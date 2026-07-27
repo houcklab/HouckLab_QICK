@@ -1,4 +1,3 @@
-"""Adversarial tests for the hardware-independent joint-search policy."""
 
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..",
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_optimizer import (  # noqa: E402
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_optimizer import (
     CandidateArchive,
     PulseCandidate,
     duration_stratified_shortlist,
@@ -67,8 +66,6 @@ def test_duration_stratification_survives_global_false_maximum():
     for read_length in (4.0, 10.0, 20.0):
         for sigma in (0.10, 0.25):
             for gain in (3000, 5000, 7000):
-                # Every globally highest coarse score is deliberately concentrated at
-                # the bad 4-us/0.10-us seed duration.
                 fidelity = (0.99 - gain * 1e-8
                             if (read_length, sigma) == (4.0, 0.10)
                             else 0.82 + 1e-6 * gain)

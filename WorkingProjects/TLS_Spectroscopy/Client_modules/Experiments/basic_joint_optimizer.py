@@ -1,24 +1,3 @@
-"""Pure optimization primitives for the joint single-qubit autotuner.
-
-The hardware-facing tuner deliberately keeps QICK programs out of this module.  The
-objects below operate on complete physical candidates and measured rows, which makes
-the search policy deterministic, checkpointable, and testable against synthetic
-devices without importing PYNQ/QICK.
-
-The policy is intentionally hybrid:
-
-* a structured backbone gives every readout-duration/control-duration stratum real
-  measurements;
-* duration-stratified successive halving prevents a noisy global maximum from
-  deleting an entire timing family;
-* a small heteroscedastic Matérn Gaussian process proposes local frequency/gain
-  refinements, but never acts as the sole selector;
-* final selection uses measured held-out rows only.
-
-This is not a generic high-dimensional optimizer.  It encodes the physics and the
-failure modes of this calibration problem while keeping the expensive measurement
-oracle replaceable.
-"""
 
 from __future__ import annotations
 
@@ -47,7 +26,6 @@ def _finite_float(value, default=float("nan")):
 
 @dataclass(frozen=True)
 class PulseCandidate:
-    """Immutable identity of one complete physical calibration tuple."""
 
     read_pulse_freq: float
     read_pulse_gain: int
@@ -114,7 +92,6 @@ class PulseCandidate:
 
 
 class CandidateArchive:
-    """Append-only measurement view with stable identities and drift epochs."""
 
     def __init__(self, sink=None):
         self.rows = sink if sink is not None else []
@@ -146,7 +123,6 @@ class CandidateArchive:
 
 
 def fidelity_evidence(row: Mapping[str, object]) -> tuple[float, float, float]:
-    """Return held-out mean, standard error, and LCB with legacy fallback."""
     mean = _finite_float(row.get("crossfit_fidelity"))
     se = _finite_float(row.get("crossfit_fidelity_se"), float("inf"))
     lcb = _finite_float(row.get("crossfit_fidelity_lcb_95"))
@@ -188,7 +164,6 @@ def unique_candidate_rows(rows: Iterable[Mapping[str, object]]) -> list[dict]:
 def duration_stratified_shortlist(
         rows: Sequence[Mapping[str, object]], *, per_stratum: int = 1,
         global_count: int = 24, maximum: int | None = None) -> list[dict]:
-    """Retain measured winners without allowing one duration to crowd out others."""
     rows = unique_candidate_rows(rows)
     grouped = {}
     for row in rows:
@@ -204,7 +179,6 @@ def duration_stratified_shortlist(
                     :max(int(global_count), 0)])
     selected = unique_candidate_rows(selected)
     if maximum is not None and len(selected) > int(maximum):
-        # The mandatory first entry from each duration stratum is never truncated.
         mandatory_keys = ({
             PulseCandidate.from_mapping(sorted(
                 grouped[key], key=_row_rank, reverse=True)[0]).key()
@@ -220,7 +194,6 @@ def duration_stratified_shortlist(
 
 
 def latency_pareto_frontier(rows: Sequence[Mapping[str, object]]) -> list[dict]:
-    """Non-dominated measured fidelity/latency points, ordered fastest first."""
     unique = unique_candidate_rows(rows)
     ordered = sorted(unique, key=lambda row: (
         PulseCandidate.from_mapping(row).chain_latency_us(),
@@ -239,7 +212,6 @@ def select_shortest_noninferior(
         rows: Sequence[Mapping[str, object]], reference: Mapping[str, object],
         *, max_loss: float = 0.005, confidence_z: float = 1.96,
         minimum_mean: float = 0.85, minimum_lcb: float = 0.82) -> tuple[dict, list]:
-    """Select latency only after fidelity passes an uncertainty-aware constraint."""
     ref_mean, ref_se, _ = fidelity_evidence(reference)
     diagnostics = []
     eligible = []
@@ -296,8 +268,6 @@ def _feature_bounds(rows, proposal_limits):
 def _features(rows, names, lows, highs):
     values = np.asarray([[float(row[name]) for name in names]
                          for row in rows], dtype=float)
-    # Gains and durations are multiplicative coordinates.  A log transform makes a
-    # fixed fractional trust region comparable at low and high DAC/duration values.
     for index, name in enumerate(names):
         if name in ("read_pulse_gain", "read_length", "qubit_pi_gain", "sigma"):
             values[:, index] = np.log(np.maximum(values[:, index], 1e-12))
@@ -336,12 +306,6 @@ def propose_trust_region_candidates(
         qubit_gain_fraction: float = 0.30,
         trust_regions: int = 6, pool_size: int = 3000,
         length_scale: float = 0.22) -> list[dict]:
-    """Propose a diverse batch using a small heteroscedastic Matérn GP.
-
-    Durations stay on measured strata.  The surrogate refines only gains and small
-    frequency offsets, so it cannot hallucinate an unmeasured waveform duration.
-    Returned points are proposals only; selection must use fresh measurements.
-    """
     usable = [dict(row) for row in rows if np.isfinite(fidelity_evidence(row)[0])]
     if not usable or int(count) <= 0:
         return []

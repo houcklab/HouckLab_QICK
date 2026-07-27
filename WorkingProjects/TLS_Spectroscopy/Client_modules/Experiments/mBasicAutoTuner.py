@@ -1,30 +1,3 @@
-"""A deliberately simple, measurement-first single-qubit auto tuner.
-
-This module automates the tune-up that has worked manually in this repository:
-
-    resonator -> wide qubit spectrum -> provisional IQ Rabi
-    -> bootstrap readout grid -> canonical single-shot control selection
-    -> error-amplified SS control -> joint readout/control/duration refinement
-
-The implementation is intentionally independent of :mod:`mAutoTuner`.  Early
-averaged-IQ experiments are *seeds*, never verdicts.  The optimization objective is
-the exact paired ground/excited ``SingleShotProgram`` used by
-``TLSSpectroscopy.py`` step 5.  In the report-only duration portfolio, the pure
-fidelity winner remains untouched by leakage or coherent-control screening.  A
-second, explicitly labelled balanced recommendation is selected only among
-statistically noninferior pulses after constant-area duration partners, deterministic
-gain zooms, leakage, and repeated-pulse behavior have all been measured.  A weak
-starting point never prevents the search, and an optional-stage failure never erases
-the best directly measured candidate.
-
-After spectroscopy and coherent Rabi locate physical frequency basins, the tuner uses
-a structured joint search over readout duration/gain and Gaussian duration/pi gain.
-Every duration pair receives measurements; multi-fidelity elimination and a local
-Matérn trust-region surrogate refine several basins without allowing a noisy early
-winner to erase the rest.  Final selection is based only on fresh held-out replays.
-A Pareto replay minimizes X180-plus-readout latency only inside a predeclared fidelity
-noninferiority bound; low-fidelity speedups are never part of the feasible set.
-"""
 
 from __future__ import annotations
 
@@ -85,11 +58,6 @@ BASIC_AUTOTUNER_REVISION = "phase-aligned-fixed-sigma-v13"
 
 BASIC_DEFAULTS = {
     "random_seed": 271828,
-    # A normal console transcript is not enough to debug hardware-path failures.
-    # Production runs therefore stream every raw single-shot/control IQ acquisition
-    # into one self-contained HDF5 bundle and embed the complete final Python data
-    # archive at save time.  Tests stay lightweight unless force_without_hardware is
-    # explicitly enabled.
     "diagnostics": {
         "enabled": True,
         "force_without_hardware": False,
@@ -97,14 +65,8 @@ BASIC_DEFAULTS = {
         "compression_level": 4,
         "flush_every_records": 8,
     },
-    # Optional explicit pickle from an interrupted run of this exact revision.  Only
-    # complete coarse cells with the same physical input contract are reused;
-    # medium/final candidates are freshly replayed in the current drift epoch.
     "resume_checkpoint": None,
     "max_consecutive_point_failures": 5,
-    # ``concise`` keeps the operator informed at human-scale stage boundaries while
-    # retaining every technical message in data['report'].  Set to ``detailed`` only
-    # when debugging an acquisition problem.
     "console": {"verbosity": "concise"},
     "calibration_drift": {
         "max_angle_degrees": 25.0,
@@ -113,10 +75,6 @@ BASIC_DEFAULTS = {
         "max_midpoint_shift_fraction": 0.25,
     },
     "reset": {
-        # Direct-control stages use fresh tProc feedback once a usable readout/pi tuple
-        # exists.  Readout-coordinate maps deliberately revert to passive reset because
-        # their changing integration length/frequency/gain invalidates one raw feedback
-        # threshold; the winner is re-probed immediately afterward.
         "enabled": True, "probe_shots": 2000, "max_iters": 3,
         "min_activation_fidelity": 0.75,
         "min_raw_assignment_fidelity": 0.80,
@@ -125,31 +83,17 @@ BASIC_DEFAULTS = {
             "sweep_shots": 800, "check_shots": 3000,
             "relax_delay_us": 500.0,
         },
-        # Clear residual measurement photons before every calibrated control pulse.
-        # Kept explicit in the saved reset record even though the shared primitive
-        # also fails safe to this value for non-tuner callers.
         "thermalization_us": 25.0,
         "post_measure_delay_us": 0.05,
-        # The reset drive gain/control are frozen.  A raw threshold is calibrated and
-        # cached for every ADC integration length/readout frequency used by the joint
-        # search, so changing the scoring gain no longer disables feedback reset.
         "profile_shots": 650,
         "profile_min_raw_fidelity": 0.72,
         "profile_validate": True,
-        # The residual-population reset probe is necessary but not authoritative:
-        # a threshold/path error can pass that probe while destroying the actual
-        # TLS step-5 g/e clouds.  Every profile must therefore reproduce the same
-        # complete pulse tuple against passive preparation before it is allowed to
-        # affect an optimizer score.
         "exact_qualification_shots": 650,
         "exact_qualification_blocks": 2,
         "exact_min_feedback_fidelity": 0.70,
         "exact_max_fidelity_loss": 0.030,
         "exact_max_block_loss": 0.080,
         "exact_min_separation_ratio": 0.70,
-        # A large, statistically resolved passive-to-feedback collapse is a path
-        # mismatch, not a profile-specific fluctuation.  Disable feedback for the
-        # remainder of the run instead of repeatedly poisoning later durations.
         "exact_catastrophic_loss": 0.10,
     },
     "baseline": {"shots": 800, "blocks": 2},
@@ -157,33 +101,19 @@ BASIC_DEFAULTS = {
         "enabled": True, "span_mhz": 4.0, "points": 61, "shots": 120,
         "polarity": "dip", "wide_span_mhz": 12.0, "wide_points": 101,
         "min_contrast_snr": 5.0, "always_wide": True,
-        # Prefer a device-independent prior around initialize.py.  Absolute bounds
-        # remain an explicit override for characterized-device studies.  The outer
-        # scan is padded only to fit a line exactly at the +/-radius limit; candidates
-        # in that padding are never accepted.
         "search_min_mhz": None, "search_max_mhz": None,
         "search_radius_mhz": 100.0,
         "search_expansion_radii_mhz": [5.0, 25.0, 100.0],
         "search_edge_padding_mhz": 2.0,
         "search_step_mhz": 0.20,
-        # Four MHz leaves enough off-resonant baseline around the measured
-        # ~0.34-MHz-wide q4 notch.  A 1.2-MHz confirmation let the quadratic
-        # background absorb a real modest-depth notch and reject it as low SNR.
         "confirmation_span_mhz": 4.0, "confirmation_points": 81,
         "confirmation_shots": 120,
         "edge_guard_points": 2, "min_relative_contrast": 0.002,
         "min_feature_width_mhz": 0.04, "max_feature_width_mhz": 2.0,
-        # A broad readout scan may contain several real resonators or package modes.
-        # Preserve and independently confirm several notches; qubit spectroscopy then
-        # selects the physically useful resonator/qubit branch.
         "max_candidates": 8,
         "min_candidate_separation_mhz": 1.0,
         "max_confirmation_width_ratio": 2.5,
         "max_confirmation_shift_mhz": 0.25,
-        # Averaged discovery must not inherit a deliberately bad/zero input readout.
-        # The input gain is also tried if the safe gain does not survive an independent
-        # confirmation scan.  This bootstrap is never written without direct SS
-        # optimization and a final exact-tuple replay.
         "discovery_gain": 5000, "discovery_length_us": 10.0,
     },
     "spectroscopy": {
@@ -191,23 +121,13 @@ BASIC_DEFAULTS = {
         "wide_span_mhz": 80.0, "wide_points": 121, "gain": 7000,
         "pulse_length_us": 2.0, "shots": 80, "max_candidates": 8,
         "min_feature_snr": 3.0, "always_wide": True,
-        # Search the complete configurable prior around initialize.py.  Unlike the
-        # resonator search this is intentionally not stopped at the first feature: a
-        # nearby TLS must not hide a farther qubit inside the authorized window.
-        # Absolute bounds remain available as an explicit override.
         "search_min_mhz": None, "search_max_mhz": None,
         "search_radius_mhz": 100.0,
         "search_edge_padding_mhz": 10.0,
         "search_step_mhz": 2.0, "coarse_candidates": 8,
-        # Overlapping broad lines need not make two local maxima: the weaker qubit
-        # can be only a shoulder on a stronger TLS.  Add a capped set of separated,
-        # high-residual shoulder proposals before the ordinary opposed confirmations.
         "coarse_shoulder_fraction": 0.18,
         "coarse_shoulder_separation_steps": 1.25,
         "coarse_min_shoulder_candidates": 2,
-        # The high-power hardware line can be several MHz wide.  A narrow 6-MHz
-        # confirmation lets the smooth-baseline model absorb that line and reject a
-        # real transition, so retain the proven 20-MHz local spectroscopy window.
         "confirmation_span_mhz": 20.0, "confirmation_points": 81,
         "confirmation_shots": 60, "max_repeat_error_mhz": 0.60,
         "confirmation_min_feature_snr": 4.0,
@@ -216,18 +136,8 @@ BASIC_DEFAULTS = {
         "coarse_capture_mhz": 2.0,
         "confirmation_neighbor_mask_mhz": 1.5,
         "confirmation_neighbor_radius_mhz": 8.0,
-        # Every independently confirmed notch may be evaluated through the expensive
-        # opposed spectroscopy confirmation.  The cap matches resonator.max_candidates
-        # and exists only to bound pathological package-mode forests.
         "max_resonator_branches": 8,
-        # Once two branches both show spectroscopy/Rabi, compare their complete rough
-        # physical tuples with the actual step-5 single-shot objective before choosing
-        # which readout neighborhood receives the expensive joint optimization.
         "branch_ss_shots": 250, "branch_ss_blocks": 2,
-        # A physical single-line fit is preferred, but spectroscopy is a basin
-        # generator rather than the final control verdict.  Two fresh opposed scans
-        # with a strong, correlated complex response may provisionally seed Rabi when
-        # overlapping lines make every one-line linewidth fit hit its bound.
         "confirmation_allow_provisional_seed": True,
         "confirmation_provisional_min_snr": 4.0,
         "confirmation_provisional_min_complex_correlation": 0.50,
@@ -241,10 +151,6 @@ BASIC_DEFAULTS = {
         "fine_gain_points": 41, "shortlist": 4,
     },
     "rough_single_shot": {
-        # A small direct-SS chevron is run independently in every retained spectral
-        # basin before any basin is discarded.  This is the automated counterpart of
-        # the manual SS Rabi-chevron step and protects a weak true qubit from a strong
-        # but irrelevant TLS ridge or a poor averaged-IQ fit.
         "coarse_shots": 140, "freq_span_mhz": 2.0, "freq_points": 3,
         "gain_fraction": 0.35, "gain_points": 5,
         "shots": 700, "blocks": 2,
@@ -255,41 +161,22 @@ BASIC_DEFAULTS = {
         "shots": 100, "confirm_shots": 600, "confirm_blocks": 2,
         "min_contrast_sigma": 5.0, "min_depth_correctness": 0.55,
         "min_consistent_depth_fraction": 0.67,
-        # Qualify every independently coherent Rabi basin before the expensive joint
-        # optimizer.  A one-pulse SS maximum is not allowed to create a transition,
-        # but a rough pulse is not required to pass the *final* pulse-quality audit
-        # before the optimizer has had a chance to tune its gain and duration.
         "max_control_branches": 6,
         "branch_compare_shots": 900, "branch_compare_blocks": 3,
         "max_rabi_frequency_shift_mhz": 2.0,
         "qualified_basin_radius_mhz": 2.0,
-        # A branch comparison made with a collapsed discriminator must not erase a
-        # strong passive bootstrap/Rabi basin over a millipercent coin-flip tie.
         "minimum_informative_branch_fidelity_lcb": 0.60,
         "minimum_informative_branch_separation_sigma": 0.75,
-        # Early readout is only a bootstrap discriminator.  It may have much lower
-        # contrast than the later optimized readout, but must still resolve enough
-        # population to test odd/even action rather than confuse readout quality with
-        # transition coherence.
         "fallback_minimum_binary_contrast": 0.12,
-        # This high-statistics rough audit runs only for the few coherent-Rabi
-        # branches.  Passing it can resolve two competing transitions; failing it is
-        # now provisional evidence and cannot block gain/duration optimization.
         "prequalification_shot_multiplier": 8,
     },
     "fine_frequency": {
-        # Repeated (+Xpi,-Xpi) pseudoidentity pairs amplify coherent detuning without
-        # assuming that half of the X180 DAC code is a calibrated X90.
         "enabled": True, "span_mhz": 1.0, "points": 17, "pairs": 5,
         "shots": 220, "calibration_shots": 500,
         "confirm_shots": 700, "confirm_blocks": 2,
         "min_contrast_sigma": 5.0,
     },
     "amplified_error": {
-        # The QUA ``ALE_tune_1Q.py`` file actually runs amplified AMPLITUDE error
-        # (AAE), not leakage.  This is its X180 analogue: multi-depth odd/even parity
-        # jointly refines frequency and gain.  Several depths suppress the aliases
-        # that make a single repeated-pulse count unsafe.
         "enabled": True, "freq_span_mhz": 0.5, "freq_points": 3,
         "gain_fraction": 0.08, "gain_points": 11,
         "pulse_counts": [5, 6, 7, 9, 10, 11, 13, 14, 15],
@@ -299,25 +186,11 @@ BASIC_DEFAULTS = {
         "min_consistent_depth_fraction": 0.67,
     },
     "leakage": {
-        # The basic workflow defaults to a practical fixed-Gaussian screen: compare
-        # independently tuned duration/power candidates and reject reproducible
-        # third-cloud growth, then independently replay the winner.  It deliberately
-        # does not search DRAG waveforms and does not rename an IQ-cloud anomaly P(f).
-        # Strict identity+shelving qutrit response inversion remains opt-in because an
-        # old anharmonicity prior is not enough to prove a usable present-day e-f
-        # calibration.  Set this to ``auto`` to activate it when that metadata exists;
-        # otherwise retain the explicitly labelled operational third-cloud screen.
         "enabled": False, "operational_enabled": True,
         "required_for_write": True,
-        # Legacy repeated-return settings remain available for detailed diagnostics,
-        # but AAE already performs the correct multi-depth coherent-error refinement.
-        # They are off in the basic screen because return error is not a leakage
-        # measurement and custom DRAG uploads made this stage needlessly fragile.
         "operational_repeated_return_enabled": False,
         "operational_depths": [1, 2, 3, 4, 6, 8],
         "operational_shots": 220, "operational_reference_shots": 500,
-        # Retry a fresh before/after discriminator bracket when drift, rather than
-        # leakage, is the only reason an otherwise safe waveform was invalid.
         "operational_drift_retries": 2,
         "operational_verify_shots": 650, "operational_verify_blocks": 3,
         "operational_max_even_return_error": 0.12,
@@ -327,21 +200,12 @@ BASIC_DEFAULTS = {
         "operational_beta_span": 0.08, "operational_beta_points": 7,
         "operational_max_beta_span": 0.16,
         "operational_max_extensions": 2,
-        # Six slots cover every default duration instead of allowing several nearby
-        # beta values from one duration to crowd out the duration/power comparison.
         "operational_max_candidate_waveforms": 6,
         "operational_selection_shots": 900,
         "operational_selection_blocks": 3,
         "operational_selection_shortlist": 6,
-        # Candidates inside this joint uncertainty/margin band are treated as tied;
-        # the longer, lower-power Gaussian wins that tie.
         "operational_fidelity_tie_margin": 0.003,
         "operational_max_tie_fidelity_loss": 0.010,
-        # The legacy tail-excess metric can cancel when a readout-induced third cloud
-        # appears in *both* prepared states.  A deterministic 2-D Gaussian-mixture
-        # model therefore compares two versus three resolved IQ populations.  A
-        # supported third population may be small, but it may not exceed either the
-        # combined or single-preparation bounds below.
         "third_cluster_min_bic_improvement": 20.0,
         "third_cluster_min_separation_sigma": 3.5,
         "max_third_cluster_fraction": 0.05,
@@ -351,14 +215,7 @@ BASIC_DEFAULTS = {
         "ef_narrow_span_mhz": 6.0, "ef_narrow_points": 61,
         "ef_spec_gain": 7000, "ef_spec_shots": 300,
         "ef_min_feature_snr": 4.0, "ef_max_repeat_error_mhz": 1.5,
-        # Keep several peaks from each opposed scan and associate the same physical
-        # feature across the two passes.  Comparing only each pass's strongest peak
-        # falsely rejects a real e-f line whenever a different weak feature swaps rank.
         "ef_feature_candidates": 8,
-        # A separately calibrated long/narrow-bandwidth Gaussian prepares the qutrit
-        # response references.  Using the candidate pulse to define "pure e" would
-        # absorb its own leakage into the response matrix and make one-pulse P(f)
-        # circularly zero by construction.
         "reference_sigma_us": 0.50,
         "reference_gain_max": 30000, "reference_gain_points": 41,
         "reference_rabi_shots": 300, "reference_min_rabi_r2": 0.55,
@@ -367,15 +224,10 @@ BASIC_DEFAULTS = {
         "ef_gain_max": 30000, "ef_gain_points": 41,
         "ef_rabi_shots": 300, "ef_min_rabi_r2": 0.55,
         "ef_min_rabi_contrast": 0.15, "ef_max_return_fraction": 0.40,
-        # beta is peak derivative-Q / peak Gaussian-I.  Both signs must be searched
-        # because the physical sign depends on the mixer/cabling convention.
         "beta_span": 0.08, "beta_points": 7,
         "max_beta_span": 0.20, "max_extensions": 2,
-        # Include a direct one-pulse witness and repeated-pulse leakage amplifiers.
         "depths": [1, 2, 4, 8], "gap_phases": [0.0, 0.5],
         "shots": 250, "reference_shots": 400,
-        # Leakage maps screen feasibility; a separate round-robin held-out replay
-        # selects fidelity so the largest of many noisy beta estimates cannot win.
         "selection_fidelity_shots": 900,
         "selection_fidelity_blocks": 3, "selection_shortlist": 5,
         "verify_shots": 800, "verify_blocks": 3,
@@ -383,7 +235,6 @@ BASIC_DEFAULTS = {
         "max_response_condition": 40.0,
         "min_identity_selectivity": 0.45,
         "min_shelving_selectivity": 0.45,
-        # Hard constraints.  Fidelity is maximized only inside this feasible set.
         "max_single_p2": 0.02, "max_amplified_p2": 0.03,
         "max_third_blob_excess": 0.05,
         "max_candidate_waveforms": 3,
@@ -399,21 +250,12 @@ BASIC_DEFAULTS = {
     },
     "readout_length": {
         "enabled": True,
-        # Dense timing coverage near the useful short-readout boundary prevents a
-        # coarse 8->14 us jump from masquerading as the shortest acceptable result.
-        # Very short points are measured, not forbidden; the fidelity constraint is
-        # what rejects a 1-us/60% readout.
         "values_us": [float(value) for value in range(1, 21)],
         "min_us": 1.0, "max_us": 20.0,
         "freq_span_mhz": 0.8, "freq_points": 3,
-        # A separate broad power axis is measured at every length.  Reusing one
-        # +/-25% neighborhood biases the comparison because short integrations can
-        # need several times the drive of long integrations.
         "gain_min": 1000, "gain_max": 10000, "gain_points": 7,
         "shots": 160, "shortlist": 3, "confirm_shots": 700,
         "confirm_blocks": 2,
-        # Global top-K can fill every held-out slot with variants of the starting
-        # length.  Confirm two coarse frequency/gain cells at every tested length.
         "confirm_per_length": 2,
     },
     "qubit": {
@@ -424,8 +266,6 @@ BASIC_DEFAULTS = {
         "local_gain_fraction": 0.22, "local_gain_points": 7,
     },
     "pulse_duration": {
-        # The physical Gaussian gate length is 4*sigma.  Every sigma gets its own
-        # local frequency/gain retune; comparing sigma at one fixed gain is invalid.
         "enabled": True,
         "sigma_values_us": [0.05, 0.10, 0.15, 0.25, 0.35, 0.50],
         "freq_span_mhz": 1.0, "freq_points": 3,
@@ -434,18 +274,11 @@ BASIC_DEFAULTS = {
         "confirm_per_sigma": 2,
     },
     "joint_search": {
-        # This replaces greedy readout-length/qubit-gain/pulse-duration coordinate
-        # descent.  Every duration pair receives a broad joint readout/pi-gain sweep.
         "enabled": True,
         "read_lengths_us": [float(value) for value in range(1, 21)],
         "sigma_values_us": [0.05, 0.10, 0.15, 0.25, 0.35, 0.50],
         "read_gain_min": 1000, "read_gain_max": 10000,
-        # Ten points give an input-independent 1000-DAC backbone (including 5000)
-        # across the normal 1k--10k operating range.  The current in-range gain is
-        # added separately, so it cannot displace any of these powers.
         "read_gain_points": 10,
-        # The fast QICK sweep includes gain zero as the shared ground reference and
-        # uniformly spans past the rough Rabi pi estimate for this duration.
         "qubit_gain_points_including_ground": 15,
         "qubit_gain_max_scale": 1.85,
         "qubit_gain_hard_max": 32767,
@@ -454,15 +287,10 @@ BASIC_DEFAULTS = {
         "medium_global_count": 24,
         "medium_max_candidates": 110,
         "medium_shots": 260, "medium_blocks": 2,
-        # A small Matérn trust-region surrogate refines gains/frequencies around
-        # several measured basins; it never selects an unmeasured candidate.
         "trust_regions": 6, "trust_proposals": 36,
         "trust_pool_size": 3000,
         "trust_read_frequency_radius_mhz": 0.40,
         "trust_qubit_frequency_radius_mhz": 0.70,
-        # Quantization keeps the surrogate from requesting dozens of nearly identical
-        # reset discriminator profiles.  All proposed points remain real measurements;
-        # this only chooses a reusable local hardware lattice for their frequencies.
         "trust_read_frequency_points": 5,
         "trust_qubit_frequency_points": 7,
         "trust_read_gain_fraction": 0.30,
@@ -471,41 +299,19 @@ BASIC_DEFAULTS = {
         "closure_iterations": 2,
         "closure_frequency_radius_scale": 0.55,
         "closure_gain_radius_scale": 0.60,
-        # A runtime-limited search must not become a short-duration search merely
-        # because those cells happened to be shuffled first.  The first gain pass is
-        # mandatory and covers every read-length/sigma pair before any pair receives
-        # a second readout power.  Three mandatory passes exercise the centre and both
-        # interior quartiles; later passes retain the same round-robin rule.
         "minimum_duration_coverage_passes": 3,
-        # Reserve distinct tails for held-out duration-stratified comparison and for
-        # frequency/AAE closure.  Without these reservations the coarse map can consume
-        # the entire soft budget, leaving its winner unconfirmed and uncorrected.
         "reserve_medium_minutes": 6.0,
         "reserve_control_refinement_minutes": 7.0,
-        # The operator never discovers an hour-long fallback after launch.  This is a
-        # soft acquisition budget: completed measurements remain reportable and final
-        # confirmation receives a reserved tail budget.
         "runtime_budget_minutes": 30.0,
         "reserve_final_minutes": 5.0,
     },
     "duration_portfolio": {
-        # Manual-selection mode: produce one independently screened calibration for
-        # every integer readout duration and never write initialize.py.  Discovery,
-        # averaged Rabi, and AAE are shared; the full readout/control tuple is then
-        # remeasured and safety-audited separately at each duration.
         "enabled": True,
         "manual_selection_only": True,
         "read_lengths_us": [float(value) for value in range(1, 21)],
-        # Cross several measured readout basins with several AAE/Rabi control basins,
-        # then add a small fixed-duration trust-region refinement.  Every duration
-        # receives the same number of attempted candidates.
         "native_seeds_per_length": 3,
         "readout_seeds_per_length": 2,
         "control_seed_count": 3,
-        # The stochastic proposals remain useful for discovering a different local
-        # basin, but they are no longer accepted as evidence that either DAC gain is
-        # locally optimal.  A deterministic axial challenge and a two-dimensional
-        # zoom below are mandatory around the measured winner.
         "local_proposals_per_length": 4,
         "local_read_frequency_radius_mhz": 0.30,
         "local_qubit_frequency_radius_mhz": 0.50,
@@ -514,10 +320,6 @@ BASIC_DEFAULTS = {
         "refine_shots": 260,
         "refine_blocks": 2,
         "deterministic_gain_refinement": True,
-        # Round one independently challenges readout and X180 gain, avoiding the
-        # combinatorial cost of a broad Cartesian grid while proving that neither
-        # coarse-lattice coordinate was simply inherited.  Round two is a full 3x3
-        # local interaction check around the newly measured winner.
         "gain_axis_read_fraction": 0.15,
         "gain_axis_read_points": 5,
         "gain_axis_qubit_fraction": 0.08,
@@ -536,22 +338,12 @@ BASIC_DEFAULTS = {
         "gain_refine_blocks": 2,
         "gain_zoom_shots": 420,
         "gain_zoom_blocks": 2,
-        # For a Gaussian X180, gain*sigma is the ideal two-level pulse area.  Test
-        # exact half/double-duration partners, including sigma values (such as 0.30
-        # us) which are absent from the original coarse duration list.  Each partner
-        # receives its own local amplitude challenge; area scaling is only a seed.
         "constant_area_sigma_factors": [0.5, 2.0],
         "constant_area_qubit_fraction": 0.08,
         "constant_area_qubit_points": 5,
         "constant_area_sigma_min_us": 0.05,
         "constant_area_sigma_max_us": 0.50,
         "pulse_family_aae_enabled": True,
-        # Selection is deliberately one-dimensional: maximize independently replayed
-        # single-shot fidelity at the fixed readout duration.  Leakage and coherent
-        # control are measured afterward on that exact winner and reported as separate
-        # facts; neither can replace it with a lower-fidelity tuple.  Keep the strongest
-        # historical same-duration tuple in the expensive replay cohort so a winner
-        # already observed earlier in this run cannot silently disappear.
         "historical_champions_per_length": 1,
         "confirm_candidates_per_length": 5,
         "pulse_family_champions_per_length": 3,
@@ -561,85 +353,44 @@ BASIC_DEFAULTS = {
         "confirm_shots": 900,
         "confirm_blocks": 3,
         "require_control_audit": True,
-        # The fidelity winner is still reported exactly as requested.  Separately,
-        # screen a few held-out pulse-family alternatives and recommend a longer,
-        # lower-drive candidate only when its paired fidelity loss is statistically
-        # bounded.  This is a Pareto report, not leakage-based replacement of the
-        # maximum-fidelity row.
         "balanced_screen_candidates_per_length": 3,
         "balanced_max_fidelity_loss": 0.010,
         "balanced_confidence_sigma": 1.96,
         "balanced_control_attempts": 2,
     },
     "latency": {
-        # Latency is a secondary, epsilon-constrained objective.  First establish
-        # the best held-out fidelity; then minimize the physical X180+readout chain
-        # only among candidates which independently prove that their fidelity loss
-        # is at most one absolute percentage point.  A fidelity/time ratio is not
-        # used because it rewards unusably short, low-fidelity measurements.
         "enabled": True,
         "max_fidelity_loss": 0.005,
         "minimum_mean_fidelity": 0.90,
         "minimum_lcb_fidelity": 0.88,
-        # Reporting has a second, explicitly non-writing Pareto option.  It answers
-        # "what is the fastest still-useful chain?" even when no faster arm can meet
-        # the much stricter 0.5-point noninferiority certificate above.  Mean/LCB
-        # floors exclude seductive 1-us/60%-fidelity points, while the five-point
-        # loss cap keeps the option anchored to the measured device ceiling.
         "practical_max_mean_fidelity_loss": 0.05,
         "practical_minimum_mean_fidelity": 0.85,
         "practical_minimum_lcb_fidelity": 0.82,
         "familywise_alpha": 0.05,
         "confidence_sigma": 1.96,
-        # A cheap joint cross of the already retuned representative at each readout
-        # length and each Gaussian duration discovers interactions without reopening
-        # the full six-dimensional frequency/gain/length Cartesian product.
         "coarse_shots": 160,
         "max_point_attempts": 2,
         "screening_sigma": 3.0,
         "screening_slack": 0.020,
-        # Retained for saved-parameter compatibility.  The timing stage no longer
-        # truncates a statistically plausible joint timing set to this top-K value;
-        # doing so can hide the actual short plateau.
         "shortlist": 8,
         "confirm_shots": 1500,
-        # Eight randomized round-robin blocks support paired noninferiority estimates;
-        # three blocks are too fragile for a sub-percentage-point decision.
         "confirm_blocks": 8,
         "max_confirmation_attempts": 2,
-        # If a promising faster tuple is unresolved rather than demonstrably worse,
-        # collect another complete interleaved batch instead of declaring failure at
-        # the first noisy boundary decision.  The same shortlist is replayed so every
-        # comparison remains block-paired to one common reference.
         "adaptive_confirmation_rounds": 2,
         "adaptive_ucb_slack": 0.010,
-        # A fast histogram can be an incoherent saturation/alias.  Audit qualified
-        # latency contenders in increasing-time order and fall through to the next
-        # one instead of letting the final control check merely abort the run.
         "control_screen_enabled": True,
         "max_block_spread": 0.08,
         "max_reference_drift": 0.04,
-        # The independent final replay may not spend a second, larger fidelity
-        # allowance after the timing comparison already spent epsilon.  A timing
-        # certificate is invalidated when the exact replay falls by more than the
-        # original noninferiority budget.
         "max_final_fidelity_drop": 0.010,
-        # Preserve every default readout-length arm in the bounded joint cross.
         "max_readout_candidates": 20,
         "max_control_candidates": 6,
         "min_read_length_us": 1.0,
         "max_read_length_us": 20.0,
-        # The primary/safety searches remain free to use slower controls.  The joint
-        # latency stage spans the full existing Gaussian search envelope.
         "min_sigma_us": 0.05,
         "max_sigma_us": 1.00,
     },
     "coordinate_descent_repeat": True,
     "control_verify": {
-        # The final single-shot histogram is not, by itself, proof of a coherent
-        # X180: a saturated transition can also produce two well-separated clouds.
-        # Audit the exact selected frequency/gain/sigma/DRAG tuple with alternating
-        # odd/even repeated pulses before it can be written.
         "enabled": True, "pulse_counts": [1, 2, 3, 4, 5, 6],
         "shots": 320, "calibration_shots": 500, "blocks": 2,
         "minimum_binary_contrast": 0.30,
@@ -650,14 +401,7 @@ BASIC_DEFAULTS = {
     "final": {
         "top_candidates": 3, "shots": 1200, "blocks": 3,
         "confidence_sigma": 1.96, "max_block_spread": 0.08,
-        # A statistically stable coin-flip classifier is still not a calibration.
-        # This gates writes only; the best measured tuple is always retained/reported.
         "minimum_write_fidelity_lcb": 0.60,
-        # A saturation line plus a stable histogram does not prove coherent X180
-        # control.  Write authorization requires a repeated-pulse/Rabi witness bound
-        # to the exact selected frequency, gain, duration, and DRAG tuple.
-        # Exact tuples whose confirmation batch was incomplete are audited regardless
-        # of raw-score rank, so later coarse outliers cannot erase a real Rabi basin.
         "max_unconfirmed_contenders": 16,
     },
 }
@@ -665,14 +409,6 @@ BASIC_DEFAULTS = {
 
 def configure_readout_length_mode(params, current_read_length_us,
                                    scan_1_to_20_us=True):
-    """Return an isolated parameter tree for broad or fixed readout-length tuning.
-
-    Four independent policies contain a readout-duration axis. Changing only the
-    final portfolio would still let the joint search, legacy length refinement, or
-    latency guard measure other durations. Keep those axes identical so fixed mode
-    means exactly what it says: optimize every other candidate coordinate while every
-    scored readout uses the value loaded from ``initialize.py``.
-    """
     configured = copy.deepcopy(params)
     if bool(scan_1_to_20_us):
         lengths = [float(value) for value in range(1, 21)]
@@ -784,9 +520,6 @@ TUNED_KEYS = (
 )
 
 
-# Human-scale console milestones.  Internal calibration-graph nodes which merely
-# re-probe a threshold or repeat a refinement stay in the saved report without
-# flooding the terminal.
 _CONCISE_STAGE_START = {
     "baseline": "Checking the starting calibration...",
     "resonator": "Finding the resonator...",
@@ -825,12 +558,6 @@ _CONCISE_STAGE_START = {
 
 
 def _qubit_gain_sweep_supported(soccfg, gen_ch):
-    """Whether ``sreg(ch, 'gain')`` is a real standalone amplitude register.
-
-    Interpolated generators pack amplitude into another register.  Incrementing the
-    nominal gain register can then compile while leaving the physical pulse amplitude
-    fixed, so unknown/packed generators use slower point-by-point compiled pulses.
-    """
     try:
         generator = soccfg["gens"][int(gen_ch)]
         gtype = str(generator.get("type", "")).lower()
@@ -860,14 +587,12 @@ def _robust_scale(x):
 
 
 def _binomial_variance_jeffreys(k, n):
-    """Posterior variance that remains finite after observing zero events."""
     n = max(int(n), 1)
     a, b = float(k) + 0.5, float(n - k) + 0.5
     return float(a * b / ((a + b) ** 2 * (a + b + 1.0)))
 
 
 def _simultaneous_z(comparisons, alpha=0.05, floor=1.96):
-    """Two-sided Bonferroni confidence multiplier for a screened family."""
     count = max(int(comparisons), 1)
     alpha = float(np.clip(alpha, 1e-9, 0.5))
     return float(max(float(floor), NormalDist().inv_cdf(
@@ -875,20 +600,9 @@ def _simultaneous_z(comparisons, alpha=0.05, floor=1.96):
 
 
 def _third_blob_diagnostics(c0, c1, theta, scale_factor, sigma_cut=4.0):
-    """Find population far from both robust g/e blobs without calling it leakage.
-
-    This catches a separated third cloud even when it lies on the ``excited`` side of
-    the binary threshold and therefore leaves step-5 fidelity deceptively high.  The
-    excess excited-preparation tail is the useful control diagnostic; common tails in
-    both preparations are more likely readout/amplifier pathology.  This remains an
-    operational anomaly metric, not P(f); strict mode can measure P(f) separately by
-    shelving response inversion.
-    """
     rotation = np.exp(-1j * float(theta))
     g = rotation * np.asarray(c0, dtype=complex)
     e = rotation * np.asarray(c1, dtype=complex)
-    # Apply the discriminator sign only to x.  Euclidean distances are sign invariant,
-    # but keeping the same orientation makes saved centres directly interpretable.
     xg, xe = float(scale_factor) * g.real, float(scale_factor) * e.real
     yg, ye = g.imag, e.imag
     cg = np.array([np.median(xg), np.median(yg)], dtype=float)
@@ -896,8 +610,6 @@ def _third_blob_diagnostics(c0, c1, theta, scale_factor, sigma_cut=4.0):
     separation = float(np.linalg.norm(ce - cg))
 
     def radius(x, y):
-        # A small separation-relative floor prevents a mathematically zero orthogonal
-        # MAD from classifying harmless ADC quantization as a third state.
         return max(0.5 * (_robust_scale(x) + _robust_scale(y)),
                    0.01 * separation, 1e-12)
 
@@ -933,16 +645,6 @@ def _third_blob_diagnostics(c0, c1, theta, scale_factor, sigma_cut=4.0):
 
 
 def _third_cluster_diagnostics(c0, c1):
-    """Detect a resolved third IQ population without assuming which state it is.
-
-    The ordinary binary discriminator is intentionally blind to structure orthogonal
-    to its threshold.  Here a full-covariance two-component GMM is compared with a
-    three-component model using BIC.  The two components most associated with the
-    ground- and excited-preparation records are treated as the intended binary pair;
-    the remaining component is the non-binary population.  This catches the failure
-    visible in an SS-cal plot even when that extra cloud occurs equally in both
-    preparations and the old ``P_outlier(e)-P_outlier(g)`` statistic cancels to zero.
-    """
     unavailable = {
         "third_cluster_guard_available": False,
         "third_cluster_supported": False,
@@ -971,9 +673,6 @@ def _third_cluster_diagnostics(c0, c1):
     finite = np.all(np.isfinite(points), axis=1)
     if np.count_nonzero(finite) < 100:
         return unavailable
-    # step5_metrics has already paired and finite-filtered c0/c1, so this is normally
-    # all true.  Keep the split explicit to avoid silently mixing labels if a caller
-    # invokes the helper directly.
     if not np.all(finite):
         return unavailable
     centre = np.median(points, axis=0)
@@ -1057,10 +756,6 @@ def _third_cluster_diagnostics(c0, c1):
     topology_distinct = bool(
         projection < -0.15 or projection > 1.15
         or perpendicular_ratio >= 0.20
-        # A compact population between the two intended states is also physical,
-        # but a compact component close to either endpoint is usually just a GMM
-        # splitting one skewed/non-Gaussian binary cloud.  Requiring an interior
-        # location prevents that ordinary model mismatch from being called leakage.
         or (size_ratio <= 2.0 and 0.20 <= projection <= 0.80))
     supported = bool(
         np.all(np.isfinite([
@@ -1090,7 +785,6 @@ def _third_cluster_diagnostics(c0, c1):
 
 
 def ground_fraction_with_discriminator(i, q, metrics):
-    """Ground-labelled fraction and Jeffreys uncertainty for a fixed g/e axis."""
     labels = discriminate_with_metrics(i, q, metrics)
     n = int(labels.size)
     if n < 10:
@@ -1101,14 +795,6 @@ def ground_fraction_with_discriminator(i, q, metrics):
 
 def solve_shelved_qutrit_population(calibration, target_identity, target_shelved,
                                     max_condition=40.0):
-    """Estimate P(g/e/f) from calibrated identity and f-selective shelving.
-
-    Each calibration column is ``(p_g identity, se, p_g shelved, se)``.  The
-    shelving sequence e-f pi followed by g-e pi maps f to g while mapping g/e away
-    from g.  Together with ordinary binary readout and normalization this gives a
-    measured 3x3 response matrix.  Ill-conditioned and nonphysical inversions fail
-    closed instead of fabricating a small leakage value.
-    """
     try:
         columns = [calibration[name] for name in ("g", "e", "f")]
         matrix = np.array([
@@ -1135,7 +821,6 @@ def solve_shelved_qutrit_population(calibration, target_identity, target_shelved
                 "population_se": np.full(3, np.inf), "condition": np.inf,
                 "p2": np.nan, "p2_se": np.inf}
     covariance = inverse @ np.diag(observed_se ** 2) @ inverse.T
-    # d(A^-1 b)/dA_rc = -A^-1[:, r] p[c].
     for row in range(2):
         for column in range(3):
             gradient = -inverse[:, row] * raw[column]
@@ -1173,7 +858,6 @@ def _candidate_key(candidate):
 
 
 def _control_key(candidate):
-    """Hardware-relevant identity of one physical X180 waveform."""
     return (
         round(float(candidate["qubit_pi_freq"]), 9),
         int(round(candidate["qubit_pi_gain"])),
@@ -1183,9 +867,6 @@ def _control_key(candidate):
 
 
 def _candidate_from_cfg(cfg):
-    # Do not use ``dict.get(key, cfg[other])`` here: Python evaluates the default
-    # expression eagerly, so a perfectly valid config containing only
-    # ``qubit_pi_freq`` would still raise KeyError while constructing its fallback.
     qf = float(cfg["qubit_pi_freq"] if "qubit_pi_freq" in cfg
                else cfg["qubit_freq"])
     return {
@@ -1196,7 +877,6 @@ def _candidate_from_cfg(cfg):
         "qubit_pi_freq": qf,
         "qubit_pi_gain": int(round(cfg["qubit_pi_gain"])),
         "sigma": float(cfg["sigma"]),
-        # Starts as part of physical identity; the direct leakage stage may optimize it.
         "qubit_drag_beta": float(cfg.get("qubit_drag_beta", 0.0) or 0.0),
     }
 
@@ -1224,17 +904,6 @@ def _unique_candidates(candidates):
 
 
 def duration_balanced_joint_jobs(read_lengths, sigmas, read_gains, rng):
-    """Return a gain-pass-major joint-grid schedule.
-
-    Every prefix ending at a complete read-gain pass contains every physical
-    read-length/sigma stratum exactly once.  This property makes a partial,
-    runtime-limited acquisition interpretable: a short readout cannot win simply
-    because random job order never reached the longer integrations.
-
-    Readout powers are visited in a space-filling order (centre, quartiles, bounds,
-    then farthest unsampled value) so the first few complete passes are useful even
-    when passive reset prevents acquisition of the full power lattice.
-    """
     lengths = np.asarray(read_lengths, dtype=float)
     pulse_sigmas = np.asarray(sigmas, dtype=float)
     gains = np.asarray(sorted(set(int(round(value)) for value in read_gains)),
@@ -1245,8 +914,6 @@ def duration_balanced_joint_jobs(read_lengths, sigmas, read_gains, rng):
     chosen = []
     unused = set(range(gains.size))
     span = max(float(gains[-1] - gains[0]), 1.0)
-    # Resolve the central operating regime before testing the compression/no-signal
-    # bounds.  Ties deliberately select the lower DAC value.
     for fraction in (0.50, 0.25, 0.75, 0.0, 1.0):
         if not unused:
             break
@@ -1256,8 +923,6 @@ def duration_balanced_joint_jobs(read_lengths, sigmas, read_gains, rng):
         chosen.append(index)
         unused.remove(index)
     while unused:
-        # Maximin completion distributes later passes between already sampled powers
-        # instead of walking monotonically through DAC gain.
         index = max(unused, key=lambda raw: (
             min(abs(float(gains[raw]) - float(gains[prior]))
                 for prior in chosen),
@@ -1278,13 +943,6 @@ def duration_balanced_joint_jobs(read_lengths, sigmas, read_gains, rng):
 
 
 def step5_metrics(ig, qg, ie, qe, analyze_multimodality=False):
-    """Reproduce TLS step-5 fidelity and return its operational discriminator.
-
-    This intentionally uses ``find_blob_median`` and the same 100-threshold
-    ``find_threshold`` sweep as :class:`SingleShot1Q`.  Consequently a manual step-5
-    result such as 0.9165 is reported on the same scale here (balanced assignment
-    fidelity), rather than the older visibility convention ``2*F-1``.
-    """
     ig, qg = np.asarray(ig, dtype=float), np.asarray(qg, dtype=float)
     ie, qe = np.asarray(ie, dtype=float), np.asarray(qe, dtype=float)
     n = min(ig.size, qg.size, ie.size, qe.size)
@@ -1318,14 +976,6 @@ def step5_metrics(ig, qg, ie, qe, analyze_multimodality=False):
         [1.0 - p_e_given_g, p_g_given_e],
         [p_e_given_g, 1.0 - p_g_given_e],
     ])
-    # The manual TLS step-5 number above deliberately fits and scores the IQ axis and
-    # threshold on the same shots so it remains directly comparable with the lab's
-    # historical calibration output.  That resubstitution estimate is slightly
-    # optimistic, however, and candidate-dependent optimism is unacceptable when a
-    # sub-percentage-point latency decision is being certified.  Build an additional
-    # deterministic two-fold cross-fit estimate: each discriminator is trained on one
-    # interleaved half and scored only on shots it did not see.  Timing selection uses
-    # this held-out metric while the ordinary ``fidelity`` field remains step-5 exact.
     crossfit_ground_errors = 0
     crossfit_excited_errors = 0
     crossfit_ground_total = 0
@@ -1389,11 +1039,8 @@ def step5_metrics(ig, qg, ie, qe, analyze_multimodality=False):
         [1.0 - crossfit_p_e_given_g, crossfit_p_g_given_e],
         [crossfit_p_e_given_g, 1.0 - crossfit_p_g_given_e],
     ])
-    # The exact helper's finite threshold grid defines fidelity.  The confusion matrix
-    # is retained for directional errors and uncertainty and should agree to O(1/n).
     var = (p_e_given_g * (1.0 - p_e_given_g)
            + p_g_given_e * (1.0 - p_g_given_e)) / (4.0 * n)
-    # Jeffreys-scale floor avoids claiming zero uncertainty after observing zero errors.
     fidelity_se = float(math.sqrt(max(var, 0.25 / (n + 1.0) ** 2)))
     sg = max(_robust_scale(xg), 1e-12)
     se = max(_robust_scale(xe), 1e-12)
@@ -1461,7 +1108,6 @@ def discriminate_with_metrics(i, q, metrics):
 
 
 def fit_anchored_rabi(gains, signal):
-    """Fit a damped Rabi cosine whose phase is anchored by the zero-gain point."""
     x, y = np.asarray(gains, dtype=float), np.asarray(signal, dtype=float)
     good = np.isfinite(x) & np.isfinite(y)
     x, y = x[good], y[good]
@@ -1477,8 +1123,6 @@ def fit_anchored_rabi(gains, signal):
     def model(g, offset, amp, pi_gain, decay):
         return offset + amp * np.exp(-g / decay) * np.cos(np.pi * g / pi_gain)
 
-    # FFT plus geometric seeds make the first physical period identifiable even when
-    # the high-gain oscillations are strongly damped.
     centred = y - np.mean(y)
     fft = np.fft.rfft(centred * np.hanning(x.size))
     ff = np.fft.rfftfreq(x.size, d=max(step, 1e-9))
@@ -1499,8 +1143,6 @@ def fit_anchored_rabi(gains, signal):
                     model, x, y,
                     p0=[float(np.mean(y)), float(y[0] - np.mean(y)),
                         float(np.clip(p0, 0.6 * step, span)), 3.0 * span],
-                    # pi_gain below one gain step is a discrete-time alias of a much
-                    # slower Rabi oscillation, not a resolvable first inversion.
                     bounds=([-np.inf, -np.inf, 1.05 * step, 0.20 * span],
                             [np.inf, np.inf, 1.25 * span, 1e5 * span]),
                     maxfev=30000,
@@ -1533,11 +1175,6 @@ def fit_anchored_rabi(gains, signal):
 
 
 def analyze_iq_chevron(freqs, gains, i_map, q_map, min_r2=0.55):
-    """Find a coherent Rabi ridge after removing each row's common IQ offset.
-
-    This is the key correction to the existing TLS/QM chevrons: absolute ``I**2+Q**2``
-    is dominated by the readout baseline and has no reason to identify a pi pulse.
-    """
     freqs, gains = np.asarray(freqs, float), np.asarray(gains, float)
     z = np.asarray(i_map, float) + 1j * np.asarray(q_map, float)
     if z.shape != (freqs.size, gains.size):
@@ -1563,9 +1200,6 @@ def analyze_iq_chevron(freqs, gains, i_map, q_map, min_r2=0.55):
                      "contrast_observed": float(np.ptp(projection))})
     max_contrast = max(max(row["contrast_observed"] for row in rows), 1e-15)
     for row in rows:
-        # A vanishing but perfectly sinusoidal numerical/noise trace can have an
-        # excellent scale-free r2.  The physical ridge must also carry a substantial
-        # fraction of the largest drive-induced displacement in the map.
         relative = float(row["contrast_observed"] / max_contrast)
         row["relative_contrast"] = relative
         row["score"] = float(row["raw_score"] * relative)
@@ -1583,9 +1217,6 @@ def _declare_common(program, include_qubit=True):
                         ro_ch=cfg["ro_chs"][0])
     if include_qubit:
         program.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-    # ``ff_park_gain`` is an environmental operating point, never an optimization
-    # coordinate.  Declare its generator even when the configured value is zero so
-    # every uploaded program can clear a stale nonzero latched FF output.
     ff_pulse.declare_static_park(program)
     for ro_ch in cfg["ro_chs"]:
         program.declare_readout(
@@ -1597,13 +1228,11 @@ def _declare_common(program, include_qubit=True):
 
 
 def _replay_static_flux(program):
-    """Hold the input configuration's FF park value for this complete repetition."""
     ff_pulse.play_static_park(
         program, settle_us=program.cfg.get("ff_park_settle_us", 0.05))
 
 
 class BasicTransmissionProgram(AveragerProgram):
-    """Static-operating-point readout using the canonical step-5 pulse."""
 
     def initialize(self):
         self.cfg.setdefault("reps", int(self.cfg.get("shots", 300)))
@@ -1619,7 +1248,6 @@ class BasicTransmissionProgram(AveragerProgram):
 
 
 class BasicSpecProgram(RAveragerProgram):
-    """Hardware frequency sweep of a constant saturation-spectroscopy pulse."""
 
     def initialize(self):
         cfg = self.cfg
@@ -1627,9 +1255,6 @@ class BasicSpecProgram(RAveragerProgram):
         self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
         _declare_common(self, include_qubit=True)
         self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
-        # Encode the magnitude and select +/- explicitly.  Passing a negative MHz
-        # value through freq2reg may produce a wrapped unsigned word too large for a
-        # tProc immediate; subtraction keeps reversed confirmation sweeps portable.
         self.f_step = self.freq2reg(
             abs(float(cfg["step"])), gen_ch=cfg["qubit_ch"])
         self.f_step_operation = "+" if float(cfg["step"]) >= 0 else "-"
@@ -1656,7 +1281,6 @@ class BasicSpecProgram(RAveragerProgram):
 
 
 class BasicRabiProgram(RAveragerProgram):
-    """Hardware gain sweep of the canonical 4-sigma Gaussian pulse."""
 
     def initialize(self):
         cfg = self.cfg
@@ -1692,13 +1316,6 @@ class BasicRabiProgram(RAveragerProgram):
 
 
 class BasicSequenceProgram(AveragerProgram):
-    """Generic canonical Gaussian sequence followed by one per-shot readout.
-
-    Legacy callers supply ``sequence_phases_deg`` and one gain/frequency.  Leakage
-    calibration supplies ``sequence_ops`` containing ``('pulse', gain, phase)`` for
-    the candidate g-e DRAG waveform and ``('pulse_at', gain, phase, frequency,
-    'reference')`` for independently calibrated long g-e/e-f reference pulses.
-    """
 
     def initialize(self):
         cfg = self.cfg
@@ -1706,10 +1323,6 @@ class BasicSequenceProgram(AveragerProgram):
         _declare_common(self, include_qubit=True)
         add_qubit_gaussian(self)
         if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
-            # The reset pulse is deliberately frozen to the independently validated
-            # control tuple while the candidate waveform is varied.  Declare both
-            # waveforms: referencing an undeclared ``qubit_reset`` happens to escape
-            # the virtual backend but fails during a real QICK program upload.
             add_qubit_gaussian(
                 self, name="qubit_reset",
                 sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
@@ -1718,8 +1331,6 @@ class BasicSequenceProgram(AveragerProgram):
         if any(op[0] == "pulse_at" and len(op) > 4
                and str(op[4]) == "gaussian"
                for op in cfg.get("sequence_ops", [])):
-            # Shelving uses the same duration/clock but no DRAG quadrature; its gain is
-            # calibrated independently for every candidate duration.
             add_qubit_gaussian(self, name="qubit_ef", drag_beta=0.0)
         if any(op[0] == "pulse_at" and len(op) > 4
                and str(op[4]) == "reference"
@@ -1747,9 +1358,6 @@ class BasicSequenceProgram(AveragerProgram):
             set_readout_pulse(
                 self, gain=int(cfg.get(
                     "reset_read_pulse_gain", cfg["read_pulse_gain"])))
-            # This program may later switch among candidate g-e and reference e-f
-            # waveforms.  Install the candidate X180 explicitly for reset first; every
-            # sequence operation below then installs its own complete pulse registers.
             self.set_pulse_registers(
                 ch=qch, style="arb",
                 freq=self.freq2reg(float(cfg.get(
@@ -1852,11 +1460,6 @@ def _shots_from_program(program, cfg):
 
 
 def load_basic_autotuner_diagnostic(path, load_raw=False):
-    """Load a self-contained diagnostic bundle produced by :class:`BasicAutoTuner`.
-
-    ``load_raw=False`` returns the complete run archive and a light record manifest.
-    Set it true only when per-shot IQ arrays are needed; hardware bundles can be large.
-    """
     with h5py.File(os.fspath(path), "r") as handle:
         if "snapshot/run_data_pickle" not in handle:
             raise ValueError("diagnostic bundle has no complete run snapshot")
@@ -1905,12 +1508,6 @@ def load_basic_autotuner_diagnostic(path, load_raw=False):
 
 
 class BasicAutoTuner(ExperimentClass):
-    """Streamlined autotuner built around direct TLS step-5 fidelity.
-
-    Hardware methods beginning with ``_acquire_`` are deliberately narrow injection
-    boundaries.  The test suite replaces them with a virtual device; production uses
-    the exact QICK programs in this module and ``mSingleShot1Q``.
-    """
 
     def __init__(self, soc=None, soccfg=None, path="", outerFolder="", prefix="data",
                  suffix="Basic_Auto_Tune", cfg=None, meta_dict=None, params=None, **kw):
@@ -1939,9 +1536,6 @@ class BasicAutoTuner(ExperimentClass):
         self._resonator_branch_records = []
         self._spec_candidate_rows = []
         self._spectroscopy_branch_attempts = []
-        # An input frequency is a value to replay, not evidence that a transition
-        # exists there.  Spectroscopy populates this list only with measured,
-        # independently reproduced features (unless spectroscopy is explicitly off).
         self._spec_candidates_mhz = []
         self._discovery_guard_active = False
         self._discovery_status = {
@@ -2118,7 +1712,6 @@ class BasicAutoTuner(ExperimentClass):
         }
         self._load_resume_checkpoint()
 
-    # ------------------------------------------------------------------ invariants
     def _load_resume_checkpoint(self):
         path = self.params.get("resume_checkpoint")
         if path in (None, ""):
@@ -2169,7 +1762,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _reset_profile_signature(candidate):
-        """ADC/DDC coordinates that bind one fixed-gain reset threshold."""
         return (
             round(float(candidate["read_pulse_freq"]), 9),
             round(float(candidate["read_length"]), 9),
@@ -2210,7 +1802,6 @@ class BasicAutoTuner(ExperimentClass):
                    default=-np.inf)
 
     def _capture_reset_probe_diagnostic(self, raw, record, candidate, reason):
-        """Move raw reset-threshold distributions into the run bundle."""
         if not isinstance(raw, dict):
             return
         record = record if isinstance(record, dict) else {}
@@ -2237,13 +1828,6 @@ class BasicAutoTuner(ExperimentClass):
                  "validation": record.get("validation")})
 
     def _qualify_feedback_runtime(self, candidate, runtime, reason):
-        """Require exact step-5 equivalence before feedback can score a tuple.
-
-        The reset probe observes residual reset-readout outcomes.  It does not prove
-        that the complete ground/excited preparation and scoring path is unchanged.
-        This randomized passive/feedback A/B replay is therefore the authority for
-        every threshold profile used by the tuner.
-        """
         settings = self.params["reset"]
         shots = max(int(settings.get("exact_qualification_shots", 650)), 1)
         blocks = max(int(settings.get("exact_qualification_blocks", 2)), 1)
@@ -2255,8 +1839,6 @@ class BasicAutoTuner(ExperimentClass):
         previous_suspended = bool(self._feedback_profiles_suspended)
         passive_rows, feedback_rows, failures = [], [], []
         try:
-            # Reverse acquisition order every block so slow drift cannot be assigned
-            # systematically to one reset mode.  GE/EG also alternates by block.
             for block in range(blocks):
                 modes = ("passive", "feedback") if block % 2 == 0 else (
                     "feedback", "passive")
@@ -2444,7 +2026,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _try_activate_feedback(self, reason):
-        """Freshly calibrate feedback for the exact current readout/control tuple."""
         settings = self.params["reset"]
         if (not bool(settings.get("enabled", True)) or self._reset_unavailable
                 or self._feedback_disqualified):
@@ -2457,10 +2038,6 @@ class BasicAutoTuner(ExperimentClass):
                 "mode": "passive", "reason": "feedback path unavailable"})
             return False
         self._calibrate_reset_phase(reason)
-        # A weak starting tuple must never gate either tuning or the attempt to make
-        # tuning faster.  The end-to-end reset probe below is the authority: if the
-        # rough pulse/readout cannot support reset it rejects the profile safely, but
-        # a low assignment-fidelity estimate by itself is not a reason to give up.
         fidelity = self._working_confirmation_fidelity()
         minimum = float(settings.get("min_activation_fidelity", 0.75))
         if not np.isfinite(fidelity) or fidelity < minimum:
@@ -2484,9 +2061,6 @@ class BasicAutoTuner(ExperimentClass):
             if self._detailed_console():
                 rec = run_probe()
             else:
-                # The complete raw-IQ/threshold/residual diagnostics remain in the
-                # probe artifact and returned reset record.  They are useful for
-                # debugging, but not useful as routine operator console output.
                 with redirect_stdout(io.StringIO()):
                     rec = run_probe()
         except Exception as exc:
@@ -2519,10 +2093,6 @@ class BasicAutoTuner(ExperimentClass):
                 settings.get("post_measure_delay_us", 0.05)),
             "reset_read_pulse_freq": float(self.working["read_pulse_freq"]),
             "reset_read_pulse_gain": int(self._reset_fixed_readout_gain),
-            # Freeze the validated correction pulse while candidate pulse parameters
-            # are swept.  Otherwise a deliberately bad candidate would also become
-            # its own reset pulse and be unfairly penalized by a different initial
-            # state rather than by its gate action.
             "reset_pi_freq": float(self.working["qubit_pi_freq"]),
             "reset_pi_gain": int(self.working["qubit_pi_gain"]),
             "reset_pi_sigma": float(self.working["sigma"]),
@@ -2570,12 +2140,6 @@ class BasicAutoTuner(ExperimentClass):
         return True
 
     def _ensure_reset_profile(self, candidate, reason):
-        """Cache feedback discrimination for one frequency/integration pair.
-
-        The reset readout drive gain and correction X180 are frozen from the bootstrap
-        calibration.  Only the ADC/DDC frequency and integration length change, so a
-        profile is reusable across every scoring readout gain in that duration group.
-        """
         settings = self.params["reset"]
         key = self._reset_profile_signature(candidate)
         if (not bool(settings.get("enabled", True))
@@ -2590,8 +2154,6 @@ class BasicAutoTuner(ExperimentClass):
                     self.soccfg, self.input_cfg["ro_chs"][0])):
             return False
         if self._reset_fixed_readout_gain is None or self._reset_fixed_control is None:
-            # This normally happens only if the bootstrap feedback activation failed.
-            # A profile cannot safely be invented from an unvalidated candidate.
             return False
         probe_candidate = _with_candidate(
             candidate,
@@ -2672,7 +2234,6 @@ class BasicAutoTuner(ExperimentClass):
         return True
 
     def _leakage_enabled(self):
-        """Whether the device configuration identifies a transmon e-f target."""
         settings = self.params["leakage"]
         mode = settings.get("enabled", "auto")
         if not (isinstance(mode, str) and mode.lower() == "auto"):
@@ -2736,11 +2297,6 @@ class BasicAutoTuner(ExperimentClass):
                 raise ValueError(
                     "ff_park_gain %d exceeds fast-flux generator range +/- %d"
                     % (park_gain, ff_max))
-        # A dynamic park->hold excursion is a different experiment timing path.  The
-        # The basic tuner faithfully replays a *static* park value, but it must not
-        # silently mix static stages with a pulsed-flux control stage.  Frequency
-        # discovery coverage is a separate, explicitly configured relative prior or
-        # absolute device envelope.
         if int(cfg.get("ff_hold_gain", 0) or 0) != 0:
             raise ValueError(
                 "basic tuner calibrates the static ff_park_gain operating point; "
@@ -2777,33 +2333,21 @@ class BasicAutoTuner(ExperimentClass):
             "qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
         )})
         cfg["qubit_drag_beta"] = float(c.get("qubit_drag_beta", 0.0) or 0.0)
-        # This key is the RAverager register step used by SingleShotProgram.  Omitting
-        # it was the exact kind of pulse-path mismatch that made older automatic runs
-        # disagree with a 91.65% manual step-5 run.
         cfg["qubit_gain"] = int(round(c["qubit_pi_gain"]))
         cfg["qubit_pulse_style"] = "arb"
         profile_key = self._reset_profile_signature(c)
         reset = ({"reset_mode": "passive"}
                  if self._feedback_profiles_suspended else
                  dict(self._reset_profiles.get(profile_key, self._reset_runtime)))
-        # The reset *drive* gain/control are frozen, so candidate readout gain can vary
-        # without changing state preparation.  Frequency and ADC integration length
-        # still bind the raw threshold and therefore require an exact cached profile.
         if (reset.get("reset_mode") == "feedback"
                 and tuple(reset.get("reset_profile_key", ())) != profile_key):
             reset = {"reset_mode": "passive"}
         cfg.update(reset)
-        # Per-shot buffers and requested shot counts must have one unambiguous meaning;
-        # inherited software averaging would otherwise make seeds and direct SS use
-        # different effective sample sets.
         cfg["rounds"] = 1
         cfg["soft_avgs"] = 1
         cfg["use_switch"] = False
         cfg["switch_triggered"] = False
         cfg.update(extra)
-        # Diagnostics must describe the reset mode compiled into this acquisition,
-        # not the tuner's global desired mode.  In particular an unmatched profile
-        # deliberately compiles passive even while another feedback profile is live.
         reset_keys = {
             key for key in cfg
             if str(key).startswith("reset_")
@@ -3020,8 +2564,6 @@ class BasicAutoTuner(ExperimentClass):
             return None
         finally:
             self.data["working"] = dict(self.working)
-            # A long hardware run must survive a client crash or operator interrupt.
-            # The pickle is the lossless checkpoint; HDF5/PNG are finalized by runner.
             try:
                 self._checkpoint()
             except Exception as exc:
@@ -3029,9 +2571,7 @@ class BasicAutoTuner(ExperimentClass):
                 if not self._detailed_console():
                     print("  Warning: the intermediate checkpoint could not be saved.")
 
-    # ------------------------------------------------------- raw diagnostic bundle
     def _diagnostic_file(self):
-        """Open the append-only raw-acquisition bundle lazily."""
         if not self._diagnostic_active:
             return None
         if self._diagnostic_h5 is None:
@@ -3056,11 +2596,6 @@ class BasicAutoTuner(ExperimentClass):
             bundle["complete"] = False
 
     def _record_raw_diagnostic(self, kind, candidate, arrays, metadata=None):
-        """Stream one raw IQ acquisition with its exact physical tuple.
-
-        Diagnostic I/O is deliberately non-authoritative: a disk failure is recorded
-        but never changes or aborts the calibration measurement itself.
-        """
         if not self._diagnostic_active:
             return None
         index = int(self._diagnostic_record_count)
@@ -3138,7 +2673,6 @@ class BasicAutoTuner(ExperimentClass):
                              compression_opts=4, shuffle=True)
 
     def _finalize_diagnostic_bundle(self, data):
-        """Embed the complete run archive beside streamed raw IQ in one HDF5."""
         if not self._diagnostic_active:
             return False
         bundle = data.setdefault("diagnostic_bundle", {})
@@ -3204,7 +2738,6 @@ class BasicAutoTuner(ExperimentClass):
             self._diagnostic_h5 = None
             return False
 
-    # ---------------------------------------------------------- production backends
     def _acquire_transmission(self, freqs_mhz, candidate, shots):
         freqs = np.asarray(freqs_mhz, dtype=float)
         z = np.full(freqs.size, np.nan + 1j * np.nan)
@@ -3258,8 +2791,6 @@ class BasicAutoTuner(ExperimentClass):
                 q_map[row] = _curve_from_qick(avgq, gains.size)
             return i_map, q_map
 
-        # Packed/unknown generator: compile every amplitude into the pulse registers.
-        # This costs uploads but cannot silently produce a flat fake gain sweep.
         jobs = [(fi, gi) for fi in range(freqs.size) for gi in range(gains.size)]
         for job_index in self.rng.permutation(len(jobs)):
             fi, gi = jobs[int(job_index)]
@@ -3275,11 +2806,7 @@ class BasicAutoTuner(ExperimentClass):
         return i_map, q_map
 
     def _acquire_ss_pair(self, candidate, shots, state_order="ge"):
-        # This is the production TLS step-5 program, not a lookalike sequence program.
         if self._fast_gain_sweep is not True:
-            # SingleShotProgram obtains g/e by sweeping the qubit gain register.  On a
-            # packed generator, two fixed compiled programs are the only safe physical
-            # equivalent.  Return arrays in canonical [ground, excited] order.
             acquired = {}
             states = ("ground", "excited") if state_order == "ge" \
                 else ("excited", "ground")
@@ -3288,8 +2815,6 @@ class BasicAutoTuner(ExperimentClass):
                     candidate, drive_freq=float(candidate["qubit_pi_freq"]),
                     sequence_gain=(0 if state == "ground"
                                    else int(candidate["qubit_pi_gain"])),
-                    # Match SingleShotProgram's gain-zero ground arm exactly: it still
-                    # emits the zero-amplitude waveform and the same 10 ns post-pulse gap.
                     sequence_phases_deg=[0.0], shots=int(shots), reps=int(shots),
                     seq_gap_us=0.010,
                 )
@@ -3317,7 +2842,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _acquire_joint_gain_sweep(self, base_candidate, gains, shots, label,
                                   epoch=0):
-        """Measure a complete pi-gain line with one shared ground cloud."""
         gains = np.asarray(gains, dtype=int)
         if (gains.ndim != 1 or gains.size < 3 or gains[0] != 0
                 or np.any(np.diff(gains) <= 0)
@@ -3400,10 +2924,6 @@ class BasicAutoTuner(ExperimentClass):
         reserve = (float(settings.get("reserve_final_minutes", 5.0))
                    if reserve_final else 0.0)
         reserve += max(float(additional_reserve_minutes), 0.0)
-        # Discovery, resonator backtracking, and bootstrap Rabi can legitimately be
-        # slow.  Charging those stages against the joint optimizer used to leave a
-        # passive-reset run with only a random fragment of its duration grid.  This
-        # budget begins at the joint map itself.
         return self._joint_runtime_minutes() < max(budget - reserve, 0.0)
 
     @staticmethod
@@ -3414,12 +2934,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _evidence_tier(row):
-        """Cross-stage authority of one fidelity estimate.
-
-        Shared-ground low-shot sweeps are excellent proposal generators, but their
-        many correlated comparisons cannot outrank a fresh paired, multi-block
-        replay merely because one of them observed a perfect finite sample.
-        """
         try:
             explicit = int(row.get("evidence_tier"))
         except (AttributeError, TypeError, ValueError, OverflowError):
@@ -3461,7 +2975,6 @@ class BasicAutoTuner(ExperimentClass):
                          and abs(after - before) > limit)
 
     def _acquire_sequence(self, candidate, sequence_ops, shots, seq_gap_us=None):
-        """Acquire raw shots for an arbitrary g-e/e-f shelving sequence."""
         extra = {
             "drive_freq": float(candidate["qubit_pi_freq"]),
             "sequence_ops": list(sequence_ops),
@@ -3484,7 +2997,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _acquire_parity_chevron(self, freqs_mhz, gains, candidate, shots,
                                 pulse_counts, calibration):
-        """Return a joint odd/even parity score, using a fixed fresh discriminator."""
         freqs, gains = np.asarray(freqs_mhz, float), np.asarray(gains, int)
         if gains.size < 2 or not np.all(np.diff(gains) == np.diff(gains)[0]):
             raise ValueError("parity chevron requires an equally spaced gain axis")
@@ -3580,7 +3092,6 @@ class BasicAutoTuner(ExperimentClass):
                 discriminate_with_metrics(shot_i, shot_q, calibration)))
         return populations
 
-    # ----------------------------------------------------------- direct SS objective
     def _measure_candidate(self, candidate, shots, label, state_order="ge",
                            archive=True, reference_discriminator=None):
         ig, qg, ie, qe = self._acquire_ss_pair(
@@ -3658,8 +3169,6 @@ class BasicAutoTuner(ExperimentClass):
             "measurement_indices": [int(row["measurement_index"])
                                     for row in measurements],
             "sep_sigma": float(np.mean([row["sep_sigma"] for row in measurements])),
-            # Multiple blocks are a family of fresh anomaly checks.  Preserve the
-            # worst upper bound so a transient third cloud cannot be averaged away.
             "third_blob_excess_ucb": float(max(
                 float(row.get("third_blob_excess", 0.0))
                 + _simultaneous_z(len(measurements))
@@ -3748,10 +3257,6 @@ class BasicAutoTuner(ExperimentClass):
         failures = []
         self._confirmation_cohort_serial += 1
         cohort = "%s::%d" % (str(label), self._confirmation_cohort_serial)
-        # Round-robin, randomized candidate order prevents one candidate from owning a
-        # uniquely favorable drift window.  GE/EG order alternates between blocks.  A
-        # transient failure is isolated to that candidate/block: successful contenders
-        # remain available to this stage and to the final replay.
         for block in range(requested_blocks):
             for index in self.rng.permutation(len(candidates)):
                 try:
@@ -3809,10 +3314,6 @@ class BasicAutoTuner(ExperimentClass):
                     len(rows) == requested_blocks),
                 "confirmation_cohort_complete": batch_complete,
                 "confirmation_failure_count": len(failures),
-                # These opaque ids are equal only for candidates acquired in the
-                # same randomized round-robin block.  Sequential frontier batches
-                # can therefore be pooled without falsely pairing unrelated drift
-                # windows merely because both happen to contain eight blocks.
                 "block_pairing_ids": list(pairing_ids),
                 "evidence_level": (
                     "held_out_complete_multi_block"
@@ -3824,9 +3325,6 @@ class BasicAutoTuner(ExperimentClass):
             aggregates.append(aggregate)
         limit = max(int(self.params["final"].get(
             "max_unconfirmed_contenders", 16)), 1)
-        # Fully failed tuples sort ahead of partially measured ones.  Preserve earlier
-        # discovery order within a priority class so a later storm of backend faults
-        # cannot continually evict the first unresolved spectral basins.
         self._unconfirmed_contenders[:] = sorted(
             self._unconfirmed_contenders,
             key=lambda entry: (-int(entry["missing_blocks"]), int(entry["order"])),
@@ -3864,13 +3362,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _latency_fidelity_evidence(row):
-        """Return the held-out fidelity evidence used only for timing decisions.
-
-        New hardware rows carry a two-fold cross-fit estimate which removes the
-        candidate-dependent optimism from fitting the IQ discriminator on its scoring
-        shots.  Legacy/synthetic rows fall back to their ordinary fidelity fields so
-        saved data and deterministic unit tests remain readable.
-        """
         if not isinstance(row, dict):
             row = {}
         try:
@@ -3912,13 +3403,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _candidate_latency_us(candidate):
-        """Physical X180-plus-readout latency used by the secondary objective.
-
-        Saved hardware rows may carry ``readout_drive_length_us`` (integration plus
-        ADC offset/guard, and any explicit longer generator request).  Synthetic and
-        legacy rows fall back to the requested integration length.  The Gaussian
-        control envelope is exactly four sigma on this canonical pulse path.
-        """
         try:
             sigma = float(candidate["sigma"])
             readout = float(candidate.get(
@@ -3933,13 +3417,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _latency_noninferiority(reference, candidate, max_loss,
                                 confidence_z=1.96):
-        """Conservative upper bound on fidelity sacrificed by ``candidate``.
-
-        When both rows expose per-block shot uncertainties, the randomized
-        round-robin blocks are paired to remove common drift.  Otherwise the method
-        falls back to the independent aggregate uncertainties.  In both cases a wide
-        error bar makes qualification *harder*, never easier.
-        """
         result = {
             "eligible": False, "reason": None, "mean_loss": np.inf,
             "loss_se": np.inf, "loss_ucb": np.inf,
@@ -4004,8 +3481,6 @@ class BasicAutoTuner(ExperimentClass):
                     candidate_block_ses = candidate_block_ses[candidate_positions]
                     paired = True
             elif not ids_present:
-                # Backward-compatible path for saved/synthetic rows predating
-                # explicit acquisition-cohort ids.
                 paired = bool(ref_blocks.size == candidate_blocks.size)
             paired = bool(
                 paired
@@ -4024,12 +3499,6 @@ class BasicAutoTuner(ExperimentClass):
                 differences = ref_blocks - candidate_blocks
                 between = float(
                     np.std(differences, ddof=1) / math.sqrt(differences.size))
-                # Propagate the uncertainty of the *mean* paired loss.  Variances
-                # add across independent blocks and division by B happens after the
-                # square root: sqrt(sum(var_i)) / B.  Dividing the summed variance by
-                # B before the root would return a typical single-block error bar and
-                # make even equal-fidelity candidates practically impossible to
-                # certify.
                 within = float(math.sqrt(np.sum(
                     ref_block_ses ** 2 + candidate_block_ses ** 2))
                     / differences.size)
@@ -4052,12 +3521,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _select_latency_constrained(rows, reference, settings):
-        """Shortest complete candidate which proves fidelity noninferiority.
-
-        This is intentionally lexicographic: hard fidelity/statistical constraints
-        first, latency second.  No weighted fidelity/time score can trade a large
-        fidelity collapse for an impressive-looking short duration.
-        """
         settings = dict(settings or {})
         max_loss = float(settings.get("max_fidelity_loss", 0.010))
         minimum_mean = float(settings.get("minimum_mean_fidelity", 0.90))
@@ -4088,10 +3551,6 @@ class BasicAutoTuner(ExperimentClass):
                     "loss_ucb": np.inf, "confidence_z": confidence_z,
                     "method": "invalid", "reference_key": None,
                 })
-            # Simultaneous intervals cover every possible higher-fidelity arm.  A
-            # candidate is within epsilon of the unknown best only when *all* those
-            # pairwise upper bounds pass; comparing solely with the observed winner
-            # can accept an under-sampled arm that may actually be better.
             result = dict(result)
             result["eligible"] = bool(
                 pairwise and all(item.get("eligible", False) for item in pairwise))
@@ -4185,12 +3644,6 @@ class BasicAutoTuner(ExperimentClass):
                                      max_per_sigma=1, limit=8,
                                      nondominated=True,
                                      uncertainty_sigma=3.0):
-        """Preserve the measured latency/fidelity frontier before fresh replay.
-
-        Fidelity-only top-K truncation loses every fast basin when several variants
-        of one slow tuple score slightly higher.  This helper retains the best row per
-        timing coordinate and then the nondominated latency/fidelity frontier.
-        """
         valid_by_key = {}
         for row in rows:
             if not np.isfinite(BasicAutoTuner._candidate_latency_us(row)):
@@ -4232,11 +3685,6 @@ class BasicAutoTuner(ExperimentClass):
             )
 
         if not nondominated:
-            # Keep every control whose coarse uncertainty interval overlaps the best
-            # interval at the same readout length, and symmetrically every readout
-            # tied at the same pulse duration.  Marginal top-1 pruning can omit the
-            # true shortest *joint* corner (for example 8 us/.10 when 8 us/.25 and
-            # 20 us/.10 happen to win their separate noisy marginals).
             z = max(float(uncertainty_sigma), 0.0)
             retained = {}
             for coordinate in ("read_length", "sigma"):
@@ -4320,11 +3768,6 @@ class BasicAutoTuner(ExperimentClass):
             return [dict(row) for row in frontier]
         if limit == 1:
             return [dict(best)]
-        # The preceding uncertainty screen already removed obviously poor fast arms.
-        # Densely retain the *earliest* surviving frontier points, because an evenly
-        # spaced sample can skip the 8/10/12-us boundary and incorrectly call 14 us the
-        # shortest acceptable readout.  Force the best-fidelity anchor as the final
-        # slot so the epsilon comparison still uses the strongest observed basin.
         best_index = next(index for index, row in enumerate(frontier)
                           if _candidate_key(row) == _candidate_key(best))
         indices = set(range(min(limit - 1, len(frontier))))
@@ -4336,7 +3779,6 @@ class BasicAutoTuner(ExperimentClass):
         return [dict(frontier[index]) for index in sorted(indices)]
 
     def _annotate_candidate_latency(self, candidate):
-        """Attach requested and hardware-realized latency to a saved candidate."""
         row = dict(candidate)
         try:
             cfg = copy.deepcopy(self.input_cfg)
@@ -4356,7 +3798,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _timing_component_subset(rows, coordinate, reference_value, limit):
-        """One high-evidence representative per timing value, diversely bounded."""
         grouped = {}
         for row in rows:
             try:
@@ -4424,7 +3865,6 @@ class BasicAutoTuner(ExperimentClass):
         return [ordered[index] for index in sorted(chosen)]
 
     def _latency_joint_candidate_pool(self, reference, control_rows=None):
-        """Cross retuned timing representatives without reopening every coordinate."""
         p = self.params["latency"]
         reference_physical = {key: reference[key] for key in self.initial}
         rows = (list(self._confirmed) + list(self._archive)
@@ -4477,10 +3917,6 @@ class BasicAutoTuner(ExperimentClass):
                 candidate["qubit_freq"] = float(candidate["qubit_pi_freq"])
                 candidates.append(self._annotate_candidate_latency(candidate))
         candidates.append(self._annotate_candidate_latency(reference_physical))
-        # Do not truncate at the seed's latency.  A slower cross-coordinate tuple may
-        # establish a materially higher safe-fidelity reference; omitting it would
-        # spend the epsilon budget relative to a degraded anchor.  The bounded
-        # representative cross (rather than the full Cartesian search) controls cost.
         return _unique_candidates(candidates)
 
     def _latency_family_settings(self, comparisons, required_blocks=None):
@@ -4488,18 +3924,9 @@ class BasicAutoTuner(ExperimentClass):
         count = max(int(comparisons), 1)
         alpha = float(np.clip(
             settings.get("familywise_alpha", 0.05), 1e-9, 0.5))
-        # One-sided Bonferroni bound: every fast contender must independently prove
-        # that its loss is below epsilon.  Multiplicity is paid in the confidence
-        # multiplier, not hidden in an optimistic winner selection.
         normal_quantile = float(NormalDist().inv_cdf(1.0 - alpha / count))
         degrees_of_freedom = (max(int(required_blocks) - 1, 1)
                               if required_blocks is not None else None)
-        # The paired loss SE includes block-to-block drift estimated from a small
-        # number of randomized rounds.  Treating that variance as known and applying a
-        # normal quantile is anti-conservative (especially for the default eight
-        # blocks), so use the finite-sample Student-t tail for every timing contrast.
-        # This is conservative when known per-shot noise dominates and exact when the
-        # between-block term controls the standard error.
         finite_sample_quantile = (
             float(student_t.ppf(1.0 - alpha / count,
                                 degrees_of_freedom))
@@ -4517,13 +3944,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _combine_latency_confirmation_rounds(rounds, label):
-        """Pool complete confirmation batches while preserving true drift pairing.
-
-        Adaptive batches normally contain the same tuples, while sequential frontier
-        promotion intentionally introduces new tuples.  Opaque per-block cohort ids
-        let both cases share one combiner without pretending that unrelated blocks
-        acquired at different times were paired.
-        """
         if not rounds:
             return []
         expected = {
@@ -4626,7 +4046,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _latency_has_ambiguous_faster_candidate(
             diagnostics, reference, selected, settings):
-        """Whether more shots could resolve a physically faster viable contender."""
         target_latency = BasicAutoTuner._candidate_latency_us(selected)
         if not np.isfinite(target_latency):
             target_latency = BasicAutoTuner._candidate_latency_us(reference)
@@ -4640,8 +4059,6 @@ class BasicAutoTuner(ExperimentClass):
             latency = float(row.get("latency_us", np.inf))
             if not np.isfinite(latency) or latency >= target_latency - 1e-12:
                 continue
-            # Only spend additional hardware time when the point estimate and lower
-            # confidence side are still compatible with the declared fidelity set.
             mean_loss = float(row.get("mean_loss", np.inf))
             loss_se = float(row.get("loss_se", np.inf))
             loss_lcb = mean_loss - float(row.get(
@@ -4657,7 +4074,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _stage_latency_selection(self, reference, control_rows=None,
                                  reference_kind="unconstrained"):
-        """Jointly minimize X180+readout time inside a fidelity-loss certificate."""
         p = self.params["latency"]
         if not p.get("enabled", True):
             self.data["latency_optimization"].update({
@@ -4722,18 +4138,6 @@ class BasicAutoTuner(ExperimentClass):
                          * float(self._latency_fidelity_evidence(row).get(
                              "fidelity_se", np.inf)))
                      >= reference_floor]
-        # Confirm every uncertainty-plausible one-per-coordinate timing
-        # representative in one randomized, interleaved held-out cohort.
-        # Truncating to the first batch is not a shortest-chain search: several noisy
-        # 1--10 us arms can occupy every slot, fail the held-out epsilon test, and hide
-        # a valid 12--16 us plateau.  Coarse nondominance is not enough either: a noisy
-        # 10-us estimate can superficially dominate the true 12-us boundary.  Splitting
-        # arms across independent cohorts is also invalid because common drift is absent
-        # from either arm's
-        # within-batch error bar.  One cohort lets every pair use the same block-level
-        # drift subtraction.  This representative set remains far smaller than the joint
-        # Cartesian grid: only one representative per timing coordinate and only
-        # uncertainty-plausible rows survive.
         frontier = self._latency_frontier_candidates(
             plausible, max_per_read_length=1, max_per_sigma=1,
             limit=max(len(plausible), 1), nondominated=False,
@@ -4806,11 +4210,6 @@ class BasicAutoTuner(ExperimentClass):
                 "fidelity-reference seed drifted by %+.3f during latency replay"
                 % reference_drift)
 
-        # The caller supplies a strong seed, not an immutable reference.  The joint
-        # cross can discover a higher-fidelity readout/control combination, including
-        # one slower than that seed.  Anchor the epsilon budget once, to the best fresh
-        # held-out aggregate in the complete comparison, so losses cannot compose over
-        # multiple coordinate stages.
         adaptive_records = []
         anchor_safety_audits = []
         anchor_control_audits = []
@@ -4828,7 +4227,6 @@ class BasicAutoTuner(ExperimentClass):
                 and (not safety_required or key in safety_qualified_keys))
 
         def qualify_candidate(row, role):
-            """Lazily prove that a decision-relevant arm is physically feasible."""
             key = _candidate_key(row)
             if key in infeasible_keys:
                 return False
@@ -4847,8 +4245,6 @@ class BasicAutoTuner(ExperimentClass):
                     "passed": control_ok, "failure": failure,
                     "audit": copy.deepcopy(audit),
                 })
-                # Selection screening is evidence for the feasible set, not the fresh
-                # exact witness which authorizes a later initialize.py write.
                 self._final_control_verified_key = None
                 if control_ok:
                     control_qualified_keys.add(key)
@@ -4907,12 +4303,6 @@ class BasicAutoTuner(ExperimentClass):
         maximum_adaptive = max(int(p.get(
             "adaptive_confirmation_rounds", 0)), 0)
         for adaptive_round in range(maximum_adaptive + 1):
-            # Recompute whenever an audit removes an infeasible arm.  Importantly,
-            # this audits not only the observed best anchor but also any arm which is
-            # the binding simultaneous reference for a rejected faster candidate.  An
-            # unsafe third cloud or incoherent saturated drive therefore cannot veto
-            # every genuinely feasible speedup merely because its histogram looked
-            # excellent.
             while True:
                 decision_rows = [
                     row for row in confirmations
@@ -4928,9 +4318,6 @@ class BasicAutoTuner(ExperimentClass):
                 self._latency_reference_key = _candidate_key(fresh_reference)
                 required_blocks = min(int(row.get("confirmation_blocks", 0))
                                       for row in decision_rows)
-                # The best-fidelity anchor is selected from this same held-out batch.
-                # Cover both directions of every pair, not merely K-1 fixed-reference
-                # contrasts, and spend alpha across every permitted adaptive look.
                 candidate_count = len(confirmations)
                 family_settings = self._latency_family_settings(
                     max(candidate_count * (candidate_count - 1)
@@ -4949,9 +4336,6 @@ class BasicAutoTuner(ExperimentClass):
                 for diagnostic in sorted(diagnostics, key=lambda row: (
                         float(row.get("latency_us", np.inf)),
                         tuple(row.get("candidate_key") or ()))):
-                    # Prove why every faster-than-reference rejected arm is out of
-                    # bounds.  This also keeps a later coherent-fallback selection
-                    # honest if a fresh control replay rejects the initial winner.
                     if (diagnostic.get("accepted", False)
                             or float(diagnostic.get("latency_us", np.inf))
                             >= reference_latency - 1e-12
@@ -4996,8 +4380,6 @@ class BasicAutoTuner(ExperimentClass):
                 "candidate_count": len(extra),
             })
             if not extra_complete:
-                # The original complete batch remains valid evidence.  An optional
-                # precision extension may fail without erasing that result.
                 break
             confirmation_rounds.append(extra)
             confirmations = self._combine_latency_confirmation_rounds(
@@ -5015,8 +4397,6 @@ class BasicAutoTuner(ExperimentClass):
             "anchor_control_audits": anchor_control_audits,
             "infeasible_reference_keys": [
                 list(key) for key in sorted(infeasible_keys)],
-            # Legacy alias retained for old result readers.  The broader name above is
-            # accurate because either coherence or leakage can remove an arm.
             "safety_rejected_anchor_keys": [
                 list(key) for key in sorted(infeasible_keys)],
             "control_qualified_candidate_keys": [
@@ -5111,7 +4491,6 @@ class BasicAutoTuner(ExperimentClass):
         return selected
 
     def _stage_latency_control_screen(self, verify_safety=False):
-        """Choose the first latency-qualified tuple passing control and safety audits."""
         record = self.data.get("latency_optimization", {})
         status_before_screen = str(record.get("status", ""))
         if (not self.params["latency"].get("control_screen_enabled", True)
@@ -5141,8 +4520,6 @@ class BasicAutoTuner(ExperimentClass):
             -float(self._latency_fidelity_evidence(row).get(
                 "fidelity_lcb_95", -np.inf)),
             _candidate_key(row)))
-        # The best-fidelity reference is the conservative last fallback, but it must
-        # pass the same coherence audit rather than being adopted silently.
         contenders.append(reference)
         failures, chosen, chosen_audit = [], None, None
         for candidate in contenders:
@@ -5198,9 +4575,6 @@ class BasicAutoTuner(ExperimentClass):
         certificate_valid = bool(prior_certificate_valid and chosen_accepted)
         if chosen_key == reference_key:
             if not chosen_accepted:
-                # Coherence does not resolve an uncertain fidelity comparison.  Keep
-                # this as an explicit pure-fidelity fallback and never resurrect a
-                # timing certificate from tuple identity alone.
                 record["status"] = "retained_reference_timing_uncertain"
             elif status_before_screen == "selected" or failures:
                 record["status"] = "retained_reference_control_fallback"
@@ -5243,8 +4617,6 @@ class BasicAutoTuner(ExperimentClass):
             "selection_confirmed": bool(chosen_audit is not None),
             "search_complete": bool(chosen_audit is not None),
         }
-        # This screening witness guides fallback but cannot be borrowed by the final
-        # write certificate.  The exact post-safety final tuple is audited again.
         self._final_control_verified_key = None
         return chosen
 
@@ -5268,7 +4640,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _prefer_lower_readout_exposure(aggregates, margin=0.003,
                                        max_mean_loss=0.010):
-        """Prefer lower readout gain-squared x duration inside a fidelity tie."""
         if not aggregates:
             return None
         best = BasicAutoTuner._best_aggregate(aggregates)
@@ -5365,7 +4736,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _record_control_witness(self, stage, frequency_mhz, kind,
                                 candidate=None, **metrics):
-        """Archive coherent evidence, optionally bound to one exact waveform."""
         try:
             frequency = float(frequency_mhz)
         except (TypeError, ValueError, OverflowError):
@@ -5388,8 +4758,6 @@ class BasicAutoTuner(ExperimentClass):
                 row["control_tuple"] = control
                 row["control_key"] = _control_key(control)
             except (KeyError, TypeError, ValueError, OverflowError):
-                # Incomplete diagnostic witnesses remain useful in the saved report,
-                # but cannot authorize a write because they have no control key.
                 pass
         row.update(metrics)
         self._control_witnesses.append(row)
@@ -5409,7 +4777,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _tuned_values_match(key, first, second):
-        """Compare two persisted calibration values without gain truncation leaks."""
         try:
             if key.endswith("gain"):
                 return int(round(float(first))) == int(round(float(second)))
@@ -5419,10 +4786,8 @@ class BasicAutoTuner(ExperimentClass):
             return first == second
 
     def _input_tuned_value(self, key):
-        """Return the value that would remain if the runner did not write ``key``."""
         return self.input_cfg.get(key, self.initial[key])
 
-    # --------------------------------------------------------------- map utilities
     @staticmethod
     def _integer_axis(start, stop, points, lower=0, upper=32767):
         start = int(np.clip(round(start), lower, upper))
@@ -5448,7 +4813,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _bounded_axis(start, stop, nominal_step):
-        """Return one uniform, inclusive axis for an authorized absolute band."""
         start, stop, nominal_step = map(float, (start, stop, nominal_step))
         if not np.all(np.isfinite([start, stop, nominal_step])):
             raise ValueError("frequency-search bounds must be finite")
@@ -5458,12 +4822,6 @@ class BasicAutoTuner(ExperimentClass):
         return np.linspace(start, stop, intervals + 1, dtype=float)
 
     def _frequency_discovery_plan(self, center, settings, adaptive=False):
-        """Build absolute or seed-relative search axes and acceptance bounds.
-
-        Relative scans include a small outer padding so a transition exactly at the
-        authorized +/-radius limit is an interior, fittable feature.  The acceptance
-        bounds remain unpadded, so the padding cannot silently enlarge the prior.
-        """
         center = float(center)
         search_min = settings.get("search_min_mhz")
         search_max = settings.get("search_max_mhz")
@@ -5535,7 +4893,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _contained_centered_axis(center, span, points, lower=None, upper=None):
-        """Build a centered axis, shifted inward to remain inside optional bounds."""
         center, span = float(center), float(span)
         points = max(int(points), 3)
         if points % 2 == 0:
@@ -5619,8 +4976,6 @@ class BasicAutoTuner(ExperimentClass):
             raise RuntimeError("every direct single-shot grid point failed")
         coverage = float(np.count_nonzero(np.isfinite(score)) / max(len(score), 1))
         selection_usable = bool(not aborted and coverage >= 0.80)
-        # A partially measured map may still nominate useful candidates for fresh
-        # confirmation, but it is never complete evidence for an automatic write.
         search_complete = bool(not aborted and coverage >= 1.0 - 1e-12)
         self._maps[stage] = {
             "axes": {key: np.asarray(value) for key, value in axes.items()},
@@ -5645,11 +5000,6 @@ class BasicAutoTuner(ExperimentClass):
                 % (100.0 * coverage))
         finite = np.flatnonzero(np.isfinite(score))
         guarded = finite
-        # The ordinary optimizer must remain a pure fidelity search.  Only strict
-        # direct-P(f) mode may constrain this ranking.  The default operational guard
-        # compares the resulting duration/power family afterwards and reports the
-        # unconstrained replay separately, so a failed guard cannot silently erase the
-        # best pulse the hardware actually measured.
         if self._leakage_active:
             threshold = float(self.params["leakage"]["max_third_blob_excess"])
             safe = finite[np.isfinite(third_blob_ucb[finite])
@@ -5661,10 +5011,6 @@ class BasicAutoTuner(ExperimentClass):
                             ranked[:max(int(shortlist), 1)]]
         covered_groups = {}
         if coverage_values is not None:
-            # Global top-K is not timing coverage: all K points can be noisy variants
-            # of one duration, while the input duration is guaranteed a separate
-            # incumbent slot.  That makes the answer depend on the starting length.
-            # Reserve held-out contenders independently at every physical duration.
             for index in guarded:
                 try:
                     group = round(float(coverage_values[int(index)]), 9)
@@ -5680,8 +5026,6 @@ class BasicAutoTuner(ExperimentClass):
                 selected_indices.extend(group_ranked[:per_value])
         selected_indices = list(dict.fromkeys(selected_indices))
         selected = [candidates[index] for index in selected_indices]
-        # The current incumbent is freshly remeasured beside the grid winners.  Thus a
-        # noisy maximum can never silently replace a genuinely better manual tuple.
         incumbent = dict(self.working)
         selected.append(incumbent)
         confirmed = self._confirm_candidates(
@@ -5709,14 +5053,7 @@ class BasicAutoTuner(ExperimentClass):
             if safe_confirmed:
                 guarded_confirmed = safe_confirmed
         direct_best = self._best_aggregate(guarded_confirmed)
-        # When held-out evidence cannot distinguish the incumbent from the apparent
-        # winner, keep the incumbent.  This prevents a flat bootstrap map from turning
-        # a coherent Rabi/readout seed into an arbitrary noise-selected tuple.
         if primary_fidelity_only:
-            # Gate/readout latency is a secondary epsilon-constrained objective.  The
-            # primary calibration must first preserve the maximum held-out fidelity;
-            # otherwise the timing preference is spent twice and can hide a longer,
-            # materially better readout solely because the input happened to be short.
             best = direct_best
         elif str(stage).startswith("readout"):
             best = self._prefer_lower_readout_exposure(
@@ -5736,8 +5073,6 @@ class BasicAutoTuner(ExperimentClass):
         n = values.size
         if n < 5:
             return values.copy()
-        # Keep the kernel deliberately short.  A 15-point kernel erased a narrow
-        # resonator in coarse scans and moved the apparent dip by multiple linewidths.
         window = 5
         return savgol_filter(values, window_length=window, polyorder=2, mode="interp")
 
@@ -5762,14 +5097,6 @@ class BasicAutoTuner(ExperimentClass):
                            min_relative_contrast=0.002,
                            min_feature_width_mhz=0.04,
                            max_feature_width_mhz=2.0):
-        """Find a detrended, interior resonator feature without accepting a slope.
-
-        A raw magnitude argmin is not a resonator detector: on a scan that misses the
-        device, cable slope or the remote tail of a notch necessarily puts the argmin
-        at an edge.  This routine iteratively fits the smooth background, scores only
-        the residual feature, and keeps boundary/contrast checks explicit so callers
-        can archive a rejected scan without calling it a found resonator.
-        """
         freqs = np.asarray(freqs, dtype=float)
         response = np.asarray(response, dtype=complex)
         if freqs.ndim != 1 or response.shape != freqs.shape or freqs.size < 9:
@@ -5785,7 +5112,6 @@ class BasicAutoTuner(ExperimentClass):
         mask = finite.copy()
         baseline = np.full(freqs.size, np.nan, dtype=float)
         sign = -1.0 if str(polarity).strip().lower() == "peak" else 1.0
-        # For a dip, signed = baseline - magnitude; for a peak the sign reverses.
         for _ in range(5):
             degree = min(2, int(np.count_nonzero(mask)) - 1)
             if degree < 1:
@@ -5799,8 +5125,6 @@ class BasicAutoTuner(ExperimentClass):
                 np.finfo(float).eps * max(
                     float(np.nanmedian(np.abs(magnitude[mask]))), 1.0),
             )
-            # Remove a positive feature from the next background fit while retaining
-            # ordinary negative residuals and slow baseline structure.
             next_mask = finite & (signed <= centre + 2.5 * scale)
             if (np.count_nonzero(next_mask) < max(7, freqs.size // 2)
                     or np.array_equal(next_mask, mask)):
@@ -5894,15 +5218,6 @@ class BasicAutoTuner(ExperimentClass):
                             max_feature_width_mhz=2.0,
                             max_candidates=8,
                             min_candidate_separation_mhz=1.0):
-        """Return several validated notches from one detrended transmission trace.
-
-        ``_resonator_feature`` intentionally returns the strongest feature for legacy
-        callers.  Discovery cannot use that as an identity decision: another resonator
-        or package mode may be deeper than the resonator coupled to the target qubit.
-        This method reuses the same robust background fit, finds separated local
-        maxima in its signed residual, and evaluates every candidate against a common
-        noise floor before any downstream branch is discarded.
-        """
         strongest = cls._resonator_feature(
             freqs, response, polarity=polarity,
             edge_guard_points=edge_guard_points, min_snr=min_snr,
@@ -5926,9 +5241,6 @@ class BasicAutoTuner(ExperimentClass):
         indices = finite_interior[np.asarray(local, dtype=int)]
         indices = np.unique(np.append(indices, int(strongest["index"]))).astype(int)
         indices = indices[np.argsort(profile[indices])[::-1]]
-        # Estimate the common background after masking the strongest separated peaks.
-        # This prevents a deep distractor from being counted as noise against a weaker
-        # but still reproducible target resonator.
         mask_indices = indices[:max(3 * int(max_candidates), int(max_candidates), 1)]
         exclusion_points = max(
             separation_points // 2,
@@ -5996,7 +5308,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _significant_spectral_rows(freqs, features, min_snr,
                                    edge_guard_points=2):
-        """Return only measured, significant, non-boundary spectral peaks."""
         freqs = np.asarray(freqs, dtype=float)
         guard = int(np.clip(
             int(edge_guard_points), 1, max((freqs.size - 3) // 2, 1)))
@@ -6022,14 +5333,6 @@ class BasicAutoTuner(ExperimentClass):
                                 maximum_rows, relative_floor=0.18,
                                 separation_steps=1.25,
                                 edge_guard_points=2):
-        """Add separated high-residual bins that need not be local maxima.
-
-        Two power-broadened transitions a few MHz apart can merge into one maximum,
-        so ``find_peaks`` alone systematically drops the weaker line.  These are only
-        *proposals*: every added shoulder still has to survive two opposed, fresh,
-        high-resolution scans and the physical complex-line fit.  The global cap keeps
-        the confirmation workload identical to the configured candidate budget.
-        """
         freqs = np.asarray(freqs, dtype=float)
         snr_trace = np.asarray(features.get("snr_trace", []), dtype=float)
         if freqs.ndim != 1 or snr_trace.shape != freqs.shape or freqs.size < 5:
@@ -6068,7 +5371,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _retain_spectral_proposal_mix(rows, maximum_rows,
                                       minimum_shoulders=2):
-        """Cap discovery work without letting ordinary peaks crowd every shoulder."""
         ranked = sorted(rows, key=lambda row: float(row["score"]), reverse=True)
         limit = max(int(maximum_rows), 1)
         shoulder_limit = int(np.clip(int(minimum_shoulders), 0, limit))
@@ -6086,13 +5388,6 @@ class BasicAutoTuner(ExperimentClass):
                                            center_hint_mhz, capture_mhz,
                                            min_snr=4.0,
                                            min_complex_correlation=0.5):
-        """Nonparametric, two-pass basin evidence for an overlapped line.
-
-        This deliberately returns the independently discovered coarse hint rather
-        than pretending a shoulder has a trustworthy one-line center.  The following
-        Rabi map supplies the coherent frequency estimate; final exact repeated-pulse
-        validation remains mandatory for any write.
-        """
         freqs = np.asarray(freqs, dtype=float)
         traces = np.asarray(passes, dtype=complex)
         if (freqs.ndim != 1 or traces.shape != (2, freqs.size)
@@ -6156,9 +5451,6 @@ class BasicAutoTuner(ExperimentClass):
         n = freqs.size
         if n < 9 or z.size != n:
             raise ValueError("invalid spectroscopy trace")
-        # A wide Savitzky-Golay curve models slow gain/phase drift.  Spectral lines are
-        # ranked by complex distance from that local baseline, independent of whether
-        # they appear as a dip, peak, or phase rotation.
         window = min(n if n % 2 else n - 1, max(11, 2 * (n // 8) + 1))
         if window % 2 == 0:
             window -= 1
@@ -6195,19 +5487,6 @@ class BasicAutoTuner(ExperimentClass):
                                    max_linewidth_mhz=8.0,
                                    excluded_centers_mhz=(),
                                    exclusion_half_width_mhz=1.5):
-        """Fit physical spectroscopy line hypotheses on a complex background.
-
-        Peak-bin matching is unstable for the several-MHz-wide, power-broadened line
-        observed on this device.  A joint I/Q fit uses the whole local profile and
-        provides a center uncertainty, linewidth, and background-model improvement.
-        Saturation spectroscopy can appear either as a symmetric excited-population
-        Lorentzian along one IQ direction or as a dispersive complex pole, depending
-        on the pulse/readout regime.  Both equal-parameter hypotheses are fitted; the
-        lower-residual one is retained instead of baking one virtual-device line shape
-        into the hardware acceptance test.
-        The fit is a confirmation/centering primitive only; coherent Rabi and direct
-        single-shot measurements still decide whether the line is controllable.
-        """
         freqs = np.asarray(freqs, dtype=float)
         response = np.asarray(response, dtype=complex)
         acquired_finite = np.isfinite(freqs) & np.isfinite(response.real) \
@@ -6228,12 +5507,6 @@ class BasicAutoTuner(ExperimentClass):
                     continue
                 target_distance = np.abs(freqs - float(center_hint_mhz))
                 neighbor_distance = np.abs(freqs - excluded_center)
-                # Assign each measured point to its nearest independently detected
-                # coarse line (a one-dimensional Voronoi mask).  Merely deleting the
-                # neighbor's central bins leaves its broad tails to drag a one-line
-                # fit several MHz; the nearest-basin mask retains the target-facing
-                # half profile and lets the neighbor tail enter only as smooth
-                # background.  Remove the neighbor core as an additional guard.
                 finite &= target_distance <= neighbor_distance
                 finite &= ~(
                     (neighbor_distance <= exclusion_half_width)
@@ -6268,7 +5541,7 @@ class BasicAutoTuner(ExperimentClass):
                     profile = 1.0 / (1.0 + normalized * normalized)
                 elif kind == "complex_pole":
                     profile = 1.0 / (1.0 + 1j * normalized)
-                else:  # pragma: no cover - closed internal model set
+                else:
                     raise ValueError("unknown spectroscopy line model")
                 line = (ar + 1j * ai) * profile
                 value = ((c0r + 1j * c0i)
@@ -6380,14 +5653,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _reproduced_spectral_seed(freqs, combined, individual, max_error_mhz,
                                   min_combined_snr):
-        """Associate one significant spectral feature across two opposed passes.
-
-        A scan can contain several real or weak spurious features.  Requiring the
-        *strongest* feature in pass one to also be strongest in pass two is not a
-        reproducibility test: harmless rank swapping then looks like a disappearing
-        line.  Match all retained local peaks, require a close pair and significant
-        combined evidence, and choose the pair with the strongest weaker pass.
-        """
         freqs = np.asarray(freqs, dtype=float)
         if freqs.size == 0 or len(individual) != 2:
             raise RuntimeError("opposed spectroscopy passes are incomplete")
@@ -6436,14 +5701,6 @@ class BasicAutoTuner(ExperimentClass):
             -row["separation_mhz"]))
 
     def _inverse_pair_map(self, stage, incumbent, params, center_frequency):
-        """Acquire one drift-bracketed inverse-pair frequency map.
-
-        The returned ``data_complete`` flag is deliberately stricter than merely
-        finding a finite minimum.  A map with one missing point may still nominate a
-        candidate for direct replay, but it cannot provide independent coordinate-
-        search evidence.  A later stable exact replay of the complete tuple remains
-        sufficient for an atomic update.
-        """
         calibration_row = self._measure_candidate(
             incumbent, params["calibration_shots"],
             "%s discriminator" % stage)
@@ -6476,11 +5733,6 @@ class BasicAutoTuner(ExperimentClass):
         self._require_stable_calibration(drift, stage)
         if not np.any(finite):
             raise RuntimeError("inverse-pair frequency scan returned no finite data")
-        # Searching many frequencies turns an ordinary largest/smallest binomial
-        # fluctuation into an apparently structured range.  A 3-sigma pointwise rule
-        # is therefore not a valid post-selection information test.  Use the measured
-        # two-point uncertainty with a conservative 5-sigma default before allowing
-        # the inverse-pair minimum to move or authorize the drive frequency.
         low_index = int(np.nanargmin(populations))
         high_index = int(np.nanargmax(populations))
         shot_count = max(int(params["shots"]), 1)
@@ -6525,7 +5777,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _parity_map(self, stage, incumbent, params, center_frequency,
                     center_gain, calibration_shots, discriminator_label):
-        """Acquire one drift-bracketed odd/even parity map."""
         calibration_row = self._measure_candidate(
             incumbent, int(calibration_shots),
             "%s discriminator" % discriminator_label)
@@ -6565,12 +5816,6 @@ class BasicAutoTuner(ExperimentClass):
         if not np.any(finite):
             raise RuntimeError("%s returned no finite parity score" % stage)
         index = np.unravel_index(int(np.nanargmax(score)), score.shape)
-        # A flat repeated-pulse surface contains no amplitude/frequency information.
-        # Its numerical argmax is merely the largest shot-noise fluctuation, and the
-        # direct one-pulse replay is intentionally too insensitive to reject a small
-        # coherent miscalibration.  Require both a multiple-comparison-resistant map
-        # contrast and agreement across the independently amplified pulse depths before
-        # the raw optimum may move the control tuple or become write evidence.
         targets = np.asarray(
             [1.0 if int(count) % 2 else 0.0
              for count in params["pulse_counts"]], dtype=float)
@@ -6579,7 +5824,6 @@ class BasicAutoTuner(ExperimentClass):
         depth_count = max(correctness.shape[0], 1)
         shot_count = max(int(params["shots"]), 1)
         depth_variance = correctness * (1.0 - correctness) / shot_count
-        # Avoid zero nominal uncertainty when finite shots happen to observe no errors.
         depth_variance = np.maximum(
             depth_variance, 0.25 / float(shot_count + 1) ** 2)
         cell_se = np.sqrt(np.nansum(depth_variance, axis=0)) / depth_count
@@ -6633,7 +5877,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _quantize_joint_proposals(self, proposals, center,
                                   read_radius, qubit_radius):
-        """Project surrogate proposals onto a small reusable frequency lattice."""
         p = self.params["joint_search"]
         read_axis = np.linspace(
             float(center["read_pulse_freq"]) - float(read_radius),
@@ -6655,9 +5898,7 @@ class BasicAutoTuner(ExperimentClass):
             projected.append(candidate)
         return _unique_candidates(projected)
 
-    # --------------------------------------------------------------------- stages
     def _stage_joint_search(self):
-        """Structured four-dimensional search plus held-out local refinement."""
         p = self.params["joint_search"]
         if not p.get("enabled", True):
             self.data["joint_search"]["status"] = "disabled"
@@ -6680,9 +5921,6 @@ class BasicAutoTuner(ExperimentClass):
             raise ValueError("joint search needs positive readout and pulse durations")
         read_gains = self._gain_axis(
             p["read_gain_min"], p["read_gain_max"], p["read_gain_points"])
-        # Preserve every member of the input-independent broad backbone.  A useful
-        # in-range starting gain is one additional measurement, never a replacement
-        # which can silently delete a better power from the grid.
         base_read_gain = int(round(base["read_pulse_gain"]))
         if (int(p["read_gain_min"]) <= base_read_gain
                 <= int(p["read_gain_max"])):
@@ -6710,9 +5948,6 @@ class BasicAutoTuner(ExperimentClass):
         anchor_interval = max(strata_per_pass, 1)
         completed_jobs = 0
         for serial, job in enumerate(jobs):
-            # Complete the mandatory duration-balanced pass even if a slow backend
-            # crosses the soft estimate while that pass is in flight.  Only later
-            # readout-power passes are optional.
             if (serial >= mandatory_jobs
                     and not self._joint_budget_allows(
                         reserve_final=True,
@@ -6904,7 +6139,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _stage_multi_candidate_aae(self):
-        """Run frequency/AAE closure from several measured control basins."""
         p = self.params["joint_search"]
         pool = sorted(
             self._qualified_transition_rows(self._confirmed),
@@ -6959,7 +6193,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _stage_joint_closure(self, iteration):
-        """Reopen a small coupled neighborhood after AAE changes the control."""
         p = self.params["joint_search"]
         source = self._qualified_transition_rows(
             list(self._joint_rows) + list(self._confirmed))
@@ -7105,16 +6338,12 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _stage_resonator(self):
-        """Confirm every credible notch before spectroscopy chooses a branch."""
         p = self.params["resonator"]
         if not p.get("enabled", True):
             self._log("resonator", "SKIP", "disabled")
             return None
         plan = self._frequency_discovery_plan(
             self.initial["read_pulse_freq"], p, adaptive=True)
-        # Discovery must inspect the complete authorized envelope.  Stopping after a
-        # valid feature in an inner shell is exactly how a stronger unrelated notch
-        # hid the target resonator in the previous implementation.
         coarse_axis = np.asarray(plan["axes"][-1], dtype=float)
         accept_min, accept_max = map(float, plan["acceptance_bounds"][-1])
         bounded = bool(plan["configured_envelope"])
@@ -7125,9 +6354,6 @@ class BasicAutoTuner(ExperimentClass):
             read_length=max(float(p.get(
                 "discovery_length_us", self.working["read_length"])), 0.1),
         )
-        # A deliberately bad input gain is only a fallback.  Once the known-safe
-        # discovery pulse reveals confirmed candidates, repeating a 200-MHz scan at
-        # the bad input power adds time without improving branch identity.
         trial_candidates = _unique_candidates([safe, self.working])
         confirmation_points = max(int(p.get("confirmation_points", 81)), 9)
         confirmation_span = float(p.get("confirmation_span_mhz", 4.0))
@@ -7266,7 +6492,6 @@ class BasicAutoTuner(ExperimentClass):
             if confirmed:
                 break
 
-        # Deduplicate the same notch proposed in neighboring coarse bins or powers.
         confirmed.sort(key=lambda row: (
             float(row["confirmation_feature"]["contrast_snr"]),
             float(row["confirmation_feature"]["relative_contrast"])),
@@ -7317,9 +6542,6 @@ class BasicAutoTuner(ExperimentClass):
                 "no independently reproduced resonator feature in %.3f..%.3f MHz (%s)"
                 % (plan["allowed_min_mhz"], plan["allowed_max_mhz"], reason))
 
-        # This is only a provisional branch for backward-compatible plotting.  Every
-        # retained branch is passed to spectroscopy below, which is the first identity
-        # decision allowed to set selection_confirmed when several notches exist.
         provisional = min(
             retained,
             key=lambda row: abs(float(row["confirmation_feature"][
@@ -7427,7 +6649,6 @@ class BasicAutoTuner(ExperimentClass):
         return seed
 
     def _stage_spectroscopy(self):
-        """Evaluate confirmed resonator branches and backtrack failed ones."""
         p = self.params["spectroscopy"]
         branches = _unique_candidates(
             self._resonator_candidates or [self._discovery_readout])
@@ -7448,9 +6669,6 @@ class BasicAutoTuner(ExperimentClass):
             return result
 
         maximum = max(int(p.get("max_resonator_branches", len(branches))), 1)
-        # The resonator stage has already capped and independently confirmed this list.
-        # Never discard a confirmed branch merely because its notch is shallower; the
-        # cap exists only to make a deliberately pathological many-mode scan explicit.
         branches = branches[:maximum]
         attempts = []
         original_readout = dict(self._discovery_readout)
@@ -7599,8 +6817,6 @@ class BasicAutoTuner(ExperimentClass):
             self._log("spectroscopy", "SKIP", "disabled")
             return None
         self._spec_candidates_mhz = []
-        # Temporarily read near the resonator response seed to maximize spectroscopy
-        # contrast.  This does not adopt the seed as the optimized SS readout.
         seed_candidate = dict(
             self._discovery_readout if seed_candidate is None else seed_candidate)
         plan = self._frequency_discovery_plan(
@@ -7613,9 +6829,6 @@ class BasicAutoTuner(ExperimentClass):
         bounded = bool(plan["configured_envelope"])
         retained_coarse_count = max(
             int(p.get("coarse_candidates", 8)), int(p["max_candidates"]), 1)
-        # Scan padding may contain real but unauthorized lines.  Inspect extra peaks
-        # before filtering so those padding-only lines cannot consume every retained
-        # in-prior candidate slot.
         scan_candidate_count = max(
             3 * retained_coarse_count, retained_coarse_count + 4)
 
@@ -7648,9 +6861,6 @@ class BasicAutoTuner(ExperimentClass):
 
         coarse_z, coarse_features, primary_rows = coarse_scan(
             coarse_freqs, "primary")
-        # One isolated flux row has no neighboring-row continuity.  A second grid
-        # offset by half a coarse step prevents a sub-MHz transition midway between
-        # the 2-MHz primary samples from disappearing entirely.
         if bounded and coarse_freqs.size >= 2:
             staggered_freqs = 0.5 * (coarse_freqs[:-1] + coarse_freqs[1:])
             staggered_z, staggered_features, staggered_rows = coarse_scan(
@@ -7710,9 +6920,6 @@ class BasicAutoTuner(ExperimentClass):
         for coarse in coarse_rows:
             neighbor_centers = [
                 float(other["frequency"]) for other in coarse_rows
-                # A shoulder is a hypothesis about a hidden second line.  It may use
-                # a reproduced peak as an exclusion anchor when fitted, but must not
-                # carve points out of that peak's own fit before it is validated.
                 if other.get("proposal_kind", "peak") == "peak"
                 if abs(float(other["frequency"]) - float(coarse["frequency"]))
                 > 0.6 * coarse_step
@@ -7730,9 +6937,6 @@ class BasicAutoTuner(ExperimentClass):
                 passes[0] = self._acquire_spectroscopy(
                     axis, seed_candidate, confirmation_shots, p["gain"],
                     p["pulse_length_us"])
-                # Acquire the second scan from high to low, then realign it.  A
-                # sweep-time drift now moves in the opposite frequency direction and
-                # cannot masquerade as a stationary line in both passes.
                 reverse_response = self._acquire_spectroscopy(
                     axis[::-1], seed_candidate, confirmation_shots, p["gain"],
                     p["pulse_length_us"])
@@ -7752,10 +6956,6 @@ class BasicAutoTuner(ExperimentClass):
                         max_linewidth_mhz=confirmation_max_linewidth,
                         excluded_centers_mhz=neighbor_centers,
                         exclusion_half_width_mhz=neighbor_mask)
-                    # Raw coarse proposals are not yet established neighboring lines.
-                    # If their Voronoi masks break a real target fit, retry without
-                    # those unverified exclusions before falling back to a provisional
-                    # opposed-response seed.
                     if not fitted.get("valid", False) and neighbor_centers:
                         unmasked = self._fit_complex_spectral_line(
                             axis, trace, coarse["frequency"], coarse_capture,
@@ -8000,7 +7200,6 @@ class BasicAutoTuner(ExperimentClass):
         return self._spec_candidates_mhz
 
     def _stage_iq_rabi(self):
-        """Use coherent Rabi to resolve branches that both passed spectroscopy."""
         branches = list(self._spectroscopy_branch_attempts)
         if len(branches) <= 1:
             return self._stage_iq_rabi_single()
@@ -8187,17 +7386,12 @@ class BasicAutoTuner(ExperimentClass):
         if not self._spec_candidates_mhz:
             raise RuntimeError(
                 "no validated spectroscopy candidates are available for Rabi")
-        # Resonator spectroscopy already established a better readout-frequency seed.
-        # Use it for the cheap averaged-IQ maps and carry it into the rough direct-SS
-        # candidates; otherwise a bad input readout can erase the Rabi we need in order
-        # to escape that same bad starting tuple.
         rabi_base = dict(self._discovery_readout)
         local_freqs = []
         for center in self._spec_candidates_mhz:
             local_freqs.extend(self._float_axis(
                 center, p["local_span_mhz"], p["freq_points_per_candidate"],
                 include=[center]))
-        # Register resolution makes sub-Hz distinctions irrelevant here.
         freqs = np.asarray(sorted(set(round(float(f), 6) for f in local_freqs)))
         gains = self._integer_axis(
             p["gain_min"], p["gain_max"], p["gain_points"])
@@ -8236,15 +7430,10 @@ class BasicAutoTuner(ExperimentClass):
             raise RuntimeError(
                 "none of the reproduced spectral features produced a coherent Rabi "
                 "witness; refusing to nominate a qubit transition")
-        # A large non-oscillatory excursion can have a high generic chevron score.
-        # It may be useful spectroscopy, but it is not an X180 seed.  From this point
-        # onward only rows satisfying the explicit coherent-witness requirements exist.
         best = max(coherent_rows, key=lambda row: float(row["score"]))
         rough_freq = float(best["frequency"])
         rough_gain = float(best["fit"].get("pi_gain", np.nan))
         if not np.isfinite(rough_gain):
-            # Still return a physical first-response lobe if a heavily damped trace did
-            # not satisfy the coherent fit.  Direct SS confirmation remains sovereign.
             projection = np.asarray(best["projection"])
             rough_gain = float(gains[int(np.nanargmax(np.abs(projection - projection[0])))])
         rough_gain = int(np.clip(round(rough_gain), 1, 32767))
@@ -8280,15 +7469,8 @@ class BasicAutoTuner(ExperimentClass):
                              reverse=True)
         rabi_candidates = []
         selected_rows = []
-        # Preserve at least one *actually coherent* candidate from every spectral basin.
-        # Spectroscopy-only basins are deliberately omitted.  Without
-        # this non-maximum suppression, four adjacent samples around one strong TLS can
-        # crowd the configured-prior/qubit basin out of the direct-SS shortlist.
         spectral_centers = np.asarray(self._spec_candidates_mhz, dtype=float)
         for center_index, center in enumerate(spectral_centers):
-            # Use disjoint nearest-centre (Voronoi) assignment.  Overlapping +/- local
-            # windows must not let several nearby spectral seeds all select the same
-            # strong Rabi row and silently erase a weaker basin.
             basin = [
                 row for row in ranked_rows
                 if int(np.argmin(np.abs(
@@ -8334,9 +7516,6 @@ class BasicAutoTuner(ExperimentClass):
         }
         self.working = _with_candidate(
             rabi_base, qubit_pi_freq=rough_freq, qubit_pi_gain=rough_gain)
-        # Refinement replaces the coarse representative of its own basin; it must not
-        # consume an extra shortlist slot and evict the weaker fourth basin (which may
-        # be the intended qubit behind stronger TLS lines).
         rabi_candidates = _unique_candidates(rabi_candidates)
         if rabi_candidates:
             replace_index = int(np.argmin([
@@ -8386,8 +7565,6 @@ class BasicAutoTuner(ExperimentClass):
                 1, 32767).astype(int)
             for offset in frequency_offsets:
                 for gain in actual_gains[basin_index]:
-                    # Candidates discovered before readout optimization are always
-                    # grafted onto the current read tuple.
                     candidates.append(_with_candidate(
                         incumbent, sigma=float(seed["sigma"]),
                         qubit_pi_freq=float(seed["qubit_pi_freq"] + offset),
@@ -8475,8 +7652,6 @@ class BasicAutoTuner(ExperimentClass):
                     qubit_pi_gain=int(seed["qubit_pi_gain"])))
         if not basin_winners:
             raise RuntimeError("no Rabi basin is available for direct SS confirmation")
-        # The arbitrary input tuple is a diagnostic baseline, not a transition
-        # candidate.  Every tuple admitted here descends from a coherent Rabi witness.
         admitted = _unique_candidates(basin_winners + [incumbent])
         confirmed = self._confirm_candidates(
             admitted,
@@ -8512,7 +7687,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _parity_refine_branch(self, incumbent, stage, label):
-        """Refine one coherent-Rabi branch without selecting it globally."""
         p = self.params["parity_chevron"]
         calibration_shots = max(int(p["shots"]), 300)
         initial = self._parity_map(
@@ -8582,15 +7756,6 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _stage_parity_chevron(self):
-        """Select a coherent transition; keep rough pulse quality provisional.
-
-        Resonator/opposed spectroscopy plus a resolved averaged-IQ Rabi establish a
-        workable transition frequency.  The parity map and exact odd/even audit add
-        useful branch-selection evidence, but at this point gain and duration are
-        deliberately still rough.  Requiring them to pass the final pulse certificate
-        here would make the optimizer demand an already tuned pi pulse before it is
-        allowed to tune one.
-        """
         p = self.params["parity_chevron"]
         self._qualified_control_candidates = []
         self._qualified_transition_frequency = None
@@ -8598,9 +7763,6 @@ class BasicAutoTuner(ExperimentClass):
         self._qualified_control_key = None
         self._final_control_verified_key = None
         source = list(self._rough_control_candidates)
-        # Isolated map/calibration helpers are used directly by deterministic unit
-        # tests and notebooks.  Production ``acquire`` activates the discovery guard
-        # and may never manufacture this fallback.
         if not source and not self._discovery_guard_active:
             source = [dict(self.working)]
         if not source:
@@ -8610,8 +7772,6 @@ class BasicAutoTuner(ExperimentClass):
         branches, seen = [], set()
         for row in sorted(source, key=self._authoritative_rank, reverse=True):
             frequency = round(float(row["qubit_pi_freq"]), 6)
-            # Adjacent SS samples within one Rabi linewidth are one branch, not
-            # separate opportunities to crowd a physically distinct transition out.
             if any(abs(frequency - existing) <= 0.5 for existing in seen):
                 continue
             seen.add(frequency)
@@ -8734,10 +7894,6 @@ class BasicAutoTuner(ExperimentClass):
                 "no coherent-Rabi branch remained after transition selection; "
                 "refusing to start the expensive joint search")
 
-        # If any rough branch already passed the exact control audit, do not let a
-        # higher one-pulse score from an unverified branch displace it.  When none pass,
-        # all branches remain workable coherent-Rabi frequencies and pulse quality is
-        # explicitly deferred to the optimizer and per-row final audits.
         verified = [row for row in admitted
                     if bool(row.get("transition_control_verified", False))]
         selection_pool = verified or admitted
@@ -8876,7 +8032,6 @@ class BasicAutoTuner(ExperimentClass):
         return selected
 
     def _candidate_in_qualified_transition(self, candidate):
-        """Whether a candidate remains in the pre-qualified transition basin."""
         centers = list(self._qualified_transition_frequencies)
         if not centers and self._qualified_transition_frequency is not None:
             centers = [float(self._qualified_transition_frequency)]
@@ -8892,13 +8047,11 @@ class BasicAutoTuner(ExperimentClass):
             abs(frequency - float(center)) <= radius for center in centers))
 
     def _qualified_transition_rows(self, rows):
-        """Remove measurements from spectral branches rejected before joint search."""
         return [row for row in rows
                 if isinstance(row, dict)
                 and self._candidate_in_qualified_transition(row)]
 
     def _stage_pre_expensive_gate(self):
-        """Require frequency identity, not a pre-optimized pulse, before joint search."""
         resonator = self._maps.get("resonator", {})
         spectroscopy = self._maps.get("spectroscopy", {})
         rabi = self._maps.get("iq_rabi", {})
@@ -9364,8 +8517,6 @@ class BasicAutoTuner(ExperimentClass):
                     "readout_length", "WARN",
                     "winner confirmed, but incomplete map coverage makes the joint "
                     "length result report-only")
-        # Every length was compared after its own local f/g retune.  One final fine
-        # pass around the winning three-dimensional cell removes coarse-grid error.
         if self.params["readout"].get("enabled", True):
             self._stage_readout_grid("readout_after_length", local=True)
         return result
@@ -9449,8 +8600,6 @@ class BasicAutoTuner(ExperimentClass):
         candidates = []
         actual_gains = np.empty((len(sigma_values), len(gain_scales)), dtype=int)
         for si, sigma in enumerate(sigma_values):
-            # Gaussian rotation area is approximately gain*sigma.  The area scaling is
-            # only a center; every duration then gets a real local gain/frequency grid.
             predicted_gain = old_gain * old_sigma / sigma
             for gi, scale in enumerate(gain_scales):
                 actual_gains[si, gi] = int(np.clip(
@@ -9592,17 +8741,7 @@ class BasicAutoTuner(ExperimentClass):
                     "duration map non-authoritative until exact final tuple replay")
         return result
 
-    # ----------------------------------------- fixed-readout-duration manual portfolio
     def _stage_portfolio_pulse_family_aae(self, reference):
-        """AAE-refine exact constant-area partners once before the 1--20 us table.
-
-        The physical X180 does not depend on the subsequent integration duration.
-        Repeating a full amplified-error map twenty times would therefore spend time
-        measuring the same control.  Instead, refine half/double-sigma partners once
-        with the best available readout, retain their exact control waveforms as
-        protected portfolio seeds, and still audit the eventual crossed tuple at each
-        readout duration.
-        """
         p = self.params["duration_portfolio"]
         if (not self._duration_portfolio_active
                 or not bool(p.get("pulse_family_aae_enabled", True))
@@ -9714,7 +8853,6 @@ class BasicAutoTuner(ExperimentClass):
         return result
 
     def _portfolio_source_rows(self):
-        """Every measured complete tuple which can seed a fixed-length search."""
         rows = []
         sources = (
             [self._bootstrap_control_candidate]
@@ -9736,16 +8874,12 @@ class BasicAutoTuner(ExperimentClass):
         return self._qualified_transition_rows(rows)
 
     def _portfolio_control_seeds(self, rows, count):
-        """Select control waveforms without promoting coarse correlated outliers."""
         count = max(int(count), 1)
         eligible = [
             row for row in rows
             if isinstance(row, dict)
             and all(key in row for key in self.initial)
             and self._candidate_in_qualified_transition(row)]
-        # Once held-out multi-block controls exist, shared-ground proposal rows have
-        # fulfilled their purpose.  They may still train the local surrogate, but may
-        # not consume the few protected control slots at every readout duration.
         if any(self._evidence_tier(row) >= 2 for row in eligible):
             eligible = [row for row in eligible
                         if self._evidence_tier(row) >= 2]
@@ -9761,9 +8895,6 @@ class BasicAutoTuner(ExperimentClass):
                 seen.add(key)
                 selected.append(row)
 
-        # The passive bootstrap is the last known control before feedback or later
-        # branch-selection machinery can alter state preparation.  Give that exact
-        # waveform one protected slot whenever it has real fidelity evidence.
         bootstrap = self._bootstrap_control_candidate
         if (isinstance(bootstrap, dict)
                 and np.isfinite(float(bootstrap.get("fidelity", np.nan)))
@@ -9776,7 +8907,6 @@ class BasicAutoTuner(ExperimentClass):
         return selected[:count]
 
     def _portfolio_candidates_for_length(self, read_length, source_rows):
-        """Build an equally budgeted full-tuple refinement set for one duration."""
         p = self.params["duration_portfolio"]
         length = float(read_length)
         local = [row for row in source_rows
@@ -9808,9 +8938,6 @@ class BasicAutoTuner(ExperimentClass):
                 seen_readouts.add(key)
                 readouts.append(row)
 
-        # As with the control waveform, replay the passive bootstrap readout at every
-        # duration.  One noisy 56-shot power cell must not prevent the known working
-        # resonator/gain neighborhood from receiving equal-budget confirmation.
         if isinstance(self._bootstrap_control_candidate, dict):
             add_readout(self._bootstrap_control_candidate)
         for row in local:
@@ -9819,10 +8946,6 @@ class BasicAutoTuner(ExperimentClass):
                 break
         readouts = readouts[:max(int(p["readout_seeds_per_length"]), 1)]
 
-        # AAE and coherent-Rabi calibration are properties of the control waveform,
-        # not of integration time.  Cross their best measured control basins with
-        # each length's best readout basins, then remeasure the complete physical
-        # tuples so no fidelity or safety evidence is borrowed across durations.
         control_source = []
         if isinstance(self._bootstrap_control_candidate, dict):
             control_source.append(self._bootstrap_control_candidate)
@@ -9900,8 +9023,6 @@ class BasicAutoTuner(ExperimentClass):
 
         candidates = self._qualified_transition_rows(
             _unique_candidates(native + crossed + proposals))
-        # Fill duplicate-collapsed sets from measured local rows.  The target is the
-        # same at every duration, preserving equal opportunity under runtime limits.
         target = max(
             int(p["native_seeds_per_length"])
             + int(p["readout_seeds_per_length"]) * int(p["control_seed_count"])
@@ -9924,12 +9045,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _portfolio_centered_gain_axis(center, fraction, points, minimum_step,
                                       lower, upper):
-        """Return an odd, deterministic DAC axis containing ``center`` exactly.
-
-        Fractional grids alone collapse at low gain, while a fixed absolute grid is
-        unnecessarily coarse at high gain.  The larger of the two spacings is used;
-        clipping is explicit and the physical incumbent is always retained.
-        """
         center = int(np.clip(round(center), int(lower), int(upper)))
         points = max(int(points), 3)
         if points % 2 == 0:
@@ -9944,12 +9059,6 @@ class BasicAutoTuner(ExperimentClass):
         return np.sort(np.unique(np.r_[values, center])).astype(int)
 
     def _portfolio_deterministic_gain_candidates(self, rows, length):
-        """Challenge a coarse winner and its constant-area duration partners.
-
-        Readout and X180 gains are first varied on separate axes.  Half/double sigma
-        partners use inverse gain scaling only as an initial pulse-area prediction;
-        every partner then receives its own measured qubit-gain axis.
-        """
         p = self.params["duration_portfolio"]
         ranked = sorted(
             [row for row in rows if isinstance(row, dict)],
@@ -10080,7 +9189,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _portfolio_gain_zoom_candidates(self, center, length, read_step=None,
                                         qubit_step=None):
-        """Full local 2-D interaction grid around a freshly measured winner."""
         p = self.params["duration_portfolio"]
         physical = {key: center[key] for key in self.initial}
         physical = _with_candidate(physical, read_length=float(length))
@@ -10122,7 +9230,6 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _portfolio_balance_diagnostic(self, reference, candidate):
-        """Paired noninferiority certificate for an optional balanced pulse."""
         p = self.params["duration_portfolio"]
         return self._latency_noninferiority(
             reference, candidate,
@@ -10130,7 +9237,6 @@ class BasicAutoTuner(ExperimentClass):
             confidence_z=float(p.get("balanced_confidence_sigma", 1.96)))
 
     def _portfolio_screening_shortlist(self, exact_rows, selected):
-        """Retain the fidelity winner plus distinct measured pulse durations."""
         p = self.params["duration_portfolio"]
         limit = max(int(p.get(
             "balanced_screen_candidates_per_length", 3)), 1)
@@ -10149,9 +9255,6 @@ class BasicAutoTuner(ExperimentClass):
         for row in ordered:
             sigma = round(float(row["sigma"]), 9)
             family_best.setdefault(sigma, row)
-        # First retain the best independently replayed alternatives.  Then force the
-        # longest measured family into the small screen cohort when space remains, so
-        # a lower-drive constant-area challenge cannot vanish solely due to shot noise.
         for row in sorted(
                 family_best.values(), key=self._authoritative_rank, reverse=True):
             add(row)
@@ -10168,7 +9271,6 @@ class BasicAutoTuner(ExperimentClass):
         return _unique_candidates(chosen)[:limit]
 
     def _portfolio_balanced_order(self, rows, reference):
-        """Rank noninferior screened rows by safety, drive stress, then fidelity."""
         eligible = []
         for raw in rows:
             row = dict(raw)
@@ -10195,7 +9297,6 @@ class BasicAutoTuner(ExperimentClass):
         return sorted(eligible, key=rank, reverse=True)
 
     def _portfolio_screen_candidate(self, candidate, length, rank):
-        """Apply the active direct or operational safety test to one exact tuple."""
         p = self.params["duration_portfolio"]
         label = "portfolio %.0f us candidate %d" % (float(length), int(rank))
         if self._leakage_active:
@@ -10230,7 +9331,6 @@ class BasicAutoTuner(ExperimentClass):
         return row
 
     def _portfolio_confirmation_status(self, screening, confirmation):
-        """Classify exact-tuple safety without conflating failure and leakage."""
         p = self.params["leakage"]
         if not bool(screening.get("valid", False)):
             return "INCONCLUSIVE"
@@ -10260,7 +9360,6 @@ class BasicAutoTuner(ExperimentClass):
         return "SAFE"
 
     def _portfolio_merge_evidence(self, screening, confirmation=None):
-        """Attach worst-case exact-tuple safety evidence to held-out fidelity."""
         row = dict(confirmation if isinstance(confirmation, dict) else screening)
         rows = [screening]
         if isinstance(confirmation, dict):
@@ -10273,9 +9372,6 @@ class BasicAutoTuner(ExperimentClass):
 
         row.update({
             "third_blob_excess_ucb": worst("third_blob_excess_ucb"),
-            # A supported third component in either the screening bracket or the
-            # held-out replay is physical evidence and must remain in the objective;
-            # a later inconclusive GMM fit cannot erase it.
             "third_cluster_supported": any(bool(item.get(
                 "third_cluster_supported", False)) for item in rows),
             "third_cluster_guard_available": all(bool(item.get(
@@ -10298,7 +9394,6 @@ class BasicAutoTuner(ExperimentClass):
         return row
 
     def _portfolio_objective(self, row):
-        """Return the sole portfolio selection objective: held-out fidelity LCB."""
         fidelity_lcb = float(fidelity_evidence(row)[2])
         if not np.isfinite(fidelity_lcb):
             fidelity = float(row.get("fidelity", np.nan))
@@ -10310,7 +9405,6 @@ class BasicAutoTuner(ExperimentClass):
         return float(fidelity_lcb)
 
     def _annotate_portfolio_objective(self, row):
-        """Attach leakage reporting fields without changing fidelity ranking."""
         row = dict(row)
         risks = []
         blob = float(row.get("third_blob_excess_ucb", np.nan))
@@ -10332,17 +9426,9 @@ class BasicAutoTuner(ExperimentClass):
         return row
 
     def _portfolio_rank(self, row):
-        """Deterministic fidelity-only rank; leakage never affects selection."""
         return tuple(self._joint_rank(row))
 
     def _portfolio_fidelity_shortlist(self, refined, source_rows, length, limit):
-        """Choose expensive replays by fidelity while protecting prior winners.
-
-        The first member is the best tuple from the fresh equal-budget refinement.
-        The strongest historical same-duration tuple(s) are mandatory even when a
-        noisy low-shot refinement temporarily ranks them lower.  Remaining slots are
-        filled by fresh fidelity rank.  Leakage fields are deliberately never read.
-        """
         refined = sorted(
             list(refined), key=self._authoritative_rank, reverse=True)
         historical = sorted((
@@ -10368,10 +9454,6 @@ class BasicAutoTuner(ExperimentClass):
             add(refined[0])
         for row in historical[:historical_count]:
             add(row)
-        # Retain independently measured champions from several pulse-duration
-        # families.  Without this protected diversity the exact replay can contain
-        # five gain variants of one short/high-power pulse and never test the longer
-        # constant-area alternative that the local stage was created to evaluate.
         family_count = max(int(self.params["duration_portfolio"].get(
             "pulse_family_champions_per_length", 1)), 1)
         family_best = {}
@@ -10391,7 +9473,6 @@ class BasicAutoTuner(ExperimentClass):
         return chosen[:target]
 
     def _portfolio_control_audit(self, candidate, length):
-        """Run and retain an odd/even coherence audit without selecting a config."""
         previous_key = self._final_control_verified_key
         previous_map = copy.deepcopy(self._maps.get("final_control_verify"))
         try:
@@ -10410,14 +9491,6 @@ class BasicAutoTuner(ExperimentClass):
                 self._maps["final_control_verify"] = previous_map
 
     def _stage_duration_portfolio(self):
-        """Return the held-out fidelity winner at every requested readout duration.
-
-        A deterministic gain/pulse-area challenge follows the broad search.  Exact
-        finalists from *all* readout lengths are then replayed in one randomized
-        round-robin cohort, so a 1-us row and a 20-us row do not own different drift
-        windows.  Leakage and odd/even control never replace the pure-fidelity winner;
-        they may only produce a separately labelled noninferior recommendation.
-        """
         if not self._duration_portfolio_active:
             return None
         p = self.params["duration_portfolio"]
@@ -10431,10 +9504,6 @@ class BasicAutoTuner(ExperimentClass):
         plans = {}
         expected_refine_candidates = None
 
-        # Phase 1: discover and locally converge each duration.  Every local cohort
-        # contains its center as a repeated reference and is randomized by
-        # _confirm_candidates, preventing a monotonic gain scan from becoming a time
-        # scan.  The high-stat final comparison is interleaved across durations below.
         for length in lengths:
             entry = {
                 "read_length_us": float(length), "status": "INCONCLUSIVE",
@@ -10732,10 +9801,6 @@ class BasicAutoTuner(ExperimentClass):
                     "gain_reference_replayed": bool(local_rows or zoom_rows),
                 })
 
-                # Successive halving is based only on held-out fidelity.  Force the
-                # strongest historical same-duration tuple into this expensive cohort
-                # so a previously observed winner (for example the 19 us joint-search
-                # incumbent) is always independently replayed rather than forgotten.
                 exact_candidates = self._portfolio_fidelity_shortlist(
                     refined_pool, source_rows, length,
                     max(int(p.get("confirm_candidates_per_length", 5)), 1))
@@ -10756,10 +9821,6 @@ class BasicAutoTuner(ExperimentClass):
                 all_failures.append(dict(failure, read_length_us=length))
             entries.append(entry)
 
-        # Phase 2: one common held-out cohort across all durations.  The block pairing
-        # ids now have the same acquisition epoch for every row, allowing real paired
-        # noninferiority tests and preventing the old sequential 99-minute table from
-        # confusing temporal drift with readout-duration dependence.
         all_exact_candidates = _unique_candidates([
             candidate for plan in plans.values()
             for candidate in plan["exact_candidates"]])
@@ -10782,9 +9843,6 @@ class BasicAutoTuner(ExperimentClass):
                 for plan in plans.values():
                     plan["entry"]["failures"].append(copy.deepcopy(failure))
 
-        # Phase 3: independently report fidelity and the optional balanced pulse.
-        # Screening several exact finalists is intentional: leakage cannot influence
-        # the pure winner, but it must be measured before recommending a longer pulse.
         for length in lengths:
             plan = plans.get(length)
             if plan is None:
@@ -11075,7 +10133,6 @@ class BasicAutoTuner(ExperimentClass):
         self.data["leakage"].update({
             "portfolio_screened": True,
             "portfolio_safe_length_count": len(safe_entries),
-            # There is intentionally no single selected write tuple in this mode.
             "verified": False, "required_for_write": False,
             "final_replay_complete": False,
         })
@@ -11088,7 +10145,6 @@ class BasicAutoTuner(ExperimentClass):
         self.working = {key: best[key] for key in self.initial}
         return best
 
-    # ----------------------------------------------- practical operational leakage screen
     def _measure_candidate_with_multimodality(self, candidate, shots, label,
                                                **kwargs):
         previous = bool(self._analyze_multimodality)
@@ -11110,7 +10166,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _acquire_repeated_populations(self, candidate, pulse_counts, shots,
                                       calibration):
-        """Measure exact-candidate odd/even repeated-pulse populations."""
         counts = [int(value) for value in pulse_counts]
         populations = np.full(len(counts), np.nan, dtype=float)
         for raw in self.rng.permutation(len(counts)):
@@ -11135,14 +10190,6 @@ class BasicAutoTuner(ExperimentClass):
     def _stage_final_control_verify(self, final,
                                     minimum_binary_contrast=None,
                                     shot_multiplier=1):
-        """Certify coherent odd/even action of the exact selected X180 tuple.
-
-        The step-5 objective establishes readout assignment and state-preparation
-        separation, but an incoherently saturated drive can pass that test.  This
-        final audit repeats the *unchanged* frequency/gain/sigma/DRAG waveform at
-        several depths.  Only an exact-tuple witness emitted here (or an earlier
-        exact-tuple parity witness) may authorize an automatic configuration write.
-        """
         p = self.params["control_verify"]
         contrast_floor = float(
             p["minimum_binary_contrast"] if minimum_binary_contrast is None
@@ -11280,14 +10327,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _measure_operational_leakage_candidate(self, candidate, shots,
                                                reference_shots, label):
-        """Screen one fixed Gaussian for a reproducible non-binary IQ cloud.
-
-        The default basic screen brackets the candidate with two fresh TLS step-5
-        measurements and uses the worse third-cloud upper bound.  Optional repeated
-        returns remain available as a diagnostic, but are disabled by default: AAE is
-        the correct coherent amplitude-error experiment, and a return error is not a
-        direct leakage population measurement.
-        """
         p = self.params["leakage"]
         candidate = dict(candidate)
         before = self._measure_candidate_with_multimodality(
@@ -11508,7 +10547,6 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _prefer_longer_noninferior(aggregates, margin=0.003,
                                    max_mean_loss=0.010):
-        """Among statistically tied fidelities, prefer longer/lower-power control."""
         if not aggregates:
             return None
         best = BasicAutoTuner._best_aggregate(aggregates)
@@ -11533,7 +10571,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _duration_covered_shortlist(rows, limit):
-        """Keep the best safe row per duration before filling by fidelity."""
         ranked = sorted(rows, key=lambda row: (
             float(row.get("fidelity_lcb_95", -np.inf)),
             float(row.get("fidelity", -np.inf))), reverse=True)
@@ -11551,7 +10588,6 @@ class BasicAutoTuner(ExperimentClass):
         return shortlist
 
     def _operational_waveform_pool(self):
-        """One measured fixed-Gaussian control candidate per available duration."""
         limit = max(int(self.params["leakage"].get(
             "operational_max_candidate_waveforms", 6)), 1)
         fixed_beta = float(self.working.get("qubit_drag_beta", 0.0))
@@ -11560,8 +10596,6 @@ class BasicAutoTuner(ExperimentClass):
             candidate = dict(self.working)
             for key in ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma"):
                 candidate[key] = row[key]
-            # The basic screen compares duration and power; it never introduces a new
-            # waveform family.  Strict direct-P(f) mode owns any explicit DRAG search.
             candidate["qubit_drag_beta"] = fixed_beta
             return candidate
 
@@ -11598,8 +10632,6 @@ class BasicAutoTuner(ExperimentClass):
         duration_rows = [by_duration[key] for key in sorted(by_duration)]
         slots = max(limit - 1, 0)
         if len(duration_rows) > slots > 0:
-            # Span the full measured duration range.  The current winner is already
-            # retained separately and confirmation rejects any noisy coarse seed.
             indices = np.unique(np.rint(np.linspace(
                 0, len(duration_rows) - 1, slots)).astype(int))
             duration_rows = [duration_rows[int(index)] for index in indices]
@@ -11615,7 +10647,6 @@ class BasicAutoTuner(ExperimentClass):
         return pool
 
     def _stage_operational_leakage(self):
-        """Select fixed-waveform Gaussian duration/power inside the operational set."""
         if not self._operational_leakage_active:
             return None
         p = self.params["leakage"]
@@ -11741,9 +10772,6 @@ class BasicAutoTuner(ExperimentClass):
             })
             raise RuntimeError(failure)
 
-        # Reserve duration coverage before filling by score.  This keeps the
-        # longer/lower-power alternatives in the held-out comparison even when several
-        # frequency/gain variants of one duration scored well earlier.
         shortlist = self._duration_covered_shortlist(
             safe_rows, p["operational_selection_shortlist"])
         confirmations = self._confirm_candidates_with_multimodality(
@@ -11797,9 +10825,6 @@ class BasicAutoTuner(ExperimentClass):
                 "verified": False, "failure": failure,
             })
             raise RuntimeError(failure)
-        # This stage establishes the highest-fidelity *safe* reference.  The later
-        # joint latency replay then minimizes readout+control time across every safe
-        # duration; choosing a timing compromise here would bias that reference.
         selected_confirmation = (
             self._best_aggregate(safe_confirmations)
             if self.params["latency"].get("enabled", True) else
@@ -11865,7 +10890,6 @@ class BasicAutoTuner(ExperimentClass):
         return chosen
 
     def _stage_operational_leakage_verify(self, allow_fallback=True):
-        """Independently repeat every operational guard on the exact final tuple."""
         if not self._operational_leakage_active:
             return None
         p = self.params["leakage"]
@@ -11899,9 +10923,6 @@ class BasicAutoTuner(ExperimentClass):
                 and self._leakage_selected_candidate is not None
                 and _control_key(candidate)
                 != _control_key(self._leakage_selected_candidate)):
-            # Keep the freshly optimized readout and restore only the known-safe
-            # control waveform.  The ensuing full operational audit validates this
-            # exact crossed tuple, including its readout-dependent third-cloud guard.
             candidate = dict(candidate)
             for key in ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
                         "qubit_drag_beta"):
@@ -11965,7 +10986,6 @@ class BasicAutoTuner(ExperimentClass):
             self._leakage_verified_candidate_key = _candidate_key(candidate)
         return bool(passed)
 
-    # ------------------------------------------------------- direct leakage constraint
     @staticmethod
     def _ef_pulse(gain, frequency, phase=0.0):
         return ("pulse_at", int(round(gain)), float(phase),
@@ -11997,7 +11017,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _population_with_local_refs(self, candidate, sequence, shots,
                                     excited_sequence=None):
-        """Project one sequence between immediately adjacent g/e IQ references."""
         ground = self._sequence_mean(candidate, [], shots)
         if excited_sequence is None:
             excited_sequence = [self._ge_pulse(candidate)]
@@ -12027,7 +11046,6 @@ class BasicAutoTuner(ExperimentClass):
         return population, float(math.sqrt(max(variance, 0.0)))
 
     def _interleaved_sequence_fractions(self, candidate, sequences, metrics, shots):
-        """Measure every labelled sequence in four randomized drift-balanced blocks."""
         labels = list(sequences)
         each = max(10, int(math.ceil(float(shots) / 4.0)))
         acquired = {label: [[], []] for label in labels}
@@ -12046,7 +11064,6 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _audit_reference_ge_gain(self, candidate, gain, shots, total_span):
-        """Directly verify that one reference pulse inverts and two return."""
         harmonic = []
         for count in (0, 1, 2):
             sequence = ([self._reference_pulse(
@@ -12076,7 +11093,6 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _calibrate_reference_ge(self, candidate):
-        """Calibrate a long narrow-bandwidth g-e pulse for independent qutrit SPAM."""
         p = self.params["leakage"]
         gains = self._integer_axis(
             0, int(p["reference_gain_max"]), int(p["reference_gain_points"]),
@@ -12115,11 +11131,6 @@ class BasicAutoTuner(ExperimentClass):
         audits = [self._audit_reference_ge_gain(
             candidate, gain, int(p["reference_rabi_shots"]), total_span)]
         if not audits[0]["passed"]:
-            # A damped multi-period fit can lock to 3pi or another alias even with a
-            # good global r2.  The physical requirement is simpler and stronger:
-            # one pulse must invert and two identical pulses must return.  On audit
-            # failure, directly test a small set of observed response maxima plus a
-            # local neighborhood of the fit and select the lowest passing gain.
             displacement_size = np.abs(response - response[0])
             peaks, _properties = find_peaks(displacement_size)
             ranked_peaks = sorted(
@@ -12162,7 +11173,6 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _calibrate_ef_transition(self, candidate):
-        """Find and coherently verify e-f with a g-e/e-f/g-e shelving witness."""
         p = self.params["leakage"]
         ge_reference = self._calibrate_reference_ge(candidate)
         ge = self._reference_pulse(
@@ -12311,7 +11321,6 @@ class BasicAutoTuner(ExperimentClass):
         return calibration
 
     def _leakage_response_calibration(self, candidate, ef_calibration, shots):
-        """Measure the identity/shelving response matrix for prepared g/e/f."""
         p = self.params["leakage"]
         ig, qg, ie, qe = self._acquire_ss_pair(candidate, int(shots))
         self._record_raw_diagnostic(
@@ -12367,7 +11376,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _leakage_target_population(self, candidate, sequence, response,
                                    ef_calibration, shots, seq_gap_us):
-        """Interleave target identity/shelving shots and invert P(g/e/f)."""
         ge = self._reference_pulse(
             ef_calibration["ge_reference_gain"],
             candidate["qubit_pi_freq"])
@@ -12377,8 +11385,6 @@ class BasicAutoTuner(ExperimentClass):
             "identity": list(sequence),
             "shelved": list(sequence) + [ef, ge],
         }
-        # Preserve the selected gap in both target arms.  The appended shelving pulses
-        # use the same short gap, matching the response calibration convention.
         metrics = response["metrics"]
         labels = list(sequences)
         each = max(10, int(math.ceil(float(shots) / 4.0)))
@@ -12404,7 +11410,6 @@ class BasicAutoTuner(ExperimentClass):
 
     def _measure_leakage_candidate(self, candidate, ef_calibration, shots,
                                    reference_shots, label):
-        """Measure step-5 fidelity, third-cloud excess, and direct/amplified P(f)."""
         p = self.params["leakage"]
         candidate = dict(candidate)
         direct = self._measure_candidate_with_multimodality(
@@ -12503,15 +11508,11 @@ class BasicAutoTuner(ExperimentClass):
         return row
 
     def _leakage_waveform_pool(self, limit=None):
-        """High-fidelity distinct control waveforms, including longer fallbacks."""
         if limit is None:
             limit = self.params["leakage"]["max_candidate_waveforms"]
         limit = max(int(limit), 1)
 
         def physical(row):
-            # Compare control waveforms under one fixed readout/reset calibration.
-            # Pulling each historical row's old readout tuple would mix raw feedback
-            # thresholds and make duration look better or worse because of SPAM drift.
             candidate = dict(self.working)
             for key in ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
                         "qubit_drag_beta"):
@@ -12537,9 +11538,6 @@ class BasicAutoTuner(ExperimentClass):
         ranked = sorted(rows, key=lambda row: (
             float(row.get("fidelity_lcb_95", -np.inf)),
             float(row.get("fidelity", -np.inf))), reverse=True)
-        # First preserve the best candidate at every longer duration.  Leakage rises
-        # rapidly for short/high-amplitude pulses, so a pure global-fidelity shortlist
-        # can otherwise omit the most important recovery direction.
         current_sigma = float(self.working["sigma"])
         by_sigma = {}
         for row in ranked:
@@ -12568,7 +11566,6 @@ class BasicAutoTuner(ExperimentClass):
         return pool
 
     def _stage_leakage(self):
-        """Choose the highest-fidelity waveform satisfying direct leakage bounds."""
         if not self._leakage_active:
             self._log("leakage", "SKIP",
                       "no e-f frequency/anharmonicity prior; direct P(f) inactive")
@@ -12616,10 +11613,6 @@ class BasicAutoTuner(ExperimentClass):
                 return row
 
             incumbent = measure(incumbent_beta, "incumbent")
-            # Safety is a constraint, not the optimization objective.  Even a safe
-            # incumbent has not established the best fidelity over beta, so always run
-            # the first two-sided DRAG map.  Further span extensions are needed only
-            # while no safe point exists or the best safe point remains on a boundary.
             measured = {round(incumbent_beta, 8)}
             for extension in range(max(int(p["max_extensions"]), 1)):
                 span = min(float(p["beta_span"]) * (1.7 ** extension),
@@ -12704,10 +11697,6 @@ class BasicAutoTuner(ExperimentClass):
                 -float(attempt["chosen"].get("fidelity_lcb_95", -np.inf))))
         chosen = selected_attempt["chosen"]
 
-        # Beta/duration screening compares many noisy fidelities.  Replaying the top
-        # safe physical tuples in randomized round-robin blocks removes that winner's
-        # curse and prevents slow drift from favoring whichever waveform ran first.
-        # Direct leakage is independently re-audited after all subsequent refinements.
         safe_pairs = [
             (attempt, row) for attempt in attempts for row in attempt.get("rows", [])
             if row.get("leakage_safe", False)
@@ -12793,17 +11782,12 @@ class BasicAutoTuner(ExperimentClass):
         return chosen
 
     def _stage_leakage_verify(self, allow_fallback=True):
-        """Fresh independent leakage blocks after all post-DRAG control refinements."""
         if not self._leakage_active:
             return None
         p = self.params["leakage"]
         self._leakage_verified_candidate_key = None
 
         def verify(candidate, tag):
-            # Every duration/frequency control family gets its own long g-e and e-f
-            # shelving calibration.  Reusing the calibration from whichever waveform
-            # won the earlier screen can mislabel e/f preparation for another latency
-            # contender and is not a valid direct P(f) certificate.
             calibration = self._calibrate_ef_transition(candidate)
             rows = []
             for block in range(max(int(p["verify_blocks"]), 1)):
@@ -12896,19 +11880,16 @@ class BasicAutoTuner(ExperimentClass):
         return bool(passed)
 
     def _stage_final_constrained(self):
-        """Exact step-5 replay of only the leakage-screened physical tuple."""
         return self._stage_final_current_tuple(
             "final exact leakage-screened step-5 replay",
             "leakage_constrained", "final_safe")
 
     def _stage_final_feedback(self):
-        """Exact replay after a fresh active-reset threshold/loop validation."""
         return self._stage_final_current_tuple(
             "final exact feedback-reset step-5 replay",
             "feedback_validated", "final_feedback")
 
     def _safety_screened_control_rows(self):
-        """Control tuples which actually passed the active safety screen."""
         leakage = self.data.get("leakage", {})
         rows = []
         for attempt in leakage.get("attempts", []) if isinstance(leakage, dict) else []:
@@ -12933,7 +11914,6 @@ class BasicAutoTuner(ExperimentClass):
                 if all(key in row for key in self.initial)]
 
     def _stage_safe_latency_reference(self):
-        """Replay the best screened control under the latest readout coordinates."""
         chosen = self.data.get("leakage", {}).get("chosen")
         if not isinstance(chosen, dict):
             raise RuntimeError("latency optimization has no safety-screened control")
@@ -12953,8 +11933,6 @@ class BasicAutoTuner(ExperimentClass):
             "safety_reference_unverified", "latency_reference")
 
     def _stage_final_current_tuple(self, label, replay_kind, log_stage):
-        # Fail closed: an exception in this replay must not leave the completion flag
-        # or provenance from the earlier unconstrained final comparison in force.
         self._final_replay_completed = False
         self._final_replay_kind = None
         p = self.params["final"]
@@ -12975,13 +11953,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _remember_final_replays(self, rows, replay_kind, batch_complete):
-        """Keep immutable evidence for both optimization objectives.
-
-        Safety and timing stages are allowed to replace ``working``.  They must not
-        erase a longer, higher-fidelity exact replay, nor may a later short replay be
-        mislabeled as the overall optimum.  Each final batch is therefore retained
-        independently and classified only from its own completion/spread evidence.
-        """
         for source in rows or []:
             row = copy.deepcopy(source)
             stable = bool(
@@ -12999,7 +11970,6 @@ class BasicAutoTuner(ExperimentClass):
             self._final_replays.append(row)
 
     def _replay_candidate_is_stable(self, candidate):
-        """Whether a final-stage aggregate is complete enough to replace an earlier one."""
         if not isinstance(candidate, dict) or not self._final_replay_completed:
             return False
         return bool(
@@ -13010,7 +11980,6 @@ class BasicAutoTuner(ExperimentClass):
 
     @staticmethod
     def _timing_recovery_rank(candidate):
-        """Held-out rank used when two fresh exact final replays compete."""
         evidence = BasicAutoTuner._latency_fidelity_evidence(candidate)
         try:
             lcb = float(evidence["fidelity_lcb_95"])
@@ -13024,15 +11993,6 @@ class BasicAutoTuner(ExperimentClass):
         return (lcb, mean)
 
     def _recover_timing_reference_after_failed_final(self, final):
-        """Replay the fidelity reference when a late fast-tuple replay collapses.
-
-        The latency certificate is a secondary objective; it must never turn a usable
-        best-fidelity calibration into an abort merely because the independent final
-        replay no longer supports the speedup.  Recovery is deliberately expensive
-        only on this exceptional path: restore the fresh best-fidelity reference,
-        repeat the applicable safety audit, and acquire a new exact final replay.  A
-        failed recovery leaves the original final evidence intact and write-blocked.
-        """
         record = self.data.get("latency_optimization", {})
         if not isinstance(final, dict) or not isinstance(record, dict):
             return final
@@ -13084,11 +12044,6 @@ class BasicAutoTuner(ExperimentClass):
         if (isinstance(reference, dict)
                 and _candidate_key(reference) == _candidate_key(final)
                 and original_final_stable):
-            # A retained-reference timing certificate has no second tuple to replay.
-            # Its fresh exact replay is still valid ordinary-fidelity evidence even
-            # when drift makes the original one-point timing claim stale.  Demote the
-            # secondary certificate instead of turning that usable calibration into
-            # an artificial abort.
             record.update({
                 "status_before_reference_recovery": status,
                 "status": "failed_final_timing_guard_retained_exact_final",
@@ -13163,8 +12118,6 @@ class BasicAutoTuner(ExperimentClass):
                 raise RuntimeError(
                     "the best-fidelity reference replay was incomplete or unstable")
             if self._leakage_active or self._operational_leakage_active:
-                # A prior unstable constrained replay may have set this false.  The
-                # fresh recovered constrained replay is now the exact write witness.
                 self.data["leakage"]["final_replay_complete"] = True
         except KeyboardInterrupt:
             raise
@@ -13206,10 +12159,6 @@ class BasicAutoTuner(ExperimentClass):
                      and self._candidate_latency_us(final)
                      <= self._candidate_latency_us(recovered))))
         if keep_original:
-            # The reference acquisition itself succeeded, but primary-fidelity
-            # evidence says it is worse than the already-stable exact final.  Restore
-            # every final/safety state field and keep the better tuple as an ordinary,
-            # explicitly uncertified calibration.
             self.working = snapshot["working"]
             self.data["final_candidates"] = snapshot["final_candidates"]
             self._final_replay_completed = snapshot["final_replay_completed"]
@@ -13275,9 +12224,6 @@ class BasicAutoTuner(ExperimentClass):
     def _current_best_for_partial_run(self):
         pool = list(self._confirmed)
         if self._archive:
-            # Completed individual measurements are real evidence even when an
-            # interrupt prevented their surrounding grid/confirmation from finishing.
-            # They are explicitly labeled unconfirmed and can never become eligible.
             observed = max(self._archive, key=lambda row: (
                 float(row.get("fidelity_lcb_95", -np.inf)),
                 float(row.get("fidelity", -np.inf))))
@@ -13299,10 +12245,6 @@ class BasicAutoTuner(ExperimentClass):
         def physical_candidate(row):
             return {key: row[key] for key in self.initial}
 
-        # A contender whose confirmation blocks all suffered transient faults is still
-        # present in the raw archive.  Re-introduce the top raw measurements here; a
-        # false coarse maximum is harmless because this final replay is fresh and held
-        # out, while omitting it could permanently lose the correct Rabi basin.
         candidates = [physical_candidate(row)
                       for row in ranked[:int(p["top_candidates"])]]
         candidates.extend(
@@ -13322,11 +12264,6 @@ class BasicAutoTuner(ExperimentClass):
         finals = self._confirm_candidates(
             candidates, p["shots"], p["blocks"], "final exact step-5 replay",
             add_to_history=True)
-        # All final records have identical shots and block count, so comparing their
-        # lower confidence bounds is fair and resistant to a one-block fluctuation.
-        # Protect the final fine-frequency/AAE tuple when its one-pulse score is
-        # statistically noninferior: a one-pulse histogram is insensitive to the small
-        # coherent errors that those amplified sequences were designed to expose.
         selection_finals = list(finals)
         if self._leakage_active:
             threshold = float(self.params["leakage"]["max_third_blob_excess"])
@@ -13336,9 +12273,6 @@ class BasicAutoTuner(ExperimentClass):
             if safe_finals:
                 selection_finals = safe_finals
         direct_best = self._best_aggregate(selection_finals)
-        # The latency stage owns the one declared fidelity tradeoff.  Starting it
-        # from a merely noninferior control seed would silently spend an additional
-        # margin before the timing comparison even begins.
         best = (direct_best if self.params["latency"].get("enabled", True)
                 else self._noninferior_seed(
                     selection_finals, self.working, direct_best, margin=0.003))
@@ -13354,7 +12288,6 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _estimate_default_measurement_repetitions(self):
-        """Conservative workload estimate used only for the upfront operator ETA."""
         p = self.params
         total = 0
         total += 2 * int(p["baseline"]["shots"]) * int(p["baseline"]["blocks"])
@@ -13364,8 +12297,6 @@ class BasicAutoTuner(ExperimentClass):
                 axis.size for axis in self._frequency_discovery_plan(
                     self.initial["read_pulse_freq"], resonator,
                     adaptive=True)["axes"])
-            # The safe bootstrap and a distinct input readout can both be required
-            # when the first gain fails its fresh confirmation.
             total += 2 * int(resonator["shots"]) * int(coarse_points)
             total += (2 * int(resonator.get(
                 "confirmation_shots", resonator["shots"]))
@@ -13375,7 +12306,6 @@ class BasicAutoTuner(ExperimentClass):
             coarse_points = self._frequency_discovery_plan(
                 self.initial["qubit_pi_freq"], spectroscopy,
                 adaptive=False)["axes"][-1].size
-            # Primary grid plus the half-step-staggered grid.
             coarse_points = 2 * int(coarse_points) - 1
             total += int(spectroscopy["shots"]) * int(coarse_points)
             candidate_count = max(
@@ -13417,7 +12347,6 @@ class BasicAutoTuner(ExperimentClass):
                       * int(readout["shots"]))
             total += (2 * (int(readout["shortlist"]) + 1)
                       * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
-            # Local readout replay after direct/amplified control selection.
             total += (2 * int(readout["local_freq_points"])
                       * int(readout["local_gain_points"]) * int(readout["shots"]))
             total += (2 * (int(readout["shortlist"]) + 1)
@@ -13518,9 +12447,6 @@ class BasicAutoTuner(ExperimentClass):
                 total += (2 * length_count * zoom_candidates
                           * int(portfolio["gain_zoom_shots"])
                           * int(portfolio["gain_zoom_blocks"]))
-            # Several exact pulse families are screened so the optional balanced
-            # recommendation has measured leakage evidence.  The fidelity winner is
-            # still selected before, and independently of, these acquisitions.
             screen_count = max(int(portfolio.get(
                 "balanced_screen_candidates_per_length", 3)), 1)
             if self._leakage_active:
@@ -13570,9 +12496,6 @@ class BasicAutoTuner(ExperimentClass):
                       * int(portfolio["confirm_blocks"]))
         elif self._leakage_active:
             leak = p["leakage"]
-            # Nominal constrained search: independently calibrate g-e/e-f and run a
-            # complete initial beta map for every retained duration.  Boundary span
-            # extensions and recovery after transient backend faults remain extra.
             waveform_count = max(int(leak["max_candidate_waveforms"]), 1)
             calibration_point = (
                 2 * (int(leak["ef_points"]) + int(leak["ef_narrow_points"]))
@@ -13598,12 +12521,7 @@ class BasicAutoTuner(ExperimentClass):
                             + 8 * len(leak["depths"]) * len(leak["gap_phases"])
                             * int(math.ceil(float(leak["verify_shots"]) / 4.0)))
             total += int(leak["verify_blocks"]) * verify_point
-            # Final direct-P(f) verification recalibrates g-e/e-f for the exact
-            # latency-selected waveform; reserve a second calibration for the safe-
-            # seed fallback path.
             total += 2 * calibration_point
-            # Re-close coordinates after DRAG/duration selection, then replay the
-            # exact safe tuple.  These are real planned stages, not optimistic extras.
             total += (2 * int(qubit["local_freq_points"])
                       * int(qubit["local_gain_points"]) * int(qubit["shots"]))
             total += (2 * (int(qubit["shortlist"]) + 1)
@@ -13636,9 +12554,6 @@ class BasicAutoTuner(ExperimentClass):
                    * int(leak["operational_shots"])
                    if bool(leak.get(
                        "operational_repeated_return_enabled", False)) else 0))
-            # A discriminator-drift retry repeats the whole before/after bracket.
-            # Budget the configured worst case so this ETA does not hide the new
-            # robustness work behind an optimistic one-attempt estimate.
             drift_attempts = 1 + max(int(leak.get(
                 "operational_drift_retries", 2)), 0)
             total += (waveform_count * beta_points * screen_point
@@ -13653,7 +12568,6 @@ class BasicAutoTuner(ExperimentClass):
                    if bool(leak.get(
                        "operational_repeated_return_enabled", False)) else 0))
             total += int(leak["operational_verify_blocks"]) * verify_point
-            # Same local closure used by strict mode after control-waveform selection.
             total += (2 * int(qubit["local_freq_points"])
                       * int(qubit["local_gain_points"]) * int(qubit["shots"]))
             total += (2 * (int(qubit["shortlist"]) + 1)
@@ -13674,8 +12588,6 @@ class BasicAutoTuner(ExperimentClass):
                       * int(readout["confirm_shots"])
                       * int(readout["confirm_blocks"]))
         final = p["final"]
-        # Normal final replay: top confirmed + top raw + working + input.  Explicit
-        # recovery-queue candidates are added only after actual confirmation faults.
         total += (2 * (2 * int(final["top_candidates"]) + 2)
                   * int(final["shots"]) * int(final["blocks"]))
         latency = p["latency"]
@@ -13697,8 +12609,6 @@ class BasicAutoTuner(ExperimentClass):
         if control_verify.get("enabled", True):
             if self._duration_portfolio_active:
                 portfolio = p["duration_portfolio"]
-                # Audit the pure-fidelity winner and, when different, a small number
-                # of noninferior balanced alternatives.  This remains report-only.
                 control_audits = (
                     len(portfolio.get("read_lengths_us", []))
                     * max(int(portfolio.get(
@@ -13713,7 +12623,6 @@ class BasicAutoTuner(ExperimentClass):
         return int(total)
 
     def _complete_acquire(self, final, plotDisp=False):
-        """Finalize and persist either a full run or an intentional early stop."""
         if final is None:
             final = self._current_best_for_partial_run()
         self._finalize(final)
@@ -13727,13 +12636,9 @@ class BasicAutoTuner(ExperimentClass):
             self._log("plot", "WARN", "summary plot failed: %s" % exc)
         return {"config": copy.deepcopy(self.input_cfg), "data": self.data}
 
-    # --------------------------------------------------------------- orchestration
     def acquire(self, progress=False, debug=False, plotDisp=False):
         del progress, debug
         self._run_started_monotonic = time.monotonic()
-        # Direct unit users may call individual analysis/finalization helpers, but a
-        # production acquire must never authorize writes after critical discovery
-        # failed and later local grids merely optimized shot noise.
         self._discovery_guard_active = True
         self._final_control_verified_key = None
         self._preflight()
@@ -13805,19 +12710,10 @@ class BasicAutoTuner(ExperimentClass):
             self._run_stage("resonator", self._stage_resonator)
             self._run_stage("spectroscopy", self._stage_spectroscopy)
             self._run_stage("iq_rabi", self._stage_iq_rabi)
-            # Break the control/readout chicken-and-egg loop: coherent averaged Rabi is
-            # a provisional preparation, then a broad direct-SS readout search makes the
-            # later exact comparison among all Rabi basins meaningful.  This bootstrap
-            # map is deliberately not write evidence; readout is re-optimized after the
-            # direct/amplified control choice.
             bootstrap = self._run_stage(
                 "readout_grid", lambda: self._stage_readout_grid(
                     "readout_grid", local=False, record_evidence=False))
             if isinstance(bootstrap, dict):
-                # Preserve the exact passive-preparation tuple and its held-out
-                # evidence.  It is crossed into every later duration even if a
-                # failed feedback profile makes a subsequent branch comparison
-                # temporarily look like coin flips.
                 self._bootstrap_control_candidate = copy.deepcopy(bootstrap)
                 self.data["bootstrap_control_candidate"] = copy.deepcopy(
                     bootstrap)
@@ -13846,10 +12742,6 @@ class BasicAutoTuner(ExperimentClass):
                     "qubit transition were not both independently qualified")
                 return self._complete_acquire(
                     self._current_best_for_partial_run(), plotDisp=plotDisp)
-            # The bootstrap probe may legitimately fail when the preliminary pulse is
-            # weak.  Retry with the now-confirmed coherent pulse before the expensive
-            # joint map; failure still falls back to passive relaxation and never
-            # aborts or narrows the search.
             self._run_stage("reset_before_joint", lambda:
                             self._try_activate_feedback("rough coherent pulse"))
             self._run_stage("joint_search", self._stage_joint_search)
@@ -13859,24 +12751,12 @@ class BasicAutoTuner(ExperimentClass):
                 self._run_stage(
                     "joint_closure_%d" % iteration,
                     lambda iteration=iteration: self._stage_joint_closure(iteration))
-                # A coupled one-pulse refinement can expose a small coherent residual.
-                # Re-close it before the next/final comparison without reopening a
-                # one-way coordinate-descent chain.
                 if (iteration < int(self.params["joint_search"].get(
                         "closure_iterations", 2))
                         and self._joint_budget_allows(reserve_final=True)):
                     self._run_stage(
                         "multi_aae_closure_%d" % iteration,
                         self._stage_multi_candidate_aae)
-            # The ordinary final map first identifies the best empirical waveforms.
-            # The default basic path then compares fixed-waveform duration/power
-            # candidates for reproducible third-cloud growth.  Optional strict mode
-            # replaces that screen with direct shelving P(f).  Either path re-closes
-            # local coordinates and independently verifies the exact tuple before the
-            # only replay allowed to authorize a write.
-            # Candidate-rich final comparison can now use its cached fixed-gain reset
-            # profile per frequency/integration pair.  Scoring gain is independent and
-            # therefore no longer forces an all-passive multi-readout replay.
             final = self._run_stage("final", self._stage_final)
             ordinary_final = copy.deepcopy(final) if final is not None else None
             ordinary_replay_completed = bool(self._final_replay_completed)
@@ -13906,16 +12786,9 @@ class BasicAutoTuner(ExperimentClass):
                 return copy.deepcopy(ordinary_final)
 
             if final is not None:
-                # Preserve the pure-fidelity answer before any independent safety
-                # or latency selection.  A shorter/screened pulse may later become the
-                # writable result, but the operator must always see the tradeoff.
                 self.data["best_fidelity_replay"] = copy.deepcopy(final)
                 self.data["best_fidelity_replay_complete"] = bool(
                     self._final_replay_completed)
-                # With a safety constraint, the joint timing decision must wait until
-                # the feasible control durations are known.  Otherwise an unsafe fast
-                # pulse can drag readout length short and hide the true shortest safe
-                # combination.  Unconstrained runs can optimize immediately.
                 if (not self._duration_portfolio_active
                         and not (self._leakage_active
                                  or self._operational_leakage_active)):
@@ -13944,9 +12817,6 @@ class BasicAutoTuner(ExperimentClass):
                 if portfolio_best is not None:
                     final = portfolio_best
             elif self._leakage_active:
-                # Direct qutrit programs may load candidate, g-e reference, and e-f
-                # waveforms together.  Passive reset avoids adding a frozen reset
-                # waveform to that memory footprint and also compares durations fairly.
                 self._deactivate_feedback("direct leakage waveform comparison")
                 leakage_result = self._run_stage(
                     "leakage", self._stage_leakage)
@@ -13969,11 +12839,6 @@ class BasicAutoTuner(ExperimentClass):
                             int(self.params["joint_search"].get(
                                 "closure_iterations", 2)) + 1))
                     if self.params["latency"].get("enabled", True):
-                        # Post-screen frequency/gain/AAE closure is useful only after
-                        # the refined exact tuple proves safety.  This first audit also
-                        # refreshes the matching e-f shelving calibration in strict
-                        # mode.  A second audit below certifies the eventual joint
-                        # timing winner.
                         self._deactivate_feedback(
                             "pre-latency direct leakage verification")
                         preverified = bool(self._run_stage(
@@ -14008,12 +12873,6 @@ class BasicAutoTuner(ExperimentClass):
                     self._deactivate_feedback("direct leakage verification")
                     leakage_verified = bool(self._run_stage(
                         "leakage_verify", self._stage_leakage_verify))
-                # A leakage-constrained replay is meaningful only for the exact tuple
-                # that passed the independent qutrit audit.  Previously this replay
-                # ran even when all e-f calibrations had failed, allowing a late noisy
-                # measurement to overwrite a much better validated unconstrained
-                # result.  Keep that best real measurement for reporting while still
-                # failing closed on every config write.
                 if leakage_verified:
                     self._run_stage(
                         "reset_after_post_readout", lambda:
@@ -14135,7 +12994,6 @@ class BasicAutoTuner(ExperimentClass):
         return self._complete_acquire(final, plotDisp=plotDisp)
 
     def _finalize_duration_portfolio(self, final):
-        """Finalize a report-only portfolio without manufacturing a write winner."""
         portfolio = self.data.get("duration_portfolio", {})
         entries = (portfolio.get("entries", [])
                    if isinstance(portfolio, dict) else [])
@@ -14185,9 +13043,6 @@ class BasicAutoTuner(ExperimentClass):
             balanced_reportable,
             key=lambda entry: self._portfolio_rank(entry["balanced"]))
             if balanced_reportable else None)
-        # Report reference follows the same fidelity-only objective as every row.
-        # Safety remains available separately as best_safe_candidate and can never
-        # replace the best-fidelity tuple in report-only portfolio mode.
         selected_entry = best_overall_entry
         candidate = (copy.deepcopy(selected_entry["selected"])
                      if selected_entry is not None else
@@ -14241,7 +13096,6 @@ class BasicAutoTuner(ExperimentClass):
             "manual_selection_required": True,
             "automatic_config_write_allowed": False,
             "fidelity_replay_stable": replay_stable,
-            # Deliberately false: there is no operator-selected portfolio row yet.
             "final_stable": False,
             "success": complete,
             "outcome": ("duration_portfolio_complete" if complete
@@ -14346,9 +13200,6 @@ class BasicAutoTuner(ExperimentClass):
                 "best_found": None, "tuned": {}, "eligible_tuned": {},
             })
             return
-        # Discovery qualification is a hard phase boundary.  A baseline or bootstrap
-        # histogram remains useful diagnostic evidence, but it is not a partially
-        # successful tune and must never be dressed up as a final/portfolio result.
         if bool(self.data.get("expensive_search_skipped", False)):
             candidate = copy.deepcopy(final)
             tuned = ({key: candidate[key] for key in TUNED_KEYS}
@@ -14386,10 +13237,6 @@ class BasicAutoTuner(ExperimentClass):
             if bool(row.get("final_replay_stable", False))
             and all(key in row for key in self.initial)
         ]
-        # ``best_found`` remains the exact tuple selected by safety/timing/write
-        # policy.  The fidelity objective is an independent immutable answer: the
-        # strongest stable exact replay from *any* final batch, including a later
-        # screened batch which happens to outperform the earlier unconstrained one.
         if stable_replays:
             best_overall = max(stable_replays, key=self._joint_rank)
         else:
@@ -14418,13 +13265,9 @@ class BasicAutoTuner(ExperimentClass):
             self.data["joint_search"].update({
                 "best_measured_reference": copy.deepcopy(fidelity_reference),
                 "latency_pareto_frontier": copy.deepcopy(frontier),
-                # Advisory only: the existing randomized familywise latency stage is
-                # the certificate allowed to influence a write.
                 "shortest_noninferior_advisory": copy.deepcopy(fast_advisory),
                 "shortest_noninferior_diagnostics": fast_diagnostics,
             })
-        # Convert arrays to ordinary lists only in the compact top-level result; full
-        # numpy evidence remains in confirmed_candidates and the pickle.
         for array_key in (
                 "block_fidelities", "block_fidelity_ses",
                 "block_crossfit_fidelities",
@@ -14513,9 +13356,6 @@ class BasicAutoTuner(ExperimentClass):
                     "latency_reduction_fraction": 0.0,
                 })
             else:
-                # A failed/not-run/uncertain timing stage is a pure-fidelity fallback.
-                # It remains subject to the ordinary exact-final, safety, discovery,
-                # and write-LCB gates below, but timing-only .90/.88 floors are N/A.
                 latency_record.update({
                     "latency_certificate_valid": False,
                     "qualified_speedup": False,
@@ -14540,11 +13380,6 @@ class BasicAutoTuner(ExperimentClass):
                             / max(reference_latency, 1e-12)),
                     })
 
-        # Report the two requested optimization answers separately.  Prefer the
-        # randomized paired/familywise timing certificate when it survived the exact
-        # final guard.  Otherwise provide a clearly labeled advisory from completed
-        # held-out confirmations; it is useful evidence but cannot authorize a
-        # configuration write or claim a proven speedup.
         safety_active = bool(
             self._leakage_active or self._operational_leakage_active)
         verified_safety_key = (
@@ -14569,9 +13404,6 @@ class BasicAutoTuner(ExperimentClass):
             and int(row.get("confirmation_blocks", 0)) >= 2)
         advisory_pool = unique_candidate_rows(advisory_pool)
         if safety_active:
-            # A fast tuple is not a usable leakage-safe answer merely because another
-            # duration passed.  Only the exact readout/control tuple independently
-            # verified by the active safety path may be called the short candidate.
             advisory_pool = [
                 row for row in advisory_pool
                 if verified_safety_key is not None
@@ -14754,14 +13586,6 @@ class BasicAutoTuner(ExperimentClass):
         missing_evidence = [key for key in changed if not evidence[key]]
         eligible = {}
         if stable and changed:
-            # The stable final replay plus its exact-waveform coherence audit is the
-            # strongest relevant write evidence: every changed coordinate below was
-            # jointly exercised as one physical tuple.  Requiring a second, per-axis
-            # provenance record can incorrectly reject a real winner that entered the
-            # final pool through basin recovery or a cross-coordinate comparison.  We
-            # therefore write the changed members of this jointly replayed tuple as an
-            # atomic unit.  Earlier search evidence remains useful diagnostic metadata,
-            # but it is not a veto over the later full-tuple experiment.
             eligible = {key: tuned[key] for key in changed}
             if missing_evidence:
                 self._log(
@@ -14818,9 +13642,7 @@ class BasicAutoTuner(ExperimentClass):
                      if eligible
                      else " (reported, not write-eligible)"))
 
-    # ---------------------------------------------------------------- persistence
     def _checkpoint(self, data=None):
-        """Atomically replace the lossless pickle checkpoint on the same volume."""
         payload = self.data if data is None else data
         temporary = self.pname + ".tmp"
         with open(temporary, "wb") as stream:
@@ -15027,13 +13849,9 @@ class BasicAutoTuner(ExperimentClass):
         return summary
 
     def save_data(self, data=None):
-        """Save compact numeric maps to HDF5; the complete nested archive is in pickle."""
         if data is None:
             data = self.data
         print("Saving %s" % self.fname)
-        # Finalize the self-contained bundle first.  Even if the compact summary H5
-        # later encounters a network-drive or serialization fault, the raw evidence
-        # and complete Python archive survive in the file the operator will send back.
         if self._diagnostic_active:
             if self._finalize_diagnostic_bundle(data):
                 print("Diagnostic bundle: %s" % self.diagnostic_fname)
@@ -15069,8 +13887,6 @@ class BasicAutoTuner(ExperimentClass):
                             h5.add("%s/%s" % (prefix, key), arr)
                     except Exception:
                         pass
-            # Compact archive columns make the direct measurements inspectable without
-            # loading Python pickle objects.
             if self._archive:
                 columns = {
                     "fidelity": [row.get("fidelity", np.nan) for row in self._archive],
@@ -15115,7 +13931,6 @@ class BasicAutoTuner(ExperimentClass):
             self._log("save", "WARN", "pickle save failed: %s" % exc)
 
     def save_plot(self, plotDisp=False):
-        """Write one compact summary: direct fidelity history and the key search maps."""
         fig, axes = plt.subplots(2, 3, figsize=(15, 8.5), constrained_layout=True)
         axes = axes.ravel()
         if self._archive:

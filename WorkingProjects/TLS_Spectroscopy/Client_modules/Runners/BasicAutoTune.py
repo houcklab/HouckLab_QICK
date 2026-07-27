@@ -1,11 +1,3 @@
-"""Run the single-qubit calibration in two operator-driven stages.
-
-Stage 1 (``RUN_DISCOVERY``) finds the resonator and the qubit transition, then stops
-and prints the values.  Paste those into the block below, flip the flags, and stage 2
-(``RUN_GAIN_SWEEP``) takes them as given and searches only readout gain and X180 gain.
-Setting both flags runs the original end-to-end pipeline.  This is a report-only entry
-point: it never modifies ``BaseConfig``.
-"""
 
 import copy
 import datetime
@@ -34,19 +26,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-# STAGE 1.  Find the resonator and the qubit transition, then stop and print them.
 RUN_DISCOVERY = True
 
-# STAGE 2.  Take the DISCOVERY block below as given and search only readout gain and
-# X180 gain.  Set both flags true to run the original end-to-end pipeline instead.
 RUN_GAIN_SWEEP = False
 
-# Stage 2 only.  True: one calibration at every integer readout duration 1--20 us.
-# False: use the read_length from the DISCOVERY block alone.
 RUN_1_TO_20_US_MODE = False
 
-# Paste the numbers printed by the stage-1 run here.  READ_PULSE_GAIN and
-# QUBIT_PI_GAIN are only starting points; the gain sweep is free to move them.
 DISCOVERY = {
     "read_pulse_freq": 7248.967089,
     "qubit_pi_freq": 2534.350291,
@@ -57,13 +42,10 @@ DISCOVERY = {
     "qubit_drag_beta": 0.0,
 }
 
-# Portfolio rows are alternatives for an operator, not one automatically selected
-# calibration.  Keep the destructive path disabled unconditionally for this runner.
 APPLY_CONFIG = False
 
 
 def _configure_stages():
-    """Return (run_mode, params) for the flags set at the top of this file."""
     if not RUN_DISCOVERY and not RUN_GAIN_SWEEP:
         raise ValueError(
             "set RUN_DISCOVERY true to locate the resonator and qubit, or "
@@ -91,19 +73,11 @@ _WRITE_CONTRACT_PARAMS = configure_gain_only_search(
     BaseConfig["sigma"],
 )
 
-# Tests and interactive runners may replace ``BasicAutoTuner`` with an acquisition
-# facade.  Keep the certificate implementation immutable so destructive-boundary
-# validation can never be replaced along with the hardware-facing class.
 _BASIC_AUTOTUNER_CERTIFICATE = BasicAutoTuner
 
-# Discovery is device-independent by default: BASIC_DEFAULTS searches a validated
-# +/-100-MHz prior around the frequencies loaded from initialize.py.  A device runner
-# may still provide explicit search_min/max overrides, but this entry point contains
-# no q4 frequency constants.
 
 
 def _result_dict(acquired, experiment):
-    """Accept both ExperimentClass-style and direct-dictionary acquire results."""
     if isinstance(acquired, dict):
         nested = acquired.get("data")
         if isinstance(nested, dict):
@@ -185,7 +159,6 @@ def _candidate_key(candidate):
 
 
 def _crossfit_timing_evidence_errors(row):
-    """Independently reconstruct one aggregate's held-out timing statistics."""
     if not isinstance(row, dict):
         return ["the timing certificate row is malformed"]
     evidence = _BASIC_AUTOTUNER_CERTIFICATE._latency_fidelity_evidence(row)
@@ -245,7 +218,6 @@ def _same_tuned_value(key, first, second):
 
 
 def _leakage_policy(params, startup_cfg):
-    """Reconstruct the leakage policy actually passed to the experiment."""
     settings = params.get("leakage", {}) if isinstance(params, dict) else {}
     if not isinstance(settings, dict):
         settings = {}
@@ -265,7 +237,6 @@ def _leakage_policy(params, startup_cfg):
 
 
 def _write_contract_errors(result, eligible, startup_cfg, params=None):
-    """Independently validate every certificate at the destructive boundary."""
     errors = []
     if not isinstance(result, dict):
         return ["result payload is not a dictionary"]
@@ -529,8 +500,6 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
                     rel_tol=0.0, abs_tol=1e-9)):
             errors.append("the final fidelity-block summary is inconsistent")
 
-    # Reconstruct the timing policy from raw evidence.  Do not trust the experiment's
-    # boolean: this is the last boundary before initialize.py is modified.
     latency_policy = params.get("latency", {})
     if not isinstance(latency_policy, dict):
         latency_policy = {}
@@ -1057,7 +1026,6 @@ def _print_objective_candidate(heading, candidate, status=None):
 
 
 def _print_duration_portfolio(result):
-    """Print the twenty report-only parameter sets as one compact operator table."""
     portfolio = result.get("duration_portfolio", {})
     entries = portfolio.get("entries", []) if isinstance(portfolio, dict) else []
     if not entries:
@@ -1369,7 +1337,6 @@ def _print_best(result):
 
 
 def _save_artifacts(experiment):
-    """Make a best effort to retain partial data even after interruption/failure."""
     save_data = getattr(experiment, "save_data", None)
     if callable(save_data):
         try:
@@ -1377,9 +1344,6 @@ def _save_artifacts(experiment):
         except Exception as exc:
             print("[basic-auto-tune] save_data failed: %s" % exc)
 
-    # Some experiment implementations create the composite plot during acquire;
-    # others expose an explicit no-argument saver.  Support the latter without
-    # depending on a private plotting method or plotting a second time.
     save_plot = getattr(experiment, "save_plot", None)
     if callable(save_plot):
         try:
@@ -1548,9 +1512,6 @@ def _history_entry(result, eligible, applied, error=None):
 
 
 def main():
-    # Capture the complete physical configuration before the first acquisition.  A
-    # change to an untuned field (channels, switch/FF state, ADC timing, etc.) is
-    # just as capable of creating an unmeasured hybrid tuple as a changed pi gain.
     startup_source_hash = config_updater.baseconfig_source_hash()
     soc, soccfg = makeProxy()
     cfg = dict(BaseConfig)
@@ -1613,8 +1574,6 @@ def main():
     best = _print_best(result)
     _print_gain_convergence(result)
 
-    # This is deliberately the sole source of configuration writes.  Diagnostic
-    # ``tuned``/``working``/``best_found`` values must never reach initialize.py.
     eligible = result.get("eligible_tuned", {})
     if not isinstance(eligible, dict):
         print("[basic-auto-tune] invalid eligible_tuned payload; BaseConfig untouched.")
@@ -1653,8 +1612,6 @@ def main():
                   "contract: %s" % "; ".join(write_contract_errors))
         if getattr(experiment, "iname", None):
             print("   Summary plot: %s" % experiment.iname)
-        # A completed or interrupted search with an empirical candidate is still a
-        # useful dry run.  Reserve a nonzero code for runs that measured no candidate.
         return 0 if best is not None else 1
 
     if acquire_error is not None:
