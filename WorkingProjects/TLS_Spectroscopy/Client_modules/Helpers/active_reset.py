@@ -115,9 +115,13 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
               f"(need {int(min_raw_shots)}) -- falling back to passive relax.")
         return None
     if not raw_fidelity >= float(min_raw_fidelity):
+        if not validate:
+            print(f"[reset] raw held-shot assignment F={raw_fidelity:.3f} is below "
+                  f"{float(min_raw_fidelity):.3f} and validation is off -- falling back to "
+                  "passive relax.")
+            return None
         print(f"[reset] raw held-shot assignment F={raw_fidelity:.3f} is below "
-              f"{float(min_raw_fidelity):.3f} -- falling back to passive relax.")
-        return None
+              f"{float(min_raw_fidelity):.3f}; deferring to the end-to-end reset validation.")
     rec = dict(data["recommended"])
     rec["raw_assignment_fidelity"] = raw_fidelity
     rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
