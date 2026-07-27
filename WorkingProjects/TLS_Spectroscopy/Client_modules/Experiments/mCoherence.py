@@ -127,15 +127,8 @@ class T1(_CoherenceBase):
             cfg["shots"] = int(reps)
         with suppress_stdout():
             prog = FFT1Program(self.soccfg, cfg)
-            i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
+            _i0, _q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
-        if self.reset_mode in ("feedback", "active"):
-            herald_calib = dict(self.calib_params)
-            herald_calib["threshold"] = self.calib_params.get(
-                "ground_threshold", self.calib_params["threshold"])
-            herald = np.asarray(discriminate_shots(i0, q0, herald_calib))
-            keep = herald == 0
-            return float(np.sum(final[keep])), int(np.sum(keep))
         return float(np.sum(final)), int(final.size)
 
     def acquire(self, progress=False, plotDisp=False):
