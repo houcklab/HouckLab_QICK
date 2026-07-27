@@ -58,6 +58,17 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None, prog
     return acc / max(done, 1)
 
 
+def order_rng(cfg):
+    seed = cfg.get("point_order_seed", None) if isinstance(cfg, dict) else None
+    return np.random.default_rng(seed)
+
+
+def visit_order(n, cfg, rng):
+    randomize = (bool(cfg.get("randomize_point_order", False))
+                 if isinstance(cfg, dict) else False)
+    return rng.permutation(int(n)) if randomize else np.arange(int(n))
+
+
 def resolve_rounds(cfg, shots, default=None):
     r = cfg.get("interleave_rounds", default) if isinstance(cfg, dict) else default
     if r is None:

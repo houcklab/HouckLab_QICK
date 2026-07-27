@@ -27,6 +27,8 @@ RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
+RANDOMIZE_POINT_ORDER = True
+POINT_ORDER_SEED = None
 THERMALIZATION_US = 25.0
 PASSIVE_RESET_US = 1000.0
 
@@ -62,6 +64,8 @@ def _base_cfg(p, extra=None):
     cfg["ff_gain"] = int(FF_HOLD_GAIN)
     cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
+    cfg["randomize_point_order"] = bool(RANDOMIZE_POINT_ORDER)
+    cfg["point_order_seed"] = POINT_ORDER_SEED
     cfg["reset_mode"] = RESET_MODE
     if active_reset.uses_feedback(RESET_MODE):
         if RESET_THRESHOLD_RAW is None:

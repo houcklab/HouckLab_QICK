@@ -14,7 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    resolve_rounds, split_reps, suppress_stdout)
+    order_rng, resolve_rounds, split_reps, suppress_stdout, visit_order)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
@@ -515,13 +515,20 @@ class _T1VsFluxBase(ExperimentClass):
             print(f"[acquire] shot-interleaved: {n} points x {nz_rounds} rounds x ~{reps0} "
                   f"reps = {shots} shots/point  ->  progress counts the {total_units} "
                   f"programs (NOT shots)", flush=True)
+        attempted = np.zeros(n)
+        rng = order_rng(self.cfg)
+        orders = []
         for r, reps in enumerate(reps_per_round):
             if reps <= 0:
                 continue
-            for idx, (g, w, dp, df) in enumerate(point_specs):
+            order = visit_order(n, self.cfg, rng)
+            orders.append(order.tolist())
+            for idx in order:
+                g, w, dp, df = point_specs[idx]
                 e, k = self._run_point_counts(g, w, do_pi=dp, do_ff=df, reps=reps)
                 exc[idx] += e
                 kept[idx] += k
+                attempted[idx] += reps
                 done_units += 1
                 if start_time is not None:
                     progress_counter(done_units - 1, total_units, start_time=start_time)
@@ -529,7 +536,9 @@ class _T1VsFluxBase(ExperimentClass):
                 with np.errstate(invalid="ignore", divide="ignore"):
                     live(r, rounds, np.where(kept > 0, exc / kept, np.nan))
         self.cfg["shots"] = saved_shots
+        self.point_visit_orders = orders
         with np.errstate(invalid="ignore", divide="ignore"):
+            self.keep_fraction = np.where(attempted > 0, kept / attempted, np.nan)
             return np.where(kept > 0, exc / kept, np.nan)
 
     def _park_T1_probe(self, probe_cfg, suffix_tag):
