@@ -24,7 +24,18 @@ class ModifiedRamseyProgram(AveragerProgram):
     standard and symmetric-drive schemes; the |relative phase| between branches
     is pi either way.)
 
-    cfg["use_pi_pulse"]: if True, inserts a pi pulse in the middle.
+    TIMING CONVENTION: tau is the pulse-CENTRE-to-pulse-CENTRE precession
+    interval. QICK schedules waits between pulse EDGES, so the gap written into
+    r_wait is tau - 4*sigma (no pi) or (tau - 8*sigma)/2 per gap (echo). If the
+    pulses no longer fit inside tau, initialize() raises rather than silently
+    running at the wrong effective tau. The realized value is reported as
+    data['effective_tau_us'] next to the requested data['tau_us'].
+
+    cfg["use_pi_pulse"]: if True, inserts a pi pulse in the middle. NOTE this
+                         makes the sequence a Hahn echo, which REFOCUSES the
+                         static parity detuning df -- i.e. it deliberately
+                         destroys the parity signal. Use it only as a
+                         negative control; initialize() prints a warning.
 
     cfg["symmetric_ramsey"]: selects the drive frequency and the closing-pi/2 base
                           phase.
@@ -90,13 +101,26 @@ class ModifiedRamseyProgram(AveragerProgram):
         for delay_key in ("adc_trig_offset", "mr_relax_delay"):
             if cfg.get(delay_key, 0.0) < 0:
                 raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+        # Every qubit pulse here is a plain 4*sigma gaussian ("arb"). A
+        # flat_top-calibrated pi/pi2 gain would be silently replayed on the
+        # wrong envelope, so refuse rather than mis-rotate.
+        if cfg.get("flattop_length") is not None:
+            raise ValueError(
+                "ModifiedRamseyProgram plays gaussian 'arb' qubit pulses only, "
+                "but cfg['flattop_length'] is set "
+                f"({cfg['flattop_length']}). The pi/pi2 gains for a flat_top "
+                "pulse do not transfer to a gaussian. Set flattop_length=None "
+                "and supply arb-calibrated gains."
+            )
 
         self.q_rp = self.ch_page(cfg["qubit_ch"])
         self.r_wait = 3
-        self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
 
-        # Free user registers on the qubit page (pulse registers occupy 11-30,
-        # r_wait uses 3). Used for active-reset measurement feedback.
+        # Free user registers on the qubit page. Pulse registers are allocated
+        # from the TOP of each page downwards (asm_v1.py:610-625: regs 22-31 on
+        # a 1-manager page, 12-31 on a 2-manager page), and AveragerProgram's
+        # loop counters (rjj=14, rcount=15) plus trigger()'s output word (16)
+        # all live on page 0. Registers 3/4/5 are therefore free on any page.
         self.r_read = 4    # holds the accumulated I read back from the ADC
         self.r_thresh = 5  # holds the single-shot discrimination threshold
 
@@ -116,14 +140,31 @@ class ModifiedRamseyProgram(AveragerProgram):
         # accumulated I is NEGATIVE (the deployed tProc compares as if
         # unsigned, so negative two's-complement I reads as a huge positive).
         # Adding the same large positive constant to BOTH operands keeps them
-        # strictly positive, so signed and unsigned comparison agree. 2^24 >>
-        # any |raw I| and offset+|raw| << 2^30 (immediate sign-bit limit).
-        self.cmp_offset = 1 << 24
+        # strictly positive, so signed and unsigned comparison agree. The offset
+        # is sized from the readout window in initialize() below (it must exceed
+        # the largest |raw I| the accumulator can produce, not merely the
+        # threshold), and defaults to 0 when active reset is off.
+        self.cmp_offset = 0
 
         # Total parity-mapping evolution time. tau = 1/(2*df) for both schemes:
         # the |relative phase| accumulated between the two parity branches is pi.
+        # NOTE: tau is the PULSE-CENTRE-TO-PULSE-CENTRE precession interval, not
+        # the inter-pulse gap. The gap actually programmed into r_wait is derived
+        # from it below, after the envelope length is known.
         self.tau_us = 1.0 / (2.0 * cfg["df"])
         self.use_pi_pulse = cfg.get("use_pi_pulse", False)
+        if self.use_pi_pulse:
+            # A Hahn echo refocuses STATIC detuning -- and the parity branch
+            # splitting df IS a static detuning within a shot. The pi pulse
+            # therefore cancels exactly the phase this measurement exists to
+            # read out, so the echo branch has zero parity contrast by
+            # construction. Keep it only as a negative control.
+            print(
+                "[ModifiedRamsey] WARNING: use_pi_pulse=True inserts a Hahn "
+                "echo, which refocuses the static parity detuning df. This is "
+                "a NULL/CONTROL sequence -- expect zero parity contrast. Do "
+                "not interpret its output as a parity trace."
+            )
 
         # symmetric_ramsey: drive at the midpoint f_avg = (f_lower + f_upper)/2
         # rather than on-resonant with the upper branch. cfg["f_ge"] is passed as
@@ -140,10 +181,6 @@ class ModifiedRamseyProgram(AveragerProgram):
         base_pi2_phase_deg = 90 if self.symmetric_ramsey else 180
         flip_offset_deg = 180 if cfg.get("flip_final_pi2", False) else 0
         self.final_pi2_phase_deg = (base_pi2_phase_deg + flip_offset_deg) % 360
-
-        # If using echo, split the same total tau around the pi pulse.
-        wait_us = self.tau_us / 2.0 if self.use_pi_pulse else self.tau_us
-        self.regwi(self.q_rp, self.r_wait, self.us2cycles(wait_us))
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
@@ -217,6 +254,71 @@ class ModifiedRamseyProgram(AveragerProgram):
             cfg["sigma"] * 4,
             gen_ch=cfg["qubit_ch"]
         )
+        # Actual envelope duration after generator-clock quantization.
+        self.pulse_us = float(
+            self.cycles2us(self.pulse_qubit_length, gen_ch=cfg["qubit_ch"])
+        )
+
+        # ---- free-evolution gap -------------------------------------------
+        # QICK schedules the gap BETWEEN pulse edges: sync_all() advances the
+        # tProc reference to the END of the preceding envelope and the next
+        # pulse(t='auto') starts at that reference (asm_v1.py:895-904, 938-960).
+        # The parity phase, however, accrues over the pulse-CENTRE-to-CENTRE
+        # interval, because the two branches precess through the (mostly
+        # low-amplitude) envelope as well. Programming the raw tau as the gap
+        # therefore overshoots the pi condition by one full envelope length
+        # (4*sigma; 8*sigma with the echo), which silently kills contrast --
+        # and does so worst exactly when the doublet is best resolved, since
+        # larger df means smaller tau against a fixed 4*sigma.
+        #
+        # So: solve for the gap that puts the OUTER pi/2 centres tau apart.
+        #   no pi : centres are  gap + 4*sigma  apart      -> gap = tau - 4*sigma
+        #   echo  : centres are 2*gap + 8*sigma apart      -> gap = (tau - 8*sigma)/2
+        # In both cases centre-to-centre = n_gaps * (gap + 4*sigma).
+        n_gaps = 2 if self.use_pi_pulse else 1
+        total_pulse_span_us = n_gaps * self.pulse_us
+        wait_us = (self.tau_us - total_pulse_span_us) / n_gaps
+        if wait_us <= 0:
+            df_max = 1.0 / (2.0 * n_gaps * self.pulse_us)
+            raise ValueError(
+                f"cfg['df']={cfg['df']} MHz needs tau={self.tau_us:.4f} us, but "
+                f"the {'three' if self.use_pi_pulse else 'two'} qubit pulses "
+                f"already span {total_pulse_span_us:.4f} us "
+                f"(4*sigma = {self.pulse_us:.4f} us each). The parity phase "
+                f"condition is unreachable. At sigma={cfg['sigma']} us the "
+                f"largest usable peak separation is df < {df_max:.4f} MHz; "
+                f"either shorten cfg['sigma'] (df_max scales as 1/(8*sigma)) or "
+                "cap the accepted doublet separation via "
+                "ModifiedRamsey_params['max_sep_MHz']."
+            )
+        self.wait_us = wait_us
+        # Realized centre-to-centre interval after tProc-cycle quantization of
+        # the gap. Saved alongside the requested tau so a run can be reinterpreted.
+        self.wait_cycles = self.us2cycles(wait_us)
+        self.effective_tau_us = float(
+            n_gaps * (self.cycles2us(self.wait_cycles) + self.pulse_us)
+        )
+        self.regwi(self.q_rp, self.r_wait, self.wait_cycles)
+
+        # The pi/2 pulses must be broadband enough to rotate BOTH parity
+        # branches. A 4*sigma gaussian pi/2 has peak Rabi Omega0/2pi ~=
+        # 0.0997/sigma MHz; if the branch detuning approaches that, the
+        # off-resonant branch is under-rotated and contrast degrades on top of
+        # any timing error. Standard scheme detunes one branch by df; the
+        # symmetric scheme detunes both by df/2 (hence its bandwidth advantage).
+        rabi_pi2_mhz = 0.0997 / cfg["sigma"]
+        branch_detuning_mhz = (
+            cfg["df"] / 2.0 if self.symmetric_ramsey else cfg["df"]
+        )
+        self.drive_bandwidth_ratio = float(branch_detuning_mhz / rabi_pi2_mhz)
+        if self.drive_bandwidth_ratio > 0.2:
+            print(
+                f"[ModifiedRamsey] WARNING: branch detuning "
+                f"{branch_detuning_mhz:.4f} MHz is {self.drive_bandwidth_ratio:.2f}x "
+                f"the pi/2 Rabi rate ({rabi_pi2_mhz:.4f} MHz at sigma="
+                f"{cfg['sigma']} us). The off-resonant branch will be "
+                "under-rotated. Shorten sigma or set symmetric_ramsey=True."
+            )
 
         # The pi and pi/2 pulses share the SAME gaussian envelope shape; they
         # differ only in DAC gain, which is set per-pulse below. Define ONE
@@ -260,10 +362,32 @@ class ModifiedRamseyProgram(AveragerProgram):
             # the threshold back up by the same window length here.
             ro_norm = self.readout_window_cycles[cfg["ro_chs"][0]]
             raw_threshold = int(round(cfg["readout_threshold"] * ro_norm))
+
+            # Size the sign-safe offset from the DATA range, not the threshold.
+            # The accumulator sums ro_norm decimated samples of at most 15 bits
+            # (12-bit ADC + 3 bits of decimation gain, per the overflow note in
+            # qick_asm.declare_readout), so |raw I| <= ro_norm * 2^15. A fixed
+            # 2^24 was smaller than that for any window beyond ~0.5 us: a shot
+            # more negative than -2^24 would wrap back below the threshold and
+            # the corrective pi would fire (or not) on the wrong branch, with
+            # no error raised. The threshold guard alone could not catch it,
+            # because the threshold sits BETWEEN the blobs while individual
+            # shots sit on them.
+            self.cmp_offset = int(ro_norm) << 15
+            # Both operands must stay inside the 32-bit signed register, and the
+            # immediate must stay inside safe_regwi's 2^30 plain-regwi window.
+            if self.cmp_offset >= 1 << 30:
+                raise ValueError(
+                    f"cfg['readout_length']={cfg['readout_length']} us gives a "
+                    f"readout window of {ro_norm} cycles, whose sign-safe "
+                    f"comparison offset {self.cmp_offset} exceeds the 2^30 "
+                    "immediate limit. Shorten the readout window for active reset."
+                )
             if abs(raw_threshold) >= self.cmp_offset:
                 raise ValueError(
                     f"raw_threshold {raw_threshold} exceeds the sign-safe "
-                    f"comparison offset {self.cmp_offset}; increase cmp_offset."
+                    f"comparison offset {self.cmp_offset}; the readout is "
+                    "saturating the accumulator."
                 )
             # r_thresh holds threshold + offset; r_read gets the same offset
             # added (mathi) right after each read, before the condj.
@@ -281,6 +405,18 @@ class ModifiedRamseyProgram(AveragerProgram):
         """
         cfg = self.cfg
         ro_ch = cfg["ro_chs"][0]
+        # The tProc `read` instruction addresses a tProc INPUT channel, which is
+        # not the same namespace as the readout index. They happen to coincide on
+        # the current firmware (readouts[0]['tproc_ch'] == 0), so passing ro_ch
+        # worked -- but it would silently read the wrong buffer on any firmware
+        # where the mapping is not the identity. Resolve it explicitly.
+        tproc_in_ch = self.soccfg["readouts"][ro_ch].get("tproc_ch")
+        if tproc_in_ch is None or tproc_in_ch < 0:
+            raise RuntimeError(
+                f"readout channel {ro_ch} has no tProc input channel "
+                f"(tproc_ch={tproc_in_ch}); its accumulated value cannot be read "
+                "back by the tProc, so active reset is impossible on it."
+            )
 
         for i in range(self.reset_cycles):
             done_label = "RESET_DONE_%d" % i
@@ -296,7 +432,7 @@ class ModifiedRamseyProgram(AveragerProgram):
             )
 
             # 2) Read the accumulated in-phase value (lower = I) into r_read.
-            self.read(ro_ch, self.q_rp, "lower", self.r_read)
+            self.read(tproc_in_ch, self.q_rp, "lower", self.r_read)
 
             # Offset I into strictly positive territory so the comparison is
             # sign-safe (see cmp_offset in initialize()); r_thresh already
@@ -332,8 +468,10 @@ class ModifiedRamseyProgram(AveragerProgram):
         if self.use_active_reset:
             self.active_reset_to_g()
 
-        # First pi/2 at phase 0.
-        self.regwi(self.q_rp, self.r_phase, 0)
+        # First pi/2 at phase 0. (No explicit phase-register write is needed:
+        # set_pulse_registers rewrites it, and the generator DDS is free-running
+        # and phase-coherent across the wait, so phase=0 here and phase=180 on
+        # the closing pulse are exact inverses independent of tau.)
         self.set_pulse_registers(
             ch=cfg["qubit_ch"],
             style="arb",
@@ -470,12 +608,16 @@ class ModifiedRamsey(ExperimentClass):
             'data': {
                 'shots_i': shots_i,
                 'shots_q': shots_q,
+                # Requested centre-to-centre precession time.
                 'tau_us': 1.0 / (2.0 * self.cfg["df"]),
-                'wait_us': (
-                    1.0 / (4.0 * self.cfg["df"])
-                    if self.cfg.get("use_pi_pulse", False)
-                    else 1.0 / (2.0 * self.cfg["df"])
-                ),
+                # Centre-to-centre time actually realized after the edge-gap
+                # correction and tProc-cycle quantization; this is the number
+                # the parity phase pi condition is set by.
+                'effective_tau_us': float(prog.effective_tau_us),
+                # Programmed inter-pulse gap (per gap), i.e. what r_wait holds.
+                'wait_us': float(prog.wait_us),
+                'qubit_pulse_us': float(prog.pulse_us),
+                'drive_bandwidth_ratio': float(prog.drive_bandwidth_ratio),
                 'f_ge': self.cfg["f_ge"],
                 'df': self.cfg["df"],
                 'use_pi_pulse': self.cfg.get("use_pi_pulse", False),
@@ -509,6 +651,7 @@ class ModifiedRamsey(ExperimentClass):
         shots_i = np.asarray(data['data']['shots_i'])
         shots_q = np.asarray(data['data']['shots_q'])
         tau_us = data['data']['tau_us']
+        eff_tau_us = data['data'].get('effective_tau_us', tau_us)
         wait_us = data['data']['wait_us']
         df = data['data']['df']
         use_pi_pulse = data['data'].get('use_pi_pulse', False)
@@ -525,7 +668,8 @@ class ModifiedRamsey(ExperimentClass):
         plt.axis('equal')
         plt.title(
             self.titlename
-            + f"\n{seq_label}, tau={tau_us:.4f} us, wait={wait_us:.4f} us, df={df:.4f} MHz"
+            + f"\n{seq_label}, tau={tau_us:.4f} us (realized {eff_tau_us:.4f} us),"
+            + f" gap={wait_us:.4f} us, df={df:.4f} MHz"
         )
         plt.tight_layout()
         plt.savefig(self.iname[:-4] + '_IQ.png')
