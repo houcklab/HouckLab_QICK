@@ -503,10 +503,16 @@ class _T1VsFluxBase(ExperimentClass):
             return np.nan
         return float(exc / kept)
 
-    def _interleaved_populations(self, point_specs, start_time=None, live=None):
+    def _interleaved_populations(self, point_specs, start_time=None, live=None,
+                                group_size=1):
         shots = int(self.cfg.get("shots", self.shots))
         rounds = resolve_rounds(self.cfg, shots, default=self.cfg.get("t1_rounds"))
         n = len(point_specs)
+        group_size = max(int(group_size), 1)
+        if n % group_size:
+            raise ValueError(f"point_specs length {n} is not a multiple of "
+                             f"group_size {group_size}")
+        n_groups = n // group_size
         exc = np.zeros(n)
         kept = np.zeros(n)
         saved_shots = self.cfg.get("shots")
@@ -525,17 +531,19 @@ class _T1VsFluxBase(ExperimentClass):
         for r, reps in enumerate(reps_per_round):
             if reps <= 0:
                 continue
-            order = visit_order(n, self.cfg, rng)
+            order = visit_order(n_groups, self.cfg, rng)
             orders.append(order.tolist())
-            for idx in order:
-                g, w, dp, df = point_specs[idx]
-                e, k = self._run_point_counts(g, w, do_pi=dp, do_ff=df, reps=reps)
-                exc[idx] += e
-                kept[idx] += k
-                attempted[idx] += reps
-                done_units += 1
-                if start_time is not None:
-                    progress_counter(done_units - 1, total_units, start_time=start_time)
+            for gi in order:
+                for idx in range(gi * group_size, (gi + 1) * group_size):
+                    g, w, dp, df = point_specs[idx]
+                    e, k = self._run_point_counts(g, w, do_pi=dp, do_ff=df, reps=reps)
+                    exc[idx] += e
+                    kept[idx] += k
+                    attempted[idx] += reps
+                    done_units += 1
+                    if start_time is not None:
+                        progress_counter(done_units - 1, total_units,
+                                         start_time=start_time)
             if live is not None:
                 with np.errstate(invalid="ignore", divide="ignore"):
                     live(r, rounds, np.where(kept > 0, exc / kept, np.nan))
@@ -601,7 +609,7 @@ class T13PointVsFlux(_T1VsFluxBase):
             specs.append((self.park_voltage, 0.0, False, False))
             specs.append((self.park_voltage, 0.0, True, False))
             specs.append((float(dc), Ts_us, True, True))
-        pe = self._interleaved_populations(specs, start_time=start_time)
+        pe = self._interleaved_populations(specs, start_time=start_time, group_size=3)
         P0 = pe[0::3]
         P1 = pe[1::3]
         Ps = pe[2::3]

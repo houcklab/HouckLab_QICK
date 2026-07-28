@@ -26,7 +26,7 @@ RUN_PREVIEW = True
 RUN_FULL = False
 
 PREVIEW_DC_POINTS = 6
-PREVIEW_SHOTS = 500
+PREVIEW_SHOTS = 1000
 
 BASELINE_DC_OFFSET = 0
 INTERLEAVE_ROUNDS = 10
@@ -54,12 +54,24 @@ P6_3PT_T1 = {
     "dc_min": 0,
     "dc_max": 10000,
     "freq_step_mhz": 1,
-    "Ts_us": 100.0,
+    "Ts_us": 60.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     "reset_mode": "feedback",
     "reset_max_iters": 3,
 }
+
+
+ASSUMED_CONTRAST = 0.54
+
+
+def resolvable_t1_window(Ts_us, shots, contrast=None, n_sigma=3.0):
+    contrast = ASSUMED_CONTRAST if contrast is None else contrast
+    sigma_p = np.sqrt(0.25 / max(int(shots), 1))
+    sigma_pe = np.sqrt(2.0) * sigma_p / max(contrast, 1e-9)
+    pe_lo = min(max(n_sigma * sigma_pe, 1e-6), 0.499)
+    pe_hi = 1.0 - pe_lo
+    return -Ts_us / np.log(pe_lo), -Ts_us / np.log(pe_hi)
 
 
 def banner(text):
@@ -112,6 +124,12 @@ def describe_schedule(dc_vec):
     print(f"  masks: contrast < {P6_3PT_T1['min_ref_contrast']} -> NaN, "
           f"T1 > {P6_3PT_T1['max_plot_t1_multiple']:g}xTs = "
           f"{P6_3PT_T1['max_plot_t1_multiple'] * Ts:g} us -> NaN")
+    for shots, tag in ((PREVIEW_SHOTS, "preview"), (P6_3PT_T1["shots"], "full")):
+        lo, hi = resolvable_t1_window(Ts, shots)
+        print(f"  RESOLVABLE T1 WINDOW ({tag}, {shots} shots, assumed contrast "
+              f"{ASSUMED_CONTRAST:g}): {lo:.0f} .. {hi:.0f} us")
+    print(f"       (T1 below the floor reads pe<=0 and gets masked; above the ceiling")
+    print(f"        pe->1 and T1 is unconstrained.  Pick Ts near the T1 you expect.)")
     settle = ff_pulse.flux_settle_us(BaseConfig)
     ramp = BaseConfig.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US)
     print(f"\n  flux pulse: ramp {ramp:g} us, settle {settle:g} us "
