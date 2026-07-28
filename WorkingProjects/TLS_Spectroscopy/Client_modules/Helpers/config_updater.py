@@ -9,53 +9,30 @@ import shutil
 import numpy as np
 
 
-OVERRIDE_BASENAME = "local_overrides.py"
-OVERRIDE_DICT = "OVERRIDES"
-_SKELETON = "OVERRIDES = {\n}\n\nouterFolder = None\n"
-
-
-def _initialize_dir():
+def config_path():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib import initialize
     p = initialize.__file__
     if p.endswith((".pyc", ".pyo")):
         p = p[:-1]
-    return os.path.dirname(os.path.abspath(p))
+    return os.path.abspath(p)
 
 
-def config_path():
-    return os.path.join(_initialize_dir(), OVERRIDE_BASENAME)
-
-
-def _ensure_override_file(path):
-    if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            f.write(_SKELETON)
-
-
-def _dict_node(tree, name):
+def _baseconfig_node(tree):
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == name:
+                if isinstance(t, ast.Name) and t.id == "BaseConfig":
                     if not isinstance(node.value, ast.Dict):
-                        raise RuntimeError("%s is not a dict literal" % name)
+                        raise RuntimeError("BaseConfig is not a dict literal")
                     return node
-    raise RuntimeError("%s assignment not found" % name)
+    raise RuntimeError("BaseConfig assignment not found")
 
 
-def _entry_indent(lines, lo, hi):
-    for i in range(lo - 1, hi):
-        m = re.match(r'^(\s*)"', lines[i])
-        if m:
-            return m.group(1)
-    return "    "
-
-
-def read_baseconfig(path=None, name=OVERRIDE_DICT):
+def read_baseconfig(path=None):
     path = path or config_path()
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read())
-    node = _dict_node(tree, name)
+    node = _baseconfig_node(tree)
     out = {}
     for k, v in zip(node.value.keys, node.value.values):
         if isinstance(k, ast.Constant) and isinstance(k.value, str):
@@ -94,7 +71,6 @@ def _same_literal_value(current, expected):
 def update_baseconfig(updates, path=None, backup=True, expected=None,
                       expected_source_hash=None):
     path = path or config_path()
-    _ensure_override_file(path)
     with open(path, "rb") as f:
         raw_src = f.read()
     src = raw_src.decode("utf-8")
@@ -102,11 +78,11 @@ def update_baseconfig(updates, path=None, backup=True, expected=None,
         live_hash = hashlib.sha256(raw_src).hexdigest()
         if live_hash != str(expected_source_hash):
             raise RuntimeError(
-                "compare-and-swap failed: the override source changed during "
-                "calibration; refusing to write values onto an unmeasured "
+                "compare-and-swap failed: the complete BaseConfig source changed "
+                "during calibration; refusing to write values onto an unmeasured "
                 "physical configuration")
     tree = ast.parse(src)
-    node = _dict_node(tree, OVERRIDE_DICT)
+    node = _baseconfig_node(tree)
     lo, hi = node.lineno, node.end_lineno
     lines = src.splitlines(keepends=True)
 
@@ -120,44 +96,29 @@ def update_baseconfig(updates, path=None, backup=True, expected=None,
     for key, wanted in (expected or {}).items():
         if key not in current_vals:
             raise RuntimeError(
-                "compare-and-swap failed: %r is not a literal in the live override "
-                "table" % key)
+                "compare-and-swap failed: %r is not a literal in live BaseConfig" % key)
         if not _same_literal_value(current_vals[key], wanted):
             raise RuntimeError(
-                "compare-and-swap failed: override %r changed during calibration "
+                "compare-and-swap failed: BaseConfig[%r] changed during calibration "
                 "(%r at start, %r now); refusing to write a hybrid tuple"
                 % (key, wanted, current_vals[key]))
 
     changed = {}
-    inserts = {}
     for key, val in updates.items():
         pat = re.compile(r'^(\s*"' + re.escape(key) + r'"\s*:\s*)([^,#\n]+?)(\s*,)')
         hits = [i for i in range(lo - 1, hi) if pat.match(lines[i])]
-        if len(hits) > 1:
-            raise RuntimeError("key %r matched %d lines in overrides (expected <= 1)"
+        if len(hits) != 1:
+            raise RuntimeError("key %r matched %d lines in BaseConfig (expected exactly 1)"
                                % (key, len(hits)))
-        if len(hits) == 1:
-            i = hits[0]
-            m = pat.match(lines[i])
-            new_val = _fmt(val)
-            lines[i] = pat.sub(lambda mm: mm.group(1) + new_val + mm.group(3),
-                               lines[i], count=1)
-            changed[key] = (m.group(2).strip(), new_val)
-        else:
-            inserts[key] = val
-    if inserts:
-        indent = _entry_indent(lines, lo, hi)
-        close_idx = hi - 1
-        block = []
-        for key, val in inserts.items():
-            new_val = _fmt(val)
-            block.append('%s"%s": %s,\n' % (indent, key, new_val))
-            changed[key] = (None, new_val)
-        lines[close_idx:close_idx] = block
+        i = hits[0]
+        m = pat.match(lines[i])
+        new_val = _fmt(val)
+        lines[i] = pat.sub(lambda mm: mm.group(1) + new_val + mm.group(3), lines[i], count=1)
+        changed[key] = (m.group(2).strip(), new_val)
 
     new_src = "".join(lines)
     new_vals = {}
-    new_node = _dict_node(ast.parse(new_src), OVERRIDE_DICT)
+    new_node = _baseconfig_node(ast.parse(new_src))
     for k, v in zip(new_node.value.keys, new_node.value.values):
         if isinstance(k, ast.Constant):
             try:
@@ -236,55 +197,6 @@ def prune_backups(path=None, keep=10):
         except Exception:
             pass
     return len(baks)
-
-
-def _lit(v):
-    if isinstance(v, bool):
-        return repr(v)
-    if isinstance(v, (int, np.integer)):
-        return str(int(v))
-    if isinstance(v, (float, np.floating)):
-        return repr(float(v))
-    return repr(v)
-
-
-def _read_module_str(path, name):
-    with open(path, encoding="utf-8") as f:
-        tree = ast.parse(f.read())
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == name:
-                    try:
-                        val = ast.literal_eval(node.value)
-                    except (ValueError, TypeError):
-                        return None
-                    return val if isinstance(val, str) else None
-    return None
-
-
-def _write_overrides(dest, values, outer_folder=None):
-    lines = ["OVERRIDES = {\n"]
-    for k in sorted(values):
-        lines.append('    "%s": %s,\n' % (k, _lit(values[k])))
-    lines.append("}\n\n")
-    folder = repr(outer_folder) if isinstance(outer_folder, str) and outer_folder else "None"
-    lines.append("outerFolder = %s\n" % folder)
-    tmp = dest + ".tmp_write"
-    with open(tmp, "w", encoding="utf-8", newline="") as f:
-        f.writelines(lines)
-    os.replace(tmp, dest)
-    return dest
-
-
-def bootstrap_local_overrides(source_path=None, dest_path=None, keys=None):
-    dest = dest_path or config_path()
-    src = source_path or os.path.join(_initialize_dir(), "initialize.py")
-    values = read_baseconfig(path=src, name="BaseConfig")
-    if keys is not None:
-        values = {k: values[k] for k in keys if k in values}
-    folder = _read_module_str(src, "outerFolder")
-    return _write_overrides(dest, values, folder)
 
 
 def last_ramsey_sign(qubit=None, path=None):

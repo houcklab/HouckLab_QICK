@@ -63,21 +63,3 @@ FF_PARK_GAIN = 0
 FF_STEP_TARGET_GAIN = 8000
 
 outerFolder = "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC"
-
-
-def _apply_local_overrides():
-    global outerFolder
-    try:
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib import (
-            local_overrides as _lo)
-    except Exception:
-        return
-    ov = getattr(_lo, "OVERRIDES", None)
-    if isinstance(ov, dict):
-        BaseConfig.update(ov)
-    folder = getattr(_lo, "outerFolder", None)
-    if isinstance(folder, str) and folder:
-        outerFolder = folder
-
-
-_apply_local_overrides()
