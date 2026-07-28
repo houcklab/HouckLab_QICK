@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    order_rng, resolve_rounds, split_reps, suppress_stdout, visit_order)
+    acquire_with_retry, order_rng, resolve_rounds, split_reps, suppress_stdout,
+    visit_order)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import FFT1Program
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
@@ -147,7 +148,7 @@ class T1(_CoherenceBase):
             cfg["shots"] = int(reps)
         with suppress_stdout():
             prog = FFT1Program(self.soccfg, cfg)
-            i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
+            i0, q0, i1, q1 = acquire_with_retry(prog, self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)

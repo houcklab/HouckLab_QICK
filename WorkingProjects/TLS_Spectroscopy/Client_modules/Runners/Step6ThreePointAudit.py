@@ -34,7 +34,7 @@ FULLCURVE_T_MAX_US = 800.0
 FULLCURVE_WALL_CLOCK_MIN = 5.0
 
 PREVIEW_DC_POINTS = 6
-PREVIEW_REPEATS = 3
+PREVIEW_REPEATS = 2
 PREVIEW_SHOTS = 1000
 
 BASELINE_DC_OFFSET = 0
@@ -275,7 +275,8 @@ def report_stability(runs, dc_vec, f_ghz):
     print("  using the full T1 curve, which sets its own time axis per flux point.")
 
 
-def run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec):
+def run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec,
+                   threept_runs=None):
     banner(f"STAGE G -- FULL T1 CURVE vs flux, wall-clock {FULLCURVE_WALL_CLOCK_MIN:g} min")
     pick = np.unique(np.linspace(0, len(dc_vec_full) - 1,
                                  FULLCURVE_DC_POINTS).astype(int))
@@ -317,6 +318,34 @@ def run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec):
         plt.close("all"); gc.collect()
         if time.time() >= deadline:
             break
+    if threept_runs:
+        banner("ACID TEST -- 3-point vs full curve on the SAME DC points")
+        T3 = np.nanmean(np.vstack([
+            _compute_3pt_t1(np.asarray(e.data["P0"]), np.asarray(e.data["P1"]),
+                            np.asarray(e.data["Ps"]),
+                            e.data.get("Ts_effective_ns", e.Ts_ns),
+                            min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
+                            max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"]
+                            )["T1_3pt_us_raw"] for e in threept_runs]), axis=0)
+        TF = np.nanmean(np.vstack([np.asarray(e.data["T1_fit_us"], dtype=float)
+                                   for e in scans]), axis=0)
+        EF = np.nanmean(np.vstack([np.asarray(e.data["T1_fit_err_us"], dtype=float)
+                                   for e in scans]), axis=0)
+        matched = threept_runs[0].data.get("three_point_matched_refs", False)
+        print(f"  3-point references: {'FLUX-MATCHED' if matched else 'LEGACY (park)'}\n")
+        print(f"  {'dc':>8s} {'f(GHz)':>9s} {'3-point':>9s} {'full curve':>14s} "
+              f"{'ratio':>7s} | agree?")
+        for j, d in enumerate(dc):
+            r = T3[j] / TF[j] if np.isfinite(T3[j]) and TF[j] else np.nan
+            ok = "yes" if np.isfinite(r) and 0.75 <= r <= 1.33 else "NO"
+            print(f"  {d:>8.0f} {fg[j]:>9.4f} {T3[j]:>9.1f} {TF[j]:>9.1f}+/-{EF[j]:<4.0f} "
+                  f"{r:>7.2f} | {ok}")
+        good = np.isfinite(T3 / TF)
+        if good.any():
+            print(f"\n  mean ratio 3-point/full-curve = {np.nanmean(T3[good]/TF[good]):.2f}")
+            print(f"  (1.00 means the fast 3-point method is unbiased and you can use it")
+            print(f"   for the map; ~0.5 means the references are still not matched.)")
+
     banner("FULL-CURVE TIMING AND STABILITY")
     print(f"  scans completed: {len(scans)} in {sum(durations):.0f} s "
           f"(budget {FULLCURVE_WALL_CLOCK_MIN * 60:.0f} s)")
@@ -378,6 +407,7 @@ def main():
             print("  WARNING: readout fidelity below 0.75; 3-point contrast will suffer.")
 
     rec = None
+    preview_runs = None
     if RUN_RESET_PROBE and active_reset.uses_feedback(P6_3PT_T1["reset_mode"]):
         banner("STAGE E -- active-reset probe and end-to-end gate")
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
@@ -415,6 +445,7 @@ def main():
             runs.append(exp)
             plt.close("all"); gc.collect()
         report_stability(runs, dc_prev, f_prev)
+        preview_runs = runs
 
     if RUN_FULL:
         banner("STAGE G -- FULL 3-point sweep")
@@ -432,7 +463,8 @@ def main():
         report_points(exp, dc_vec_full, f_ghz_full)
 
     if RUN_FULLCURVE:
-        run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec)
+        run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec,
+                       threept_runs=preview_runs)
 
     banner("audit complete -- paste the whole log back")
 

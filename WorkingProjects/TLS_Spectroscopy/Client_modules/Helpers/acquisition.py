@@ -58,6 +58,32 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None, prog
     return acc / max(done, 1)
 
 
+def drain_streamer(soc):
+    try:
+        soc.poll_data(totaltime=-1, timeout=0.05)
+    except Exception:
+        pass
+
+
+def acquire_with_retry(prog, soc, attempts=3, **kwargs):
+    last = None
+    for attempt in range(int(attempts)):
+        try:
+            return prog.acquire(soc, **kwargs)
+        except ValueError as exc:
+            if "broadcast" not in str(exc):
+                raise
+            last = exc
+            drain_streamer(soc)
+            print(f"[acquire] streamer returned stale points "
+                  f"({str(exc).split('shape')[-1].strip()}); drained and retrying "
+                  f"({attempt + 1}/{int(attempts)})", flush=True)
+    raise RuntimeError(
+        "readout streamer kept returning more points than the program expects, even "
+        "after draining.  This is a qick streaming-buffer desync, not a config error; "
+        "restarting the qick server on the board clears it.") from last
+
+
 def order_rng(cfg):
     seed = cfg.get("point_order_seed", None) if isinstance(cfg, dict) else None
     return np.random.default_rng(seed)

@@ -14,7 +14,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    order_rng, resolve_rounds, split_reps, suppress_stdout, visit_order)
+    acquire_with_retry, order_rng, resolve_rounds, split_reps, suppress_stdout,
+    visit_order)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
@@ -490,7 +491,7 @@ class _T1VsFluxBase(ExperimentClass):
             cfg["shots"] = int(reps)
         with suppress_stdout():
             prog = FFT1Program(self.soccfg, cfg)
-            i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
+            i0, q0, i1, q1 = acquire_with_retry(prog, self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)
@@ -603,18 +604,40 @@ class T13PointVsFlux(_T1VsFluxBase):
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         dc_vec = self.dc_vec
         Ts_us = self.Ts_ns / 1e3
+        matched = bool(self.cfg.get("three_point_matched_refs", True))
+        t_ref_us = float(self.cfg.get("three_point_ref_hold_us", 1.0))
+        if matched and not (0.0 < t_ref_us < Ts_us):
+            raise ValueError(f"three_point_ref_hold_us={t_ref_us} must be >0 and "
+                             f"< Ts={Ts_us}")
+        Ts_eff_ns = (self.Ts_ns - t_ref_us * 1e3) if matched else self.Ts_ns
+        if matched:
+            print(f"[3pt] flux-matched references: P0/P1 take the SAME flux excursion as "
+                  f"Ps (hold {t_ref_us:g}us),")
+            print(f"      so the reset residual cancels.  effective decay window = "
+                  f"Ts - t_ref = {Ts_eff_ns / 1e3:g} us")
+        else:
+            print(f"[3pt] LEGACY references: P0/P1 measured at park with no flux pulse. "
+                  f"Any reset residual")
+            print(f"      that the flux excursion would have removed biases T1 low.")
         start_time = time.time()
         specs = []
         for dc in dc_vec:
-            specs.append((self.park_voltage, 0.0, False, False))
-            specs.append((self.park_voltage, 0.0, True, False))
+            if matched:
+                specs.append((float(dc), t_ref_us, False, True))
+                specs.append((float(dc), t_ref_us, True, True))
+            else:
+                specs.append((self.park_voltage, 0.0, False, False))
+                specs.append((self.park_voltage, 0.0, True, False))
             specs.append((float(dc), Ts_us, True, True))
         pe = self._interleaved_populations(specs, start_time=start_time, group_size=3)
         P0 = pe[0::3]
         P1 = pe[1::3]
         Ps = pe[2::3]
+        self.data["three_point_matched_refs"] = matched
+        self.data["three_point_ref_hold_us"] = t_ref_us if matched else 0.0
+        self.data["Ts_effective_ns"] = float(Ts_eff_ns)
 
-        est = _compute_3pt_t1(P0, P1, Ps, self.Ts_ns,
+        est = _compute_3pt_t1(P0, P1, Ps, Ts_eff_ns,
                               min_ref_contrast=self.min_ref_contrast,
                               max_t1_multiple=self.max_plot_t1_multiple)
         inv = _safe_inverse_t1_us(est["T1_3pt_us_plot"])
