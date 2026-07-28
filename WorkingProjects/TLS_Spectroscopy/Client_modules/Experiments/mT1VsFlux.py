@@ -373,8 +373,12 @@ class FFT1Program(AveragerProgram):
         set_readout_pulse(self, read_freq)
 
         if cfg.get("do_ff", True):
+            park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+            stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+            self.ff_settle_us = (float(cfg.get("flux_settle_time", 100)) / 1000.0
+                                 if stepping else 0.0)
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
-                self, hold_us=cfg["ff_hold"],
+                self, hold_us=float(cfg["ff_hold"]) + self.ff_settle_us,
                 ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
                 ramp_us=cfg.get("ff_ramp_length", 0.02), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
