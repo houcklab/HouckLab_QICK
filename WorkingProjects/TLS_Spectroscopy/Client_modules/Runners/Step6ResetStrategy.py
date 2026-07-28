@@ -13,6 +13,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetPro
     ActiveResetProbe)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import T13PointVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, flux_fit as fx
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 
 QUBIT = "q4"
 
@@ -104,7 +105,7 @@ def summarize(exp):
             np.asarray(d["Ps"], dtype=float))
 
 
-def main():
+def run():
     soc, soccfg = makeProxy()
 
     banner("STEP 6 RESET STRATEGY -- what to do for a 2-3 day scan")
@@ -274,6 +275,11 @@ def main():
     print(f"    A loop that will not converge is not, and that is what is now tested.")
 
     banner("done -- paste the whole log back")
+
+
+def main():
+    with tee_log.tee("Step6ResetStrategy", folder=outerFolder):
+        run()
 
 
 if __name__ == "__main__":

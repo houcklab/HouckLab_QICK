@@ -4,12 +4,13 @@ import numpy as np
 from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
     ReadProbeProgram, ResetCheckProgram,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     set_readout_pulse, readout_drive_length_us,
 )
@@ -175,7 +176,7 @@ def stat(v):
     return float(np.mean(v)), float(np.std(v) / max(1.0, np.sqrt(v.size - 1)))
 
 
-def main():
+def run():
     soc, soccfg = makeProxy()
     cfg = dict(BaseConfig)
     cfg["qubit_gain"] = int(cfg["qubit_pi_gain"])
@@ -356,6 +357,11 @@ def main():
     print(f"  after seeing these numbers -- not before.")
 
     banner("done -- paste the whole log back")
+
+
+def main():
+    with tee_log.tee("ResetDelayAudit", folder=outerFolder):
+        run()
 
 
 if __name__ == "__main__":

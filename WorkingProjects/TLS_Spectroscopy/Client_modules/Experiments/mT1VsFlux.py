@@ -629,7 +629,8 @@ class T13PointVsFlux(_T1VsFluxBase):
                 specs.append((self.park_voltage, 0.0, False, False))
                 specs.append((self.park_voltage, 0.0, True, False))
             specs.append((float(dc), Ts_us, True, True))
-        pe = self._interleaved_populations(specs, start_time=start_time, group_size=3)
+        pe = self._interleaved_populations(specs, group_size=3,
+                                           start_time=start_time if progress else None)
         P0 = pe[0::3]
         P1 = pe[1::3]
         Ps = pe[2::3]
@@ -776,7 +777,8 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                 specs.append((float(dc), float(t), True, True))
                 index_map.append((i, k))
                 valid[i, k] = 1
-        pe = self._interleaved_populations(specs, start_time=start_time)
+        pe = self._interleaved_populations(
+            specs, start_time=start_time if progress else None)
         for (i, k), val in zip(index_map, pe):
             ss[i, k] = val
         self._finish_acquire(ss, valid, t_us)
