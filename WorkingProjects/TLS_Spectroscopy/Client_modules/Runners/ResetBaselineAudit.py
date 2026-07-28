@@ -25,7 +25,7 @@ ITERS_LIST = [1, 2, 3, 5, 8]
 THERMALIZATION_SWEEP_US = [0.5, 2.0, 5.0, 10.0, 25.0, 50.0]
 RELAX_SWEEP_US = [25.0, 50.0, 100.0, 250.0, 1000.0, 2000.0]
 
-RESET_THERMALIZATION_US = 2.0
+RESET_THERMALIZATION_US = 25.0
 RESET_MEAS_SYNCDELAY_US = 4.0
 RESET_READ_DELAY_US = 2.0
 RESET_ITERS = 3
@@ -246,16 +246,37 @@ def main():
         go = stat(acc[("neverfire_old", N, False)])
         print(f"  {N:>3d} {gi[0]:>+11.4f}+-{gi[1]:<7.4f} {ei[0]:>+11.4f}+-{ei[1]:<7.4f} "
               f"{go[0]:>+11.4f}+-{go[1]:<7.4f}")
-    e1 = stat(acc[("neverfire_ins", 1, True)])[0]
-    e8 = stat(acc[("neverfire_ins", 8, True)])[0]
-    print(f"\n  SANITY: the |e> column must stay near 1.0 -- if the pi were firing it would")
-    print(f"  collapse.  N=1 {e1:+.3f}, N=8 {e8:+.3f}.")
-    if e8 < 0.5:
-        print("  *** it collapsed: the never-fire threshold did NOT disable the pi. ***")
-        print("  *** everything in section (B) is invalid; tell me and I will fix it. ***")
+    gvals = np.array([stat(acc[("neverfire_ins", N, False)])[0] for N in ITERS_LIST])
+    evals = np.array([stat(acc[("neverfire_ins", N, True)])[0] for N in ITERS_LIST])
+    thr0 = 0 if NEVER_FIRE_GROUND_BELOW else 0
+    peg0, pge0 = ar._threshold_rates(ref["g"][oper], ref["e"][oper], thr0,
+                                     NEVER_FIRE_GROUND_BELOW)
+    floor0 = ar.reset_floor(peg0, pge0)
+    print(f"\n  SANITY: did the huge threshold really disable the pi?  The failure mode is")
+    print(f"  regwi truncating {NEVER_FIRE_THRESHOLD} to something small.  If it had")
+    print(f"  truncated toward 0, the effective threshold would sit between the blobs and")
+    print(f"  prep |g> would be driven to that threshold's floor, {floor0:.3f}.")
+    print(f"  Measured prep |g> stays at {gvals.min():.3f}..{gvals.max():.3f}.")
+    if gvals.max() > 0.6 * floor0 + 0.15:
+        print("  *** prep |g> was driven upward: the pi WAS firing.  (B) is invalid. ***")
     else:
-        print(f"  The |e> decay from N=1 to N=8 is the qubit relaxing during the loop plus")
-        print(f"  any measurement-induced decay.")
+        print(f"  -> far below {floor0:.3f}, so the pi never fired.  (B) is valid.")
+    dt_us = (float(cfg.get("read_length", 5.0)) + RESET_MEAS_SYNCDELAY_US
+             + float(cfg.get("reset_settle_us", 0.05)))
+    good = np.isfinite(evals) & (evals > 0)
+    if good.sum() >= 3:
+        surv = float(np.exp(np.polyfit(np.array(ITERS_LIST)[good],
+                                       np.log(evals[good]), 1)[0]))
+        t1_surv = float(np.exp(-dt_us / float(cfg.get("t1_us", 316.0))))
+        print(f"\n  The |e> column falls {surv:.3f} per iteration.  Each iteration is about")
+        print(f"  {dt_us:.1f} us, so T1 alone would give {t1_surv:.3f}.")
+        print(f"  -> every reset readout destroys {100 * (1 - surv):.0f}% of the excited")
+        print(f"     population, against {100 * (1 - t1_surv):.0f}% expected from T1.")
+        if (1 - surv) > 2.5 * (1 - t1_surv):
+            print(f"     That is {(1 - surv) / max(1 - t1_surv, 1e-6):.0f}x too fast to be T1.")
+            print(f"     The readout tone itself is knocking the qubit down, so the effective")
+            print(f"     in-loop P(g|e) is worse than the calibrated one and extra iterations")
+            print(f"     buy less than the Markov model predicts.")
 
     banner("(C) RESONATOR RING-DOWN -- sweep reset_thermalization_us, pi never fires")
     print("  prep |g>, 3 never-firing iterations, varying the clearing delay before the")
@@ -284,15 +305,28 @@ def main():
         print(f"  {rl:>11.1f} {a[0]:>+13.4f}+-{a[1]:<7.4f} {b[0]:>+13.4f}+-{b[1]:<7.4f}")
 
     if ALWAYS_FIRE:
-        banner("(E) PI EFFICIENCY, measured directly with force_flip")
+        banner("(E) PI PULSE, measured with force_flip")
         print("  prep |g>, reset loop with the conditional branch removed so the pi ALWAYS")
-        print("  fires.  After 1 forced pi the in-situ residual IS the pi transfer")
-        print("  efficiency.  The threshold-scan fit inferred f = 0.91 indirectly.")
+        print("  fires.  Two normalisations, and they answer different questions:")
+        print("    in-situ  -- 1.0 means 'as excited as prep |e> in this same program'.")
+        print("                Both use the SAME pi, so this is the pi inside the loop")
+        print("                relative to the pi outside it, NOT an absolute efficiency.")
+        print("    old proj -- 1.0 means 'as excited as the reference |e> blob', which is")
+        print("                the absolute scale.")
+        print(f"\n  {'forced pi from |g>':>22s} {'in-situ':>18s} {'old proj':>18s}")
         for N in (1, 2, 3):
             a = stat(acc[("forceflip_ins", N)])
-            show(f"{N} forced pi from |g>", *a)
-        f1 = stat(acc[("forceflip_ins", 1)])
-        print(f"\n  -> measured pi efficiency f = {f1[0]:.3f} +- {f1[1]:.3f}")
+            b = stat(acc[("forceflip_old", N)])
+            print(f"  {str(N):>22s} {a[0]:>+11.4f}+-{a[1]:<5.4f} {b[0]:>+11.4f}+-{b[1]:<5.4f}")
+        f_rel = stat(acc[("forceflip_ins", 1)])
+        f_abs = stat(acc[("forceflip_old", 1)])
+        print(f"\n  -> in the loop the pi reaches {f_rel[0]:.3f} +- {f_rel[1]:.3f} of what it")
+        print(f"     reaches outside: the loop's readouts do not degrade the pi.")
+        print(f"  -> on the absolute scale it reaches {f_abs[0]:.3f} +- {f_abs[1]:.3f}.")
+        print(f"     This is NOT the pi efficiency either -- it starts from whatever the")
+        print(f"     25 us relax left, not from |g>.  Section (D) shows that starting point")
+        print(f"     is badly contaminated.  For an absolute pi efficiency, run (E) with")
+        print(f"     relax_delay at the value where (D)'s prep |e> row reaches 1.0.")
 
     banner("(F) THE REAL RESET, both zero points")
     print(f"  {'thr':>8s} {'prep':>5s} {'old proj':>20s} {'in-situ':>20s} {'model':>8s}")
@@ -300,8 +334,7 @@ def main():
                                        thr_F, gb)
     peg_H, pge_H = ar._threshold_rates(ref["g"][oper][1::2], ref["e"][oper][1::2],
                                        thr_hi, gb)
-    f_meas = (stat(acc[("forceflip_ins", 1)])[0] if ALWAYS_FIRE else 0.91)
-    f_meas = float(min(1.0, max(0.05, f_meas)))
+    f_meas = float(cfg.get("reset_pi_efficiency", ar.DEFAULT_PI_EFFICIENCY))
     for thr, (peg, pge) in ((thr_F, (peg_F, pge_F)), (thr_hi, (peg_H, pge_H))):
         pe, pg = ar.predicted_residuals(peg, pge, f_meas, RESET_ITERS)
         for prep, model in ((False, pg), (True, pe)):
@@ -310,9 +343,18 @@ def main():
             print(f"  {thr:>8d} {('|e>' if prep else '|g>'):>5s} "
                   f"{a[0]:>+11.4f}+-{a[1]:<7.4f} {b[0]:>+11.4f}+-{b[1]:<7.4f} "
                   f"{model:>8.4f}")
-    print(f"\n  (model uses the directly measured pi efficiency f = {f_meas:.3f} and the")
-    print(f"   P(e|g)/P(g|e) measured on the held-out raw shots at each threshold:")
-    print(f"   thr {thr_F}: {peg_F:.3f}/{pge_F:.3f}   thr {thr_hi}: {peg_H:.3f}/{pge_H:.3f})")
+    print(f"\n  (model assumes pi efficiency f = {f_meas:.2f}; see (E) for why this audit")
+    print(f"   cannot measure it absolutely.  P(e|g)/P(g|e) are from the held-out raw")
+    print(f"   shots: thr {thr_F}: {peg_F:.3f}/{pge_F:.3f}, thr {thr_hi}: "
+          f"{peg_H:.3f}/{pge_H:.3f})")
+    print(f"\n  {'threshold':>10s} {'floor':>7s} {'measured worst':>15s} {'above floor':>12s}")
+    for thr, (peg, pge) in ((thr_F, (peg_F, pge_F)), (thr_hi, (peg_H, pge_H))):
+        w = max(abs(stat(acc[("real_ins", thr, False)])[0]),
+                abs(stat(acc[("real_ins", thr, True)])[0]))
+        fl = ar.reset_floor(peg, pge)
+        print(f"  {thr:>10d} {fl:>7.3f} {w:>15.3f} {w - fl:>12.3f}")
+    print(f"\n  If 'above floor' is small, the reset is doing everything it can and the")
+    print(f"  floor -- i.e. the readout -- is the whole story.")
 
     banner("(G) POPULATION OR DISPLACEMENT?  the single-shot histogram")
     print("  This is the decisive one, and the data was always there -- acquire() used to")

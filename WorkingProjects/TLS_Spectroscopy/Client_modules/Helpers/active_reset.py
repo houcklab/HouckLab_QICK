@@ -116,6 +116,33 @@ def fit_reset_threshold(ground, excited, iters=3, pi_efficiency=DEFAULT_PI_EFFIC
     return best
 
 
+MAX_RESIDUAL_ABOVE_FLOOR = 0.12
+MAX_USABLE_FLOOR = 0.40
+
+
+def reset_verdict(p_e_given_g, p_g_given_e, residual_g, residual_e, baseline=None,
+                  max_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
+                  max_floor=MAX_USABLE_FLOOR):
+    floor = reset_floor(p_e_given_g, p_g_given_e)
+    worst = max(abs(float(residual_g)), abs(float(residual_e)))
+    above = worst - floor if np.isfinite(floor) else float("nan")
+    reasons = []
+    if not np.isfinite(floor) or floor > float(max_floor):
+        reasons.append(f"the readout leaves a reset floor of {floor:.3f}, above the "
+                       f"{float(max_floor):.2f} at which conditional reset stops being "
+                       f"worth doing")
+    if np.isfinite(above) and above > float(max_above_floor):
+        reasons.append(f"the reset sits {above:.3f} above its own floor of {floor:.3f}, "
+                       f"more than the {float(max_above_floor):.2f} allowed -- the loop "
+                       f"is not converging, which is a pi or feedback problem rather "
+                       f"than a readout one")
+    if baseline is not None and abs(float(baseline) - 1.0) > 0.35:
+        reasons.append(f"the no-reset baseline is {float(baseline):+.3f} instead of ~1.0, "
+                       f"so the prepared |e> or the projection is wrong")
+    return {"ok": not reasons, "floor": floor, "worst": worst,
+            "above_floor": above, "reasons": reasons}
+
+
 def to_signed32(v):
     v = int(v) & 0xFFFFFFFF
     return v - (1 << 32) if v >= (1 << 31) else v
@@ -289,8 +316,10 @@ def active_reset_readouts(cfg):
 
 
 def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000,
-                       validate=True, min_raw_fidelity=0.80, min_raw_shots=200,
-                       diagnostic_callback=None):
+                       validate=True, min_raw_fidelity=0.60, min_raw_shots=200,
+                       diagnostic_callback=None,
+                       max_residual_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
+                       max_usable_floor=MAX_USABLE_FLOOR):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
@@ -337,9 +366,14 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
         return None
     if not raw_fidelity >= float(min_raw_fidelity):
         print(f"[reset] raw held-shot assignment F={raw_fidelity:.3f} is below "
-              f"{float(min_raw_fidelity):.3f} -- per-shot discrimination too marginal for "
-              "clean active reset; falling back to passive relax.")
+              f"{float(min_raw_fidelity):.3f} -- there is essentially no per-shot "
+              "discrimination; falling back to passive relax.")
         return None
+    if raw_fidelity < 0.80:
+        print(f"[reset] NOTE raw assignment F={raw_fidelity:.3f} is modest.  That is not "
+              f"by itself a reason to refuse active reset: the reset floor is set by "
+              f"P(e|g)/(P(e|g)+1-P(g|e)), and the reset-optimal threshold deliberately "
+              f"trades F away to lower it.  Judging on the floor below.")
     rec = dict(data["recommended"])
     rec["raw_assignment_fidelity"] = raw_fidelity
     rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
@@ -353,11 +387,23 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
             print(f"[reset] end-to-end validation failed ({exc}) -- falling back to "
                   "passive relax.")
             return None
-        if not residual.get("works", False):
-            print("[reset] conditional reset did not pass its prepared-|e> residual "
-                  "check -- falling back to passive relax.")
+        errs = rec.get("raw_assignment_errors", {})
+        verdict = reset_verdict(errs.get("p_e_given_g", float("nan")),
+                                errs.get("p_g_given_e", float("nan")),
+                                residual.get("reset_ground", float("nan")),
+                                residual.get("reset_excited", float("nan")),
+                                baseline=residual.get("baseline", None),
+                                max_above_floor=max_residual_above_floor,
+                                max_floor=max_usable_floor)
+        print(f"[reset] residual {verdict['worst']:.3f} against a floor of "
+              f"{verdict['floor']:.3f} ({verdict['above_floor']:+.3f} above it)")
+        if not verdict["ok"]:
+            for reason in verdict["reasons"]:
+                print(f"[reset] {reason}")
+            print("[reset] falling back to passive relax.")
             return None
         rec["validation"] = residual
+        rec["verdict"] = verdict
     print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
           f"ground_below={rec['ground_below']}")
     return rec

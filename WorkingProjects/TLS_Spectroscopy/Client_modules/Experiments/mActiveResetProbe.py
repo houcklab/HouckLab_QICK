@@ -397,12 +397,21 @@ class ActiveResetProbe(ExperimentClass):
                          "purity": pur, "ge": ge})
             print(f"    res_phase={ph:6.1f} deg: lower={sl:>9d} upper={su:>9d}  "
                   f"purity(lower)={pur:.2f}")
-        max_sl = max((r["sep_lower"] for r in rows), default=1) or 1
-        eligible = [r for r in rows if r["sep_lower"] >= 0.3 * max_sl] or rows
-        best = max(eligible, key=lambda r: r["purity"])
-        gl, el = best["ge"]["g"]["lower"], best["ge"]["e"]["lower"]
-        g_shots = np.asarray(best["ge"]["g"]["shots_lower"], dtype=np.int64).ravel()
-        e_shots = np.asarray(best["ge"]["e"]["shots_lower"], dtype=np.int64).ravel()
+        best = max(rows, key=lambda r: max(r["sep_lower"], r["sep_upper"]))
+        oper = "lower" if best["sep_lower"] >= best["sep_upper"] else "upper"
+        best_sep = max(best["sep_lower"], best["sep_upper"])
+        lower_only = max(rows, key=lambda r: r["sep_lower"])
+        if best_sep > 1.05 * lower_only["sep_lower"]:
+            print(f"  NOTE the best separation is on the '{oper}' half at "
+                  f"{best['res_phase']:.1f} deg ({best_sep}).  The best the 'lower' half")
+            print(f"       can do is {lower_only['sep_lower']} at "
+                  f"{lower_only['res_phase']:.1f} deg -- "
+                  f"{100 * (best_sep - lower_only['sep_lower']) / best_sep:.0f}% worse.")
+            print(f"       active_reset_block reads either half, so taking the better one.")
+        best["purity"] = best_sep / (best["sep_lower"] + best["sep_upper"] + 1e-9)
+        gl, el = best["ge"]["g"][oper], best["ge"]["e"][oper]
+        g_shots = np.asarray(best["ge"]["g"]["shots_" + oper], dtype=np.int64).ravel()
+        e_shots = np.asarray(best["ge"]["e"]["shots_" + oper], dtype=np.int64).ravel()
         iters = int(cfg.get("reset_max_iters", 3))
         fit = None
         if min(g_shots.size, e_shots.size) >= 8:
@@ -416,12 +425,12 @@ class ActiveResetProbe(ExperimentClass):
         else:
             thr = int(round(0.5 * (gl + el)))
             ground_below = gl < el
-        clean = best["purity"] >= 0.85 and best["sep_lower"] >= 3 * max(1, best["sep_upper"])
+        clean = best["purity"] >= 0.85
         print("-" * 72)
         print(f"  BEST res_phase = {best['res_phase']:.1f} deg "
-              f"(lower separation {best['sep_lower']}, purity {best['purity']:.2f})")
+              f"('{oper}' separation {best_sep}, purity {best['purity']:.2f})")
         print(f"  -> set BaseConfig['res_phase'] = {best['res_phase']:.1f}")
-        print(f"  -> aligned discrimination: oper='lower', threshold_raw={thr}, "
+        print(f"  -> aligned discrimination: oper='{oper}', threshold_raw={thr}, "
               f"ground_below={ground_below}")
         if fit is not None:
             print(f"     (threshold chosen to minimise the {iters}-iteration reset "
@@ -431,13 +440,13 @@ class ActiveResetProbe(ExperimentClass):
               else "still MARGINAL after alignment -- readout SNR limited, not a phase problem"))
 
         resid = self._residual_at(best["res_phase"], thr, ground_below, int(check_shots),
-                                  oper="lower")
+                                  oper=oper)
         self.data = {
             'tproc_ch': tproc_ch, 'supported': True,
             'best_res_phase': best["res_phase"], 'sweep': [
                 {k: r[k] for k in ("res_phase", "sep_lower", "sep_upper", "purity")}
                 for r in rows],
-            'recommended': {'oper': 'lower', 'threshold_raw': thr,
+            'recommended': {'oper': oper, 'threshold_raw': thr,
                             'ground_below': bool(ground_below)},
             'clean': bool(clean), 'residual': resid,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
