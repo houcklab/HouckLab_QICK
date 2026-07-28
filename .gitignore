@@ -22,3 +22,5 @@
 /__init__.py
 /requirements.txt
 /setup.py
+WorkingProjects/TLS_Spectroscopy/Client_modules/Experiments/mAutoTuner.py
+WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/AutoTune.py
