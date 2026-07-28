@@ -115,9 +115,10 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                              else cfg.get("ff_park_gain", 0))
         self.inter_target_wait_ns = float(inter_target_wait_ns)
         self.readout_after_park = bool(readout_after_park)
-        self.park_readout_settle_ns = (park_readout_settle_ns if park_readout_settle_ns
-                                       is not None else cfg.get("flux_settle_time", 100))
-        cfg["flux_settle_time"] = self.park_readout_settle_ns
+        self.park_readout_settle_ns = (float(park_readout_settle_ns)
+                                       if park_readout_settle_ns is not None
+                                       else ff_pulse.flux_settle_us(cfg) * 1e3)
+        cfg["flux_settle_time_us"] = self.park_readout_settle_ns / 1e3
         self.post_readout_reset_ns = (post_readout_reset_ns if post_readout_reset_ns
                                       is not None else cfg.get("relax_delay", 0) * 1e3)
         self.fit_trace = bool(fit_trace)

@@ -375,8 +375,7 @@ class FFT1Program(AveragerProgram):
         if cfg.get("do_ff", True):
             park_gain = float(cfg.get("ff_park_gain", 0) or 0)
             stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
-            self.ff_settle_us = (float(cfg.get("flux_settle_time", 100)) / 1000.0
-                                 if stepping else 0.0)
+            self.ff_settle_us = (ff_pulse.flux_settle_us(cfg) if stepping else 0.0)
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
                 self, hold_us=float(cfg["ff_hold"]) + self.ff_settle_us,
                 ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
@@ -405,7 +404,7 @@ class FFT1Program(AveragerProgram):
             ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
             self.sync_all(self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self.ff_segs)
-        self.sync_all(self.us2cycles(cfg.get("flux_settle_time", 100) / 1000.0))
+        self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
@@ -434,7 +433,7 @@ class _T1VsFluxBase(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='data', cfg=None, meta_dict=None, dc_vec=None, shots=2000,
-                 calib_params=None, park_voltage=None, flux_settle_time_ns=None,
+                 calib_params=None, park_voltage=None, flux_settle_time_us=None,
                  reset_mode="passive", flux_tail_compensation=None,
                  repeat_metadata=None, write_outputs=True, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
@@ -459,9 +458,10 @@ class _T1VsFluxBase(ExperimentClass):
         self.shots = int(shots)
         self.park_voltage = (park_voltage if park_voltage is not None
                              else cfg.get("ff_park_gain", 0))
-        self.flux_settle_time_ns = (flux_settle_time_ns if flux_settle_time_ns is not None
-                                    else cfg.get("flux_settle_time", 100))
-        cfg["flux_settle_time"] = self.flux_settle_time_ns
+        self.flux_settle_time_us = (float(flux_settle_time_us)
+                                    if flux_settle_time_us is not None
+                                    else ff_pulse.flux_settle_us(cfg))
+        cfg["flux_settle_time_us"] = self.flux_settle_time_us
         self.reset_mode = reset_mode
         cfg["reset_mode"] = reset_mode
         self.repeat_metadata = dict(repeat_metadata or {})
@@ -472,7 +472,7 @@ class _T1VsFluxBase(ExperimentClass):
 
         self.data = {"qubit": self.element, "dc_vec": self.dc_vec, "shots": self.shots,
                      "park_voltage": self.park_voltage,
-                     "flux_settle_time_ns": self.flux_settle_time_ns,
+                     "flux_settle_time_us": self.flux_settle_time_us,
                      "flux_tail_compensation": cfg.get("flux_tail_compensation"),
                      "meta_dict": dict(cfg), "calib_params": calib_params,
                      "reset_mode": reset_mode,

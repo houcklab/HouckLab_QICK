@@ -9,7 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import mak
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import T1
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
@@ -52,7 +52,7 @@ P_T1_FLUX_RAMP = {
     "run": False,
     "shots": 1000,
     "excursion_gain": 8000,
-    "flux_settle_time_ns": 20000,
+    "flux_settle_time_us": None,
     "flux_tail_compensation": None,
     "t_min_us": 1.0,
     "t_max_us": 300.0,
@@ -120,13 +120,14 @@ def run_t1(outer_folder, soc, soccfg, calib_params):
 def run_t1_flux_ramp(outer_folder, soc, soccfg, calib_params):
     p = P_T1_FLUX_RAMP
     cfg = _base_cfg(p)
-    cfg["flux_settle_time"] = float(p.get("flux_settle_time_ns",
-                                          cfg.get("flux_settle_time", 100)))
+    override = p.get("flux_settle_time_us", None)
+    if override is not None:
+        cfg["flux_settle_time_us"] = float(override)
     comp = p.get("flux_tail_compensation", None)
     if comp is not None:
         cfg["flux_tail_compensation"] = comp
     print(f"[T1 flux ramp] ff_gain={p['excursion_gain']}, settle after the step = "
-          f"{cfg['flux_settle_time'] / 1e3:.1f} us, "
+          f"{ff_pulse.flux_settle_us(cfg):.2f} us, "
           f"predistortion = {'ON' if comp is not None else 'OFF'}")
     if comp is None:
         print("[T1 flux ramp] WARNING: no flux-tail compensation loaded.  The step "

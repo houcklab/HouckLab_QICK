@@ -102,7 +102,7 @@ def rabi_flux_body(prog):
     read_at_park = (not hold) or bool(cfg.get("readout_after_park", True))
     if hold and read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
-        prog.sync_all(prog.us2cycles(cfg.get("flux_settle_time", 100) / 1000.0))
+        prog.sync_all(prog.us2cycles(ff_pulse.flux_settle_us(cfg)))
     _reset_sync = 0.05 if feedback else (cfg["relax_delay"] if read_at_park else 0.01)
     prog.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                  adc_trig_offset=prog.us2cycles(cfg["adc_trig_offset"]),

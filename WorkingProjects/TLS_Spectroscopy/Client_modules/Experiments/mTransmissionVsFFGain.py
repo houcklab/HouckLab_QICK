@@ -33,7 +33,7 @@ class FFTransProgram(AveragerProgram):
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=max(cfg.get("ff_settle_us", 20.0), cfg.get("dt_pulseplay", 5.0)),
             ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
-            ramp_us=cfg.get("ff_ramp_length", 0.02), dt_def_us=cfg.get("dt_pulsedef", 0.002),
+            ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
             compensation=ff_pulse.load_compensation(cfg),
             distortion_model=ff_pulse.make_distortion_model(self))
         self.synci(200)

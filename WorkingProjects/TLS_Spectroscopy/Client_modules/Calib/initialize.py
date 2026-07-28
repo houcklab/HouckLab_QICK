@@ -21,7 +21,8 @@ BaseConfig = {
 
     "reps": 1000,
     "relax_delay": 3000,
-    "flux_settle_time": 100,
+    "flux_settle_time_us": 0.5,
+    "ff_ramp_length": 0.5,
     "adc_trig_offset": 0.5,
     "res_phase": 135.0,
 

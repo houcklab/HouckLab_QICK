@@ -84,7 +84,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
 
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=cfg["ff_hold"], ff_gain=cfg["ff_gain"],
-            dt_play_us=cfg.get("dt_pulseplay", 5.0), ramp_us=cfg.get("ff_ramp_length", 0.02),
+            dt_play_us=cfg.get("dt_pulseplay", 5.0), ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
             dt_def_us=cfg.get("dt_pulsedef", 0.002),
             compensation=ff_pulse.load_compensation(cfg),
             distortion_model=ff_pulse.make_distortion_model(self))
@@ -101,7 +101,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
         if cfg.get("readout_after_park", True):
             ff_pulse.play_ramp_down(self, self.ff_segs)
-            self.sync_all(self.us2cycles(cfg.get("flux_settle_time", 100) / 1000.0))
+            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))

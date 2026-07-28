@@ -29,6 +29,17 @@ def _avg_segs(seg, dt_def_us, dt_play_us):
     return np.array([seg[i * ppp:(i + 1) * ppp].mean() for i in range(n)])
 
 
+def flux_settle_us(cfg):
+    if "flux_settle_time" in cfg:
+        legacy = cfg["flux_settle_time"]
+        raise ValueError(
+            f"cfg['flux_settle_time'] = {legacy} is the old NANOSECOND key and is no "
+            f"longer read.  Rename it to 'flux_settle_time_us' and convert the value: "
+            f"{legacy} ns -> {float(legacy) / 1000.0:g} us.  Leaving it in place would "
+            f"silently apply a 1000x longer settle.")
+    return float(cfg.get("flux_settle_time_us", DEFAULT_FLUX_SETTLE_US))
+
+
 def _warn_slew(delta, ramp_us):
     if abs(delta) < 1e-9 or ramp_us <= 0:
         return
@@ -114,6 +125,7 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
 
 
 STATE_SAFE_RAMP_US = 0.5
+DEFAULT_FLUX_SETTLE_US = 0.5
 MAX_SAFE_SLEW_DAC_PER_US = 20000.0
 _SLEW_WARNED = set()
 
