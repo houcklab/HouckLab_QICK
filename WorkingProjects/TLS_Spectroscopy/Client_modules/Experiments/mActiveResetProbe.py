@@ -137,30 +137,7 @@ class ActiveResetProbe(ExperimentClass):
 
     @staticmethod
     def _fit_raw_discriminator(ground, excited):
-        ground = np.asarray(ground, dtype=np.int64).ravel()
-        excited = np.asarray(excited, dtype=np.int64).ravel()
-        values = np.unique(np.concatenate((ground, excited)))
-        candidates = np.unique(np.concatenate((values, values + 1)))
-        best = None
-        for ground_below in (True, False):
-            for threshold in candidates:
-                if ground_below:
-                    p_e_given_g = float(np.mean(ground >= threshold))
-                    p_g_given_e = float(np.mean(excited < threshold))
-                else:
-                    p_e_given_g = float(np.mean(ground <= threshold))
-                    p_g_given_e = float(np.mean(excited > threshold))
-                fidelity = 1.0 - 0.5 * (p_e_given_g + p_g_given_e)
-                item = {
-                    "threshold_raw": int(threshold),
-                    "ground_below": bool(ground_below),
-                    "fidelity": fidelity,
-                    "p_e_given_g": p_e_given_g,
-                    "p_g_given_e": p_g_given_e,
-                }
-                if best is None or item["fidelity"] > best["fidelity"]:
-                    best = item
-        return best
+        return ar.fit_assignment_threshold(ground, excited)
 
     @staticmethod
     def _score_raw_discriminator(ground, excited, discriminator):
@@ -178,6 +155,84 @@ class ActiveResetProbe(ExperimentClass):
             "p_e_given_g": p_e_given_g,
             "p_g_given_e": p_g_given_e,
         }
+
+    def _gate_residuals(self, cfg, threshold_raw, ground_below, oper, shots):
+        c = dict(cfg)
+        c["reps"] = c["shots"] = int(shots)
+        c["reset_oper"] = str(oper)
+        c["reset_threshold_raw"] = int(threshold_raw)
+        c["reset_ground_below"] = bool(ground_below)
+        ge = self._ge_raw(c)
+        Ig, Qg = ge["g"]["I"], ge["g"]["Q"]
+        dx, dy = ge["e"]["I"] - Ig, ge["e"]["Q"] - Qg
+        denom = dx * dx + dy * dy
+        out = []
+        for prep in (False, True):
+            cc = dict(c)
+            cc["prep_excited"] = bool(prep)
+            cc["do_reset"] = True
+            Ir, Qr = ResetCheckProgram(self.soccfg, cc).acquire(self.soc, load_pulses=True)
+            out.append((((Ir - Ig) * dx + (Qr - Qg) * dy) / denom)
+                       if denom > 0 else float("nan"))
+        return float(out[0]), float(out[1])
+
+    def _tune_reset_threshold(self, cfg, oper, ground_raw, excited_raw,
+                              fidelity_fit, iters):
+        if not bool(cfg.get("reset_tune_threshold", True)):
+            return None
+        if min(ground_raw.size, excited_raw.size) < 8:
+            return None
+        shots = int(cfg.get("reset_tune_shots", 1000))
+        floor = ar.reset_floor(fidelity_fit["p_e_given_g"], fidelity_fit["p_g_given_e"])
+        print("-" * 68)
+        print(f"  tuning the raw threshold for RESET (not for assignment fidelity).")
+        print(f"  the fixed point of the reset loop is P(e|g)/(P(e|g)+1-P(g|e)); at the")
+        print(f"  F-optimal threshold that floor is {floor:.3f}, so no number of")
+        print(f"  iterations can push the residual below it.")
+        try:
+            _, r_e = self._gate_residuals(cfg, fidelity_fit["threshold_raw"],
+                                          fidelity_fit["ground_below"], oper, shots)
+        except Exception as exc:
+            print(f"  could not run the gate to calibrate the pi efficiency ({exc}); "
+                  f"assuming {ar.DEFAULT_PI_EFFICIENCY:.2f}")
+            r_e = float("nan")
+        f_pi = ar.infer_pi_efficiency(fidelity_fit["p_e_given_g"],
+                                      fidelity_fit["p_g_given_e"], iters, r_e)
+        if not np.isfinite(f_pi) or f_pi <= 0.05:
+            f_pi = ar.DEFAULT_PI_EFFICIENCY
+            print(f"  pi efficiency not measurable here; assuming {f_pi:.2f}")
+        else:
+            print(f"  measured residual {r_e:+.3f} after {iters} iters "
+                  f"-> pi efficiency {f_pi:.2f}")
+        best = ar.fit_reset_threshold(ground_raw[1::2], excited_raw[1::2],
+                                      iters=iters, pi_efficiency=f_pi)
+        if best is None:
+            return None
+        moved = int(best["threshold_raw"]) - int(fidelity_fit["threshold_raw"])
+        print(f"  reset-optimal threshold {best['threshold_raw']} ({moved:+d} from the "
+              f"F-optimal one)")
+        print(f"    P(e|g) {fidelity_fit['p_e_given_g']:.3f} -> {best['p_e_given_g']:.3f}, "
+              f"P(g|e) {fidelity_fit['p_g_given_e']:.3f} -> {best['p_g_given_e']:.3f}, "
+              f"F {fidelity_fit['fidelity']:.3f} -> {best['fidelity']:.3f}")
+        print(f"    floor {floor:.3f} -> {best['reset_floor']:.3f}, predicted worst "
+              f"residual {best['predicted_worst']:.3f}")
+        best["pi_efficiency"] = float(f_pi)
+        best["residual_at_fidelity_threshold"] = r_e
+        if moved == 0 and bool(best["ground_below"]) == bool(fidelity_fit["ground_below"]):
+            print("  (already optimal -- keeping it)")
+            return best
+        try:
+            g_res, e_res = self._gate_residuals(cfg, best["threshold_raw"],
+                                                best["ground_below"], oper, shots)
+            print(f"    confirmed on hardware: |g> {g_res:+.3f}, |e> {e_res:+.3f}")
+            best["measured_residual_g"] = g_res
+            best["measured_residual_e"] = e_res
+            if max(abs(g_res), abs(e_res)) > max(abs(r_e), best["predicted_worst"]) + 0.05:
+                print("    WORSE than the F-optimal threshold on hardware -- reverting")
+                return None
+        except Exception as exc:
+            print(f"    could not confirm on hardware ({exc}); keeping the model choice")
+        return best
 
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
@@ -242,11 +297,21 @@ class ActiveResetProbe(ExperimentClass):
         print("-" * 68)
         print(f"  discriminating half: '{oper}' (|g>-|e> separation "
               f"{max(sep_lower, sep_upper)} vs {min(sep_lower, sep_upper)} on the other)")
-        print(f"  -> active_reset_block(oper='{oper}', threshold_raw={thr}, "
-              f"ground_below={ground_below})")
         print(f"  held-out raw assignment: F={discrimination['fidelity']:.3f} "
               f"[P(e|g)={discrimination['p_e_given_g']:.3f}, "
               f"P(g|e)={discrimination['p_g_given_e']:.3f}]")
+        iters = int(cfg.get("reset_max_iters", 3))
+        tuning = self._tune_reset_threshold(
+            cfg, oper, ground_raw, excited_raw, discrimination, iters)
+        if tuning is not None:
+            thr = int(tuning["threshold_raw"])
+            ground_below = bool(tuning["ground_below"])
+            discrimination = dict(discrimination)
+            discrimination.update({"p_e_given_g": tuning["p_e_given_g"],
+                                   "p_g_given_e": tuning["p_g_given_e"],
+                                   "fidelity": tuning["fidelity"]})
+        print(f"  -> active_reset_block(oper='{oper}', threshold_raw={thr}, "
+              f"ground_below={ground_below})")
         if max(sep_lower, sep_upper) < 3 * max(1, min(sep_lower, sep_upper)):
             print("  WARNING: |g> and |e> barely separate in the raw read -- discrimination "
                   "is marginal.  Improve readout SNR / set the readout phase so the blobs "
@@ -266,6 +331,9 @@ class ActiveResetProbe(ExperimentClass):
                 'p_e_given_g': discrimination['p_e_given_g'],
                 'p_g_given_e': discrimination['p_g_given_e'],
             },
+            'reset_floor': ar.reset_floor(discrimination['p_e_given_g'],
+                                          discrimination['p_g_given_e']),
+            'reset_threshold_tuning': tuning,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         self.pickle_data()
@@ -282,6 +350,7 @@ class ActiveResetProbe(ExperimentClass):
             lower, upper = self._raw_shots(prog)
             out[label] = {"lower": int(round(float(np.median(lower)))),
                           "upper": int(round(float(np.median(upper)))),
+                          "shots_lower": lower, "shots_upper": upper,
                           "I": float(np.asarray(avgi).ravel()[0]),
                           "Q": float(np.asarray(avgq).ravel()[0])}
         return out
@@ -319,8 +388,21 @@ class ActiveResetProbe(ExperimentClass):
         eligible = [r for r in rows if r["sep_lower"] >= 0.3 * max_sl] or rows
         best = max(eligible, key=lambda r: r["purity"])
         gl, el = best["ge"]["g"]["lower"], best["ge"]["e"]["lower"]
-        thr = int(round(0.5 * (gl + el)))
-        ground_below = gl < el
+        g_shots = np.asarray(best["ge"]["g"]["shots_lower"], dtype=np.int64).ravel()
+        e_shots = np.asarray(best["ge"]["e"]["shots_lower"], dtype=np.int64).ravel()
+        iters = int(cfg.get("reset_max_iters", 3))
+        fit = None
+        if min(g_shots.size, e_shots.size) >= 8:
+            fit = ar.fit_reset_threshold(g_shots, e_shots, iters=iters,
+                                         pi_efficiency=float(cfg.get(
+                                             "reset_pi_efficiency",
+                                             ar.DEFAULT_PI_EFFICIENCY)))
+        if fit is not None:
+            thr = int(fit["threshold_raw"])
+            ground_below = bool(fit["ground_below"])
+        else:
+            thr = int(round(0.5 * (gl + el)))
+            ground_below = gl < el
         clean = best["purity"] >= 0.85 and best["sep_lower"] >= 3 * max(1, best["sep_upper"])
         print("-" * 72)
         print(f"  BEST res_phase = {best['res_phase']:.1f} deg "
@@ -328,6 +410,10 @@ class ActiveResetProbe(ExperimentClass):
         print(f"  -> set BaseConfig['res_phase'] = {best['res_phase']:.1f}")
         print(f"  -> aligned discrimination: oper='lower', threshold_raw={thr}, "
               f"ground_below={ground_below}")
+        if fit is not None:
+            print(f"     (threshold chosen to minimise the {iters}-iteration reset "
+                  f"residual, not the assignment fidelity: floor "
+                  f"{fit['reset_floor']:.3f}, F={fit['fidelity']:.3f})")
         print("  discrimination is " + ("CLEAN (separation now on one quadrature)" if clean
               else "still MARGINAL after alignment -- readout SNR limited, not a phase problem"))
 

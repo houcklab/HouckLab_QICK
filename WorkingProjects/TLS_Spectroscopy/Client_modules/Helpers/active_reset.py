@@ -29,6 +29,93 @@ def herald_keep(i0, q0, calib_params):
     return np.asarray(discriminate_shots(i0, q0, herald_calib)) == 0
 
 
+DEFAULT_PI_EFFICIENCY = 0.8
+
+
+def reset_floor(p_e_given_g, p_g_given_e):
+    peg = float(p_e_given_g)
+    denom = peg + 1.0 - float(p_g_given_e)
+    return peg / denom if denom > 1e-12 else float("nan")
+
+
+def predicted_residuals(p_e_given_g, p_g_given_e, pi_efficiency, iters):
+    peg = float(p_e_given_g)
+    pge = float(p_g_given_e)
+    span = peg + 1.0 - pge
+    if span <= 1e-12:
+        return float("nan"), float("nan")
+    floor = peg / span
+    decay = (1.0 - min(1.0, max(0.0, float(pi_efficiency)) * span)) ** int(iters)
+    return floor + (1.0 - floor) * decay, floor * (1.0 - decay)
+
+
+def infer_pi_efficiency(p_e_given_g, p_g_given_e, iters, residual_from_e):
+    peg = float(p_e_given_g)
+    span = peg + 1.0 - float(p_g_given_e)
+    floor = reset_floor(peg, p_g_given_e)
+    obs = float(residual_from_e)
+    if not np.isfinite(obs) or span <= 1e-12 or not np.isfinite(floor):
+        return float("nan")
+    frac = (obs - floor) / (1.0 - floor)
+    if frac <= 0.0:
+        return 1.0
+    if frac >= 1.0:
+        return 0.0
+    decay = frac ** (1.0 / max(1, int(iters)))
+    return float(min(1.0, max(0.0, (1.0 - decay) / span)))
+
+
+def _threshold_rates(ground, excited, threshold, ground_below):
+    if ground_below:
+        return (float(np.mean(ground >= threshold)),
+                float(np.mean(excited < threshold)))
+    return (float(np.mean(ground <= threshold)),
+            float(np.mean(excited > threshold)))
+
+
+def _threshold_candidates(ground, excited):
+    values = np.unique(np.concatenate((np.asarray(ground, dtype=np.int64).ravel(),
+                                       np.asarray(excited, dtype=np.int64).ravel())))
+    return np.unique(np.concatenate((values, values + 1)))
+
+
+def fit_assignment_threshold(ground, excited):
+    ground = np.asarray(ground, dtype=np.int64).ravel()
+    excited = np.asarray(excited, dtype=np.int64).ravel()
+    best = None
+    for ground_below in (True, False):
+        for threshold in _threshold_candidates(ground, excited):
+            peg, pge = _threshold_rates(ground, excited, threshold, ground_below)
+            item = {"threshold_raw": int(threshold), "ground_below": bool(ground_below),
+                    "fidelity": 1.0 - 0.5 * (peg + pge),
+                    "p_e_given_g": peg, "p_g_given_e": pge}
+            if best is None or item["fidelity"] > best["fidelity"]:
+                best = item
+    return best
+
+
+def fit_reset_threshold(ground, excited, iters=3, pi_efficiency=DEFAULT_PI_EFFICIENCY):
+    ground = np.asarray(ground, dtype=np.int64).ravel()
+    excited = np.asarray(excited, dtype=np.int64).ravel()
+    best = None
+    for ground_below in (True, False):
+        for threshold in _threshold_candidates(ground, excited):
+            peg, pge = _threshold_rates(ground, excited, threshold, ground_below)
+            r_e, r_g = predicted_residuals(peg, pge, pi_efficiency, iters)
+            worst = max(r_e, r_g)
+            if not np.isfinite(worst):
+                continue
+            item = {"threshold_raw": int(threshold), "ground_below": bool(ground_below),
+                    "fidelity": 1.0 - 0.5 * (peg + pge),
+                    "p_e_given_g": peg, "p_g_given_e": pge,
+                    "reset_floor": reset_floor(peg, pge),
+                    "predicted_residual_e": r_e, "predicted_residual_g": r_g,
+                    "predicted_worst": worst}
+            if best is None or worst < best["predicted_worst"]:
+                best = item
+    return best
+
+
 def to_signed32(v):
     v = int(v) & 0xFFFFFFFF
     return v - (1 << 32) if v >= (1 << 31) else v

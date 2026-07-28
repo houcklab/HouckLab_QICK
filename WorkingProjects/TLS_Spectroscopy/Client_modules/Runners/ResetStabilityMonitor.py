@@ -23,6 +23,7 @@ REF_RELAX_US = 2000.0
 GATE_RELAX_US = 25.0
 
 RESET_MAX_ITERS = 3
+RESET_PI_EFFICIENCY = 0.8
 RESET_THERMALIZATION_US = 2.0
 RESET_MEAS_SYNCDELAY_US = 4.0
 RESET_READ_DELAY_US = 2.0
@@ -38,21 +39,8 @@ def banner(text):
 
 
 def fit_threshold(ground, excited):
-    values = np.unique(np.concatenate((ground, excited)))
-    best = None
-    for ground_below in (True, False):
-        for threshold in values:
-            if ground_below:
-                p_e_g = float(np.mean(ground >= threshold))
-                p_g_e = float(np.mean(excited < threshold))
-            else:
-                p_e_g = float(np.mean(ground <= threshold))
-                p_g_e = float(np.mean(excited > threshold))
-            f = 1.0 - 0.5 * (p_e_g + p_g_e)
-            if best is None or f > best["fidelity"]:
-                best = {"threshold_raw": int(threshold), "ground_below": bool(ground_below),
-                        "fidelity": f, "p_e_given_g": p_e_g, "p_g_given_e": p_g_e}
-    return best
+    return ar.fit_reset_threshold(ground, excited, iters=RESET_MAX_ITERS,
+                                  pi_efficiency=RESET_PI_EFFICIENCY)
 
 
 def ge_reference(soc, soccfg, cfg, shots):
@@ -200,36 +188,57 @@ def main():
     def trend(y):
         good = np.isfinite(y)
         if good.sum() < 3:
-            return np.nan, np.nan
-        slope = np.polyfit(t[good], y[good], 1)[0]
-        return slope * 60.0, float(np.nanstd(y))
+            return np.nan, np.nan, np.nan
+        tt, yy = t[good], y[good]
+        slope, _ = np.polyfit(tt, yy, 1)
+        resid = yy - np.polyval(np.polyfit(tt, yy, 1), tt)
+        dof = max(1, yy.size - 2)
+        var_t = float(np.sum((tt - tt.mean()) ** 2))
+        slope_err = float(np.sqrt(np.sum(resid ** 2) / dof / var_t)) if var_t > 0 else np.nan
+        return slope * 60.0, float(np.nanstd(y)), slope_err * 60.0
 
     print(f"  cycles: {len(rows)} over {t[-1]:.0f} s  "
           f"({t[-1] / max(len(rows) - 1, 1):.1f} s per cycle)")
-    print(f"\n  {'quantity':>22s} {'mean':>10s} {'std':>10s} {'drift/min':>12s}")
+    floor = np.array([ar.reset_floor(r["peg"], r["pge"]) for r in rows])
+    print(f"\n  {'quantity':>22s} {'mean':>10s} {'std':>10s} {'drift/min':>12s} "
+          f"{'sigma':>8s}")
     for name, y in (("reset |e> (fresh thr)", fe), ("reset |e> (stale thr)", se),
+                    ("reset floor (model)", floor),
                     ("threshold_raw", thr), ("blob separation", sep),
                     ("ground raw median", graw), ("assignment F", F)):
-        d, s = trend(y)
-        print(f"  {name:>22s} {np.nanmean(y):>10.3f} {s:>10.3f} {d:>12.3f}")
+        d, s, de = trend(y)
+        sig = abs(d) / de if np.isfinite(de) and de > 0 else np.nan
+        print(f"  {name:>22s} {np.nanmean(y):>10.3f} {s:>10.3f} "
+              f"{d:>8.3f}+-{de:<7.3f} {sig:>8.1f}")
 
-    d_fresh = trend(fe)[0]
-    d_stale = trend(se)[0]
+    d_fresh, s_fresh, e_fresh = trend(fe)
+    d_stale, s_stale, e_stale = trend(se)
     n_fail = sum(1 for r in rows if max(abs(r["fresh_g"]), abs(r["fresh_e"])) > GATE_LIMIT)
     print(f"\n  gate failures (fresh threshold): {n_fail}/{len(rows)}")
-    print(f"  spread of reset |e>: fresh {np.nanstd(fe):.3f}, stale {np.nanstd(se):.3f}")
-    if np.isfinite(d_stale) and np.isfinite(d_fresh):
-        if abs(d_stale) > 2.0 * abs(d_fresh) + 0.01:
-            print("  --> STALE THRESHOLD is the problem: the frozen threshold degrades much")
-            print("      faster than a freshly derived one.  Re-probe more often (or derive")
-            print("      the raw threshold from the SS cal every run).")
-        elif np.nanstd(fe) > 0.05 or abs(d_fresh) > 0.02:
-            print("  --> THE RESET/READOUT ITSELF is unstable: even a fresh threshold cannot")
-            print("      hold the residual.  Re-probing will not fix this; chase the readout")
-            print("      (blob separation / F above) or the pi.")
-        else:
-            print("  --> STABLE over this window.  If the gate failed earlier today it was")
-            print("      a transient, not a systematic drift.")
+    print(f"  spread of reset |e>: fresh {s_fresh:.3f}, stale {s_stale:.3f}")
+    print(f"  model floor from the measured readout errors: {np.nanmean(floor):.3f} "
+          f"-- the residual CANNOT go below this at any iteration count")
+    print(f"  headroom above the floor: {np.nanmean(fe) - np.nanmean(floor):+.3f} "
+          f"(this part is the pi; the floor is the readout)")
+    drifting = np.isfinite(e_fresh) and e_fresh > 0 and abs(d_fresh) > 3.0 * e_fresh
+    stale_worse = (np.isfinite(e_stale) and np.isfinite(e_fresh)
+                   and (d_stale - d_fresh) > 3.0 * np.hypot(e_stale, e_fresh))
+    margin = (GATE_LIMIT - np.nanmean(fe)) / max(s_fresh, 1e-9)
+    if stale_worse:
+        print("  --> STALE THRESHOLD is the problem: the frozen threshold degrades")
+        print("      significantly faster than a freshly derived one.  Re-probe more often.")
+    elif drifting:
+        print(f"  --> REAL DRIFT: the slope {d_fresh:+.3f}/min is "
+              f"{abs(d_fresh) / e_fresh:.1f} sigma from zero.")
+    else:
+        print(f"  --> NO significant drift (slope {d_fresh:+.3f}+-{e_fresh:.3f}/min).")
+        print(f"      What you are seeing is shot-to-shot SCATTER about a mean that sits")
+        print(f"      {margin:+.1f} sigma from the {GATE_LIMIT} gate, so the gate is close")
+        print(f"      to a coin flip.  Re-probing will not help; lower the mean.")
+    if np.nanmean(floor) > 0.5 * GATE_LIMIT:
+        print(f"      The floor alone is {np.nanmean(floor):.3f}.  More iterations cannot")
+        print(f"      fix that -- move the threshold toward |e> (run ResetThresholdScan)")
+        print(f"      or improve the readout SNR.")
     if ph0 is not None and ph1 is not None:
         dphi = (ph1[0] - ph0[0] + 180.0) % 360.0 - 180.0
         print(f"\n  res_phase: start {ph0[0]:.1f} deg (purity {ph0[1]:.2f}) -> "
