@@ -97,7 +97,20 @@ class ResetCheckProgram(AveragerProgram):
                  else 0) + 1
         avg_di, avg_dq = super().acquire(soc, readouts_per_experiment=reads,
                                          load_pulses=load_pulses, progress=progress)
+        self.readouts_per_rep = reads
         return float(np.asarray(avg_di)[0][-1]), float(np.asarray(avg_dq)[0][-1])
+
+    def shots(self):
+        reads = int(getattr(self, "readouts_per_rep", 1))
+        out = []
+        for buf in (self.di_buf, self.dq_buf):
+            v = np.asarray([ar.to_signed32(x) for x in
+                            np.asarray(buf[0]).ravel()], dtype=np.int64)
+            n = v.size // reads
+            if n < 1:
+                return None, None
+            out.append(v[:n * reads].reshape(n, reads))
+        return out[0], out[1]
 
 
 class ActiveResetProbe(ExperimentClass):

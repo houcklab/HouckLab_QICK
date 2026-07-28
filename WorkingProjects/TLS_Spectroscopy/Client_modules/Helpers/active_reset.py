@@ -43,7 +43,7 @@ def predicted_residuals(p_e_given_g, p_g_given_e, pi_efficiency, iters):
     pge = float(p_g_given_e)
     span = peg + 1.0 - pge
     if span <= 1e-12:
-        return float("nan"), float("nan")
+        return 1.0, 0.0
     floor = peg / span
     decay = (1.0 - min(1.0, max(0.0, float(pi_efficiency)) * span)) ** int(iters)
     return floor + (1.0 - floor) * decay, floor * (1.0 - decay)

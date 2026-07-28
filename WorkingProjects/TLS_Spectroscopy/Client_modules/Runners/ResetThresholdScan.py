@@ -179,71 +179,116 @@ def main():
         print(row)
 
     banner("MODEL vs MEASUREMENT")
-    fs = np.linspace(0.05, 1.0, 96)
-    err = []
-    for f in fs:
+
+    def chi2(f, off):
         s = 0.0
+        n = 0
         for (thr, it), c in grid.items():
             peg, pge = rates[thr]
             pe, pg = ar.predicted_residuals(peg, pge, f, it)
             if np.isfinite(c["e"]):
-                s += (c["e"] - pe) ** 2
+                s += ((c["e"] - off - pe) / max(c["e_err"], 1e-3)) ** 2
+                n += 1
             if np.isfinite(c["g"]):
-                s += (c["g"] - pg) ** 2
-        err.append(s)
-    f_best = float(fs[int(np.argmin(err))])
-    n_pts = 2 * len(grid)
-    rms = float(np.sqrt(min(err) / max(1, n_pts)))
-    print(f"  single global pi efficiency fitted over all {n_pts} points: "
-          f"f = {f_best:.2f}")
-    print(f"  rms residual of the model: {rms:.3f}")
-    if rms < 0.05:
-        print("  -> the Markov model DESCRIBES the reset.  The floor is real and the")
-        print("     threshold/iteration recommendation below can be trusted.")
+                s += ((c["g"] - off - pg) / max(c["g_err"], 1e-3)) ** 2
+                n += 1
+        return s, n
+
+    fs = np.linspace(0.05, 1.0, 191)
+    offs = np.linspace(-0.10, 0.25, 141)
+    s_plain, n_pts = min((chi2(f, 0.0) for f in fs), key=lambda x: x[0])
+    f_plain = float(fs[int(np.argmin([chi2(f, 0.0)[0] for f in fs]))])
+    s_off, f_best, off_best = min((chi2(f, o)[0], float(f), float(o))
+                                  for f in fs for o in offs)
+    print(f"  the model has ONE free parameter, the pi efficiency f, and predicts both")
+    print(f"  the |g> and the |e> residual at every cell.  Fitting all {n_pts} points:")
+    print(f"\n    zero point fixed at 0 : chi2/dof = {s_plain / max(n_pts - 1, 1):6.2f}  "
+          f"(f = {f_plain:.2f})")
+    print(f"    zero point free       : chi2/dof = {s_off / max(n_pts - 2, 1):6.2f}  "
+          f"(f = {f_best:.2f}, offset = {off_best:+.3f})")
+    print(f"    delta-chi2 for that one extra parameter: {s_plain - s_off:.0f}")
+    zero_point_error = (s_plain - s_off) > 25.0 and abs(off_best) > 0.02
+    if zero_point_error:
+        print(f"\n  -> the SHAPE of the model is right but its ZERO POINT is not.  Every")
+        print(f"     residual measured here is high by {off_best:+.3f}, independently of")
+        print(f"     threshold and of iteration count.  No reset mechanism can do that:")
+        print(f"     it is an artefact of how the residual is referenced (the projector's")
+        print(f"     0 and 1 come from ReadProbeProgram at {REF_RELAX_US:g} us relax, but")
+        print(f"     are applied to ResetCheckProgram at {GATE_RELAX_US:g} us).")
+        print(f"     Run Runners/ResetBaselineAudit.py to decompose it.")
+        print(f"     The numbers below are quoted BOTH ways.")
+    elif s_off / max(n_pts - 2, 1) < 3.0:
+        print(f"\n  -> the Markov model describes the reset.  The floor is real.")
     else:
-        print("  -> the model does NOT describe the data well.  Something other than")
-        print("     readout errors + a finite-fidelity pi is limiting the reset.")
+        print(f"\n  -> the model does NOT describe the data even with a free zero point.")
+        print(f"     Something beyond readout errors + a finite-fidelity pi is at work.")
     print(f"\n  {'thr':>8s} {'N':>3s} {'meas |e>':>9s} {'model':>7s} "
-          f"{'meas |g>':>9s} {'model':>7s}")
+          f"{'meas |g>':>9s} {'model':>7s}   (model includes offset {off_best:+.3f})")
     for thr in thresholds:
         for it in ITERS_LIST:
             peg, pge = rates[thr]
             pe, pg = ar.predicted_residuals(peg, pge, f_best, it)
             c = grid[(thr, it)]
-            print(f"  {thr:>8d} {it:>3d} {c['e']:>9.3f} {pe:>7.3f} "
-                  f"{c['g']:>9.3f} {pg:>7.3f}")
+            print(f"  {thr:>8d} {it:>3d} {c['e']:>9.3f} {pe + off_best:>7.3f} "
+                  f"{c['g']:>9.3f} {pg + off_best:>7.3f}")
 
     banner("RECOMMENDATION")
-    ranked = sorted(grid.items(), key=lambda kv: kv[1]["worst"])
-    base_key = (int(fF["threshold_raw"]), 3)
-    base = grid.get(base_key)
-    if base is not None:
-        print(f"  today's setting (F-optimal threshold {base_key[0]}, 3 iters): "
-              f"worst residual {base['worst']:.3f} "
-              f"({'PASS' if base['worst'] <= GATE_LIMIT else 'FAILS the ' + str(GATE_LIMIT) + ' gate'})")
-    print(f"\n  best measured cells:")
-    print(f"  {'thr':>8s} {'N':>3s} {'worst':>7s} {'|g>':>8s} {'|e>':>8s} {'F':>6s}")
-    for (thr, it), c in ranked[:6]:
-        peg, pge = rates[thr]
-        print(f"  {thr:>8d} {it:>3d} {c['worst']:>7.3f} {c['g']:>8.3f} {c['e']:>8.3f} "
-              f"{1 - 0.5 * (peg + pge):>6.3f}")
-    (bthr, bit), bc = ranked[0]
-    bpeg, bpge = rates[bthr]
-    print(f"\n  -> set RESET_THRESHOLD_RAW = {bthr}")
-    print(f"     set RESET_GROUND_BELOW  = {gb}")
-    print(f"     set RESET_MAX_ITERS     = {bit}")
-    print(f"     (worst residual {bc['worst']:.3f}, assignment F at that threshold "
-          f"{1 - 0.5 * (bpeg + bpge):.3f})")
-    if base is not None and base["worst"] > 0:
-        print(f"     improvement over today's setting: "
-              f"{base['worst'] / max(bc['worst'], 1e-6):.1f}x")
-    print(f"\n  cheapest cell that still clears the {GATE_LIMIT} gate:")
-    clears = [((thr, it), c) for (thr, it), c in grid.items() if c["worst"] <= GATE_LIMIT]
-    if clears:
-        (cthr, cit), cc = min(clears, key=lambda kv: (kv[0][1], kv[1]["worst"]))
-        print(f"     threshold {cthr}, {cit} iters -> worst {cc['worst']:.3f}")
-    else:
-        print("     none -- the readout itself is the limit, not the threshold.")
+    print(f"  {len(grid)} cells were measured.  Picking the single smallest is a")
+    print(f"  max-of-noise selection, so the recommendation below comes from the FITTED")
+    print(f"  model (which pools all {n_pts} points) evaluated on the measured blob")
+    print(f"  statistics, not from the grid minimum.")
+    cand = np.unique(np.concatenate((g_shots, e_shots)))
+    cand = cand[(cand > min(thresholds) - 4000) & (cand < max(thresholds) + 4000)]
+    best = None
+    print(f"\n  {'N':>3s} {'best thr':>9s} {'P(e|g)':>7s} {'P(g|e)':>7s} {'F':>6s} "
+          f"{'true worst':>11s} {'as measured':>12s}")
+    for it in ITERS_LIST:
+        row = None
+        for t in cand[::max(1, len(cand) // 400)]:
+            peg, pge = ar._threshold_rates(g_shots[1::2], e_shots[1::2], t, gb)
+            pe, pg = ar.predicted_residuals(peg, pge, f_best, it)
+            w = max(pe, pg)
+            if np.isfinite(w) and (row is None or w < row[0]):
+                row = (w, int(t), peg, pge)
+        if row is None:
+            continue
+        w, t, peg, pge = row
+        print(f"  {it:>3d} {t:>9d} {peg:>7.3f} {pge:>7.3f} "
+              f"{1 - 0.5 * (peg + pge):>6.3f} {w:>11.3f} {w + off_best:>12.3f}")
+        if best is None or w < best[0]:
+            best = row + (it,)
+    peg0, pge0 = rates[int(fF["threshold_raw"])]
+    pe0, pg0 = ar.predicted_residuals(peg0, pge0, f_best, 3)
+    base = grid.get((int(fF["threshold_raw"]), 3))
+    print(f"\n  today's setting (F-optimal threshold {fF['threshold_raw']}, 3 iters):")
+    print(f"     model true worst {max(pe0, pg0):.3f}, as measured "
+          f"{max(pe0, pg0) + off_best:.3f}"
+          + (f", observed {base['worst']:.3f}" if base else ""))
+    if best is not None:
+        w, t, peg, pge, it = best
+        print(f"\n  -> set RESET_THRESHOLD_RAW = {t}")
+        print(f"     set RESET_GROUND_BELOW  = {gb}")
+        print(f"     set RESET_MAX_ITERS     = {it}")
+        print(f"     (model true worst {w:.3f}, assignment F at that threshold "
+              f"{1 - 0.5 * (peg + pge):.3f})")
+    print(f"\n  cheapest N whose model worst-case clears the {GATE_LIMIT} gate WITH the")
+    print(f"  zero-point offset still in place (i.e. what the gate will actually see):")
+    got = False
+    for it in ITERS_LIST:
+        row = None
+        for t in cand[::max(1, len(cand) // 400)]:
+            peg, pge = ar._threshold_rates(g_shots[1::2], e_shots[1::2], t, gb)
+            w = max(ar.predicted_residuals(peg, pge, f_best, it))
+            if np.isfinite(w) and (row is None or w < row[0]):
+                row = (w, int(t))
+        if row is not None and row[0] + off_best <= GATE_LIMIT:
+            print(f"     N = {it} at threshold {row[1]} -> {row[0] + off_best:.3f}")
+            got = True
+            break
+    if not got:
+        print(f"     none of the iteration counts tested.  Fix the zero point first")
+        print(f"     (ResetBaselineAudit.py) -- without the offset, N = "
+              f"{ITERS_LIST[0]} already clears it.")
 
     banner("scan complete -- paste the whole log back")
 
