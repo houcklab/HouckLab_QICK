@@ -30,6 +30,7 @@ RESET_MAX_ITERS = 3
 RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
 THERMALIZATION_US = 25.0
+FEEDBACK_RELAX_US = 25.0
 PASSIVE_RESET_US = 1000.0
 
 P_SS_CAL = {
@@ -78,7 +79,7 @@ def _base_cfg(p, extra=None):
         cfg["reset_thermalization_us"] = THERMALIZATION_US
     if extra:
         cfg.update(extra)
-    cfg["relax_delay"] = (THERMALIZATION_US if active_reset.uses_feedback(cfg)
+    cfg["relax_delay"] = (FEEDBACK_RELAX_US if active_reset.uses_feedback(cfg)
                           else PASSIVE_RESET_US)
     return cfg
 

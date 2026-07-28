@@ -66,14 +66,17 @@ RESONATOR_LOOKUP_CSV = None
 RESONATOR_FIT_PARAMS = None #[7246069361.953229,113435289.31239134,5.073521417128309,0.23663454523911054,62987.59314475978,-4611.599933061799,0.5368760162762044]
 
 INTERLEAVE_ROUNDS = 10
+RANDOMIZE_POINT_ORDER = True
+POINT_ORDER_SEED = None
 
 PROBE_RESET = True
 CAL_RES_PHASE = False
-RESET_THRESHOLD_RAW = 7087
+RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
-RESET_GROUND_BELOW = True
+RESET_GROUND_BELOW = False
 THERMALIZATION_US = 25.0
 T1_RESET_BACKSTOP_US = 2000.0
+T1_FEEDBACK_RELAX_US = 25.0
 
 
 P1_RESONATOR = {
@@ -172,9 +175,9 @@ P6_3PT_T1 = {
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     "reset_mode": "feedback",
-    "reset_threshold_raw": 7087,
+    "reset_threshold_raw": None,
     "reset_oper": "lower",
-    "reset_ground_below": True,
+    "reset_ground_below": False,
     "reset_max_iters": 3,
     "T1_probe_cfg": {
         "shots_T1": 1000,
@@ -200,9 +203,9 @@ P6_FULL_T1 = {
     "t_min_us_default": 1.0,
     "t_points_default": 41,
     "reset_mode": "feedback",
-    "reset_threshold_raw": 7087,
+    "reset_threshold_raw": None,
     "reset_oper": "lower",
-    "reset_ground_below": True,
+    "reset_ground_below": False,
     "reset_max_iters": 3,
     "T1_probe_cfg": None,
 }
@@ -735,10 +738,14 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     base.update({
         "shots": int(p["shots"]),
         "interleave_rounds": p.get("interleave_rounds", INTERLEAVE_ROUNDS),
+        "randomize_point_order": bool(RANDOMIZE_POINT_ORDER),
+        "point_order_seed": POINT_ORDER_SEED,
         "ff_gain_vec": dc_vec,
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": T1_RESET_BACKSTOP_US,
+        "relax_delay": (T1_FEEDBACK_RELAX_US
+                        if active_reset.uses_feedback(p.get("reset_mode"))
+                        else T1_RESET_BACKSTOP_US),
         "qubit_pulse_style": "arb",
     })
     if active_reset.uses_feedback(p.get("reset_mode")):
@@ -755,11 +762,10 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     return base
 
 
-def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
-    plt.close("all")
-    gc.collect()
-    p = dict(P6_3PT_T1)
-    if active_reset.uses_feedback(p.get("reset_mode")) and PROBE_RESET:
+def _resolve_step6_reset(p, soc, soccfg, outer_folder):
+    if not active_reset.uses_feedback(p.get("reset_mode")):
+        return p
+    if PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
                                  shots=int(p.get("reset_probe_shots", 2000)))
@@ -770,12 +776,25 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             p["reset_threshold_raw"] = int(rec["threshold_raw"])
             p["reset_oper"] = str(rec["oper"])
             p["reset_ground_below"] = bool(rec["ground_below"])
-    elif active_reset.uses_feedback(p.get("reset_mode")):
-        print(f"[6] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
-              f"({RESET_OPER}) without re-probing")
-        p["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
-        p["reset_oper"] = str(RESET_OPER)
-        p["reset_ground_below"] = bool(RESET_GROUND_BELOW)
+        return p
+    if RESET_THRESHOLD_RAW is None:
+        raise RuntimeError(
+            "PROBE_RESET=False but RESET_THRESHOLD_RAW is None.  The raw reset "
+            "threshold is an absolute accumulator value that drifts between sessions, "
+            "so there is no safe default -- set PROBE_RESET=True, or paste a threshold "
+            "measured on this cooldown with this readout.")
+    print(f"[6] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
+          f"({RESET_OPER}) without re-probing")
+    p["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
+    p["reset_oper"] = str(RESET_OPER)
+    p["reset_ground_below"] = bool(RESET_GROUND_BELOW)
+    return p
+
+
+def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
+    plt.close("all")
+    gc.collect()
+    p = _resolve_step6_reset(dict(P6_3PT_T1), soc, soccfg, outer_folder)
     freq_step_mhz = p.get("freq_step_mhz", None)
     if freq_step_mhz is not None:
         if FLUX_FIT_PARAMS is None:
@@ -816,7 +835,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
 def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
-    p = P6_FULL_T1
+    p = _resolve_step6_reset(dict(P6_FULL_T1), soc, soccfg, outer_folder)
     freq_step_mhz = p.get("freq_step_mhz", None)
     if freq_step_mhz is not None:
         if FLUX_FIT_PARAMS is None:
