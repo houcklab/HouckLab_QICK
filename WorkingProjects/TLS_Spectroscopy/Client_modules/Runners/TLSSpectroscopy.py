@@ -74,7 +74,7 @@ CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = False
-THERMALIZATION_US = 25.0
+THERMALIZATION_US = 2.0
 T1_RESET_BACKSTOP_US = 2000.0
 T1_FEEDBACK_RELAX_US = 25.0
 
@@ -157,7 +157,7 @@ P5_SS_CAL = {
     "reset_mode": "feedback",
     "reset_probe_shots": 2000,
     "reset_max_iters": 3,
-    "reset_thermalization_us": 25.0,
+    "reset_thermalization_us": 2.0,
 }
 
 

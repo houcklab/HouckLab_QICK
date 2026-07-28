@@ -23,13 +23,13 @@ READOUT_AFTER_PARK = True
 RESET_MODE = "feedback"
 PROBE_RESET = True
 CAL_RES_PHASE = True
-RESET_THRESHOLD_RAW = 7087
+RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
-RESET_GROUND_BELOW = True
+RESET_GROUND_BELOW = False
 RESET_MAX_ITERS = 3
 RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
-THERMALIZATION_US = 25.0
+THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
 PASSIVE_RESET_US = 1000.0
 
@@ -151,6 +151,12 @@ def main():
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
     elif active_reset.uses_feedback(RESET_MODE):
+        if RESET_THRESHOLD_RAW is None:
+            raise RuntimeError(
+                "PROBE_RESET=False but RESET_THRESHOLD_RAW is None.  The raw reset "
+                "threshold is an absolute accumulator value that drifts between "
+                "sessions, so there is no safe default -- set PROBE_RESET=True, or "
+                "paste a threshold measured on this cooldown with this readout.")
         print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
 
