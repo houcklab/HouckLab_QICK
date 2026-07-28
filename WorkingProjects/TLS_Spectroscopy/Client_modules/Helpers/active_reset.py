@@ -255,7 +255,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     _assert_scratch_free(prog, page, named)
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
-    clear_us = (cfg.get("reset_thermalization_us", 25.0)
+    clear_us = (cfg.get("reset_thermalization_us", 2.0)
                 if thermalization_us is None else thermalization_us)
     clear_us = float(clear_us)
     if clear_us < 0:

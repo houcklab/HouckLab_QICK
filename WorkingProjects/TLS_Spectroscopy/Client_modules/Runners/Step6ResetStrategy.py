@@ -36,7 +36,7 @@ PROBE_SHOTS = 2000
 
 INTERLEAVE_ROUNDS = 10
 RANDOMIZE_POINT_ORDER = True
-THERMALIZATION_US = 25.0
+THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
 PASSIVE_BACKSTOP_US = 2000.0
 RESET_MAX_ITERS = 3
@@ -273,20 +273,39 @@ def run():
             scaled = ab[r_]["t"] * SWEEP_POINTS_PROD / max(len(dc_vec), 1) / 60.0
             print(f"  {r_:>7d} {ab[r_]['t']:>8.2f} {base_t / ab[r_]['t']:>7.2f}x "
                   f"{scaled:>11.2f}m {100 * sc:>10.1f}% {sc / max(base_sc, 1e-9):>12.2f}x")
-        worst = max(ab, key=lambda k: np.nanmean(
-            np.nanstd(ab[k]["t1"], axis=0) / np.abs(np.nanmean(ab[k]["t1"], axis=0))))
-        best_speed = min(ab, key=lambda k: ab[k]["t"])
-        sc_best = np.nanmean(np.nanstd(ab[best_speed]["t1"], axis=0)
-                             / np.abs(np.nanmean(ab[best_speed]["t1"], axis=0)))
-        print(f"\n  -> at rounds={best_speed} the pass is "
-              f"{base_t / ab[best_speed]['t']:.2f}x faster and the T1 scatter is "
-              f"{sc_best / max(base_sc, 1e-9):.2f}x")
-        if sc_best <= 1.25 * base_sc:
-            print(f"     the scatter did NOT degrade, so rounds={best_speed} is safe and")
-            print(f"     worth more than any reset knob.  Set INTERLEAVE_ROUNDS accordingly.")
+        rel = 1.0 / np.sqrt(2 * (ROUNDS_AB_PASSES - 1)) / np.sqrt(max(len(dc_vec), 1))
+        print(f"\n  each scatter is a std from {ROUNDS_AB_PASSES} passes averaged over "
+              f"{len(dc_vec)} DC points,")
+        print(f"  so each carries a relative uncertainty of about {rel:.2f}.  Judge the")
+        print(f"  ratios against that, not against a fixed cutoff.")
+        scs = {}
+        for r_ in ROUNDS_AB:
+            arr = ab[r_]["t1"]
+            scs[r_] = float(np.nanmean(np.nanstd(arr, axis=0)
+                                       / np.abs(np.nanmean(arr, axis=0))))
+        b = scs[ROUNDS_AB[0]]
+        safe = []
+        print(f"\n  {'rounds':>7s} {'speedup':>8s} {'scatter ratio':>14s} {'sigma':>7s}")
+        for r_ in ROUNDS_AB:
+            d = scs[r_] - b
+            de = np.hypot(scs[r_] * rel, b * rel)
+            sig = abs(d) / max(de, 1e-9)
+            print(f"  {r_:>7d} {base_t / ab[r_]['t']:>7.2f}x {scs[r_] / b:>13.2f}x "
+                  f"{sig:>7.1f}")
+            if sig < 2.0:
+                safe.append(r_)
+        if safe:
+            pick = min(safe, key=lambda r_: ab[r_]["t"])
+            print(f"\n  -> rounds={pick} is {base_t / ab[pick]['t']:.2f}x faster with a "
+                  f"scatter ratio of {scs[pick] / b:.2f}x")
+            print(f"     ({abs(scs[pick] - b) / max(np.hypot(scs[pick] * rel, b * rel), 1e-9):.1f} "
+                  f"sigma -- no evidence of harm).  Set INTERLEAVE_ROUNDS = {pick}.")
+            worse = [r_ for r_ in ROUNDS_AB if r_ not in safe]
+            if worse:
+                print(f"     rounds={min(worse)} is faster still but its scatter is "
+                      f"{scs[min(worse)] / b:.2f}x, which does not clear 2 sigma.")
         else:
-            print(f"     the scatter DID degrade -- rounds is doing real work.  Take the")
-            print(f"     largest speedup whose scatter ratio stays under ~1.25x.")
+            print(f"\n  -> no reduction clears 2 sigma; keep rounds={ROUNDS_AB[0]}.")
 
     banner("VERDICT -- how to run active reset for 2-3 days")
     base = next((r for r in rows if r["frac"] == 0.0), None)

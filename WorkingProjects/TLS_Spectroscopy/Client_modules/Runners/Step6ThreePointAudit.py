@@ -38,10 +38,10 @@ PREVIEW_REPEATS = 2
 PREVIEW_SHOTS = 1000
 
 BASELINE_DC_OFFSET = 0
-INTERLEAVE_ROUNDS = 10
+INTERLEAVE_ROUNDS = 2
 RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
-THERMALIZATION_US = 25.0
+THERMALIZATION_US = 2.0
 T1_FEEDBACK_RELAX_US = 25.0
 T1_RESET_BACKSTOP_US = 2000.0
 FLUX_TAIL_COMPENSATION = None
@@ -63,7 +63,7 @@ P6_3PT_T1 = {
     "dc_min": 0,
     "dc_max": 10000,
     "freq_step_mhz": 1,
-    "Ts_us": 60.0,
+    "Ts_us": 115.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     "reset_mode": "feedback",

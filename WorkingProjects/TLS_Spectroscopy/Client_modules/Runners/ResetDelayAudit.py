@@ -248,6 +248,14 @@ def run():
     banner("STAGE 1 -- resonator ring-down, measured directly from the ADC trace")
     rd = measure_ringdown(soc, soccfg, cfg)
     if rd is not None:
+        top = float(np.max(rd["mag"]))
+        med = float(np.median(rd["mag"]))
+        if top < 5.0 * max(med, 1e-9) or top < 50.0:
+            print(f"\n  NO SIGNAL: the stitched trace peaks at {top:.0f} against a median")
+            print(f"  of {med:.0f}.  The ADC never saw the readout tone, so any tau fitted")
+            print(f"  from it is meaningless.  Ignore stage 1; stage 2 still measures the")
+            print(f"  delay the pi actually needs, which is the number that matters.")
+            rd["tau_us"] = float("nan")
         print(f"  decimated sample spacing {rd['dt_us'] * 1e3:.1f} ns, "
               f"drive length {rd['drive_us']:.2f} us, peak at {rd['peak_us']:.2f} us, "
               f"tail {rd['tail_us']:.2f} us")
@@ -290,6 +298,7 @@ def run():
     oper = "lower" if lo >= up else "upper"
     disc = ar.fit_assignment_threshold(ref["g"][oper][::2], ref["e"][oper][::2])
     thr, gb = int(disc["threshold_raw"]), bool(disc["ground_below"])
+    ref_g, ref_e = ref["g"][oper], ref["e"][oper]
     print(f"\n  readout: quadrature '{oper}', separation {max(lo, up):.0f}, "
           f"F={disc['fidelity']:.3f}, threshold {thr}")
 
@@ -410,6 +419,19 @@ def run():
         b, be = stat(acc[("clear_real", cu)])
         print(f"  {cu:>8.1f} {a:>11.4f}+-{ae_:<6.4f} {b:>11.4f}+-{be:<6.4f} "
               f"{cu:>8.1f} us")
+    gvals = np.array([stat(acc[("clear_g", cu)])[0] for cu in CLEAR_SWEEP_US])
+    peg0, pge0 = ar._threshold_rates(ref_g, ref_e, 0, True)
+    floor0 = ar.reset_floor(peg0, pge0)
+    print(f"\n  SANITY: the 'pi disabled' column is only meaningful if the huge threshold")
+    print(f"  ({NEVER_FIRE_THRESHOLD}) really did disable the pi.  The failure mode is regwi")
+    print(f"  truncating that immediate.  If it truncated toward 0 the effective threshold")
+    print(f"  would sit between the blobs and prep |g> would be driven to that threshold's")
+    print(f"  floor, {floor0:.3f}.  Measured: {np.nanmin(gvals):.3f}..{np.nanmax(gvals):.3f}.")
+    if np.nanmax(gvals) > 0.6 * floor0 + 0.15:
+        print(f"  *** prep |g> was driven upward -- the pi WAS firing.  Stage 3 is invalid. ***")
+    else:
+        print(f"  -> far below {floor0:.3f}, so the pi never fired.  Stage 3 is valid.")
+
     yy = np.array([stat(acc[("clear_real", cu)])[0] for cu in CLEAR_SWEEP_US])
     ee = np.array([max(stat(acc[("clear_real", cu)])[1], 1e-6) for cu in CLEAR_SWEEP_US])
     fin = np.isfinite(yy)

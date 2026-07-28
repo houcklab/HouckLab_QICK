@@ -244,10 +244,24 @@ def run():
         print("  Each in-loop readout was measured to destroy ~16% of the excited")
         print("  population, so more iterations is not automatically better.  This finds")
         print("  where it stops helping and whether it starts hurting.")
+        print("  Configs are INTERLEAVED round by round in randomised order, so readout")
+        print("  drift during the stage cannot map onto the iteration axis.")
+        acc_g = {it: [] for it in ITERS_LIST}
+        acc_e = {it: [] for it in ITERS_LIST}
+        rng = np.random.default_rng(0)
+        for _ in range(ROUNDS):
+            for j in rng.permutation(len(ITERS_LIST)):
+                it = ITERS_LIST[int(j)]
+                acc_g[it].append(run_pe(soc, soccfg,
+                                        build(cfg, ref, False, True, it), ref))
+                acc_e[it].append(run_pe(soc, soccfg,
+                                        build(cfg, ref, True, True, it), ref))
         print(f"\n  {'N':>3s} {'|g>':>16s} {'|e>':>16s} {'worst':>7s} {'floor':>7s} "
               f"{'us/shot':>9s} {'sweep(min)':>11s}")
         for it in ITERS_LIST:
-            gm, ge, em, ee, w = worst_residual(soc, soccfg, cfg, ref, it)
+            gm, ge = stat(acc_g[it])
+            em, ee = stat(acc_e[it])
+            w = max(abs(gm), abs(em))
             us, oh = timing(soc, soccfg, build(cfg, ref, True, True, it), ref)
             if it == BASE_ITERS and oh > 0:
                 OVERHEAD_S[0] = oh
@@ -255,6 +269,12 @@ def run():
             print(f"  {it:>3d} {gm:>9.4f}+-{ge:<5.4f} {em:>9.4f}+-{ee:<5.4f} {w:>7.4f} "
                   f"{ref['floor']:>7.3f} {us:>9.1f} {sweep_time_min(us):>11.1f}",
                   flush=True)
+        mono = [max(abs(stat(acc_g[i])[0]), abs(stat(acc_e[i])[0])) for i in ITERS_LIST]
+        bumps = sum(1 for a, b in zip(mono, mono[1:]) if b > a + 0.05)
+        if bumps:
+            print(f"\n  WARNING {bumps} point(s) rise with N by more than 0.05.  The model")
+            print(f"  says the residual must fall monotonically, so that is drift or a")
+            print(f"  discrimination problem, not iteration physics.")
 
     if RUN_READ_GAIN:
         banner("STAGE 2 -- readout drive gain DURING the reset loop only")
@@ -381,16 +401,18 @@ def run():
             p["above"] = p["resid"] - p["floor"]
             p["ok"] = p["above"] <= ar.MAX_RESIDUAL_ABOVE_FLOOR
             p["raw_min"] = sweep_time_min(p["us"])
-            p["eff_min"] = effective_min(p["us"], p["F"], p["resid_g"])
             p["contrast"] = contrast(p["F"], p["resid_g"])
+            p["eff_min"] = (effective_min(p["us"], p["F"], p["resid_g"])
+                            if p["contrast"] > 0.05 else np.inf)
         print(f"\n  {'config':>22s} {'resid':>7s} {'above':>7s} {'F':>6s} "
               f"{'contrast':>9s} {'us/shot':>8s} {'raw min':>8s} {'eff min':>8s} {'':<3s}")
         for p in sorted(rows, key=lambda q: q["eff_min"]):
+            eff = "  unusable" if not np.isfinite(p["eff_min"]) else f"{p['eff_min']:>8.2f}"
             print(f"  {p['tag']:>22s} {p['resid']:>7.4f} {p['above']:>+7.3f} "
                   f"{p['F']:>6.3f} {p['contrast']:>9.3f} {p['us']:>8.1f} "
-                  f"{p['raw_min']:>8.2f} {p['eff_min']:>8.2f} "
+                  f"{p['raw_min']:>8.2f} {eff} "
                   f"{'ok ' if p['ok'] else 'NO ':<3s}")
-        good = [p for p in rows if p["ok"]]
+        good = [p for p in rows if p["ok"] and np.isfinite(p["eff_min"])]
         base = next((p for p in rows if p["tag"] == f"iters={BASE_ITERS}"), None)
         if good:
             best = min(good, key=lambda p: p["eff_min"])
