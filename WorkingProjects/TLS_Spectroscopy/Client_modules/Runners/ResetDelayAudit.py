@@ -17,15 +17,16 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 QUBIT = "q4"
 
-RINGDOWN_TAIL_US = 10.0
-RINGDOWN_REPS = 200
+RINGDOWN_DRIVE_US = 0.4
+RINGDOWN_SOFT_AVGS = 500
+RINGDOWN_BUF_FRACTION = 0.95
 
 SYNCDELAY_SWEEP_US = [3.5, 4.0, 5.0, 7.0, 10.0, 15.0, 25.0]
 CLEAR_SWEEP_US = [0.0, 0.5, 2.0, 5.0, 10.0, 25.0, 50.0]
 
-ROUNDS = 4
-REF_SHOTS = 3000
-GATE_SHOTS = 800
+ROUNDS = 20
+REF_SHOTS = 4000
+GATE_SHOTS = 1000
 REF_RELAX_US = 2000.0
 GATE_RELAX_US = 25.0
 
@@ -47,7 +48,7 @@ class RingdownProgram(AveragerProgram):
 
     def initialize(self):
         cfg = self.cfg
-        cfg.setdefault("reps", RINGDOWN_REPS)
+        cfg["reps"] = 1
         ro = cfg["ro_chs"][0]
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=ro)
@@ -56,7 +57,8 @@ class RingdownProgram(AveragerProgram):
                              length=self.us2cycles(cfg["capture_us"], ro_ch=ro),
                              gen_ch=cfg["res_ch"])
         set_readout_pulse(self, self.freq2reg(cfg["read_pulse_freq"],
-                                              gen_ch=cfg["res_ch"], ro_ch=ro))
+                                              gen_ch=cfg["res_ch"], ro_ch=ro),
+                          length_us=float(cfg["ringdown_drive_us"]))
         self.synci(200)
 
     def body(self):
@@ -69,27 +71,47 @@ class RingdownProgram(AveragerProgram):
         self.sync_all(self.us2cycles(cfg.get("relax_delay", 200.0)))
 
 
-def measure_ringdown(soc, soccfg, cfg, capture_us=None):
-    c = dict(cfg)
-    drive_us = float(readout_drive_length_us(cfg))
-    want = float(drive_us + RINGDOWN_TAIL_US if capture_us is None else capture_us)
-    c["reps"] = RINGDOWN_REPS
-    c["relax_delay"] = 200.0
-    ro = c["ro_chs"][0]
-    out = None
-    for attempt in (want, drive_us + 4.0, drive_us + 2.0, drive_us + 1.0):
-        c["capture_us"] = float(attempt)
+def decimated_budget_us(soccfg, ro):
+    maxlen = None
+    for key in ("buf_maxlen", "avg_buf_maxlen", "maxlen"):
         try:
-            prog = RingdownProgram(soccfg, c)
-            out = prog.acquire_decimated(soc, load_pulses=True, progress=False)
-            if attempt < want:
-                print(f"  decimated buffer would not hold {want:.1f} us; captured "
-                      f"{attempt:.1f} us instead.")
+            maxlen = int(soccfg['readouts'][ro][key])
             break
-        except Exception as exc:
-            last = exc
-    if out is None:
-        print(f"  could not capture a decimated trace ({last}).")
+        except Exception:
+            continue
+    if not maxlen:
+        maxlen = 1024
+    try:
+        return float(soccfg.cycles2us(maxlen, ro_ch=ro)), maxlen
+    except Exception:
+        pass
+    try:
+        return maxlen / float(soccfg['readouts'][ro]['f_fabric']), maxlen
+    except Exception:
+        return 2.5, maxlen
+
+
+def measure_ringdown(soc, soccfg, cfg):
+    c = dict(cfg)
+    ro = c["ro_chs"][0]
+    budget_us, maxlen = decimated_budget_us(soccfg, ro)
+    capture = float(budget_us) * RINGDOWN_BUF_FRACTION
+    drive = float(min(RINGDOWN_DRIVE_US, capture / 4.0))
+    print(f"  decimated buffer holds {maxlen} samples = {budget_us:.2f} us, so the")
+    print(f"  capture is {capture:.2f} us.  The normal readout pulse is "
+          f"{readout_drive_length_us(cfg):.2f} us, which alone would not fit, so this")
+    print(f"  stage drives the resonator with a SHORT {drive:.2f} us tone instead and")
+    print(f"  watches it empty.  Ring-down does not care how long you filled for.")
+    c["capture_us"] = capture
+    c["ringdown_drive_us"] = drive
+    c["reps"] = 1
+    c["soft_avgs"] = int(RINGDOWN_SOFT_AVGS)
+    c["relax_delay"] = 50.0
+    try:
+        prog = RingdownProgram(soccfg, c)
+        out = prog.acquire_decimated(soc, load_pulses=True, progress=False)
+    except Exception as exc:
+        print(f"  could not capture a decimated trace ({exc}).")
         print(f"  Skipping the direct kappa measurement; stage 2 still measures the")
         print(f"  delay the pi actually needs, which is the number that matters.")
         return None
@@ -105,7 +127,7 @@ def measure_ringdown(soc, soccfg, cfg, capture_us=None):
     else:
         dt_us = float(c["capture_us"]) / max(mag.size, 1)
     t = np.arange(mag.size) * dt_us
-    drive_us = float(readout_drive_length_us(cfg))
+    drive_us = float(c["ringdown_drive_us"])
     peak = int(np.argmax(mag))
     start = min(peak + max(2, int(round(0.05 / max(dt_us, 1e-9)))), mag.size - 5)
     tt, mm = t[start:], mag[start:]
@@ -142,8 +164,8 @@ def ge_reference(soc, soccfg, cfg, shots):
     return out
 
 
-def gate(soc, soccfg, cfg, prep, do_reset, thr, gb, oper, iters,
-         syncdelay_us, clear_us, force_flip=False):
+def gate_pe(soc, soccfg, cfg, prep, do_reset, thr, gb, oper, iters,
+            syncdelay_us, clear_us, ref_thr, ref_gb, force_flip=False):
     c = dict(cfg)
     c["reps"] = c["shots"] = int(GATE_SHOTS)
     c["prep_excited"] = bool(prep)
@@ -157,16 +179,13 @@ def gate(soc, soccfg, cfg, prep, do_reset, thr, gb, oper, iters,
     c["reset_thermalization_us"] = float(clear_us)
     c["reset_read_delay_us"] = RESET_READ_DELAY_US
     c["relax_delay"] = GATE_RELAX_US
-    return ResetCheckProgram(soccfg, c).acquire(soc, load_pulses=True)
-
-
-def projector(ag, ae):
-    dx, dy = ae[0] - ag[0], ae[1] - ag[1]
-    den = dx * dx + dy * dy
-
-    def p(I, Q):
-        return (((I - ag[0]) * dx + (Q - ag[1]) * dy) / den) if den > 0 else float("nan")
-    return p
+    prog = ResetCheckProgram(soccfg, c)
+    prog.acquire(soc, load_pulses=True)
+    lo, up = prog.shots()
+    if lo is None:
+        return float("nan")
+    v = (lo if oper == "lower" else up)[:, -1].astype(float)
+    return float(np.mean(v >= ref_thr)) if ref_gb else float(np.mean(v <= ref_thr))
 
 
 def stat(v):
@@ -268,45 +287,66 @@ def run():
     print("  not hurting the pi.  Ratio < 1.0 = they are, and the delay is too short.")
     t0 = time.time()
     for r in range(ROUNDS):
-        ag = gate(soc, soccfg, cfg, False, False, thr, gb, oper, 1,
-                  BASE_SYNCDELAY_US, BASE_CLEAR_US)
-        ae = gate(soc, soccfg, cfg, True, False, thr, gb, oper, 1,
-                  BASE_SYNCDELAY_US, BASE_CLEAR_US)
-        proj = projector(ag, ae)
+        clean = gate_pe(soc, soccfg, cfg, True, False, thr, gb, oper, 1,
+                        BASE_SYNCDELAY_US, BASE_CLEAR_US, thr, gb)
+        rec(("clean_pi",), clean)
         for sd in SYNCDELAY_SWEEP_US:
             try:
-                v = gate(soc, soccfg, cfg, False, True, thr, gb, oper, 1,
-                         sd, BASE_CLEAR_US, force_flip=True)
-                rec(("sync", sd), proj(*v))
+                v = gate_pe(soc, soccfg, cfg, False, True, thr, gb, oper, 1,
+                            sd, BASE_CLEAR_US, thr, gb, force_flip=True)
+                rec(("sync", sd), v / clean if clean > 0.05 else np.nan)
+                rec(("sync_raw", sd), v)
             except ValueError as exc:
                 rec(("sync", sd), np.nan)
+                rec(("sync_raw", sd), np.nan)
                 if r == 0:
                     print(f"    syncdelay {sd:g} us rejected by the timing guard: "
                           f"{str(exc)[:70]}")
-        print(f"  round {r + 1}/{ROUNDS} ({time.time() - t0:.0f} s)", flush=True)
-    print(f"\n  {'syncdelay':>10s} {'pi reaches':>18s} {'cost/shot':>11s}")
+        if r == 0 or (r + 1) % 5 == 0:
+            print(f"  round {r + 1}/{ROUNDS} ({time.time() - t0:.0f} s)", flush=True)
+    cm, ce = stat(acc[("clean_pi",)])
+    print(f"\n  a clean pi (no readout in front of it) reaches P(excited) = "
+          f"{cm:.4f} +- {ce:.4f}")
+    print(f"  shot-noise floor at {GATE_SHOTS} shots x {ROUNDS} rounds: "
+          f"{np.sqrt(0.25 / (GATE_SHOTS * ROUNDS)):.4f}")
+    print(f"\n  {'syncdelay':>10s} {'P(exc)':>9s} {'/clean pi':>18s} {'cost/shot':>11s}")
     best_sd, best_v = None, -np.inf
     for sd in SYNCDELAY_SWEEP_US:
         m, e = stat(acc[("sync", sd)])
-        print(f"  {sd:>10.1f} {m:>11.4f}+-{e:<6.4f} {RESET_ITERS * sd:>9.1f} us")
+        rm, _ = stat(acc[("sync_raw", sd)])
+        print(f"  {sd:>10.1f} {rm:>9.4f} {m:>11.4f}+-{e:<6.4f} "
+              f"{RESET_ITERS * sd:>9.1f} us")
         if np.isfinite(m) and m > best_v:
             best_v, best_sd = m, sd
     ok = [(sd, *stat(acc[("sync", sd)])) for sd in SYNCDELAY_SWEEP_US
           if np.isfinite(stat(acc[("sync", sd)])[0])]
+    knee = BASE_SYNCDELAY_US
     if len(ok) >= 3:
-        lo_sd, hi_sd = ok[0], ok[-1]
-        d = hi_sd[1] - lo_sd[1]
-        de = np.hypot(lo_sd[2], hi_sd[2])
-        print(f"\n  change from {lo_sd[0]:g} us to {hi_sd[0]:g} us: {d:+.4f} +- {de:.4f} "
-              f"({abs(d) / max(de, 1e-9):.1f} sigma)")
-        knee = next((sd for sd, m, e in ok if m >= 0.98 * best_v), best_sd)
-        print(f"  the pi stops improving at reset_meas_syncdelay_us = {knee:g} us")
-        print(f"  -> that is the ring-down requirement, measured on the thing that")
-        print(f"     actually cares.  Cost {RESET_ITERS * knee:.1f} us per shot at "
-              f"{RESET_ITERS} iterations.")
+        y = np.array([m for _, m, _ in ok])
+        e = np.array([max(err, 1e-6) for _, _, err in ok])
+        w = 1.0 / e ** 2
+        mu = float((w * y).sum() / w.sum())
+        chi = float((((y - mu) / e) ** 2).sum())
+        dof = len(y) - 1
+        print(f"\n  is there ANY dependence on the delay?")
+        print(f"    weighted mean {mu:.4f}, chi2 against a flat line = {chi:.1f} "
+              f"for {dof} dof")
+        if chi < dof + 2.0 * np.sqrt(2.0 * dof):
+            print(f"    -> NO.  The sweep is flat: the pi does not care about this delay")
+            print(f"       over {ok[0][0]:g}..{ok[-1][0]:g} us, so ring-down is already")
+            print(f"       cleared by the time the pi fires.  Take the CHEAPEST value.")
+            knee = ok[0][0]
+        else:
+            best_v = max(m for _, m, _ in ok)
+            knee = next((sd for sd, m, _ in ok if m >= 0.98 * best_v), best_sd)
+            print(f"    -> YES.  The pi stops improving at "
+                  f"reset_meas_syncdelay_us = {knee:g} us.")
+            print(f"       That is the ring-down requirement, measured on the thing")
+            print(f"       that actually cares.")
+        print(f"  cost of {knee:g} us: {RESET_ITERS * knee:.1f} us per shot at "
+              f"{RESET_ITERS} iterations")
     else:
-        knee = BASE_SYNCDELAY_US
-        print("  too few valid points to locate a knee.")
+        print("  too few valid points to judge; keeping the current value.")
 
     banner("STAGE 3 -- (B) post-loop delay, swept INDEPENDENTLY")
     print(f"  Held at the stage-2 choice reset_meas_syncdelay_us = {knee:g} us, so this")
@@ -314,27 +354,39 @@ def run():
     print("  The pi is disabled (threshold far beyond the blobs), so anything that")
     print("  moves here is the readout acting on the qubit, not the reset logic.")
     for r in range(ROUNDS):
-        ag = gate(soc, soccfg, cfg, False, False, thr, gb, oper, 1, knee, BASE_CLEAR_US)
-        ae = gate(soc, soccfg, cfg, True, False, thr, gb, oper, 1, knee, BASE_CLEAR_US)
-        proj = projector(ag, ae)
         for cu in CLEAR_SWEEP_US:
-            v = gate(soc, soccfg, cfg, False, True, NEVER_FIRE_THRESHOLD, True, oper,
-                     RESET_ITERS, knee, cu)
-            rec(("clear_g", cu), proj(*v))
-            v = gate(soc, soccfg, cfg, False, True, thr, gb, oper, RESET_ITERS, knee, cu)
-            rec(("clear_real", cu), proj(*v))
-        print(f"  round {r + 1}/{ROUNDS}", flush=True)
+            rec(("clear_g", cu), gate_pe(
+                soc, soccfg, cfg, False, True, NEVER_FIRE_THRESHOLD, True, oper,
+                RESET_ITERS, knee, cu, thr, gb))
+            rec(("clear_real", cu), gate_pe(
+                soc, soccfg, cfg, False, True, thr, gb, oper, RESET_ITERS, knee, cu,
+                thr, gb))
+        if r == 0 or (r + 1) % 5 == 0:
+            print(f"  round {r + 1}/{ROUNDS}", flush=True)
     print(f"\n  {'clear':>8s} {'pi disabled':>18s} {'real reset':>18s} {'cost/shot':>10s}")
     for cu in CLEAR_SWEEP_US:
         a, ae_ = stat(acc[("clear_g", cu)])
         b, be = stat(acc[("clear_real", cu)])
         print(f"  {cu:>8.1f} {a:>11.4f}+-{ae_:<6.4f} {b:>11.4f}+-{be:<6.4f} "
               f"{cu:>8.1f} us")
-    a0, e0 = stat(acc[("clear_real", CLEAR_SWEEP_US[0])])
-    a1, e1 = stat(acc[("clear_real", CLEAR_SWEEP_US[-1])])
-    d, de = a0 - a1, np.hypot(e0, e1)
-    print(f"\n  real reset, {CLEAR_SWEEP_US[0]:g} us vs {CLEAR_SWEEP_US[-1]:g} us: "
-          f"{d:+.4f} +- {de:.4f} ({abs(d) / max(de, 1e-9):.1f} sigma)")
+    yy = np.array([stat(acc[("clear_real", cu)])[0] for cu in CLEAR_SWEEP_US])
+    ee = np.array([max(stat(acc[("clear_real", cu)])[1], 1e-6) for cu in CLEAR_SWEEP_US])
+    fin = np.isfinite(yy)
+    if fin.sum() >= 3:
+        w = 1.0 / ee[fin] ** 2
+        mu = float((w * yy[fin]).sum() / w.sum())
+        chi = float((((yy[fin] - mu) / ee[fin]) ** 2).sum())
+        dof = int(fin.sum()) - 1
+        print(f"\n  weighted mean {mu:.4f}, chi2 against a flat line = {chi:.1f} "
+              f"for {dof} dof")
+        clear_flat = chi < dof + 2.0 * np.sqrt(2.0 * dof)
+        if clear_flat:
+            print(f"  -> FLAT.  reset_thermalization_us is not doing measurable work.")
+        else:
+            print(f"  -> NOT flat; the post-loop delay matters.  Pick the knee below.")
+    else:
+        clear_flat = True
+        print("\n  too few valid points to judge.")
 
     banner("VERDICT")
     if rd is not None and np.isfinite(rd.get("tau_us", np.nan)):
@@ -346,13 +398,16 @@ def run():
     vals = [v for v in vals if np.isfinite(v[1])]
     if vals:
         best = min(vals, key=lambda v: v[1])
-        cheap = next((v for v in vals if v[1] <= best[1] + np.hypot(v[2], best[2])), best)
+        cheap = (vals[0] if clear_flat else
+                 next((v for v in vals if v[1] <= best[1] + np.hypot(v[2], best[2])),
+                      best))
         print(f"  (B) reset_thermalization_us -> {cheap[0]:g} us   "
-              f"[cheapest value statistically indistinguishable from the best, "
-              f"{best[0]:g} us]")
-        if abs(d) <= 2 * de:
-            print(f"      the whole sweep is flat to within {2 * de:.3f}; (B) is not")
-            print(f"      doing real work here and the cheap value is the right one.")
+              f"[costs 1x per shot]")
+        if clear_flat:
+            print(f"      the sweep is statistically flat, so the cheapest value wins;")
+            print(f"      {best[0]:g} us looked best but not significantly so.")
+        else:
+            print(f"      cheapest value indistinguishable from the best ({best[0]:g} us)")
     print(f"\n  Set these in Helpers/active_reset.py defaults and in the runners only")
     print(f"  after seeing these numbers -- not before.")
 

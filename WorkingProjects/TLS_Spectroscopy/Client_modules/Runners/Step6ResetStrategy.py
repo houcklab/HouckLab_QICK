@@ -208,8 +208,12 @@ def run():
     dc2 = dc_vec[pick2]
     base_thr = int(rec["threshold_raw"])
     rows = []
+    print(f"\n  T1 is reported PER FLUX POINT.  Averaging over flux points is")
+    print(f"  meaningless here -- T1 genuinely runs {np.nanmax(np.nanmean(T1s, axis=0)):.0f}"
+          f" -> {np.nanmin(np.nanmean(T1s, axis=0)):.0f} us across this range, so a flux")
+    print(f"  average would just measure the flux dependence.")
     print(f"\n  {'detune':>8s} {'threshold':>10s} {'P(e|g)':>7s} {'P(g|e)':>7s} "
-          f"{'floor':>7s} {'T1 mean':>9s} {'spread':>8s} {'valid':>6s}")
+          f"{'floor':>7s} | " + "  ".join(f"dc={int(d):>5d}" for d in dc2))
     for frac in DETUNE_FRACTIONS:
         thr = int(round(base_thr + frac * sep))
         peg, pge = active_reset._threshold_rates(g_raw, e_raw, thr, gb)
@@ -222,43 +226,56 @@ def run():
             t1s.append(summarize(exp)[0])
         arr = np.vstack(t1s)
         good = np.isfinite(arr)
-        m = np.nanmean(arr) if good.any() else np.nan
-        s = np.nanstd(np.nanmean(arr, axis=0)) if good.any() else np.nan
+        per_dc = np.nanmean(arr, axis=0)
         rows.append({"frac": frac, "thr": thr, "peg": peg, "pge": pge, "floor": fl,
-                     "T1": m, "spread": s, "valid": int(good.sum()),
-                     "per_dc": np.nanmean(arr, axis=0)})
-        print(f"  {frac:>+8.2f} {thr:>10d} {peg:>7.3f} {pge:>7.3f} {fl:>7.3f} "
-              f"{m:>9.1f} {s:>8.1f} {good.sum():>4d}/{arr.size:<3d}", flush=True)
+                     "valid": int(good.sum()), "per_dc": per_dc})
+        cells = "  ".join(f"{v:>7.1f}" if np.isfinite(v) else "    nan"
+                          for v in per_dc)
+        print(f"  {frac:>+8.2f} {thr:>10d} {peg:>7.3f} {pge:>7.3f} {fl:>7.3f} | "
+              f"{cells}  ({good.sum():>2d}/{arr.size:<2d})", flush=True)
 
     banner("VERDICT -- how to run active reset for 2-3 days")
-    ok = [r for r in rows if np.isfinite(r["T1"])]
-    if len(ok) >= 3:
-        t1 = np.array([r["T1"] for r in ok])
-        fl = np.array([r["floor"] for r in ok])
-        base = next((r for r in ok if r["frac"] == 0.0), ok[len(ok) // 2])
-        swing = (np.nanmax(t1) - np.nanmin(t1)) / max(abs(base["T1"]), 1e-9)
-        floor_swing = np.nanmax(fl) / max(np.nanmin(fl), 1e-9)
-        ref_scatter = (np.nanmean(np.nanstd(T1s, axis=0) / np.abs(np.nanmean(T1s, axis=0)))
-                       if len(reps) > 1 else np.nan)
-        print(f"  across the detuning range the reset floor changed by "
-              f"{floor_swing:.1f}x ({np.nanmin(fl):.3f} -> {np.nanmax(fl):.3f})")
-        print(f"  while the 3-point T1 moved by {100 * swing:.1f}%")
-        if np.isfinite(ref_scatter):
-            print(f"  against a repeat-to-repeat scatter of {100 * ref_scatter:.1f}% at "
-                  f"fixed settings")
-        if np.isfinite(ref_scatter) and swing <= 2.0 * ref_scatter:
-            print(f"\n  -> T1 is INSENSITIVE to the reset threshold: the residual really")
-            print(f"     does cancel in the ratio.  For the long run that means:")
-            print(f"       * probe ONCE at the start and leave the threshold alone")
-            print(f"       * do NOT re-probe between points -- re-probing injects step")
-            print(f"         changes in the residual BETWEEN the three points of a")
-            print(f"         triplet, which is the one thing that does NOT cancel")
-            print(f"       * re-probe only if a periodic health check shows the threshold")
-            print(f"         has walked outside the blobs entirely")
-        else:
-            print(f"\n  -> T1 DOES move with the threshold by more than the noise.")
-            print(f"     Re-probe periodically, but always finish a triplet before")
-            print(f"     changing anything.")
+    base = next((r for r in rows if r["frac"] == 0.0), None)
+    ref_scatter = np.nanstd(T1s, axis=0)[pick2]
+    if base is not None and len(rows) > 1:
+        print(f"  For each flux point: how far does T1 move when the threshold is wrong,")
+        print(f"  measured in units of the scatter that flux point already shows at FIXED")
+        print(f"  settings?  Anything under ~2 sigma is not a threshold effect.")
+        print(f"\n  {'dc':>8s} {'T1 @ nominal':>13s} {'fixed-setting':>14s} "
+              f"{'worst detuned':>14s} {'shift':>8s}")
+        print(f"  {'':>8s} {'(us)':>13s} {'scatter (us)':>14s} {'excursion (us)':>14s} "
+              f"{'(sigma)':>8s}")
+        worst_sigma = []
+        for i, dc in enumerate(dc2):
+            b = base["per_dc"][i]
+            others = [r["per_dc"][i] for r in rows if r is not base]
+            others = [v for v in others if np.isfinite(v)]
+            if not np.isfinite(b) or not others or ref_scatter[i] <= 0:
+                continue
+            dev = max(others, key=lambda v: abs(v - b))
+            sig = abs(dev - b) / ref_scatter[i]
+            worst_sigma.append(sig)
+            print(f"  {dc:>8.0f} {b:>13.1f} {ref_scatter[i]:>14.1f} {dev:>14.1f} "
+                  f"{sig:>8.1f}")
+        if worst_sigma:
+            med = float(np.median(worst_sigma))
+            fl = np.array([r["floor"] for r in rows])
+            print(f"\n  the reset floor spans {np.nanmin(fl):.3f} -> {np.nanmax(fl):.3f} "
+                  f"({np.nanmax(fl) / max(np.nanmin(fl), 1e-9):.1f}x) across this sweep")
+            print(f"  median worst-case T1 shift: {med:.1f} sigma")
+            if med < 2.0:
+                print(f"\n  -> T1 is INSENSITIVE to the reset threshold.  The residual")
+                print(f"     really does cancel in the ratio.  For the long run:")
+                print(f"       * probe ONCE at the start and leave the threshold alone")
+                print(f"       * do NOT re-probe between points -- re-probing injects a")
+                print(f"         step change BETWEEN the three points of a triplet, which")
+                print(f"         is the one thing that does NOT cancel")
+                print(f"       * re-probe only if a health check shows the threshold has")
+                print(f"         walked outside the blobs entirely")
+            else:
+                print(f"\n  -> T1 DOES move with the threshold at some flux points.")
+                print(f"     Re-probe periodically, but always finish a triplet before")
+                print(f"     changing anything.")
     print(f"\n  On the gates that stop active reset from firing:")
     print(f"    probe_reset_params used to refuse whenever raw F < 0.80 and whenever the")
     print(f"    residual exceeded a flat 0.2.  Today F = "
