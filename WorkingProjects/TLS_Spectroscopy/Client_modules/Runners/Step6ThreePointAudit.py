@@ -26,6 +26,7 @@ RUN_PREVIEW = True
 RUN_FULL = False
 
 PREVIEW_DC_POINTS = 6
+PREVIEW_REPEATS = 3
 PREVIEW_SHOTS = 1000
 
 BASELINE_DC_OFFSET = 0
@@ -203,6 +204,34 @@ def report_points(exp, dc_vec, f_ghz):
         print("           range; if P1-P0 is small every T1 here is noise-dominated.")
 
 
+def report_stability(runs, dc_vec, f_ghz):
+    if len(runs) < 2:
+        return
+    banner("STABILITY -- does each DC point reproduce across repeats?")
+    mats = []
+    for exp in runs:
+        est = _compute_3pt_t1(np.asarray(exp.data["P0"]), np.asarray(exp.data["P1"]),
+                              np.asarray(exp.data["Ps"]), exp.Ts_ns,
+                              min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
+                              max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"])
+        mats.append(est["T1_3pt_us_plot"])
+    T1 = np.vstack(mats)
+    print(f"  {'dc':>8s} {'f(GHz)':>9s} | " +
+          " ".join(f"{'rep' + str(i + 1):>8s}" for i in range(len(runs))) +
+          f" | {'mean':>8s} {'spread':>8s} {'spread/mean':>12s}")
+    for j, dc in enumerate(dc_vec):
+        col = T1[:, j]
+        m, sd = np.nanmean(col), np.nanstd(col)
+        cells = " ".join(f"{v:>8.1f}" for v in col)
+        frac = sd / m if np.isfinite(m) and m > 0 else np.nan
+        tag = "  <-- FLUCTUATING" if np.isfinite(frac) and frac > 0.25 else ""
+        print(f"  {dc:>8.0f} {f_ghz[j]:>9.4f} | {cells} | {m:>8.1f} {sd:>8.1f} "
+              f"{frac:>11.2f}{tag}")
+    print("\n  spread/mean < ~0.15 is measurement noise; > 0.25 means that flux point")
+    print("  genuinely moved between passes -- real TLS dynamics, not a broken sweep.")
+    print("  A single-pass map cannot distinguish the two; use wall_clock repeats.")
+
+
 def main():
     soc, soccfg = makeProxy()
 
@@ -247,27 +276,31 @@ def main():
                   f"ground_below={rec['ground_below']}")
 
     if RUN_PREVIEW:
-        banner(f"STAGE F -- PREVIEW: {PREVIEW_DC_POINTS} DC points, per-point numbers")
+        banner(f"STAGE F -- PREVIEW: {PREVIEW_DC_POINTS} DC points x "
+               f"{PREVIEW_REPEATS} repeats")
         pick = np.unique(np.linspace(0, len(dc_vec_full) - 1,
                                      PREVIEW_DC_POINTS).astype(int))
         dc_prev, f_prev = dc_vec_full[pick], f_ghz_full[pick]
         print(f"  DC points: {[f'{d:.0f}' for d in dc_prev]}")
         cfg = base_cfg(dc_prev, PREVIEW_SHOTS, rec)
-        t0 = time.time()
-        exp = T13PointVsFlux(
-            soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-            suffix="Step6Audit_3pt_preview", cfg=cfg, dc_vec=dc_prev,
-            Ts_ns=int(round(P6_3PT_T1["Ts_us"] * 1e3)), shots=PREVIEW_SHOTS,
-            calib_params=calib_params, park_voltage=BASELINE_DC_OFFSET,
-            reset_mode=cfg["reset_mode"],
-            min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
-            max_plot_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"],
-            run_park_T1_if_Ts_none=False, write_outputs=False)
-        exp.acquire(progress=False)
-        print(f"  preview took {time.time() - t0:.0f} s "
-              f"({(time.time() - t0) / max(len(dc_prev), 1):.1f} s per DC point)")
-        report_points(exp, dc_prev, f_prev)
-        plt.close("all"); gc.collect()
+        runs = []
+        for r in range(PREVIEW_REPEATS):
+            t0 = time.time()
+            exp = T13PointVsFlux(
+                soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
+                suffix="Step6Audit_3pt_preview", cfg=dict(cfg), dc_vec=dc_prev,
+                Ts_ns=int(round(P6_3PT_T1["Ts_us"] * 1e3)), shots=PREVIEW_SHOTS,
+                calib_params=calib_params, park_voltage=BASELINE_DC_OFFSET,
+                reset_mode=cfg["reset_mode"],
+                min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
+                max_plot_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"],
+                run_park_T1_if_Ts_none=False, write_outputs=False)
+            exp.acquire(progress=False)
+            print(f"\n  --- repeat {r + 1}/{PREVIEW_REPEATS} ({time.time() - t0:.0f} s) ---")
+            report_points(exp, dc_prev, f_prev)
+            runs.append(exp)
+            plt.close("all"); gc.collect()
+        report_stability(runs, dc_prev, f_prev)
 
     if RUN_FULL:
         banner("STAGE G -- FULL 3-point sweep")
