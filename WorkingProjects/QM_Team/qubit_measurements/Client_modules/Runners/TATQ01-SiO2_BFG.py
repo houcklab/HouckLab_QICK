@@ -78,14 +78,21 @@ Qubit_Parameters = {
 
 start_voltage = 0.000 # sets voltage for the entire experiment #0.0059 working for good T2Rs
 
-# Charge line (YOKO GS200 over GPIB). Set False to run without it: the context
+# Charge line (YOKO GS200 over USB / USBTMC). Set False to run without it: the context
 # gets a NullYoko stub holding the voltage at start_voltage, so transmission /
 # two-tone / Rabi / T1 / T2 / T2E / single-shot all run normally. Any experiment
 # that actually steps the voltage (RunChargeSweep, RunChargeDispersion*,
 # RunModifiedRamsey*, Run2ToneChargeDispersionQuasiCW) will raise rather than
 # silently record data from a voltage that never moved.
 UseYoko = False
-yoko_addr = 'GPIB1::9::INSTR'
+# USBTMC address of the charge-line yoko: YOKOGAWA,GS210,91T621492,2.02
+# (vendor 0x0B21, model 0x0039). Was 'GPIB1::9::INSTR' before the move to USB.
+# NOTE: list_resources() also reports a second GS200-class device with serial
+# 91s929899 that never accepts a session (VI_ERROR_NCIC) -- a stale enumeration,
+# not this box. Match on the serial above, not on position in the list.
+# If the box is swapped or re-enumerated, list candidates with:
+#   python -c "import pyvisa; print(pyvisa.ResourceManager().list_resources())"
+yoko_addr = 'USB0::0x0B21::0x0039::91T621492::0::INSTR'
 
 Qubit_Readout = 3
 Qubit_Pulse = 3

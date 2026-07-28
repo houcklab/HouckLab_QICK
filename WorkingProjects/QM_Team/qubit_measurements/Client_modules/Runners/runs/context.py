@@ -172,7 +172,8 @@ def rebuild_singleshot_config(ctx, SS_params):
 
 def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *,
                   Transmission_params, Spec_relevant_params, tl, ts, charge_params,
-                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR',
+                  cavity_min=True, yoko_fixed=False,
+                  yoko_addr='USB0::0x0B21::0x0039::91T621492::0::INSTR',
                   use_yoko=True, readout_length_us=15, adc_trig_offset_us=None):
     """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
     per-qubit scalars — the setup boilerplate that used to sit at the top of the

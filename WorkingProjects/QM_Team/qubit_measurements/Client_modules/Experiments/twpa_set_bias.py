@@ -38,7 +38,9 @@ import pyvisa
 # ---------------------------------------------------------------------------
 # User-set parameters — fill in for the current setup
 # ---------------------------------------------------------------------------
-TWPA_YOKO_ADDRESS   = "GPIB1::12::INSTR"   # TODO: dedicated TWPA YOKO address (NOT the charge-line yoko at ::9::)
+TWPA_YOKO_ADDRESS   = "GPIB1::12::INSTR"   # TODO: dedicated TWPA YOKO address
+#                                          # (NOT the charge-line yoko, which is now on USB:
+#                                          #  USB0::0x0B21::0x0039::91T621492::0::INSTR)
 
 TARGET_CURRENT_uA   = 0 # 22             # optimum from 20260521_144734 flux sweep (max |S21|, broad 3.5–5.5 uA plateau); datasheet nominal ≈ 11 uA
 MAX_RATE_nA_per_s   = 300.0                # datasheet ceiling — do not raise
