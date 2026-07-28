@@ -10,7 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import mak
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import (
-    T13PointVsFlux, _compute_3pt_t1,
+    T13PointVsFlux, T1FullCurveVsFlux, _compute_3pt_t1,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
@@ -24,6 +24,14 @@ RUN_SS_CAL = True
 RUN_RESET_PROBE = True
 RUN_PREVIEW = True
 RUN_FULL = False
+RUN_FULLCURVE = True
+
+FULLCURVE_DC_POINTS = 6
+FULLCURVE_SHOTS = 500
+FULLCURVE_T_POINTS = 21
+FULLCURVE_T_MIN_US = 1.0
+FULLCURVE_T_MAX_US = 800.0
+FULLCURVE_WALL_CLOCK_MIN = 5.0
 
 PREVIEW_DC_POINTS = 6
 PREVIEW_REPEATS = 3
@@ -73,6 +81,19 @@ def resolvable_t1_window(Ts_us, shots, contrast=None, n_sigma=3.0):
     pe_lo = min(max(n_sigma * sigma_pe, 1e-6), 0.499)
     pe_hi = 1.0 - pe_lo
     return -Ts_us / np.log(pe_lo), -Ts_us / np.log(pe_hi)
+
+
+def t1_sigma(pe, Ts_us, sigma_P, contrast):
+    pe = np.asarray(pe, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sigma_pe = (sigma_P / max(contrast, 1e-9)) * np.sqrt(1.0 + (1.0 - pe) ** 2 + pe ** 2)
+        dT1_dpe = Ts_us / (pe * np.log(pe) ** 2)
+        return np.abs(dT1_dpe) * sigma_pe
+
+
+def measured_sigma_P(P0):
+    P0 = np.asarray(P0, dtype=float)
+    return float(np.std(P0)) if P0.size >= 3 else float("nan")
 
 
 def banner(text):
@@ -180,7 +201,7 @@ def report_points(exp, dc_vec, f_ghz):
                           min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
                           max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"])
     print(f"\n  {'dc':>8s} {'f(GHz)':>9s} | {'P0':>6s} {'P1':>6s} {'Ps':>6s} | "
-          f"{'contr':>6s} {'pe':>6s} | {'T1(us)':>9s} | why")
+          f"{'contr':>6s} {'pe':>6s} | {'T1(us)':>9s} {'sigma':<7s} | why")
     for i, dc in enumerate(dc_vec):
         c, pe = est["contrast"][i], est["pe"][i]
         t1 = est["T1_3pt_us_raw"][i]
@@ -193,12 +214,21 @@ def report_points(exp, dc_vec, f_ghz):
             why = "pe outside (0,1)"
         else:
             why = f"T1>{est['max_t1_us']:.0f}us"
+        sig = t1_sigma(pe, exp.Ts_ns / 1e3, measured_sigma_P(P0), abs(c))
+        if ok and np.isfinite(sig) and np.isfinite(t1) and sig > 0.5 * abs(t1):
+            why = f"UNRESOLVED (sigma {sig:.0f} > T1/2)"
         print(f"  {dc:>8.0f} {f_ghz[i]:>9.4f} | {P0[i]:>6.3f} {P1[i]:>6.3f} {Ps[i]:>6.3f} | "
-              f"{c:>6.3f} {pe:>6.3f} | {t1:>9.1f} | {why}")
+              f"{c:>6.3f} {pe:>6.3f} | {t1:>9.1f} +/-{sig:<7.0f} | {why}")
     good = int(np.sum(est["valid_mask"]))
     print(f"\n  {good}/{len(dc_vec)} points valid")
     print(f"  reference contrast P1-P0: mean {np.nanmean(est['contrast']):.3f}, "
           f"min {np.nanmin(est['contrast']):.3f}")
+    sP = measured_sigma_P(P0)
+    shot = float(np.sqrt(0.22 * 0.78 / max(int(exp.shots), 1)))
+    print(f"  sigma_P from the P0 scatter (P0 is the same experiment at every dc): "
+          f"{sP:.4f}")
+    print(f"  shot-noise floor at {int(exp.shots)} shots: {shot:.4f} "
+          f"({sP / shot:.1f}x -- excess is drift/instability)")
     if np.nanmean(est["contrast"]) < 0.3:
         print("  WARNING: low reference contrast -- P0/P1 should straddle the readout")
         print("           range; if P1-P0 is small every T1 here is noise-dominated.")
@@ -207,29 +237,113 @@ def report_points(exp, dc_vec, f_ghz):
 def report_stability(runs, dc_vec, f_ghz):
     if len(runs) < 2:
         return
-    banner("STABILITY -- does each DC point reproduce across repeats?")
-    mats = []
+    banner("STABILITY -- is the scatter across repeats bigger than the noise?")
+    T1s, sigs = [], []
     for exp in runs:
-        est = _compute_3pt_t1(np.asarray(exp.data["P0"]), np.asarray(exp.data["P1"]),
-                              np.asarray(exp.data["Ps"]), exp.Ts_ns,
+        P0 = np.asarray(exp.data["P0"]); P1 = np.asarray(exp.data["P1"])
+        Ps = np.asarray(exp.data["Ps"])
+        est = _compute_3pt_t1(P0, P1, Ps, exp.Ts_ns,
                               min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
                               max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"])
-        mats.append(est["T1_3pt_us_plot"])
-    T1 = np.vstack(mats)
+        T1s.append(est["T1_3pt_us_plot"])
+        sigs.append(t1_sigma(est["pe"], exp.Ts_ns / 1e3, measured_sigma_P(P0),
+                             np.nanmean(np.abs(est["contrast"]))))
+    T1 = np.vstack(T1s)
+    SIG = np.vstack(sigs)
+    print("  each T1 carries its own propagated sigma; a point only counts as moving")
+    print("  if the scatter across repeats exceeds that.\n")
     print(f"  {'dc':>8s} {'f(GHz)':>9s} | " +
-          " ".join(f"{'rep' + str(i + 1):>8s}" for i in range(len(runs))) +
-          f" | {'mean':>8s} {'spread':>8s} {'spread/mean':>12s}")
+          " ".join(f"{'rep' + str(i + 1):>16s}" for i in range(len(runs))) +
+          f" | {'spread':>7s} {'exp.sig':>8s} | verdict")
     for j, dc in enumerate(dc_vec):
-        col = T1[:, j]
-        m, sd = np.nanmean(col), np.nanstd(col)
-        cells = " ".join(f"{v:>8.1f}" for v in col)
-        frac = sd / m if np.isfinite(m) and m > 0 else np.nan
-        tag = "  <-- FLUCTUATING" if np.isfinite(frac) and frac > 0.25 else ""
-        print(f"  {dc:>8.0f} {f_ghz[j]:>9.4f} | {cells} | {m:>8.1f} {sd:>8.1f} "
-              f"{frac:>11.2f}{tag}")
-    print("\n  spread/mean < ~0.15 is measurement noise; > 0.25 means that flux point")
-    print("  genuinely moved between passes -- real TLS dynamics, not a broken sweep.")
-    print("  A single-pass map cannot distinguish the two; use wall_clock repeats.")
+        col, sg = T1[:, j], SIG[:, j]
+        cells = " ".join(f"{v:>9.1f}+/-{e:<5.0f}" for v, e in zip(col, sg))
+        spread = float(np.nanstd(col))
+        expect = float(np.nanmean(sg))
+        if not np.isfinite(expect) or expect <= 0:
+            verdict = "no error estimate"
+        elif np.nanmax(sg) > 0.5 * abs(np.nanmean(col)):
+            verdict = "UNRESOLVED (sigma too large to say)"
+        elif spread > 2.0 * expect:
+            verdict = "MOVED -- beyond noise"
+        else:
+            verdict = "consistent with noise"
+        print(f"  {dc:>8.0f} {f_ghz[j]:>9.4f} | {cells} | {spread:>7.1f} {expect:>8.1f} "
+              f"| {verdict}")
+    print("\n  'UNRESOLVED' means Ts is badly matched to T1 at that point (pe near 0 or 1),")
+    print("  not that the qubit moved.  Fix by choosing Ts closer to the local T1, or by")
+    print("  using the full T1 curve, which sets its own time axis per flux point.")
+
+
+def run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec):
+    banner(f"STAGE G -- FULL T1 CURVE vs flux, wall-clock {FULLCURVE_WALL_CLOCK_MIN:g} min")
+    pick = np.unique(np.linspace(0, len(dc_vec_full) - 1,
+                                 FULLCURVE_DC_POINTS).astype(int))
+    dc, fg = dc_vec_full[pick], f_ghz_full[pick]
+    n_prog = len(dc) * FULLCURVE_T_POINTS * INTERLEAVE_ROUNDS
+    print(f"  {len(dc)} DC points x {FULLCURVE_T_POINTS} delays x {INTERLEAVE_ROUNDS} "
+          f"rounds = {n_prog} programs per scan")
+    print(f"  delays {FULLCURVE_T_MIN_US:g}..{FULLCURVE_T_MAX_US:g} us log-spaced, "
+          f"{FULLCURVE_SHOTS} shots/point")
+    print(f"  fixed t_max (NOT the constant-Q model) -- your T1 does not scale as 1/f")
+    print(f"  DC: {[f'{d:.0f}' for d in dc]}")
+    cfg = base_cfg(dc, FULLCURVE_SHOTS, rec)
+    deadline = time.time() + FULLCURVE_WALL_CLOCK_MIN * 60.0
+    scans, durations = [], []
+    while True:
+        t0 = time.time()
+        exp = T1FullCurveVsFlux(
+            soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
+            suffix="Step6Audit_fullcurve", cfg=dict(cfg), dc_vec=dc,
+            shots=FULLCURVE_SHOTS, calib_params=calib_params,
+            park_voltage=BASELINE_DC_OFFSET, reset_mode=cfg["reset_mode"],
+            t_max_ns=FULLCURVE_T_MAX_US * 1e3,
+            t_min_ns_default=FULLCURVE_T_MIN_US * 1e3,
+            t_points_default=FULLCURVE_T_POINTS, write_outputs=False)
+        exp.acquire(progress=False)
+        dt = time.time() - t0
+        durations.append(dt)
+        scans.append(exp)
+        print(f"\n  --- scan {len(scans)} finished in {dt:.1f} s "
+              f"({dt / len(dc):.1f} s per DC point, "
+              f"{1e3 * dt / n_prog:.0f} ms per program) ---")
+        T1 = np.asarray(exp.data["T1_fit_us"], dtype=float)
+        ERR = np.asarray(exp.data["T1_fit_err_us"], dtype=float)
+        OK = np.asarray(exp.data["fit_success"], dtype=int)
+        print(f"  {'dc':>8s} {'f(GHz)':>9s} {'T1(us)':>10s} {'err':>8s}  fit")
+        for j, d in enumerate(dc):
+            print(f"  {d:>8.0f} {fg[j]:>9.4f} {T1[j]:>10.1f} {ERR[j]:>8.1f}  "
+                  f"{'ok' if OK[j] else 'FAILED'}")
+        plt.close("all"); gc.collect()
+        if time.time() >= deadline:
+            break
+    banner("FULL-CURVE TIMING AND STABILITY")
+    print(f"  scans completed: {len(scans)} in {sum(durations):.0f} s "
+          f"(budget {FULLCURVE_WALL_CLOCK_MIN * 60:.0f} s)")
+    print(f"  per scan: {np.mean(durations):.1f} s "
+          f"(min {min(durations):.1f}, max {max(durations):.1f})")
+    per_dc = np.mean(durations) / len(dc)
+    print(f"  per DC point: {per_dc:.2f} s  ->  a {len(dc_vec_full)}-point map would take "
+          f"{per_dc * len(dc_vec_full) / 60:.1f} min per scan")
+    if len(scans) < 2:
+        print("  (only one scan fitted in the budget; no stability estimate)")
+        return
+    M = np.vstack([np.asarray(e.data["T1_fit_us"], dtype=float) for e in scans])
+    E = np.vstack([np.asarray(e.data["T1_fit_err_us"], dtype=float) for e in scans])
+    print(f"\n  {'dc':>8s} {'f(GHz)':>9s} {'mean T1':>9s} {'spread':>8s} {'mean err':>9s} "
+          f"| verdict")
+    for j, d in enumerate(dc):
+        col, er = M[:, j], E[:, j]
+        m, sd, ee = np.nanmean(col), np.nanstd(col), np.nanmean(er)
+        if not np.isfinite(m):
+            verdict = "no fit"
+        elif not np.isfinite(ee) or ee <= 0:
+            verdict = "no error estimate"
+        elif sd > 2.0 * ee:
+            verdict = "MOVED -- beyond fit error"
+        else:
+            verdict = "consistent with noise"
+        print(f"  {d:>8.0f} {fg[j]:>9.4f} {m:>9.1f} {sd:>8.1f} {ee:>9.1f} | {verdict}")
 
 
 def main():
@@ -316,6 +430,9 @@ def main():
             run_park_T1_if_Ts_none=False, write_outputs=True)
         exp.acquire(progress=True)
         report_points(exp, dc_vec_full, f_ghz_full)
+
+    if RUN_FULLCURVE:
+        run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec)
 
     banner("audit complete -- paste the whole log back")
 
