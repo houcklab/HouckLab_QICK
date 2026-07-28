@@ -295,7 +295,7 @@ def run_auto_coherence(ctx, AutoCoherence_override_params):
         outerFolder=ctx.outerFolder,
         qubit_readout=ctx.Qubit_Readout,
         qubit_params=ctx.Qubit_Parameters,
-        yoko=ctx.yoko,                        # set to None if no charge line
+        yoko=ctx.yoko if ctx.has_yoko else None,   # None => no charge line
         auto_params=AutoCoherence_override_params,
     )
     print("[AutoCoherence] Results:", auto_results)

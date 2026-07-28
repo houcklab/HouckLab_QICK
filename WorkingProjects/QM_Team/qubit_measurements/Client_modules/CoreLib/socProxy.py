@@ -5,7 +5,9 @@ def makeProxy():
     Pyro4.config.SERIALIZER = "pickle"
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
-    ns_host = "192.168.0.103"
+    # BFG setup. Pyro4 nameserver is on 8888; the board's JupyterLab UI is the
+    # separate http://192.168.1.112:9090 (Tornado) -- do not point Pyro4 there.
+    ns_host = "192.168.1.112"
     ns_port = 8888
     server_name = "myqick"
 

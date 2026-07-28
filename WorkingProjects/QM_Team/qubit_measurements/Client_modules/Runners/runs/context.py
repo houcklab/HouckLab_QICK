@@ -21,12 +21,64 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.socProxy 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
 
 
+class NullYoko:
+    """Stand-in for the YOKO GS200 when the charge line is not connected.
+
+    Speaks just enough of the SCPI surface that `ramp_to()` and the `:SOUR:LEV?`
+    reads scattered through the measurement routines keep working: it remembers a
+    virtual level and reports it back. Experiments that never move the voltage
+    (transmission, two-tone, Rabi, T1/T2/T2E, single-shot) therefore run unchanged.
+
+    It deliberately REFUSES to fake a voltage change. Charge-sweep / charge-parity
+    routines derive their physics from stepping the yoko; silently pretending the
+    step happened would produce plausible-looking but meaningless data, so any
+    attempt to move off the starting level raises instead.
+    """
+
+    def __init__(self, level=0.0):
+        self._level = float(level)
+        print(f"[NullYoko] No yoko in use - virtual level pinned at {self._level} V. "
+              f"Voltage-stepping experiments (charge sweep / charge dispersion / "
+              f"modified Ramsey) will raise if run.")
+
+    def write(self, cmd):
+        cmd = str(cmd).strip()
+        upper = cmd.upper()
+        if upper.startswith(":SOUR:LEV"):
+            target = float(cmd.split()[-1])
+            if abs(target - self._level) > 1e-12:
+                raise RuntimeError(
+                    f"NullYoko: refusing to fake a voltage change "
+                    f"({self._level} V -> {target} V). This experiment needs a real "
+                    f"charge line. Connect/power the YOKO and rebuild the context with "
+                    f"use_yoko=True (see UseYoko in the runner)."
+                )
+        # :SOUR:FUNC VOLT, :OUTP ON, etc. are no-ops.
+
+    def query(self, cmd):
+        upper = str(cmd).strip().upper()
+        if upper.startswith(":SOUR:LEV"):
+            # %.12g, not %.6f: ramp_to() reads the level back and writes it
+            # again, and write() refuses a move larger than 1e-12. Rounding the
+            # read-back to 6 decimals would make that echo look like a real
+            # voltage change for any start_voltage with finer resolution.
+            return f"{self._level:.12g}"
+        if upper.startswith("*IDN"):
+            return "NullYoko,virtual,0,0"
+        return "0"
+
+    def close(self):
+        pass
+
+
 @dataclass
 class Context:
     # hardware handles
     soc: object
     soccfg: object
     yoko: object
+    # False when `yoko` is a NullYoko stub (no charge line this session)
+    has_yoko: bool
     # persistent instrument config (mutated only for the pulse_freq / res_phase carry-overs)
     config: dict
     outerFolder: str
@@ -120,7 +172,8 @@ def rebuild_singleshot_config(ctx, SS_params):
 
 def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *,
                   Transmission_params, Spec_relevant_params, tl, ts, charge_params,
-                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR'):
+                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR',
+                  use_yoko=True, readout_length_us=15, adc_trig_offset_us=None):
     """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
     per-qubit scalars — the setup boilerplate that used to sit at the top of the
     CSTQ03_BFC.py script — returning a populated Context.
@@ -128,17 +181,31 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     The keyword param dicts (Transmission_params, Spec_relevant_params, tl, ts,
     charge_params) are the client's tuning dicts; they feed the initial config
     assembly exactly as the original script did.
+
+    `readout_length_us` / `adc_trig_offset_us` set the readout window for every
+    experiment that runs under this config, i.e. everything BEFORE the client's
+    `rebuild_singleshot_config()` call: transmission, two-tone, chi shift, Rabi,
+    T1/T2/T2E, charge dispersion, ModifiedRamsey, ActiveResetVerify. The
+    single-shot regime takes its window from SS_params["Readout_Time"] /
+    SS_params["ADC_Offset"] instead. `adc_trig_offset_us=None` keeps
+    BaseConfig["adc_trig_offset"]; the default readout_length_us=15 preserves the
+    value this function hardcoded before it was exposed to the runner.
     """
     soc, soccfg = makeProxy()
 
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
     # yoko current source
-    rm = pyvisa.ResourceManager()
-    yoko = rm.open_resource(yoko_addr)
-    yoko.write(":SOUR:FUNC VOLT")
-    yoko.write(":OUTP ON")
-    ramp_to(yoko, start_voltage)
+    if use_yoko:
+        rm = pyvisa.ResourceManager()
+        yoko = rm.open_resource(yoko_addr)
+        yoko.write(":SOUR:FUNC VOLT")
+        yoko.write(":OUTP ON")
+        ramp_to(yoko, start_voltage)
+    else:
+        # No charge line this session: virtual level starts at start_voltage so the
+        # setup ramp below is a no-op rather than a refused move.
+        yoko = NullYoko(start_voltage)
 
     # derived scalars for the selected readout/pulse qubit
     cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
@@ -149,8 +216,23 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
     qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 
-    readout_length_us = 15
-    adc_trig_offset_us = BaseConfig["adc_trig_offset"]
+    readout_length_us = float(readout_length_us)
+    if readout_length_us <= 0:
+        raise ValueError(
+            f"readout_length_us must be positive, got {readout_length_us}. "
+            f"Set it from the runner (Readout_Time)."
+        )
+    if adc_trig_offset_us is None:
+        adc_trig_offset_us = BaseConfig["adc_trig_offset"]
+    adc_trig_offset_us = float(adc_trig_offset_us)
+    if adc_trig_offset_us < 0:
+        raise ValueError(
+            f"adc_trig_offset_us must be >= 0, got {adc_trig_offset_us}. "
+            f"Set it from the runner (ADC_Offset)."
+        )
+    print(f"[readout window] integration {readout_length_us} us, "
+          f"adc_trig_offset {adc_trig_offset_us} us, "
+          f"resonator tone {adc_trig_offset_us + readout_length_us} us")
     trans_config = {
         "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
         "pulse_style": "const",  # --Fixed
@@ -159,6 +241,9 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
         # must last through offset + window rather than merely equal the window.
         "length": adc_trig_offset_us + readout_length_us,
         "readout_length": readout_length_us,
+        # written explicitly (not left to BaseConfig) so a runner-side
+        # adc_trig_offset_us override actually reaches the programs
+        "adc_trig_offset": adc_trig_offset_us,
         "pulse_gain": cavity_gain,  # [DAC units]
         "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
         "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter
@@ -187,7 +272,7 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     config["cavity_min"] = cavity_min  # look for dip, not peak
 
     return Context(
-        soc=soc, soccfg=soccfg, yoko=yoko,
+        soc=soc, soccfg=soccfg, yoko=yoko, has_yoko=use_yoko,
         config=config, outerFolder=outerFolder,
         Qubit_Readout=Qubit_Readout, Qubit_Pulse=Qubit_Pulse,
         Qubit_Parameters=Qubit_Parameters,

@@ -54,8 +54,13 @@ def modified_ramsey_timing(soccfg, cfg):
     # QICK tracks generator/readout timestamps as (native clock cycles converted
     # to tProc cycles), then sync_all() truncates the largest timestamp to an
     # integer tProc cycle. Reproduce that sequence exactly here.
+    # Mirror ModifiedRamseyProgram.initialize(), which does
+    # cfg.setdefault("length", adc_trig_offset + readout_length): both call
+    # sites below compute the timing BEFORE building the program, so a cfg that
+    # the program would happily default must not KeyError here.
     requested_tone_native_cycles = soccfg.us2cycles(
-        cfg["length"], gen_ch=res_ch
+        cfg.get("length", cfg["adc_trig_offset"] + cfg["readout_length"]),
+        gen_ch=res_ch
     )
     adc_offset_tproc_cycles = soccfg.us2cycles(cfg["adc_trig_offset"])
     window_native_cycles_by_ch = {
@@ -561,6 +566,54 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
     current_voltage_mr = float(ctx.yoko.query(":SOUR:LEV?"))
     direction_mr = +1
 
+    # ---------- fixed-frequency mode (no two-tone calibration) ----------
+    # skip_two_tone_search=True bypasses the per-cycle QubitSpecSliceFF sweep AND
+    # the yoko voltage walk: every cycle runs the Ramsey straight away at
+    # fixed_f_ge with tau = 1/(2*fixed_df). Use it when the doublet position is
+    # already known (or the spec is too slow / too weak to resolve the peaks) and
+    # the device is stable enough not to need re-centering each cycle.
+    #   fixed_f_ge   [MHz] drive frequency; None -> ctx.qubit_frequency_center
+    #   fixed_df     [MHz] separation that sets tau; None -> center_peak_df_for_tau
+    #   fixed_voltage [V]  one-time yoko move before the cycles; None -> hold
+    #                      whatever voltage the yoko is already at
+    skip_two_tone_mr = ModifiedRamsey_params.get("skip_two_tone_search", False)
+    fixed_f_ge_mr = None
+    fixed_df_mr = None
+    if skip_two_tone_mr:
+        fixed_f_ge_mr = ModifiedRamsey_params.get("fixed_f_ge", None)
+        if fixed_f_ge_mr is None:
+            fixed_f_ge_mr = ctx.qubit_frequency_center
+        fixed_f_ge_mr = float(fixed_f_ge_mr)
+
+        fixed_df_mr = ModifiedRamsey_params.get("fixed_df", None)
+        if fixed_df_mr is None:
+            fixed_df_mr = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
+        fixed_df_mr = float(fixed_df_mr)
+        if fixed_df_mr <= 0:
+            raise RuntimeError(
+                f"[ModifiedRamsey] skip_two_tone_search=True requires a positive "
+                f"fixed_df (it sets tau = 1/(2*df)); got {fixed_df_mr}."
+            )
+
+        fixed_voltage_mr = ModifiedRamsey_params.get("fixed_voltage", None)
+        if fixed_voltage_mr is not None:
+            fixed_voltage_mr = float(fixed_voltage_mr)
+            if not (voltage_min_mr <= fixed_voltage_mr <= voltage_max_mr):
+                raise RuntimeError(
+                    f"[ModifiedRamsey] fixed_voltage={fixed_voltage_mr:.6f} V is "
+                    f"outside [voltage_min, voltage_max] = "
+                    f"[{voltage_min_mr:.6f}, {voltage_max_mr:.6f}] V."
+                )
+            ramp_to(ctx.yoko, fixed_voltage_mr)
+            current_voltage_mr = fixed_voltage_mr
+
+        print(
+            f"[ModifiedRamsey] fixed-frequency mode: skipping the two-tone search. "
+            f"f_ge={fixed_f_ge_mr:.6f} MHz, df={fixed_df_mr:.6f} MHz, "
+            f"tau={1.0 / (2.0 * fixed_df_mr):.4f} us, V={current_voltage_mr:.6f} V "
+            f"(held)"
+        )
+
     cycle_summary_mr = []
 
     apriori_sep_mr = None
@@ -605,8 +658,22 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         chosen_probe_freq_mr = None
         chosen_peak_sep_mr = None
 
+        if skip_two_tone_mr:
+            chosen_probe_freq_mr = fixed_f_ge_mr
+            chosen_peak_sep_mr = fixed_df_mr
+            success_mr = True
+            print(
+                f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: fixed frequency "
+                f"(no two-tone), f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                f"df={chosen_peak_sep_mr:.6f} MHz, "
+                f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us, "
+                f"V={current_voltage_mr:.6f} V"
+            )
+
         # ---------- two-tone voltage search ----------
-        for attempt_idx_mr in range(max_tries_mr):
+        # Fixed-frequency mode runs zero attempts, so the search below is skipped
+        # entirely and the fixed f_ge / df set above stand for this cycle.
+        for attempt_idx_mr in range(0 if skip_two_tone_mr else max_tries_mr):
             print(
                 f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}/{num_cycles_mr}, "
                 f"attempt {attempt_idx_mr + 1}/{max_tries_mr}, V={current_voltage_mr:.6f} V"
@@ -976,6 +1043,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         cycle_summary_mr.append({
             "cycle_idx": cycle_idx_mr,
             "success": True,
+            "search_mode": "fixed" if skip_two_tone_mr else "two_tone",
             "final_voltage": current_voltage_mr,
             "chosen_probe_freq": chosen_probe_freq_mr,
             "peak_sep": chosen_peak_sep_mr,

@@ -1,7 +1,9 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "C:/Users/newforce/miniconda3/envs/qsim/python.exe",
     "python.envFile": "${workspaceFolder}/.env",
     "terminal.integrated.env.windows": {
-        "PYTHONPATH": "C:\\Users\\ece-houck-j409\\PycharmProjects\\HouckLab_QICK"
-    }
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

@@ -11,3 +11,4 @@ from .coherence import *
 from .charge_parity import *
 from .singleshot import *
 from .zero_span import *
+from .verify import *

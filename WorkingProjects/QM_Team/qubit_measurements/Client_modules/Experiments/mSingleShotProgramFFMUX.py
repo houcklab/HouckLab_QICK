@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import raw_shot_buffers
 from tqdm.notebook import tqdm
 import time
 
@@ -99,9 +100,10 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
     def collect_shots(self):
         all_i = []
         all_q = []
-        for i in range(len(self.di_buf)):
-            shots_i0=self.di_buf[i].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
-            shots_q0=self.dq_buf[i].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+        di_buf, dq_buf = raw_shot_buffers(self)
+        for i in range(len(di_buf)):
+            shots_i0=di_buf[i].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+            shots_q0=dq_buf[i].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i,all_q
@@ -253,12 +255,14 @@ class SingleShotProgram(AveragerProgram):
     def collect_shots(self):
         all_i = []
         all_q = []
-        # print(self.di_buf)#, self.di_buf[1][:30])
-        for i in range(len(self.di_buf)):
+        # di_buf/dq_buf are averaged over reps from qick ~0.2.29x on; pull the
+        # raw per-shot stream out of acc_buf instead (see Helpers/shot_buffers).
+        di_buf, dq_buf = raw_shot_buffers(self)
+        for i in range(len(di_buf)):
             ro_ch = self.cfg["ro_chs"][i]
             norm = self.us2cycles(self.cfg['readout_length'], ro_ch=ro_ch)
-            shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) / norm
-            shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) / norm
+            shots_i0=di_buf[i].reshape((1,self.cfg["reps"])) / norm
+            shots_q0=dq_buf[i].reshape((1,self.cfg["reps"])) / norm
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i,all_q
@@ -854,8 +858,9 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+        di_buf, dq_buf = raw_shot_buffers(self)
+        shots_i0=di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+        shots_q0=dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
 
         return shots_i0,shots_q0
 

@@ -1,9 +1,16 @@
-"""CSTQ03_BFC — client-facing measurement runner.
+"""TATQ01-SiO2 (BFG) — client-facing measurement runner.
 
 Edit the device parameters and per-experiment params below, toggle the RunX
 flags, and run this file top-to-bottom. The measurement procedures themselves
 live in the `runs/` package (imported via `*` below); this file only selects
 what to run. See docs/superpowers/specs/2026-07-02-cstq03-runner-refactor-design.md.
+
+Fridge/cooldown: BFG, 2026-06-27 recooldown.
+Device:          "Device 2 KOH + SiOx JJ (2 CLs)".
+Data root:       Z:/t1Team/Data/2026-06-27_BFG_recooldown/.../RFSOC/Q<n>/
+                 (Q1..Q4 already exist on the drive from earlier sessions;
+                  each experiment adds its own <Experiment>/<Experiment>_<date>/
+                  subfolder under them, same as every other runner.)
 """
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs import *
@@ -12,13 +19,18 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs impo
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. DEVICE PARAMETERS  (edit every session)
 # ══════════════════════════════════════════════════════════════════════════════
-temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC/Q4//"
 
 # ── Output folder root — edit this one line ────────────────────────────────
-_QubitFolderRoot = "V:/t1Team/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC"
+_QubitFolderRoot = "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC"
 QubitFolders = {str(q): f"{_QubitFolderRoot}/Q{q}//" for q in range(1, 7)}
 
-############## CSTQ03 (clone of CSTQ02_BFC.py + zero-span parity) ######
+############## TATQ01-SiO2 / BFG Device 2 ##############################
+# NOTE: these values are carried over verbatim from CSTQ03_BFC.py and have NOT
+# been re-measured on this device/cooldown. Re-run transmission -> two-tone ->
+# Rabi -> single-shot per qubit and update the entries as you go.
+# NOTE: only Q1..Q4 are wired for fast flux on this setup (see FF_Qubits in
+# Calib/initialize4Q.py); entries '5'/'6' are kept only to preserve the
+# carried-over parameter set.
 Qubit_Parameters = {
     # TODO
     '1': {'Readout': {'Frequency': 6757.94, 'Gain': 200}, # 500 okay, 700 too much 520 maybe too much 530 too much
@@ -30,32 +42,70 @@ Qubit_Parameters = {
           'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
           'outerfoldername': QubitFolders['2']},
 
-    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 550}, # 600 too much
-          'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
+    # currently working on
+    # Imported from QubitSpecFF_2026_07_01_01_20_10_data.json (Q3, BFG 2026-06-27):
+    #   readout  pulse_freq = 6818.08 MHz, pulse_gain = 2000
+    #   qubit    qubit_freq = 1683.3482587064677 MHz, qubit_gain = 5000
+    # pi2_Gain / sigma / flattop_length are not set by that spec run (const pulse)
+    # and are still the carried-over values -- re-tune with Rabi.
+    # Readout set from SingleShot_OptReadout_2026_07_28_01_57_54 (Q3, BFG 2026-06-27):
+    #   best single-shot fidelity 78.1% at gain 2900, pulse_freq 6818.105 MHz
+    #   (sweep was gain 1000..3000 x freq 6818.100..6818.200, 1000 shots/point)
+    # WARNING: the optimum sits ON the sweep boundary -- fidelity rises
+    # monotonically toward high gain AND low frequency, so it is not bracketed.
+    # Re-run SingleShot_ReadoutOptimize with gain_start/stop pushed above 3000 and
+    # the frequency window extended below 6818.10 to find the true maximum.
+    '3': {'Readout': {'Frequency': 6818.105, 'Gain': 2900}, # 600 too much
+        #   'Qubit': {'Frequency': 1683.3482587064677, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1},
+                'Qubit': {'Frequency': 1682.5, 'Gain': 7200,  "pi2_Gain": 7200 // 2,"sigma": 0.09 , "flattop_length": None},
           'outerfoldername': QubitFolders['3']},
 
     '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
           'Qubit': {'Frequency':    2306.308975, 'Gain': 7009,  "pi2_Gain": 7009 // 2 ,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
           'outerfoldername': QubitFolders['4']},
-    
+
     # TODO
     '5': {'Readout': {'Frequency': 6970.59, 'Gain': 1500}, # 4500 with directional coupler 1500 good without-
           'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
           'outerfoldername': QubitFolders['5']}, # qubit, T1 found
 
-    # currently working on
-    '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800}, 
+    # TODO
+    '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800},
           'Qubit': {'Frequency': 3055.2, 'Gain': 4600,  "pi2_Gain": 4750 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
           'outerfoldername': QubitFolders['6']},
     }
-############## End Can D ############################
+############## End Device 2 ############################
 
 start_voltage = 0.000 # sets voltage for the entire experiment #0.0059 working for good T2Rs
 
-Qubit_Readout = 6
-Qubit_Pulse = 6
+# Charge line (YOKO GS200 over GPIB). Set False to run without it: the context
+# gets a NullYoko stub holding the voltage at start_voltage, so transmission /
+# two-tone / Rabi / T1 / T2 / T2E / single-shot all run normally. Any experiment
+# that actually steps the voltage (RunChargeSweep, RunChargeDispersion*,
+# RunModifiedRamsey*, Run2ToneChargeDispersionQuasiCW) will raise rather than
+# silently record data from a voltage that never moved.
+UseYoko = False
+yoko_addr = 'GPIB1::9::INSTR'
+
+Qubit_Readout = 3
+Qubit_Pulse = 3
 yoko_fixed = False  # during a charge sweep; lazy way of sweeping two tone spec over time
 cavity_min = True   # look for dip, not peak
+
+# ── Readout window for the NON-single-shot experiments ──────────────────────
+# ADC integration window / trigger offset [us] for every experiment that runs
+# above the rebuild_singleshot_config() call in section 3: transmission,
+# two-tone, chi shift, Rabi, T1/T2/T2E, charge dispersion, ModifiedRamsey and
+# ActiveResetVerify. The resonator tone duration is derived automatically as
+# ADC_Offset + Readout_Time, so don't set "length" separately.
+# Longer window -> better SNR per shot, until it exceeds ~T1 of the qubit (the
+# tail of the integration then just averages in decayed |e> population).
+# The single-shot family below (SingleShot / T1SS / readout+qubit optimize /
+# AutoCoherence / ZeroSpanParity) has its OWN window in SS_params, and
+# ZeroSpanParity overrides again via ZSP_*Params["read_length"].
+Readout_Time = 30   # us, ADC integration window
+ADC_Offset   = 1    # us, delay from tone start to ADC trigger
+#                     (None -> keep BaseConfig["adc_trig_offset"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -65,21 +115,23 @@ Constant2Tone = False
 tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
+# First measurement on a fresh cooldown: re-find the cavity before trusting any
+# of the carried-over qubit frequencies above.
 RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 5}
+Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 0.5}
 
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
 
-Run2ToneSpec = True
+Run2ToneSpec = False
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 6000, "SpecSpan": 1000, "SpecNumPoints": 101, # 750 works Q5
-                        "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
+Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 1.5, "SpecNumPoints": 101, # Q3 2026-07-01 json: qubit_gain 5000
+                        "qubit_length" : 30, # length of flattop pulse when gauss = False; Q3 json: 100
                         "reps": 20, 'rounds': 10,
-                        'Gauss': False, "sigma": 2, "gain": 6000,
+                        'Gauss': False, "sigma": 2, "gain": 1000,  # Q3 json: qubit_pulse_style "const" -> Gauss False
                         'relax_delay' : 1500,
                         "display": True, 'min_sep_MHz':0.2,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
@@ -110,7 +162,7 @@ Run2ToneChargeDispersionQuasiCW = False   # new automated mode
 # ModifiedRamsey_params["relax_delay"] applies only to the two-tone search. The
 # fixed-tau Ramsey uses the separate mr_relax_delay below (zero by default);
 # enable its hardware active reset when deterministic |g> preparation is required.
-RunModifiedRamsey = False
+RunModifiedRamsey = True
 
 TwoToneChargeDispersion_params = {
     "df": 0.5,                 # required peak separation in MHz
@@ -143,9 +195,9 @@ ModifiedRamsey_params = {
     # True  -> no per-cycle spec sweep and no yoko voltage walk. Every cycle runs
     #          the Ramsey at fixed_f_ge with tau = 1/(2*fixed_df).
     # False -> the two-tone doublet search below picks f_ge and df each cycle.
-    "skip_two_tone_search": False,
+    "skip_two_tone_search": True,
     "fixed_f_ge": None,        # MHz drive frequency; None -> qubit_frequency_center
-    "fixed_df": None,          # MHz separation that sets tau; None -> center_peak_df_for_tau
+    "fixed_df": 0.5,          # MHz separation that sets tau; None -> center_peak_df_for_tau
     "fixed_voltage": None,     # V one-time yoko move before cycling; None -> hold current V
 
     # --- two-tone search settings (same role as TwoToneChargeDispersion_params) ---
@@ -199,14 +251,14 @@ ModifiedRamsey_params = {
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
     # off preserves the original standard-scheme behavior.
     "flip_final_pi2": False,      # add 180 deg to closing pi/2 (swap parity->state)
-    "symmetric_ramsey": False,    # drive at midpoint f_avg=f_ge-df/2 instead of upper
+    "symmetric_ramsey": True,    # drive at midpoint f_avg=f_ge-df/2 instead of upper
     # Hardware active reset to |g> per shot (opt-in). When True, the driver
     # runs calibrate_active_reset_readout() first: it rotates config["res_phase"]
     # so g/e separate ALONG I and derives the I threshold from the rotated
     # SingleShot blobs (requires use_apriori_separator=True). The threshold is
     # re-derived from each ss recalibration. Validate with RunActiveResetVerify
     # before trusting it in long runs.
-    "use_active_reset": False,
+    "use_active_reset": True,
     # Manual I threshold override (normalized units). None (recommended) ->
     # auto-derived by the calibration above.
     "readout_threshold": None,
@@ -216,7 +268,7 @@ ModifiedRamsey_params = {
     # Must be >= ~6/kappa of THIS readout resonator so the pi fires on a
     # photon-free (un-Stark-shifted) qubit. 5 us = 6/kappa for the TATQ01/BFE
     # Q2 resonator (kappa/2pi = 190 kHz measured 2026-06-06); verify kappa for
-    # the CSTQ03 readout and trim if it is wider.
+    # this device's readout and trim if it is wider.
     "reset_readout_relax_delay": 5.0,
     "post_reset_wait": 0.0,
 }
@@ -243,9 +295,37 @@ ActiveResetVerify_params = {
     # validates the same timing the Ramsey uses.
     "reset_readout_relax_delay": 5.0,  # us after each reset readout
     "post_reset_wait": 0.0,  # us settle after the reset block
-    "relax_delay": 3500,  # us between reps (>= 3*T1 to re-thermalise; matches
+    "relax_delay": 5000,  # us between reps (>= 3*T1 to re-thermalise; matches
     #                       the 3-5*T1 convention used by T1/T2E above)
     "plotDisp": True,
+}
+
+# ── ModifiedRamsey fix-set verification ──────────────────────────────────────
+# Regression suite for the ModifiedRamsey fixes (tone coverage, ro_chs keying,
+# mr_relax_delay, acquire guards, config validation, sign-safe reset compare,
+# the timing model, buffer de-interleave, and the acc_buf shot source). Needs
+# NO qubit signal, NO single-shot calibration and NO yoko, so it is the right
+# thing to run on a fresh cooldown / after any qick or bitstream change.
+# Offline checks first (soccfg only), then the board stages; finishes with one
+# fixed-voltage ModifiedRamsey acquisition that exercises the full save path.
+# See Experiments/verify_ModifiedRamsey.py for what each check proves.
+RunVerifyModifiedRamsey = False
+VerifyModifiedRamsey_params = {
+    "run_offline": True,        # tier A against the live soccfg first
+    "refresh_snapshot": True,   # rewrite the committed soccfg snapshot
+    "force": False,             # continue even if an earlier stage failed
+    "buffer_reps": 200,
+    "raw_i_reps": 1000,
+    "rep_period_reps": 5000,    # timing is differential; this is the fit length
+    "run_fixed_voltage_ramsey": True,
+    "ramsey_params": {
+        # f_ge defaults to ctx.qubit_frequency_center; df is arbitrary here --
+        # without a charge-parity doublet it only sets tau = 1/(2*df).
+        "df": 0.5,
+        "mr_reps": 2000,
+        "mr_relax_delay": 0.0,
+        "use_active_reset": False,
+    },
 }
 
 RunModifiedRamsey_Control = False  # two-tone search -> half-period step -> sweet-spot interpolation -> Ramsey
@@ -300,14 +380,14 @@ ChiShift_params = {"reps": 10,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 10000, 'number_of_steps': 101,
-                         "reps": 20, 'rounds': 20,
-                         'relax_delay': 1500,
+                         "max_gain": 30000, 'number_of_steps': 101,
+                         "reps": 10, 'rounds': 10,
+                         'relax_delay': 5000,
                          'fit' : False}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
-T1T2_params = {"T1_step": 50, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
+T1T2_params = {"T1_step": 50, "T1_expts": 60, "T1_reps": 10, "T1_rounds": 10, # 80 100 30 30
                "T2_step": 0.25, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
                "relax_delay": 3500, # 5000
                'repetitions': 1000}
@@ -323,9 +403,12 @@ T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25,
               "min_max": None,
               'repetitions': 3000}
 
-SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 2500, "pi2_SS": False} # keep at 15
+SingleShot = True
+# NOTE: "Readout_Time"/"ADC_Offset" here are the single-shot regime's own readout
+# window (applied by rebuild_singleshot_config in section 3) and are INDEPENDENT of
+# the Readout_Time/ADC_Offset globals in section 1, which cover everything above it.
+SS_params = {"Shots": 1000, "Readout_Time": 30, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 2, 'relax_delay': 5000, "pi2_SS": True} # keep at 15
 
 # Single-shot readout with NO qubit drive: just look at the IQ blobs the readout
 # produces on an undriven qubit. Uses the same readout tone/window as SingleShot
@@ -334,7 +417,7 @@ SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": 
 # second blob is resolvable, its population.
 RunUndrivenSingleShot = False   # not "UndrivenSingleShot": that name is the imported experiment class
 US_params = {"Shots": 5000,            # more shots than SS: a small secondary blob needs statistics
-             "relax_delay": 2500,      # us, omit to inherit SS_params['relax_delay']
+             "relax_delay": 5000,      # us, omit to inherit SS_params['relax_delay']
              "min_separation_sigma": 2.0,  # blobs must be this far apart (combined sigma) to be called two
              "plotDisp": True}
 
@@ -347,10 +430,10 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'repetitions': 3000}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
+SS_R_params = {"gain_start": 1000, "gain_stop": 3000, "gain_pts": 21, "span": 0.1, "trans_pts": 21}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 11, "q_freq_span": 2, "q_freq_pts": 21,
+SS_Q_params = {"q_gain_span": 1000, "q_gain_pts" : 41, "q_freq_span": 2, "q_freq_pts": 21,
                'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 # ── Automated T1 / T2 / T2Echo calibration ──────────────────────────────────
@@ -528,6 +611,8 @@ ctx = build_context(
     Spec_relevant_params=Spec_relevant_params,
     tl=tl, ts=ts, charge_params=charge_params,
     cavity_min=cavity_min, yoko_fixed=yoko_fixed,
+    use_yoko=UseYoko, yoko_addr=yoko_addr,
+    readout_length_us=Readout_Time, adc_trig_offset_us=ADC_Offset,
 )
 
 # ── Regime A: transmission / spectroscopy / charge-parity / coherence / ARV ──
@@ -552,6 +637,7 @@ if RunT2E:                           run_t2e(ctx, T2E_params)
 if RunTrans_QubitSpec:               run_trans_qubit_spec(ctx, Spec_relevant_params, T1T2_params)
 if RunChargeSweep:                   run_charge_sweep(ctx, Spec_relevant_params)
 if RunActiveResetVerify:             run_active_reset_verify(ctx, ActiveResetVerify_params)
+if RunVerifyModifiedRamsey:          run_verify_modified_ramsey(ctx, VerifyModifiedRamsey_params)
 
 # ── switch to the single-shot config regime (original top-level rebuild @ old line 2990) ──
 rebuild_singleshot_config(ctx, SS_params)

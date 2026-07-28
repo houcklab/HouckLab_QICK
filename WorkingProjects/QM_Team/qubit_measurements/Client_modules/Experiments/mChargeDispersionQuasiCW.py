@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import raw_shot_buffers
 import datetime
 from tqdm.notebook import tqdm
 import time
@@ -111,9 +112,11 @@ class ChargeDispersionQuasiCW(ExperimentClass):
         )
 
         # raw repetition-resolved outputs
-        # prog.di_buf/prog.dq_buf contain one entry per hardware shot
-        raw_i = np.asarray(prog.di_buf[0])   # ADC 0
-        raw_q = np.asarray(prog.dq_buf[0])   # ADC 0
+        # one entry per hardware shot (from prog.acc_buf on qick >= ~0.2.29x,
+        # where prog.di_buf is averaged over reps)
+        prog_di_buf, prog_dq_buf = raw_shot_buffers(prog)
+        raw_i = np.asarray(prog_di_buf[0])   # ADC 0
+        raw_q = np.asarray(prog_dq_buf[0])   # ADC 0
 
         reps = int(self.cfg["reps"])
         expts = int(self.cfg["expts"])

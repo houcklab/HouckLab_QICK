@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import raw_shot_buffers
 import datetime
 from tqdm.notebook import tqdm
 import time
@@ -66,9 +67,10 @@ class T1Program(AveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
+        di_buf, dq_buf = raw_shot_buffers(self)
+        shots_i0 = di_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
             self.cfg['readout_length'], ro_ch=0)
-        shots_q0 = self.dq_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
+        shots_q0 = dq_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
             self.cfg['readout_length'], ro_ch=0)
 
         return shots_i0, shots_q0

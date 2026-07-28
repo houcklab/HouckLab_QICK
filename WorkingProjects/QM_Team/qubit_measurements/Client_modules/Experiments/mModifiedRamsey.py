@@ -2,6 +2,15 @@ from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import raw_shot_buffers
+
+# Minimum real tProc stall (us) between the reset readout window closing and the
+# feedback `read`. The accumulated word has to cross the avg buffer's async FIFO
+# into the PS clock domain and then an AXIS converter into the tProc domain --
+# tens to ~150 ns. 0.5 us is ~3x that and is free in practice: the runners
+# already wait 5 us here for the resonator to ring down. Must match
+# mActiveResetVerify.MIN_RESET_READ_SETTLE_US (verify_ModifiedRamsey asserts it).
+MIN_RESET_READ_SETTLE_US = 0.5
 
 
 class ModifiedRamseyProgram(AveragerProgram):
@@ -74,6 +83,13 @@ class ModifiedRamseyProgram(AveragerProgram):
     cfg["reset_readout_relax_delay"]:
                                  syncdelay (us) after each reset readout before the
                                  conditional flip (default 1.0).
+    cfg["reset_read_settle"]   : MINIMUM real tProc stall (us) between the reset
+                                 readout window closing and the `read` that feeds
+                                 the condj (default 0.5). Load-bearing; see the
+                                 long comment in active_reset_to_g(). Only the
+                                 SHORTFALL against reset_readout_relax_delay is
+                                 emitted, as a waiti, so the scheduled rep period
+                                 is unchanged for every cfg.
     cfg["post_reset_wait"]     : extra settle time (us) after the reset block,
                                  before the first Ramsey pi/2 (default 0.0).
     """
@@ -87,6 +103,8 @@ class ModifiedRamseyProgram(AveragerProgram):
             raise ValueError("cfg['sigma'] must be positive")
         if cfg["readout_length"] <= 0:
             raise ValueError("cfg['readout_length'] must be positive")
+        if not cfg["ro_chs"]:
+            raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
         for delay_key in ("adc_trig_offset", "mr_relax_delay"):
             if cfg.get(delay_key, 0.0) < 0:
                 raise ValueError(f"cfg['{delay_key}'] must be non-negative")
@@ -104,10 +122,67 @@ class ModifiedRamseyProgram(AveragerProgram):
         self.reset_cycles = int(cfg.get("reset_cycles", 1)) if self.use_active_reset else 0
         if self.reset_cycles < 0:
             raise ValueError("cfg['reset_cycles'] must be non-negative")
+        self.reset_ro_ch = int(cfg["ro_chs"][0])
+        reset_rocfg = self.soccfg["readouts"][self.reset_ro_ch]
+        if "tproc_ch" not in reset_rocfg:
+            raise KeyError(
+                f"soccfg['readouts'][{self.reset_ro_ch}] has no 'tproc_ch'; "
+                "hardware feedback cannot identify the tProc input port."
+            )
+        self.reset_read_port = int(reset_rocfg["tproc_ch"])
+        if not 0 <= self.reset_read_port < 8:
+            raise ValueError(
+                f"readout {self.reset_ro_ch} maps to invalid tProc v1 input "
+                f"port {self.reset_read_port}; expected 0..7."
+            )
         if self.use_active_reset:
-            for delay_key in ("reset_readout_relax_delay", "post_reset_wait"):
+            for delay_key in ("reset_readout_relax_delay", "post_reset_wait",
+                              "reset_read_settle"):
                 if cfg.get(delay_key, 0.0) < 0:
                     raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+        # Feedback-read settle. reset_read_settle is the MINIMUM real stall
+        # required between the reset readout window closing and the `read`; the
+        # measure's syncdelay already advances the tProc time reference by
+        # reset_readout_relax_delay, and waiti's immediate is relative to that
+        # reference, so only the shortfall has to be emitted. Emitting the
+        # shortfall as a waiti (never as extra synci) is what keeps the scheduled
+        # rep period -- and therefore runs.charge_parity.modified_ramsey_timing --
+        # byte-identical for every cfg. See active_reset_to_g().
+        self.reset_readout_syncdelay_cycles = self.us2cycles(
+            cfg.get("reset_readout_relax_delay", 1.0))
+        # FLOOR, not merely a default. reset_read_settle=0.0 passes the
+        # non-negativity validation above, and combined with
+        # reset_readout_relax_delay=0.0 it collapses the real margin to 0.8 tProc
+        # cycles (1.9 ns) -- functionally the pre-fix bug, and low enough that
+        # nothing downstream would notice. The stall is load-bearing, so it is
+        # not configurable away.
+        self.reset_read_settle_cycles = max(
+            self.us2cycles(cfg.get("reset_read_settle",
+                                   MIN_RESET_READ_SETTLE_US)),
+            self.us2cycles(MIN_RESET_READ_SETTLE_US),
+        )
+        self.reset_read_extra_wait_cycles = max(
+            0,
+            self.reset_read_settle_cycles - self.reset_readout_syncdelay_cycles
+        )
+        # The shortfall is emitted as a waiti BEYOND the tProc time reference, but
+        # the corrective pi's `set` targets reference+0, so the pi fires this late
+        # and the real rep period exceeds the scheduled one by the same amount
+        # (modified_ramsey_timing stays correct as a *scheduled*-period model).
+        # Zero for every shipped cfg: the runners pass
+        # reset_readout_relax_delay=5.0 and charge_parity defaults it to 1.0.
+        if (self.use_active_reset and self.reset_cycles
+                and self.reset_read_extra_wait_cycles > 0):
+            late_us = self.cycles2us(self.reset_read_extra_wait_cycles)
+            print(
+                "[ModifiedRamsey] WARNING: reset_readout_relax_delay "
+                f"({cfg.get('reset_readout_relax_delay', 1.0)} us) is shorter "
+                f"than the feedback-read settle floor "
+                f"({MIN_RESET_READ_SETTLE_US} us). The corrective pi will fire "
+                f"{late_us:.3f} us LATER than scheduled, on a resonator that has "
+                "had that much less time to ring down, and the real rep period "
+                "will exceed the modelled one by the same amount."
+            )
         # condj jumps (skips the corrective pi) when the qubit is already in |g>.
         # If |g> sits below threshold in I, the "already ground" test is I < thresh.
         self.reset_skip_op = "<" if cfg.get("reset_ground_below_threshold", True) else ">"
@@ -116,9 +191,14 @@ class ModifiedRamseyProgram(AveragerProgram):
         # accumulated I is NEGATIVE (the deployed tProc compares as if
         # unsigned, so negative two's-complement I reads as a huge positive).
         # Adding the same large positive constant to BOTH operands keeps them
-        # strictly positive, so signed and unsigned comparison agree. 2^24 >>
-        # any |raw I| and offset+|raw| << 2^30 (immediate sign-bit limit).
-        self.cmp_offset = 1 << 24
+        # strictly positive, so signed and unsigned comparison agree.
+        # Sized 2^28 (was 2^24): the raw accumulator scales with the readout
+        # window, and raw_threshold = readout_threshold * window_cycles below.
+        # At the deployed 15 us window (~4600 cycles) a normalized threshold of
+        # a few thousand puts raw_threshold within ~1.2x of a 2^24 offset, i.e.
+        # against the guard. 2^28 keeps offset + |raw| well under the 2^31
+        # register/immediate limit while restoring real headroom.
+        self.cmp_offset = 1 << 28
 
         # Total parity-mapping evolution time. tau = 1/(2*df) for both schemes:
         # the |relative phase| accumulated between the two parity branches is pi.
@@ -164,8 +244,6 @@ class ModifiedRamseyProgram(AveragerProgram):
         requested_tone_cycles = self.us2cycles(
             cfg["length"], gen_ch=cfg["res_ch"]
         )
-        if not cfg["ro_chs"]:
-            raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
         self.readout_window_cycles = {
             ch: self.us2cycles(cfg["readout_length"], ro_ch=ch)
             for ch in cfg["ro_chs"]
@@ -280,7 +358,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         qubit was found in |e>. After the block the qubit is in |g>.
         """
         cfg = self.cfg
-        ro_ch = cfg["ro_chs"][0]
+        ro_ch = self.reset_ro_ch
 
         for i in range(self.reset_cycles):
             done_label = "RESET_DONE_%d" % i
@@ -292,11 +370,61 @@ class ModifiedRamseyProgram(AveragerProgram):
                 adcs=self.ro_chs,
                 adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
-                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
+                syncdelay=self.reset_readout_syncdelay_cycles
             )
 
+            # 1b) STALL the tProc until the accumulated I is actually AT the
+            # tProc input. DO NOT REMOVE THIS LINE.
+            #
+            # measure(wait=True) emits waiti(0, int(window_end)) and syncdelay
+            # emits synci. Only waiti stalls the control core; synci merely
+            # advances the tProc TIME REFERENCE ("This does not pause the tProc",
+            # asm_v1.py sync_all). So without this stall the `read` below ran ~2
+            # instructions (~5 ns) after the ADC window closed -- in fact 0.2
+            # tProc cycles BEFORE it closed, because wait_all() truncates the
+            # fractional readout-end timestamp with int(). And the tProc input
+            # port is a bare last-value latch: s_axis_read.vhd is one register
+            # loaded whenever s_axis_tvalid is high with s_axis_tready tied to
+            # '1', and the `read` instruction samples it unconditionally without
+            # ever inspecting tvalid. The accumulated word meanwhile has to cross
+            # the avg buffer's async FIFO into the 100 MHz PS domain and an AXIS
+            # clock converter into the 430 MHz tProc domain -- tens to ~150 ns.
+            # A read that early therefore returns the PREVIOUS readout's I.
+            #
+            # What that cost, measured 2026-07-28 on TATQ01-SiO2 Q3 via
+            # ActiveResetVerify (2000 reps/condition, 5 verification readouts):
+            #     prep|g> reset OFF   P(|g>) = 0.872   thermal baseline
+            #     prep|e> reset OFF   P(|g>) = 0.152   control
+            #     prep|g> reset ON    P(|g>) = 0.539   <- should be ~0.78
+            #     prep|e> reset ON    P(|g>) = 0.497   <- should be ~0.74
+            #     prep|e> force_pi    P(|g>) = 0.847   pi + readout are FINE
+            #     prep|g> force_pi    P(|g>) = 0.132
+            # The corrective pi fired on ~50% of shots, uncorrelated with THIS
+            # shot's state, while force_pi (same readout, same 5 us, same pi, no
+            # condj) reproduced the baselines to 0.02. Forensics on the saved
+            # per-shot h5: corr(read0 of rep n, read4 of rep n-1) = -0.723 for
+            # prep|e> and +0.750 for prep|g> -- the sign flips because the pi
+            # repairs |e> but damages |g> -- against |corr| <= 0.04 in all four
+            # control conditions, and P(|g>) | previous read = |e>) = 0.847
+            # reproduces the force-pi baseline to 0.0004. The decision variable
+            # was the PREVIOUS rep's last readout: exactly one readout of lag.
+            #
+            # wait_all(t) emits waiti(0, t), which stalls until the tProc time
+            # counter reaches reference + t. measure()'s sync_all has just set
+            # reference = window_end + reset_readout_relax_delay and zeroed the
+            # readout timestamps, so wait_all(0) alone already buys the whole
+            # reset_readout_relax_delay (5.0 us on the deployed runner cfg,
+            # against the 200 cycles = 0.47 us the canonical qick active-reset
+            # demo waits). reset_read_extra_wait_cycles is therefore only the
+            # shortfall against cfg["reset_read_settle"], so a shorter
+            # reset_readout_relax_delay still gets a real settle and no synci is
+            # ever added. verify_ModifiedRamsey.check_reset_read_settle measures
+            # this margin offline and fails if it goes away.
+            self.wait_all(self.reset_read_extra_wait_cycles)
+
             # 2) Read the accumulated in-phase value (lower = I) into r_read.
-            self.read(ro_ch, self.q_rp, "lower", self.r_read)
+            # `read` addresses a tProc INPUT PORT, not an ADC/readout index.
+            self.read(self.reset_read_port, self.q_rp, "lower", self.r_read)
 
             # Offset I into strictly positive territory so the comparison is
             # sign-safe (see cmp_offset in initialize()); r_thresh already
@@ -398,13 +526,24 @@ class ModifiedRamseyProgram(AveragerProgram):
                 "readouts_per_experiment must equal reset_cycles + 1 "
                 f"({self.reads_per_rep}) for ModifiedRamseyProgram"
             )
+        if threshold is not None:
+            # qick's threshold mode REPLACES the accumulated data with heaviside
+            # decisions and zeros Q (AcquireMixin._process_accumulated), while
+            # this class returns collect_shots() -- read straight out of the raw
+            # acc_buf -- and discards super().acquire()'s return value. Accepting
+            # a threshold here would silently hand back meaningless IQ. Threshold
+            # the shots yourself after acquire(); the g/e separator lives in the
+            # runner (get_apriori_separator_from_singleshot).
+            raise ValueError(
+                "ModifiedRamseyProgram.acquire() does not support threshold=...; "
+                "it returns raw per-shot IQ. Classify the returned shots instead."
+            )
         super().acquire(
             soc,
             readouts_per_experiment=self.reads_per_rep,
             load_pulses=load_pulses,
             start_src=start_src,
             progress=progress,
-            threshold=threshold,
             angle=angle,
             save_experiments=save_experiments,
         )
@@ -417,8 +556,9 @@ class ModifiedRamseyProgram(AveragerProgram):
         # Readout ii of each rep lives at di_buf[ch][ii::reads_per_rep]; the final
         # Ramsey readout is the last one in each rep (the earlier ones are resets).
         final = reads_per_rep - 1
-        shots_i = self.di_buf[0][final::reads_per_rep].reshape((1, self.cfg["reps"])) / norm
-        shots_q = self.dq_buf[0][final::reads_per_rep].reshape((1, self.cfg["reps"])) / norm
+        di_buf, dq_buf = raw_shot_buffers(self)
+        shots_i = di_buf[0][final::reads_per_rep].reshape((1, self.cfg["reps"])) / norm
+        shots_q = dq_buf[0][final::reads_per_rep].reshape((1, self.cfg["reps"])) / norm
         return shots_i, shots_q
 
 

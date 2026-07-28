@@ -52,6 +52,9 @@ from qick import AveragerProgram
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import (
     ExperimentClass,
 )
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import (
+    raw_shot_buffers,
+)
 
 
 _STROBE_REQUIRED = (
@@ -406,8 +409,9 @@ class ZeroSpanParity(ExperimentClass):
         # positional index 0 for the single declared readout. ro_ch above is
         # kept for the soccfg.us2cycles(..., ro_ch=ro_ch) call and any
         # soccfg["readouts"][ro_ch] lookups, which ARE keyed by absolute channel.
-        I = np.asarray(prog.di_buf[0], dtype=float).ravel() / ro_cycles
-        Q = np.asarray(prog.dq_buf[0], dtype=float).ravel() / ro_cycles
+        prog_di_buf, prog_dq_buf = raw_shot_buffers(prog)
+        I = np.asarray(prog_di_buf[0], dtype=float).ravel() / ro_cycles
+        Q = np.asarray(prog_dq_buf[0], dtype=float).ravel() / ro_cycles
         sp = float(cfg["sample_period_us"])
         t_us = np.arange(I.size, dtype=float) * sp
         data = {
