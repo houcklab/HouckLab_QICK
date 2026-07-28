@@ -687,11 +687,17 @@ def check_ro_ch_normalization(soccfg):
     r.expect(norms[1] != norms[0],
              "mutated snapshot did not actually change the window length; the "
              "check would be vacuous")
-    expected = round(norms[1] * 1.0) + (1 << 28)
+    # cmp_offset is itself sized from the ro_chs[0] window (int(ro_norm) << 15),
+    # so derive the expectation from norms[1] rather than hardcoding a constant.
+    # This keeps the check's teeth: if the fix were reverted so BOTH the
+    # threshold and the offset were keyed on channel 0, each term would be built
+    # from norms[0] and the total would still miss this norms[1]-derived value.
+    expected_offset = int(norms[1]) << 15
+    expected = round(norms[1] * 1.0) + expected_offset
     r.expect(thresholds[1] == expected,
              f"raw threshold for ro_chs=[1] is {thresholds[1]}, expected "
-             f"{expected} (window {norms[1]} + cmp_offset) -- the threshold "
-             "rescale is not keyed on ro_chs[0]")
+             f"{expected} (window {norms[1]} + cmp_offset {expected_offset}) -- "
+             "the threshold rescale is not keyed on ro_chs[0]")
     r.notes["windows"] = {str(k): int(v) for k, v in norms.items()}
     return r
 
@@ -1150,7 +1156,12 @@ def check_timing_model(soccfg):
         "echo": base_cfg(use_pi_pulse=True),
         "mr_relax_5us": base_cfg(mr_relax_delay=5.0),
         "mr_relax_20us": base_cfg(mr_relax_delay=20.0),
-        "df_2MHz": base_cfg(df=2.0),
+        # tau is now the pulse-CENTRE-to-CENTRE interval, so a usable df is
+        # bounded by the envelope: df < 1/(8*sigma) (no pi). At sigma=0.1 us that
+        # caps df at 1.25 MHz, so 2 MHz needs sigma < 0.0625 us or the program
+        # correctly raises "parity phase condition is unreachable". Shrink sigma
+        # rather than lowering df, to keep a genuinely short tau in the sweep.
+        "df_2MHz": base_cfg(df=2.0, sigma=0.05),
         "short_readout": base_cfg(readout_length=2.0),
         "reset_1": reset_cfg(),
         "reset_2": reset_cfg(reset_cycles=2),

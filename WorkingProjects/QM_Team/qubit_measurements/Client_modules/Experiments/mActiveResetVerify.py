@@ -459,11 +459,20 @@ class ActiveResetVerifyProgram(AveragerProgram):
         # deployed tProc compares r_read/r_thresh as if unsigned. Adding the
         # same large positive constant to BOTH operands makes them strictly
         # positive, so signed and unsigned comparison agree and the decision is
-        # correct under either firmware behaviour. Sized 2^28 (was 2^24, which
-        # assumed |raw I| ~1e4-1e5): the raw accumulator scales with the readout
-        # window, so at 15 us raw_threshold can approach 2^24. Must match
-        # ModifiedRamseyProgram.cmp_offset -- verify_ModifiedRamsey asserts it.
-        self.cmp_offset = 1 << 28
+        # correct under either firmware behaviour.
+        #
+        # The offset must exceed the largest |raw I| the ACCUMULATOR can produce,
+        # not merely raw_threshold, and both scale with the readout window -- so
+        # it is sized from the window in initialize() (int(ro_norm) << 15) rather
+        # than hardcoded. A fixed constant is only correct for one readout
+        # length: 2^24 covers just 0.111x of the worst case at the 15 us /
+        # 4608-cycle window (shots below -2^24 still wrap, i.e. the original bug
+        # survives), and 2^28 stops covering it past a ~26.7 us readout.
+        # Must match ModifiedRamseyProgram.cmp_offset -- verify_ModifiedRamsey
+        # asserts it (F11), since the two active_reset_to_g() implementations
+        # have to emit identical asm or ARV validates a compare the Ramsey never
+        # runs. 0 here; set for real in initialize() when active reset is on.
+        self.cmp_offset = 0
         # Feedback-read settle. reset_read_settle is the MINIMUM real stall
         # required between the reset readout window closing and the `read`; the
         # measure's syncdelay already advances the tProc time reference by
@@ -608,10 +617,29 @@ class ActiveResetVerifyProgram(AveragerProgram):
             # tProc compares (collect_shots divides accumulated I by the window len).
             ro_norm = self.readout_window_cycles[cfg["ro_chs"][0]]
             raw_threshold = int(round(cfg["readout_threshold"] * ro_norm))
+
+            # Size the sign-safe offset from the DATA range, not the threshold.
+            # The accumulator sums ro_norm decimated samples of at most 15 bits
+            # (12-bit ADC + 3 bits of decimation gain, per the overflow note in
+            # qick_asm.declare_readout), so |raw I| <= ro_norm * 2^15. The
+            # threshold guard alone cannot catch an undersized offset, because
+            # the threshold sits BETWEEN the blobs while individual shots sit on
+            # them. Kept identical to ModifiedRamseyProgram (F11).
+            self.cmp_offset = int(ro_norm) << 15
+            # Both operands must stay inside the 32-bit signed register, and the
+            # immediate must stay inside safe_regwi's 2^30 plain-regwi window.
+            if self.cmp_offset >= 1 << 30:
+                raise ValueError(
+                    f"cfg['readout_length']={cfg.get('readout_length')} us gives "
+                    f"a readout window of {ro_norm} cycles, whose sign-safe "
+                    f"comparison offset {self.cmp_offset} exceeds the 2^30 "
+                    "immediate limit. Shorten the readout window for active reset."
+                )
             if abs(raw_threshold) >= self.cmp_offset:
                 raise ValueError(
                     f"raw_threshold {raw_threshold} exceeds the sign-safe "
-                    f"comparison offset {self.cmp_offset}; increase cmp_offset."
+                    f"comparison offset {self.cmp_offset}; the readout is "
+                    "saturating the accumulator."
                 )
             # r_thresh holds threshold + offset; r_read gets the same offset
             # added (mathi) right after each read, before the condj.
