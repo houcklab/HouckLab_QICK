@@ -320,31 +320,53 @@ def run_full_curve(soc, soccfg, dc_vec_full, f_ghz_full, calib_params, rec,
             break
     if threept_runs:
         banner("ACID TEST -- 3-point vs full curve on the SAME DC points")
-        T3 = np.nanmean(np.vstack([
+        T3runs, S3runs = [], []
+        for e in threept_runs:
+            P0 = np.asarray(e.data["P0"]); P1 = np.asarray(e.data["P1"])
+            Ps = np.asarray(e.data["Ps"])
+            Tse = e.data.get("Ts_effective_ns", e.Ts_ns)
+            est3 = _compute_3pt_t1(P0, P1, Ps, Tse,
+                                   min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
+                                   max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"])
+            T3runs.append(est3["T1_3pt_us_raw"])
+            S3runs.append(t1_sigma(est3["pe"], Tse / 1e3, measured_sigma_P(P0),
+                                   np.nanmean(np.abs(est3["contrast"]))))
+        S3 = np.nanmean(np.vstack(S3runs), axis=0)
+        _unused = np.nanmean(np.vstack([
             _compute_3pt_t1(np.asarray(e.data["P0"]), np.asarray(e.data["P1"]),
                             np.asarray(e.data["Ps"]),
                             e.data.get("Ts_effective_ns", e.Ts_ns),
                             min_ref_contrast=P6_3PT_T1["min_ref_contrast"],
                             max_t1_multiple=P6_3PT_T1["max_plot_t1_multiple"]
                             )["T1_3pt_us_raw"] for e in threept_runs]), axis=0)
+        T3 = np.nanmean(np.vstack(T3runs), axis=0)
         TF = np.nanmean(np.vstack([np.asarray(e.data["T1_fit_us"], dtype=float)
                                    for e in scans]), axis=0)
         EF = np.nanmean(np.vstack([np.asarray(e.data["T1_fit_err_us"], dtype=float)
                                    for e in scans]), axis=0)
         matched = threept_runs[0].data.get("three_point_matched_refs", False)
         print(f"  3-point references: {'FLUX-MATCHED' if matched else 'LEGACY (park)'}\n")
-        print(f"  {'dc':>8s} {'f(GHz)':>9s} {'3-point':>9s} {'full curve':>14s} "
-              f"{'ratio':>7s} | agree?")
+        print("  agreement is judged on the propagated errors, not a fixed ratio band\n")
+        print(f"  {'dc':>8s} {'f(GHz)':>9s} {'3-point':>14s} {'full curve':>14s} "
+              f"{'n_sigma':>8s} | verdict")
+        nsig = []
         for j, d in enumerate(dc):
-            r = T3[j] / TF[j] if np.isfinite(T3[j]) and TF[j] else np.nan
-            ok = "yes" if np.isfinite(r) and 0.75 <= r <= 1.33 else "NO"
-            print(f"  {d:>8.0f} {fg[j]:>9.4f} {T3[j]:>9.1f} {TF[j]:>9.1f}+/-{EF[j]:<4.0f} "
-                  f"{r:>7.2f} | {ok}")
-        good = np.isfinite(T3 / TF)
-        if good.any():
-            print(f"\n  mean ratio 3-point/full-curve = {np.nanmean(T3[good]/TF[good]):.2f}")
-            print(f"  (1.00 means the fast 3-point method is unbiased and you can use it")
-            print(f"   for the map; ~0.5 means the references are still not matched.)")
+            diff = abs(T3[j] - TF[j])
+            sig = float(np.hypot(S3[j], EF[j]))
+            n = diff / sig if sig > 0 else np.nan
+            nsig.append(n)
+            print(f"  {d:>8.0f} {fg[j]:>9.4f} {T3[j]:>8.1f}+/-{S3[j]:<4.0f} "
+                  f"{TF[j]:>8.1f}+/-{EF[j]:<4.0f} {n:>8.2f} | "
+                  f"{'AGREE' if np.isfinite(n) and n < 2 else 'DISAGREE'}")
+        nsig = np.asarray(nsig, dtype=float)
+        bad = int(np.sum(np.isfinite(nsig) & (nsig >= 2)))
+        print(f"\n  worst disagreement: {np.nanmax(nsig):.2f} sigma; "
+              f"{bad}/{len(dc)} points disagree")
+        if bad == 0:
+            print("  -> the fast 3-point method is consistent with the full curve.")
+            print("     Use it for the map; the full curve is the slower cross-check.")
+        else:
+            print("  -> a real discrepancy remains; do NOT trust the 3-point map yet.")
 
     banner("FULL-CURVE TIMING AND STABILITY")
     print(f"  scans completed: {len(scans)} in {sum(durations):.0f} s "
