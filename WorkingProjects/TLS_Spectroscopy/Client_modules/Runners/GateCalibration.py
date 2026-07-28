@@ -40,14 +40,15 @@ THERMALIZATION_US = 2.0
 PASSIVE_RESET_US = 1000.0
 
 P_TRANSMISSION = {
-    "run": True,
-    "shots": 500,
+    "run": False,
+    "shots": 1000,
     "freq_start_mhz": 7245,
     "freq_stop_mhz": 7255,
     "freq_points": 201,
-    "spec_amp": 8000,
-    "spec_len_us": 10,
+    "spec_amp": 2000,
+    "spec_len_us": 15,
 }
+
 P_TRANSMISSION_SWEEP = {
     "run": False,
     "shots": 500,
@@ -70,6 +71,7 @@ P_QUBIT_SPEC = {
     "spec_length_us": 1.0,
     "relax_delay_us": 100.0,
 }
+
 P_QUBIT_SPEC_SWEEP = {
     "run": False,
     "shots": 1000,
@@ -96,44 +98,44 @@ P_RABI_CHEVRON_IQ = {
     "shots": 100,
     "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 500,
-    "a_max": 30000,
-    "a_points": 41,
-    "freq_span_mhz": 20.0,
+    "a_min": 2000,
+    "a_max": 12000,
+    "a_points": 21,
+    "freq_span_mhz": 2.0,
     "freq_points": 21,
 }
 
 P_RABI_CHEVRON_SS = {
     "run": False,
-    "shots": 200,
-    "num_pi": 5,
+    "shots": 1000,
+    "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 10000,
-    "a_max": 15000,
+    "a_min": 500,
+    "a_max": 30000,
     "a_points": 21,
-    "freq_span_mhz": 1.0,
+    "freq_span_mhz": 10.0,
     "freq_points": 21,
 }
 
 P_READOUT_OPT = {
     "run": False,
-    "shots": 400,
+    "shots": 500,
     "freq_span_mhz": 1.0,
-    "freq_points": 9,
+    "freq_points": 11,
     "gain_min": 1000,
     "gain_max": 10000,
-    "gain_points": 9,
+    "gain_points": 21,
 }
 
 P_QUBIT_OPT = {
-    "run": False,
-    "shots": 400,
+    "run": True,
+    "shots": 500,
     "num_pi_pulses": 1,
-    "freq_span_mhz": 1.0,
-    "freq_points": 11,
+    "freq_span_mhz": 2.0,
+    "freq_points": 21,
     "gain_min": 2000,
     "gain_max": 9000,
-    "gain_points": 11,
+    "gain_points": 21,
 }
 
 

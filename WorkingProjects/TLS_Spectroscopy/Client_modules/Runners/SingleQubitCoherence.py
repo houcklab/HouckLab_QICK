@@ -31,21 +31,21 @@ RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
 THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
-PASSIVE_RESET_US = 1000.0
+PASSIVE_RESET_US = 1500.0
 
 P_SS_CAL = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
 }
 
 P_T1 = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "t_min_us": 1.0,
-    "t_max_us": 300.0,
-    "t_points": 61,
+    "t_max_us": 1500.0,
+    "t_points": 71,
 }
 
 P_T1_FLUX_RAMP = {
@@ -54,8 +54,8 @@ P_T1_FLUX_RAMP = {
     "excursion_gain": 8000,
     "flux_tail_compensation": None,
     "t_min_us": 1.0,
-    "t_max_us": 300.0,
-    "t_points": 61,
+    "t_max_us": 1500.0,
+    "t_points": 71,
 }
 
 

@@ -26,17 +26,17 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-RUN_DISCOVERY = True
+RUN_DISCOVERY = False
 
-RUN_GAIN_SWEEP = False
+RUN_GAIN_SWEEP = True
 
 RUN_1_TO_20_US_MODE = False
 
 DISCOVERY = {
     "read_pulse_freq": 7248.967089,
-    "qubit_pi_freq": 2534.350291,
-    "sigma": 0.5,
-    "read_length": 10.0,
+    "qubit_pi_freq": 2534.477824,
+    "sigma": 0.25,
+    "read_length": 15.0,
     "read_pulse_gain": 3700,
     "qubit_pi_gain": 2689,
     "qubit_drag_beta": 0.0,
