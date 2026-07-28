@@ -83,11 +83,37 @@ class ResetCheckProgram(AveragerProgram):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
         if cfg.get("do_reset", False):
+            read_gain = cfg.get("reset_read_pulse_gain", None)
+            pi_gain = cfg.get("reset_pi_gain", None)
+            pi_freq = cfg.get("reset_pi_freq", None)
+            if read_gain is not None:
+                set_readout_pulse(self, self.freq2reg(
+                    cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+                    ro_ch=cfg["ro_chs"][0]), gain=int(read_gain))
+            if pi_gain is not None or pi_freq is not None:
+                self.set_pulse_registers(
+                    ch=cfg["qubit_ch"], style="arb",
+                    freq=self.freq2reg(float(pi_freq) if pi_freq is not None
+                                       else cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
+                                       gen_ch=cfg["qubit_ch"]),
+                    phase=0,
+                    gain=int(pi_gain if pi_gain is not None else cfg["qubit_pi_gain"]),
+                    waveform="qubit")
             ar.active_reset_block(
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)))
+            if pi_gain is not None or pi_freq is not None:
+                self.set_pulse_registers(
+                    ch=cfg["qubit_ch"], style="arb",
+                    freq=self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
+                                       gen_ch=cfg["qubit_ch"]),
+                    phase=0, gain=int(cfg["qubit_pi_gain"]), waveform="qubit")
+            if read_gain is not None:
+                set_readout_pulse(self, self.freq2reg(
+                    cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+                    ro_ch=cfg["ro_chs"][0]))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg.get("relax_delay", 500.0)))

@@ -341,6 +341,23 @@ class FFT1Program(AveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
+    def _set_qubit_pulse(self, gain=None, freq_mhz=None):
+        cfg = self.cfg
+        freq = self.freq2reg(
+            float(freq_mhz) if freq_mhz is not None
+            else cfg.get("qubit_pi_freq", cfg["qubit_freq"]), gen_ch=cfg["qubit_ch"])
+        g = int(cfg["qubit_pi_gain"] if gain is None else gain)
+        if cfg.get("qubit_pulse_style", "arb") == "flat_top":
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="flat_top", freq=freq, phase=0, gain=g,
+                waveform="qubit",
+                length=self.us2cycles(cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
+        else:
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb", freq=freq,
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]), gain=g,
+                waveform="qubit")
+
     def initialize(self):
         cfg = self.cfg
         cfg["reps"] = cfg["shots"]
@@ -358,18 +375,9 @@ class FFT1Program(AveragerProgram):
         qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
                                    gen_ch=cfg["qubit_ch"])
 
-        style = cfg.get("qubit_pulse_style", "arb")
-        if style == "flat_top":
-            add_qubit_gaussian(self)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="flat_top", freq=qubit_freq, phase=0,
-                                     gain=cfg["qubit_pi_gain"], waveform="qubit",
-                                     length=self.us2cycles(cfg["flat_top_length"],
-                                                           gen_ch=cfg["qubit_ch"]))
-        else:
-            add_qubit_gaussian(self)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
-                                     phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
-                                     gain=cfg["qubit_pi_gain"], waveform="qubit")
+        self._read_freq_reg = read_freq
+        add_qubit_gaussian(self)
+        self._set_qubit_pulse()
 
         set_readout_pulse(self, read_freq)
 
@@ -390,11 +398,25 @@ class FFT1Program(AveragerProgram):
         if cfg.get("do_ff", True):
             ff_pulse.assert_park(self, self.ff_segs)
         if active_reset.uses_feedback(cfg):
+            read_gain = cfg.get("reset_read_pulse_gain", None)
+            pi_gain = cfg.get("reset_pi_gain", None)
+            pi_freq = cfg.get("reset_pi_freq", None)
+            if read_gain is not None:
+                set_readout_pulse(self, self._read_freq_reg, gain=int(read_gain))
+            if pi_gain is not None or pi_freq is not None:
+                self._set_qubit_pulse(
+                    gain=int(pi_gain) if pi_gain is not None else cfg["qubit_pi_gain"],
+                    freq_mhz=float(pi_freq) if pi_freq is not None
+                    else cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
             active_reset.active_reset_block(
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)))
+            if pi_gain is not None or pi_freq is not None:
+                self._set_qubit_pulse()
+            if read_gain is not None:
+                set_readout_pulse(self, self._read_freq_reg)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))

@@ -27,6 +27,9 @@ DETUNE_DC_POINTS = 5
 DETUNE_SHOTS = 500
 DETUNE_REPEATS = 2
 
+ROUNDS_AB = [10, 5, 2, 1]
+ROUNDS_AB_PASSES = 4
+
 SS_SHOTS = 1000
 SS_GROUND_THRESHOLD = 0.7
 PROBE_SHOTS = 2000
@@ -40,6 +43,7 @@ RESET_MAX_ITERS = 3
 MIN_REF_CONTRAST = 0.05
 MAX_PLOT_T1_MULTIPLE = 20.0
 
+SWEEP_POINTS_PROD = 335
 DC_MIN, DC_MAX, FREQ_STEP_MHZ = 0, 10000, 1
 FLUX_FIT_PARAMS = [9.30070052036, 0.100677145556, 31881.294671,
                    7115.71137189, 0.822636051338, -4.13273417292e-05]
@@ -233,6 +237,56 @@ def run():
                           for v in per_dc)
         print(f"  {frac:>+8.2f} {thr:>10d} {peg:>7.3f} {pge:>7.3f} {fl:>7.3f} | "
               f"{cells}  ({good.sum():>2d}/{arr.size:<2d})", flush=True)
+
+    banner("STAGE 4 -- interleave_rounds A/B (the biggest wall-clock lever)")
+    print("  _interleaved_populations visits every spec once PER ROUND and builds a fresh")
+    print("  FFT1Program each visit, so a pass is 3 x n_dc x rounds programs, each")
+    print("  carrying only shots/rounds shots.  Per-program host overhead is paid every")
+    print("  time.  The triplet is contiguous (group_size=3) so P0/P1/Ps drift-cancel")
+    print("  WITHIN a triplet regardless of rounds; rounds only guards drift ACROSS a")
+    print("  pass, which a multi-pass run already averages over.  The question is whether")
+    print("  the pass-to-pass T1 scatter actually degrades when rounds is cut.")
+    ab = {}
+    for r_ in ROUNDS_AB:
+        c = build_cfg(dc_vec, SHOTS, rec)
+        c["interleave_rounds"] = int(r_)
+        t1s, times = [], []
+        for _ in range(ROUNDS_AB_PASSES):
+            ts = time.time()
+            exp = run_3pt(soc, soccfg, c, dc_vec, SHOTS, calib_params,
+                          "Step6Strategy_rounds")
+            times.append(time.time() - ts)
+            t1s.append(summarize(exp)[0])
+        ab[r_] = {"t1": np.vstack(t1s), "t": float(np.median(times))}
+        print(f"  rounds={r_:>2d}: {np.median(times):.2f} s per {len(dc_vec)}-point pass "
+              f"({3 * len(dc_vec) * r_} programs)", flush=True)
+    if ab:
+        base_t = ab[ROUNDS_AB[0]]["t"]
+        print(f"\n  {'rounds':>7s} {'s/pass':>8s} {'speedup':>8s} {'335-pt pass':>12s} "
+              f"{'T1 scatter':>11s} {'vs rounds=%d' % ROUNDS_AB[0]:>13s}")
+        base_sc = None
+        for r_ in ROUNDS_AB:
+            arr = ab[r_]["t1"]
+            sc = np.nanmean(np.nanstd(arr, axis=0) / np.abs(np.nanmean(arr, axis=0)))
+            if base_sc is None:
+                base_sc = sc
+            scaled = ab[r_]["t"] * SWEEP_POINTS_PROD / max(len(dc_vec), 1) / 60.0
+            print(f"  {r_:>7d} {ab[r_]['t']:>8.2f} {base_t / ab[r_]['t']:>7.2f}x "
+                  f"{scaled:>11.2f}m {100 * sc:>10.1f}% {sc / max(base_sc, 1e-9):>12.2f}x")
+        worst = max(ab, key=lambda k: np.nanmean(
+            np.nanstd(ab[k]["t1"], axis=0) / np.abs(np.nanmean(ab[k]["t1"], axis=0))))
+        best_speed = min(ab, key=lambda k: ab[k]["t"])
+        sc_best = np.nanmean(np.nanstd(ab[best_speed]["t1"], axis=0)
+                             / np.abs(np.nanmean(ab[best_speed]["t1"], axis=0)))
+        print(f"\n  -> at rounds={best_speed} the pass is "
+              f"{base_t / ab[best_speed]['t']:.2f}x faster and the T1 scatter is "
+              f"{sc_best / max(base_sc, 1e-9):.2f}x")
+        if sc_best <= 1.25 * base_sc:
+            print(f"     the scatter did NOT degrade, so rounds={best_speed} is safe and")
+            print(f"     worth more than any reset knob.  Set INTERLEAVE_ROUNDS accordingly.")
+        else:
+            print(f"     the scatter DID degrade -- rounds is doing real work.  Take the")
+            print(f"     largest speedup whose scatter ratio stays under ~1.25x.")
 
     banner("VERDICT -- how to run active reset for 2-3 days")
     base = next((r for r in rows if r["frac"] == 0.0), None)

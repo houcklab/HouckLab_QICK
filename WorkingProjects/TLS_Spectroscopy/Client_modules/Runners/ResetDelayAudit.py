@@ -17,11 +17,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 QUBIT = "q4"
 
-RINGDOWN_DRIVE_US = 0.4
-RINGDOWN_SOFT_AVGS = 500
+RINGDOWN_TAIL_US = 60.0
+RINGDOWN_SOFT_AVGS = 200
 RINGDOWN_BUF_FRACTION = 0.95
 
-SYNCDELAY_SWEEP_US = [3.5, 4.0, 5.0, 7.0, 10.0, 15.0, 25.0]
+SYNCDELAY_MIN_US = 3.5
+SYNCDELAY_SWEEP_US = [3.5, 5.0, 8.0, 12.0, 18.0, 25.0, 40.0]
 CLEAR_SWEEP_US = [0.0, 0.5, 2.0, 5.0, 10.0, 25.0, 50.0]
 
 ROUNDS = 20
@@ -65,7 +66,7 @@ class RingdownProgram(AveragerProgram):
         cfg = self.cfg
         ff_pulse.play_static_park(self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         self.trigger(adcs=cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]))
+                     adc_trig_offset=self.us2cycles(cfg["ringdown_trig_offset_us"]))
         self.pulse(ch=cfg["res_ch"])
         self.wait_all()
         self.sync_all(self.us2cycles(cfg.get("relax_delay", 200.0)))
@@ -92,56 +93,71 @@ def decimated_budget_us(soccfg, ro):
 
 
 def measure_ringdown(soc, soccfg, cfg):
-    c = dict(cfg)
-    ro = c["ro_chs"][0]
+    ro = cfg["ro_chs"][0]
     budget_us, maxlen = decimated_budget_us(soccfg, ro)
-    capture = float(budget_us) * RINGDOWN_BUF_FRACTION
-    drive = float(min(RINGDOWN_DRIVE_US, capture / 4.0))
-    print(f"  decimated buffer holds {maxlen} samples = {budget_us:.2f} us, so the")
-    print(f"  capture is {capture:.2f} us.  The normal readout pulse is "
-          f"{readout_drive_length_us(cfg):.2f} us, which alone would not fit, so this")
-    print(f"  stage drives the resonator with a SHORT {drive:.2f} us tone instead and")
-    print(f"  watches it empty.  Ring-down does not care how long you filled for.")
-    c["capture_us"] = capture
-    c["ringdown_drive_us"] = drive
-    c["reps"] = 1
-    c["soft_avgs"] = int(RINGDOWN_SOFT_AVGS)
-    c["relax_delay"] = 50.0
-    try:
-        prog = RingdownProgram(soccfg, c)
-        out = prog.acquire_decimated(soc, load_pulses=True, progress=False)
-    except Exception as exc:
-        print(f"  could not capture a decimated trace ({exc}).")
-        print(f"  Skipping the direct kappa measurement; stage 2 still measures the")
-        print(f"  delay the pi actually needs, which is the number that matters.")
+    win = float(budget_us) * RINGDOWN_BUF_FRACTION
+    drive = float(readout_drive_length_us(cfg))
+    span = drive + RINGDOWN_TAIL_US
+    offsets = np.arange(0.0, span, win * 0.9)
+    print(f"  the decimated buffer holds {maxlen} samples = {budget_us:.2f} us, but the")
+    print(f"  readout drive alone is {drive:.2f} us, so no single capture can see the")
+    print(f"  decay.  Stepping the ADC trigger across {span:.0f} us in {len(offsets)} "
+          f"windows of")
+    print(f"  {win:.2f} us and stitching them.  The drive is the REAL readout pulse, so")
+    print(f"  the resonator is filled exactly as it is during a reset iteration.")
+    ts, mags = [], []
+    dt_us = None
+    for off in offsets:
+        c = dict(cfg)
+        c["capture_us"] = win
+        c["ringdown_drive_us"] = drive
+        c["ringdown_trig_offset_us"] = float(off)
+        c["reps"] = 1
+        c["soft_avgs"] = int(RINGDOWN_SOFT_AVGS)
+        c["relax_delay"] = 50.0
+        try:
+            prog = RingdownProgram(soccfg, c)
+            out = prog.acquire_decimated(soc, load_pulses=True, progress=False)
+        except Exception as exc:
+            print(f"  capture at offset {off:.2f} us failed ({exc}); stopping the sweep.")
+            break
+        arr = np.asarray(out[0], dtype=float)
+        if arr.ndim == 2 and arr.shape[1] == 2:
+            I, Q = arr[:, 0], arr[:, 1]
+        else:
+            I, Q = arr[0], arr[1]
+        mag = np.hypot(I, Q)
+        if dt_us is None:
+            try:
+                dt_us = 1.0 / float(soccfg['readouts'][ro]['f_fabric'])
+            except Exception:
+                dt_us = win / max(mag.size, 1)
+        ts.append(np.arange(mag.size) * dt_us + off)
+        mags.append(mag)
+    if not ts:
+        print("  no window captured; skipping the direct kappa measurement.")
         return None
-    arr = np.asarray(out[0], dtype=float)
-    I, Q = (arr[:, 0], arr[:, 1]) if arr.ndim == 2 and arr.shape[1] == 2 else (arr[0], arr[1])
-    mag = np.hypot(I, Q)
-    try:
-        f_fabric = float(soccfg['readouts'][ro]['f_fabric'])
-    except Exception:
-        f_fabric = None
-    if f_fabric and f_fabric > 0:
-        dt_us = 1.0 / f_fabric
-    else:
-        dt_us = float(c["capture_us"]) / max(mag.size, 1)
-    t = np.arange(mag.size) * dt_us
-    drive_us = float(c["ringdown_drive_us"])
-    peak = int(np.argmax(mag))
-    start = min(peak + max(2, int(round(0.05 / max(dt_us, 1e-9)))), mag.size - 5)
-    tt, mm = t[start:], mag[start:]
-    tail_us = float(tt[-1] - tt[0]) if tt.size > 1 else 0.0
-    base = float(np.median(mm[-max(3, mm.size // 5):]))
+    t = np.concatenate(ts)
+    mag = np.concatenate(mags)
+    order = np.argsort(t)
+    t, mag = t[order], mag[order]
+    fit_from = drive * 1.02
+    sel = t >= fit_from
+    if sel.sum() < 10:
+        return {"t": t, "mag": mag, "dt_us": dt_us, "drive_us": drive,
+                "tau_us": np.nan, "peak_us": float(t[int(np.argmax(mag))]),
+                "tail_us": float(t[-1] - fit_from), "fit_pts": 0}
+    tt, mm = t[sel], mag[sel]
+    base = float(np.median(mm[-max(5, mm.size // 6):]))
     y = mm - base
     good = y > 0.05 * max(y.max(), 1e-9)
     tau = np.nan
-    if good.sum() >= 4:
+    if good.sum() >= 6:
         sl = np.polyfit(tt[good], np.log(y[good]), 1)[0]
         tau = -1.0 / sl if sl < 0 else np.nan
-    return {"t": t, "mag": mag, "dt_us": dt_us, "drive_us": drive_us,
-            "tau_us": tau, "peak_us": t[peak], "tail_us": tail_us,
-            "fit_pts": int(good.sum())}
+    return {"t": t, "mag": mag, "dt_us": dt_us, "drive_us": drive, "tau_us": tau,
+            "peak_us": float(t[int(np.argmax(mag))]),
+            "tail_us": float(t[-1] - fit_from), "fit_pts": int(good.sum())}
 
 
 def ge_reference(soc, soccfg, cfg, shots):
@@ -259,11 +275,14 @@ def run():
         else:
             print(f"  could not fit an exponential to the tail ({rd['fit_pts']} usable "
                   f"points over {rd['tail_us']:.2f} us); see the trace dump.")
-        step = max(1, rd["mag"].size // 40)
-        print(f"\n  trace (every {step} samples):")
+        step = max(1, rd["mag"].size // 60)
+        print(f"\n  stitched trace (every {step} samples, drive ends at "
+              f"{rd['drive_us']:.2f} us):")
+        top = max(rd["mag"].max(), 1e-9)
         for i in range(0, rd["mag"].size, step):
-            bar = "#" * int(40 * rd["mag"][i] / max(rd["mag"].max(), 1e-9))
-            print(f"    {rd['t'][i]:>6.2f} us {rd['mag'][i]:>10.0f} {bar}")
+            bar = "#" * int(48 * rd["mag"][i] / top)
+            mark = " <- drive ends" if abs(rd["t"][i] - rd["drive_us"]) < step * rd["dt_us"] else ""
+            print(f"    {rd['t'][i]:>7.2f} us {rd['mag'][i]:>10.0f} {bar}{mark}")
 
     ref = ge_reference(soc, soccfg, cfg, REF_SHOTS)
     lo = abs(np.median(ref["e"]["lower"]) - np.median(ref["g"]["lower"]))
@@ -273,6 +292,28 @@ def run():
     thr, gb = int(disc["threshold_raw"]), bool(disc["ground_below"])
     print(f"\n  readout: quadrature '{oper}', separation {max(lo, up):.0f}, "
           f"F={disc['fidelity']:.3f}, threshold {thr}")
+
+    tau_meas = rd["tau_us"] if (rd is not None and np.isfinite(rd.get("tau_us", np.nan))
+                                and rd["tail_us"] >= 2.0 * rd["tau_us"]) else None
+    if tau_meas is not None:
+        lo_sd = float(SYNCDELAY_MIN_US)
+        hi_sd = float(max(12.0, 8.0 * tau_meas))
+        sweep = sorted({round(float(v), 2)
+                        for v in np.geomspace(lo_sd, hi_sd, 7)})
+        print(f"\n  the (A) sweep is built from the measured tau: {sweep} us")
+        print(f"  that spans {lo_sd / tau_meas:.1f}..{hi_sd / tau_meas:.1f} tau.  The low")
+        print(f"  end is floored at {lo_sd:g} us because reset_read_delay_us "
+              f"({RESET_READ_DELAY_US:g} us)")
+        print(f"  plus the {ar.MIN_READ_TO_PULSE_GAP_US:g} us guard has to fit before "
+              f"the pi.")
+        if lo_sd >= 5.0 * tau_meas:
+            print(f"  NOTE even the shortest delay the timing guard allows is already")
+            print(f"  {lo_sd / tau_meas:.1f} tau, so ring-down cannot be hurting the pi.")
+            print(f"  The sweep below is a confirmation, not a search.")
+    else:
+        sweep = list(SYNCDELAY_SWEEP_US)
+        print(f"\n  no trustworthy tau, so the (A) sweep uses the default grid: "
+              f"{sweep} us")
 
     acc = {}
 
@@ -290,7 +331,7 @@ def run():
         clean = gate_pe(soc, soccfg, cfg, True, False, thr, gb, oper, 1,
                         BASE_SYNCDELAY_US, BASE_CLEAR_US, thr, gb)
         rec(("clean_pi",), clean)
-        for sd in SYNCDELAY_SWEEP_US:
+        for sd in sweep:
             try:
                 v = gate_pe(soc, soccfg, cfg, False, True, thr, gb, oper, 1,
                             sd, BASE_CLEAR_US, thr, gb, force_flip=True)
@@ -311,14 +352,14 @@ def run():
           f"{np.sqrt(0.25 / (GATE_SHOTS * ROUNDS)):.4f}")
     print(f"\n  {'syncdelay':>10s} {'P(exc)':>9s} {'/clean pi':>18s} {'cost/shot':>11s}")
     best_sd, best_v = None, -np.inf
-    for sd in SYNCDELAY_SWEEP_US:
+    for sd in sweep:
         m, e = stat(acc[("sync", sd)])
         rm, _ = stat(acc[("sync_raw", sd)])
         print(f"  {sd:>10.1f} {rm:>9.4f} {m:>11.4f}+-{e:<6.4f} "
               f"{RESET_ITERS * sd:>9.1f} us")
         if np.isfinite(m) and m > best_v:
             best_v, best_sd = m, sd
-    ok = [(sd, *stat(acc[("sync", sd)])) for sd in SYNCDELAY_SWEEP_US
+    ok = [(sd, *stat(acc[("sync", sd)])) for sd in sweep
           if np.isfinite(stat(acc[("sync", sd)])[0])]
     knee = BASE_SYNCDELAY_US
     if len(ok) >= 3:
