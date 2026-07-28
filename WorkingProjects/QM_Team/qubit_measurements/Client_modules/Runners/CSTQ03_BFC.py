@@ -178,7 +178,15 @@ ModifiedRamsey_params = {
     # symmetric-pair-about-center selection with sub-bin Lorentzian refinement.
     "prominence_snr": 5.0,        # peak prominence threshold in units of noise sigma
     "min_sep_MHz": 0.02,          # resolution limit for the doublet (NOT df)
-    "max_sep_MHz": None,          # None -> full swept span
+    # UPPER bound on the accepted doublet separation. tau = 1/(2*sep) must leave
+    # room for the pi/2 envelopes: ModifiedRamsey now requires sep < 1/(8*sigma)
+    # (no pi) or 1/(16*sigma) (echo) and RAISES otherwise instead of silently
+    # running at the wrong effective tau. At sigma=0.1 us that is 1.25 MHz;
+    # at sigma=0.22 us only 0.57 MHz. Set this below that limit so a
+    # well-separated doublet cannot abort the run mid-cycle. 1.0 leaves headroom
+    # at sigma=0.1; LOWER IT to <0.57 if you switch to a sigma=0.22 qubit.
+    # (None would mean "full swept span" and can now abort a cycle.)
+    "max_sep_MHz": 1.0,
     "symmetry_tol_MHz": None,     # None -> half span; tighten to enforce symmetry
     "min_height_balance": 0.3,    # min (weaker/stronger) peak-height ratio
     "smooth_window": 5,           # Savitzky-Golay window (odd; <3 disables)

@@ -95,12 +95,25 @@ def modified_ramsey_timing(soccfg, cfg):
     qubit_pulse_tproc_cycles = int(qubit_end_tproc)
     use_pi_pulse = bool(cfg.get("use_pi_pulse", False))
     ramsey_pulse_count = 3 if use_pi_pulse else 2
-    wait_request_us = (
-        1.0 / (4.0 * cfg["df"])
-        if use_pi_pulse else 1.0 / (2.0 * cfg["df"])
-    )
+    # Mirror ModifiedRamseyProgram: tau is the pulse-CENTRE-to-CENTRE precession
+    # time, while QICK schedules the wait between pulse EDGES, so the programmed
+    # gap is tau/n_gaps - 4*sigma. See mModifiedRamsey.initialize().
+    tau_us = 1.0 / (2.0 * cfg["df"])
+    qubit_pulse_us = float(qubit_native_cycles / qubit_f_fabric)
     wait_count = 2 if use_pi_pulse else 1
-    wait_tproc_cycles = wait_count * soccfg.us2cycles(wait_request_us)
+    wait_request_us = tau_us / wait_count - qubit_pulse_us
+    if wait_request_us <= 0:
+        raise ValueError(
+            f"cfg['df']={cfg['df']} MHz needs tau={tau_us:.4f} us, but the "
+            f"qubit pulses span {wait_count * qubit_pulse_us:.4f} us "
+            f"(4*sigma = {qubit_pulse_us:.4f} us each). Shorten cfg['sigma'] "
+            "or work at a smaller peak separation."
+        )
+    wait_cycles_each = soccfg.us2cycles(wait_request_us)
+    wait_tproc_cycles = wait_count * wait_cycles_each
+    effective_tau_us = float(
+        wait_count * (wait_cycles_each / f_time + qubit_pulse_us)
+    )
     final_padding_tproc_cycles = soccfg.us2cycles(0.05)
     mr_relax_tproc_cycles = soccfg.us2cycles(cfg.get("mr_relax_delay", 0.0))
 
@@ -172,6 +185,10 @@ def modified_ramsey_timing(soccfg, cfg):
         "qubit_pulse_us": to_us(qubit_pulse_tproc_cycles),
         "ramsey_qubit_pulse_count": int(ramsey_pulse_count),
         "ramsey_wait_us": to_us(wait_tproc_cycles),
+        # Requested vs realized pulse-centre-to-centre precession time.
+        "requested_tau_us": float(tau_us),
+        "effective_tau_us": effective_tau_us,
+        "ramsey_gap_per_wait_us": float(wait_cycles_each / f_time),
         "final_padding_us": to_us(final_padding_tproc_cycles),
         "mr_relax_delay_us": to_us(mr_relax_tproc_cycles),
         "reset_cycles": int(reset_cycles),
@@ -936,8 +953,11 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         )
 
         elapsed_ms_mr = np.arange(len(raw_i_mr)) * rep_period_us * 1e-3
+        # +0.5 -> label each N-shot bin at its CENTRE, not its left edge, so the
+        # averaged trace lines up with the raw single-shot trace above it.
         elapsed_avg_ms_mr = (
-                np.arange(len(excited_avg_mr)) * average_n_shots_mr * rep_period_us * 1e-3
+                (np.arange(len(excited_avg_mr)) + 0.5)
+                * average_n_shots_mr * rep_period_us * 1e-3
         )
 
         timestamp_mr = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -1138,10 +1158,25 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
 
         # ── Run Modified Ramsey at the sweet spot ────────────────────────────
         if sweet_verified:
+            # The control must run the SAME sequence as the measurement it
+            # controls, otherwise a null result is uninterpretable. Carry the
+            # sequence-shaping keys explicitly (pi_gain is also required by the
+            # program whenever use_pi_pulse or use_active_reset is on).
             mr_cfg_mrc = {
                 "f_ge":           f_ge_mrc,
                 "df":             cd_max_mhz_mrc,
                 "pi2_gain":       ctx.pi2_gain,
+                "pi_gain":        ctx.qubit_gain,
+                "use_pi_pulse":   ModifiedRamsey_Control_params.get("use_pi_pulse", False),
+                "flip_final_pi2": ModifiedRamsey_Control_params.get("flip_final_pi2", False),
+                "symmetric_ramsey": ModifiedRamsey_Control_params.get("symmetric_ramsey", False),
+                "use_active_reset": ModifiedRamsey_Control_params.get("use_active_reset", False),
+                "reset_cycles":   ModifiedRamsey_Control_params.get("reset_cycles", 1),
+                "reset_ground_below_threshold": ModifiedRamsey_Control_params.get(
+                    "reset_ground_below_threshold", True),
+                "reset_readout_relax_delay": ModifiedRamsey_Control_params.get(
+                    "reset_readout_relax_delay", 1.0),
+                "post_reset_wait": ModifiedRamsey_Control_params.get("post_reset_wait", 0.0),
                 "sigma":          ctx.qubit_sigma,
                 "flattop_length": ctx.qubit_flattop,
                 "mr_relax_delay": ModifiedRamsey_Control_params.get("mr_relax_delay", 0.0),
@@ -1168,8 +1203,14 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
             raw_q_mrc = np.ravel(np.array(data_mrc["data"]["shots_q"]))
             iq_mrc = np.column_stack([raw_i_mrc, raw_q_mrc])
 
+            # KMeans(n_clusters=2) ALWAYS returns two centroids, even for a
+            # single unimodal blob, and the majority-forcing below then labels
+            # the minority half "1". Left ungated, this control can never
+            # report "no switching" -- it manufactures a ~50/50 split out of
+            # pure readout noise. So require the two blobs to be genuinely
+            # separated before trusting the split.
             kmeans_mrc = KMeans(n_clusters=2, random_state=0, n_init=20)
-            kmeans_mrc.fit_predict(iq_mrc)
+            labels_mrc = kmeans_mrc.fit_predict(iq_mrc)
             centers_mrc = kmeans_mrc.cluster_centers_
 
             c0_mrc = centers_mrc[0]
@@ -1179,14 +1220,33 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
             scores_mrc   = (iq_mrc - midpoint_mrc) @ normal_mrc
             binary_states_mrc = (scores_mrc > 0).astype(int)
 
-            n0_mrc = np.sum(binary_states_mrc == 0)
-            n1_mrc = np.sum(binary_states_mrc == 1)
-            if n1_mrc > n0_mrc:
-                binary_states_mrc = 1 - binary_states_mrc
-                c0_mrc, c1_mrc = c1_mrc, c0_mrc
-                normal_mrc   = c1_mrc - c0_mrc
-                midpoint_mrc = 0.5 * (c0_mrc + c1_mrc)
-                scores_mrc   = (iq_mrc - midpoint_mrc) @ normal_mrc
+            # Separation test: centroid distance vs the pooled within-cluster
+            # spread. Two resolved readout blobs give >~ 2; one blob gives <~ 1.
+            sep_mrc = float(np.linalg.norm(normal_mrc))
+            within_mrc = float(np.sqrt(np.mean([
+                np.mean(np.sum((iq_mrc[labels_mrc == k] - centers_mrc[k]) ** 2, axis=1))
+                for k in (0, 1) if np.any(labels_mrc == k)
+            ])))
+            blob_snr_mrc = sep_mrc / within_mrc if within_mrc > 0 else np.inf
+            blobs_resolved_mrc = blob_snr_mrc >= 2.0
+            if not blobs_resolved_mrc:
+                print(
+                    f"[MRC] Cycle {cycle_idx_mrc + 1}: single blob "
+                    f"(centroid separation / within-cluster spread = "
+                    f"{blob_snr_mrc:.2f} < 2.0). No g/e separation -- reporting "
+                    "all shots as state 0 (NO SWITCHING) rather than splitting "
+                    "noise in half."
+                )
+                binary_states_mrc = np.zeros(len(iq_mrc), dtype=int)
+            else:
+                n0_mrc = np.sum(binary_states_mrc == 0)
+                n1_mrc = np.sum(binary_states_mrc == 1)
+                if n1_mrc > n0_mrc:
+                    binary_states_mrc = 1 - binary_states_mrc
+                    c0_mrc, c1_mrc = c1_mrc, c0_mrc
+                    normal_mrc   = c1_mrc - c0_mrc
+                    midpoint_mrc = 0.5 * (c0_mrc + c1_mrc)
+                    scores_mrc   = (iq_mrc - midpoint_mrc) @ normal_mrc
 
             rep_period_us_mrc = timing_mrc["scheduled_rep_period_us"]
             streamer_rep_period_us_mrc = data_mrc["data"].get(
@@ -1568,12 +1628,17 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     # Plot 4: binary parity trace over time
     # ---------------------------
     plt.figure(figsize=(10, 4))
-    plt.plot(elapsed_s, binary_states, "-", linewidth=1.5)
+    # NameError guard: this routine's per-shot labels are `binary_amps` (set at
+    # the KMeans block above); `binary_states` and `cycle_idx` are names from the
+    # cycle-looping routines and are NOT defined here. Reading them raised a
+    # NameError that aborted the function BEFORE the np.savez below, so every
+    # QuasiCW run lost its data after having already taken it.
+    plt.plot(elapsed_s, binary_amps, "-", linewidth=1.5)
     plt.xlabel("Time since start (s)")
     plt.ylabel("Assigned state")
     plt.yticks([0, 1])
     plt.ylim(-0.1, 1.1)
-    plt.title(f"Cycle {cycle_idx + 1}: QuasiCW binary trace")
+    plt.title("ChargeDispersionQuasiCW binary trace")
     plt.tight_layout()
     plt.savefig(base + "_binary.png", dpi=300, bbox_inches="tight")
     plt.close()
