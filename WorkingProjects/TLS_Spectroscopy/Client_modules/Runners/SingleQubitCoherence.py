@@ -52,6 +52,8 @@ P_T1_FLUX_RAMP = {
     "run": False,
     "shots": 1000,
     "excursion_gain": 8000,
+    "flux_settle_time_ns": 20000,
+    "flux_tail_compensation": None,
     "t_min_us": 1.0,
     "t_max_us": 300.0,
     "t_points": 61,
@@ -118,6 +120,21 @@ def run_t1(outer_folder, soc, soccfg, calib_params):
 def run_t1_flux_ramp(outer_folder, soc, soccfg, calib_params):
     p = P_T1_FLUX_RAMP
     cfg = _base_cfg(p)
+    cfg["flux_settle_time"] = float(p.get("flux_settle_time_ns",
+                                          cfg.get("flux_settle_time", 100)))
+    comp = p.get("flux_tail_compensation", None)
+    if comp is not None:
+        cfg["flux_tail_compensation"] = comp
+    print(f"[T1 flux ramp] ff_gain={p['excursion_gain']}, settle after the step = "
+          f"{cfg['flux_settle_time'] / 1e3:.1f} us, "
+          f"predistortion = {'ON' if comp is not None else 'OFF'}")
+    if comp is None:
+        print("[T1 flux ramp] WARNING: no flux-tail compensation loaded.  The step "
+              "returns to park with its")
+        print("[T1 flux ramp]          full uncorrected tail; if P(excited) rises with "
+              "delay, that is the tail,")
+        print("[T1 flux ramp]          not the qubit.  Run the step-3 predistortion fit "
+              "and pass its JSON here.")
     exp = T1(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
              suffix="T1_Flux_Ramp", cfg=cfg, calib_params=calib_params,
              t_vec_us=_log_t_vec(p), ff_gain=float(p["excursion_gain"]),

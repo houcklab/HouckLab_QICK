@@ -33,7 +33,7 @@ def _fit_exp_decay(t_us, pe):
                                bounds=([0.0, 0.0, 0.01], [1.0, 1.0, 1e6]), maxfev=20000)
         err = float(np.sqrt(pcov[2, 2])) if np.isfinite(pcov[2, 2]) else np.nan
         return {"P0": float(popt[0]), "P1": float(popt[1]), "tau_us": float(popt[2]),
-                "tau_err_us": err}
+                "tau_err_us": err, "decaying": bool(popt[1] > popt[0])}
     except Exception:
         return None
 
@@ -108,8 +108,12 @@ class _CoherenceBase(ExperimentClass):
             tt = np.logspace(np.log10(self.t_vec_us.min()), np.log10(self.t_vec_us.max()), 400)
             err = fit.get("tau_err_us", np.nan)
             metric = getattr(self, "_metric_name", "tau")
-            label = (f"{metric} = {fit['tau_us']:.2f} +/- {err:.2f} us"
-                     if np.isfinite(err) else f"{metric} = {fit['tau_us']:.2f} us")
+            if not fit.get("decaying", True):
+                label = (f"RISING, not a {metric} (tau_rise = {fit['tau_us']:.1f} us) "
+                         f"-- measurement is invalid")
+            else:
+                label = (f"{metric} = {fit['tau_us']:.2f} +/- {err:.2f} us"
+                         if np.isfinite(err) else f"{metric} = {fit['tau_us']:.2f} us")
             ax.plot(tt, fit["P0"] + (fit["P1"] - fit["P0"]) * np.exp(-tt / fit["tau_us"]),
                     "-r", lw=1.5, label=label)
             ax.legend()
@@ -191,11 +195,21 @@ class T1(_CoherenceBase):
             'point_order_seed': self.cfg.get("point_order_seed", None),
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
-        if fit:
-            print(f"[T1{' flux ramp' if held else ''}] T1 = {fit['tau_us']:.2f} "
-                  f"+/- {fit['tau_err_us']:.2f} us")
+        tag = f"[T1{' flux ramp' if held else ''}]"
+        if fit and not fit.get("decaying", True):
+            self.data["T1_us"] = np.nan
+            self.data["T1_err_us"] = np.nan
+            self.data["fit_rising"] = True
+            print(f"{tag} P(excited) RISES with delay ({fit['P1']:.3f} -> {fit['P0']:.3f}); "
+                  f"this is not a T1.")
+            print(f"{tag} refusing to report a decay constant.  A population that grows "
+                  f"with the hold time means")
+            print(f"{tag} the measurement, not the qubit, is changing -- suspect flux "
+                  f"settling or heating at ff_gain={self.ff_gain:.0f}.")
+        elif fit:
+            print(f"{tag} T1 = {fit['tau_us']:.2f} +/- {fit['tau_err_us']:.2f} us")
         else:
-            print(f"[T1{' flux ramp' if held else ''}] decay fit failed")
+            print(f"{tag} decay fit failed")
         if self.save:
             self._plot_decay(pe, fit, "P(excited)",
                              f"{self.element} T1{' flux ramp' if held else ''}"
