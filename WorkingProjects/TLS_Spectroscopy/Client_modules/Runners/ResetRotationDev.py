@@ -290,14 +290,18 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
     sink = rot.latch_offset(shift, theta, max_abs,
                             excited_above=plan["excited_above"])
     rep = rot.separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
+    eta = data.get("pi_efficiency")
+    if eta is None or not np.isfinite(eta) or eta <= 0:
+        eta = PI_EFFICIENCY_GUESS
+    eta = float(min(1.0, eta))
     two = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=RESET_MAX_ITERS,
-                                pi_efficiency=PI_EFFICIENCY_GUESS, three_zone=False)
+                                pi_efficiency=eta, three_zone=False)
     three = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=RESET_MAX_ITERS,
-                                  pi_efficiency=PI_EFFICIENCY_GUESS, three_zone=True)
+                                  pi_efficiency=eta, three_zone=True)
     old = ar.fit_reset_threshold(
         lg if rep["sep_lower"] >= rep["sep_upper"] else ug,
         le if rep["sep_lower"] >= rep["sep_upper"] else ue,
-        iters=RESET_MAX_ITERS, pi_efficiency=PI_EFFICIENCY_GUESS)
+        iters=RESET_MAX_ITERS, pi_efficiency=eta)
     out = {"theta": theta, "shift": shift, "c_int": c_int, "s_int": s_int,
            "plan": plan, "latch_sink": sink, "max_abs": max_abs, "report": rep,
            "two": rot.thresholds_to_acc(two, plan),
@@ -308,7 +312,7 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
            "probe_floor": data.get("reset_floor"),
            "probe_errors": data.get("raw_assignment_errors", {}),
            "probe_raw_F": data.get("raw_assignment_fidelity"),
-           "probe_recommended": data.get("recommended")}
+           "probe_recommended": data.get("recommended"), "eta": eta}
     if verbose:
         print(f"  theta = {np.rad2deg(theta):+7.2f} deg | 2^{shift} -> C={c_int}, S={s_int}"
               f" | headroom {worst:.2e} / {rot.INT32_MAX:.2e}")
@@ -351,7 +355,7 @@ def stage2(soc, soccfg, fit, calib_params, rec):
                 print("  current reset has no recommendation this session -- skipping 'old'.")
                 continue
             cfg.update({"reset_threshold_raw": int(rec["threshold_raw"]),
-                        "reset_oper": str(rec["oper"]),
+                        "reset_oper": str(fit["oper"]),
                         "reset_ground_below": bool(rec["ground_below"])})
         else:
             thr = fit["three"] if scheme == "rot3" else fit["two"]
@@ -382,7 +386,7 @@ def stage3(soc, soccfg, fit, calib_params, rec):
             cfg = base_cfg(reset_scheme=scheme)
             if scheme == "old":
                 cfg.update({"reset_threshold_raw": int(rec["threshold_raw"]),
-                            "reset_oper": str(rec["oper"]),
+                            "reset_oper": str(fit["oper"]),
                             "reset_ground_below": bool(rec["ground_below"])})
             else:
                 thr = fit["three"] if scheme == "rot3" else fit["two"]
@@ -503,7 +507,7 @@ def main():
                 rec = fit["old"]
                 two, three = fit["two_proj"], fit["three_proj"]
                 print(f"\n  predicted worst residual, {RESET_MAX_ITERS} iters, "
-                      f"eta={PI_EFFICIENCY_GUESS}:")
+                      f"eta={fit['eta']:.2f} (measured by the probe, not assumed):")
                 if fit["old"]:
                     print(f"    current (1 quadrature)  {fit['old']['predicted_worst']:.4f}"
                           f"   threshold {fit['old']['threshold_raw']} on '{fit['oper']}'")

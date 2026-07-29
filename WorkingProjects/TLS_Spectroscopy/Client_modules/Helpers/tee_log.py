@@ -71,11 +71,17 @@ def tee(name, folder=None, header=None):
     sys.stderr = _Tee(err, handle)
     try:
         print(f"[log] writing a copy of this console to:\n[log]   {path}")
-        print(f"[log] progress bars are collapsed to one line each in the file.")
+        print("[log] progress bars are collapsed to one line each in the file.")
         if header:
             print(f"[log] {header}")
         print()
         yield path
+    except BaseException:
+        import traceback
+        print("\n[log] the run ended with an exception; traceback follows so it "
+              "lands IN this file rather than only on the console:")
+        traceback.print_exc()
+        raise
     finally:
         try:
             sys.stdout.flush()
