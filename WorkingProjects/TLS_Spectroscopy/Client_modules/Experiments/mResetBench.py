@@ -183,52 +183,11 @@ def measure_refs_guarded(soc, soccfg, cfg, expected_sep=None, retries=1):
 
 
 def fit_legacy_from_raw(lg, ug, le, ue, iters, eta):
-    sep_lower = abs(float(np.median(le)) - float(np.median(lg)))
-    sep_upper = abs(float(np.median(ue)) - float(np.median(ug)))
-    oper = "lower" if sep_lower >= sep_upper else "upper"
-    g = lg if oper == "lower" else ug
-    e = le if oper == "lower" else ue
-    best = ar.fit_reset_threshold(g, e, iters=int(iters), pi_efficiency=float(eta))
-    if best is not None:
-        best = dict(best)
-        best["oper"] = oper
-    return best
+    return rot.fit_legacy_from_raw(lg, ug, le, ue, iters, eta)
 
 
 def fit_from_raw(lg, ug, le, ue, iters, eta):
-    lg = np.asarray(lg, dtype=np.int64)
-    ug = np.asarray(ug, dtype=np.int64)
-    le = np.asarray(le, dtype=np.int64)
-    ue = np.asarray(ue, dtype=np.int64)
-    n = min(lg.size, ug.size, le.size, ue.size)
-    lg, ug, le, ue = lg[:n], ug[:n], le[:n], ue[:n]
-    max_abs = float(np.max(np.abs(np.concatenate([lg, ug, le, ue]))))
-    theta = rot.projection_angle(lg, ug, le, ue)
-    shift, c_int, s_int = rot.fixed_point_coeffs(theta, max_abs)
-    ok, worst = rot.check_headroom(shift, theta, max_abs)
-    if not ok:
-        raise RuntimeError(f"fixed-point headroom check failed ({worst:.3e})")
-    plan = rot.asm_plan(c_int, s_int)
-    sink = rot.latch_offset(shift, theta, max_abs,
-                            excited_above=plan["excited_above"])
-    rep = rot.separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
-    eta = float(min(1.0, eta))
-    two = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=int(iters),
-                                pi_efficiency=eta, three_zone=False)
-    three = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=int(iters),
-                                  pi_efficiency=eta, three_zone=True)
-    old = fit_legacy_from_raw(lg, ug, le, ue, iters, eta)
-    return {"theta": theta, "shift": shift, "c_int": c_int, "s_int": s_int,
-            "plan": plan, "latch_sink": sink, "max_abs": max_abs,
-            "headroom_worst": worst, "report": rep,
-            "two": rot.thresholds_to_acc(two, plan),
-            "three": rot.thresholds_to_acc(three, plan),
-            "two_proj": two, "three_proj": three, "old": old,
-            "oper": (old or {}).get("oper",
-                                    "lower" if rep["sep_lower"] >= rep["sep_upper"]
-                                    else "upper"),
-            "n": n, "eta": eta,
-            "raw": {"lg": lg, "ug": ug, "le": le, "ue": ue}}
+    return rot.fit_raw_calibration(lg, ug, le, ue, iters, eta)
 
 
 def probe_and_fit(soc, soccfg, cfg, iters, eta_fallback, path="q4", outer_folder="",
@@ -292,9 +251,7 @@ def arm_cfg(cfg, scheme, fit, legacy=None):
 
 
 def rot_reset_params(fit, max_iters):
-    return {"c_int": int(fit["c_int"]), "s_int": int(fit["s_int"]),
-            "excite_threshold": float(fit["two"]["excite_threshold"]),
-            "max_iters": int(max_iters)}
+    return rot.reset_params_from_fit(fit, max_iters)
 
 
 def _dispatching_reset_block(original):

@@ -497,8 +497,12 @@ class ActiveResetProbe(ExperimentClass):
         self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    def _residual_at(self, res_phase, threshold_raw, ground_below, shots, oper=None):
+    def _residual_at(self, res_phase, threshold_raw, ground_below, shots, oper=None,
+                     rot_reset=None):
         cfg = dict(self.cfg)
+        cfg.pop("rot_reset", None)
+        if rot_reset:
+            cfg["rot_reset"] = dict(rot_reset)
         cfg["res_phase"] = float(res_phase)
         cfg["reps"] = cfg["shots"] = int(shots)
         cfg["tproc_ch"] = ar.feedback_channel(self.soccfg, cfg["ro_chs"][0])

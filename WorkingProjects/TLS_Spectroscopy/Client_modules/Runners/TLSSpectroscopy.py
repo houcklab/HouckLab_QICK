@@ -75,6 +75,7 @@ RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
 
 PROBE_RESET = True
+USE_ROTATED_RESET = True
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
@@ -801,6 +802,8 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
                         else T1_RESET_BACKSTOP_US),
         "qubit_pulse_style": "arb",
     })
+    if active_reset.uses_feedback(p.get("reset_mode")) and p.get("rot_reset"):
+        base["rot_reset"] = dict(p["rot_reset"])
     if active_reset.uses_feedback(p.get("reset_mode")):
         if p.get("reset_threshold_raw") is None:
             raise RuntimeError("reset_mode='feedback' needs a reset threshold, but the "
@@ -837,6 +840,16 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
             p["reset_threshold_raw"] = int(rec["threshold_raw"])
             p["reset_oper"] = str(rec["oper"])
             p["reset_ground_below"] = bool(rec["ground_below"])
+            if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
+                p["rot_reset"] = dict(rec["rot_reset"])
+                print("[6] ROTATED reset selected (probe-validated); the legacy "
+                      "threshold stays in the cfg as the documented fallback.")
+            elif USE_ROTATED_RESET:
+                print("[6] rotated reset not validated this session -- running the "
+                      "LEGACY reset.")
+            else:
+                print("[6] USE_ROTATED_RESET=False -- running the LEGACY reset by "
+                      "request.")
         return p
     if RESET_THRESHOLD_RAW is None:
         raise RuntimeError(
@@ -846,6 +859,9 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
             "measured on this cooldown with this readout.")
     print(f"[6] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
           f"({RESET_OPER}) without re-probing")
+    if USE_ROTATED_RESET:
+        print("[6] NOTE: the rotated reset needs a fresh probe for its projection "
+              "coefficients; with PROBE_RESET=False this run uses the LEGACY reset.")
     p["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
     p["reset_oper"] = str(RESET_OPER)
     p["reset_ground_below"] = bool(RESET_GROUND_BELOW)

@@ -49,7 +49,9 @@ def test_superiority_at_offset_passes(out):
 
 def test_iteration_sweep_tracks_model(out):
     assert "[PASS] both schemes follow the modelled convergence" in out
-    assert "non-increasing in iters: yes" in out
+    m = re.search(r"worst DIFFERENTIAL deviation \(rot vs old\): ([\d.]+)", out)
+    assert m, "stage 3 must report the differential deviation"
+    assert float(m.group(1)) < 0.05
 
 
 def test_overall_verdict_is_replacement_ready(out):

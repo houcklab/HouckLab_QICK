@@ -22,6 +22,8 @@ READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
 PROBE_RESET = True
+USE_ROTATED_RESET = True
+ROT_RESET_PARAMS = None
 CAL_RES_PHASE = True
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
@@ -76,6 +78,8 @@ def _base_cfg(p, extra=None):
         cfg["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
+        if ROT_RESET_PARAMS:
+            cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
         cfg["reset_thermalization_us"] = THERMALIZATION_US
     if extra:
@@ -140,6 +144,7 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
+    global ROT_RESET_PARAMS
     if CAL_RES_PHASE:
         best = calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder,
                                    apply_config=False)
@@ -159,6 +164,13 @@ def main():
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
+            if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
+                ROT_RESET_PARAMS = dict(rec["rot_reset"])
+                print("[reset] ROTATED reset selected (probe-validated); legacy "
+                      "threshold kept as the documented fallback.")
+            elif USE_ROTATED_RESET:
+                print("[reset] rotated reset not validated this session -- LEGACY "
+                      "reset in use.")
     elif active_reset.uses_feedback(RESET_MODE):
         if RESET_THRESHOLD_RAW is None:
             raise RuntimeError(

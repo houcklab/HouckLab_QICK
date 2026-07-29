@@ -16,6 +16,13 @@ def uses_feedback(cfg_or_mode):
     return reset_mode_of(cfg_or_mode) in FEEDBACK_MODES
 
 
+def uses_rotated(cfg):
+    try:
+        return bool(cfg.get("rot_reset"))
+    except Exception:
+        return False
+
+
 def heralds(cfg_or_mode):
     return reset_mode_of(cfg_or_mode) in HERALD_MODES
 
@@ -228,6 +235,29 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        thermalization_us=None, page=None, reg_val=None, reg_thr=None,
                        read_delay_us=None, force_flip=None, trace_base_addr=None,
                        reg_flag=None):
+    try:
+        rot_params = prog.cfg.get("rot_reset")
+    except Exception:
+        rot_params = None
+    if rot_params:
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (
+            active_reset_rot)
+        missing = [k for k in ("c_int", "s_int", "excite_threshold")
+                   if k not in rot_params]
+        if missing:
+            raise ValueError(
+                f"cfg['rot_reset'] engages the rotated reset but is missing "
+                f"{missing}; calibrate with probe_reset_params or remove the key "
+                f"to run the legacy reset")
+        return active_reset_rot.active_reset_rot_block(
+            prog, ro_ch=ro_ch, res_ch=res_ch, qubit_ch=qubit_ch,
+            c_int=rot_params["c_int"], s_int=rot_params["s_int"],
+            excite_threshold=rot_params["excite_threshold"],
+            max_iters=int(rot_params.get("max_iters", max_iters)),
+            adc_trig_offset_us=adc_trig_offset_us, settle_us=settle_us,
+            meas_syncdelay_us=meas_syncdelay_us,
+            thermalization_us=thermalization_us, page=page,
+            read_delay_us=read_delay_us, three_zone=False, use_latch=False)
     if threshold_raw is None:
         raise ValueError("active_reset_block needs threshold_raw (raw accumulator units); "
                          "calibrate it with Experiments/mActiveResetProbe.py.")
@@ -422,6 +452,62 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
             return None
         rec["validation"] = residual
         rec["verdict"] = verdict
+    rec["use"] = "legacy"
+    raw_shots = getattr(probe, "raw_shots", None)
+    if raw_shots and "ground" in raw_shots and "excited" in raw_shots:
+        try:
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (
+                active_reset_rot)
+            eta = (data.get("reset_threshold_tuning") or {}).get("pi_efficiency")
+            if eta is None or not np.isfinite(eta) or eta <= 0:
+                eta = DEFAULT_PI_EFFICIENCY
+            iters = int(cfg.get("reset_max_iters", 3))
+            fit = active_reset_rot.fit_raw_calibration(
+                raw_shots["ground"]["lower"], raw_shots["ground"]["upper"],
+                raw_shots["excited"]["lower"], raw_shots["excited"]["upper"],
+                iters, float(min(1.0, eta)))
+            rot_params = active_reset_rot.reset_params_from_fit(fit, iters)
+            rep = fit["report"]
+            print(f"[reset] rotated projection: theta={np.rad2deg(fit['theta']):+.1f} deg, "
+                  f"separation {rep['sep_best_single']:.0f} (best single) -> "
+                  f"{rep['sep_rotated']:.0f} (rotated), gain "
+                  f"{rep['gain_vs_best_single']:.2f}x")
+            if validate:
+                rot_residual = probe._residual_at(
+                    float(cfg.get("res_phase", 0.0)), int(rec["threshold_raw"]),
+                    bool(rec["ground_below"]), max(500, int(shots)),
+                    oper=rec["oper"], rot_reset=rot_params)
+                tp = fit["two_proj"]
+                rot_verdict = reset_verdict(
+                    tp["p_fire_given_g"], 1.0 - tp["p_fire_given_e"],
+                    rot_residual.get("reset_ground", float("nan")),
+                    rot_residual.get("reset_excited", float("nan")),
+                    baseline=rot_residual.get("baseline", None),
+                    max_above_floor=max_residual_above_floor,
+                    max_floor=max_usable_floor)
+                print(f"[reset] rotated residual {rot_verdict['worst']:.3f} against a "
+                      f"floor of {rot_verdict['floor']:.3f} "
+                      f"({rot_verdict['above_floor']:+.3f} above it)")
+                if rot_verdict["ok"]:
+                    rec["rot_reset"] = rot_params
+                    rec["rot_validation"] = rot_residual
+                    rec["rot_verdict"] = rot_verdict
+                    rec["use"] = "rot"
+                else:
+                    for reason in rot_verdict["reasons"]:
+                        print(f"[reset] rotated: {reason}")
+                    print("[reset] the ROTATED reset failed its own end-to-end check; "
+                          "the validated LEGACY reset stays in charge for this "
+                          "session.")
+            else:
+                rec["rot_reset"] = rot_params
+                rec["use"] = "rot"
+        except Exception as exc:
+            print(f"[reset] rotated calibration failed ({exc}); the legacy reset "
+                  f"stays in charge.")
+    if rec["use"] == "rot":
+        print("[reset] the ROTATED reset is calibrated, hardware-validated, and "
+              "selected; res_phase alignment is no longer load-bearing.")
     print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
           f"ground_below={rec['ground_below']}")
     return rec

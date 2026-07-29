@@ -53,7 +53,7 @@ def test_all_four_replacement_criteria_pass(out):
     assert out.count("[PASS]") == 4, out[out.find("VERDICT"):][:1500]
     assert "[FAIL]" not in out
     for marker in ("every 3-point fit valid", "no systematic T1 shift",
-                   "same reset floor", "rotated block built and ran"):
+                   "reset floor no worse than legacy", "rotated block built and ran"):
         assert re.search(r"\[PASS\][^\n]*" + re.escape(marker), out), marker
     assert "Part B passes." in out
 

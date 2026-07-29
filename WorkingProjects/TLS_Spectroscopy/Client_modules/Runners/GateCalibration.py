@@ -31,6 +31,8 @@ READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
 PROBE_RESET = False
+USE_ROTATED_RESET = True
+ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
@@ -149,6 +151,8 @@ def _base_cfg(p, extra=None):
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
     cfg["reset_mode"] = RESET_MODE
+    if active_reset.uses_feedback(RESET_MODE) and ROT_RESET_PARAMS:
+        cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
     if active_reset.uses_feedback(RESET_MODE):
         if RESET_THRESHOLD_RAW is None:
             raise RuntimeError("RESET_MODE='feedback' needs a reset threshold, but the "
@@ -363,6 +367,7 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
+    global ROT_RESET_PARAMS
     if CAL_RES_PHASE:
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
     if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
@@ -375,9 +380,19 @@ def main():
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
+            if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
+                ROT_RESET_PARAMS = dict(rec["rot_reset"])
+                print("[reset] ROTATED reset selected (probe-validated); legacy "
+                      "threshold kept as the documented fallback.")
+            elif USE_ROTATED_RESET:
+                print("[reset] rotated reset not validated this session -- LEGACY "
+                      "reset in use.")
     elif active_reset.uses_feedback(RESET_MODE):
         print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
+        if USE_ROTATED_RESET:
+            print("[reset] NOTE: the rotated reset needs a fresh probe; with "
+                  "PROBE_RESET=False this run uses the LEGACY reset.")
 
     print("=" * 70)
     flux_note = ("PARK (ff_gain=0)" if FF_HOLD_GAIN == 0 else

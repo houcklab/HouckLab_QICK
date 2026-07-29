@@ -377,3 +377,58 @@ def reference_axis(ig, qg, ie, qe):
 def population_from_iq(ir, qr, axis):
     return float(((float(ir) - axis["ig"]) * axis["dx"]
                   + (float(qr) - axis["qg"]) * axis["dy"]) / axis["denom"])
+
+
+def fit_legacy_from_raw(lg, ug, le, ue, iters, eta):
+    sep_lower = abs(float(np.median(le)) - float(np.median(lg)))
+    sep_upper = abs(float(np.median(ue)) - float(np.median(ug)))
+    oper = "lower" if sep_lower >= sep_upper else "upper"
+    g = lg if oper == "lower" else ug
+    e = le if oper == "lower" else ue
+    best = ar.fit_reset_threshold(g, e, iters=int(iters), pi_efficiency=float(eta))
+    if best is not None:
+        best = dict(best)
+        best["oper"] = oper
+    return best
+
+
+def fit_raw_calibration(lg, ug, le, ue, iters, eta):
+    lg = np.asarray(lg, dtype=np.int64)
+    ug = np.asarray(ug, dtype=np.int64)
+    le = np.asarray(le, dtype=np.int64)
+    ue = np.asarray(ue, dtype=np.int64)
+    n = min(lg.size, ug.size, le.size, ue.size)
+    lg, ug, le, ue = lg[:n], ug[:n], le[:n], ue[:n]
+    max_abs = float(np.max(np.abs(np.concatenate([lg, ug, le, ue]))))
+    theta = projection_angle(lg, ug, le, ue)
+    shift, c_int, s_int = fixed_point_coeffs(theta, max_abs)
+    ok, worst = check_headroom(shift, theta, max_abs)
+    if not ok:
+        raise RuntimeError(f"fixed-point headroom check failed ({worst:.3e})")
+    plan = asm_plan(c_int, s_int)
+    sink = latch_offset(shift, theta, max_abs,
+                        excited_above=plan["excited_above"])
+    rep = separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
+    eta = float(min(1.0, eta))
+    two = choose_thresholds(rep["proj_g"], rep["proj_e"], iters=int(iters),
+                            pi_efficiency=eta, three_zone=False)
+    three = choose_thresholds(rep["proj_g"], rep["proj_e"], iters=int(iters),
+                              pi_efficiency=eta, three_zone=True)
+    old = fit_legacy_from_raw(lg, ug, le, ue, iters, eta)
+    return {"theta": theta, "shift": shift, "c_int": c_int, "s_int": s_int,
+            "plan": plan, "latch_sink": sink, "max_abs": max_abs,
+            "headroom_worst": worst, "report": rep,
+            "two": thresholds_to_acc(two, plan),
+            "three": thresholds_to_acc(three, plan),
+            "two_proj": two, "three_proj": three, "old": old,
+            "oper": (old or {}).get("oper",
+                                    "lower" if rep["sep_lower"] >= rep["sep_upper"]
+                                    else "upper"),
+            "n": n, "eta": eta,
+            "raw": {"lg": lg, "ug": ug, "le": le, "ue": ue}}
+
+
+def reset_params_from_fit(fit, max_iters):
+    return {"c_int": int(fit["c_int"]), "s_int": int(fit["s_int"]),
+            "excite_threshold": float(fit["two"]["excite_threshold"]),
+            "max_iters": int(max_iters)}

@@ -170,15 +170,17 @@ def analyze_and_judge(acc):
         ratio = abs(st["mean"]) / limit if limit > 0 else np.inf
         if ratio > worst["ratio"]:
             worst = {"ratio": ratio, "diff": st["mean"], "limit": limit, "dc": dc}
-        dp0 = float(np.mean(np.abs(P0["legacy"][:, j] - P0["rot"][:, j])))
+        dp0 = float(np.mean(P0["rot"][:, j] - P0["legacy"][:, j]))
         worst_p0 = max(worst_p0, dp0)
         print(f"  dc {dc:+7.0f}: legacy T1 = {ml:6.1f} +/- {sl:5.1f} us | "
               f"rot T1 = {mr:6.1f} +/- {sr:5.1f} us")
         print(f"            paired diff (legacy - rot) {st['mean']:+7.1f} +/- "
               f"{st['sem']:5.1f} us (t {st['t']:+5.1f}, n {st['n']}) | "
               f"allowed {limit:6.1f} us -> {'ok' if ok_dc else 'SYSTEMATIC SHIFT'}")
-        print(f"            mean |P0_legacy - P0_rot| = {dp0:.4f} "
-              f"(same-reset-floor limit {P0_DIFF_LIMIT:g})")
+        print(f"            mean P0_rot - P0_legacy = {dp0:+.4f} "
+              f"(one-sided limit +{P0_DIFF_LIMIT:g}; negative means the ROTATED "
+              f"reset left LESS residual excitation, which is a win, not a "
+              f"mismatch)")
     n_valid = int(np.sum(valid["legacy"] > 0.5) + np.sum(valid["rot"] > 0.5))
     n_total = int(valid["legacy"].size + valid["rot"].size)
     pass1 = n_valid == n_total
@@ -192,8 +194,11 @@ def analyze_and_judge(acc):
           f"mean diff| {abs(worst['diff']):.1f} us vs its {worst['limit']:.1f} us "
           f"allowance (dc {worst['dc']:+.0f}; allowance = max(2 x combined sem, "
           f"{SHIFT_FRACTION:g} x pooled mean T1))")
-    print(f"  [{'PASS' if pass3 else 'FAIL'}] same reset floor: worst mean "
-          f"|P0_legacy - P0_rot| = {worst_p0:.4f} (limit {P0_DIFF_LIMIT:g})")
+    print(f"  [{'PASS' if pass3 else 'FAIL'}] reset floor no worse than legacy: "
+          f"worst mean P0_rot - P0_legacy = {worst_p0:+.4f} "
+          f"(one-sided limit +{P0_DIFF_LIMIT:g})")
+    if worst_p0 < 0:
+        print("         the rotated arm's reset floor was BETTER at every flux point")
     print(f"  [{'PASS' if pass4 else 'FAIL'}] the rotated block built and ran inside "
           f"the untouched production FFT1Program on all {n_pairs} passes -- no "
           f"register or scratch conflict was ever raised")
