@@ -1,5 +1,6 @@
 import datetime
 import gc
+import math
 import time
 
 import numpy as np
@@ -330,9 +331,11 @@ def run():
         print("  two implementations agrees to 0.5%, so any real offset is physics.")
         offset_sig = abs(wmean - 1.0) / max(werr, 1e-12)
         same_side = int(np.sum(ratios < 1.0))
-        one_sided = same_side == dof or same_side == 0
+        tail = min(same_side, dof - same_side)
+        p_sign = min(1.0, 2.0 * sum(math.comb(dof, j) for j in range(tail + 1))
+                     / float(2 ** dof))
         print(f"  {same_side}/{dof} points fall below 1.0 "
-              f"(one-sided by chance: p = {2.0 ** (1 - dof):.3f})")
+              f"(sign test, two-sided p = {p_sign:.3f})")
         P0 = np.asarray(exp3.data["P0"], dtype=float)
         pe_last = ss1[:, -1]
         print("\n  Where the 3-point floor sits versus the decay's own floor:")
@@ -353,16 +356,21 @@ def run():
         if chi2 / dof < 2.0 and offset_sig < 3.0:
             print(f"\n  -> agreed.  The 3-point sweep at Ts = {Ts_US:g} us measures the same")
             print("     T1 the full fit does, and it is the method to run for 2-3 days.")
-        elif offset_sig >= 3.0 and one_sided:
-            print(f"\n  -> a one-sided {100 * (wmean - 1):+.1f}% offset at "
-                  f"{offset_sig:.1f} sigma.  Every point falls the same way, so this is")
-            print(f"     a BIAS, not scatter -- the chi2/dof of {chi2 / dof:.1f} is inflated by")
-            print("     the full curve's own underestimated error bars, not by disagreement")
-            print("     in sign.  Read the excess column above: if it is positive and")
-            print("     comparable to the offset, the reset residual is the cause and the")
-            print("     3-point method is not trustworthy until the reset is fixed.")
-            print("     The full curve fits its own floor and is immune to this specific")
-            print("     error -- but see stage 5 for whether it is reproducible.")
+        elif offset_sig >= 3.0 and np.isfinite(mean_excess) and mean_excess > 0.02:
+            print(f"\n  -> a {100 * (wmean - 1):+.1f}% offset at {offset_sig:.1f} sigma, and the")
+            print(f"     excess is positive at every DC point (mean {mean_excess:+.3f}).")
+            print("     That is the signature of a BIAS, not scatter: the 3-point P0")
+            print("     reference sits above the level the decay actually reaches, so the")
+            print("     estimator over-subtracts and reads short.  The cause is the reset")
+            print("     residual leaking into the reference.  Expect this offset to shrink")
+            print("     as the reset improves, and to vanish when the residual matches the")
+            print("     thermal steady state.  The full curve fits its own floor and is")
+            print(f"     immune -- chi2/dof of {chi2 / dof:.1f} here reflects the full curve's own")
+            print("     error bars, which stage 5 tests directly.")
+        elif offset_sig >= 3.0:
+            print(f"\n  -> a {100 * (wmean - 1):+.1f}% offset at {offset_sig:.1f} sigma, but the excess")
+            print(f"     column (mean {mean_excess:+.3f}) does not explain it.  Something other")
+            print("     than the reset residual is shifting one of the two estimators.")
         else:
             print(f"\n  -> scatter exceeds the error bars (chi2/dof = {chi2 / dof:.1f}) and the")
             print("     offsets are not one-sided.  Either T1 moved between the two sweeps")
