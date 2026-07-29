@@ -273,9 +273,9 @@ def main():
         if pass1 and pass2 and pass3:
             print("\n  Part C passes.")
         else:
-            print("\n  Part C does NOT pass -- send back this log before anything gets "
-                  "replaced.")
-        banner("done -- send back the .txt log")
+            print("\n  Part C does NOT pass -- do not swap the legacy reset on "
+                  "this evidence.")
+        banner("done -- the .txt log is the complete record of this run")
 
 
 if __name__ == "__main__":

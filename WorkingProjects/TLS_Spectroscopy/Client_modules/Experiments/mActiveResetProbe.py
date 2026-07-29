@@ -157,7 +157,7 @@ class ActiveResetProbe(ExperimentClass):
             except Exception:
                 continue
         raise RuntimeError("could not read tProc data memory via the soc proxy; the "
-                           "single_read/read_dmem API differs on this board -- tell me the error.")
+                           "single_read/read_dmem API differs on this board.")
 
     def _raw_shots(self, program):
         try:

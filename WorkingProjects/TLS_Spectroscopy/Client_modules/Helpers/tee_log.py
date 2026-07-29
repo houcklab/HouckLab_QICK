@@ -94,4 +94,4 @@ def tee(name, folder=None, header=None):
         except Exception:
             pass
         print(f"\n[log] full log written to:\n[log]   {path}")
-        print("[log] send me that file rather than the console.")
+        print("[log] the file is the complete record of this run.")

@@ -136,9 +136,9 @@ def abort_on_register_pressure(arm, pair, exc):
     print("  above.")
     banner("VERDICT -- replacement criteria, part B")
     print("  [FAIL] the pass pairs could not complete inside the production program")
-    print("\n  Part B does NOT pass -- send back this log before anything gets "
-          "replaced.")
-    banner("done -- send back the .txt log")
+    print("\n  Part B does NOT pass -- do not swap the legacy reset on "
+          "this evidence.")
+    banner("done -- the .txt log is the complete record of this run")
 
 
 def analyze_and_judge(acc):
@@ -207,9 +207,9 @@ def analyze_and_judge(acc):
               "physics-equivalent;")
         print("  run ResetRotationDrift (part C) to finish the gauntlet.")
     else:
-        print("\n  Part B does NOT pass -- send back this log before anything gets "
-              "replaced.")
-    banner("done -- send back the .txt log")
+        print("\n  Part B does NOT pass -- do not swap the legacy reset on this "
+              "evidence.")
+    banner("done -- the .txt log is the complete record of this run")
 
 
 def main():

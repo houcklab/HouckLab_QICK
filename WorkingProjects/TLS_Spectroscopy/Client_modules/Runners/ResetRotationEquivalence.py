@@ -394,9 +394,9 @@ def main():
             print("\n  Part A passes.  Run ResetRotationT1 (part B) and "
                   "ResetRotationDrift (part C).")
         else:
-            print("\n  Part A does NOT pass -- send back this log before anything "
-                  "gets replaced.")
-        banner("done -- send back the .txt log")
+            print("\n  Part A does NOT pass -- do not swap the legacy reset on "
+                  "this evidence.")
+        banner("done -- the .txt log is the complete record of this run")
 
 
 if __name__ == "__main__":

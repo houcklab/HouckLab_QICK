@@ -498,7 +498,7 @@ def run():
     print("    t_points_default: read it off stage 4")
     print(f"    shots: 2000                   (this audit ran {SHOTS})")
 
-    banner("done -- send back the .txt log")
+    banner("done -- the .txt log is the complete record of this run")
 
 
 def main():
