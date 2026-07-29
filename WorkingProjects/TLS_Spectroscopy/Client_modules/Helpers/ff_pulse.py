@@ -201,10 +201,46 @@ def make_distortion_model(prog):
     raise ValueError("predist_taps must have 1, 2, or 4 [A, tau] pairs")
 
 
+_COMP_WARNED = set()
+
+
+def _check_compensation_conditions(cfg, comp):
+    meta = (comp or {}).get("metadata", {}) or {}
+    src = str((comp or {}).get("source", "?"))
+    now = {"fit_ff_ramp_length_us": float(cfg.get("ff_ramp_length",
+                                                  STATE_SAFE_RAMP_US)),
+           "fit_dt_pulseplay_us": float(cfg.get("dt_pulseplay", 5.0)),
+           "fit_dt_pulsedef_us": float(cfg.get("dt_pulsedef", 0.002))}
+    known = {k: meta[k] for k in now if k in meta}
+    if not known:
+        key = ("legacy", src)
+        if key not in _COMP_WARNED:
+            _COMP_WARNED.add(key)
+            print(f"[flux] WARNING the compensation {src} does not record the flux-pulse "
+                  f"conditions it was fitted under.  Its segment edges are only valid for "
+                  f"the ramp it was measured with; applying it to a different "
+                  f"ff_ramp_length lines the correction up against the wrong part of the "
+                  f"waveform.  Re-run step 3a if the ramp has changed since.")
+        return
+    bad = {k: (known[k], now[k]) for k in known
+           if abs(float(known[k]) - now[k]) > 1e-9}
+    if bad:
+        key = ("mismatch", src, tuple(sorted(bad)))
+        if key not in _COMP_WARNED:
+            _COMP_WARNED.add(key)
+            detail = ", ".join(f"{k}: fitted at {a:g} us, now {b:g} us"
+                               for k, (a, b) in sorted(bad.items()))
+            print(f"[flux] WARNING the compensation {src} was fitted under different "
+                  f"flux-pulse conditions ({detail}).  The segment edges no longer line "
+                  f"up with the same features of the waveform.  Re-run step 3a.")
+
+
 def load_compensation(cfg):
     comp = cfg.get("flux_tail_compensation", None)
     if comp is None:
         return None
     if isinstance(comp, str):
-        return fpd.load_compensation_json(comp)
+        comp = fpd.load_compensation_json(comp)
+    if isinstance(comp, dict):
+        _check_compensation_conditions(cfg, comp)
     return comp

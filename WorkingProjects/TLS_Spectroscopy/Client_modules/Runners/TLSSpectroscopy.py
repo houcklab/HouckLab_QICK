@@ -169,7 +169,7 @@ P6_3PT_T1 = {
     "dc_step": 60,
     "freq_step_mhz": 1,
     "wall_clock_duration_min": None,
-    "Ts_us": 115.0,
+    "Ts_us": 100.0,
     "auto_Ts_factor": 0.5,
     "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
@@ -373,7 +373,7 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
         long_time_ns=2000.0, average_window_ns=0.0,
         readout_after_park=False,
         park_voltage=BASELINE_DC_OFFSET,
-        fit_trace=False, advanced_fit=bool(p.get("advanced_fit", True)),
+        advanced_fit=bool(p.get("advanced_fit", True)),
         live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
     )
@@ -639,7 +639,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         park_voltage=BASELINE_DC_OFFSET,
         inter_target_wait_ns=p.get("inter_target_wait_us", 100.0) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
-        fit_trace=bool(p.get("fit_trace", True)), advanced_fit=bool(p.get("advanced_fit", False)),
+        advanced_fit=bool(p.get("advanced_fit", False)),
         live_plot=bool(p.get("live_plot", False)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
     )
@@ -657,7 +657,8 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     if active_reset.uses_feedback(cfg["reset_mode"]) and PROBE_RESET:
         rec = probe_reset_params(
             soc, soccfg, cfg, path=QUBIT, outer_folder=outer_folder,
-            shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True)
+            shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True,
+            reset_max_iters=int(P5_SS_CAL.get("reset_max_iters", 3)))
         if rec is None:
             print("[5] active-reset validation failed -- using the configured passive "
                   f"{cfg['relax_delay']} us fallback.")
@@ -694,22 +695,54 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     return ss.calib_params
 
 
+MAX_CONSECUTIVE_RUN_FAILURES = 3
+
+
 def _run_one_stop_t1(factory, wall_clock_s):
     series_start = datetime.now()
     per_run_full_data = []
     base_path = None
     csv_path = None
     run_index = 0
+    consecutive_failures = 0
+    completed = 0
     while True:
         run_start = datetime.now()
         repeat_metadata = build_wall_clock_repeat_metadata(run_start, series_start, run_index)
         if wall_clock_s is not None:
             print(f"  [6] wall-clock run {run_index + 1} "
                   f"(elapsed {repeat_metadata['wall_clock_elapsed_minutes_from_first_run']:.1f} min)")
-        exp = factory(repeat_metadata)
-        exp.acquire(progress=True)
+        try:
+            exp = factory(repeat_metadata)
+            exp.acquire(progress=True)
+        except KeyboardInterrupt:
+            print(f"  [6] interrupted after {completed} completed run(s); "
+                  f"the one-stop CSV holds everything up to here.")
+            break
+        except Exception as exc:
+            consecutive_failures += 1
+            print(f"  [6] run {run_index + 1} FAILED ({type(exc).__name__}: "
+                  f"{str(exc)[:160]})")
+            if consecutive_failures >= MAX_CONSECUTIVE_RUN_FAILURES:
+                print(f"  [6] {consecutive_failures} consecutive failures -- stopping.  "
+                      f"The one-stop CSV holds the {completed} run(s) that succeeded.")
+                break
+            print(f"  [6] transient failure {consecutive_failures}/"
+                  f"{MAX_CONSECUTIVE_RUN_FAILURES}; continuing with the next pass so a "
+                  f"single hiccup does not end a multi-day series.")
+            run_index += 1
+            if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
+                break
+            continue
+        consecutive_failures = 0
+        completed += 1
         if base_path is None:
             base_path = _csv_base_from_pickle(exp.pname)
+            try:
+                exp.save_config()
+            except Exception as exc:
+                print(f"  [6] could not write the series config ({exc}); the one-stop "
+                      f"CSV is still the primary record.")
         spec = get_wall_clock_repeat_spec(exp)
         full_spec = get_wall_clock_repeat_full_spec(exp) or {}
         per_run_full_data.append({
@@ -768,7 +801,8 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
     if PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
-                                 shots=int(p.get("reset_probe_shots", 2000)))
+                                 shots=int(p.get("reset_probe_shots", 2000)),
+                                 reset_max_iters=int(p.get("reset_max_iters", 3)))
         if rec is None:
             print("[6] no feedback discrimination this session -- using passive relax.")
             p["reset_mode"] = "passive"
@@ -901,6 +935,7 @@ def main():
         ("4_long_time_spec_vs_flux", P4_LONG_TIME["run"]),
         ("5_single_shot_cal", P5_SS_CAL["run"]),
         ("6_3pt_t1_vs_flux", P6_3PT_T1["run"]),
+        ("6_full_t1_vs_flux", P6_FULL_T1["run"]),
     ]
     for name, on in steps_enabled:
         print(f"  {'[x]' if on else '[ ]'} {name}")
@@ -928,11 +963,15 @@ def main():
             _resolve_resonator_lookup(latest_resonator_lookup_csv))
     if P5_SS_CAL["run"]:
         calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
-    if P6_3PT_T1["run"]:
+    if P6_3PT_T1["run"] or P6_FULL_T1["run"]:
         if calib_params is None:
             print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
             calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
-        run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json)
+        if P6_3PT_T1["run"]:
+            run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json)
+        if P6_FULL_T1["run"]:
+            run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params,
+                                      correction_json)
 
     print("\nTLS spectroscopy pipeline complete.")
 

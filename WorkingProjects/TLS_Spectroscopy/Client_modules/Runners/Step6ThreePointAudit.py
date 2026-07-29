@@ -63,7 +63,7 @@ P6_3PT_T1 = {
     "dc_min": 0,
     "dc_max": 10000,
     "freq_step_mhz": 1,
-    "Ts_us": 115.0,
+    "Ts_us": 60.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     "reset_mode": "feedback",
@@ -433,7 +433,8 @@ def main():
     if RUN_RESET_PROBE and active_reset.uses_feedback(P6_3PT_T1["reset_mode"]):
         banner("STAGE E -- active-reset probe and end-to-end gate")
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outerFolder, shots=2000)
+                                 outer_folder=outerFolder, shots=2000,
+                                 reset_max_iters=int(P6_3PT_T1["reset_max_iters"]))
         if rec is None:
             print("  gate FAILED -> this audit will fall back to passive relax "
                   f"({T1_RESET_BACKSTOP_US:.0f}us)")

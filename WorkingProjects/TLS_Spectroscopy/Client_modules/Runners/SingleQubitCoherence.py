@@ -149,7 +149,8 @@ def main():
                   f"(aligns |g>/|e> on one raw quadrature; initialize.py unchanged)")
     if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder)
+                                 outer_folder=outer_folder,
+                                 reset_max_iters=int(RESET_MAX_ITERS))
         if rec is None:
             RESET_MODE = "passive"
             print(f"[reset] no feedback discrimination this session -> passive reset "
