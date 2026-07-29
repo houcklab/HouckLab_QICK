@@ -176,7 +176,7 @@ class RotResetProgram(AveragerProgram):
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)))
-        elif scheme in ("rot2", "rot3"):
+        elif scheme in ("rot2", "rot3", "rot3nl"):
             rot.active_reset_rot_block(
                 self, ro_ch=cfg["ro_chs"][0],
                 c_int=cfg["rot_c_int"], s_int=cfg["rot_s_int"],
@@ -184,7 +184,8 @@ class RotResetProgram(AveragerProgram):
                 ground_threshold=cfg.get("rot_ground_threshold"),
                 latch_sink=cfg.get("rot_latch_sink"),
                 max_iters=int(cfg.get("reset_max_iters", 3)),
-                three_zone=(scheme == "rot3"), use_latch=(scheme == "rot3"))
+                three_zone=(scheme in ("rot3", "rot3nl")),
+                use_latch=(scheme == "rot3"))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True,
@@ -369,7 +370,7 @@ def stage2(soc, soccfg, fit, calib_params, rec):
     print("  below are populations on the g->e axis (|g>=0, |e>=1), same construction")
     print("  the probe uses -- so they are directly comparable to stage 1's numbers.")
     results = {}
-    arms = [("old", {}), ("rot2", {}), ("rot3", {})]
+    arms = [("old", {}), ("rot2", {}), ("rot3nl", {}), ("rot3", {})]
     for scheme, _ in arms:
         cfg = base_cfg(reset_scheme=scheme)
         if scheme == "old":
@@ -380,7 +381,7 @@ def stage2(soc, soccfg, fit, calib_params, rec):
                         "reset_oper": str(fit["oper"]),
                         "reset_ground_below": bool(rec["ground_below"])})
         else:
-            thr = fit["three"] if scheme == "rot3" else fit["two"]
+            thr = fit["three"] if scheme in ("rot3", "rot3nl") else fit["two"]
             cfg.update({"rot_c_int": fit["c_int"], "rot_s_int": fit["s_int"],
                         "rot_excite_threshold": thr["excite_threshold"],
                         "rot_ground_threshold": thr.get("ground_threshold"),
@@ -401,7 +402,7 @@ def stage3(soc, soccfg, fit, calib_params, rec):
     if fit is None or rec is None:
         print("  missing a fit or a recommendation -- skipping.")
         return None
-    arms = ["old", "rot2", "rot3"]
+    arms = ["old", "rot2", "rot3nl", "rot3"]
     acc = {a: {"g": [], "e": []} for a in arms}
     for rep in range(int(AB_REPEATS)):
         refs = measure_refs(soc, soccfg, base_cfg(reset_scheme="none"))
@@ -412,7 +413,7 @@ def stage3(soc, soccfg, fit, calib_params, rec):
                             "reset_oper": str(fit["oper"]),
                             "reset_ground_below": bool(rec["ground_below"])})
             else:
-                thr = fit["three"] if scheme == "rot3" else fit["two"]
+                thr = fit["three"] if scheme in ("rot3", "rot3nl") else fit["two"]
                 cfg.update({"rot_c_int": fit["c_int"], "rot_s_int": fit["s_int"],
                             "rot_excite_threshold": thr["excite_threshold"],
                             "rot_ground_threshold": thr.get("ground_threshold"),
@@ -430,7 +431,12 @@ def stage3(soc, soccfg, fit, calib_params, rec):
         print(f"  {scheme:>6} {g.mean():8.4f} +/- {g.std(ddof=1) / np.sqrt(g.size):.4f}"
               f"   {e.mean():8.4f} +/- {e.std(ddof=1) / np.sqrt(e.size):.4f}"
               f" {max(g.mean(), e.mean()):8.4f}")
-    for a, b in (("old", "rot2"), ("rot2", "rot3"), ("old", "rot3")):
+    print("\n  rot3nl is three zones with the latch DISABLED: it isolates the extra")
+    print("  control flow from the latch itself.  rot3nl == rot2 means the branching")
+    print("  is free and any rot3 penalty is the latch; rot3nl < rot2 means the extra")
+    print("  condj pair is the cost and the latch is innocent.")
+    for a, b in (("old", "rot2"), ("rot2", "rot3nl"), ("rot3nl", "rot3"),
+                 ("rot2", "rot3"), ("old", "rot3")):
         if a not in summary or b not in summary:
             continue
         d = summary[a]["e"] - summary[b]["e"]
@@ -483,18 +489,39 @@ def stage4(soc, soccfg, calib_params):
         print("\n  'raw F' and 'floor' are the CURRENT scheme measured by the probe at")
         print("  each phase -- independent of any model.  If they dip where sep single")
         print("  dips, the degradation is real and not an artefact of the fit.")
-        new = np.asarray([r["new_pred"] for r in rows])
-        old = np.asarray([r["old_pred"] for r in rows])
-        print(f"\n  rotated spread across phase: {np.nanmax(new) - np.nanmin(new):.4f} "
-              f"(should be ~0)")
-        print(f"  single spread across phase:  {np.nanmax(old) - np.nanmin(old):.4f} "
-              f"(should be large)")
-        if np.nanmax(new) - np.nanmin(new) < 0.5 * (np.nanmax(old) - np.nanmin(old)):
-            print("  -> the rotated reset is measurably less sensitive to readout phase.")
+        new = np.asarray([r["new_pred"] for r in rows], dtype=float)
+        old = np.asarray([r["old_pred"] for r in rows], dtype=float)
+        gains = np.asarray([r["gain"] for r in rows], dtype=float)
+        improves = old / np.where(new > 0, new, np.nan)
+        floors = np.asarray([(r.get("probe_floor") if r.get("probe_floor") is not None
+                              else np.nan) for r in rows], dtype=float)
+        print(f"\n  device drift across the sweep: measured floor spans "
+              f"{np.nanmin(floors):.3f}..{np.nanmax(floors):.3f}")
+        print("  Absolute residuals therefore CANNOT be compared between phase points --")
+        print("  the probes are minutes apart and the readout moves more than the phase")
+        print("  effect does.  The drift-immune quantity is the improvement ratio, since")
+        print("  both schemes are derived from the SAME probe data at each phase.")
+        print("\n  separation gain vs phase:  "
+              + "  ".join(f"{d:+.0f}d {g:.2f}x" for d, g in
+                          zip([r["offset"] for r in rows], gains)))
+        print("  improvement  vs phase:  "
+              + "  ".join(f"{d:+.0f}d {i:.2f}x" for d, i in
+                          zip([r["offset"] for r in rows], improves)))
+        aligned = np.nanmin(improves)
+        worst = np.nanmax(improves)
+        if worst > 1.10 and aligned < 1.05:
+            k = int(np.nanargmax(improves))
+            print(f"\n  -> CONFIRMED: the rotated reset is worth {worst:.2f}x at "
+                  f"{rows[k]['offset']:+.0f} deg of misalignment and {aligned:.2f}x when the")
+            print("     blobs are already on a quadrature.  That is exactly the predicted")
+            print("     shape: no gain when aligned, real gain when not.")
+        elif worst <= 1.10:
+            print("\n  -> no phase point in this sweep misaligned the blobs enough to")
+            print(f"     matter (best improvement {worst:.2f}x).  Widen PHASE_OFFSETS_DEG.")
         else:
-            print("  -> NO measurable immunity.  Either the phase offsets did not move the")
-            print("     blobs as expected, or the fit is picking up something else.  Check")
-            print("     the separation columns before believing either scheme.")
+            print(f"\n  -> improvement is {aligned:.2f}x even at the best-aligned phase,")
+            print("     which should be ~1.00x.  Something other than misalignment is")
+            print("     driving the difference -- check the separation columns.")
     return rows
 
 
