@@ -174,7 +174,7 @@ P6_3PT_T1 = {
     "dc_step": 60,
     "freq_step_mhz": 1,
     "wall_clock_duration_min": None,
-    "Ts_us": 100.0,
+    "Ts_us": 60.0,
     "auto_Ts_factor": 0.5,
     "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
