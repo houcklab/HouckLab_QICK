@@ -238,9 +238,10 @@ def main():
         gc.collect()
 
         banner("STAGE 0 -- calibrate BOTH schemes from one probe dataset")
-        fit = bench.probe_and_fit(soc, soccfg, base_cfg(PROBE_SHOTS),
-                                  RESET_MAX_ITERS, ETA_FALLBACK, path=QUBIT,
-                                  outer_folder=outerFolder, suffix="RotT1_Probe")
+        fit = bench.probe_and_fit_consistent(
+            soc, soccfg, base_cfg(PROBE_SHOTS), RESET_MAX_ITERS, ETA_FALLBACK,
+            refs_shots=2000, path=QUBIT, outer_folder=outerFolder,
+            suffix="RotT1_Probe")
         if fit is None:
             print("  no usable calibration at all -- stopping before wasting the T1 "
                   "passes.")

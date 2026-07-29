@@ -18,13 +18,17 @@ def main():
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mResetBench")
     R = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ResetRotationEquivalence")
-    truth = reset_sim.install_bench(bench, rot)
+    import os as _os
+    truth = reset_sim.TruthState(seed=int(_os.environ.get("RESET_SIM_SEED", "7")))
+    truth.glitch_period_ticks = 41
+    truth.glitch_shift = 25000.0
+    reset_sim.install_bench(bench, rot, truth=truth)
     reset_sim.install_runner_common(R)
     truth.base_res_phase = float(R.BaseConfig.get("res_phase", 0.0))
     truth.res_phase_getter = lambda: R.BaseConfig.get("res_phase", 0.0)
     R.CAL_ROUNDS = 6
     R.REPS_PER_CAL = 4
-    R.N_OFFSET = 8
+    R.N_OFFSET = 12
     R.OFFSET_DEG = 40.0
     R.SHOTS_FAST = 16000
     R.PROBE_SHOTS = 16000

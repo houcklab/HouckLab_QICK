@@ -23,6 +23,8 @@ def main():
     truth.drift_deg_amp = 30.0
     truth.drift_period_ticks = 120.0
     truth.sep_wobble = 0.03
+    truth.glitch_period_ticks = 53
+    truth.glitch_shift = 25000.0
     reset_sim.install_bench(bench, rot, truth=truth)
     reset_sim.install_runner_common(R)
     print(f"simulated instrument: seed {seed}, angle drift amplitude "

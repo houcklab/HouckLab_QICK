@@ -120,6 +120,68 @@ def measure_residuals(soc, soccfg, cfg, refs):
     return out
 
 
+RESIDUAL_SANE_LO = -0.15
+RESIDUAL_SANE_HI = 0.75
+REF_SEP_BAND = (0.55, 1.8)
+
+
+def residuals_sane(res, lo=RESIDUAL_SANE_LO, hi=RESIDUAL_SANE_HI):
+    return all(np.isfinite(v) and lo <= float(v) <= hi for v in res.values())
+
+
+def refs_sane(refs, expected_sep, band=REF_SEP_BAND):
+    if expected_sep is None or not np.isfinite(expected_sep) or expected_sep <= 0:
+        return True
+    ratio = float(refs["separation"]) / float(expected_sep)
+    return band[0] <= ratio <= band[1]
+
+
+def calibration_consistent(fit, refs, tol=0.4):
+    raw = fit["raw"]
+    gi, gq = float(np.median(raw["lg"])), float(np.median(raw["ug"]))
+    ei, eq = float(np.median(raw["le"])), float(np.median(raw["ue"]))
+    sep = max(float(refs["separation"]), 1.0)
+    dg = float(np.hypot(gi - refs["ig"], gq - refs["qg"]))
+    de = float(np.hypot(ei - (refs["ig"] + refs["dx"]),
+                        eq - (refs["qg"] + refs["dy"])))
+    mismatch = max(dg, de) / sep
+    return bool(mismatch < tol), mismatch
+
+
+def probe_and_fit_consistent(soc, soccfg, cfg, iters, eta_fallback, refs_shots=2000,
+                             retries=1, **kw):
+    fit = None
+    for attempt in range(int(retries) + 1):
+        fit = probe_and_fit(soc, soccfg, cfg, iters, eta_fallback, **kw)
+        if fit is None:
+            return None
+        refs_cfg = dict(cfg)
+        refs_cfg["shots"] = refs_cfg["reps"] = int(refs_shots)
+        refs = measure_refs(soc, soccfg, refs_cfg)
+        ok, mismatch = calibration_consistent(fit, refs)
+        if ok:
+            return fit
+        print(f"    the probe calibration disagrees with a fresh reference "
+              f"measurement (blob centers off by {mismatch:.2f} of the separation) "
+              f"-- a glitch during the probe is suspected"
+              f"{'; re-probing' if attempt < retries else ''}", flush=True)
+    print("    calibration never became self-consistent -- treating this "
+          "calibration as unusable", flush=True)
+    return None
+
+
+def measure_refs_guarded(soc, soccfg, cfg, expected_sep=None, retries=1):
+    refs = measure_refs(soc, soccfg, cfg)
+    tries = 0
+    while not refs_sane(refs, expected_sep) and tries < int(retries):
+        print(f"    reference separation {refs['separation']:.0f} is far from the "
+              f"expected {float(expected_sep):.0f} -- glitch suspected, re-measuring "
+              f"the references", flush=True)
+        refs = measure_refs(soc, soccfg, cfg)
+        tries += 1
+    return refs, refs_sane(refs, expected_sep)
+
+
 def fit_legacy_from_raw(lg, ug, le, ue, iters, eta):
     sep_lower = abs(float(np.median(le)) - float(np.median(lg)))
     sep_upper = abs(float(np.median(ue)) - float(np.median(ug)))

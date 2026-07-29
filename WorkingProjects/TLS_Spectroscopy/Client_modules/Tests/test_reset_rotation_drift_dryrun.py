@@ -70,3 +70,11 @@ def test_drift_genuinely_degraded_the_stale_legacy_arm(out):
         f"legacy_fixed worst {worst_lf:.4f} barely exceeds its mean {mean_lf:.4f}; "
         f"the simulated drift never actually hurt the stale arm, so the run proves "
         f"nothing about drift protection")
+
+
+def test_glitched_cycles_are_detected_and_excluded(out):
+    assert "glitch, excluded" in out
+    m = re.search(r"(\d+) cycles kept in [\d.]+ min \((\d+) glitch-excluded", out)
+    assert m, "analysis must report kept and glitch-excluded counts"
+    assert int(m.group(1)) >= 24
+    assert int(m.group(2)) >= 1

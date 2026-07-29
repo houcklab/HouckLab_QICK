@@ -52,6 +52,9 @@ class TruthState:
         self.tick = 0
         self.base_res_phase = None
         self.res_phase_getter = None
+        self.glitch_period_ticks = 0
+        self.glitch_len_ticks = 2
+        self.glitch_shift = 20000.0
 
     def advance(self):
         self.tick += 1
@@ -77,11 +80,18 @@ class TruthState:
         sep = self.current_sep()
         return self.ig + sep * np.cos(th), self.qg + sep * np.sin(th)
 
+    def glitching(self):
+        if not self.glitch_period_ticks:
+            return False
+        return (self.tick % int(self.glitch_period_ticks)) < int(self.glitch_len_ticks)
+
     def blob_shots(self, pop, n=4000):
         ie, qe = self.excited_center()
         exc = self.rng.random(n) < float(pop)
         i = np.where(exc, ie, self.ig) + self.rng.normal(0, self.sigma, n)
         q = np.where(exc, qe, self.qg) + self.rng.normal(0, self.sigma, n)
+        if self.glitching():
+            i = i + self.glitch_shift
         return i.astype(np.int64), q.astype(np.int64)
 
 
