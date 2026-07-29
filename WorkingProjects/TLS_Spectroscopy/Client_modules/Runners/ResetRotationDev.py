@@ -270,8 +270,9 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
     data = probe.acquire().get("data", {})
     plt.close("all")
     gc.collect()
-    raw = data.get("raw_shots")
+    raw = getattr(probe, "raw_shots", None)
     if not raw or "ground" not in raw or "excited" not in raw:
+        print("    probe exposed no raw_shots attribute -- cannot fit the rotation.")
         return None
     lg = np.asarray(raw["ground"]["lower"], dtype=np.int64)
     ug = np.asarray(raw["ground"]["upper"], dtype=np.int64)
@@ -285,7 +286,9 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
     ok, worst = rot.check_headroom(shift, theta, max_abs)
     if not ok:
         raise RuntimeError(f"fixed-point headroom check failed ({worst:.3e})")
-    sink = rot.latch_offset(shift, theta, max_abs)
+    plan = rot.asm_plan(c_int, s_int)
+    sink = rot.latch_offset(shift, theta, max_abs,
+                            excited_above=plan["excited_above"])
     rep = rot.separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
     two = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=RESET_MAX_ITERS,
                                 pi_efficiency=PI_EFFICIENCY_GUESS, three_zone=False)
@@ -296,13 +299,22 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
         le if rep["sep_lower"] >= rep["sep_upper"] else ue,
         iters=RESET_MAX_ITERS, pi_efficiency=PI_EFFICIENCY_GUESS)
     out = {"theta": theta, "shift": shift, "c_int": c_int, "s_int": s_int,
-           "latch_sink": sink, "max_abs": max_abs, "report": rep,
-           "two": two, "three": three, "old": old,
+           "plan": plan, "latch_sink": sink, "max_abs": max_abs, "report": rep,
+           "two": rot.thresholds_to_acc(two, plan),
+           "three": rot.thresholds_to_acc(three, plan),
+           "two_proj": two, "three_proj": three, "old": old,
            "oper": "lower" if rep["sep_lower"] >= rep["sep_upper"] else "upper",
-           "n": n}
+           "n": n,
+           "probe_floor": data.get("reset_floor"),
+           "probe_errors": data.get("raw_assignment_errors", {}),
+           "probe_raw_F": data.get("raw_assignment_fidelity"),
+           "probe_recommended": data.get("recommended")}
     if verbose:
         print(f"  theta = {np.rad2deg(theta):+7.2f} deg | 2^{shift} -> C={c_int}, S={s_int}"
               f" | headroom {worst:.2e} / {rot.INT32_MAX:.2e}")
+        print(f"  asm plan: acc = {plan['c_abs']}*I {plan['combine_op']} "
+              f"{plan['s_abs']}*Q   (multiply immediates are non-negative by "
+              f"construction; excited_above={plan['excited_above']}, latch sink {sink})")
         print(f"  separation:  lower {rep['sep_lower']:8.0f}   upper {rep['sep_upper']:8.0f}"
               f"   best single {rep['sep_best_single']:8.0f}   rotated {rep['sep_rotated']:8.0f}"
               f"   gain {rep['gain_vs_best_single']:.2f}x")
@@ -425,16 +437,25 @@ def stage4(soc, soccfg, calib_params):
                      "sep_single": fit["report"]["sep_best_single"],
                      "sep_rot": fit["report"]["sep_rotated"],
                      "old_pred": old_pred,
-                     "new_pred": fit["three"]["predicted_worst"]})
+                     "new_pred": fit["three_proj"]["predicted_worst"],
+                     "probe_floor": fit.get("probe_floor"),
+                     "probe_F": fit.get("probe_raw_F")})
     BaseConfig["res_phase"] = base_phase
     print(f"\n  restored res_phase = {BaseConfig['res_phase']:g} deg")
     if rows:
         print(f"\n  {'offset':>7} {'sep single':>11} {'sep rot':>9} {'gain':>6} "
-              f"{'OLD pred':>9} {'NEW pred':>9} {'improve':>8}")
+              f"{'raw F':>7} {'floor':>7} {'OLD pred':>9} {'NEW pred':>9} {'improve':>8}")
         for r in rows:
             imp = r["old_pred"] / r["new_pred"] if r["new_pred"] > 0 else np.nan
+            pf = r.get("probe_F")
+            fl = r.get("probe_floor")
             print(f"  {r['offset']:+6.0f}d {r['sep_single']:11.0f} {r['sep_rot']:9.0f} "
-                  f"{r['gain']:5.2f}x {r['old_pred']:9.4f} {r['new_pred']:9.4f} {imp:7.2f}x")
+                  f"{r['gain']:5.2f}x {(pf if pf is not None else np.nan):7.3f} "
+                  f"{(fl if fl is not None else np.nan):7.3f} "
+                  f"{r['old_pred']:9.4f} {r['new_pred']:9.4f} {imp:7.2f}x")
+        print("\n  'raw F' and 'floor' are the CURRENT scheme measured by the probe at")
+        print("  each phase -- independent of any model.  If they dip where sep single")
+        print("  dips, the degradation is real and not an artefact of the fit.")
         new = np.asarray([r["new_pred"] for r in rows])
         old = np.asarray([r["old_pred"] for r in rows])
         print(f"\n  rotated spread across phase: {np.nanmax(new) - np.nanmin(new):.4f} "
@@ -480,7 +501,7 @@ def main():
             fit = fit_rotation(soc, soccfg, "Fit")
             if fit is not None:
                 rec = fit["old"]
-                two, three = fit["two"], fit["three"]
+                two, three = fit["two_proj"], fit["three_proj"]
                 print(f"\n  predicted worst residual, {RESET_MAX_ITERS} iters, "
                       f"eta={PI_EFFICIENCY_GUESS}:")
                 if fit["old"]:

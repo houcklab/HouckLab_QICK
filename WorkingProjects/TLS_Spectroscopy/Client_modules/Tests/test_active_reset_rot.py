@@ -360,3 +360,89 @@ def test_block_rejects_inverted_zone_order():
         rot.active_reset_rot_block(prog, ro_ch=0, c_int=1, s_int=0, excite_threshold=10,
                                    ground_threshold=99, latch_sink=-10 ** 9,
                                    read_delay_us=None)
+
+
+@pytest.mark.parametrize("theta_deg", np.arange(-180, 181, 15).tolist())
+def test_asm_plan_never_emits_a_negative_multiply_immediate(theta_deg):
+    """qick encodes a negative immediate as 2**31+val, not two's complement, and
+    `mathi '*' negative` has no verified precedent in this repo.  The plan must
+    therefore only ever ask for non-negative multipliers."""
+    theta = np.deg2rad(theta_deg)
+    _, c, s = rot.fixed_point_coeffs(theta, 2e4)
+    plan = rot.asm_plan(c, s)
+    assert plan["c_abs"] >= 0 and plan["s_abs"] >= 0
+    assert plan["combine_op"] in ('+', '-')
+
+
+@pytest.mark.parametrize("theta_deg", np.arange(-180, 181, 15).tolist())
+def test_acc_equals_signed_projection(theta_deg):
+    theta = np.deg2rad(theta_deg)
+    lg, ug, le, ue = realistic_blobs(n=2000)
+    _, c, s = rot.fixed_point_coeffs(theta, 2e4)
+    plan = rot.asm_plan(c, s)
+    sign = 1 if plan["excited_above"] else -1
+    assert np.allclose(rot.project_acc(le, ue, plan),
+                       sign * rot.project(le, ue, c, s))
+
+
+def test_real_q4_geometry_takes_the_negative_coefficient_path():
+    """theta ~ -89 deg on the measured q4 blobs, so s_int < 0 -- exactly the case
+    asm_plan exists to keep off the unverified instruction."""
+    lg, ug, le, ue = realistic_blobs()
+    theta = rot.projection_angle(lg, ug, le, ue)
+    _, c, s = rot.fixed_point_coeffs(theta, float(np.max(np.abs(
+        np.concatenate([lg, ug, le, ue])))))
+    assert s < 0, "expected the measured geometry to give a negative sine"
+    plan = rot.asm_plan(c, s)
+    assert plan["s_abs"] > 0 and plan["combine_op"] == '-'
+
+
+@pytest.mark.parametrize("theta_deg", [-89.0, -45.0, 5.0, 91.0, 150.0, -150.0])
+def test_end_to_end_asm_fires_pi_on_excited_shots_for_any_geometry(theta_deg):
+    """The whole chain: fit -> plan -> thresholds -> acc space -> emitted asm.
+    An excited-looking shot must fire the pi and a ground-looking one must not,
+    whichever quadrant theta lands in."""
+    theta = np.deg2rad(theta_deg)
+    n = 4000
+    rng = np.random.default_rng(1)
+    d = 20000.0
+    lg = rng.normal(0, 5000, n)
+    ug = rng.normal(0, 5000, n)
+    le = rng.normal(d * np.cos(theta), 5000, n)
+    ue = rng.normal(d * np.sin(theta), 5000, n)
+    max_abs = float(np.max(np.abs(np.concatenate([lg, ug, le, ue]))))
+    th = rot.projection_angle(lg, ug, le, ue)
+    shift, c, s = rot.fixed_point_coeffs(th, max_abs)
+    plan = rot.asm_plan(c, s)
+    rep = rot.separation_report(lg, ug, le, ue, c_int=c, s_int=s, theta=th)
+    thr = rot.thresholds_to_acc(
+        rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=3), plan)
+    sink = rot.latch_offset(shift, th, max_abs, excited_above=plan["excited_above"])
+
+    prog = MockProgram(max_iters=3)
+    rot.active_reset_rot_block(
+        prog, ro_ch=0, c_int=c, s_int=s,
+        excite_threshold=thr["excite_threshold"],
+        ground_threshold=thr["ground_threshold"], latch_sink=sink,
+        max_iters=3, three_zone=True, use_latch=True, read_delay_us=None)
+
+    med_e = (float(np.median(le)), float(np.median(ue)))
+    med_g = (float(np.median(lg)), float(np.median(ug)))
+    n_e, _ = interpret(prog.asm, [med_e] * 3, c, s)
+    n_g, _ = interpret(prog.asm, [med_g] * 3, c, s)
+    assert n_e == 3, f"theta={theta_deg}: a typical excited shot must fire the pi"
+    assert n_g == 0, f"theta={theta_deg}: a typical ground shot must not fire the pi"
+
+
+@pytest.mark.parametrize("theta_deg", [-89.0, 91.0])
+def test_latch_sign_is_checked_against_the_projection_orientation(theta_deg):
+    theta = np.deg2rad(theta_deg)
+    _, c, s = rot.fixed_point_coeffs(theta, 2e4)
+    plan = rot.asm_plan(c, s)
+    wrong = 10 ** 9 if plan["excited_above"] else -10 ** 9
+    prog = MockProgram()
+    with pytest.raises(ValueError, match="wrong sign"):
+        rot.active_reset_rot_block(
+            prog, ro_ch=0, c_int=c, s_int=s, excite_threshold=0.0,
+            ground_threshold=(-1.0 if plan["excited_above"] else 1.0),
+            latch_sink=wrong, read_delay_us=None)

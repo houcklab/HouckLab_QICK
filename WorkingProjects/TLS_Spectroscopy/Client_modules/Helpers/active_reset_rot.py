@@ -38,9 +38,9 @@ def max_projection(shift, theta, max_abs_raw):
     return float((2 ** int(shift)) * _gain(theta) * float(max_abs_raw))
 
 
-def latch_offset(shift, theta, max_abs_raw):
-    sink = int(round(LATCH_RESERVE * max_projection(shift, theta, max_abs_raw)))
-    return -max(sink, 1)
+def latch_offset(shift, theta, max_abs_raw, excited_above=True):
+    sink = max(int(round(LATCH_RESERVE * max_projection(shift, theta, max_abs_raw))), 1)
+    return -sink if excited_above else sink
 
 
 def check_headroom(shift, theta, max_abs_raw):
@@ -52,6 +52,52 @@ def check_headroom(shift, theta, max_abs_raw):
 def project(lower, upper, c_int, s_int):
     return (int(c_int) * np.asarray(lower, dtype=np.int64)
             + int(s_int) * np.asarray(upper, dtype=np.int64))
+
+
+def asm_plan(c_int, s_int):
+    """Express the projection using only NON-NEGATIVE multiply immediates.
+
+    qick's convert_immediate maps a negative immediate to 2**31 + val rather than
+    to two's complement, so `mathi(reg, '*', negative)` is not a pattern this repo
+    has ever verified on hardware -- the only precedent is `* -1`.  regwi with a
+    negative value IS verified: the production reset runs a negative threshold_raw
+    every day.  So keep the multiplies non-negative and carry the sign in the
+    combine operator and the comparison sense, which uses only verified patterns.
+
+        acc = |c|*I  (+/-) |s|*Q          <- what the tProc computes
+        proj = sign(c) * acc              <- the quantity we actually mean
+
+    Since theta is fitted from the g->e vector, proj_e > proj_g always, so the
+    excited blob is above in `acc` exactly when c_int >= 0.
+    """
+    c_int, s_int = int(c_int), int(s_int)
+    same_sign = (c_int >= 0) == (s_int >= 0)
+    return {"c_abs": abs(c_int), "s_abs": abs(s_int),
+            "combine_op": '+' if same_sign else '-',
+            "excited_above": c_int >= 0}
+
+
+def project_acc(lower, upper, plan):
+    """The value the tProc register actually holds, given asm_plan()."""
+    lo = np.asarray(lower, dtype=np.int64)
+    up = np.asarray(upper, dtype=np.int64)
+    term = int(plan["s_abs"]) * up
+    return int(plan["c_abs"]) * lo + (term if plan["combine_op"] == '+' else -term)
+
+
+def thresholds_to_acc(thr, plan):
+    """Convert thresholds fitted in projection space into tProc register space.
+
+    choose_thresholds() works on `proj`, where the excited blob is above by
+    construction.  The register holds `acc = sign(c) * proj`, so both thresholds
+    flip sign when c_int < 0; the block's comparison operators flip with them.
+    """
+    sign = 1 if plan["excited_above"] else -1
+    out = dict(thr)
+    out["excite_threshold"] = sign * float(thr["excite_threshold"])
+    if thr.get("ground_threshold") is not None:
+        out["ground_threshold"] = sign * float(thr["ground_threshold"])
+    return out
 
 
 def separation_report(lower_g, upper_g, lower_e, upper_e, c_int=None, s_int=None,
@@ -165,10 +211,17 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
                          "rotated two-zone control arm.")
     if three_zone and ground_threshold is None:
         raise ValueError("three_zone=True needs ground_threshold (projected units)")
-    if three_zone and float(ground_threshold) > float(excite_threshold):
-        raise ValueError(f"ground_threshold ({ground_threshold}) must not exceed "
-                         f"excite_threshold ({excite_threshold}): the confident-ground "
-                         f"zone sits below the confident-excited zone by construction")
+    if three_zone:
+        _plan = asm_plan(c_int, s_int)
+        _ok = (float(ground_threshold) <= float(excite_threshold)
+               if _plan["excited_above"] else
+               float(ground_threshold) >= float(excite_threshold))
+        if not _ok:
+            raise ValueError(
+                f"ground_threshold ({ground_threshold}) is on the wrong side of "
+                f"excite_threshold ({excite_threshold}) for excited_above="
+                f"{_plan['excited_above']}: the confident-ground zone must sit on the "
+                f"opposite side of the excited zone.")
     cfg = prog.cfg
     if settle_us is None:
         settle_us = float(cfg.get("reset_settle_us", 0.05))
@@ -208,6 +261,18 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
     if use_latch and latch_sink is None:
         raise ValueError("use_latch=True needs latch_sink from latch_offset()")
 
+    plan = asm_plan(c_int, s_int)
+    if plan["excited_above"]:
+        skip_pi_op, not_ground_op, sink_sign = '<', '>=', -1
+    else:
+        skip_pi_op, not_ground_op, sink_sign = '>', '<=', +1
+    if use_latch and np.sign(latch_sink) not in (0, sink_sign):
+        raise ValueError(
+            f"latch_sink has the wrong sign for this projection: excited_above="
+            f"{plan['excited_above']} needs a {'negative' if sink_sign < 0 else 'positive'} "
+            f"sink so a latched shot lands in the confident-ground zone, got {latch_sink}.  "
+            f"Use latch_offset(shift, theta, max_abs, excited_above=...).")
+
     _UID[0] += 1
     uid = _UID[0]
     sync_cycles = prog.us2cycles(meas_syncdelay_us)
@@ -241,21 +306,21 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
             prog.waiti(0, adc_end + read_delay_cycles)
         prog.read(tproc_ch, page, "lower", r_i)
         prog.read(tproc_ch, page, "upper", r_q)
-        prog.mathi(page, r_i, r_i, '*', int(c_int))
-        prog.mathi(page, r_q, r_q, '*', int(s_int))
-        prog.math(page, r_i, r_i, '+', r_q)
+        prog.mathi(page, r_i, r_i, '*', int(plan["c_abs"]))
+        prog.mathi(page, r_q, r_q, '*', int(plan["s_abs"]))
+        prog.math(page, r_i, r_i, plan["combine_op"], r_q)
         if use_latch:
             prog.math(page, r_i, r_i, '+', r_latch)
         prog.sync_all(sync_cycles)
 
         done = f"ARR_DONE_{uid}_{i}"
         nopi = f"ARR_NOPI_{uid}_{i}"
-        prog.condj(page, r_i, '<', r_excite, nopi)
+        prog.condj(page, r_i, skip_pi_op, r_excite, nopi)
         prog.pulse(ch=qubit_ch)
         if three_zone:
             prog.condj(page, r_excite, '>=', r_excite, done)
             prog.label(nopi)
-            prog.condj(page, r_i, '>=', r_ground, done)
+            prog.condj(page, r_i, not_ground_op, r_ground, done)
             if use_latch:
                 prog.regwi(page, r_latch, int(latch_sink))
             prog.label(done)
