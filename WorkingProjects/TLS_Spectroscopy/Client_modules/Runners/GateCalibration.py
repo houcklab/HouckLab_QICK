@@ -367,7 +367,8 @@ def main():
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
     if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder)
+                                 outer_folder=outer_folder,
+                                 reset_max_iters=int(RESET_MAX_ITERS))
         if rec is None:
             RESET_MODE = "passive"
         else:

@@ -5,11 +5,11 @@ import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import qubit_spec_trace_fit as qst
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
@@ -19,61 +19,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepR
 )
 
 DAC_TO_VOLT_SCALE = 1.0 / 30000.0
-
-
-def _odd_savgol_window(requested, n):
-    w = min(int(requested), n if n % 2 else n - 1)
-    if w % 2 == 0:
-        w -= 1
-    return max(w, 3)
-
-
-def _quadratic_refine_x(x, y, idx):
-    if idx <= 0 or idx >= len(x) - 1:
-        return float(x[idx])
-    y0, y1, y2 = y[idx - 1], y[idx], y[idx + 1]
-    denom = y0 - 2.0 * y1 + y2
-    if not np.isfinite(denom) or abs(denom) < 1e-18:
-        return float(x[idx])
-    delta = 0.5 * (y0 - y2) / denom
-    delta = float(np.clip(delta, -1.0, 1.0))
-    return float(x[idx] + delta * (x[idx + 1] - x[idx]))
-
-
-def _extract_dip_frequency_hz(f_hz, mag_dbm):
-    f_hz = np.asarray(f_hz, dtype=float)
-    mag_dbm = np.asarray(mag_dbm, dtype=float)
-    finite = np.isfinite(f_hz) & np.isfinite(mag_dbm)
-    f_hz, mag_dbm = f_hz[finite], mag_dbm[finite]
-    if f_hz.size < 7:
-        raise ValueError("Need at least seven finite points to extract a dip.")
-    order = np.argsort(f_hz)
-    f_hz, mag_dbm = f_hz[order], mag_dbm[order]
-
-    smooth_window = _odd_savgol_window(9, len(mag_dbm))
-    if smooth_window > 3:
-        mag_for_min = signal.savgol_filter(mag_dbm, smooth_window,
-                                           min(2, smooth_window - 1), mode="interp")
-    else:
-        mag_for_min = mag_dbm
-    rough_idx = int(np.nanargmin(mag_for_min))
-    rough_fr_hz = _quadratic_refine_x(f_hz, mag_for_min, rough_idx)
-
-    local_half_width_hz = max(10e6, 0.15 * (f_hz.max() - f_hz.min()))
-    local = np.abs(f_hz - rough_fr_hz) <= local_half_width_hz
-    if local.sum() >= 7:
-        try:
-            params, _ = ff.fit_resonator_dip(f_hz[local] / 1e6, mag_dbm[local])
-            fr_hz = float(params["fr"]) * 1e6
-            fwhm_hz = abs(float(params["fwhm"])) * 1e6
-            local_min = float(f_hz[local].min())
-            local_max = float(f_hz[local].max())
-            if not (local_min <= fr_hz <= local_max):
-                raise ValueError("Dip fit center escaped the local search window.")
-            return fr_hz, fwhm_hz, "local_dip_lorentzian"
-        except Exception:
-            pass
-    return rough_fr_hz, np.nan, "local_smoothed_minimum"
 
 
 class QubitLongTimeSpecVsFlux(ExperimentClass):
@@ -100,7 +45,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                  average_step_ns=16.0, park_voltage=None, inter_target_wait_ns=1000.0,
                  readout_after_park=True, park_readout_settle_ns=None,
                  post_readout_reset_ns=None, flux_tail_compensation=None,
-                 fit_trace=True, advanced_fit=False, live_plot=True,
+                 advanced_fit=False, live_plot=True,
                  resonator_lookup_csv=None, step_tag="4", **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
@@ -121,7 +66,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         cfg["flux_settle_time_us"] = self.park_readout_settle_ns / 1e3
         self.post_readout_reset_ns = (post_readout_reset_ns if post_readout_reset_ns
                                       is not None else cfg.get("relax_delay", 0) * 1e3)
-        self.fit_trace = bool(fit_trace)
         self.advanced_fit = bool(advanced_fit)
         self.live_plot = bool(live_plot)
         self.resonator_lookup_csv = resonator_lookup_csv
@@ -283,77 +227,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.data['raw_sweep_csv'] = raw_csv_path
         self.data['raw_sweep_csv_path'] = raw_csv_path
 
-        tau_fit_frequency_hz = np.full((n_dc, n_tau), np.nan)
-        tau_fit_fwhm_hz = np.full((n_dc, n_tau), np.nan)
-        tau_fit_method = np.empty((n_dc, n_tau), dtype=object)
-        for i in range(n_dc):
-            for k in range(n_tau):
-                col = mag_dbm[:, i, k]
-                if np.isfinite(col).sum() < 7:
-                    continue
-                try:
-                    fr, fwhm, method = _extract_dip_frequency_hz(freq_hz, col)
-                except Exception:
-                    continue
-                tau_fit_frequency_hz[i, k] = fr
-                tau_fit_fwhm_hz[i, k] = fwhm
-                tau_fit_method[i, k] = method
-
-        long_time_frequency_hz = np.full(n_dc, np.nan)
-        long_time_frequency_ghz = np.full(n_dc, np.nan)
-        long_time_frequency_std_ghz = np.full(n_dc, np.nan)
-        n_valid_tau_fits = np.zeros(n_dc, dtype=int)
-        extraction_source = np.empty(n_dc, dtype=object)
         long_time_mag_dbm = np.nanmean(mag_dbm, axis=2)
-        for i in range(n_dc):
-            row = tau_fit_frequency_hz[i]
-            valid = row[np.isfinite(row)]
-            if valid.size:
-                center = float(np.nanmedian(valid))
-                mad = float(np.nanmedian(np.abs(valid - center)))
-                tol_hz = max(6e6, 5 * 1.4826 * mad)
-                keep = np.abs(valid - center) <= tol_hz
-                if not np.any(keep):
-                    keep = np.ones_like(valid, dtype=bool)
-                kept = valid[keep]
-                long_time_frequency_hz[i] = float(np.nanmean(kept))
-                long_time_frequency_ghz[i] = long_time_frequency_hz[i] / 1e9
-                long_time_frequency_std_ghz[i] = float(np.nanstd(kept) / 1e9)
-                n_valid_tau_fits[i] = int(np.count_nonzero(keep))
-                extraction_source[i] = "tau_window_mean"
-                continue
-            try:
-                fr, _fw, method = _extract_dip_frequency_hz(freq_hz, long_time_mag_dbm[:, i])
-                long_time_frequency_hz[i] = fr
-                long_time_frequency_ghz[i] = fr / 1e9
-                long_time_frequency_std_ghz[i] = np.nan
-                n_valid_tau_fits[i] = 0
-                extraction_source[i] = f"avg_map_{method}"
-            except Exception:
-                extraction_source[i] = "failed"
-
-        self.data.update({
-            'tau_fit_frequency_hz': tau_fit_frequency_hz,
-            'tau_fit_fwhm_hz': tau_fit_fwhm_hz,
-            'long_time_frequency_hz': long_time_frequency_hz,
-            'long_time_frequency_ghz': long_time_frequency_ghz,
-            'long_time_frequency_std_ghz': long_time_frequency_std_ghz,
-            'n_valid_tau_fits': n_valid_tau_fits,
-            'extraction_source': extraction_source.astype(str),
-        })
-        print(f"[{self.step_tag}] median settling flatness over flux points: "
-              f"{np.nanmedian(long_time_frequency_std_ghz) * 1e3:.3f} MHz")
-
-        if self.fit_trace:
-            try:
-                self._write_summary_csv()
-                self._write_trace_csv()
-                self._save_trace_interpolation_plot()
-                self._save_frequency_trace_plot()
-                self._draw_summary_plot(long_time_mag_dbm, fpts_mhz, plotDisp)
-            except Exception as exc:
-                print(f"[{self.step_tag}] trace plotting failed ({exc}); "
-                      f"raw_sweep CSV + pickle remain for offline analysis.")
 
         if self.advanced_fit:
             try:
@@ -365,131 +239,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.data['time'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.pickle_data()
         return {'config': cfg, 'data': self.data}
-
-    def _write_summary_csv(self):
-        import csv as _csv
-        path = os.path.splitext(self.iname)[0] + "_long_time_frequency.csv"
-        d = self.data
-        with open(path, "w", newline="") as fobj:
-            writer = _csv.DictWriter(fobj, fieldnames=[
-                "dc_offset_V", "long_time_frequency_Hz", "long_time_frequency_GHz",
-                "long_time_frequency_std_MHz", "n_valid_tau_fits", "extraction_source",
-                "park_voltage_V", "long_time_ns", "average_window_ns", "average_step_ns",
-                "readout_after_park", "park_readout_settle_ns", "post_readout_reset_ns"])
-            writer.writeheader()
-            for i, dc in enumerate(self.dc_vec):
-                f_hz = d['long_time_frequency_hz'][i]
-                std_ghz = d['long_time_frequency_std_ghz'][i]
-                writer.writerow({
-                    "dc_offset_V": float(dc),
-                    "long_time_frequency_Hz": f_hz if np.isfinite(f_hz) else np.nan,
-                    "long_time_frequency_GHz": f_hz / 1e9 if np.isfinite(f_hz) else np.nan,
-                    "long_time_frequency_std_MHz": std_ghz * 1e3 if np.isfinite(std_ghz) else np.nan,
-                    "n_valid_tau_fits": int(d['n_valid_tau_fits'][i]),
-                    "extraction_source": d['extraction_source'][i],
-                    "park_voltage_V": float(self.park_voltage),
-                    "long_time_ns": int(self.long_time_ns),
-                    "average_window_ns": self.average_window_ns,
-                    "average_step_ns": self.average_step_ns,
-                    "readout_after_park": bool(self.readout_after_park),
-                    "park_readout_settle_ns": int(self.park_readout_settle_ns),
-                    "post_readout_reset_ns": int(self.post_readout_reset_ns)})
-        self.data['summary_csv'] = path
-
-    def _write_trace_csv(self):
-        d = self.data
-        dc = np.asarray(self.dc_vec, dtype=float)
-        f_hz = np.asarray(d['long_time_frequency_hz'], dtype=float)
-        good = np.isfinite(dc) & np.isfinite(f_hz)
-        if not np.any(good):
-            return
-        path = os.path.splitext(self.iname)[0] + "_trace.csv"
-        header = ("dc_offset_V,trace_frequency_Hz,trace_frequency_GHz,"
-                  "readout_after_park,park_voltage_V,long_time_ns,"
-                  "park_readout_settle_ns,post_readout_reset_ns")
-        n = good.sum()
-        csv_data = np.column_stack([
-            dc[good], f_hz[good], f_hz[good] / 1e9,
-            np.full(n, int(self.readout_after_park)),
-            np.full(n, float(self.park_voltage)),
-            np.full(n, int(self.long_time_ns)),
-            np.full(n, int(self.park_readout_settle_ns)),
-            np.full(n, int(self.post_readout_reset_ns))])
-        np.savetxt(path, csv_data, delimiter=",", header=header, comments="")
-        self.data['trace_csv'] = path
-        self.data['trace_csv_path'] = path
-
-    def _save_trace_interpolation_plot(self):
-        d = self.data
-        dc = np.asarray(self.dc_vec, dtype=float)
-        f_ghz = np.asarray(d['long_time_frequency_ghz'], dtype=float)
-        good = np.isfinite(f_ghz)
-        if good.sum() < 4:
-            return
-        from scipy.interpolate import interp1d
-        path = os.path.splitext(self.iname)[0] + "_trace_interpolation.png"
-        order = np.argsort(dc[good])
-        xs, ys = dc[good][order], f_ghz[good][order]
-        dense = np.linspace(xs.min(), xs.max(), 1000)
-        try:
-            interp = interp1d(xs, ys, kind="cubic")
-            dense_y = interp(dense)
-        except Exception:
-            dense_y = np.interp(dense, xs, ys)
-        fig, ax = plt.subplots(constrained_layout=True)
-        ax.plot(xs, ys, "x", color="red", label="long-time frequency")
-        ax.plot(dense, dense_y, "-", color="cyan", label="cubic interpolation")
-        ax.set_xlabel("Flux DC target")
-        ax.set_ylabel("Qubit frequency [GHz]")
-        ax.set_title(f"{self.element} long-time frequency trace interpolation")
-        ax.legend(loc="best", fontsize=8)
-        fig.savefig(path, bbox_inches="tight")
-        plt.close(fig)
-        self.data['trace_interpolation_png'] = path
-
-    def _save_frequency_trace_plot(self):
-        d = self.data
-        path = os.path.splitext(self.iname)[0] + "_long_time_frequency_trace.png"
-        fig, ax = plt.subplots(constrained_layout=True)
-        ax.errorbar(self.dc_vec, d['long_time_frequency_ghz'],
-                    yerr=d['long_time_frequency_std_ghz'], fmt=".-", capsize=2)
-        ax.set_xlabel("Flux DC target")
-        ax.set_ylabel("Long-time qubit frequency [GHz]")
-        ax.set_title(f"{self.element} long-time frequency vs flux "
-                     f"(t = {self.long_time_ns / 1e3:.3g} us)")
-        fig.savefig(path, bbox_inches="tight")
-        plt.close(fig)
-        self.data['frequency_trace_png'] = path
-
-    def _draw_summary_plot(self, long_time_mag_dbm, fpts_mhz, plotDisp):
-        d = self.data
-        norm = long_time_mag_dbm - np.nanmedian(long_time_mag_dbm, axis=0, keepdims=True)
-        trace_mhz = d['long_time_frequency_ghz'] * 1e3
-        fig, axs = plt.subplots(3, 1, figsize=(9, 12), constrained_layout=True)
-        pcm = axs[0].pcolormesh(self.dc_vec, fpts_mhz, long_time_mag_dbm,
-                                shading="nearest")
-        fig.colorbar(pcm, ax=axs[0], label="Magnitude [dBm] (tau-averaged)")
-        axs[0].plot(self.dc_vec, trace_mhz, "r.-", ms=3, lw=0.8, label="extracted trace")
-        axs[0].set_xlabel("Flux DC target")
-        axs[0].set_ylabel("Probe freq [MHz]")
-        axs[0].set_title(f"{self.element} long-time spec vs flux")
-        axs[0].legend(loc="best", fontsize=8)
-        pcn = axs[1].pcolormesh(self.dc_vec, fpts_mhz, norm, shading="nearest")
-        fig.colorbar(pcn, ax=axs[1], label="Magnitude [dBm] (per-flux normalized)")
-        axs[1].plot(self.dc_vec, trace_mhz, "r.-", ms=3, lw=0.8)
-        axs[1].set_xlabel("Flux DC target")
-        axs[1].set_ylabel("Probe freq [MHz]")
-        axs[1].set_title("per-flux background removed")
-        axs[2].errorbar(self.dc_vec, d['long_time_frequency_ghz'],
-                        yerr=d['long_time_frequency_std_ghz'], fmt=".-", capsize=2)
-        axs[2].set_xlabel("Flux DC target")
-        axs[2].set_ylabel("Long-time frequency [GHz]")
-        fig.savefig(self.iname, bbox_inches="tight")
-        if plotDisp:
-            plt.show(block=False)
-            plt.pause(0.1)
-        else:
-            plt.close(fig)
 
     def _run_advanced_fit(self, mag_dbm_2d, fpts_mhz):
         dc_scaled = self.dc_vec * DAC_TO_VOLT_SCALE

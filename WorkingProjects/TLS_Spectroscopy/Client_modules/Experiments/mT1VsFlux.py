@@ -1,4 +1,5 @@
 import csv
+import os
 import time
 import datetime
 
@@ -64,7 +65,8 @@ def _compute_3pt_t1(P0, P1, Ps, Ts_ns, min_ref_contrast=0.05, max_t1_multiple=20
     P1 = np.asarray(P1, dtype=float)
     Ps = np.asarray(Ps, dtype=float)
     contrast = P1 - P0
-    valid_contrast = np.isfinite(contrast) & (np.abs(contrast) >= float(min_ref_contrast))
+    valid_contrast = np.isfinite(contrast) & (contrast >= float(min_ref_contrast))
+    inverted = np.isfinite(contrast) & (contrast <= -float(min_ref_contrast))
     denom_safe = np.where(valid_contrast, contrast, np.nan)
     pe = (Ps - P0) / denom_safe
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -77,8 +79,14 @@ def _compute_3pt_t1(P0, P1, Ps, Ts_ns, min_ref_contrast=0.05, max_t1_multiple=20
         valid_t1 &= T1_3pt_us_raw <= max_t1_us
     valid_mask = valid_contrast & valid_pe & valid_t1
     T1_3pt_us_plot = np.where(valid_mask, T1_3pt_us_raw, np.nan)
+    n_inv = int(np.count_nonzero(inverted))
+    if n_inv:
+        print(f"[3pt] {n_inv} point(s) have P1 < P0 by more than {min_ref_contrast:g}: "
+              f"the pi made the qubit look LESS excited than no pi.  That is a readout "
+              f"polarity or pi failure, not a T1, and those points are dropped.  "
+              f"(They used to pass, because the contrast test took |P1-P0|.)")
     return {"contrast": contrast, "pe": pe, "T1_3pt_us_raw": T1_3pt_us_raw,
-            "T1_3pt_us_plot": T1_3pt_us_plot,
+            "T1_3pt_us_plot": T1_3pt_us_plot, "n_sign_inverted": n_inv,
             "valid_mask": valid_mask.astype(np.int8), "max_t1_us": max_t1_us}
 
 
@@ -144,11 +152,15 @@ def _csv_base_from_pickle(pname):
 
 
 def _write_csv_rows(csv_path, fieldnames, rows):
-    with open(csv_path, "w", newline="") as f:
+    tmp = str(csv_path) + ".tmp"
+    with open(tmp, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, csv_path)
     return csv_path
 
 
@@ -223,8 +235,15 @@ def get_wall_clock_repeat_full_spec(exp):
                 "array_columns": {"population_pe": data["ss_data"]}}
     if isinstance(exp, T13PointVsFlux):
         return {"axes": {},
-                "scalar_columns": {"Ts_ns": float(int(exp.Ts_ns)),
-                                   "P0": data["P0"], "P1": data["P1"], "Ps": data["Ps"]},
+                "scalar_columns": {
+                    "Ts_ns": float(int(exp.Ts_ns)),
+                    "Ts_effective_ns": float(data["Ts_effective_ns"]),
+                    "three_point_ref_hold_us": float(data["three_point_ref_hold_us"]),
+                    "three_point_matched_refs": float(
+                        bool(data["three_point_matched_refs"])),
+                    "P0": data["P0"], "P1": data["P1"], "Ps": data["Ps"],
+                    "ref_contrast_3pt": data["ref_contrast_3pt"],
+                    "T1_3pt_valid_mask": data["T1_3pt_valid_mask"]},
                 "array_columns": {}}
     return None
 
@@ -372,8 +391,6 @@ class FFT1Program(AveragerProgram):
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
-        qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
-                                   gen_ch=cfg["qubit_ch"])
 
         self._read_freq_reg = read_freq
         add_qubit_gaussian(self)

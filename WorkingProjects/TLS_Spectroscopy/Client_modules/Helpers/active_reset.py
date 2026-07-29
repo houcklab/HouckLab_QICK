@@ -124,9 +124,14 @@ def reset_verdict(p_e_given_g, p_g_given_e, residual_g, residual_e, baseline=Non
                   max_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
                   max_floor=MAX_USABLE_FLOOR):
     floor = reset_floor(p_e_given_g, p_g_given_e)
-    worst = max(abs(float(residual_g)), abs(float(residual_e)))
+    rg, re_ = float(residual_g), float(residual_e)
+    worst = max(abs(rg), abs(re_))
     above = worst - floor if np.isfinite(floor) else float("nan")
     reasons = []
+    if not (np.isfinite(rg) and np.isfinite(re_)):
+        reasons.append(f"the end-to-end residuals are not finite (|g>={rg}, |e>={re_}), "
+                       f"so the reset was never actually verified -- refusing rather "
+                       f"than assuming it works")
     if not np.isfinite(floor) or floor > float(max_floor):
         reasons.append(f"the readout leaves a reset floor of {floor:.3f}, above the "
                        f"{float(max_floor):.2f} at which conditional reset stops being "
@@ -172,31 +177,33 @@ def trace_word_count(max_iters):
     return 1 + TRACE_WORDS_PER_ITER * int(max_iters)
 
 
+def _soccfg_section(prog, key):
+    try:
+        return list(prog.soccfg[key])
+    except (KeyError, TypeError, IndexError, AttributeError):
+        return []
+
+
 def reserved_registers(prog, page):
     reserved = {0}
     if int(page) == 0:
         reserved.update({13, 14, 15, 31})
-    for gencfg in prog.soccfg['gens']:
-        try:
-            tproc_ch = int(gencfg['tproc_ch'])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if prog._ch_page_tproc(tproc_ch) != int(page):
-            continue
-        for name in prog.pulse_registers:
-            reserved.add(prog._sreg_tproc(tproc_ch, name))
-    for rocfg in prog.soccfg['readouts']:
-        tproc_ctrl = rocfg.get('tproc_ctrl') if hasattr(rocfg, 'get') else None
-        if tproc_ctrl is None:
-            continue
-        try:
-            tproc_ctrl = int(tproc_ctrl)
-        except (TypeError, ValueError):
-            continue
-        if prog._ch_page_tproc(tproc_ctrl) != int(page):
-            continue
-        for name in prog.pulse_registers:
-            reserved.add(prog._sreg_tproc(tproc_ctrl, name))
+    for section, field in (("gens", "tproc_ch"), ("readouts", "tproc_ctrl")):
+        for entry in _soccfg_section(prog, section):
+            try:
+                tproc_ch = entry.get(field) if hasattr(entry, "get") else entry[field]
+            except (KeyError, TypeError, IndexError):
+                continue
+            if tproc_ch is None:
+                continue
+            try:
+                tproc_ch = int(tproc_ch)
+                if prog._ch_page_tproc(tproc_ch) != int(page):
+                    continue
+                for name in prog.pulse_registers:
+                    reserved.add(prog._sreg_tproc(tproc_ch, name))
+            except (TypeError, ValueError, AttributeError, KeyError):
+                continue
     return reserved
 
 
@@ -255,7 +262,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     _assert_scratch_free(prog, page, named)
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
-    clear_us = (cfg.get("reset_thermalization_us", 2.0)
+    clear_us = (cfg.get("reset_thermalization_us", 25.0)
                 if thermalization_us is None else thermalization_us)
     clear_us = float(clear_us)
     if clear_us < 0:
@@ -274,9 +281,17 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     for i in range(int(max_iters)):
         prog.measure(pulse_ch=res_ch, adcs=[ro_ch], adc_trig_offset=off,
                      wait=True, syncdelay=None)
-        if read_delay_cycles is not None:
-            adc_end = int(max(prog._adc_ts))
-            pulse_at = int(max(prog._dac_ts + prog._adc_ts)) + sync_cycles
+        adc_ts = getattr(prog, "_adc_ts", None)
+        dac_ts = getattr(prog, "_dac_ts", None)
+        if read_delay_cycles is not None and adc_ts is None and hasattr(prog, "waiti"):
+            raise RuntimeError(
+                "reset_read_delay_us was requested but this program exposes no _adc_ts "
+                "timeline, so the read delay cannot be placed safely.  The tProc read "
+                "register is one measurement stale without it.  Pass "
+                "read_delay_us=None only if you accept that.")
+        if read_delay_cycles is not None and adc_ts is not None:
+            adc_end = int(max(adc_ts))
+            pulse_at = int(max(list(dac_ts) + list(adc_ts))) + sync_cycles
             if adc_end + read_delay_cycles + gap_cycles > pulse_at:
                 room = prog.cycles2us(max(pulse_at - adc_end - gap_cycles, 0))
                 raise ValueError(
@@ -319,12 +334,15 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                        validate=True, min_raw_fidelity=0.60, min_raw_shots=200,
                        diagnostic_callback=None,
                        max_residual_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
-                       max_usable_floor=MAX_USABLE_FLOOR):
+                       max_usable_floor=MAX_USABLE_FLOOR,
+                       reset_max_iters=None):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
     cfg["shots"] = int(shots)
     cfg["reps"] = int(shots)
+    if reset_max_iters is not None:
+        cfg["reset_max_iters"] = int(reset_max_iters)
     cfg["qubit_gain"] = int(cfg.get("qubit_pi_gain", cfg.get("qubit_gain", 0)))
     try:
         probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=path,

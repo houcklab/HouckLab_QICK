@@ -119,19 +119,6 @@ class FFStepResponseSpecProgram(RAveragerProgram):
 class QubitFluxStepResponse(ExperimentClass):
 
     @staticmethod
-    def find_latest_full_range_trace_csv(outer_folder, qubit):
-        from pathlib import Path
-        qubit_dir = Path(outer_folder) / qubit
-        pattern = f"{qubit}_*_Qubit_Spec_vs_Flux_Full_Range_trace.csv"
-        if not qubit_dir.exists():
-            return None
-        candidates = list(qubit_dir.rglob(pattern))
-        if not candidates:
-            return None
-        latest = max(candidates, key=lambda path: path.stat().st_mtime)
-        return str(latest)
-
-    @staticmethod
     def find_latest_rise_decay_bump_dc_compensation_json(
         outer_folder,
         qubit,
@@ -744,6 +731,10 @@ class QubitFluxStepResponse(ExperimentClass):
             "source_png": self.iname,
             "source": self.__class__.__name__,
             "intended_use": "rise_decay_bump_set_dc_offset_tail_compensation",
+            "fit_ff_ramp_length_us": float(
+                self.cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US)),
+            "fit_dt_pulseplay_us": float(self.cfg.get("dt_pulseplay", 5.0)),
+            "fit_dt_pulsedef_us": float(self.cfg.get("dt_pulsedef", 0.002)),
             "rise_decay_bump_response_domain": self.piecewise_response_domain,
             "rise_decay_bump_desired_response": fit_result.get("desired_response", None),
             "rise_decay_bump_desired_response_level": desired_level,

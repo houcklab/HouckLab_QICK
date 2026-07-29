@@ -229,12 +229,13 @@ class ActiveResetProbe(ExperimentClass):
         print(f"  F-optimal threshold that floor is {floor:.3f}, so no number of")
         print(f"  iterations can push the residual below it.")
         try:
-            _, r_e = self._gate_residuals(cfg, fidelity_fit["threshold_raw"],
-                                          fidelity_fit["ground_below"], oper, shots)
+            r_g, r_e = self._gate_residuals(cfg, fidelity_fit["threshold_raw"],
+                                            fidelity_fit["ground_below"], oper, shots)
         except Exception as exc:
             print(f"  could not run the gate to calibrate the pi efficiency ({exc}); "
                   f"assuming {ar.DEFAULT_PI_EFFICIENCY:.2f}")
-            r_e = float("nan")
+            r_g = r_e = float("nan")
+        base_worst = max(abs(r_g), abs(r_e))
         f_pi = ar.infer_pi_efficiency(fidelity_fit["p_e_given_g"],
                                       fidelity_fit["p_g_given_e"], iters, r_e)
         if not np.isfinite(f_pi) or f_pi <= 0.05:
@@ -247,6 +248,17 @@ class ActiveResetProbe(ExperimentClass):
                                       iters=iters, pi_efficiency=f_pi)
         if best is None:
             return None
+        held_peg, held_pge = ar._threshold_rates(
+            ground_raw[::2], excited_raw[::2], best["threshold_raw"],
+            best["ground_below"])
+        best["p_e_given_g"] = held_peg
+        best["p_g_given_e"] = held_pge
+        best["fidelity"] = 1.0 - 0.5 * (held_peg + held_pge)
+        best["reset_floor"] = ar.reset_floor(held_peg, held_pge)
+        best["predicted_residual_e"], best["predicted_residual_g"] = (
+            ar.predicted_residuals(held_peg, held_pge, f_pi, iters))
+        best["predicted_worst"] = max(best["predicted_residual_e"],
+                                      best["predicted_residual_g"])
         moved = int(best["threshold_raw"]) - int(fidelity_fit["threshold_raw"])
         print(f"  reset-optimal threshold {best['threshold_raw']} ({moved:+d} from the "
               f"F-optimal one)")
@@ -266,8 +278,13 @@ class ActiveResetProbe(ExperimentClass):
             print(f"    confirmed on hardware: |g> {g_res:+.3f}, |e> {e_res:+.3f}")
             best["measured_residual_g"] = g_res
             best["measured_residual_e"] = e_res
-            if max(abs(g_res), abs(e_res)) > max(abs(r_e), best["predicted_worst"]) + 0.05:
-                print("    WORSE than the F-optimal threshold on hardware -- reverting")
+            new_worst = max(abs(g_res), abs(e_res))
+            if np.isfinite(base_worst) and new_worst > base_worst + 0.05:
+                print(f"    WORSE on hardware than the F-optimal threshold "
+                      f"({new_worst:.3f} vs {base_worst:.3f}) -- reverting")
+                return None
+            if not np.isfinite(new_worst):
+                print("    the confirmation gate returned no finite residual -- reverting")
                 return None
         except Exception as exc:
             print(f"    could not confirm on hardware ({exc}); keeping the model choice")
