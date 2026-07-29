@@ -369,6 +369,9 @@ def main():
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS
     if CAL_RES_PHASE:
+        print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
+              "single-quadrature reset; the rotated reset (the default) measures "
+              "its own projection angle every probe and does not need it.")
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
     if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,

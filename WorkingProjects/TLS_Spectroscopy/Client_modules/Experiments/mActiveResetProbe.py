@@ -369,9 +369,11 @@ class ActiveResetProbe(ExperimentClass):
         print(f"  -> active_reset_block(oper='{oper}', threshold_raw={thr}, "
               f"ground_below={ground_below})")
         if max(sep_lower, sep_upper) < 3 * max(1, min(sep_lower, sep_upper)):
-            print("  WARNING: |g> and |e> barely separate in the raw read -- discrimination "
-                  "is marginal.  Improve readout SNR / set the readout phase so the blobs "
-                  "split along one quadrature before trusting active reset.")
+            print("  WARNING: |g> and |e> barely separate on a single raw quadrature.  "
+                  "The LEGACY reset needs res_phase to put the split on one half; the "
+                  "ROTATED reset (the default) recovers the full vector separation "
+                  "regardless of angle.  If the ROTATED separation below is also small, "
+                  "the problem is readout SNR, not phase.")
         print("=" * 68)
 
         # Keep the raw threshold-training/audit distributions available to an owning
