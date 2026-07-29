@@ -290,7 +290,7 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
     sink = rot.latch_offset(shift, theta, max_abs,
                             excited_above=plan["excited_above"])
     rep = rot.separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
-    eta = data.get("pi_efficiency")
+    eta = (data.get("reset_threshold_tuning") or {}).get("pi_efficiency")
     if eta is None or not np.isfinite(eta) or eta <= 0:
         eta = PI_EFFICIENCY_GUESS
     eta = float(min(1.0, eta))
@@ -325,20 +325,38 @@ def fit_rotation(soc, soccfg, tag, verbose=True):
     return out
 
 
-def measure_residual(soc, soccfg, cfg, calib_params, label):
-    prepared = {}
+def _mean_iq(soc, soccfg, cfg, prep_excited, scheme):
+    c = dict(cfg)
+    c["prep_excited"] = bool(prep_excited)
+    c["reset_scheme"] = str(scheme)
+    prog = RotResetProgram(soccfg, c)
+    i_final, q_final = prog.acquire(soc, load_pulses=True, progress=False)
+    plt.close("all")
+    gc.collect()
+    return float(np.mean(i_final)), float(np.mean(q_final))
+
+
+def measure_refs(soc, soccfg, cfg):
+    """The |g> and |e> reference points with NO reset, in raw accumulator units.
+
+    Residuals are measured by projecting onto the g->e axis and normalising so
+    |g>=0 and |e>=1 -- the same construction the probe uses in _gate_residuals.
+    Both references go through the identical readout, so the result is a
+    population and is immune to readout fidelity.  Thresholding single shots
+    against calib_params does NOT work here: those thresholds live in the host's
+    scaled units while these buffers are raw accumulator sums.
+    """
+    ig, qg = _mean_iq(soc, soccfg, cfg, False, "none")
+    ie, qe = _mean_iq(soc, soccfg, cfg, True, "none")
+    return rot.reference_axis(ig, qg, ie, qe)
+
+
+def measure_residual(soc, soccfg, cfg, refs, label=None):
+    out = {}
     for prep in (False, True):
-        c = dict(cfg)
-        c["prep_excited"] = bool(prep)
-        prog = RotResetProgram(soccfg, c)
-        i_final, q_final = prog.acquire(soc, load_pulses=True, progress=False)
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
-            discriminate_shots)
-        assign = np.asarray(discriminate_shots(i_final, q_final, calib_params))
-        prepared["e" if prep else "g"] = float(np.mean(assign == 1))
-        plt.close("all")
-        gc.collect()
-    return prepared
+        ir, qr = _mean_iq(soc, soccfg, cfg, prep, cfg.get("reset_scheme", "none"))
+        out["e" if prep else "g"] = rot.population_from_iq(ir, qr, refs)
+    return out
 
 
 def stage2(soc, soccfg, fit, calib_params, rec):
@@ -346,6 +364,10 @@ def stage2(soc, soccfg, fit, calib_params, rec):
     if fit is None:
         print("  no rotation fit -- skipping.")
         return None
+    refs = measure_refs(soc, soccfg, base_cfg(reset_scheme="none"))
+    print(f"  |g>/|e> reference separation {refs['separation']:.0f} raw units; residuals")
+    print("  below are populations on the g->e axis (|g>=0, |e>=1), same construction")
+    print("  the probe uses -- so they are directly comparable to stage 1's numbers.")
     results = {}
     arms = [("old", {}), ("rot2", {}), ("rot3", {})]
     for scheme, _ in arms:
@@ -364,7 +386,7 @@ def stage2(soc, soccfg, fit, calib_params, rec):
                         "rot_ground_threshold": thr.get("ground_threshold"),
                         "rot_latch_sink": fit["latch_sink"]})
         t0 = time.time()
-        res = measure_residual(soc, soccfg, cfg, calib_params, scheme)
+        res = measure_residual(soc, soccfg, cfg, refs, scheme)
         results[scheme] = res
         print(f"  {scheme:5s}: residual from |g> {res['g']:.4f}   from |e> {res['e']:.4f}"
               f"   worst {max(res.values()):.4f}   ({time.time() - t0:.0f} s)")
@@ -382,6 +404,7 @@ def stage3(soc, soccfg, fit, calib_params, rec):
     arms = ["old", "rot2", "rot3"]
     acc = {a: {"g": [], "e": []} for a in arms}
     for rep in range(int(AB_REPEATS)):
+        refs = measure_refs(soc, soccfg, base_cfg(reset_scheme="none"))
         for scheme in arms:
             cfg = base_cfg(reset_scheme=scheme)
             if scheme == "old":
@@ -394,10 +417,10 @@ def stage3(soc, soccfg, fit, calib_params, rec):
                             "rot_excite_threshold": thr["excite_threshold"],
                             "rot_ground_threshold": thr.get("ground_threshold"),
                             "rot_latch_sink": fit["latch_sink"]})
-            res = measure_residual(soc, soccfg, cfg, calib_params, scheme)
+            res = measure_residual(soc, soccfg, cfg, refs, scheme)
             acc[scheme]["g"].append(res["g"])
             acc[scheme]["e"].append(res["e"])
-        print(f"    repeat {rep + 1}/{AB_REPEATS} done")
+        print(f"    repeat {rep + 1}/{AB_REPEATS} done (ref separation {refs['separation']:.0f})")
     print(f"\n  {'arm':>6} {'from|g>':>18} {'from|e>':>18} {'worst':>8}")
     summary = {}
     for scheme in arms:

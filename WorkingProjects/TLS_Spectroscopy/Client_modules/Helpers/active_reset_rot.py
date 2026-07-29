@@ -331,3 +331,25 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
         prog.sync_all(prog.us2cycles(settle_us))
     if clear_us > 0:
         prog.sync_all(prog.us2cycles(clear_us))
+
+
+def reference_axis(ig, qg, ie, qe):
+    """Normalising axis for population measurements, from |g> and |e> references.
+
+    Residuals are read off by projecting onto the g->e vector and scaling so
+    |g> = 0 and |e> = 1.  Both references pass through the same readout, so the
+    result is a population and does not depend on readout fidelity.  Units cancel,
+    so raw accumulator sums work directly -- which host-unit single-shot
+    thresholds do NOT, being a factor ~1e4 away from the raw buffers.
+    """
+    dx, dy = float(ie) - float(ig), float(qe) - float(qg)
+    denom = dx * dx + dy * dy
+    if not np.isfinite(denom) or denom <= 0:
+        raise ValueError("the |g> and |e> reference points coincide")
+    return {"ig": float(ig), "qg": float(qg), "dx": dx, "dy": dy, "denom": denom,
+            "separation": float(np.hypot(dx, dy))}
+
+
+def population_from_iq(ir, qr, axis):
+    return float(((float(ir) - axis["ig"]) * axis["dx"]
+                  + (float(qr) - axis["qg"]) * axis["dy"]) / axis["denom"])

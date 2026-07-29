@@ -446,3 +446,52 @@ def test_latch_sign_is_checked_against_the_projection_orientation(theta_deg):
             prog, ro_ch=0, c_int=c, s_int=s, excite_threshold=0.0,
             ground_threshold=(-1.0 if plan["excited_above"] else 1.0),
             latch_sink=wrong, read_delay_us=None)
+
+
+def _synth_reader(seed=0, n=4000, sigma=7000.0,
+                  ig=-794.0, qg=-3606.0, ie=-22182.0, qe=2512.0):
+    """Raw-accumulator reader matching the measured q4 geometry."""
+    rng = np.random.default_rng(seed)
+
+    def read_mean(p_excited):
+        exc = rng.random(n) < p_excited
+        i = np.where(exc, ie, ig) + rng.normal(0, sigma, n)
+        q = np.where(exc, qe, qg) + rng.normal(0, sigma, n)
+        return float(np.mean(i)), float(np.mean(q))
+    return read_mean
+
+
+@pytest.mark.parametrize("p_true", [0.0, 0.031, 0.103, 0.143, 0.3, 0.6, 1.0])
+def test_population_from_iq_recovers_the_true_population(p_true):
+    read = _synth_reader()
+    axis = rot.reference_axis(*read(0.0), *read(1.0))
+    assert rot.population_from_iq(*read(p_true), axis) == pytest.approx(p_true, abs=0.02)
+
+
+def test_population_measurement_is_immune_to_readout_fidelity():
+    """The whole point of normalising against measured references: halving the
+    blob separation must not change the recovered population."""
+    out = []
+    for sigma in (3000.0, 7000.0, 14000.0):
+        read = _synth_reader(sigma=sigma)
+        axis = rot.reference_axis(*read(0.0), *read(1.0))
+        out.append(rot.population_from_iq(*read(0.15), axis))
+    assert max(out) - min(out) < 0.04, out
+
+
+def test_reference_axis_rejects_coincident_references():
+    with pytest.raises(ValueError):
+        rot.reference_axis(1.0, 2.0, 1.0, 2.0)
+
+
+def test_raw_units_defeat_host_scale_thresholds():
+    """Regression guard for the stage-2 bug: single-shot thresholds from the host
+    calibration are ~1e4 away from raw accumulator sums, so thresholding raw
+    buffers against them returns a number near 0.6 regardless of the truth."""
+    read = _synth_reader()
+    axis = rot.reference_axis(*read(0.0), *read(1.0))
+    host_threshold = 2.635
+    for p in (0.03, 0.15, 0.60):
+        ir, _ = read(p)
+        assert abs(ir) > 100 * abs(host_threshold)
+        assert rot.population_from_iq(*read(p), axis) == pytest.approx(p, abs=0.03)
