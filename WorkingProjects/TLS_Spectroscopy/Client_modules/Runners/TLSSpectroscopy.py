@@ -294,6 +294,15 @@ def _dc_vec(p):
     return np.arange(p["dc_min"], p["dc_max"], p["dc_step"])
 
 
+def _step6_dc_vec(p):
+    if p.get("freq_step_mhz", None) is None:
+        return _dc_vec(p)
+    if FLUX_FIT_PARAMS is None:
+        raise RuntimeError("Step 6 freq_step_mhz needs FLUX_FIT_PARAMS: run step 2 "
+                           "and paste the printed values at the top of this file.")
+    return _build_freq_uniform_dc_vec(p)
+
+
 def _freq_vec_mhz(p):
     v = np.arange(p["freq_min"], p["freq_max"], p["freq_step"])
     if v.size == 0:
@@ -722,12 +731,15 @@ def _run_one_stop_t1(factory, wall_clock_s):
             exp.acquire(progress=True)
         except KeyboardInterrupt:
             print(f"  [6] interrupted after {completed} completed run(s); "
-                  f"the one-stop CSV holds everything up to here.")
+                  + (f"the one-stop CSV holds them: {csv_path}" if csv_path
+                     else "NOTHING was written -- this pass is lost."))
             break
         except Exception as exc:
             consecutive_failures += 1
             print(f"  [6] run {run_index + 1} FAILED ({type(exc).__name__}: "
                   f"{str(exc)[:160]})")
+            if wall_clock_s is None:
+                raise
             if consecutive_failures >= MAX_CONSECUTIVE_RUN_FAILURES:
                 print(f"  [6] {consecutive_failures} consecutive failures -- stopping.  "
                       f"The one-stop CSV holds the {completed} run(s) that succeeded.")
@@ -765,6 +777,9 @@ def _run_one_stop_t1(factory, wall_clock_s):
         })
         csv_path = save_wall_clock_repeat_full_outputs(base_path, spec["file_tag"], per_run_full_data)
         print(f"  [6] one-stop CSV updated after run {run_index + 1}: {csv_path}")
+        if exp.data.get("interrupted"):
+            print("  [6] that pass was interrupted; stopping the series.")
+            break
         run_index += 1
         if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
             break
@@ -809,7 +824,14 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
                                  shots=int(p.get("reset_probe_shots", 2000)),
                                  reset_max_iters=int(p.get("reset_max_iters", 3)))
         if rec is None:
+            extra_us = (T1_RESET_BACKSTOP_US - T1_FEEDBACK_RELAX_US) * 1e-6
+            n_pts = int(p.get("_projected_points", 0)) * int(p["shots"])
             print("[6] no feedback discrimination this session -- using passive relax.")
+            if n_pts:
+                print(f"[6] WARNING: that downgrade costs {extra_us:g} s of extra relax "
+                      f"per shot.  Over {n_pts:,} shots that is "
+                      f"{n_pts * extra_us / 3600:.1f} h ADDED to this scan.  "
+                      f"Ctrl-C now if that is not acceptable.")
             p["reset_mode"] = "passive"
         else:
             p["reset_threshold_raw"] = int(rec["threshold_raw"])
@@ -833,15 +855,10 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
 def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
-    p = _resolve_step6_reset(dict(P6_3PT_T1), soc, soccfg, outer_folder)
-    freq_step_mhz = p.get("freq_step_mhz", None)
-    if freq_step_mhz is not None:
-        if FLUX_FIT_PARAMS is None:
-            raise RuntimeError("Step 6 freq_step_mhz needs FLUX_FIT_PARAMS: run step 2 "
-                               "and paste the printed values at the top of this file.")
-        dc_vec = _build_freq_uniform_dc_vec(p)
-    else:
-        dc_vec = _dc_vec(p)
+    p = dict(P6_3PT_T1)
+    dc_vec = _step6_dc_vec(p)
+    p["_projected_points"] = len(dc_vec) * 3
+    p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
     flux_tail_compensation = _load_correction(correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
     print(f"[6] 3-point T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "
@@ -874,15 +891,10 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
 def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
-    p = _resolve_step6_reset(dict(P6_FULL_T1), soc, soccfg, outer_folder)
-    freq_step_mhz = p.get("freq_step_mhz", None)
-    if freq_step_mhz is not None:
-        if FLUX_FIT_PARAMS is None:
-            raise RuntimeError("Step 6 freq_step_mhz needs FLUX_FIT_PARAMS: run step 2 "
-                               "and paste the printed values at the top of this file.")
-        dc_vec = _build_freq_uniform_dc_vec(p)
-    else:
-        dc_vec = _dc_vec(p)
+    p = dict(P6_FULL_T1)
+    dc_vec = _step6_dc_vec(p)
+    p["_projected_points"] = len(dc_vec) * int(p.get("t_points_default", 41))
+    p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
     flux_tail_compensation = _load_correction(correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
     print(f"[6] Full T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "

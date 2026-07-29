@@ -22,9 +22,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 QUBIT = "q4"
 
 DC_POINTS = 6
-SHOTS = 300
+SHOTS = 1000
 SHOTS_3PT = 2000
-T_POINTS = 11
+T_POINTS = 15
 T_MIN_US = 1.0
 FIXED_TMAX_US = 1500.0
 AUTO_TMAX_FACTOR = 3.0
@@ -35,7 +35,7 @@ PROBE_LONG_US = 2500.0
 PROBE_T_POINTS = 31
 PROBE_SHOTS = 500
 
-DECIMATIONS = [11, 9, 7, 5]
+DECIMATIONS = [15, 13, 11, 9, 7]
 
 SS_SHOTS = 1000
 SS_GROUND_THRESHOLD = 0.7
@@ -329,22 +329,45 @@ def run():
         print("  the decay asymptote this ratio is 1.00; a simulated cross-check of the")
         print("  two implementations agrees to 0.5%, so any real offset is physics.")
         offset_sig = abs(wmean - 1.0) / max(werr, 1e-12)
+        same_side = int(np.sum(ratios < 1.0))
+        one_sided = same_side == dof or same_side == 0
+        print(f"  {same_side}/{dof} points fall below 1.0 "
+              f"(one-sided by chance: p = {2.0 ** (1 - dof):.3f})")
+        P0 = np.asarray(exp3.data["P0"], dtype=float)
+        pe_last = ss1[:, -1]
+        print("\n  Where the 3-point floor sits versus the decay's own floor:")
+        print(f"  {'dc':>8} {'P0 (3pt ref)':>13} {'pe at t_max':>12} {'excess':>9}")
+        excess = []
+        for i, d in enumerate(dc_vec):
+            ex = P0[i] - pe_last[i] if np.isfinite(P0[i]) else np.nan
+            if np.isfinite(ex):
+                excess.append(ex)
+            print(f"  {d:8.0f} {P0[i]:13.3f} {pe_last[i]:12.3f} {ex:+9.3f}")
+        mean_excess = float(np.mean(excess)) if excess else np.nan
+        print(f"\n  mean excess = {mean_excess:+.3f}")
+        print("  The 3-point estimator assumes the decay settles to P0.  The full curve's")
+        print("  longest delay shows where it actually settles.  A positive excess means")
+        print("  P0 sits ABOVE the true floor, the estimator over-subtracts, and it reads")
+        print("  T1 systematically SHORT.  This is the reset residual leaking into the")
+        print("  reference, and it grows as the reset degrades.")
         if chi2 / dof < 2.0 and offset_sig < 3.0:
-            print(f"  -> agreed.  The 3-point sweep at Ts = {Ts_US:g} us measures the same")
+            print(f"\n  -> agreed.  The 3-point sweep at Ts = {Ts_US:g} us measures the same")
             print("     T1 the full fit does, and it is the method to run for 2-3 days.")
-        elif offset_sig >= 3.0 and chi2 / dof < 3.0:
-            print(f"  -> a consistent {100 * (wmean - 1):+.1f}% offset at "
-                  f"{offset_sig:.1f} sigma, with the scatter otherwise explained.")
-            print("     That is not noise.  It means the P0 reference is not the level the")
-            print("     decay actually settles to -- the reset residual at the reference")
-            print("     differs from the residual after the flux excursion.  The full curve")
-            print("     fits its own floor and is immune; the 3-point method is not.")
-            print("     Either keep the full curve, or re-check three_point_matched_refs.")
+        elif offset_sig >= 3.0 and one_sided:
+            print(f"\n  -> a one-sided {100 * (wmean - 1):+.1f}% offset at "
+                  f"{offset_sig:.1f} sigma.  Every point falls the same way, so this is")
+            print(f"     a BIAS, not scatter -- the chi2/dof of {chi2 / dof:.1f} is inflated by")
+            print("     the full curve's own underestimated error bars, not by disagreement")
+            print("     in sign.  Read the excess column above: if it is positive and")
+            print("     comparable to the offset, the reset residual is the cause and the")
+            print("     3-point method is not trustworthy until the reset is fixed.")
+            print("     The full curve fits its own floor and is immune to this specific")
+            print("     error -- but see stage 5 for whether it is reproducible.")
         else:
-            print(f"  -> scatter exceeds the error bars (chi2/dof = {chi2 / dof:.1f}).")
-            print("     Either T1 moved between the two sweeps, or the disagreement is")
-            print("     flux-dependent.  Look at which DC points drive it before")
-            print("     concluding anything about the method.")
+            print(f"\n  -> scatter exceeds the error bars (chi2/dof = {chi2 / dof:.1f}) and the")
+            print("     offsets are not one-sided.  Either T1 moved between the two sweeps")
+            print("     or the disagreement is flux-dependent.  Check stage 5's")
+            print("     pass-to-pass reproducibility before blaming either method.")
     else:
         print("\n  no DC point was usable in both methods.")
 
@@ -365,8 +388,11 @@ def run():
         worst = np.nanmax(dev) if np.any(np.isfinite(dev)) else np.nan
         print(f"  {npts:7d} {t_vec1[idx].max():9.1f} {row} {100 * worst:8.1f}%")
     print(f"\n  'max dev' is the worst fractional change vs the {len(t_vec1)}-point fit.")
-    print("  The smallest grid whose deviation stays under a few percent is the")
-    print("  one to use -- runtime scales almost linearly with the point count.")
+    print("  Runtime scales almost linearly with the point count, so the smallest grid")
+    print("  whose deviation stays under a few percent is the one to use.  But read it")
+    print(f"  the other way too: if dropping {len(t_vec1)} -> {len(t_vec1) - 2} already moves T1 by more")
+    print(f"  than the fit errors in stage 2, then {len(t_vec1)} points is not enough either and")
+    print("  the number needs to go UP, not down.")
 
     banner("STAGE 5 -- second pass, and the one-stop wall-clock CSV")
     print("  A 2-3 day run repeats the pass.  With t_max fixed both passes must use")
@@ -390,11 +416,31 @@ def run():
                  and np.allclose(t_vec1, t_vec2, rtol=0, atol=1e-6))
     print(f"  identical grids: {same_grid} "
           f"({'as expected with a fixed t_max' if same_grid else 'UNEXPECTED'})")
-    print(f"\n  {'dc':>8} {'pass1':>9} {'pass2':>9} {'diff':>9} {'sigma':>7}")
+    print(f"\n  {'dc':>8} {'pass1':>9} {'pass2':>9} {'diff':>9} {'sigma':>7} {'ratio':>7}")
+    sigs, rats = [], []
     for i, d in enumerate(dc_vec):
         diff = T1_full2[i] - T1_full1[i]
         sig = abs(diff) / max(np.hypot(err_full1[i], err_full2[i]), 1e-12)
-        print(f"  {d:8.0f} {T1_full1[i]:9.1f} {T1_full2[i]:9.1f} {diff:+9.1f} {sig:7.1f}")
+        rat = (max(T1_full1[i], T1_full2[i]) / max(min(T1_full1[i], T1_full2[i]), 1e-9)
+               if min(T1_full1[i], T1_full2[i]) > 0 else np.nan)
+        if np.isfinite(sig):
+            sigs.append(sig)
+        if np.isfinite(rat):
+            rats.append(rat)
+        print(f"  {d:8.0f} {T1_full1[i]:9.1f} {T1_full2[i]:9.1f} {diff:+9.1f} "
+              f"{sig:7.1f} {rat:7.2f}")
+    if sigs:
+        rms = float(np.sqrt(np.mean(np.square(sigs))))
+        print(f"\n  rms pass-to-pass deviation = {rms:.1f} sigma "
+              f"(1.0 if the error bars were honest)")
+        print(f"  worst pass-to-pass ratio    = {max(rats):.2f}x")
+        if rms > 1.5:
+            print("  -> the quoted fit errors UNDERSTATE the real run-to-run spread by")
+            print(f"     about {rms:.1f}x.  Whatever the full curve reports, trust it only")
+            print(f"     to a factor of ~{max(rats):.1f} at these settings.  Raise shots or")
+            print("     delay points before using it as a reference for anything.")
+        else:
+            print("  -> the error bars are consistent with the observed reproducibility.")
 
     per_run = []
     for exp, md in ((full1, md0), (full2, md1)):
@@ -425,12 +471,14 @@ def run():
     per_dc = acq1_s / max(len(dc_vec), 1)
     print(f"  measured {per_dc:.1f} s per DC point at {T_POINTS} delays, {SHOTS} shots")
     print(f"  production is {n_prod} DC points at 2000 shots:")
-    full_h = n_prod * per_dc * (2000.0 / SHOTS) / 3600
     tpt_h = n_prod * (acq3_s / max(len(dc_vec), 1)) * (2000.0 / SHOTS_3PT) / 3600
-    print(f"    one full-curve pass  ~ {full_h:.1f} h")
-    print(f"    one 3-point pass     ~ {tpt_h:.2f} h")
-    print(f"    over 60 h that is ~{60 / max(full_h, 1e-9):.0f} full-curve passes "
-          f"or ~{60 / max(tpt_h, 1e-9):.0f} 3-point passes")
+    for npts in sorted({T_POINTS, 41}):
+        full_h = (n_prod * per_dc * (2000.0 / SHOTS) * (npts / T_POINTS)) / 3600
+        tag = "  <- P6_FULL_T1 t_points_default" if npts == 41 else ""
+        print(f"    one full-curve pass at {npts:2d} delays ~ {full_h:5.1f} h"
+              f"  ({60 / max(full_h, 1e-9):4.0f} passes in 60 h){tag}")
+    print(f"    one 3-point pass              ~ {tpt_h:5.2f} h"
+          f"  ({60 / max(tpt_h, 1e-9):4.0f} passes in 60 h)")
     print()
     print("  Set in P6_FULL_T1 before the real run:")
     if probe_ok:

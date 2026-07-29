@@ -36,7 +36,7 @@ BaseConfig = {
     "qubit_freq": 2534.350291,
     "qubit_pi_freq": 2534.350291,
     "qubit_pi_gain": 5850,
-    "qubit_pi2_gain": 2895,
+    "qubit_pi2_gain": 2925,
     "qubit_drag_beta": 0.0,
     "qubit_anharmonicity_mhz": -200.0,
     "qubit_gain": 5850,

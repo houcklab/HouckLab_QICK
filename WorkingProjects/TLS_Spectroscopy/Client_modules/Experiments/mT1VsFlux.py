@@ -105,7 +105,9 @@ def _exp_decay_model(t, P0, P1, T1):
     return P0 + (P1 - P0) * np.exp(-t / T1)
 
 
-def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
+def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False,
+                min_contrast=0.05, max_t1_multiple=2.0, max_err_fraction=0.5,
+                return_diagnostics=False):
     from scipy.optimize import curve_fit
     ss = np.asarray(ss, dtype=float)
     t_us = np.asarray(t_us, dtype=float)
@@ -113,6 +115,8 @@ def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
     T1_fit = np.full(n_dc, np.nan)
     T1_err = np.full(n_dc, np.nan)
     fit_ok = np.zeros(n_dc, dtype=np.int8)
+    contrast = np.full(n_dc, np.nan)
+    reject = np.zeros(n_dc, dtype=np.int8)
     lo, hi = fit_clip
     for i in range(n_dc):
         y = ss[i, :]
@@ -141,9 +145,24 @@ def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
             T1_fit[i] = popt[2]
             err = np.sqrt(pcov[2, 2]) if np.isfinite(pcov[2, 2]) else np.nan
             T1_err[i] = err
-            fit_ok[i] = 1
+            contrast[i] = float(popt[1] - popt[0])
+            span = float(np.nanmax(t_fit))
+            if not np.isfinite(popt[2]):
+                reject[i] = 1
+            elif contrast[i] <= 0:
+                reject[i] = 2
+            elif contrast[i] < float(min_contrast):
+                reject[i] = 3
+            elif popt[2] > float(max_t1_multiple) * span:
+                reject[i] = 4
+            elif np.isfinite(err) and err > float(max_err_fraction) * popt[2]:
+                reject[i] = 5
+            fit_ok[i] = 0 if reject[i] else 1
         except Exception:
             continue
+    if return_diagnostics:
+        return T1_fit, T1_err, fit_ok, {"fit_contrast": contrast,
+                                        "reject_code": reject}
     return T1_fit, T1_err, fit_ok
 
 
@@ -227,7 +246,8 @@ def get_wall_clock_repeat_full_spec(exp):
     data = exp.data
     if isinstance(exp, T1FullCurveVsFlux):
         scalar_columns = {}
-        for key in ("T1_fit_err_us", "inv_T1_fit_err_per_us", "fit_success"):
+        for key in ("T1_fit_err_us", "inv_T1_fit_err_per_us", "fit_success",
+                    "fit_contrast", "fit_reject_code"):
             if key in data:
                 scalar_columns[key] = data[key]
         return {"axes": {"delay_time_us": np.asarray(data["t_vec_ns"], dtype=float) / 1e3},
@@ -555,6 +575,7 @@ class _T1VsFluxBase(ExperimentClass):
         n_groups = n // group_size
         exc = np.zeros(n)
         kept = np.zeros(n)
+        self._partial = (exc, kept)
         saved_shots = self.cfg.get("shots")
         reps_per_round = split_reps(shots, rounds)
         nz_rounds = sum(1 for reps in reps_per_round if reps > 0)
@@ -758,8 +779,11 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
 
     def __init__(self, *args, auto_tmax_factor=3.0, T1_probe_cfg=None,
                  t_min_ns_default=1000.0, t_points_default=41, t_max_ns=None,
-                 fit_clip=(0.0, 1.0), require_monotone=False, **kw):
+                 fit_clip=(0.0, 1.0), require_monotone=False,
+                 min_contrast=0.05, max_t1_multiple=20.0, **kw):
         super().__init__(*args, **kw)
+        self.min_contrast = float(min_contrast)
+        self.max_t1_multiple = float(max_t1_multiple)
         self.auto_tmax_factor = float(auto_tmax_factor)
         self.T1_probe_cfg = T1_probe_cfg
         self.t_min_ns_default = float(t_min_ns_default)
@@ -784,7 +808,17 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
             print(f"[FIXED t_vec] t_max={t_max / 1e3:.3g} us, points={len(t_vec_ns)} "
                   f"(park-T1 probe skipped)")
         else:
+            probe_window_us = float(dict(self.T1_probe_cfg or {}).get("t_max_us", 300.0))
             T1_us = self._park_T1_probe(self.T1_probe_cfg, "AUTO t_vec")
+            if T1_us > probe_window_us:
+                raise RuntimeError(
+                    f"Park T1 probe returned {T1_us:.3g} us from a window that only "
+                    f"reaches {probe_window_us:g} us, so the decay was never observed "
+                    f"and the fit is an extrapolation.  t_max would be set to "
+                    f"{self.auto_tmax_factor * T1_us:.3g} us for every shot of the "
+                    f"whole scan.  Refusing.  Either widen T1_probe_cfg['t_max_us'] "
+                    f"past the real park T1, or set t_max_us explicitly to skip the "
+                    f"probe.")
             t_max = self.auto_tmax_factor * T1_us * 1e3
             t_vec_ns = np.logspace(np.log10(t_min), np.log10(max(t_max, t_min * 2)),
                                    self.t_points_default)
@@ -816,8 +850,18 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                 specs.append((float(dc), float(t), True, True))
                 index_map.append((i, k))
                 valid[i, k] = 1
-        pe = self._interleaved_populations(
-            specs, start_time=start_time if progress else None)
+        try:
+            pe = self._interleaved_populations(
+                specs, start_time=start_time if progress else None)
+            self.data["interrupted"] = False
+        except KeyboardInterrupt:
+            exc_a, kept_a = self._partial
+            with np.errstate(invalid="ignore", divide="ignore"):
+                pe = np.where(kept_a > 0, exc_a / kept_a, np.nan)
+            self.data["interrupted"] = True
+            print(f"\n[6] interrupted mid-pass -- fitting and saving the partial map "
+                  f"({int(np.sum(kept_a > 0))}/{len(specs)} points have shots).",
+                  flush=True)
         for (i, k), val in zip(index_map, pe):
             ss[i, k] = val
         self._finish_acquire(ss, valid, t_us)
@@ -831,12 +875,27 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
 
     def _finish_acquire(self, ss, valid, t_us):
         self.data["ss_data"] = ss
-        T1_fit, T1_err, fit_ok = _fit_T1_map(ss, t_us, fit_clip=self.fit_clip,
-                                             require_monotone=self.require_monotone)
+        T1_fit, T1_err, fit_ok, diag = _fit_T1_map(
+            ss, t_us, fit_clip=self.fit_clip, require_monotone=self.require_monotone,
+            min_contrast=self.min_contrast, max_t1_multiple=self.max_t1_multiple,
+            return_diagnostics=True)
         inv, inv_err = _safe_inverse_t1_us(T1_fit, T1_err)
         self.data.update({"T1_fit_us": T1_fit, "T1_fit_err_us": T1_err,
                           "inv_T1_fit_per_us": inv, "inv_T1_fit_err_per_us": inv_err,
-                          "fit_success": fit_ok})
+                          "fit_success": fit_ok,
+                          "fit_contrast": diag["fit_contrast"],
+                          "fit_reject_code": diag["reject_code"]})
+        n_bad = int(np.sum(diag["reject_code"] > 0))
+        if n_bad:
+            labels = {1: "non-finite T1", 2: "sign-inverted (rising) trace",
+                      3: f"contrast below {self.min_contrast:g}",
+                      4: f"T1 beyond {self.max_t1_multiple:g}x the measured window",
+                      5: "fit error above half the fitted T1"}
+            counts = {c: int(np.sum(diag["reject_code"] == c))
+                      for c in sorted(set(diag["reject_code"].tolist())) if c}
+            detail = ", ".join(f"{labels[c]}: {n}" for c, n in counts.items())
+            print(f"[full-curve fit] rejected {n_bad}/{len(T1_fit)} DC points ({detail}).  "
+                  f"They are flagged fit_success=0 in the CSV, not silently averaged in.")
         if self.write_outputs:
             base = _csv_base_from_pickle(self.pname)
             dc_vec = self.dc_vec
@@ -881,7 +940,9 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                 "T1_fit_err_us": self.data["T1_fit_err_us"],
                 "inv_T1_fit_per_us": self.data["inv_T1_fit_per_us"],
                 "inv_T1_fit_err_per_us": self.data["inv_T1_fit_err_per_us"],
-                "fit_success": self.data["fit_success"]}
+                "fit_success": self.data["fit_success"],
+                "fit_contrast": self.data["fit_contrast"],
+                "fit_reject_code": self.data["fit_reject_code"]}
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
