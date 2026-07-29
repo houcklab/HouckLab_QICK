@@ -342,8 +342,9 @@ def test_asm_rejects_register_collision_with_pulse_registers():
     with pytest.raises(ValueError):
         rot.active_reset_rot_block(
             prog, ro_ch=0, c_int=1, s_int=0, excite_threshold=10, ground_threshold=0,
-            latch_sink=-10 ** 9, regs={"reg_i": 21, "reg_q": 2, "reg_ground": 3,
-                                       "reg_excite": 4, "reg_latch": 5},
+            latch_sink=-10 ** 9, three_zone=True, use_latch=True,
+            regs={"reg_i": 21, "reg_q": 2, "reg_ground": 3,
+                  "reg_excite": 4, "reg_latch": 5},
             read_delay_us=None)
 
 
@@ -359,7 +360,7 @@ def test_block_rejects_inverted_zone_order():
     with pytest.raises(ValueError, match="ground_threshold"):
         rot.active_reset_rot_block(prog, ro_ch=0, c_int=1, s_int=0, excite_threshold=10,
                                    ground_threshold=99, latch_sink=-10 ** 9,
-                                   read_delay_us=None)
+                                   three_zone=True, use_latch=True, read_delay_us=None)
 
 
 @pytest.mark.parametrize("theta_deg", np.arange(-180, 181, 15).tolist())
@@ -445,7 +446,7 @@ def test_latch_sign_is_checked_against_the_projection_orientation(theta_deg):
         rot.active_reset_rot_block(
             prog, ro_ch=0, c_int=c, s_int=s, excite_threshold=0.0,
             ground_threshold=(-1.0 if plan["excited_above"] else 1.0),
-            latch_sink=wrong, read_delay_us=None)
+            latch_sink=wrong, three_zone=True, use_latch=True, read_delay_us=None)
 
 
 def _synth_reader(seed=0, n=4000, sigma=7000.0,
@@ -495,3 +496,23 @@ def test_raw_units_defeat_host_scale_thresholds():
         ir, _ = read(p)
         assert abs(ir) > 100 * abs(host_threshold)
         assert rot.population_from_iq(*read(p), axis) == pytest.approx(p, abs=0.03)
+
+
+def test_latch_and_three_zone_default_off():
+    """Measured 2026-07-29: the latch costs 0.078 on the |e> branch at 3.9 sigma,
+    isolated against a three-zone arm with the latch disabled.  Defaults must not
+    silently re-enable it."""
+    import inspect
+    sig = inspect.signature(rot.active_reset_rot_block)
+    assert sig.parameters["use_latch"].default is False
+    assert sig.parameters["three_zone"].default is False
+
+
+def test_two_zone_is_reachable_with_only_an_excite_threshold():
+    """The validated configuration must need nothing but c/s and one threshold."""
+    prog = MockProgram(max_iters=3)
+    rot.active_reset_rot_block(prog, ro_ch=0, c_int=-991, s_int=259,
+                               excite_threshold=-13000, read_delay_us=None)
+    n, _ = interpret(prog.asm, [(-20000, 2000)] * 3, -991, 259)
+    assert n == 3
+    assert sum(1 for op in prog.asm if op[0] == "measure") == 3

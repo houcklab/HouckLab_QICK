@@ -3,6 +3,24 @@ import numpy as np
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
 
 
+# MEASURED 2026-07-29, q4, 4 interleaved repeats (Runners/ResetRotationDev.py):
+#
+#   old (1 quadrature)        residual from |e>  0.1349 +/- 0.0063
+#   rot2 (rotated, 2 zones)                      0.1256 +/- 0.0192   +0.4 sigma vs old
+#   rot3nl (3 zones, no latch)                   0.1419 +/- 0.0163   -0.7 sigma vs rot2
+#   rot3 (3 zones + latch)                       0.2203 +/- 0.0082   -3.9 sigma vs rot3nl
+#
+# The rotation is validated: rot2 matches the production reset on an aligned
+# readout, and stage 4 measured 1.44x more separation at the exact diagonal
+# (14679 vs 14506 across the two halves) where one quadrature loses sqrt(2).
+#
+# The LATCH is not.  rot3nl isolates the extra branching and costs nothing, so
+# the 3.9 sigma penalty is the latch itself.  A false latch is unrecoverable --
+# it pins the qubit in |e> for the remaining iterations -- and the threshold is
+# fitted on out-of-loop statistics but applied in-loop, 4 us after the previous
+# readout with the resonator still ringing down, where the distribution differs.
+# Hence use_latch/three_zone default to False.  Turn them on only with a
+# ground threshold fitted on IN-LOOP shots.
 INT32_MAX = 2 ** 31 - 1
 DEFAULT_HEADROOM = 4.0
 LATCH_RESERVE = 4.0
@@ -149,13 +167,19 @@ def simulate_reset(a_g, b_g, a_e, b_e, pi_efficiency, iters, start="g"):
     return float(el + ez)
 
 
+def _threshold_grid(pg, pe, n):
+    pooled = np.concatenate([np.asarray(pg, dtype=np.float64),
+                             np.asarray(pe, dtype=np.float64)])
+    qs = np.quantile(pooled, np.linspace(0.0, 1.0, int(n)))
+    return np.unique(qs)
+
+
 def choose_thresholds(proj_g, proj_e, iters=3, pi_efficiency=ar.DEFAULT_PI_EFFICIENCY,
-                      n_candidates=121, three_zone=True):
+                      n_candidates=801, three_zone=True):
     pg = np.asarray(proj_g, dtype=np.float64)
     pe = np.asarray(proj_e, dtype=np.float64)
-    lo = float(min(pg.min(), pe.min()))
-    hi = float(max(pg.max(), pe.max()))
-    cands = np.linspace(lo, hi, int(n_candidates))
+    cands = _threshold_grid(pg, pe, n_candidates if not three_zone
+                            else min(int(n_candidates), 161))
     best = None
     for excite_thr in cands:
         b_g, b_e = float(np.mean(pg >= excite_thr)), float(np.mean(pe >= excite_thr))
@@ -195,7 +219,7 @@ def scratch_registers(base=1):
 def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
                            c_int=None, s_int=None, excite_threshold=None,
                            ground_threshold=None, latch_sink=None, max_iters=3,
-                           use_latch=True, three_zone=True, regs=None,
+                           use_latch=False, three_zone=False, regs=None,
                            adc_trig_offset_us=None, settle_us=None,
                            meas_syncdelay_us=None, thermalization_us=None,
                            page=None, read_delay_us=None, trace_base_addr=None):

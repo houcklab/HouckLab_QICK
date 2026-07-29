@@ -17,14 +17,21 @@ def main():
     bench = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mResetBench")
     R = importlib.import_module(
-        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ResetRotationDev")
-    truth = reset_sim.install_bench(bench, rot)
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ResetRotationDrift")
+    seed = int(os.environ.get("RESET_SIM_SEED", "7"))
+    truth = reset_sim.TruthState(seed=seed)
+    truth.drift_deg_amp = 30.0
+    truth.drift_period_ticks = 120.0
+    truth.sep_wobble = 0.03
+    reset_sim.install_bench(bench, rot, truth=truth)
     reset_sim.install_runner_common(R)
-    reset_sim.install_dev_arith(R)
-    truth.base_res_phase = float(R.BaseConfig.get("res_phase", 0.0))
-    truth.res_phase_getter = lambda: R.BaseConfig.get("res_phase", 0.0)
-    R.AB_REPEATS = 2
-    R.PHASE_OFFSETS_DEG = [0.0, 45.0]
+    print(f"simulated instrument: seed {seed}, angle drift amplitude "
+          f"{truth.drift_deg_amp:g} deg, period {truth.drift_period_ticks:g} ticks, "
+          f"separation wobble {truth.sep_wobble:g}")
+    R.DURATION_MIN = 0.0
+    R.MIN_CYCLES = 24
+    R.MINI_SHOTS = 4000
+    R.ARM_SHOTS = 4000
     R.main()
     print("\n=== DRY RUN COMPLETED WITHOUT ERROR ===")
 

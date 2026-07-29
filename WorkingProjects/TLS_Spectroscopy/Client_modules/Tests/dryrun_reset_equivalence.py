@@ -17,14 +17,18 @@ def main():
     bench = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mResetBench")
     R = importlib.import_module(
-        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ResetRotationDev")
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ResetRotationEquivalence")
     truth = reset_sim.install_bench(bench, rot)
     reset_sim.install_runner_common(R)
-    reset_sim.install_dev_arith(R)
     truth.base_res_phase = float(R.BaseConfig.get("res_phase", 0.0))
     truth.res_phase_getter = lambda: R.BaseConfig.get("res_phase", 0.0)
-    R.AB_REPEATS = 2
-    R.PHASE_OFFSETS_DEG = [0.0, 45.0]
+    R.CAL_ROUNDS = 6
+    R.REPS_PER_CAL = 4
+    R.N_OFFSET = 8
+    R.OFFSET_DEG = 40.0
+    R.SHOTS_FAST = 16000
+    R.PROBE_SHOTS = 16000
+    R.ITER_SWEEP = [1, 3, 5]
     R.main()
     print("\n=== DRY RUN COMPLETED WITHOUT ERROR ===")
 

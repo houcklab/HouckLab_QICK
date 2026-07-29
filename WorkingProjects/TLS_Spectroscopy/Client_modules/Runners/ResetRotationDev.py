@@ -31,14 +31,11 @@ import matplotlib.pyplot as plt
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
-    ActiveResetProbe)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mResetBench as bench
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset_rot as rot
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
-    add_qubit_gaussian, set_readout_pulse)
+    set_readout_pulse)
 
 QUBIT = "q4"
 
@@ -137,82 +134,6 @@ class ArithProgram(AveragerProgram):
                      wait=True, syncdelay=self.us2cycles(1.0))
 
 
-class RotResetProgram(AveragerProgram):
-    """Prepare |g> or |e>, optionally reset with one of the two schemes, read out."""
-
-    def initialize(self):
-        cfg = self.cfg
-        cfg.setdefault("reps", int(cfg.get("shots", 2000)))
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
-                         mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        ff_pulse.declare_static_park(self)
-        for ro_ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(cfg["read_length"],
-                                                       ro_ch=cfg["ro_chs"][0]),
-                                 gen_ch=cfg["res_ch"])
-        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
-                                  ro_ch=cfg["ro_chs"][0])
-        qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
-                                   gen_ch=cfg["qubit_ch"])
-        add_qubit_gaussian(self)
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
-                                 phase=0, gain=int(cfg["qubit_pi_gain"]),
-                                 waveform="qubit")
-        set_readout_pulse(self, read_freq)
-        self.synci(200)
-
-    def body(self):
-        cfg = self.cfg
-        ff_pulse.play_static_park(self, settle_us=cfg.get("ff_park_settle_us", 0.05))
-        if cfg.get("prep_excited", True):
-            self.pulse(ch=cfg["qubit_ch"])
-            self.sync_all(self.us2cycles(0.01))
-        scheme = str(cfg.get("reset_scheme", "none"))
-        if scheme == "old":
-            ar.active_reset_block(
-                self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
-                oper=cfg.get("reset_oper", "lower"),
-                ground_below=cfg.get("reset_ground_below", True),
-                max_iters=int(cfg.get("reset_max_iters", 3)))
-        elif scheme in ("rot2", "rot3", "rot3nl"):
-            rot.active_reset_rot_block(
-                self, ro_ch=cfg["ro_chs"][0],
-                c_int=cfg["rot_c_int"], s_int=cfg["rot_s_int"],
-                excite_threshold=cfg["rot_excite_threshold"],
-                ground_threshold=cfg.get("rot_ground_threshold"),
-                latch_sink=cfg.get("rot_latch_sink"),
-                max_iters=int(cfg.get("reset_max_iters", 3)),
-                three_zone=(scheme in ("rot3", "rot3nl")),
-                use_latch=(scheme == "rot3"))
-        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(cfg.get("relax_delay", RELAX_US)))
-
-    def reads_per_rep(self):
-        n = int(self.cfg.get("reset_max_iters", 3))
-        return (n if str(self.cfg.get("reset_scheme", "none")) != "none" else 0) + 1
-
-    def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        reads = self.reads_per_rep()
-        super().acquire(soc, readouts_per_experiment=reads,
-                        load_pulses=load_pulses, progress=progress)
-        self.readouts_per_rep = reads
-        return self.final_shots()
-
-    def final_shots(self):
-        reads = int(getattr(self, "readouts_per_rep", 1))
-        out = []
-        for buf in (self.di_buf, self.dq_buf):
-            v = np.asarray([ar.to_signed32(x) for x in np.asarray(buf[0]).ravel()],
-                           dtype=np.int64)
-            n = v.size // reads
-            out.append(v[:n * reads].reshape(n, reads)[:, -1])
-        return out[0], out[1]
-
-
 def read_dmem(soc, addr):
     for getter in (lambda: soc.tproc.single_read(addr),
                    lambda: soc.tproc.read_dmem(addr, 1)[0],
@@ -266,98 +187,20 @@ def stage0(soc, soccfg):
 
 
 def fit_rotation(soc, soccfg, tag, verbose=True):
-    probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                             suffix=f"RotDev_{tag}", cfg=base_cfg())
-    data = probe.acquire().get("data", {})
-    plt.close("all")
-    gc.collect()
-    raw = getattr(probe, "raw_shots", None)
-    if not raw or "ground" not in raw or "excited" not in raw:
-        print("    probe exposed no raw_shots attribute -- cannot fit the rotation.")
-        return None
-    lg = np.asarray(raw["ground"]["lower"], dtype=np.int64)
-    ug = np.asarray(raw["ground"]["upper"], dtype=np.int64)
-    le = np.asarray(raw["excited"]["lower"], dtype=np.int64)
-    ue = np.asarray(raw["excited"]["upper"], dtype=np.int64)
-    n = min(lg.size, ug.size, le.size, ue.size)
-    lg, ug, le, ue = lg[:n], ug[:n], le[:n], ue[:n]
-    max_abs = float(np.max(np.abs(np.concatenate([lg, ug, le, ue]))))
-    theta = rot.projection_angle(lg, ug, le, ue)
-    shift, c_int, s_int = rot.fixed_point_coeffs(theta, max_abs)
-    ok, worst = rot.check_headroom(shift, theta, max_abs)
-    if not ok:
-        raise RuntimeError(f"fixed-point headroom check failed ({worst:.3e})")
-    plan = rot.asm_plan(c_int, s_int)
-    sink = rot.latch_offset(shift, theta, max_abs,
-                            excited_above=plan["excited_above"])
-    rep = rot.separation_report(lg, ug, le, ue, c_int=c_int, s_int=s_int, theta=theta)
-    eta = (data.get("reset_threshold_tuning") or {}).get("pi_efficiency")
-    if eta is None or not np.isfinite(eta) or eta <= 0:
-        eta = PI_EFFICIENCY_GUESS
-    eta = float(min(1.0, eta))
-    two = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=RESET_MAX_ITERS,
-                                pi_efficiency=eta, three_zone=False)
-    three = rot.choose_thresholds(rep["proj_g"], rep["proj_e"], iters=RESET_MAX_ITERS,
-                                  pi_efficiency=eta, three_zone=True)
-    old = ar.fit_reset_threshold(
-        lg if rep["sep_lower"] >= rep["sep_upper"] else ug,
-        le if rep["sep_lower"] >= rep["sep_upper"] else ue,
-        iters=RESET_MAX_ITERS, pi_efficiency=eta)
-    out = {"theta": theta, "shift": shift, "c_int": c_int, "s_int": s_int,
-           "plan": plan, "latch_sink": sink, "max_abs": max_abs, "report": rep,
-           "two": rot.thresholds_to_acc(two, plan),
-           "three": rot.thresholds_to_acc(three, plan),
-           "two_proj": two, "three_proj": three, "old": old,
-           "oper": "lower" if rep["sep_lower"] >= rep["sep_upper"] else "upper",
-           "n": n,
-           "probe_floor": data.get("reset_floor"),
-           "probe_errors": data.get("raw_assignment_errors", {}),
-           "probe_raw_F": data.get("raw_assignment_fidelity"),
-           "probe_recommended": data.get("recommended"), "eta": eta}
-    if verbose:
-        print(f"  theta = {np.rad2deg(theta):+7.2f} deg | 2^{shift} -> C={c_int}, S={s_int}"
-              f" | headroom {worst:.2e} / {rot.INT32_MAX:.2e}")
-        print(f"  asm plan: acc = {plan['c_abs']}*I {plan['combine_op']} "
-              f"{plan['s_abs']}*Q   (multiply immediates are non-negative by "
-              f"construction; excited_above={plan['excited_above']}, latch sink {sink})")
-        print(f"  separation:  lower {rep['sep_lower']:8.0f}   upper {rep['sep_upper']:8.0f}"
-              f"   best single {rep['sep_best_single']:8.0f}   rotated {rep['sep_rotated']:8.0f}"
-              f"   gain {rep['gain_vs_best_single']:.2f}x")
-    return out
-
-
-def _mean_iq(soc, soccfg, cfg, prep_excited, scheme):
-    c = dict(cfg)
-    c["prep_excited"] = bool(prep_excited)
-    c["reset_scheme"] = str(scheme)
-    prog = RotResetProgram(soccfg, c)
-    i_final, q_final = prog.acquire(soc, load_pulses=True, progress=False)
-    plt.close("all")
-    gc.collect()
-    return float(np.mean(i_final)), float(np.mean(q_final))
+    fit = bench.probe_and_fit(soc, soccfg, base_cfg(), RESET_MAX_ITERS,
+                              PI_EFFICIENCY_GUESS, path=QUBIT,
+                              outer_folder=outerFolder, suffix=f"RotDev_{tag}")
+    if fit is not None and verbose:
+        bench.print_fit(fit)
+    return fit
 
 
 def measure_refs(soc, soccfg, cfg):
-    """The |g> and |e> reference points with NO reset, in raw accumulator units.
-
-    Residuals are measured by projecting onto the g->e axis and normalising so
-    |g>=0 and |e>=1 -- the same construction the probe uses in _gate_residuals.
-    Both references go through the identical readout, so the result is a
-    population and is immune to readout fidelity.  Thresholding single shots
-    against calib_params does NOT work here: those thresholds live in the host's
-    scaled units while these buffers are raw accumulator sums.
-    """
-    ig, qg = _mean_iq(soc, soccfg, cfg, False, "none")
-    ie, qe = _mean_iq(soc, soccfg, cfg, True, "none")
-    return rot.reference_axis(ig, qg, ie, qe)
+    return bench.measure_refs(soc, soccfg, cfg)
 
 
 def measure_residual(soc, soccfg, cfg, refs, label=None):
-    out = {}
-    for prep in (False, True):
-        ir, qr = _mean_iq(soc, soccfg, cfg, prep, cfg.get("reset_scheme", "none"))
-        out["e" if prep else "g"] = rot.population_from_iq(ir, qr, refs)
-    return out
+    return bench.measure_residuals(soc, soccfg, cfg, refs)
 
 
 def stage2(soc, soccfg, fit, calib_params, rec):
