@@ -89,6 +89,7 @@ def run_park_ss(soc, soccfg, tag):
 def run_ss_flux_ramp(soc, soccfg, base, dc, p, tag):
     c = dict(base)
     c["shots"] = c["reps"] = SS_SHOTS_PER_DC
+    c["reset_mode"] = p.get("reset_mode", "passive")
     t0 = time.time()
     ss = SingleShotFluxRamp(
         soc=soc, soccfg=soccfg, path=TLS.QUBIT,

@@ -73,6 +73,8 @@ def main():
                 raise AssertionError(cfg["qubit_pi_freq"])
             if int(cfg["shots"]) != int(A.SS_SHOTS_PER_DC):
                 raise AssertionError(cfg["shots"])
+            if cfg.get("reset_mode") != A.P6["reset_mode"]:
+                raise AssertionError(cfg.get("reset_mode"))
             if not np.isclose(float(kw["flux_hold_us"]),
                               float(A.P6["ss_flux_hold_us"])):
                 raise AssertionError(kw["flux_hold_us"])
