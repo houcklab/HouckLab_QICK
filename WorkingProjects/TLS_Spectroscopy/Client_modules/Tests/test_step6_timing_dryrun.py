@@ -20,25 +20,52 @@ def out():
     return p.stdout
 
 
-def test_production_vector_is_computed_from_the_real_flux_fit(out):
-    m = re.search(r"production dc vector: (\d+) points", out)
-    assert m and int(m.group(1)) > 100
+def test_span_is_400_mhz_and_vector_matches(out):
+    m = re.search(r"400 MHz span: f ([\d.]+) -> ([\d.]+) GHz maps to dc 0\.\.(\d+)", out)
+    assert m
+    assert abs((float(m.group(1)) - float(m.group(2))) - 0.400) < 0.002
+    m2 = re.search(r"production dc vector: (\d+) freq-uniform points", out)
+    assert m2 and 380 <= int(m2.group(1)) <= 420
 
 
-def test_all_building_blocks_were_measured(out):
-    for marker in ("ss cal run 1", "probe + validation", "dc points:",
-                   "transmission run 1", "per-dc T1 cost"):
-        assert marker in out, f"{marker} missing"
+def test_transmission_is_gone(out):
+    assert "transmission" not in out.lower()
 
 
-def test_both_scenarios_extrapolated(out):
-    assert "SCENARIO A" in out and "SCENARIO B" in out
-    assert re.search(r"one pass \(T1 sweep itself\)\s+\S", out)
-    m = re.search(r"scenario B is ([\d.]+)x scenario A", out)
-    assert m and float(m.group(1)) >= 1.0
+def test_full_pass_measured_directly(out):
+    assert re.search(r"full pass: .+ \([\d.]+ s/dc\); \d+/\d+ valid", out)
     assert "passes/hour" in out
 
 
-def test_rotated_reset_was_engaged_for_the_timing(out):
-    assert "ROTATED reset selected" in out
-    assert "fell back to PASSIVE" not in out
+def test_standard_outputs_written(out):
+    m = re.search(r"one-stop CSV:\s+(\S+)", out)
+    assert m and os.path.exists(m.group(1))
+    with open(m.group(1)) as f:
+        rows = f.read().strip().splitlines()
+    n_dc = int(re.search(r"production dc vector: (\d+)", out).group(1))
+    assert len(rows) == n_dc + 1
+    assert "inv_T1_3pt_per_us" in rows[0] and "P0" in rows[0]
+
+
+def test_raw_h5_reconstructs_the_ss_cal(out):
+    import h5py
+    import json
+    import numpy as np
+    m = re.search(r"raw-data h5:\s+(\S+)", out)
+    assert m and os.path.exists(m.group(1))
+    with h5py.File(m.group(1), "r") as f:
+        for name in ("I_0", "Q_0", "I_1", "Q_1"):
+            assert f[f"ss_cal/{name}"].shape[0] >= 500
+        calib = json.loads(f["ss_cal"].attrs["calib_params"])
+        assert "threshold" in calib and "read_theta" in calib
+        n_dc = int(re.search(r"production dc vector: (\d+)", out).group(1))
+        assert f["t1/dc_vec"].shape[0] == n_dc
+        assert f["t1/freq_ghz"].shape[0] == n_dc
+        for key in ("T1_3pt_us", "P0", "P1", "Ps", "T1_3pt_valid_mask"):
+            assert f[f"t1/{key}"].shape[0] == n_dc
+        assert bool(f["reset"].attrs["rotated_in_use"]) is True
+        assert float(f["timing"].attrs["t_pass_s"]) >= 0.0
+        t1 = np.asarray(f["t1/T1_3pt_us"])
+        valid = np.asarray(f["t1/T1_3pt_valid_mask"]) > 0.5
+        assert valid.sum() > n_dc * 0.5
+        assert np.nanmedian(t1[valid]) > 10.0

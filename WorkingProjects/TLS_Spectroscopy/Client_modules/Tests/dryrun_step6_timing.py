@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import tempfile
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, *[".."] * 4))
@@ -13,6 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Tests import reset_sim
 
 def main():
     reset_sim.install_stubs()
+    import numpy as np
     seed = int(os.environ.get("RESET_SIM_SEED", "7"))
     rot = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset_rot")
@@ -25,10 +27,9 @@ def main():
     reset_sim.install_t1(T1mod, rot, truth=truth)
     TLS.FFT1Program = T1mod.FFT1Program
     A.makeProxy = reset_sim.fake_proxy
-    A.SingleShot1Q = reset_sim.make_fake_ss()
-    A.outerFolder = tempfile.mkdtemp(prefix="TimingAudit_dryrun_")
-    A.tee_log = __import__("types").SimpleNamespace(
-        tee=lambda *a, **k: reset_sim.NullTee())
+    out_dir = tempfile.mkdtemp(prefix="TimingAudit_dryrun_")
+    A.outerFolder = out_dir
+    A.tee_log = types.SimpleNamespace(tee=lambda *a, **k: reset_sim.NullTee())
     TLS._load_correction = lambda cj, of: None
 
     lg, ug = truth.blob_shots(0.0, 8000)
@@ -40,19 +41,29 @@ def main():
     rec["use"] = "rot"
     TLS.probe_reset_params = lambda *a, **k: dict(rec)
 
-    class FakeTransmission:
+    rng = np.random.default_rng(seed)
+
+    class FakeSS:
         def __init__(self, **kw):
-            self.cfg = kw.get("cfg", {})
+            n = int(kw.get("cfg", {}).get("shots", 1000))
+            self.I_0 = rng.normal(-3.0, 1.0, n)
+            self.Q_0 = rng.normal(0.0, 1.0, n)
+            exc = rng.random(n) < truth.eta
+            self.I_1 = np.where(exc, 3.0, -3.0) + rng.normal(0, 1.0, n)
+            self.Q_1 = rng.normal(0.0, 1.0, n)
+            self.calib_params = {"scale_factor": 1.0, "threshold": 0.0,
+                                 "read_theta": 0.0, "ground_threshold": -1.0}
+            self.max_F = 0.88
+            self.data = {"confusion": [[0.95, 0.2], [0.05, 0.8]]}
 
         def acquire(self, **kw):
-            truth.advance()
             return None
 
-    A.Transmission = FakeTransmission
-    A.SAMPLE_DC_COUNTS = [2, 4]
-    A.TIMING_REPS = 1
-    A.P6 = dict(A.P6, shots=300)
+    A.SingleShot1Q = FakeSS
+    A.P6 = dict(A.P6, shots=200)
+    TLS.INTERLEAVE_ROUNDS = 2
     A.main()
+    print(f"### OUTPUT_DIR {out_dir}")
     print("\n=== DRY RUN COMPLETED WITHOUT ERROR ===")
 
 
