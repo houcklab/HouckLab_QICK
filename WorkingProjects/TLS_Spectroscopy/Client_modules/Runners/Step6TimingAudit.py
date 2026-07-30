@@ -1,3 +1,4 @@
+import csv
 import datetime
 import gc
 import json
@@ -17,7 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 
 P6 = {
-    "shots": 2000,
+    "shots": 500,
     "dc_min": 0,
     "freq_step_mhz": 1,
     "Ts_us": 60.0,
@@ -31,8 +32,9 @@ P6 = {
 }
 
 SPAN_MHZ = 400.0
-SS_SHOTS = 1000
+SS_SHOTS_PER_DC = 500
 SS_GROUND_THRESHOLD = 0.7
+PROGRESS_EVERY = 25
 
 
 def banner(text):
@@ -67,174 +69,204 @@ def solve_dc_max(span_mhz):
     return int(round(hi)), f0, target
 
 
-def run_ss(soc, soccfg):
+def run_ss(soc, soccfg, tag):
     c = dict(BaseConfig)
-    c["shots"] = c["reps"] = SS_SHOTS
+    c["shots"] = c["reps"] = SS_SHOTS_PER_DC
     t0 = time.time()
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=TLS.QUBIT,
-                      outerFolder=outerFolder, suffix="TimingAudit_SS",
+                      outerFolder=outerFolder, suffix=tag,
                       cfg=c, repeats=1,
                       confidence_threshold=SS_GROUND_THRESHOLD)
     ss.acquire(progress=False, plotDisp=False)
     dt = time.time() - t0
     plt.close("all")
-    gc.collect()
     return ss, dt
 
 
-def save_raw_h5(path, ss, exp, dc_vec, freq_ghz, p, timing):
-    with h5py.File(path, "w") as f:
-        g = f.create_group("ss_cal")
-        for name in ("I_0", "Q_0", "I_1", "Q_1"):
-            g.create_dataset(name, data=np.asarray(getattr(ss, name), dtype=float))
-        g.attrs["calib_params"] = json.dumps(
-            {k: float(v) for k, v in ss.calib_params.items()})
-        g.attrs["fidelity"] = float(ss.max_F)
-        g.attrs["confusion"] = json.dumps(
-            np.asarray(ss.data["confusion"], dtype=float).tolist())
-        g.attrs["shots"] = int(SS_SHOTS)
-        g.attrs["prep"] = ("I_0/Q_0 are single shots with NO pulse (ground prep); "
-                           "I_1/Q_1 follow one pi pulse.  Units are the host-side "
-                           "rotated-and-scaled values discriminate_shots consumes.")
-
-        t = f.create_group("t1")
-        t.create_dataset("dc_vec", data=np.asarray(dc_vec, dtype=float))
-        t.create_dataset("freq_ghz", data=np.asarray(freq_ghz, dtype=float))
-        for key in ("T1_3pt_us", "T1_3pt_valid_mask", "P0", "P1", "Ps",
-                    "ref_contrast_3pt", "pe_3pt"):
-            if key in exp.data:
-                t.create_dataset(key, data=np.asarray(exp.data[key], dtype=float))
-        t.attrs["Ts_ns"] = int(exp.Ts_ns)
-        t.attrs["Ts_effective_ns"] = float(exp.data.get("Ts_effective_ns",
-                                                        exp.Ts_ns))
-        t.attrs["shots"] = int(p["shots"])
-
-        r = f.create_group("reset")
-        r.attrs["params"] = json.dumps(
-            {k: (v if isinstance(v, (int, float, str, bool)) else str(v))
-             for k, v in p.items()
-             if str(k).startswith("reset") or k == "rot_reset"}, default=str)
-        r.attrs["rotated_in_use"] = bool(p.get("rot_reset"))
-
-        m = f.create_group("timing")
-        for k, v in timing.items():
-            m.attrs[k] = float(v)
+def run_t1_point(soc, soccfg, p, base, dc, calib_params, tag):
+    t0 = time.time()
+    exp = TLS.T13PointVsFlux(
+        soc=soc, soccfg=soccfg, path=TLS.QUBIT, outerFolder=outerFolder,
+        suffix=tag, cfg=dict(base),
+        dc_vec=np.asarray([float(dc)]),
+        Ts_ns=int(round(p["Ts_us"] * 1e3)),
+        shots=int(p["shots"]), calib_params=calib_params,
+        park_voltage=TLS.BASELINE_DC_OFFSET,
+        min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
+        max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
+        reset_mode=p.get("reset_mode", "passive"),
+        flux_tail_compensation=base.get("flux_tail_compensation"),
+        repeat_metadata=None, write_outputs=False)
+    exp.acquire(progress=False)
+    dt = time.time() - t0
+    out = {k: float(np.asarray(exp.data[k]).ravel()[0])
+           for k in ("T1_3pt_us", "T1_3pt_valid_mask", "P0", "P1", "Ps",
+                     "ref_contrast_3pt")}
+    out["Ts_effective_ns"] = float(exp.data.get("Ts_effective_ns", exp.Ts_ns))
+    plt.close("all")
+    return out, dt
 
 
 def main():
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     with tee_log.tee(f"Step6TimingAudit_{stamp}", outerFolder):
         soc, soccfg = makeProxy()
-        banner("STEP 6 TIMING AUDIT -- one full 400 MHz pass, timed and fully saved")
-        print("  This runs ONE complete 3-point pass over the 400 MHz production")
-        print("  span, so the pass time is measured directly rather than")
-        print("  extrapolated, and every output is written to disk:")
-        print("    - the standard step-6 one-stop CSV and config JSON")
-        print("    - a raw-data HDF5 holding the single-shot calibration shots")
-        print("      (enough to reconstruct the calibration offline), the 3-point")
-        print("      arrays, the reset parameters in use, and the timings")
+        banner("STEP 6 TIMING AUDIT -- per-dc interleave: 500-shot ss cal + "
+               "500-shot 3-point T1 at EVERY dc point")
+        print("  Structure per dc point:")
+        print(f"    1. fresh single-shot calibration ({SS_SHOTS_PER_DC} shots per "
+              f"prep) -> that point's own threshold/theta")
+        print(f"    2. 3-point T1 at that dc ({P6['shots']} shots) discriminated "
+              f"with the fresh calibration")
+        print("  Every calibration's raw shots are kept, so the h5 can reconstruct")
+        print("  the discrimination at any point along the scan and correlate")
+        print("  readout drift with the T1 trace.  The reset is probed once up")
+        print("  front (this is still the testing script; production step 6 is")
+        print("  unchanged).")
 
         p = dict(P6)
         dc_max, f0, f_end = solve_dc_max(SPAN_MHZ)
         p["dc_max"] = dc_max
-        dc_vec = TLS._step6_dc_vec(p)
-        freq_ghz = fx.estimate_fit_frequency_ghz_array(
-            TLS.FLUX_FIT_PARAMS, np.asarray(dc_vec, dtype=float))
+        dc_vec = np.asarray(TLS._step6_dc_vec(p), dtype=float)
+        freq_ghz = fx.estimate_fit_frequency_ghz_array(TLS.FLUX_FIT_PARAMS, dc_vec)
+        n_dc = len(dc_vec)
         print(f"\n  {SPAN_MHZ:g} MHz span: f {f0:.4f} -> {f_end:.4f} GHz maps to "
-              f"dc 0..{dc_max} DAC")
-        print(f"  production dc vector: {len(dc_vec)} freq-uniform points at "
-              f"{p['freq_step_mhz']:g} MHz steps")
+              f"dc 0..{dc_max} DAC ({n_dc} freq-uniform points)")
 
-        banner("MEASURE -- single-shot calibration (raw shots kept for the h5)")
-        ss, t_ss = run_ss(soc, soccfg)
-        print(f"  ss cal: {hms(t_ss)} (F = {ss.max_F:.4f}, {SS_SHOTS} shots per prep)")
-
-        banner("MEASURE -- reset probe")
-        p["_projected_points"] = len(dc_vec) * 3
+        banner("MEASURE -- reset probe (once)")
+        p["_projected_points"] = n_dc * 3
         t0 = time.time()
         p = TLS._resolve_step6_reset(p, soc, soccfg, outerFolder)
         t_probe = time.time() - t0
         print(f"  probe + validation: {hms(t_probe)}")
         if not TLS.active_reset.uses_feedback(p.get("reset_mode")):
-            print("  WARNING: probe fell back to PASSIVE; the pass below will run at")
-            print("  2 ms pacing and its time will NOT represent a feedback run.")
+            print("  WARNING: probe fell back to PASSIVE; per-dc pacing below will "
+                  "not represent a feedback run.")
 
         flux_tail = TLS._load_correction(None, outerFolder)
         base = TLS._t1_base_cfg(p, flux_tail, dc_vec)
 
-        banner(f"MEASURE -- one full 3-point pass ({len(dc_vec)} dc points x "
-               f"{p['shots']} shots)")
-        series_start = datetime.datetime.now()
-        run_start = series_start
-        t0 = time.time()
-        exp = TLS.T13PointVsFlux(
-            soc=soc, soccfg=soccfg, path=TLS.QUBIT, outerFolder=outerFolder,
-            suffix="TimingAudit_FullPass", cfg=dict(base),
-            dc_vec=np.asarray(dc_vec, dtype=float),
-            Ts_ns=int(round(p["Ts_us"] * 1e3)),
-            shots=int(p["shots"]), calib_params=ss.calib_params,
-            park_voltage=TLS.BASELINE_DC_OFFSET,
-            min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
-            max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
-            reset_mode=p.get("reset_mode", "passive"),
-            flux_tail_compensation=flux_tail,
-            repeat_metadata=TLS.build_wall_clock_repeat_metadata(
-                run_start, series_start, 0),
-            write_outputs=False)
-        exp.acquire(progress=True)
-        t_pass = time.time() - t0
-        plt.close("all")
-        gc.collect()
-        valid = np.asarray(exp.data["T1_3pt_valid_mask"], dtype=float)
-        print(f"  full pass: {hms(t_pass)} ({t_pass / len(dc_vec):.2f} s/dc); "
-              f"{int(valid.sum())}/{len(dc_vec)} valid 3-point estimates")
+        banner(f"MEASURE -- {n_dc} x (ss cal + 3-point T1)")
+        ss_raw = {k: np.zeros((n_dc, SS_SHOTS_PER_DC)) for k in
+                  ("I_0", "Q_0", "I_1", "Q_1")}
+        ss_cols = {k: np.zeros(n_dc) for k in
+                   ("ss_F", "ss_threshold", "ss_theta", "ss_ground_threshold")}
+        t1_cols = {k: np.zeros(n_dc) for k in
+                   ("T1_3pt_us", "T1_3pt_valid_mask", "P0", "P1", "Ps",
+                    "ref_contrast_3pt")}
+        t_ss = np.zeros(n_dc)
+        t_t1 = np.zeros(n_dc)
+        Ts_eff_ns = float(p["Ts_us"] * 1e3)
+        series_t0 = time.time()
+        for i, dc in enumerate(dc_vec):
+            ss, t_ss[i] = run_ss(soc, soccfg, f"TimingAudit_SS_{i:03d}")
+            for k in ss_raw:
+                v = np.asarray(getattr(ss, k), dtype=float).ravel()
+                ss_raw[k][i, :min(len(v), SS_SHOTS_PER_DC)] = \
+                    v[:SS_SHOTS_PER_DC]
+            ss_cols["ss_F"][i] = float(ss.max_F)
+            ss_cols["ss_threshold"][i] = float(ss.calib_params["threshold"])
+            ss_cols["ss_theta"][i] = float(ss.calib_params["read_theta"])
+            ss_cols["ss_ground_threshold"][i] = float(
+                ss.calib_params.get("ground_threshold", np.nan))
+            out, t_t1[i] = run_t1_point(soc, soccfg, p, base, dc,
+                                        ss.calib_params,
+                                        f"TimingAudit_T1_{i:03d}")
+            for k in t1_cols:
+                t1_cols[k][i] = out[k]
+            Ts_eff_ns = out["Ts_effective_ns"]
+            if (i + 1) % PROGRESS_EVERY == 0 or i == n_dc - 1:
+                el = time.time() - series_t0
+                eta = el / (i + 1) * (n_dc - i - 1)
+                print(f"  {i + 1:>4}/{n_dc}  f {freq_ghz[i]:.4f} GHz  "
+                      f"F {ss_cols['ss_F'][i]:.3f}  "
+                      f"T1 {t1_cols['T1_3pt_us'][i]:7.1f} us  "
+                      f"valid {int(t1_cols['T1_3pt_valid_mask'][i])}  "
+                      f"[{hms(el)} elapsed, ETA {hms(eta)}]", flush=True)
+            if i % 50 == 0:
+                gc.collect()
+        t_total = time.time() - series_t0
+        valid = t1_cols["T1_3pt_valid_mask"] > 0.5
+        print(f"\n  per-dc pass complete: {hms(t_total)} "
+              f"({t_total / n_dc:.2f} s/dc); {int(valid.sum())}/{n_dc} valid")
+        print(f"  per-dc split: ss cal median {np.median(t_ss):.2f} s, "
+              f"3-point T1 median {np.median(t_t1):.2f} s")
 
-        banner("SAVE -- standard step-6 outputs plus the raw-data h5")
-        base_path = TLS._csv_base_from_pickle(exp.pname)
-        try:
-            exp.save_config()
-            print(f"  config JSON saved alongside {base_path}")
-        except Exception as exc:
-            print(f"  config JSON not written ({exc}); the CSV is still complete")
-        spec = TLS.get_wall_clock_repeat_spec(exp)
-        full_spec = TLS.get_wall_clock_repeat_full_spec(exp) or {}
-        run_entry = {
-            "run_metadata": TLS.build_wall_clock_repeat_metadata(
-                run_start, series_start, 0),
-            "dc_vec": np.asarray(exp.dc_vec, dtype=float),
-            "metric_column_name": spec["metric_column_name"],
-            "metric_values": np.asarray(spec["metric_values"], dtype=float),
-            "extra_metric_matrices": {
-                key: np.asarray(values, dtype=float)
-                for key, values in dict(spec.get("extra_metric_matrices",
-                                                 {})).items()},
-            "axes": full_spec.get("axes", {}),
-            "scalar_columns": full_spec.get("scalar_columns", {}),
-            "array_columns": full_spec.get("array_columns", {}),
-        }
-        csv_path = TLS.save_wall_clock_repeat_full_outputs(
-            base_path, spec["file_tag"], [run_entry])
-        print(f"  one-stop CSV: {csv_path}")
+        banner("SAVE -- per-dc CSV and raw-data h5")
+        stamp_dir = datetime.datetime.now()
+        base_path = TLS._csv_base_from_pickle(
+            f"{outerFolder}/{TLS.QUBIT}/{TLS.QUBIT}_{stamp_dir:%Y_%m_%d}/"
+            f"{TLS.QUBIT}_{stamp_dir:%H_%M_%S}_TimingAudit_PerDC")
+        csv_path = f"{base_path}.csv"
+        fieldnames = (["scan_index", "dc_target_V", "freq_ghz", "Ts_ns",
+                       "inv_T1_3pt_per_us"]
+                      + list(t1_cols.keys()) + list(ss_cols.keys())
+                      + ["t_ss_s", "t_t1_s"])
+        with open(csv_path, "w", newline="") as fcsv:
+            w = csv.DictWriter(fcsv, fieldnames=fieldnames)
+            w.writeheader()
+            for i in range(n_dc):
+                row = {"scan_index": i, "dc_target_V": dc_vec[i],
+                       "freq_ghz": freq_ghz[i], "Ts_ns": Ts_eff_ns,
+                       "inv_T1_3pt_per_us":
+                           (1.0 / t1_cols["T1_3pt_us"][i]
+                            if valid[i] and t1_cols["T1_3pt_us"][i] > 0
+                            else float("nan")),
+                       "t_ss_s": t_ss[i], "t_t1_s": t_t1[i]}
+                for k in t1_cols:
+                    row[k] = t1_cols[k][i]
+                for k in ss_cols:
+                    row[k] = ss_cols[k][i]
+                w.writerow(row)
+        print(f"  per-dc CSV: {csv_path}")
 
         h5_path = f"{base_path}_raw.h5"
-        timing = {"t_ss_s": t_ss, "t_probe_s": t_probe, "t_pass_s": t_pass,
-                  "n_dc": len(dc_vec), "span_mhz": SPAN_MHZ,
-                  "shots": p["shots"]}
-        save_raw_h5(h5_path, ss, exp, dc_vec, freq_ghz, p, timing)
-        print(f"  raw-data h5:  {h5_path}")
-        print("  h5 layout: ss_cal/{I_0,Q_0,I_1,Q_1 + calib/confusion attrs}, "
-              "t1/{dc_vec, freq_ghz, T1_3pt_us, P0, P1, Ps, valid, contrast}, "
-              "reset/{params}, timing/{...}")
+        with h5py.File(h5_path, "w") as f:
+            g = f.create_group("ss_cal")
+            for k, v in ss_raw.items():
+                g.create_dataset(k, data=v)
+            for k, v in ss_cols.items():
+                g.create_dataset(k, data=v)
+            g.attrs["shots_per_prep"] = SS_SHOTS_PER_DC
+            g.attrs["layout"] = ("2-D arrays [n_dc, shots]: row i is the "
+                                 "calibration taken immediately before the "
+                                 "3-point T1 at dc_vec[i].  I_0/Q_0 ground prep, "
+                                 "I_1/Q_1 one pi pulse, host units.")
+            t = f.create_group("t1")
+            t.create_dataset("dc_vec", data=dc_vec)
+            t.create_dataset("freq_ghz", data=np.asarray(freq_ghz, dtype=float))
+            for k, v in t1_cols.items():
+                t.create_dataset(k, data=v)
+            t.attrs["Ts_ns"] = int(round(p["Ts_us"] * 1e3))
+            t.attrs["Ts_effective_ns"] = float(Ts_eff_ns)
+            t.attrs["shots"] = int(p["shots"])
+            r = f.create_group("reset")
+            r.attrs["params"] = json.dumps(
+                {k: (v if isinstance(v, (int, float, str, bool)) else str(v))
+                 for k, v in p.items()
+                 if str(k).startswith("reset") or k == "rot_reset"}, default=str)
+            r.attrs["rotated_in_use"] = bool(p.get("rot_reset"))
+            m = f.create_group("timing")
+            m.create_dataset("t_ss_s", data=t_ss)
+            m.create_dataset("t_t1_s", data=t_t1)
+            m.attrs["t_probe_s"] = float(t_probe)
+            m.attrs["t_total_s"] = float(t_total)
+            m.attrs["n_dc"] = int(n_dc)
+            m.attrs["span_mhz"] = float(SPAN_MHZ)
+        print(f"  raw-data h5: {h5_path}")
 
         banner("TIMING SUMMARY")
-        print(f"  ss cal              {hms(t_ss)}")
-        print(f"  reset probe         {hms(t_probe)}")
-        print(f"  full pass           {hms(t_pass)}  "
-              f"({t_pass / len(dc_vec):.2f} s per dc point)")
+        print(f"  reset probe (once)   {hms(t_probe)}")
+        print(f"  ss cal per dc        {np.median(t_ss):.2f} s median "
+              f"({hms(float(np.sum(t_ss)))} total)")
+        print(f"  3-point T1 per dc    {np.median(t_t1):.2f} s median "
+              f"({hms(float(np.sum(t_t1)))} total)")
+        print(f"  full per-dc pass     {hms(t_total)}  "
+              f"({t_total / n_dc:.2f} s per dc point)")
         reprobes_per_hour = (60.0 / TLS.RESET_REPROBE_MIN
                              if TLS.RESET_REPROBE_MIN else 0.0)
         overhead = reprobes_per_hour * t_probe / 3600.0
-        print(f"  wall-clock series   ~{3600.0 * (1 - overhead) / t_pass:.1f} "
+        print(f"  wall-clock series    ~{3600.0 * (1 - overhead) / t_total:.1f} "
               f"passes/hour ({TLS.RESET_REPROBE_MIN:g}-min re-probes cost "
               f"{100 * overhead:.1f}%)")
         banner("done -- the .txt log, CSV and h5 together are the complete record")

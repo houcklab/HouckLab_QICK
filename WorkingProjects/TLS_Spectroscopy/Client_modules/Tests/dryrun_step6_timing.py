@@ -45,6 +45,7 @@ def main():
 
     class FakeSS:
         def __init__(self, **kw):
+            truth.advance()
             n = int(kw.get("cfg", {}).get("shots", 1000))
             self.I_0 = rng.normal(-3.0, 1.0, n)
             self.Q_0 = rng.normal(0.0, 1.0, n)
@@ -61,6 +62,8 @@ def main():
 
     A.SingleShot1Q = FakeSS
     A.P6 = dict(A.P6, shots=200)
+    A.SS_SHOTS_PER_DC = 200
+    A.PROGRESS_EVERY = 100
     TLS.INTERLEAVE_ROUNDS = 2
     A.main()
     print(f"### OUTPUT_DIR {out_dir}")
