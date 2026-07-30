@@ -2,7 +2,7 @@ import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
-from qick import RAveragerProgram
+from qick import AveragerProgram, RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
@@ -174,6 +174,144 @@ class SingleShotProgram(RAveragerProgram):
         return shots_i, shots_q
 
 
+class SingleShotFluxRampProgram(AveragerProgram):
+
+    def __init__(self, soccfg, cfg):
+        super().__init__(soccfg, cfg)
+
+    def _set_qubit_pulse(self, gain, freq_mhz, waveform="qubit"):
+        cfg = self.cfg
+        freq = self.freq2reg(float(freq_mhz), gen_ch=cfg["qubit_ch"])
+        if cfg.get("qubit_pulse_style", "arb") == "flat_top":
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="flat_top", freq=freq, phase=0,
+                gain=int(gain), waveform=waveform,
+                length=self.us2cycles(
+                    cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
+        else:
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb", freq=freq,
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+                gain=int(gain), waveform=waveform)
+
+    def initialize(self):
+        cfg = self.cfg
+        cfg["reps"] = int(cfg["shots"])
+        park_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
+        if not np.isfinite(park_freq):
+            raise ValueError("qubit_pi_freq must be finite")
+        if active_reset.uses_feedback(cfg) and \
+                cfg.get("qubit_pulse_style", "arb") != "arb":
+            raise ValueError("feedback-reset SingleShotFluxRampProgram requires an "
+                             "arb qubit pulse")
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+                         mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        ff_pulse.declare_ff(self)
+        for ro_ch in cfg["ro_chs"]:
+            self.declare_readout(
+                ch=ro_ch, freq=cfg["read_pulse_freq"],
+                length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
+                gen_ch=cfg["res_ch"])
+        self._read_freq_reg = self.freq2reg(
+            cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
+        add_qubit_gaussian(self)
+        if active_reset.uses_feedback(cfg):
+            reset_read_freq = float(cfg.get(
+                "reset_read_pulse_freq", cfg["read_pulse_freq"]))
+            if not np.isclose(
+                    reset_read_freq, float(cfg["read_pulse_freq"]),
+                    rtol=0.0, atol=1e-9):
+                raise ValueError("feedback reset and scoring readout must share one "
+                                 "ADC/DDC frequency")
+            add_qubit_gaussian(
+                self, name="qubit_reset",
+                sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+                drag_beta=float(cfg.get(
+                    "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))))
+        prep_gain = int(cfg.get("ss_flux_pi_gain", cfg["qubit_pi_gain"])) \
+            if bool(cfg.get("prep_excited", False)) else 0
+        self._set_qubit_pulse(prep_gain, park_freq, "qubit")
+        set_readout_pulse(self, self._read_freq_reg)
+        hold_us = float(cfg.get("ss_flux_hold_us", cfg.get("ff_hold", 0.0)))
+        if hold_us < 0:
+            raise ValueError("ss_flux_hold_us must be non-negative")
+        park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+        stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+        self.ff_settle_us = ff_pulse.flux_settle_us(cfg) if stepping else 0.0
+        self.ff_segs = ff_pulse.build_ramp_hold_ramp(
+            self, hold_us=hold_us + self.ff_settle_us,
+            ff_gain=float(cfg["ff_gain"]),
+            dt_play_us=cfg.get("dt_pulseplay", 5.0),
+            ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+            dt_def_us=cfg.get("dt_pulsedef", 0.002),
+            compensation=ff_pulse.load_compensation(cfg),
+            distortion_model=ff_pulse.make_distortion_model(self))
+        self.synci(200)
+
+    def body(self):
+        cfg = self.cfg
+        ff_pulse.assert_park(self, self.ff_segs)
+        if active_reset.uses_feedback(cfg):
+            reset_read_gain = cfg.get("reset_read_pulse_gain")
+            if reset_read_gain is not None:
+                set_readout_pulse(
+                    self, self._read_freq_reg, gain=int(reset_read_gain))
+            reset_freq = float(cfg.get(
+                "reset_pi_freq", cfg.get(
+                    "park_qubit_pi_freq", cfg.get("qubit_pi_freq", cfg["qubit_freq"]))))
+            reset_gain = int(cfg.get(
+                "reset_pi_gain", cfg.get("park_qubit_pi_gain", cfg["qubit_pi_gain"])))
+            self._set_qubit_pulse(reset_gain, reset_freq, "qubit_reset")
+            active_reset.active_reset_block(
+                self, ro_ch=cfg["ro_chs"][0],
+                threshold_raw=cfg["reset_threshold_raw"],
+                oper=cfg.get("reset_oper", "lower"),
+                ground_below=cfg.get("reset_ground_below", True),
+                max_iters=int(cfg.get("reset_max_iters", 3)))
+            prep_gain = int(cfg.get("ss_flux_pi_gain", cfg["qubit_pi_gain"])) \
+                if bool(cfg.get("prep_excited", False)) else 0
+            self._set_qubit_pulse(
+                prep_gain, float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
+                "qubit")
+            if reset_read_gain is not None:
+                set_readout_pulse(self, self._read_freq_reg)
+        self.measure(
+            pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+            wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))
+        if bool(cfg.get("prep_excited", False)):
+            for _ in range(int(cfg.get("repeats", 1))):
+                self.pulse(ch=cfg["qubit_ch"])
+                self.sync_all(self.us2cycles(0.010))
+        ff_pulse.play_ramp_up_hold(
+            self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+        self.sync_all(self.us2cycles(0.010))
+        ff_pulse.play_ramp_down(self, self.ff_segs)
+        self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+        self.measure(
+            pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+            wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+    def acquire(self, soc, load_pulses=True, progress=False, **kw):
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        super().acquire(
+            soc, load_pulses=load_pulses,
+            readouts_per_experiment=2 + n_reset, progress=progress)
+        return self.collect_shots()
+
+    def collect_shots(self):
+        length = self.us2cycles(
+            self.cfg["read_length"], ro_ch=self.cfg["ro_chs"][0])
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        reads = 2 + n_reset
+        shots_i = self.di_buf[0].reshape((self.cfg["reps"], reads)) / length
+        shots_q = self.dq_buf[0].reshape((self.cfg["reps"], reads)) / length
+        return (shots_i[:, n_reset], shots_q[:, n_reset],
+                shots_i[:, n_reset + 1], shots_q[:, n_reset + 1])
+
+
 class SingleShot1Q(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
@@ -190,13 +328,16 @@ class SingleShot1Q(ExperimentClass):
         self.max_F = None
         self.element = str(path)
 
+    def _acquire_shots(self, progress=False):
+        prog = SingleShotProgram(self.soccfg, self.cfg)
+        return prog.acquire(self.soc, load_pulses=True, progress=progress)
+
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         cfg.setdefault("shots", cfg.get("ss_shots", 1000))
         cfg["repeats"] = self.repeats
         self.shots = int(cfg["shots"])
-        prog = SingleShotProgram(self.soccfg, cfg)
-        shots_i, shots_q = prog.acquire(self.soc, load_pulses=True, progress=progress)
+        shots_i, shots_q = self._acquire_shots(progress=progress)
         self.I_0, self.Q_0 = shots_i[0], shots_q[0]
         self.I_1, self.Q_1 = shots_i[1], shots_q[1]
 
@@ -328,3 +469,49 @@ class SingleShot1Q(ExperimentClass):
         arr = {'I_0': self.I_0, 'Q_0': self.Q_0, 'I_1': self.I_1, 'Q_1': self.Q_1,
                'confusion': self.confusion}
         super().save_data(data=arr)
+
+
+class SingleShotFluxRamp(SingleShot1Q):
+
+    def __init__(self, *args, ff_gain=None, flux_hold_us=None, **kw):
+        cfg = dict(kw.get("cfg") or {})
+        if ff_gain is None:
+            ff_gain = cfg.get("ff_gain")
+        if ff_gain is None:
+            raise ValueError("ff_gain is required")
+        cfg["ff_gain"] = float(ff_gain)
+        if flux_hold_us is not None:
+            cfg["ss_flux_hold_us"] = float(flux_hold_us)
+        kw["cfg"] = cfg
+        super().__init__(*args, **kw)
+        self.ff_gain = float(ff_gain)
+
+    def _acquire_shots(self, progress=False):
+        order = str(self.cfg.get("single_shot_state_order", "ge")).lower()
+        if order not in ("ge", "eg"):
+            raise ValueError("single_shot_state_order must be 'ge' or 'eg'")
+        states = (False, True) if order == "ge" else (True, False)
+        acquired = {}
+        for prep_excited in states:
+            cfg = dict(self.cfg)
+            cfg["prep_excited"] = bool(prep_excited)
+            prog = SingleShotFluxRampProgram(self.soccfg, cfg)
+            _, _, final_i, final_q = prog.acquire(
+                self.soc, load_pulses=True, progress=progress)
+            acquired[bool(prep_excited)] = final_i, final_q
+        return (np.asarray([acquired[False][0], acquired[True][0]]),
+                np.asarray([acquired[False][1], acquired[True][1]]))
+
+    def analyze(self, plotDisp=False):
+        result = super().analyze(plotDisp=plotDisp)
+        self.calib_params.update({
+            "flux_ramp_ff_gain": self.ff_gain,
+            "flux_ramp_park_pi_freq_mhz": float(self.cfg.get(
+                "qubit_pi_freq", self.cfg["qubit_freq"])),
+            "flux_ramp_hold_us": float(self.cfg.get(
+                "ss_flux_hold_us", self.cfg.get("ff_hold", 0.0))),
+            "flux_ramp_pi_gain": int(self.cfg.get(
+                "ss_flux_pi_gain", self.cfg["qubit_pi_gain"])),
+        })
+        self.data["calib_params"] = dict(self.calib_params)
+        return result

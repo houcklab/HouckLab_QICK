@@ -36,6 +36,9 @@ def test_per_dc_structure_ran_to_completion(out):
     assert m and int(m.group(2)) == n
     assert int(m.group(1)) >= n * 0.8
     assert "ss cal per dc" in out and "3-point T1 per dc" in out
+    assert f"### SS_FLUX_POINTS {n}" in out
+    assert "### PARK_SS_RUNS 1" in out
+    assert "flux-ramped IQ blobs" in out
     assert "transmission" not in out.lower()
 
 
@@ -46,7 +49,8 @@ def test_outputs_written_with_per_dc_columns(out):
         rows = f.read().strip().splitlines()
     assert len(rows) == _n_dc(out) + 1
     for col in ("T1_3pt_us", "ss_F", "ss_threshold", "ss_theta",
-                "t_ss_s", "t_t1_s", "freq_ghz"):
+                "ss_ff_gain", "ss_park_pi_freq_mhz", "ss_qubit_pi_gain",
+                "ss_flux_hold_us", "t_ss_s", "t_t1_s", "freq_ghz"):
         assert col in rows[0]
 
 
@@ -59,8 +63,16 @@ def test_h5_holds_every_calibration(out):
         for name in ("I_0", "Q_0", "I_1", "Q_1"):
             assert f[f"ss_cal/{name}"].shape[0] == n
             assert f[f"ss_cal/{name}"].shape[1] >= 100
-        for name in ("ss_F", "ss_threshold", "ss_theta"):
+        for name in ("ss_F", "ss_threshold", "ss_theta", "ss_ff_gain",
+                     "ss_park_pi_freq_mhz", "ss_qubit_pi_gain", "ss_flux_hold_us"):
             assert f[f"ss_cal/{name}"].shape[0] == n
+        assert f["ss_cal/dc_vec"].shape[0] == n
+        assert f["ss_cal/freq_ghz"].shape[0] == n
+        assert float(f["ss_cal"].attrs["flux_hold_us"]) == 1.0
+        assert f["park_cal/I_0"].shape[0] >= 100
+        assert f["park_cal/I_1"].shape[0] >= 100
+        assert "fixed discriminator" in f["park_cal"].attrs["role"]
+        assert "post-interaction" in f["ss_cal"].attrs["metrics_role"]
         assert f["t1/T1_3pt_us"].shape[0] == n
         assert f["timing/t_ss_s"].shape[0] == n
         assert f["timing/t_t1_s"].shape[0] == n

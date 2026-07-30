@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+    SingleShot1Q, SingleShotFluxRamp)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as TLS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
@@ -29,6 +30,7 @@ P6 = {
     "reset_oper": "lower",
     "reset_ground_below": False,
     "reset_max_iters": 3,
+    "ss_flux_hold_us": 1.0,
 }
 
 SPAN_MHZ = 400.0
@@ -69,14 +71,31 @@ def solve_dc_max(span_mhz):
     return int(round(hi)), f0, target
 
 
-def run_ss(soc, soccfg, tag):
+def run_park_ss(soc, soccfg, tag):
     c = dict(BaseConfig)
     c["shots"] = c["reps"] = SS_SHOTS_PER_DC
     t0 = time.time()
-    ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=TLS.QUBIT,
-                      outerFolder=outerFolder, suffix=tag,
-                      cfg=c, repeats=1,
-                      confidence_threshold=SS_GROUND_THRESHOLD)
+    ss = SingleShot1Q(
+        soc=soc, soccfg=soccfg, path=TLS.QUBIT,
+        outerFolder=outerFolder, suffix=tag,
+        cfg=c, repeats=1,
+        confidence_threshold=SS_GROUND_THRESHOLD)
+    ss.acquire(progress=False, plotDisp=False)
+    dt = time.time() - t0
+    plt.close("all")
+    return ss, dt
+
+
+def run_ss_flux_ramp(soc, soccfg, base, dc, p, tag):
+    c = dict(base)
+    c["shots"] = c["reps"] = SS_SHOTS_PER_DC
+    t0 = time.time()
+    ss = SingleShotFluxRamp(
+        soc=soc, soccfg=soccfg, path=TLS.QUBIT,
+        outerFolder=outerFolder, suffix=tag,
+        cfg=c, repeats=1,
+        confidence_threshold=SS_GROUND_THRESHOLD,
+        ff_gain=float(dc), flux_hold_us=float(p.get("ss_flux_hold_us", 1.0)))
     ss.acquire(progress=False, plotDisp=False)
     dt = time.time() - t0
     plt.close("all")
@@ -111,18 +130,18 @@ def main():
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     with tee_log.tee(f"Step6TimingAudit_{stamp}", outerFolder):
         soc, soccfg = makeProxy()
-        banner("STEP 6 TIMING AUDIT -- per-dc interleave: 500-shot ss cal + "
+        banner("STEP 6 TIMING AUDIT -- per-dc interleave: 500-shot flux-ramped IQ blobs + "
                "500-shot 3-point T1 at EVERY dc point")
         print("  Structure per dc point:")
-        print(f"    1. fresh single-shot calibration ({SS_SHOTS_PER_DC} shots per "
-              f"prep) -> that point's own threshold/theta")
+        print(f"    1. prepare |g>/|e> at park, ramp to that dc, hold, ramp back, and "
+              f"retain the IQ blobs ({SS_SHOTS_PER_DC} shots per prep)")
         print(f"    2. 3-point T1 at that dc ({P6['shots']} shots) discriminated "
-              f"with the fresh calibration")
-        print("  Every calibration's raw shots are kept, so the h5 can reconstruct")
-        print("  the discrimination at any point along the scan and correlate")
-        print("  readout drift with the T1 trace.  The reset is probed once up")
-        print("  front (this is still the testing script; production step 6 is")
-        print("  unchanged).")
+              f"with one clean park calibration")
+        print("  The per-dc fitted blob metrics describe the post-interaction clouds;")
+        print("  they are not used as T1 discriminator settings.  Every raw shot is")
+        print("  kept so the h5 can correlate cloud weights and shapes with TLS spikes.")
+        print("  The reset is probed once up front (this is still the testing script;")
+        print("  production step 6 is unchanged).")
 
         p = dict(P6)
         dc_max, f0, f_end = solve_dc_max(SPAN_MHZ)
@@ -134,7 +153,7 @@ def main():
               f"dc 0..{dc_max} DAC ({n_dc} freq-uniform points)")
 
         banner("MEASURE -- reset probe (once)")
-        p["_projected_points"] = n_dc * 3
+        p["_projected_points"] = n_dc * 5 + 2
         t0 = time.time()
         p = TLS._resolve_step6_reset(p, soc, soccfg, outerFolder)
         t_probe = time.time() - t0
@@ -145,12 +164,20 @@ def main():
 
         flux_tail = TLS._load_correction(None, outerFolder)
         base = TLS._t1_base_cfg(p, flux_tail, dc_vec)
+        base["three_point_ref_hold_us"] = float(p["ss_flux_hold_us"])
 
-        banner(f"MEASURE -- {n_dc} x (ss cal + 3-point T1)")
+        banner("MEASURE -- clean park IQ calibration")
+        park_ss, t_park_ss = run_park_ss(
+            soc, soccfg, "TimingAudit_SS_Park_Reference")
+        print(f"  park calibration: F {park_ss.max_F:.3f}, {hms(t_park_ss)}")
+
+        banner(f"MEASURE -- {n_dc} x (flux-ramped IQ blobs + 3-point T1)")
         ss_raw = {k: np.zeros((n_dc, SS_SHOTS_PER_DC)) for k in
                   ("I_0", "Q_0", "I_1", "Q_1")}
         ss_cols = {k: np.zeros(n_dc) for k in
-                   ("ss_F", "ss_threshold", "ss_theta", "ss_ground_threshold")}
+                   ("ss_F", "ss_threshold", "ss_theta", "ss_ground_threshold",
+                    "ss_ff_gain", "ss_park_pi_freq_mhz", "ss_qubit_pi_gain",
+                    "ss_flux_hold_us")}
         t1_cols = {k: np.zeros(n_dc) for k in
                    ("T1_3pt_us", "T1_3pt_valid_mask", "P0", "P1", "Ps",
                     "ref_contrast_3pt")}
@@ -159,7 +186,8 @@ def main():
         Ts_eff_ns = float(p["Ts_us"] * 1e3)
         series_t0 = time.time()
         for i, dc in enumerate(dc_vec):
-            ss, t_ss[i] = run_ss(soc, soccfg, f"TimingAudit_SS_{i:03d}")
+            ss, t_ss[i] = run_ss_flux_ramp(
+                soc, soccfg, base, dc, p, f"TimingAudit_SS_Flux_{i:03d}")
             for k in ss_raw:
                 v = np.asarray(getattr(ss, k), dtype=float).ravel()
                 ss_raw[k][i, :min(len(v), SS_SHOTS_PER_DC)] = \
@@ -169,8 +197,17 @@ def main():
             ss_cols["ss_theta"][i] = float(ss.calib_params["read_theta"])
             ss_cols["ss_ground_threshold"][i] = float(
                 ss.calib_params.get("ground_threshold", np.nan))
+            ss_cols["ss_ff_gain"][i] = float(
+                ss.calib_params.get("flux_ramp_ff_gain", dc))
+            ss_cols["ss_park_pi_freq_mhz"][i] = float(
+                ss.calib_params.get(
+                    "flux_ramp_park_pi_freq_mhz", BaseConfig["qubit_pi_freq"]))
+            ss_cols["ss_qubit_pi_gain"][i] = float(
+                ss.calib_params.get("flux_ramp_pi_gain", BaseConfig["qubit_pi_gain"]))
+            ss_cols["ss_flux_hold_us"][i] = float(
+                ss.calib_params.get("flux_ramp_hold_us", p["ss_flux_hold_us"]))
             out, t_t1[i] = run_t1_point(soc, soccfg, p, base, dc,
-                                        ss.calib_params,
+                                        park_ss.calib_params,
                                         f"TimingAudit_T1_{i:03d}")
             for k in t1_cols:
                 t1_cols[k][i] = out[k]
@@ -222,16 +259,28 @@ def main():
 
         h5_path = f"{base_path}_raw.h5"
         with h5py.File(h5_path, "w") as f:
+            pcal = f.create_group("park_cal")
+            for k in ("I_0", "Q_0", "I_1", "Q_1"):
+                pcal.create_dataset(k, data=np.asarray(getattr(park_ss, k), dtype=float))
+            pcal.attrs["calib_params"] = json.dumps(park_ss.calib_params)
+            pcal.attrs["fidelity"] = float(park_ss.max_F)
+            pcal.attrs["role"] = "fixed discriminator used for every T1 point"
             g = f.create_group("ss_cal")
+            g.create_dataset("dc_vec", data=dc_vec)
+            g.create_dataset("freq_ghz", data=np.asarray(freq_ghz, dtype=float))
             for k, v in ss_raw.items():
                 g.create_dataset(k, data=v)
             for k, v in ss_cols.items():
                 g.create_dataset(k, data=v)
             g.attrs["shots_per_prep"] = SS_SHOTS_PER_DC
+            g.attrs["flux_hold_us"] = float(p.get("ss_flux_hold_us", 1.0))
+            g.attrs["qubit_pi_gain"] = int(BaseConfig["qubit_pi_gain"])
+            g.attrs["metrics_role"] = "post-interaction blob descriptors"
             g.attrs["layout"] = ("2-D arrays [n_dc, shots]: row i is the "
-                                 "calibration taken immediately before the "
-                                 "3-point T1 at dc_vec[i].  I_0/Q_0 ground prep, "
-                                 "I_1/Q_1 one pi pulse, host units.")
+                                 "flux-ramped IQ acquisition taken immediately before "
+                                 "the 3-point T1 at dc_vec[i].  Both preparations "
+                                 "use the calibrated park pulse, ramp to dc_vec[i], "
+                                 "hold, and ramp back before the park readout.")
             t = f.create_group("t1")
             t.create_dataset("dc_vec", data=dc_vec)
             t.create_dataset("freq_ghz", data=np.asarray(freq_ghz, dtype=float))
@@ -250,6 +299,7 @@ def main():
             m.create_dataset("t_ss_s", data=t_ss)
             m.create_dataset("t_t1_s", data=t_t1)
             m.attrs["t_probe_s"] = float(t_probe)
+            m.attrs["t_park_ss_s"] = float(t_park_ss)
             m.attrs["t_total_s"] = float(t_total)
             m.attrs["n_dc"] = int(n_dc)
             m.attrs["span_mhz"] = float(SPAN_MHZ)
@@ -257,6 +307,7 @@ def main():
 
         banner("TIMING SUMMARY")
         print(f"  reset probe (once)   {hms(t_probe)}")
+        print(f"  park ss cal (once)   {hms(t_park_ss)}")
         print(f"  ss cal per dc        {np.median(t_ss):.2f} s median "
               f"({hms(float(np.sum(t_ss)))} total)")
         print(f"  3-point T1 per dc    {np.median(t_t1):.2f} s median "

@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+    SingleShot1Q, SingleShotFluxRamp)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import T1
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
@@ -40,6 +41,17 @@ P_SS_CAL = {
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
+}
+
+P_SS_FLUX_RAMP = {
+    "run": False,
+    "shots": 1000,
+    "number_pi_pulses": 1,
+    "ground_threshold": 0.7,
+    "excursion_gain": 8000,
+    "qubit_pi_gain": None,
+    "flux_hold_us": 1.0,
+    "flux_tail_compensation": None,
 }
 
 P_T1 = {
@@ -105,6 +117,34 @@ def run_ss_cal(outer_folder, soc, soccfg):
                       confidence_threshold=float(p["ground_threshold"]))
     ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
     print(f"[SS] fidelity F = {ss.max_F:.4f}; calib_params = {ss.calib_params}")
+    plt.close("all"); gc.collect()
+    return ss.calib_params
+
+
+def run_ss_flux_ramp(outer_folder, soc, soccfg):
+    p = P_SS_FLUX_RAMP
+    cfg = _base_cfg(p)
+    if p.get("qubit_pi_gain") is not None:
+        cfg["ss_flux_pi_gain"] = int(p["qubit_pi_gain"])
+    comp = p.get("flux_tail_compensation")
+    if comp is not None:
+        cfg["flux_tail_compensation"] = comp
+    print(f"[SS flux ramp] park pi {float(cfg['qubit_pi_freq']):.6f} MHz at gain "
+          f"{int(cfg.get('ss_flux_pi_gain', cfg['qubit_pi_gain']))}, then "
+          f"ff_gain={p['excursion_gain']}, ramp "
+          f"{cfg.get('ff_ramp_length', ff_pulse.STATE_SAFE_RAMP_US):g} us, hold "
+          f"{float(p['flux_hold_us']):g} us, predistortion "
+          f"{'ON' if comp is not None else 'OFF'}")
+    ss = SingleShotFluxRamp(
+        soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+        suffix="SS_Cal_Flux_Ramp", cfg=cfg,
+        repeats=int(p["number_pi_pulses"]),
+        confidence_threshold=float(p["ground_threshold"]),
+        ff_gain=float(p["excursion_gain"]),
+        flux_hold_us=float(p["flux_hold_us"]))
+    ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
+    print(f"[SS flux ramp] fidelity F = {ss.max_F:.4f}; "
+          f"calib_params = {ss.calib_params}")
     plt.close("all"); gc.collect()
     return ss.calib_params
 
@@ -192,6 +232,7 @@ def main():
     print(f"single-qubit coherence | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | "
           f"{'PARK' if FF_HOLD_GAIN == 0 else f'held ff_gain={FF_HOLD_GAIN}'}")
     for name, on in [("SS_Cal", P_SS_CAL["run"]),
+                     ("SS_Cal_Flux_Ramp", P_SS_FLUX_RAMP["run"]),
                      ("T1", P_T1["run"]),
                      ("T1_Flux_Ramp", P_T1_FLUX_RAMP["run"])]:
         print(f"  {'[x]' if on else '[ ]'} {name}")
@@ -200,6 +241,8 @@ def main():
     calib_params = None
     if P_SS_CAL["run"]:
         calib_params = run_ss_cal(outer_folder, soc, soccfg)
+    if P_SS_FLUX_RAMP["run"]:
+        run_ss_flux_ramp(outer_folder, soc, soccfg)
     if P_T1["run"]:
         if calib_params is None:
             print("[SS] T1 needs a single-shot calibration; running SS_Cal first.")
@@ -207,7 +250,8 @@ def main():
         run_t1(outer_folder, soc, soccfg, calib_params)
     if P_T1_FLUX_RAMP["run"]:
         if calib_params is None:
-            print("[SS] T1_Flux_Ramp needs a single-shot calibration; running SS_Cal first.")
+            print("[SS] T1_Flux_Ramp needs a park single-shot calibration; "
+                  "running SS_Cal first.")
             calib_params = run_ss_cal(outer_folder, soc, soccfg)
         run_t1_flux_ramp(outer_folder, soc, soccfg, calib_params)
 
