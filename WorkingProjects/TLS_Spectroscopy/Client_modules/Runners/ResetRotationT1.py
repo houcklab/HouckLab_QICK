@@ -105,7 +105,7 @@ def run_pass(soc, soccfg, cfg, calib_params, arm, pair):
         shots=int(SHOTS_3PT), calib_params=calib_params, park_voltage=0,
         reset_mode="feedback", min_ref_contrast=MIN_REF_CONTRAST,
         max_plot_t1_multiple=MAX_PLOT_T1_MULTIPLE,
-        run_park_T1_if_Ts_none=False, write_outputs=False)
+        write_outputs=False)
     exp.acquire(progress=False)
     out = {k: np.asarray(exp.data[k], dtype=float) for k in HARVEST_KEYS}
     plt.close("all")

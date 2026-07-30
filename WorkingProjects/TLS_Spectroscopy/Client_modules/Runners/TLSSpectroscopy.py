@@ -176,8 +176,6 @@ P6_3PT_T1 = {
     "freq_step_mhz": 1,
     "wall_clock_duration_min": None,
     "Ts_us": 60.0,
-    "auto_Ts_factor": 0.5,
-    "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     "reset_mode": "feedback",
@@ -185,13 +183,6 @@ P6_3PT_T1 = {
     "reset_oper": "lower",
     "reset_ground_below": False,
     "reset_max_iters": 3,
-    "T1_probe_cfg": {
-        "shots_T1": 1000,
-        "t_min_us": 1.0,
-        "t_max_us": 300.0,
-        "t_points": 71,
-        "num_pulses": 1,
-    },
 }
 
 
@@ -872,6 +863,9 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
     p = dict(P6_3PT_T1)
+    if p.get("Ts_us") is None:
+        raise RuntimeError('P6_3PT_T1["Ts_us"] must be set: the 3-point method runs '
+                           'at one FIXED decay delay (production uses 60.0).')
     dc_vec = _step6_dc_vec(p)
     p["_projected_points"] = len(dc_vec) * 3
     p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
@@ -885,15 +879,11 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
         return T13PointVsFlux(
             soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
             suffix="TLS_3pt_T1_vs_Flux_distortion_corrected", cfg=dict(base),
-            dc_vec=dc_vec, Ts_ns=(None if p.get("Ts_us") is None
-                                  else int(round(p["Ts_us"] * 1e3))),
+            dc_vec=dc_vec, Ts_ns=int(round(p["Ts_us"] * 1e3)),
             shots=int(p["shots"]), calib_params=calib_params,
             park_voltage=BASELINE_DC_OFFSET,
             min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
             max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
-            auto_Ts_factor=float(p.get("auto_Ts_factor", 0.5)),
-            T1_probe_cfg=p.get("T1_probe_cfg", None),
-            run_park_T1_if_Ts_none=bool(p.get("run_park_T1_if_Ts_none", True)),
             reset_mode=p.get("reset_mode", "passive"),
             flux_tail_compensation=flux_tail_compensation,
             repeat_metadata=repeat_metadata,

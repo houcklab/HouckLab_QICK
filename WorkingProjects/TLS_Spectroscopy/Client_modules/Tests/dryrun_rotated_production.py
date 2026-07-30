@@ -43,8 +43,7 @@ def main():
     TLS.P6_3PT_T1 = dict(TLS.P6_3PT_T1)
     TLS.P6_3PT_T1.update({"run": True, "shots": 600, "dc_min": 0, "dc_max": 9000,
                           "dc_step": 4000, "freq_step_mhz": None,
-                          "Ts_us": 60.0, "T1_probe_cfg": None,
-                          "run_park_T1_if_Ts_none": False})
+                          "Ts_us": 60.0})
     TLS.PROBE_RESET = True
     TLS.INTERLEAVE_ROUNDS = 2
     calib = {"scale_factor": 1, "threshold": 0.0, "read_theta": 0.0,

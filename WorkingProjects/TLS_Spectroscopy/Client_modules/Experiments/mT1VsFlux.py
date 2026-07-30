@@ -638,26 +638,18 @@ class _T1VsFluxBase(ExperimentClass):
 class T13PointVsFlux(_T1VsFluxBase):
 
     def __init__(self, *args, Ts_ns=None, min_ref_contrast=0.05,
-                 max_plot_t1_multiple=20.0, auto_Ts_factor=0.5, T1_probe_cfg=None,
-                 run_park_T1_if_Ts_none=True, **kw):
+                 max_plot_t1_multiple=20.0, **kw):
         super().__init__(*args, **kw)
         self.min_ref_contrast = float(min_ref_contrast)
         self.max_plot_t1_multiple = max_plot_t1_multiple
-        self.auto_Ts_factor = float(auto_Ts_factor)
-        self.T1_probe_cfg = T1_probe_cfg
         self.data.update({"min_ref_contrast": self.min_ref_contrast,
-                          "max_plot_t1_multiple": max_plot_t1_multiple,
-                          "auto_Ts_factor": self.auto_Ts_factor,
-                          "auto_T1_probe_cfg": T1_probe_cfg})
+                          "max_plot_t1_multiple": max_plot_t1_multiple})
         if Ts_ns is None:
-            if not run_park_T1_if_Ts_none:
-                raise ValueError("Ts_ns is None and run_park_T1_if_Ts_none is False.")
-            T1_us = self._park_T1_probe(T1_probe_cfg, "AUTO Ts")
-            Ts_us = self.auto_Ts_factor * T1_us
-            Ts_ns = int(np.round(Ts_us * 1e3))
-            print(f"[AUTO Ts] T1_park={T1_us:.3g} us -> Ts={Ts_us:.3g} us ({Ts_ns} ns)")
-            self.data.update({"auto_T1_park_us": T1_us, "auto_Ts_us": Ts_us,
-                              "auto_Ts_ns": Ts_ns})
+            raise ValueError(
+                "Ts_ns is required: the 3-point method runs at ONE fixed decay "
+                "delay.  Pick it from the known T1 range (the estimator's variance "
+                "is minimal at Ts ~= T1 and it is only defined while the decay has "
+                "neither vanished nor stayed put); production uses 60 us.")
         self.Ts_ns = int(Ts_ns)
         self.data["Ts_ns"] = self.Ts_ns
 

@@ -133,7 +133,7 @@ def run_3pt(soc, soccfg, cfg, dc_vec, calib_params, suffix):
         reset_mode=cfg["reset_mode"],
         min_ref_contrast=MIN_REF_CONTRAST,
         max_plot_t1_multiple=MAX_PLOT_T1_MULTIPLE,
-        run_park_T1_if_Ts_none=False, write_outputs=False)
+        write_outputs=False)
     exp.acquire(progress=False)
     plt.close("all")
     gc.collect()
