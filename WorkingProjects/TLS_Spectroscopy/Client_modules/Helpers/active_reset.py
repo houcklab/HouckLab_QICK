@@ -125,6 +125,19 @@ def fit_reset_threshold(ground, excited, iters=3, pi_efficiency=DEFAULT_PI_EFFIC
 
 MAX_RESIDUAL_ABOVE_FLOOR = 0.12
 MAX_USABLE_FLOOR = 0.40
+FUNCTIONAL_RESIDUAL_MAX = 0.45
+FUNCTIONAL_BASELINE_BAND = (0.7, 1.3)
+
+
+def reset_functional(residual):
+    if not residual:
+        return False
+    worst = max(float(residual.get("reset_ground", float("nan"))),
+                float(residual.get("reset_excited", float("nan"))))
+    base = float(residual.get("baseline", float("nan")))
+    return bool(np.isfinite(worst) and worst < FUNCTIONAL_RESIDUAL_MAX
+                and np.isfinite(base)
+                and FUNCTIONAL_BASELINE_BAND[0] <= base <= FUNCTIONAL_BASELINE_BAND[1])
 
 
 def reset_verdict(p_e_given_g, p_g_given_e, residual_g, residual_e, baseline=None,
@@ -365,7 +378,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                        diagnostic_callback=None,
                        max_residual_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
                        max_usable_floor=MAX_USABLE_FLOOR,
-                       reset_max_iters=None):
+                       reset_max_iters=None, gate_policy="best_effort"):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
@@ -427,6 +440,9 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
     rec["raw_assignment_shots"] = buffered_shots
     legacy_ok = True
+    legacy_residual = None
+    rot_residual = None
+    rot_params_kept = None
     if validate:
         try:
             residual = probe._residual_at(
@@ -437,6 +453,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                   "the ROTATED scheme before giving up on active reset.")
             legacy_ok = False
         else:
+            legacy_residual = residual
             errs = rec.get("raw_assignment_errors", {})
             verdict = reset_verdict(errs.get("p_e_given_g", float("nan")),
                                     errs.get("p_g_given_e", float("nan")),
@@ -492,6 +509,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                 print(f"[reset] rotated residual {rot_verdict['worst']:.3f} against a "
                       f"floor of {rot_verdict['floor']:.3f} "
                       f"({rot_verdict['above_floor']:+.3f} above it)")
+                rot_params_kept = rot_params
                 if rot_verdict["ok"]:
                     rec["rot_reset"] = rot_params
                     rec["rot_validation"] = rot_residual
@@ -513,11 +531,38 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
         except Exception as exc:
             print(f"[reset] rotated calibration failed ({exc}); the legacy reset "
                   f"stays in charge.")
+    if rec["use"] is None and str(gate_policy) == "best_effort":
+        candidates = []
+        if reset_functional(rot_residual) and rot_params_kept:
+            worst = max(rot_residual["reset_ground"], rot_residual["reset_excited"])
+            candidates.append((worst, "rot", rot_residual))
+        if reset_functional(legacy_residual):
+            worst = max(legacy_residual["reset_ground"],
+                        legacy_residual["reset_excited"])
+            candidates.append((worst, "legacy", legacy_residual))
+        if candidates:
+            candidates.sort(key=lambda c: c[0])
+            worst, scheme, resid = candidates[0]
+            rec["use"] = scheme
+            rec["degraded"] = True
+            rec["degraded_residuals"] = dict(resid)
+            if scheme == "rot":
+                rec["rot_reset"] = rot_params_kept
+            print(f"[reset] no scheme met the validated bar, but the {scheme} reset "
+                  f"IS functional (measured residuals |g> "
+                  f"{resid['reset_ground']:+.3f}, |e> {resid['reset_excited']:+.3f}) "
+                  f"-- running it BEST-EFFORT rather than dropping to passive.")
+            print("[reset] rationale: a mediocre active reset at ~0.1 ms/shot beats "
+                  "a 2 ms passive relax ~20x in throughput, and the matched-"
+                  "reference 3-point method cancels the reset residual to first "
+                  "order.  Recalibrate the pi when convenient; pass "
+                  "gate_policy='strict' to restore the hard gate.")
     if rec["use"] is None:
-        print("[reset] NEITHER the legacy nor the rotated reset passed its "
-              "end-to-end gate -- falling back to passive relax.  (Both failing "
-              "usually means the pi efficiency is too low for the loop to "
-              "converge in reset_max_iters; recalibrate the pi.)")
+        print("[reset] no functional reset at all (residuals near or above "
+              f"{FUNCTIONAL_RESIDUAL_MAX:g}, or the no-reset baseline is broken) "
+              "-- falling back to passive relax.  This means the feedback loop is "
+              "not resetting, not merely resetting poorly; check the pi and the "
+              "feedback path.")
         return None
     if rec["use"] == "rot":
         print("[reset] the ROTATED reset is calibrated, hardware-validated, and "

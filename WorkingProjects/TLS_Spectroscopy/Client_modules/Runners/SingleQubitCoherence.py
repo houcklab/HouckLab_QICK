@@ -169,8 +169,12 @@ def main():
             RESET_GROUND_BELOW = bool(rec["ground_below"])
             if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
                 ROT_RESET_PARAMS = dict(rec["rot_reset"])
-                print("[reset] ROTATED reset selected (probe-validated); legacy "
-                      "threshold kept as the documented fallback.")
+                if rec.get("degraded"):
+                    print("[reset] ROTATED reset selected BEST-EFFORT: functional "
+                          "but above the validated bar this probe.")
+                else:
+                    print("[reset] ROTATED reset selected (probe-validated); legacy "
+                          "threshold kept as the documented fallback.")
             elif USE_ROTATED_RESET:
                 print("[reset] rotated reset not validated this session -- LEGACY "
                       "reset in use.")

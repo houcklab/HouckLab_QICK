@@ -877,8 +877,14 @@ def _resolve_step6_reset(p, soc, soccfg, outer_folder):
             p["reset_ground_below"] = bool(rec["ground_below"])
             if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
                 p["rot_reset"] = dict(rec["rot_reset"])
-                print("[6] ROTATED reset selected (probe-validated); the legacy "
-                      "threshold stays in the cfg as the documented fallback.")
+                if rec.get("degraded"):
+                    print("[6] ROTATED reset selected BEST-EFFORT: functional but "
+                          "above the validated bar this probe; matched references "
+                          "tolerate the residual, and this beats passive ~20x in "
+                          "throughput.")
+                else:
+                    print("[6] ROTATED reset selected (probe-validated); the legacy "
+                          "threshold stays in the cfg as the documented fallback.")
             elif USE_ROTATED_RESET:
                 print("[6] rotated reset not validated this session -- running the "
                       "LEGACY reset.")

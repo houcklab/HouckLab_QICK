@@ -25,7 +25,7 @@ def _blobs(seed=0, n=4000):
     return lg, ug, le, ue
 
 
-def _make_fake_probe(legacy_bad, rot_bad):
+def _make_fake_probe(legacy_bad, rot_bad, e_bad=0.30):
     lg, ug, le, ue = _blobs()
 
     class FakeProbe:
@@ -49,20 +49,20 @@ def _make_fake_probe(legacy_bad, rot_bad):
         def _residual_at(self, res_phase, threshold_raw, ground_below, shots,
                          oper=None, rot_reset=None):
             bad = rot_bad if rot_reset else legacy_bad
-            e = 0.30 if bad else 0.05
+            e = e_bad if bad else 0.05
             return {"baseline": 0.98, "reset_ground": 0.03, "reset_excited": e,
                     "reset": e, "works": not bad}
 
     return FakeProbe
 
 
-def _run(legacy_bad, rot_bad):
+def _run(legacy_bad, rot_bad, e_bad=0.30, **kw):
     saved = mActiveResetProbe.ActiveResetProbe
-    mActiveResetProbe.ActiveResetProbe = _make_fake_probe(legacy_bad, rot_bad)
+    mActiveResetProbe.ActiveResetProbe = _make_fake_probe(legacy_bad, rot_bad, e_bad)
     try:
         return ar.probe_reset_params(None, None, {"reset_max_iters": 3,
                                                   "res_phase": 0.0},
-                                     path="q4", outer_folder="", shots=2000)
+                                     path="q4", outer_folder="", shots=2000, **kw)
     finally:
         mActiveResetProbe.ActiveResetProbe = saved
 
@@ -83,8 +83,23 @@ def test_legacy_failure_falls_through_to_a_validated_rotated_reset():
     assert "verdict" not in rec
 
 
-def test_both_failing_falls_back_to_passive():
+def test_both_above_bar_but_functional_runs_best_effort():
     rec = _run(legacy_bad=True, rot_bad=True)
+    assert rec is not None, ("a functional-but-mediocre reset must run best-effort "
+                             "by default, never silently become 2 ms passive")
+    assert rec.get("degraded") is True
+    assert rec["use"] in ("rot", "legacy")
+    if rec["use"] == "rot":
+        assert rec.get("rot_reset")
+
+
+def test_strict_policy_still_goes_passive_when_both_fail_the_bar():
+    rec = _run(legacy_bad=True, rot_bad=True, gate_policy="strict")
+    assert rec is None
+
+
+def test_a_truly_nonfunctional_reset_goes_passive_even_in_best_effort():
+    rec = _run(legacy_bad=True, rot_bad=True, e_bad=0.60)
     assert rec is None
 
 
