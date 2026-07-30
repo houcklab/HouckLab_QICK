@@ -30,8 +30,7 @@ FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
-PROBE_RESET = False
-USE_ROTATED_RESET = True
+PROBE_RESET = True
 ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
@@ -122,6 +121,8 @@ P_RABI_CHEVRON_SS = {
 P_READOUT_OPT = {
     "run": False,
     "shots": 500,
+    "num_pi": 1,
+    "pulse_type": "X180",
     "freq_span_mhz": 1.0,
     "freq_points": 11,
     "gain_min": 1000,
@@ -132,7 +133,8 @@ P_READOUT_OPT = {
 P_QUBIT_OPT = {
     "run": True,
     "shots": 500,
-    "num_pi_pulses": 1,
+    "num_pi": 1,
+    "pulse_type": "X180",
     "freq_span_mhz": 2.0,
     "freq_points": 21,
     "gain_min": 2000,
@@ -151,19 +153,20 @@ def _base_cfg(p, extra=None):
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
     cfg["reset_mode"] = RESET_MODE
-    if active_reset.uses_feedback(RESET_MODE) and ROT_RESET_PARAMS:
-        cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
-    if active_reset.uses_feedback(RESET_MODE):
+    if extra:
+        cfg.update(extra)
+    if active_reset.uses_feedback(cfg):
+        if not ROT_RESET_PARAMS:
+            raise RuntimeError("feedback reset needs a validated rotated reset profile")
         if RESET_THRESHOLD_RAW is None:
             raise RuntimeError("RESET_MODE='feedback' needs a reset threshold, but the "
                                "start-of-run probe did not set one.")
+        cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
         cfg["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
         cfg["reset_thermalization_us"] = THERMALIZATION_US
-    if extra:
-        cfg.update(extra)
     return cfg
 
 
@@ -181,7 +184,7 @@ def run_transmission(outer_folder, soc, soccfg):
     start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else f0 - 2.0
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
     f_vec = np.linspace(float(start), float(stop), int(p["freq_points"]))
-    cfg = _base_cfg(p)
+    cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     cfg["relax_delay"] = 50
     _apply_spec_probe(cfg, p)
     print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
@@ -199,7 +202,9 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
     freqs = np.linspace(float(start), float(stop), int(p["freq_points"]))
     gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
-    cfg = _base_cfg(p, extra={"ff_gain": int(FF_HOLD_GAIN), "ff_settle_us": 20.0})
+    cfg = _base_cfg(p, extra={"ff_gain": int(FF_HOLD_GAIN),
+                              "ff_settle_us": 20.0,
+                              "reset_mode": "passive"})
     cfg["relax_delay"] = 50
     _apply_spec_probe(cfg, p)
     exp = ExperimentClass(path=QUBIT, outerFolder=outer_folder, suffix="GateCal_TransSweep", cfg=cfg)
@@ -333,11 +338,13 @@ def run_readout_opt(outer_folder, soc, soccfg):
                                  int(p["gain_points"]))).astype(int)
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     print(f"[readout opt] scanning read freq {freqs[0]:.3f}..{freqs[-1]:.3f} MHz x gain "
-          f"{gains[0]}..{gains[-1]} at ff_gain={FF_HOLD_GAIN} (passive)")
+          f"{gains[0]}..{gains[-1]} with {p['pulse_type']} state preparation at "
+          f"ff_gain={FF_HOLD_GAIN} (passive)")
     exp = ReadoutOptimize(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                           suffix="GateCal_Readout_Optimize", cfg=cfg,
                           freqs_mhz=freqs, gains=gains, shots=int(p["shots"]),
-                          live_plot=LIVE_PLOTS)
+                          num_pi=int(p["num_pi"]),
+                          pulse_type=p["pulse_type"], live_plot=LIVE_PLOTS)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
     return exp
@@ -352,11 +359,13 @@ def run_qubit_opt(outer_folder, soc, soccfg):
                                  int(p["gain_points"]))).astype(int)
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     print(f"[qubit opt] scanning qubit freq {freqs[0]:.3f}..{freqs[-1]:.3f} MHz x gain "
-          f"{gains[0]}..{gains[-1]}, {p['num_pi_pulses']}x pi (passive)")
+          f"{gains[0]}..{gains[-1]}, {p['pulse_type']} with "
+          f"{p['num_pi']} logical pi rotations (passive)")
     exp = QubitPulseOptimize(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                              suffix="GateCal_Qubit_Optimize", cfg=cfg,
                              freqs_mhz=freqs, gains=gains, shots=int(p["shots"]),
-                             num_pi_pulses=int(p["num_pi_pulses"]), live_plot=LIVE_PLOTS)
+                             num_pi=int(p["num_pi"]),
+                             pulse_type=p["pulse_type"], live_plot=LIVE_PLOTS)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
     return exp
@@ -368,43 +377,47 @@ def main():
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS
+    feedback_requested = (active_reset.uses_feedback(RESET_MODE)
+                          and bool(P_RABI_CHEVRON_SS["run"]))
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
               "its own projection angle every probe and does not need it.")
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
-    if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
+    if feedback_requested and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
                                  reset_max_iters=int(RESET_MAX_ITERS))
         if rec is None:
             RESET_MODE = "passive"
-        else:
+            ROT_RESET_PARAMS = None
+        elif active_reset.rotated_probe_record(rec):
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
-            if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
-                ROT_RESET_PARAMS = dict(rec["rot_reset"])
-                if rec.get("degraded"):
-                    print("[reset] ROTATED reset selected BEST-EFFORT: functional "
-                          "but above the validated bar this probe.")
-                else:
-                    print("[reset] ROTATED reset selected (probe-validated); legacy "
-                          "threshold kept as the documented fallback.")
-            elif USE_ROTATED_RESET:
-                print("[reset] rotated reset not validated this session -- LEGACY "
-                      "reset in use.")
-    elif active_reset.uses_feedback(RESET_MODE):
-        print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
-              f"({RESET_OPER}) without re-probing")
-        if USE_ROTATED_RESET:
-            print("[reset] NOTE: the rotated reset needs a fresh probe; with "
-                  "PROBE_RESET=False this run uses the LEGACY reset.")
+            ROT_RESET_PARAMS = dict(rec["rot_reset"])
+            if rec.get("degraded"):
+                print("[reset] ROTATED reset selected BEST-EFFORT: functional "
+                      "but above the validated bar this probe.")
+            else:
+                print("[reset] ROTATED reset selected (probe-validated).")
+        else:
+            RESET_MODE = "passive"
+            ROT_RESET_PARAMS = None
+            print("[reset] rotated reset did not validate -- using passive reset.")
+    elif feedback_requested:
+        if ROT_RESET_PARAMS:
+            print("[reset] PROBE_RESET=False -> using the configured rotated reset "
+                  "profile without re-probing")
+        else:
+            RESET_MODE = "passive"
+            print("[reset] PROBE_RESET=False and no rotated reset profile is configured "
+                  "-- using passive reset.")
 
     print("=" * 70)
     flux_note = ("PARK (ff_gain=0)" if FF_HOLD_GAIN == 0 else
                  f"HELD flux ff_gain={FF_HOLD_GAIN} DAC, read {'at park' if READOUT_AFTER_PARK else 'AT held flux'}")
-    print(f"pi-pulse calibration | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | at {flux_note}")
+    print(f"gate calibration | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | at {flux_note}")
     if FF_HOLD_GAIN != 0:
         print(f"  NOTE: qubit_pi_freq={BaseConfig['qubit_pi_freq']} MHz must be the qubit freq AT ff_gain={FF_HOLD_GAIN}")
     for name, on in [("Transmission", P_TRANSMISSION["run"]),
@@ -443,7 +456,7 @@ def main():
     if P_QUBIT_OPT["run"]:
         run_qubit_opt(outer_folder, soc, soccfg)
 
-    print("\npi-pulse calibration complete.")
+    print("\ngate calibration complete.")
 
 
 if __name__ == "__main__":

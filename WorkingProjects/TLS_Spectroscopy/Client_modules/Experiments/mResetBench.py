@@ -51,7 +51,7 @@ class BenchResetProgram(AveragerProgram):
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
-                max_iters=int(cfg.get("reset_max_iters", 3)))
+                max_iters=int(cfg.get("reset_max_iters", 3)), allow_legacy=True)
         elif scheme in ("rot2", "rot3", "rot3nl"):
             rot.active_reset_rot_block(
                 self, ro_ch=cfg["ro_chs"][0],
@@ -262,6 +262,7 @@ def _dispatching_reset_block(original):
         except Exception:
             params = None
         if not params:
+            kw["allow_legacy"] = True
             return original(prog, **kw)
         return rot.active_reset_rot_block(
             prog, ro_ch=kw.get("ro_ch", 0),

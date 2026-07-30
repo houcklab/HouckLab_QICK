@@ -39,10 +39,14 @@ def main():
     TLS.outerFolder = tempfile.mkdtemp(prefix="RotProd_dryrun_")
     rec = fake_probe_rec(truth, rot, 3)
     probe_calls = []
+    probe_result = [rec]
 
     def fake_probe(*a, **k):
         probe_calls.append(1)
-        return {**rec, "rot_reset": dict(rec["rot_reset"])}
+        current = probe_result[0]
+        if current is None:
+            return None
+        return {**current, "rot_reset": dict(current["rot_reset"])}
 
     TLS.probe_reset_params = fake_probe
     TLS.P6_3PT_T1 = dict(TLS.P6_3PT_T1)
@@ -63,32 +67,32 @@ def main():
 
     T1mod.FFT1Program.__init__ = spy_init
 
-    print("### SCENARIO 1: USE_ROTATED_RESET=True -- the rotated reset must reach "
+    print("### SCENARIO 1: the rotated reset must reach "
           "the production program")
-    TLS.USE_ROTATED_RESET = True
     TLS.run_step6_3pt_t1(TLS.outerFolder, None, None, calib, None)
     rot_engaged = [c for c in seen_cfgs if c.get("rot_reset")]
     print(f"### production programs built: {len(seen_cfgs)}, with rot_reset: "
           f"{len(rot_engaged)}")
     assert seen_cfgs and len(rot_engaged) == len(seen_cfgs)
     assert all(c.get("reset_threshold_raw") is not None for c in seen_cfgs)
-    print("### every program carried BOTH parameter sets (rotated active, legacy "
-          "fallback present)")
+    print("### every feedback program carried the rotated reset profile")
 
     seen_cfgs.clear()
-    print("\n### SCENARIO 2: USE_ROTATED_RESET=False -- one flag back to legacy")
-    TLS.USE_ROTATED_RESET = False
+    probe_result[0] = None
+    print("\n### SCENARIO 2: failed rotated calibration falls back to passive")
     TLS.run_step6_3pt_t1(TLS.outerFolder, None, None, calib, None)
     rot_engaged = [c for c in seen_cfgs if c.get("rot_reset")]
-    print(f"### production programs built: {len(seen_cfgs)}, with rot_reset: "
-          f"{len(rot_engaged)}")
+    passive = [c for c in seen_cfgs if c.get("reset_mode") == "passive"]
+    print(f"### programs built after failed rotation: {len(seen_cfgs)}, passive: "
+          f"{len(passive)}, with rot_reset: {len(rot_engaged)}")
     assert seen_cfgs and len(rot_engaged) == 0
-    print("### the identical run reverted to the legacy reset with no other change")
+    assert len(passive) == len(seen_cfgs)
+    print("### no program silently reverted to the legacy reset")
 
     seen_cfgs.clear()
     probe_calls.clear()
+    probe_result[0] = rec
     print("\n### SCENARIO 3: wall-clock series with periodic re-probe between passes")
-    TLS.USE_ROTATED_RESET = True
     TLS.RESET_REPROBE_MIN = 1e-7
     TLS.P6_3PT_T1 = dict(TLS.P6_3PT_T1)
     TLS.P6_3PT_T1["wall_clock_duration_min"] = 0.02

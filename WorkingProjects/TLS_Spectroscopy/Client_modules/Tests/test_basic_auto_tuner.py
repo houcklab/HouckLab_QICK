@@ -3865,6 +3865,8 @@ def test_feedback_profile_is_bound_to_frequency_and_length_not_scoring_gain():
         tuner._reset_runtime = {
             "reset_mode": "feedback", "reset_threshold_raw": 1234,
             "reset_oper": "lower", "reset_ground_below": True,
+            "rot_reset": {"c_int": 100, "s_int": 0,
+                          "excite_threshold": 1000, "max_iters": 3},
             "reset_max_iters": 3, "reset_pi_freq": 2534.5,
             "reset_pi_gain": 5790, "reset_pi_sigma": 0.25,
             "reset_pi_drag_beta": 0.04,
@@ -3909,6 +3911,8 @@ def test_feedback_exact_ab_rejects_the_observed_step5_collapse():
             "reset_mode": "feedback", "reset_profile_key": profile_key,
             "reset_threshold_raw": 1234, "reset_oper": "lower",
             "reset_ground_below": True, "reset_max_iters": 3,
+            "rot_reset": {"c_int": 100, "s_int": 0,
+                          "excite_threshold": 1000, "max_iters": 3},
             "reset_pi_freq": tuner.working["qubit_pi_freq"],
             "reset_pi_gain": tuner.working["qubit_pi_gain"],
             "reset_pi_sigma": tuner.working["sigma"],
@@ -4015,7 +4019,7 @@ def test_rabi_sweep_feedback_restores_the_swept_gain_and_scoring_readout():
         RI.set_readout_pulse = original_set
         RI.active_reset.active_reset_block = original_reset
     assert readout_gains == [5000, 7300]
-    assert math == [(0, 27, 2, "+", 0), (0, 2, 27, "+", 0)]
+    assert math == [(0, 3, 2, "+", 0), (0, 2, 3, "+", 0)]
 
 
 def test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word():
@@ -4067,14 +4071,14 @@ def test_active_reset_primitive_always_clears_measurement_photons():
 
     program = FakeProgram()
     active_reset.active_reset_block(
-        program, threshold_raw=123, max_iters=3)
+        program, threshold_raw=123, max_iters=3, allow_legacy=True)
     assert program.measurements == 3
     assert np.isclose(program.syncs[-1], 17.5)
     default_program = FakeProgram()
     default_program.cfg = dict(FakeProgram.cfg)
     default_program.cfg.pop("reset_thermalization_us")
     active_reset.active_reset_block(
-        default_program, threshold_raw=123, max_iters=1)
+        default_program, threshold_raw=123, max_iters=1, allow_legacy=True)
     assert np.isclose(default_program.syncs[-1], 25.0)
 
 

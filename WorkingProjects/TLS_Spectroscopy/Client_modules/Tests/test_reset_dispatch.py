@@ -31,10 +31,18 @@ def test_rot_reset_in_cfg_routes_to_the_rotated_block():
     assert n == 3
 
 
-def test_without_rot_reset_the_legacy_block_runs():
+def test_without_rot_reset_fails_closed():
+    prog = MockProgram(max_iters=3)
+    with pytest.raises(RuntimeError, match=r"validated cfg\['rot_reset'\]"):
+        ar.active_reset_block(prog, ro_ch=0, threshold_raw=5, oper="lower",
+                              ground_below=False, max_iters=3, read_delay_us=None)
+
+
+def test_diagnostics_can_explicitly_request_the_legacy_block():
     prog = MockProgram(max_iters=3)
     ar.active_reset_block(prog, ro_ch=0, threshold_raw=5, oper="lower",
-                          ground_below=False, max_iters=3, read_delay_us=None)
+                          ground_below=False, max_iters=3, read_delay_us=None,
+                          allow_legacy=True)
     opers = [op[1] for op in prog.asm if op[0] == "read"]
     assert opers.count("lower") == 3 and opers.count("upper") == 0
     assert not any(op[0] == "mathi" for op in prog.asm)
@@ -46,7 +54,8 @@ def test_both_paths_emit_one_measure_per_iteration():
         if with_rot:
             prog.cfg["rot_reset"] = dict(ROT)
         ar.active_reset_block(prog, ro_ch=0, threshold_raw=5, oper="lower",
-                              ground_below=False, max_iters=3, read_delay_us=None)
+                              ground_below=False, max_iters=3, read_delay_us=None,
+                              allow_legacy=not with_rot)
         assert sum(1 for op in prog.asm if op[0] == "measure") == 3
 
 

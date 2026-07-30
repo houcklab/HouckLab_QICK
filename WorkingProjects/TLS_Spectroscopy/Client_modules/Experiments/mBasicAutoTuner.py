@@ -2067,9 +2067,9 @@ class BasicAutoTuner(ExperimentClass):
             rec = None
             self._log("reset", "WARN", "feedback probe failed after %s (%s: %s)"
                       % (reason, type(exc).__name__, exc))
-        if rec is None:
+        if not active_reset.rotated_probe_record(rec):
             self._deactivate_feedback(
-                "fresh feedback validation failed after %s" % reason)
+                "fresh rotated feedback validation failed after %s" % reason)
             return False
         self._reset_fixed_readout_gain = int(self.working["read_pulse_gain"])
         self._reset_fixed_control = {
@@ -2080,17 +2080,13 @@ class BasicAutoTuner(ExperimentClass):
                 self.working.get("qubit_drag_beta", 0.0)),
         }
         profile_key = self._reset_profile_signature(self.working)
-        self._reset_runtime = {
-            "reset_mode": "feedback",
+        self._reset_runtime = active_reset.feedback_runtime_from_probe(
+            rec, max_iters=int(settings.get("max_iters", 3)),
+            thermalization_us=float(settings.get("thermalization_us", 25.0)),
+            post_measure_delay_us=float(
+                settings.get("post_measure_delay_us", 0.05)))
+        self._reset_runtime.update({
             "reset_profile_key": profile_key,
-            "reset_threshold_raw": int(rec["threshold_raw"]),
-            "reset_oper": str(rec.get("oper", "lower")),
-            "reset_ground_below": bool(rec.get("ground_below", True)),
-            "reset_max_iters": int(settings.get("max_iters", 3)),
-            "reset_thermalization_us": float(
-                settings.get("thermalization_us", 25.0)),
-            "active_reset_post_measure_delay_us": float(
-                settings.get("post_measure_delay_us", 0.05)),
             "reset_read_pulse_freq": float(self.working["read_pulse_freq"]),
             "reset_read_pulse_gain": int(self._reset_fixed_readout_gain),
             "reset_pi_freq": float(self.working["qubit_pi_freq"]),
@@ -2098,7 +2094,7 @@ class BasicAutoTuner(ExperimentClass):
             "reset_pi_sigma": float(self.working["sigma"]),
             "reset_pi_drag_beta": float(
                 self.working.get("qubit_drag_beta", 0.0)),
-        }
+        })
         self._reset_profiles[profile_key] = copy.deepcopy(self._reset_runtime)
         self._feedback_profiles_suspended = False
         if not self._qualify_feedback_runtime(
@@ -2109,7 +2105,7 @@ class BasicAutoTuner(ExperimentClass):
             return False
         self._reset_readout_key = self._reset_readout_signature(self.working)
         event = {
-            "mode": "feedback", "reason": str(reason),
+            "mode": "feedback", "scheme": "rotated", "reason": str(reason),
             "readout_key": list(self._reset_readout_key),
             "threshold_raw": int(rec["threshold_raw"]),
             "oper": str(rec.get("oper", "lower")),
@@ -2117,11 +2113,12 @@ class BasicAutoTuner(ExperimentClass):
             "validation": rec.get("validation"),
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
+            "rot_reset": copy.deepcopy(rec["rot_reset"]),
             "thermalization_us": float(settings.get("thermalization_us", 25.0)),
         }
         self.data["reset"]["events"].append(event)
         self.data["reset"].update({
-            "mode": "feedback", "fresh": True,
+            "mode": "feedback", "scheme": "rotated", "fresh": True,
             "readout_key": list(self._reset_readout_key),
             "threshold_raw": int(rec["threshold_raw"]),
             "oper": str(rec.get("oper", "lower")),
@@ -2129,6 +2126,7 @@ class BasicAutoTuner(ExperimentClass):
             "validation": rec.get("validation"),
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
+            "rot_reset": copy.deepcopy(rec["rot_reset"]),
             "thermalization_us": float(settings.get("thermalization_us", 25.0)),
         })
         self._log(
@@ -2188,21 +2186,17 @@ class BasicAutoTuner(ExperimentClass):
             self._log("reset", "WARN", "reset profile %.6f MHz/%.1f us failed "
                       "after %s (%s: %s)" % (
                           key[0], key[1], reason, type(exc).__name__, exc))
-        if rec is None:
+        if not active_reset.rotated_probe_record(rec):
             self.data["reset"].setdefault("failed_profiles", []).append({
                 "profile_key": list(key), "reason": str(reason)})
             return False
-        runtime = {
-            "reset_mode": "feedback",
+        runtime = active_reset.feedback_runtime_from_probe(
+            rec, max_iters=int(settings.get("max_iters", 3)),
+            thermalization_us=float(settings.get("thermalization_us", 25.0)),
+            post_measure_delay_us=float(
+                settings.get("post_measure_delay_us", 0.05)))
+        runtime.update({
             "reset_profile_key": key,
-            "reset_threshold_raw": int(rec["threshold_raw"]),
-            "reset_oper": str(rec.get("oper", "lower")),
-            "reset_ground_below": bool(rec.get("ground_below", True)),
-            "reset_max_iters": int(settings.get("max_iters", 3)),
-            "reset_thermalization_us": float(
-                settings.get("thermalization_us", 25.0)),
-            "active_reset_post_measure_delay_us": float(
-                settings.get("post_measure_delay_us", 0.05)),
             "reset_read_pulse_freq": float(candidate["read_pulse_freq"]),
             "reset_read_pulse_gain": int(self._reset_fixed_readout_gain),
             "reset_pi_freq": float(self._reset_fixed_control["qubit_pi_freq"]),
@@ -2210,23 +2204,25 @@ class BasicAutoTuner(ExperimentClass):
             "reset_pi_sigma": float(self._reset_fixed_control["sigma"]),
             "reset_pi_drag_beta": float(
                 self._reset_fixed_control.get("qubit_drag_beta", 0.0)),
-        }
+        })
         self._reset_profiles[key] = copy.deepcopy(runtime)
         self._reset_runtime = copy.deepcopy(runtime)
         self._feedback_profiles_suspended = False
         if not self._qualify_feedback_runtime(probe_candidate, runtime, reason):
             return False
         event = {
-            "mode": "feedback_profile", "reason": str(reason),
+            "mode": "feedback_profile", "scheme": "rotated",
+            "reason": str(reason),
             "profile_key": list(key),
             "fixed_readout_gain": int(self._reset_fixed_readout_gain),
             "threshold_raw": int(rec["threshold_raw"]),
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "validation": rec.get("validation"),
+            "rot_reset": copy.deepcopy(rec["rot_reset"]),
         }
         self.data["reset"]["events"].append(event)
         self.data["reset"].update({
-            "mode": "feedback", "fresh": True,
+            "mode": "feedback", "scheme": "rotated", "fresh": True,
             "profile_count": len(self._reset_profiles),
             "active_profile_key": list(key),
             "fixed_readout_gain": int(self._reset_fixed_readout_gain),
@@ -2339,9 +2335,10 @@ class BasicAutoTuner(ExperimentClass):
         reset = ({"reset_mode": "passive"}
                  if self._feedback_profiles_suspended else
                  dict(self._reset_profiles.get(profile_key, self._reset_runtime)))
-        if (reset.get("reset_mode") == "feedback"
-                and tuple(reset.get("reset_profile_key", ())) != profile_key):
-            reset = {"reset_mode": "passive"}
+        if reset.get("reset_mode") == "feedback":
+            if (tuple(reset.get("reset_profile_key", ())) != profile_key
+                    or not reset.get("rot_reset")):
+                reset = {"reset_mode": "passive"}
         cfg.update(reset)
         cfg["rounds"] = 1
         cfg["soft_avgs"] = 1
@@ -2355,6 +2352,8 @@ class BasicAutoTuner(ExperimentClass):
         reset_keys.add("reset_mode")
         if "active_reset_post_measure_delay_us" in cfg:
             reset_keys.add("active_reset_post_measure_delay_us")
+        if "rot_reset" in cfg:
+            reset_keys.add("rot_reset")
         self._last_compiled_reset_runtime = {
             key: copy.deepcopy(cfg[key]) for key in reset_keys if key in cfg}
         self._last_compiled_reset_runtime.setdefault("reset_mode", "passive")

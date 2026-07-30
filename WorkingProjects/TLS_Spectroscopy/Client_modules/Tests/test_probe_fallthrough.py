@@ -104,6 +104,11 @@ def test_a_truly_nonfunctional_reset_goes_passive_even_in_best_effort():
 
 
 def test_rot_failure_with_valid_legacy_keeps_legacy():
-    rec = _run(legacy_bad=False, rot_bad=True)
+    rec = _run(legacy_bad=False, rot_bad=True, allow_legacy_result=True)
     assert rec is not None and rec["use"] == "legacy"
     assert "rot_reset" not in rec
+
+
+def test_rot_failure_with_valid_legacy_never_returns_legacy_by_default():
+    rec = _run(legacy_bad=False, rot_bad=True)
+    assert rec is None or (rec["use"] == "rot" and rec.get("rot_reset"))

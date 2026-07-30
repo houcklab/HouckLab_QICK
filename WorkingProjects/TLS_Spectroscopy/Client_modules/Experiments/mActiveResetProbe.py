@@ -103,7 +103,7 @@ class ResetCheckProgram(AveragerProgram):
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
-                max_iters=int(cfg.get("reset_max_iters", 3)))
+                max_iters=int(cfg.get("reset_max_iters", 3)), allow_legacy=True)
             if pi_gain is not None or pi_freq is not None:
                 self.set_pulse_registers(
                     ch=cfg["qubit_ch"], style="arb",

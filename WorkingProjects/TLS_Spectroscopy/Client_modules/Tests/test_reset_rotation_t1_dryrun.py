@@ -88,7 +88,8 @@ def test_dispatcher_routes_a_legacy_cfg_to_the_original_block(monkeypatch):
     assert len(calls) == 1
     assert calls[0][0] is prog
     assert calls[0][1] == {"ro_ch": 0, "threshold_raw": 5, "oper": "lower",
-                           "ground_below": False, "max_iters": 3}
+                           "ground_below": False, "max_iters": 3,
+                           "allow_legacy": True}
     assert not prog.asm
     ar.active_reset_block(prog, ro_ch=0, threshold_raw=5, oper="lower",
                           ground_below=False, max_iters=3)

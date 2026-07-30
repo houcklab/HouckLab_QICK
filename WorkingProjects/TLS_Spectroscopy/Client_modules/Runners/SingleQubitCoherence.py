@@ -23,7 +23,6 @@ READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
 PROBE_RESET = True
-USE_ROTATED_RESET = True
 ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
@@ -83,19 +82,20 @@ def _base_cfg(p, extra=None):
     cfg["randomize_point_order"] = bool(RANDOMIZE_POINT_ORDER)
     cfg["point_order_seed"] = POINT_ORDER_SEED
     cfg["reset_mode"] = RESET_MODE
-    if active_reset.uses_feedback(RESET_MODE):
+    if extra:
+        cfg.update(extra)
+    if active_reset.uses_feedback(cfg):
+        if not ROT_RESET_PARAMS:
+            raise RuntimeError("feedback reset needs a validated rotated reset profile")
         if RESET_THRESHOLD_RAW is None:
             raise RuntimeError(f"RESET_MODE={RESET_MODE!r} needs a reset threshold, but "
                                "the start-of-run probe did not set one.")
         cfg["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
-        if ROT_RESET_PARAMS:
-            cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
+        cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
         cfg["reset_thermalization_us"] = THERMALIZATION_US
-    if extra:
-        cfg.update(extra)
     cfg["relax_delay"] = (FEEDBACK_RELAX_US if active_reset.uses_feedback(cfg)
                           else PASSIVE_RESET_US)
     return cfg
@@ -185,6 +185,8 @@ def main():
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS
+    feedback_requested = (active_reset.uses_feedback(RESET_MODE) and any((
+        P_SS_FLUX_RAMP["run"], P_T1["run"], P_T1_FLUX_RAMP["run"])))
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
@@ -195,38 +197,38 @@ def main():
             BaseConfig["res_phase"] = float(best)
             print(f"[res-phase] applied res_phase={best:.1f} deg for this session "
                   f"(aligns |g>/|e> on one raw quadrature; initialize.py unchanged)")
-    if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
+    if feedback_requested and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
                                  reset_max_iters=int(RESET_MAX_ITERS))
         if rec is None:
             RESET_MODE = "passive"
+            ROT_RESET_PARAMS = None
             print(f"[reset] no feedback discrimination this session -> passive reset "
                   f"({PASSIVE_RESET_US:.0f}us). Verify it exceeds ~5x T1.")
-        else:
+        elif active_reset.rotated_probe_record(rec):
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
-            if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
-                ROT_RESET_PARAMS = dict(rec["rot_reset"])
-                if rec.get("degraded"):
-                    print("[reset] ROTATED reset selected BEST-EFFORT: functional "
-                          "but above the validated bar this probe.")
-                else:
-                    print("[reset] ROTATED reset selected (probe-validated); legacy "
-                          "threshold kept as the documented fallback.")
-            elif USE_ROTATED_RESET:
-                print("[reset] rotated reset not validated this session -- LEGACY "
-                      "reset in use.")
-    elif active_reset.uses_feedback(RESET_MODE):
-        if RESET_THRESHOLD_RAW is None:
-            raise RuntimeError(
-                "PROBE_RESET=False but RESET_THRESHOLD_RAW is None.  The raw reset "
-                "threshold is an absolute accumulator value that drifts between "
-                "sessions, so there is no safe default -- set PROBE_RESET=True, or "
-                "paste a threshold measured on this cooldown with this readout.")
-        print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
-              f"({RESET_OPER}) without re-probing")
+            ROT_RESET_PARAMS = dict(rec["rot_reset"])
+            if rec.get("degraded"):
+                print("[reset] ROTATED reset selected BEST-EFFORT: functional "
+                      "but above the validated bar this probe.")
+            else:
+                print("[reset] ROTATED reset selected (probe-validated).")
+        else:
+            RESET_MODE = "passive"
+            ROT_RESET_PARAMS = None
+            print(f"[reset] rotated reset did not validate -> passive reset "
+                  f"({PASSIVE_RESET_US:.0f}us).")
+    elif feedback_requested:
+        if ROT_RESET_PARAMS and RESET_THRESHOLD_RAW is not None:
+            print("[reset] PROBE_RESET=False -> using the configured rotated reset "
+                  "profile without re-probing")
+        else:
+            RESET_MODE = "passive"
+            print(f"[reset] no configured rotated reset profile -> passive reset "
+                  f"({PASSIVE_RESET_US:.0f}us).")
 
     print("=" * 70)
     print(f"single-qubit coherence | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | "

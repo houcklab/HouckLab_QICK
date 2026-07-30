@@ -23,6 +23,34 @@ def uses_rotated(cfg):
         return False
 
 
+def rotated_probe_record(rec):
+    if not isinstance(rec, dict) or rec.get("use") != "rot":
+        return False
+    params = rec.get("rot_reset")
+    return isinstance(params, dict) and all(
+        key in params for key in ("c_int", "s_int", "excite_threshold"))
+
+
+def feedback_runtime_from_probe(rec, max_iters=3, thermalization_us=25.0,
+                                post_measure_delay_us=None):
+    if not rotated_probe_record(rec):
+        raise ValueError("a validated rotated reset probe record is required")
+    runtime = {
+        "reset_mode": "feedback",
+        "reset_threshold_raw": int(rec["threshold_raw"]),
+        "reset_oper": str(rec.get("oper", "lower")),
+        "reset_ground_below": bool(rec.get("ground_below", True)),
+        "reset_max_iters": int(max_iters),
+        "reset_thermalization_us": float(thermalization_us),
+        "rot_reset": dict(rec["rot_reset"]),
+    }
+    runtime["rot_reset"]["max_iters"] = int(max_iters)
+    if post_measure_delay_us is not None:
+        runtime["active_reset_post_measure_delay_us"] = float(
+            post_measure_delay_us)
+    return runtime
+
+
 def heralds(cfg_or_mode):
     return reset_mode_of(cfg_or_mode) in HERALD_MODES
 
@@ -247,7 +275,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        adc_trig_offset_us=None, settle_us=None, meas_syncdelay_us=None,
                        thermalization_us=None, page=None, reg_val=None, reg_thr=None,
                        read_delay_us=None, force_flip=None, trace_base_addr=None,
-                       reg_flag=None):
+                       reg_flag=None, allow_legacy=False):
     try:
         rot_params = prog.cfg.get("rot_reset")
     except Exception:
@@ -260,8 +288,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
         if missing:
             raise ValueError(
                 f"cfg['rot_reset'] engages the rotated reset but is missing "
-                f"{missing}; calibrate with probe_reset_params or remove the key "
-                f"to run the legacy reset")
+                f"{missing}; calibrate it with probe_reset_params")
         return active_reset_rot.active_reset_rot_block(
             prog, ro_ch=ro_ch, res_ch=res_ch, qubit_ch=qubit_ch,
             c_int=rot_params["c_int"], s_int=rot_params["s_int"],
@@ -271,6 +298,10 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
             meas_syncdelay_us=meas_syncdelay_us,
             thermalization_us=thermalization_us, page=page,
             read_delay_us=read_delay_us, three_zone=False, use_latch=False)
+    if not allow_legacy:
+        raise RuntimeError(
+            "feedback reset requires a validated cfg['rot_reset']; use passive "
+            "reset when rotated calibration is unavailable")
     if threshold_raw is None:
         raise ValueError("active_reset_block needs threshold_raw (raw accumulator units); "
                          "calibrate it with Experiments/mActiveResetProbe.py.")
@@ -378,7 +409,8 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                        diagnostic_callback=None,
                        max_residual_above_floor=MAX_RESIDUAL_ABOVE_FLOOR,
                        max_usable_floor=MAX_USABLE_FLOOR,
-                       reset_max_iters=None, gate_policy="best_effort"):
+                       reset_max_iters=None, gate_policy="best_effort",
+                       allow_legacy_result=False):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
@@ -473,7 +505,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
             else:
                 rec["validation"] = residual
                 rec["verdict"] = verdict
-    rec["use"] = "legacy" if legacy_ok else None
+    rec["use"] = "legacy" if legacy_ok and allow_legacy_result else None
     raw_shots = getattr(probe, "raw_shots", None)
     if raw_shots and "ground" in raw_shots and "excited" in raw_shots:
         try:
@@ -519,9 +551,13 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                     for reason in rot_verdict["reasons"]:
                         print(f"[reset] rotated: {reason}")
                     if legacy_ok:
-                        print("[reset] the ROTATED reset failed its own end-to-end "
-                              "check; the validated LEGACY reset stays in charge "
-                              "for this session.")
+                        if allow_legacy_result:
+                            print("[reset] the ROTATED reset failed its own end-to-end "
+                                  "check; the validated LEGACY reset stays in charge "
+                                  "for this diagnostic session.")
+                        else:
+                            print("[reset] the ROTATED reset failed its own end-to-end "
+                                  "check; production reset will use passive relax.")
                     else:
                         print("[reset] the ROTATED reset failed its end-to-end "
                               "check as well.")
@@ -529,14 +565,16 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                 rec["rot_reset"] = rot_params
                 rec["use"] = "rot"
         except Exception as exc:
-            print(f"[reset] rotated calibration failed ({exc}); the legacy reset "
-                  f"stays in charge.")
+            suffix = ("the legacy reset stays in charge for this diagnostic session."
+                      if allow_legacy_result else
+                      "production reset will use passive relax.")
+            print(f"[reset] rotated calibration failed ({exc}); {suffix}")
     if rec["use"] is None and str(gate_policy) == "best_effort":
         candidates = []
         if reset_functional(rot_residual) and rot_params_kept:
             worst = max(rot_residual["reset_ground"], rot_residual["reset_excited"])
             candidates.append((worst, "rot", rot_residual))
-        if reset_functional(legacy_residual):
+        if allow_legacy_result and reset_functional(legacy_residual):
             worst = max(legacy_residual["reset_ground"],
                         legacy_residual["reset_excited"])
             candidates.append((worst, "legacy", legacy_residual))

@@ -24,14 +24,15 @@ def test_rotated_reset_reaches_every_production_program(out):
     m = re.search(r"programs built: (\d+), with rot_reset: (\d+)", out)
     assert m and int(m.group(1)) > 0 and int(m.group(1)) == int(m.group(2))
     assert "ROTATED reset selected (probe-validated)" in out
-    assert "legacy fallback present" in out
+    assert "every feedback program carried the rotated reset profile" in out
 
 
-def test_the_flag_reverts_to_legacy_with_no_other_change(out):
-    ms = re.findall(r"programs built: (\d+), with rot_reset: (\d+)", out)
-    assert len(ms) == 2
-    assert int(ms[1][0]) > 0 and int(ms[1][1]) == 0
-    assert "USE_ROTATED_RESET=False -- running the LEGACY reset by request." in out
+def test_failed_rotation_goes_passive_instead_of_legacy(out):
+    m = re.search(r"programs built after failed rotation: (\d+), passive: (\d+), "
+                  r"with rot_reset: (\d+)", out)
+    assert m and int(m.group(1)) > 0
+    assert int(m.group(1)) == int(m.group(2)) and int(m.group(3)) == 0
+    assert "no program silently reverted to the legacy reset" in out
 
 
 def test_all_scenarios_complete_the_full_production_pipeline(out):

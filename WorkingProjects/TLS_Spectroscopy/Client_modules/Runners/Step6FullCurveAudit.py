@@ -11,8 +11,6 @@ import matplotlib.pyplot as plt
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
-    ActiveResetProbe)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import (
     T13PointVsFlux, T1FullCurveVsFlux, _fit_T1_map, _csv_base_from_pickle,
     build_wall_clock_repeat_metadata, get_wall_clock_repeat_full_spec,
@@ -73,20 +71,18 @@ def build_cfg(dc_vec, shots, rec, threshold_override=None):
         "ff_gain_vec": dc_vec,
         "flux_fit_params": FLUX_FIT_PARAMS,
         "qubit_pulse_style": "arb",
-        "reset_mode": "feedback" if rec is not None else "passive",
+        "reset_mode": ("feedback" if active_reset.rotated_probe_record(rec)
+                       else "passive"),
         "three_point_matched_refs": True,
     })
-    if rec is not None:
+    if active_reset.rotated_probe_record(rec):
         thr = int(rec["threshold_raw"] if threshold_override is None
                   else threshold_override)
-        cfg.update({
-            "reset_threshold_raw": thr,
-            "reset_oper": str(rec["oper"]),
-            "reset_ground_below": bool(rec["ground_below"]),
-            "reset_max_iters": int(RESET_MAX_ITERS),
-            "reset_thermalization_us": THERMALIZATION_US,
-            "relax_delay": FEEDBACK_RELAX_US,
-        })
+        cfg.update(active_reset.feedback_runtime_from_probe(
+            rec, max_iters=RESET_MAX_ITERS,
+            thermalization_us=THERMALIZATION_US))
+        cfg["reset_threshold_raw"] = thr
+        cfg["relax_delay"] = FEEDBACK_RELAX_US
     else:
         cfg["relax_delay"] = PASSIVE_BACKSTOP_US
     return cfg
@@ -169,24 +165,20 @@ def run():
     plt.close("all")
     gc.collect()
 
-    probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=QUBIT,
-                             outerFolder=outerFolder, suffix="Step6FullCurve_Probe",
-                             cfg=dict(BaseConfig, shots=RESET_PROBE_SHOTS,
-                                      reps=RESET_PROBE_SHOTS,
-                                      qubit_gain=int(BaseConfig["qubit_pi_gain"]),
-                                      reset_max_iters=RESET_MAX_ITERS,
-                                      reset_thermalization_us=THERMALIZATION_US))
-    pdata = probe.acquire().get("data", {})
-    rec = pdata.get("recommended")
-    if rec is None:
-        print("  probe found no usable feedback discrimination; running PASSIVE.")
+    rec = active_reset.probe_reset_params(
+        soc, soccfg, BaseConfig, path=QUBIT, outer_folder=outerFolder,
+        shots=RESET_PROBE_SHOTS, validate=True,
+        reset_max_iters=RESET_MAX_ITERS)
+    if not active_reset.rotated_probe_record(rec):
+        rec = None
+        print("  probe found no usable rotated reset; running PASSIVE.")
     else:
-        errs = pdata.get("raw_assignment_errors", {})
+        errs = rec.get("raw_assignment_errors", {})
         floor0 = active_reset.reset_floor(errs.get("p_e_given_g", np.nan),
                                           errs.get("p_g_given_e", np.nan))
         print(f"  reset threshold_raw={rec['threshold_raw']} oper={rec['oper']} "
               f"ground_below={bool(rec['ground_below'])}")
-        print(f"  F={pdata.get('raw_assignment_fidelity', np.nan):.3f}, "
+        print(f"  F={rec.get('raw_assignment_fidelity', np.nan):.3f}, "
               f"reset floor {floor0:.3f}")
     plt.close("all")
     gc.collect()
