@@ -38,8 +38,13 @@ def main():
     TLS._load_correction = lambda cj, of: None
     TLS.outerFolder = tempfile.mkdtemp(prefix="RotProd_dryrun_")
     rec = fake_probe_rec(truth, rot, 3)
-    TLS.probe_reset_params = (
-        lambda *a, **k: {**rec, "rot_reset": dict(rec["rot_reset"])})
+    probe_calls = []
+
+    def fake_probe(*a, **k):
+        probe_calls.append(1)
+        return {**rec, "rot_reset": dict(rec["rot_reset"])}
+
+    TLS.probe_reset_params = fake_probe
     TLS.P6_3PT_T1 = dict(TLS.P6_3PT_T1)
     TLS.P6_3PT_T1.update({"run": True, "shots": 600, "dc_min": 0, "dc_max": 9000,
                           "dc_step": 4000, "freq_step_mhz": None,
@@ -79,6 +84,22 @@ def main():
           f"{len(rot_engaged)}")
     assert seen_cfgs and len(rot_engaged) == 0
     print("### the identical run reverted to the legacy reset with no other change")
+
+    seen_cfgs.clear()
+    probe_calls.clear()
+    print("\n### SCENARIO 3: wall-clock series with periodic re-probe between passes")
+    TLS.USE_ROTATED_RESET = True
+    TLS.RESET_REPROBE_MIN = 1e-7
+    TLS.P6_3PT_T1 = dict(TLS.P6_3PT_T1)
+    TLS.P6_3PT_T1["wall_clock_duration_min"] = 0.02
+    TLS.run_step6_3pt_t1(TLS.outerFolder, None, None, calib, None)
+    n_passes = len({id(c) for c in seen_cfgs}) and len(seen_cfgs)
+    rot_engaged = [c for c in seen_cfgs if c.get("rot_reset")]
+    print(f"### probe calls: {len(probe_calls)} (1 initial + re-probes), programs "
+          f"with rot_reset: {len(rot_engaged)}/{len(seen_cfgs)}")
+    assert len(probe_calls) >= 3
+    assert len(rot_engaged) == len(seen_cfgs)
+    print("### the series re-probed between passes and every pass stayed rotated")
 
     print("\n=== DRY RUN COMPLETED WITHOUT ERROR ===")
 

@@ -83,6 +83,7 @@ RESET_GROUND_BELOW = False
 THERMALIZATION_US = 2.0
 T1_RESET_BACKSTOP_US = 2000.0
 T1_FEEDBACK_RELAX_US = 25.0
+RESET_REPROBE_MIN = 30.0
 
 
 P1_RESONATOR = {
@@ -704,7 +705,7 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
 MAX_CONSECUTIVE_RUN_FAILURES = 3
 
 
-def _run_one_stop_t1(factory, wall_clock_s):
+def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
     series_start = datetime.now()
     per_run_full_data = []
     base_path = None
@@ -712,7 +713,20 @@ def _run_one_stop_t1(factory, wall_clock_s):
     run_index = 0
     consecutive_failures = 0
     completed = 0
+    last_cal = series_start
     while True:
+        if (recalibrate is not None and reprobe_s and run_index > 0
+                and (datetime.now() - last_cal).total_seconds() >= float(reprobe_s)):
+            print(f"  [6] {(datetime.now() - last_cal).total_seconds() / 60:.0f} min "
+                  f"since the last reset calibration -- re-probing between passes "
+                  f"(~1 min; the pass grid and Ts are unchanged, only the reset "
+                  f"parameters refresh).")
+            try:
+                recalibrate()
+            except Exception as exc:
+                print(f"  [6] re-probe failed ({type(exc).__name__}: {str(exc)[:120]}) "
+                      f"-- keeping the previous reset calibration.")
+            last_cal = datetime.now()
         run_start = datetime.now()
         repeat_metadata = build_wall_clock_repeat_metadata(run_start, series_start, run_index)
         if wall_clock_s is not None:
@@ -776,6 +790,36 @@ def _run_one_stop_t1(factory, wall_clock_s):
         if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
             break
     return csv_path
+
+
+
+def _make_reset_recalibrator(p, base, soc, soccfg, outer_folder):
+    if not (PROBE_RESET and active_reset.uses_feedback(p.get("reset_mode"))):
+        return None
+
+    def recalibrate():
+        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
+                                 outer_folder=outer_folder,
+                                 shots=int(p.get("reset_probe_shots", 2000)),
+                                 reset_max_iters=int(p.get("reset_max_iters", 3)))
+        if rec is None:
+            print("  [6] re-probe found no usable discrimination -- keeping the "
+                  "previous reset calibration for the next block.")
+            return
+        base["reset_threshold_raw"] = int(rec["threshold_raw"])
+        base["reset_oper"] = str(rec["oper"])
+        base["reset_ground_below"] = bool(rec["ground_below"])
+        if USE_ROTATED_RESET and rec.get("use") == "rot" and rec.get("rot_reset"):
+            base["rot_reset"] = dict(rec["rot_reset"])
+            print("  [6] re-probe: ROTATED reset revalidated; refreshed projection "
+                  "and thresholds now apply to the following passes.")
+        elif base.pop("rot_reset", None) is not None:
+            print("  [6] re-probe: the rotated reset did NOT validate this time -- "
+                  "the following passes run the freshly validated LEGACY reset.")
+        else:
+            print("  [6] re-probe: legacy reset thresholds refreshed.")
+
+    return recalibrate
 
 
 def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
@@ -890,7 +934,14 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             write_outputs=False,
         )
 
-    csv_path = _run_one_stop_t1(factory, wall_clock_s)
+    recalibrate = _make_reset_recalibrator(p, base, soc, soccfg, outer_folder)
+    if recalibrate is not None and wall_clock_s is not None and RESET_REPROBE_MIN:
+        print(f"[6] reset re-probe scheduled every {RESET_REPROBE_MIN:g} min between "
+              f"passes so a multi-hour series tracks readout drift instead of "
+              f"holding an hour-zero calibration.")
+    csv_path = _run_one_stop_t1(
+        factory, wall_clock_s, recalibrate=recalibrate,
+        reprobe_s=(RESET_REPROBE_MIN * 60.0 if RESET_REPROBE_MIN else None))
     print(f"[6] Done. One-stop 3-point CSV: {csv_path}")
 
 
@@ -937,7 +988,14 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         return T1FullCurveVsFlux(t_max_ns=(None if t_max_us is None else t_max_us * 1e3),
                                  **common)
 
-    csv_path = _run_one_stop_t1(factory, wall_clock_s)
+    recalibrate = _make_reset_recalibrator(p, base, soc, soccfg, outer_folder)
+    if recalibrate is not None and wall_clock_s is not None and RESET_REPROBE_MIN:
+        print(f"[6] reset re-probe scheduled every {RESET_REPROBE_MIN:g} min between "
+              f"passes so a multi-hour series tracks readout drift instead of "
+              f"holding an hour-zero calibration.")
+    csv_path = _run_one_stop_t1(
+        factory, wall_clock_s, recalibrate=recalibrate,
+        reprobe_s=(RESET_REPROBE_MIN * 60.0 if RESET_REPROBE_MIN else None))
     print(f"[6] Done. One-stop CSV: {csv_path}")
 
 

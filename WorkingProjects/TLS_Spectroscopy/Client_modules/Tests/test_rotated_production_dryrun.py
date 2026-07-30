@@ -34,6 +34,16 @@ def test_the_flag_reverts_to_legacy_with_no_other_change(out):
     assert "USE_ROTATED_RESET=False -- running the LEGACY reset by request." in out
 
 
-def test_both_scenarios_complete_the_full_production_pipeline(out):
-    assert out.count("Done. One-stop 3-point CSV") == 2
+def test_all_scenarios_complete_the_full_production_pipeline(out):
+    assert out.count("Done. One-stop 3-point CSV") == 3
     assert "FAILED" not in out
+
+
+def test_wall_clock_series_reprobes_and_stays_rotated(out):
+    assert "SCENARIO 3" in out
+    assert "re-probing between passes" in out
+    assert "ROTATED reset revalidated" in out
+    m = re.search(r"probe calls: (\d+) \(1 initial \+ re-probes\), programs "
+                  r"with rot_reset: (\d+)/(\d+)", out)
+    assert m and int(m.group(1)) >= 3
+    assert int(m.group(2)) == int(m.group(3)) > 0
