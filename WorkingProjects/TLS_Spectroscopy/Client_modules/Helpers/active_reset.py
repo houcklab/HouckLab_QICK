@@ -426,33 +426,37 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     rec["raw_assignment_fidelity"] = raw_fidelity
     rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
     rec["raw_assignment_shots"] = buffered_shots
+    legacy_ok = True
     if validate:
         try:
             residual = probe._residual_at(
                 float(cfg.get("res_phase", 0.0)), int(rec["threshold_raw"]),
                 bool(rec["ground_below"]), max(500, int(shots)), oper=rec["oper"])
         except Exception as exc:
-            print(f"[reset] end-to-end validation failed ({exc}) -- falling back to "
-                  "passive relax.")
-            return None
-        errs = rec.get("raw_assignment_errors", {})
-        verdict = reset_verdict(errs.get("p_e_given_g", float("nan")),
-                                errs.get("p_g_given_e", float("nan")),
-                                residual.get("reset_ground", float("nan")),
-                                residual.get("reset_excited", float("nan")),
-                                baseline=residual.get("baseline", None),
-                                max_above_floor=max_residual_above_floor,
-                                max_floor=max_usable_floor)
-        print(f"[reset] residual {verdict['worst']:.3f} against a floor of "
-              f"{verdict['floor']:.3f} ({verdict['above_floor']:+.3f} above it)")
-        if not verdict["ok"]:
-            for reason in verdict["reasons"]:
-                print(f"[reset] {reason}")
-            print("[reset] falling back to passive relax.")
-            return None
-        rec["validation"] = residual
-        rec["verdict"] = verdict
-    rec["use"] = "legacy"
+            print(f"[reset] legacy end-to-end validation failed ({exc}) -- trying "
+                  "the ROTATED scheme before giving up on active reset.")
+            legacy_ok = False
+        else:
+            errs = rec.get("raw_assignment_errors", {})
+            verdict = reset_verdict(errs.get("p_e_given_g", float("nan")),
+                                    errs.get("p_g_given_e", float("nan")),
+                                    residual.get("reset_ground", float("nan")),
+                                    residual.get("reset_excited", float("nan")),
+                                    baseline=residual.get("baseline", None),
+                                    max_above_floor=max_residual_above_floor,
+                                    max_floor=max_usable_floor)
+            print(f"[reset] legacy residual {verdict['worst']:.3f} against a floor of "
+                  f"{verdict['floor']:.3f} ({verdict['above_floor']:+.3f} above it)")
+            if not verdict["ok"]:
+                for reason in verdict["reasons"]:
+                    print(f"[reset] {reason}")
+                print("[reset] the LEGACY reset failed its end-to-end gate -- trying "
+                      "the ROTATED scheme before falling back to passive.")
+                legacy_ok = False
+            else:
+                rec["validation"] = residual
+                rec["verdict"] = verdict
+    rec["use"] = "legacy" if legacy_ok else None
     raw_shots = getattr(probe, "raw_shots", None)
     if raw_shots and "ground" in raw_shots and "excited" in raw_shots:
         try:
@@ -496,18 +500,32 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
                 else:
                     for reason in rot_verdict["reasons"]:
                         print(f"[reset] rotated: {reason}")
-                    print("[reset] the ROTATED reset failed its own end-to-end check; "
-                          "the validated LEGACY reset stays in charge for this "
-                          "session.")
+                    if legacy_ok:
+                        print("[reset] the ROTATED reset failed its own end-to-end "
+                              "check; the validated LEGACY reset stays in charge "
+                              "for this session.")
+                    else:
+                        print("[reset] the ROTATED reset failed its end-to-end "
+                              "check as well.")
             else:
                 rec["rot_reset"] = rot_params
                 rec["use"] = "rot"
         except Exception as exc:
             print(f"[reset] rotated calibration failed ({exc}); the legacy reset "
                   f"stays in charge.")
+    if rec["use"] is None:
+        print("[reset] NEITHER the legacy nor the rotated reset passed its "
+              "end-to-end gate -- falling back to passive relax.  (Both failing "
+              "usually means the pi efficiency is too low for the loop to "
+              "converge in reset_max_iters; recalibrate the pi.)")
+        return None
     if rec["use"] == "rot":
         print("[reset] the ROTATED reset is calibrated, hardware-validated, and "
               "selected; res_phase alignment is no longer load-bearing.")
+        if not legacy_ok:
+            print("[reset] NOTE: the legacy parameters in this calibration did NOT "
+                  "pass validation; they remain recorded but are not a trusted "
+                  "fallback this session.")
     print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
           f"ground_below={rec['ground_below']}")
     return rec
