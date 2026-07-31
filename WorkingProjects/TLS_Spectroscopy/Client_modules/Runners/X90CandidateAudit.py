@@ -91,12 +91,20 @@ def summarize(records):
     summary.sort(key=lambda row: (
         row["blocks_completed"] == BLOCKS,
         row["eligible_fraction"] >= 0.6,
-        row["robust_score"],
-        row["validation_pass_fraction"]), reverse=True)
+        row["validation_pass_fraction"] >= 0.6,
+        row["robust_score"]), reverse=True)
     return summary
 
 
+def select_recommendation(summary):
+    return next((row for row in summary
+                 if row["blocks_completed"] == BLOCKS
+                 and row["eligible_fraction"] >= 0.6
+                 and row["validation_pass_fraction"] >= 0.6), None)
+
+
 def save_outputs(records, summary, base_path):
+    recommended = select_recommendation(summary)
     record_fields = [
         "block", "visit", "freq_mhz", "gain", "elapsed_s", "passed",
         "eligible", "quality", "population_1x", "population_4x",
@@ -147,7 +155,8 @@ def save_outputs(records, summary, base_path):
             "order_seed": ORDER_SEED,
         },
         "base_config": BaseConfig,
-        "recommended": summary[0],
+        "recommended": recommended,
+        "best_observed": summary[0],
         "summary": summary,
         "records": records,
     }
@@ -179,7 +188,9 @@ def save_outputs(records, summary, base_path):
         fig.colorbar(image, ax=ax)
         ax.set(xlabel="Qubit frequency [MHz]", ylabel="X90 gain [DAC]",
                title=labels[key])
-        ax.plot(summary[0]["freq_mhz"], summary[0]["gain"], "wx", ms=12, mew=2)
+        if recommended is not None:
+            ax.plot(recommended["freq_mhz"], recommended["gain"],
+                    "wx", ms=12, mew=2)
     plot_path = f"{base_path}.png"
     fig.savefig(plot_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -278,17 +289,23 @@ def run(soc, soccfg, outer_folder=outerFolder):
               f"{row['blocks_completed']:>2}/{BLOCKS:<2}   "
               f"{row['eligible_fraction']:.2f}      "
               f"{row['validation_pass_fraction']:.2f}")
-    best = summary[0]
-    print("\nrecommended parameters")
-    print(f"qubit_pi_freq = {best['freq_mhz']:.5f}")
-    print(f"qubit_pi2_gain = {best['gain']}")
-    if best["blocks_completed"] < BLOCKS or best["eligible_fraction"] < 0.6:
-        print("WARNING: the recommendation is incomplete or was not eligible in a "
-              "majority of blocks; do not update initialize.py from this run.")
+    best_observed = summary[0]
+    recommended = select_recommendation(summary)
+    if recommended is None:
+        print("\nNO VALID X90 CANDIDATE")
+        print("No complete candidate passed validation in a majority of blocks.")
+        print("Do not update initialize.py from this run.")
+        print(f"Best observed only: {best_observed['freq_mhz']:.5f} MHz, "
+              f"gain {best_observed['gain']}")
+    else:
+        print("\nrecommended parameters")
+        print(f"qubit_pi_freq = {recommended['freq_mhz']:.5f}")
+        print(f"qubit_pi2_gain = {recommended['gain']}")
     print("\noutputs")
     for path in paths:
         print(path)
-    return {"records": records, "summary": summary, "recommended": best,
+    return {"records": records, "summary": summary,
+            "recommended": recommended, "best_observed": best_observed,
             "paths": paths}
 
 

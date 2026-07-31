@@ -65,6 +65,18 @@ def test_summary_prefers_complete_reproducible_candidate(monkeypatch):
     assert summary[0]["blocks_completed"] == 5
     assert np.isclose(summary[0]["robust_score"], 0.70)
     assert summary[-1]["gain"] == 3000
+    assert A.select_recommendation(summary) == summary[0]
+
+
+def test_all_failed_candidates_have_no_recommendation(monkeypatch):
+    monkeypatch.setattr(A, "BLOCKS", 3)
+    records = [
+        record(block, 2534.55, 2750, 0.2, 0.4, 0.2, passed=False)
+        for block in range(3)
+    ]
+    summary = A.summarize(records)
+    assert summary[0]["validation_pass_fraction"] == 0.0
+    assert A.select_recommendation(summary) is None
 
 
 def test_run_saves_outputs_and_recommends_reproducible_pair(monkeypatch, tmp_path):
