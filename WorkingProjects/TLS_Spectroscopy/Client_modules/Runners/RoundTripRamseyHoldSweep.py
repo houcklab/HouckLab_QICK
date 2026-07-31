@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRoundTripRamse
     RAMSEY_ARMS, RoundTripRamsey)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
     SingleShot1Q, discriminate_shots)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import split_reps
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as TLS
@@ -55,6 +56,18 @@ CHANNEL_KEYS = (
     "assignment_contrast", "population_g", "population_e", "ramsey_i",
     "ramsey_q", "coherence_magnitude", "coherence_phase_rad", "valid",
     "keep_fraction_g", "keep_fraction_e", "keep_fraction_i", "keep_fraction_q",
+)
+
+ROUND_SUMMARY_KEYS = (
+    "round_coherence_mean_debiased", "round_coherence_median_debiased",
+    "round_phase_mean_rad", "round_phase_resultant",
+    "round_reference_contrast_mean",
+)
+
+ROUND_ARRAY_KEYS = (
+    "P_g", "P_e", "P_i", "P_q", "reference_contrast", "ramsey_i",
+    "ramsey_q", "coherence_magnitude", "coherence_magnitude_debiased",
+    "coherence_phase_rad",
 )
 
 T1_KEYS = (
@@ -217,6 +230,56 @@ def run_channel(soc, soccfg, cfg, p, outer_folder, dc_gain, hold_us,
     return exp, time.time() - started
 
 
+def analyze_rounds(exp, p, calib_params, assignment):
+    counts = [int(value) for value in split_reps(int(p["shots"]), int(p["rounds"]))
+              if int(value) > 0]
+    edges = np.concatenate(([0], np.cumsum(counts)))
+    probabilities = {arm: np.full(len(counts), np.nan) for arm in RAMSEY_ARMS}
+    for arm in RAMSEY_ARMS:
+        raw = exp.raw[arm]
+        outcomes = discriminate_shots(raw["i"], raw["q"], calib_params)
+        for index in range(len(counts)):
+            probabilities[arm][index] = float(np.mean(
+                outcomes[edges[index]:edges[index + 1]]))
+    contrast = float(assignment["P_e"] - assignment["P_g"])
+    ramsey_i = 2.0 * (probabilities["i"] - float(assignment["P_g"])) / contrast - 1.0
+    ramsey_q = 2.0 * (probabilities["q"] - float(assignment["P_g"])) / contrast - 1.0
+    magnitude = np.hypot(ramsey_i, ramsey_q)
+    variance_i = np.asarray([
+        4.0 * value * (1.0 - value) / (count * contrast ** 2)
+        for value, count in zip(probabilities["i"], counts)
+    ])
+    variance_q = np.asarray([
+        4.0 * value * (1.0 - value) / (count * contrast ** 2)
+        for value, count in zip(probabilities["q"], counts)
+    ])
+    debiased = np.sqrt(np.maximum(
+        magnitude ** 2 - variance_i - variance_q, 0.0))
+    phase = np.arctan2(ramsey_q, ramsey_i)
+    phase_vector = np.mean(np.exp(1j * phase))
+    arrays = {
+        "P_g": probabilities["g"],
+        "P_e": probabilities["e"],
+        "P_i": probabilities["i"],
+        "P_q": probabilities["q"],
+        "reference_contrast": probabilities["e"] - probabilities["g"],
+        "ramsey_i": ramsey_i,
+        "ramsey_q": ramsey_q,
+        "coherence_magnitude": magnitude,
+        "coherence_magnitude_debiased": debiased,
+        "coherence_phase_rad": phase,
+    }
+    summary = {
+        "round_coherence_mean_debiased": float(np.mean(debiased)),
+        "round_coherence_median_debiased": float(np.median(debiased)),
+        "round_phase_mean_rad": float(np.angle(phase_vector)),
+        "round_phase_resultant": float(abs(phase_vector)),
+        "round_reference_contrast_mean": float(np.mean(arrays["reference_contrast"])),
+    }
+    return {"counts": np.asarray(counts, dtype=int),
+            "arrays": arrays, "summary": summary}
+
+
 def run_t1_check(soc, soccfg, cfg, p, outer_folder, targets, calib_params,
                  stage_index):
     dc_vec = np.asarray([target["dc_gain"] for target in targets], dtype=float)
@@ -252,7 +315,7 @@ def run_t1_check(soc, soccfg, cfg, p, outer_folder, targets, calib_params,
 
 def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
               park_channel, park_elapsed, park_cal_elapsed, fit_park,
-              anchor_shift, t1_start):
+              anchor_shift, park_rounds, t1_start):
     string = h5py.string_dtype(encoding="utf-8")
     shots = int(p["shots"])
     n = len(schedule)
@@ -266,6 +329,7 @@ def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
         handle.attrs["configured_park_freq_ghz"] = float(BaseConfig["qubit_pi_freq"]) / 1e3
         handle.attrs["park_anchor_shift_ghz"] = float(anchor_shift)
         handle.attrs["interrupted"] = False
+        handle.attrs["preflight_passed"] = False
         handle.attrs["completed_points"] = 0
         handle.attrs["total_points"] = n
         park = handle.create_group("park_cal")
@@ -285,7 +349,13 @@ def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
                     data=np.asarray(park_channel.raw[arm][source], dtype=float))
         reference.attrs["metrics"] = json.dumps(
             park_channel.metrics, default=json_default)
+        reference.attrs["round_summary"] = json.dumps(
+            park_rounds["summary"], default=json_default)
         reference.attrs["elapsed_s"] = float(park_elapsed)
+        reference.create_dataset("round_shots", data=park_rounds["counts"])
+        for key in ROUND_ARRAY_KEYS:
+            reference.create_dataset(
+                f"round_{key}", data=np.asarray(park_rounds["arrays"][key], dtype=float))
         tg = handle.create_group("targets")
         tg.create_dataset("label", data=np.asarray([x["label"] for x in targets], dtype=object),
                           dtype=string)
@@ -305,8 +375,18 @@ def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
         channel.create_dataset("acquired_unix_s", shape=(n,), dtype=float, fillvalue=np.nan)
         for key in CHANNEL_KEYS:
             channel.create_dataset(key, shape=(n,), dtype=float, fillvalue=np.nan)
-        for key in ("coherence_relative_to_park", "coherence_phase_relative_rad"):
+        for key in ROUND_SUMMARY_KEYS:
             channel.create_dataset(key, shape=(n,), dtype=float, fillvalue=np.nan)
+        for key in ("coherence_relative_to_park", "coherence_phase_relative_rad",
+                    "round_coherence_relative_to_park",
+                    "round_phase_relative_to_park_rad"):
+            channel.create_dataset(key, shape=(n,), dtype=float, fillvalue=np.nan)
+        n_rounds = len(park_rounds["counts"])
+        channel.create_dataset("round_shots", data=park_rounds["counts"])
+        for key in ROUND_ARRAY_KEYS:
+            channel.create_dataset(
+                f"round_{key}", shape=(n, n_rounds), dtype=float,
+                fillvalue=np.nan, chunks=(1, n_rounds))
         for arm in RAMSEY_ARMS:
             for prefix in ("herald_I", "herald_Q", "I", "Q"):
                 channel.create_dataset(
@@ -329,7 +409,8 @@ def save_t1_group(handle, stage, result):
     group.attrs["elapsed_s"] = float(result["elapsed_s"])
 
 
-def write_channel_point(handle, visit, exp, elapsed, park_metrics):
+def write_channel_point(handle, visit, exp, elapsed, park_metrics, rounds,
+                        park_rounds):
     channel = handle["channel"]
     for key in CHANNEL_KEYS:
         channel[key][visit] = float(exp.metrics[key])
@@ -339,6 +420,16 @@ def write_channel_point(handle, visit, exp, elapsed, park_metrics):
         float(exp.metrics["coherence_magnitude"]) / park_c)
     channel["coherence_phase_relative_rad"][visit] = float(np.angle(np.exp(
         1j * (float(exp.metrics["coherence_phase_rad"]) - park_phase))))
+    for key in ROUND_SUMMARY_KEYS:
+        channel[key][visit] = float(rounds["summary"][key])
+    channel["round_coherence_relative_to_park"][visit] = float(
+        rounds["summary"]["round_coherence_mean_debiased"]
+        / park_rounds["summary"]["round_coherence_mean_debiased"])
+    channel["round_phase_relative_to_park_rad"][visit] = float(np.angle(np.exp(
+        1j * (rounds["summary"]["round_phase_mean_rad"]
+              - park_rounds["summary"]["round_phase_mean_rad"]))))
+    for key in ROUND_ARRAY_KEYS:
+        channel[f"round_{key}"][visit] = rounds["arrays"][key]
     for arm in RAMSEY_ARMS:
         values = exp.raw[arm]
         channel[f"herald_I_{arm}"][visit] = values["herald_i"]
@@ -358,8 +449,9 @@ def save_csv(h5_path, csv_path):
             "park_anchored_freq_ghz", "dc_gain", "hold_us", "completed", "error",
             "elapsed_s", "acquired_unix_s",
         ] + list(CHANNEL_KEYS) + [
-            "coherence_relative_to_park", "coherence_phase_relative_rad"
-        ]
+            "coherence_relative_to_park", "coherence_phase_relative_rad",
+            "round_coherence_relative_to_park", "round_phase_relative_to_park_rad",
+        ] + list(ROUND_SUMMARY_KEYS)
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
         targets = handle["targets"]
@@ -385,8 +477,10 @@ def save_csv(h5_path, csv_path):
                 "elapsed_s": float(channel["elapsed_s"][visit]),
                 "acquired_unix_s": float(channel["acquired_unix_s"][visit]),
             })
-            for key in CHANNEL_KEYS + (
-                    "coherence_relative_to_park", "coherence_phase_relative_rad"):
+            for key in CHANNEL_KEYS + ROUND_SUMMARY_KEYS + (
+                    "coherence_relative_to_park", "coherence_phase_relative_rad",
+                    "round_coherence_relative_to_park",
+                    "round_phase_relative_to_park_rad"):
                 row[key] = float(channel[key][visit])
             writer.writerow(row)
 
@@ -446,8 +540,10 @@ def save_plot(h5_path, plot_path):
                 hold = np.asarray(schedule["hold_us"])[mask]
                 order = np.argsort(hold)
                 hold = hold[order]
-                coherence = np.asarray(channel["coherence_relative_to_park"])[mask][order]
-                phase = np.asarray(channel["coherence_phase_relative_rad"])[mask][order]
+                coherence = np.asarray(
+                    channel["round_coherence_relative_to_park"])[mask][order]
+                phase = np.asarray(
+                    channel["round_phase_relative_to_park_rad"])[mask][order]
                 label = f"{role} {nominal:.6f} GHz"
                 axes[0, tls_index].plot(
                     hold, coherence, ".-", lw=0.9, ms=4,
@@ -523,28 +619,49 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
         soc, soccfg, cfg, p, outer_folder, TLS.BASELINE_DC_OFFSET, 0.0,
         park_ss.calib_params, assignment)
     park_metrics = park_channel.metrics
+    park_rounds = analyze_rounds(
+        park_channel, p, park_ss.calib_params, assignment)
+    park_round_summary = park_rounds["summary"]
     print(f"park channel P_g={park_metrics['P_g']:.3f}, "
           f"P_e={park_metrics['P_e']:.3f}, "
-          f"|C|={park_metrics['coherence_magnitude']:.3f}, "
+          f"P_i={park_metrics['P_i']:.3f}, P_q={park_metrics['P_q']:.3f}, "
+          f"aggregate |C|={park_metrics['coherence_magnitude']:.3f}, "
+          f"round-debiased |C|={park_round_summary['round_coherence_mean_debiased']:.3f}, "
+          f"phase stability={park_round_summary['round_phase_resultant']:.3f}, "
           f"contrast={park_metrics['reference_contrast']:.3f}, {hms(park_elapsed)}")
+    create_h5(
+        h5_path, p, cfg, targets, holds, schedule, park_ss, assignment,
+        park_channel, park_elapsed, park_cal_elapsed, fit_park, anchor_shift,
+        park_rounds, None)
     if not park_metrics["valid"]:
+        with h5py.File(h5_path, "r+") as handle:
+            handle.attrs["preflight_error"] = "park assignment reference is invalid"
         raise RuntimeError("park assignment reference is invalid")
     if not park_metrics["local_reference_valid"]:
+        with h5py.File(h5_path, "r+") as handle:
+            handle.attrs["preflight_error"] = "park channel reference contrast is invalid"
         raise RuntimeError("park channel reference contrast is invalid")
-    if float(park_metrics["coherence_magnitude"]) < float(p["min_park_coherence"]):
-        raise RuntimeError(
-            f"park coherence {park_metrics['coherence_magnitude']:.3f} is below "
+    park_gate = float(park_round_summary["round_coherence_mean_debiased"])
+    if park_gate < float(p["min_park_coherence"]):
+        message = (
+            f"round-debiased park coherence {park_gate:.3f} is below "
             f"{float(p['min_park_coherence']):.3f}")
+        with h5py.File(h5_path, "r+") as handle:
+            handle.attrs["preflight_error"] = message
+        raise RuntimeError(
+            f"{message}; diagnostic park IQ and round metrics were saved to {h5_path}")
+    with h5py.File(h5_path, "r+") as handle:
+        handle.attrs["preflight_passed"] = True
+        handle.flush()
     t1_start = None
     if p.get("run_t1_checks"):
         print("running randomized start T1 check")
         t1_start = run_t1_check(
             soc, soccfg, cfg, p, outer_folder, targets, park_ss.calib_params, 0)
         print(f"start T1 check complete in {hms(t1_start['elapsed_s'])}")
-    create_h5(
-        h5_path, p, cfg, targets, holds, schedule, park_ss, assignment,
-        park_channel, park_elapsed, park_cal_elapsed, fit_park, anchor_shift,
-        t1_start)
+        with h5py.File(h5_path, "r+") as handle:
+            save_t1_group(handle, "start", t1_start)
+            handle.flush()
     started = time.time()
     interrupted = False
     completed = 0
@@ -556,7 +673,9 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
                 exp, elapsed = run_channel(
                     soc, soccfg, cfg, p, outer_folder, target["dc_gain"],
                     item["hold_us"], park_ss.calib_params, assignment)
-                write_channel_point(handle, visit, exp, elapsed, park_metrics)
+                rounds = analyze_rounds(exp, p, park_ss.calib_params, assignment)
+                write_channel_point(
+                    handle, visit, exp, elapsed, park_metrics, rounds, park_rounds)
                 completed += 1
             except KeyboardInterrupt:
                 interrupted = True
@@ -574,11 +693,11 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
                     or visit + 1 == n):
                 elapsed_total = time.time() - started
                 eta = elapsed_total / max(visit + 1, 1) * (n - visit - 1)
-                coherence = handle["channel/coherence_magnitude"][visit]
-                phase = handle["channel/coherence_phase_relative_rad"][visit]
+                coherence = handle["channel/round_coherence_mean_debiased"][visit]
+                phase = handle["channel/round_phase_relative_to_park_rad"][visit]
                 print(f"{visit + 1:>4}/{n}  {target['label']:<12}  "
                       f"hold {float(item['hold_us']):>5.1f} us  "
-                      f"|C| {coherence:.3f}  phase {phase:+.2f}  "
+                      f"round |C| {coherence:.3f}  phase {phase:+.2f}  "
                       f"[{hms(elapsed_total)} elapsed, ETA {hms(eta)}]", flush=True)
             if visit % 50 == 0:
                 gc.collect()

@@ -37,6 +37,7 @@ def test_h5_has_complete_randomized_sweep(output):
         assert int(handle.attrs["total_points"]) == 18
         assert int(handle.attrs["completed_points"]) == 18
         assert not bool(handle.attrs["interrupted"])
+        assert bool(handle.attrs["preflight_passed"])
         assert np.all(handle["channel/completed"][:] == 1)
         assert handle["channel/I_g"].shape == (18, 40)
         assert handle["channel/Q_q"].shape == (18, 40)
@@ -45,6 +46,10 @@ def test_h5_has_complete_randomized_sweep(output):
         assert "t1_checks/start/T1_3pt_us" in handle
         assert "t1_checks/end/T1_3pt_us" in handle
         assert np.all(np.isfinite(handle["channel/coherence_magnitude"][:]))
+        assert handle["channel/round_coherence_magnitude_debiased"].shape == (18, 2)
+        assert np.all(np.isfinite(
+            handle["channel/round_coherence_mean_debiased"][:]))
+        assert "round_summary" in handle["park_channel_reference"].attrs
 
 
 def test_csv_is_visit_ordered_and_complete(output):
@@ -53,7 +58,9 @@ def test_csv_is_visit_ordered_and_complete(output):
         rows = handle.read().strip().splitlines()
     assert len(rows) == 19
     for name in ("hold_us", "nominal_freq_ghz", "park_anchored_freq_ghz",
-                 "coherence_magnitude", "coherence_phase_relative_rad"):
+                 "coherence_magnitude", "coherence_phase_relative_rad",
+                 "round_coherence_mean_debiased",
+                 "round_phase_relative_to_park_rad"):
         assert name in rows[0]
 
 
