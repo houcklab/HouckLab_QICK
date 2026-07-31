@@ -97,6 +97,7 @@ def test_q_arm_prepares_x90_and_analyzes_at_phase_90(monkeypatch):
                         lambda prog, segs: events.append(("ramp_down", segs)))
     program.body()
     assert len([row for row in events if row[0] == "pulse"]) == 2
+    assert len([row for row in events if row[0] == "measure"]) == 1
     assert ("register", 2750, 90.0) in events
     names = [row[0] for row in events]
     assert names.index("ramp_down") < names.index("register")
@@ -117,7 +118,50 @@ def test_ground_arm_has_no_microwave_pulses(monkeypatch):
     monkeypatch.setattr(R.ff_pulse, "play_ramp_down", lambda *a, **kw: None)
     program.body()
     assert not [row for row in events if row[0] == "pulse"]
+    assert len([row for row in events if row[0] == "measure"]) == 1
+
+
+def test_herald_mode_retains_the_initial_measurement(monkeypatch):
+    events = []
+    program = object.__new__(R.RoundTripRamseyProgram)
+    program.cfg = dict(base_cfg("g"), reset_mode="active")
+    program.ff_segs = {"park": 0}
+    program.us2cycles = lambda value, **kw: value
+    program.pulse = lambda ch: events.append(("pulse", ch))
+    program.sync_all = lambda cycles: None
+    program.measure = lambda **kw: events.append(("measure", kw))
+    monkeypatch.setattr(R.ff_pulse, "assert_park", lambda prog, segs: None)
+    monkeypatch.setattr(R.ff_pulse, "play_ramp_up_hold", lambda *a, **kw: None)
+    monkeypatch.setattr(R.ff_pulse, "play_ramp_down", lambda *a, **kw: None)
+    program.body()
     assert len([row for row in events if row[0] == "measure"]) == 2
+
+
+def test_collect_shots_without_herald_returns_only_final_readout():
+    program = object.__new__(R.RoundTripRamseyProgram)
+    program.cfg = dict(base_cfg("g"), reps=3, reset_mode="passive",
+                       read_length=1.0)
+    program.us2cycles = lambda value, **kw: value
+    program.di_buf = [np.array([1.0, 2.0, 3.0])]
+    program.dq_buf = [np.array([4.0, 5.0, 6.0])]
+    hi, hq, i, q = program.collect_shots()
+    assert np.all(np.isnan(hi)) and np.all(np.isnan(hq))
+    assert i.tolist() == [1.0, 2.0, 3.0]
+    assert q.tolist() == [4.0, 5.0, 6.0]
+
+
+def test_collect_shots_with_herald_preserves_both_readouts():
+    program = object.__new__(R.RoundTripRamseyProgram)
+    program.cfg = dict(base_cfg("g"), reps=2, reset_mode="active",
+                       read_length=1.0)
+    program.us2cycles = lambda value, **kw: value
+    program.di_buf = [np.array([1.0, 2.0, 3.0, 4.0])]
+    program.dq_buf = [np.array([5.0, 6.0, 7.0, 8.0])]
+    hi, hq, i, q = program.collect_shots()
+    assert hi.tolist() == [1.0, 3.0]
+    assert hq.tolist() == [5.0, 7.0]
+    assert i.tolist() == [2.0, 4.0]
+    assert q.tolist() == [6.0, 8.0]
 
 
 def test_feedback_reset_uses_reset_frequency_then_restores_arm(monkeypatch):

@@ -260,8 +260,8 @@ def main():
             raise RuntimeError("park four-arm g/e reference has insufficient contrast; verify qubit_pi_gain")
         if not np.isfinite(pm["coherence_magnitude"]) or pm["coherence_magnitude"] < 0.35:
             raise RuntimeError("park four-arm reference has insufficient Ramsey coherence; verify qubit_pi2_gain")
-        if pm["ramsey_i"] < 0.35 or abs(pm["ramsey_q"]) > 0.50:
-            raise RuntimeError("park four-arm Ramsey axes are inconsistent with phase-0/phase-90 analysis; verify qubit_pi2_gain and generator phase")
+        print(f"  park coherence phase {pm['coherence_phase_rad']:+.3f} rad is the "
+              "relative phase origin for the scan.")
 
         channel_keys = (
             "P_g", "P_e", "P_i", "P_q", "reference_contrast", "ramsey_i",

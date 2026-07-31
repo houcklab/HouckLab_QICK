@@ -63,7 +63,7 @@ def main():
             self.shots = int(kw["shots"])
 
         def acquire(self, **kw):
-            phase = self.dc / 1800.0
+            phase = 0.8 + self.dc / 1800.0
             magnitude = 0.82 - 0.18 * np.exp(-((self.dc - 400.0) / 180.0) ** 2)
             pg, pe = 0.10, 0.82
             mid, half = 0.5 * (pg + pe), 0.5 * (pe - pg)

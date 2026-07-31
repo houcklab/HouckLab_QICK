@@ -108,6 +108,62 @@ def test_x90_qubit_optimizer_reports_measured_pi2_gain(tmp_path):
     assert "best_qubit_pi_gain" not in data
     assert data["number_drive_pulses"] == 2
     assert data["pulse_type"] == "X90"
+    assert data["x90_validation"] is None
+
+
+def test_x90_validation_checks_population_return_and_phase_axes(monkeypatch,
+                                                                 tmp_path):
+    seen = {}
+
+    class FakeSingleShot:
+        def __init__(self, cfg, repeats, **kw):
+            seen.setdefault("ss_cfgs", []).append((dict(cfg), repeats))
+            self.I_0 = np.full(20, -1.0)
+            self.Q_0 = np.zeros(20)
+            if cfg["qubit_gain"] == 5600:
+                self.I_1 = np.full(20, 1.0)
+            elif repeats == 1:
+                self.I_1 = np.r_[np.full(10, -1.0), np.full(10, 1.0)]
+            else:
+                self.I_1 = np.full(20, -1.0)
+            self.Q_1 = np.zeros(20)
+            self.calib_params = {
+                "scale_factor": 1.0, "threshold": 0.0,
+                "read_theta": 0.0, "ground_threshold": -0.5,
+            }
+
+        def acquire(self, **kw):
+            return None
+
+    class FakeRoundTrip:
+        def __init__(self, cfg, ff_gain, flux_hold_us, **kw):
+            seen["channel_cfg"] = dict(cfg)
+            seen["ff_gain"] = ff_gain
+            seen["flux_hold_us"] = flux_hold_us
+            self.metrics = {
+                "reference_contrast": 0.82,
+                "coherence_magnitude": 0.91,
+                "ramsey_i": 0.90,
+                "ramsey_q": 0.08,
+            }
+
+        def acquire(self, **kw):
+            return None
+
+    monkeypatch.setattr(O, "SingleShot1Q", FakeSingleShot)
+    monkeypatch.setattr(O, "RoundTripRamsey", FakeRoundTrip)
+    exp = optimizer(O.QubitPulseOptimize, tmp_path, pulse_type="X90")
+    exp.soc = object()
+    exp.soccfg = object()
+    result = exp._validate_x90(2534.4, 2810)
+    assert result["passed"] is True
+    assert seen["ss_cfgs"][0][0]["qubit_gain"] == 5600
+    assert np.isclose(result["population_1x"], 0.5)
+    assert np.isclose(result["population_4x"], 0.0)
+    assert seen["channel_cfg"]["qubit_pi2_gain"] == 2810
+    assert seen["channel_cfg"]["reset_mode"] == "passive"
+    assert seen["ff_gain"] == 0.0
+    assert seen["flux_hold_us"] == 0.0
 
 
 def test_x180_qubit_optimizer_keeps_half_gain_as_seed_only(tmp_path):

@@ -33,9 +33,9 @@ BaseConfig = {
     "read_pulse_freq": 7248.967089,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 2534.350291,
-    "qubit_pi_freq": 2534.350291,
-    "qubit_pi_gain": 5500,
+    "qubit_freq": 2534.550,
+    "qubit_pi_freq": 2534.550,
+    "qubit_pi_gain": 5900,
     "qubit_pi2_gain": 2750,
     "qubit_drag_beta": 0.0,
     "qubit_anharmonicity_mhz": -200.0,

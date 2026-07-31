@@ -73,3 +73,4 @@ def test_csv_exposes_complex_response_and_matched_t1(output):
 def test_runner_reports_park_validation(output):
     assert "park four-arm Ramsey reference" in output
     assert re.search(r"P_g=[\d.]+, P_e=[\d.]+, I=[+-][\d.]+, Q=[+-][\d.]+", output)
+    assert "park coherence phase +0.800 rad is the relative phase origin" in output

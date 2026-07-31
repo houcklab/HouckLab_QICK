@@ -122,10 +122,11 @@ class RoundTripRamseyProgram(AveragerProgram):
             self._set_arm_prep()
             if reset_read_gain is not None:
                 set_readout_pulse(self, self._read_freq_reg)
-        self.measure(
-            pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-            wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))
+        if active_reset.heralds(cfg):
+            self.measure(
+                pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))
         if arm != "g":
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.010))
@@ -146,20 +147,25 @@ class RoundTripRamseyProgram(AveragerProgram):
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)
+        n_herald = int(active_reset.heralds(self.cfg))
         super().acquire(
             soc, load_pulses=load_pulses,
-            readouts_per_experiment=2 + n_reset, progress=progress)
+            readouts_per_experiment=1 + n_reset + n_herald, progress=progress)
         return self.collect_shots()
 
     def collect_shots(self):
         length = self.us2cycles(
             self.cfg["read_length"], ro_ch=self.cfg["ro_chs"][0])
         n_reset = active_reset.active_reset_readouts(self.cfg)
-        reads = 2 + n_reset
+        n_herald = int(active_reset.heralds(self.cfg))
+        reads = 1 + n_reset + n_herald
         shots_i = self.di_buf[0].reshape((self.cfg["reps"], reads)) / length
         shots_q = self.dq_buf[0].reshape((self.cfg["reps"], reads)) / length
-        return (shots_i[:, n_reset], shots_q[:, n_reset],
-                shots_i[:, n_reset + 1], shots_q[:, n_reset + 1])
+        if n_herald:
+            return (shots_i[:, n_reset], shots_q[:, n_reset],
+                    shots_i[:, n_reset + 1], shots_q[:, n_reset + 1])
+        empty = np.full(self.cfg["reps"], np.nan)
+        return empty, empty.copy(), shots_i[:, n_reset], shots_q[:, n_reset]
 
 
 class RoundTripRamsey(ExperimentClass):

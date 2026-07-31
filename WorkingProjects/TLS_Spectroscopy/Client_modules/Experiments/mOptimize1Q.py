@@ -5,7 +5,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+    SingleShot1Q, discriminate_shots)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRoundTripRamsey import (
+    RoundTripRamsey)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
@@ -152,6 +155,74 @@ class QubitPulseOptimize(_GridOptimizer):
         cfg["pulse_type"] = self.pulse_type
         return cfg
 
+    def _validate_x90(self, freq, gain):
+        if self.soc is None or self.soccfg is None:
+            return None
+        shots = int(self.cfg.get("x90_validation_shots", max(250, self.shots)))
+        cfg = self._point_cfg(freq, gain)
+        cfg["shots"] = cfg["reps"] = shots
+        cfg["reset_mode"] = "passive"
+        cfg["qubit_pi2_gain"] = int(gain)
+        ref_cfg = dict(cfg)
+        ref_cfg["qubit_gain"] = int(ref_cfg["qubit_pi_gain"])
+        with suppress_stdout():
+            ss = SingleShot1Q(
+                soc=self.soc, soccfg=self.soccfg, path=self.element,
+                outerFolder=self.outerFolder, suffix="x90_validation_ss",
+                cfg=ref_cfg, plot=False, save=False, repeats=1, min_F=0.0)
+            ss.acquire(progress=False, plotDisp=False)
+        assignment = {
+            "P_g": float(np.mean(discriminate_shots(
+                ss.I_0, ss.Q_0, ss.calib_params))),
+            "P_e": float(np.mean(discriminate_shots(
+                ss.I_1, ss.Q_1, ss.calib_params))),
+        }
+        assignment_contrast = assignment["P_e"] - assignment["P_g"]
+
+        def pulse_population(repeats):
+            pulse_cfg = dict(cfg)
+            pulse_cfg["qubit_gain"] = int(gain)
+            with suppress_stdout():
+                pulse_ss = SingleShot1Q(
+                    soc=self.soc, soccfg=self.soccfg, path=self.element,
+                    outerFolder=self.outerFolder,
+                    suffix=f"x90_validation_{int(repeats)}x", cfg=pulse_cfg,
+                    plot=False, save=False, repeats=int(repeats), min_F=0.0)
+                pulse_ss.acquire(progress=False, plotDisp=False)
+            measured = float(np.mean(discriminate_shots(
+                pulse_ss.I_1, pulse_ss.Q_1, ss.calib_params)))
+            return ((measured - assignment["P_g"]) / assignment_contrast
+                    if assignment_contrast > 0 else np.nan)
+
+        population_1x = pulse_population(1)
+        population_4x = pulse_population(4)
+        channel = RoundTripRamsey(
+            soc=self.soc, soccfg=self.soccfg, path=self.element,
+            outerFolder=self.outerFolder, suffix="x90_validation_axes", cfg=cfg,
+            ff_gain=float(cfg.get("ff_park_gain", 0.0)), flux_hold_us=0.0,
+            shots=shots, rounds=min(5, shots), calib_params=ss.calib_params,
+            assignment_reference=assignment, min_reference_contrast=0.05,
+            save=False)
+        with suppress_stdout():
+            channel.acquire(progress=False, plotDisp=False)
+        metrics = dict(channel.metrics)
+        passed = bool(
+            assignment_contrast >= 0.20
+            and metrics["reference_contrast"] >= 0.20
+            and metrics["coherence_magnitude"] >= 0.50
+            and metrics["ramsey_i"] >= 0.50
+            and abs(metrics["ramsey_q"]) <= 0.35
+            and abs(population_1x - 0.50) <= 0.25
+            and abs(population_4x) <= 0.20)
+        return {
+            "passed": passed,
+            "shots": shots,
+            "assignment_reference": assignment,
+            "population_1x": population_1x,
+            "population_4x": population_4x,
+            "metrics": metrics,
+        }
+
     def acquire(self, progress=False, plotDisp=False):
         print(f"[qubit opt] {len(self.freqs_mhz)} qubit freqs x {len(self.gains)} gains, "
               f"{self.shots} shots/pt, {self.drive_pulses}x {self.pulse_type} drive pulses")
@@ -170,6 +241,23 @@ class QubitPulseOptimize(_GridOptimizer):
         if self.pulse_type == "X90":
             self.data['best_qubit_pi2_gain'] = best_gain
             result = f"qubit_pi2_gain={best_gain}"
+            try:
+                validation = self._validate_x90(best_freq, best_gain)
+            except Exception as exc:
+                validation = {"passed": False,
+                              "error": f"{type(exc).__name__}: {exc}"}
+            self.data["x90_validation"] = validation
+            if validation is not None:
+                if validation["passed"]:
+                    metrics = validation["metrics"]
+                    print(f"[qubit opt] X90 validation passed: I="
+                          f"{metrics['ramsey_i']:+.3f}, Q="
+                          f"{metrics['ramsey_q']:+.3f}, |C|="
+                          f"{metrics['coherence_magnitude']:.3f}, P1="
+                          f"{validation['population_1x']:.3f}, P4="
+                          f"{validation['population_4x']:.3f}")
+                else:
+                    print(f"[qubit opt] X90 validation failed: {validation}")
         else:
             self.data['best_qubit_pi_gain'] = best_gain
             self.data['qubit_pi2_gain_seed'] = int(round(best_gain / 2))
