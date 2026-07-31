@@ -17,8 +17,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mOptimize1Q imp
 
 
 QUBIT = "q4"
-GAINS = [2650, 2700, 2750, 2800, 2850]
-FREQUENCIES_MHZ = [2534.50, 2534.55]
+GAIN_OFFSETS = [-250, -125, 0, 125, 250]
+FREQUENCY_OFFSETS_MHZ = [-0.05, 0.0]
+GAINS = [int(BaseConfig["qubit_pi2_gain"]) + offset for offset in GAIN_OFFSETS]
+FREQUENCIES_MHZ = [float(BaseConfig["qubit_pi_freq"]) + offset
+                   for offset in FREQUENCY_OFFSETS_MHZ]
 BLOCKS = 5
 SHOTS_PER_BLOCK = 500
 RAMSEY_ROUNDS = 2

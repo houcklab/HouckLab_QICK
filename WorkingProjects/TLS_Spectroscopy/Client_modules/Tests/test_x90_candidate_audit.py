@@ -51,6 +51,12 @@ def test_candidate_order_visits_every_pair_once_per_block():
     assert orders[0] != orders[2]
 
 
+def test_default_grid_centers_on_configured_x90():
+    assert A.BaseConfig["qubit_pi2_gain"] in A.GAINS
+    assert A.BaseConfig["qubit_pi_freq"] in A.FREQUENCIES_MHZ
+    assert np.isclose(np.mean(A.GAINS), A.BaseConfig["qubit_pi2_gain"])
+
+
 def test_summary_prefers_complete_reproducible_candidate(monkeypatch):
     monkeypatch.setattr(A, "BLOCKS", 5)
     records = []
