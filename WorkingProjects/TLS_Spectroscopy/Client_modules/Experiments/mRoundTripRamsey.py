@@ -93,9 +93,12 @@ class RoundTripRamseyProgram(AveragerProgram):
         self.park_idle_only = bool(cfg.get("ramsey_park_idle_only", False))
         if self.park_idle_only and stepping:
             raise ValueError("ramsey_park_idle_only requires ff_gain == ff_park_gain")
+        self.ramsey_echo = bool(cfg.get("ramsey_echo", False))
+        segment_hold_us = hold_us / 2.0 if self.ramsey_echo else hold_us
+        self.ramsey_idle_segment_us = segment_hold_us
         self.ff_settle_us = ff_pulse.flux_settle_us(cfg) if stepping else 0.0
         self.ff_segs = None if self.park_idle_only else ff_pulse.build_ramp_hold_ramp(
-                self, hold_us=hold_us + self.ff_settle_us,
+                self, hold_us=segment_hold_us + self.ff_settle_us,
                 ff_gain=float(cfg["ff_gain"]),
                 dt_play_us=cfg.get("dt_pulseplay", 5.0),
                 ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
@@ -103,6 +106,21 @@ class RoundTripRamseyProgram(AveragerProgram):
                 compensation=ff_pulse.load_compensation(cfg),
                 distortion_model=ff_pulse.make_distortion_model(self))
         self.synci(200)
+
+    def _play_excursion(self):
+        cfg = self.cfg
+        if self.ff_segs is None:
+            echo = bool(self.__dict__.get(
+                "ramsey_echo", cfg.get("ramsey_echo", False)))
+            fallback = float(cfg.get("ramsey_flux_hold_us", 0.0)) / (2.0 if echo else 1.0)
+            self.sync_all(self.us2cycles(self.__dict__.get(
+                "ramsey_idle_segment_us", fallback)))
+        else:
+            ff_pulse.play_ramp_up_hold(
+                self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+            self.sync_all(self.us2cycles(0.010))
+            ff_pulse.play_ramp_down(self, self.ff_segs)
+            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
 
     def body(self):
         cfg = self.cfg
@@ -134,14 +152,14 @@ class RoundTripRamseyProgram(AveragerProgram):
         if arm != "g":
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.010))
-        if self.ff_segs is None:
-            self.sync_all(self.us2cycles(float(cfg.get("ramsey_flux_hold_us", 0.0))))
-        else:
-            ff_pulse.play_ramp_up_hold(
-                self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+        self._play_excursion()
+        if bool(self.__dict__.get("ramsey_echo", cfg.get("ramsey_echo", False))):
+            echo_gain = int(cfg["qubit_pi_gain"]) if arm in ("i", "q") else 0
+            self._set_qubit_pulse(
+                echo_gain, float(cfg.get("ramsey_echo_phase_deg", 0.0)))
+            self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.010))
-            ff_pulse.play_ramp_down(self, self.ff_segs)
-            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+            self._play_excursion()
         if arm in ("i", "q"):
             phase = 0.0 if arm == "i" else float(cfg.get("ramsey_q_phase_deg", 90.0))
             self._set_qubit_pulse(int(cfg["qubit_pi2_gain"]), phase)

@@ -41,7 +41,8 @@ P = {
     "min_assignment_contrast": 0.50,
     "min_local_reference_contrast": 0.10,
     "min_park_coherence": 0.35,
-    "park_idle_delays_us": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "use_echo": True,
+    "park_idle_delays_us": [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
     "run_t1_checks": True,
     "t1_shots": 500,
     "t1_rounds": 5,
@@ -183,6 +184,7 @@ def base_cfg(p, flux_tail, target_dcs):
         "flux_fit_params": TLS.FLUX_FIT_PARAMS,
         "randomize_point_order": True,
         "point_order_seed": int(p["order_seed"]),
+        "ramsey_echo": bool(p.get("use_echo", False)),
     })
     return cfg
 
@@ -582,6 +584,7 @@ def save_t1_csv(h5_path, csv_path):
 
 def save_plot(h5_path, plot_path):
     with h5py.File(h5_path, "r") as handle:
+        settings = json.loads(handle.attrs["settings"])
         targets = handle["targets"]
         schedule = handle["schedule"]
         channel = handle["channel"]
@@ -625,7 +628,8 @@ def save_plot(h5_path, plot_path):
                            color="black", lw=0.7, alpha=0.5)
                 ax.grid(True, alpha=0.2)
                 ax.legend(fontsize=8)
-        fig.suptitle("Targeted round-trip Ramsey hold sweep")
+        mode = "Hahn-echo" if settings.get("use_echo") else "Ramsey"
+        fig.suptitle(f"Targeted round-trip {mode} hold sweep")
         fig.savefig(plot_path, dpi=180, bbox_inches="tight")
         plt.close(fig)
 
@@ -658,6 +662,7 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
             p["passive_reset_us"]) * 1e-6
     print("=" * 96)
     print("TARGETED ROUND-TRIP RAMSEY HOLD SWEEP")
+    print(f"channel mode: {'PARK-PULSE HAHN ECHO' if p.get('use_echo') else 'RAMSEY'}")
     print(f"{len(targets)} frequencies x {len(holds)} holds x {int(p['repeats'])} repeats "
           f"= {n} finite channel points")
     print(f"passive reset {float(p['passive_reset_us']):g} us, "
@@ -713,20 +718,24 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
             for item in park_idle
         ], dtype=float)
         zero_value = float(values[np.argmin(np.abs(delays))])
-        transit_value = float(values[np.argmin(np.abs(delays - 1.0))])
+        transit_us = 2.0 if p.get("use_echo") else 1.0
+        transit_value = float(values[np.argmin(np.abs(delays - transit_us))])
         threshold = float(p["min_park_coherence"])
         if zero_value < threshold:
             diagnosis = (
-                f"zero-delay tomography is also low ({zero_value:.3f}), so the "
-                "current X90 pulse or its park frequency is not calibrated")
+                f"zero-delay tomography is also low ({zero_value:.3f}), so the park "
+                f"{'echo control sequence' if p.get('use_echo') else 'X90 pulse or frequency'} "
+                "is not calibrated")
         elif transit_value < threshold:
             diagnosis = (
-                f"zero-delay tomography survives ({zero_value:.3f}) but the 1 us "
-                f"idle falls to {transit_value:.3f}, so park Ramsey coherence is "
+                f"zero-delay tomography survives ({zero_value:.3f}) but the "
+                f"{transit_us:g} us idle falls to {transit_value:.3f}, so park "
+                f"{'echo' if p.get('use_echo') else 'Ramsey'} coherence is "
                 "shorter than the flux transit")
         else:
             diagnosis = (
-                f"zero-delay and 1 us idle tomography survive ({zero_value:.3f}, "
+                f"zero-delay and {transit_us:g} us idle tomography survive "
+                f"({zero_value:.3f}, "
                 f"{transit_value:.3f}), so the nominally zero flux-ramp waveform "
                 "path is causing the loss")
         message = (f"round-debiased park coherence {park_gate:.3f} is below "

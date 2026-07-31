@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+import json
 
 import h5py
 import numpy as np
@@ -38,6 +39,7 @@ def test_h5_has_complete_randomized_sweep(output):
         assert int(handle.attrs["completed_points"]) == 18
         assert not bool(handle.attrs["interrupted"])
         assert bool(handle.attrs["preflight_passed"])
+        assert json.loads(handle.attrs["settings"])["use_echo"] is True
         assert np.all(handle["channel/completed"][:] == 1)
         assert handle["channel/I_g"].shape == (18, 40)
         assert handle["channel/Q_q"].shape == (18, 40)
@@ -52,8 +54,8 @@ def test_h5_has_complete_randomized_sweep(output):
         assert "round_summary" in handle["park_channel_reference"].attrs
         assert np.allclose(
             handle["park_idle_diagnostic/delay_us"][:],
-            [0.0, 0.25, 0.5, 0.75, 1.0])
-        assert handle["park_idle_diagnostic/I_i"].shape == (5, 40)
+            [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0])
+        assert handle["park_idle_diagnostic/I_i"].shape == (7, 40)
 
 
 def test_csv_is_visit_ordered_and_complete(output):
