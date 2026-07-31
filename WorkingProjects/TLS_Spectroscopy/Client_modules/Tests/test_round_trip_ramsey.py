@@ -121,6 +121,30 @@ def test_ground_arm_has_no_microwave_pulses(monkeypatch):
     assert len([row for row in events if row[0] == "measure"]) == 1
 
 
+def test_park_idle_mode_skips_flux_waveforms(monkeypatch):
+    events = []
+    program = object.__new__(R.RoundTripRamseyProgram)
+    program.cfg = dict(base_cfg("i"), ramsey_park_idle_only=True,
+                       ramsey_flux_hold_us=0.75)
+    program.ff_segs = None
+    program.us2cycles = lambda value, **kw: value
+    program.pulse = lambda ch: events.append(("pulse", ch))
+    program.sync_all = lambda cycles: events.append(("sync", cycles))
+    program.measure = lambda **kw: events.append(("measure", kw))
+    program._set_qubit_pulse = lambda gain, phase, *a, **kw: events.append(
+        ("register", gain, phase))
+    monkeypatch.setattr(
+        R.ff_pulse, "play_ramp_up_hold",
+        lambda *a, **kw: events.append(("unexpected_ramp_up",)))
+    monkeypatch.setattr(
+        R.ff_pulse, "play_ramp_down",
+        lambda *a, **kw: events.append(("unexpected_ramp_down",)))
+    program.body()
+    assert ("sync", 0.75) in events
+    assert not [row for row in events if row[0].startswith("unexpected")]
+    assert len([row for row in events if row[0] == "pulse"]) == 2
+
+
 def test_herald_mode_retains_the_initial_measurement(monkeypatch):
     events = []
     program = object.__new__(R.RoundTripRamseyProgram)

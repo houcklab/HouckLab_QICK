@@ -50,6 +50,10 @@ def test_h5_has_complete_randomized_sweep(output):
         assert np.all(np.isfinite(
             handle["channel/round_coherence_mean_debiased"][:]))
         assert "round_summary" in handle["park_channel_reference"].attrs
+        assert np.allclose(
+            handle["park_idle_diagnostic/delay_us"][:],
+            [0.0, 0.25, 0.5, 0.75, 1.0])
+        assert handle["park_idle_diagnostic/I_i"].shape == (5, 40)
 
 
 def test_csv_is_visit_ordered_and_complete(output):

@@ -41,6 +41,7 @@ P = {
     "min_assignment_contrast": 0.50,
     "min_local_reference_contrast": 0.10,
     "min_park_coherence": 0.35,
+    "park_idle_delays_us": [0.0, 0.25, 0.5, 0.75, 1.0],
     "run_t1_checks": True,
     "t1_shots": 500,
     "t1_rounds": 5,
@@ -230,6 +231,33 @@ def run_channel(soc, soccfg, cfg, p, outer_folder, dc_gain, hold_us,
     return exp, time.time() - started
 
 
+def run_park_idle_diagnostic(soc, soccfg, cfg, p, outer_folder,
+                             calib_params, assignment):
+    delays = np.asarray(p.get("park_idle_delays_us", []), dtype=float)
+    if delays.size == 0 or np.any(~np.isfinite(delays)) or np.any(delays < 0.0):
+        raise ValueError("park_idle_delays_us must contain finite non-negative values")
+    diagnostic_cfg = dict(cfg)
+    diagnostic_cfg["ramsey_park_idle_only"] = True
+    result = []
+    for delay in delays:
+        exp, elapsed = run_channel(
+            soc, soccfg, diagnostic_cfg, p, outer_folder,
+            TLS.BASELINE_DC_OFFSET, float(delay), calib_params, assignment)
+        rounds = analyze_rounds(exp, p, calib_params, assignment)
+        result.append({
+            "delay_us": float(delay),
+            "exp": exp,
+            "elapsed_s": float(elapsed),
+            "rounds": rounds,
+        })
+        print(f"park idle {float(delay):>4.2f} us: "
+              f"aggregate |C|={float(exp.metrics['coherence_magnitude']):.3f}, "
+              f"round-debiased |C|="
+              f"{rounds['summary']['round_coherence_mean_debiased']:.3f}, "
+              f"phase stability={rounds['summary']['round_phase_resultant']:.3f}")
+    return result
+
+
 def analyze_rounds(exp, p, calib_params, assignment):
     counts = [int(value) for value in split_reps(int(p["shots"]), int(p["rounds"]))
               if int(value) > 0]
@@ -315,7 +343,7 @@ def run_t1_check(soc, soccfg, cfg, p, outer_folder, targets, calib_params,
 
 def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
               park_channel, park_elapsed, park_cal_elapsed, fit_park,
-              anchor_shift, park_rounds, t1_start):
+              anchor_shift, park_rounds, park_idle, t1_start):
     string = h5py.string_dtype(encoding="utf-8")
     shots = int(p["shots"])
     n = len(schedule)
@@ -356,6 +384,7 @@ def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
         for key in ROUND_ARRAY_KEYS:
             reference.create_dataset(
                 f"round_{key}", data=np.asarray(park_rounds["arrays"][key], dtype=float))
+        save_park_idle_group(handle, park_idle)
         tg = handle.create_group("targets")
         tg.create_dataset("label", data=np.asarray([x["label"] for x in targets], dtype=object),
                           dtype=string)
@@ -396,6 +425,38 @@ def create_h5(path, p, cfg, targets, holds, schedule, park_ss, assignment,
         if t1_start is not None:
             save_t1_group(handle, "start", t1_start)
         handle.flush()
+
+
+def save_park_idle_group(handle, diagnostics):
+    group = handle.create_group("park_idle_diagnostic")
+    group.create_dataset(
+        "delay_us", data=np.asarray([item["delay_us"] for item in diagnostics], dtype=float))
+    group.create_dataset(
+        "elapsed_s", data=np.asarray([item["elapsed_s"] for item in diagnostics], dtype=float))
+    for key in CHANNEL_KEYS:
+        group.create_dataset(
+            key, data=np.asarray([
+                item["exp"].metrics[key] for item in diagnostics
+            ], dtype=float))
+    for key in ROUND_SUMMARY_KEYS:
+        group.create_dataset(
+            key, data=np.asarray([
+                item["rounds"]["summary"][key] for item in diagnostics
+            ], dtype=float))
+    group.create_dataset("round_shots", data=diagnostics[0]["rounds"]["counts"])
+    for key in ROUND_ARRAY_KEYS:
+        group.create_dataset(
+            f"round_{key}", data=np.asarray([
+                item["rounds"]["arrays"][key] for item in diagnostics
+            ], dtype=float))
+    for arm in RAMSEY_ARMS:
+        for source, label in (("herald_i", "herald_I"),
+                              ("herald_q", "herald_Q"),
+                              ("i", "I"), ("q", "Q")):
+            group.create_dataset(
+                f"{label}_{arm}", data=np.asarray([
+                    item["exp"].raw[arm][source] for item in diagnostics
+                ], dtype=float), compression="gzip", compression_opts=1)
 
 
 def save_t1_group(handle, stage, result):
@@ -629,10 +690,13 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
           f"round-debiased |C|={park_round_summary['round_coherence_mean_debiased']:.3f}, "
           f"phase stability={park_round_summary['round_phase_resultant']:.3f}, "
           f"contrast={park_metrics['reference_contrast']:.3f}, {hms(park_elapsed)}")
+    print("running park idle diagnostic without a flux waveform")
+    park_idle = run_park_idle_diagnostic(
+        soc, soccfg, cfg, p, outer_folder, park_ss.calib_params, assignment)
     create_h5(
         h5_path, p, cfg, targets, holds, schedule, park_ss, assignment,
         park_channel, park_elapsed, park_cal_elapsed, fit_park, anchor_shift,
-        park_rounds, None)
+        park_rounds, park_idle, None)
     if not park_metrics["valid"]:
         with h5py.File(h5_path, "r+") as handle:
             handle.attrs["preflight_error"] = "park assignment reference is invalid"
@@ -643,9 +707,30 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
         raise RuntimeError("park channel reference contrast is invalid")
     park_gate = float(park_round_summary["round_coherence_mean_debiased"])
     if park_gate < float(p["min_park_coherence"]):
-        message = (
-            f"round-debiased park coherence {park_gate:.3f} is below "
-            f"{float(p['min_park_coherence']):.3f}")
+        delays = np.asarray([item["delay_us"] for item in park_idle], dtype=float)
+        values = np.asarray([
+            item["rounds"]["summary"]["round_coherence_mean_debiased"]
+            for item in park_idle
+        ], dtype=float)
+        zero_value = float(values[np.argmin(np.abs(delays))])
+        transit_value = float(values[np.argmin(np.abs(delays - 1.0))])
+        threshold = float(p["min_park_coherence"])
+        if zero_value < threshold:
+            diagnosis = (
+                f"zero-delay tomography is also low ({zero_value:.3f}), so the "
+                "current X90 pulse or its park frequency is not calibrated")
+        elif transit_value < threshold:
+            diagnosis = (
+                f"zero-delay tomography survives ({zero_value:.3f}) but the 1 us "
+                f"idle falls to {transit_value:.3f}, so park Ramsey coherence is "
+                "shorter than the flux transit")
+        else:
+            diagnosis = (
+                f"zero-delay and 1 us idle tomography survive ({zero_value:.3f}, "
+                f"{transit_value:.3f}), so the nominally zero flux-ramp waveform "
+                "path is causing the loss")
+        message = (f"round-debiased park coherence {park_gate:.3f} is below "
+                   f"{threshold:.3f}; {diagnosis}")
         with h5py.File(h5_path, "r+") as handle:
             handle.attrs["preflight_error"] = message
         raise RuntimeError(

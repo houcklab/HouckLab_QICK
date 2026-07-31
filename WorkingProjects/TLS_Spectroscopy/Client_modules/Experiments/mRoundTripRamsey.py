@@ -90,21 +90,25 @@ class RoundTripRamseyProgram(AveragerProgram):
             raise ValueError("ramsey_flux_hold_us must be finite and non-negative")
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
         stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+        self.park_idle_only = bool(cfg.get("ramsey_park_idle_only", False))
+        if self.park_idle_only and stepping:
+            raise ValueError("ramsey_park_idle_only requires ff_gain == ff_park_gain")
         self.ff_settle_us = ff_pulse.flux_settle_us(cfg) if stepping else 0.0
-        self.ff_segs = ff_pulse.build_ramp_hold_ramp(
-            self, hold_us=hold_us + self.ff_settle_us,
-            ff_gain=float(cfg["ff_gain"]),
-            dt_play_us=cfg.get("dt_pulseplay", 5.0),
-            ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
-            dt_def_us=cfg.get("dt_pulsedef", 0.002),
-            compensation=ff_pulse.load_compensation(cfg),
-            distortion_model=ff_pulse.make_distortion_model(self))
+        self.ff_segs = None if self.park_idle_only else ff_pulse.build_ramp_hold_ramp(
+                self, hold_us=hold_us + self.ff_settle_us,
+                ff_gain=float(cfg["ff_gain"]),
+                dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+                dt_def_us=cfg.get("dt_pulsedef", 0.002),
+                compensation=ff_pulse.load_compensation(cfg),
+                distortion_model=ff_pulse.make_distortion_model(self))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
         arm = self._arm()
-        ff_pulse.assert_park(self, self.ff_segs)
+        if self.ff_segs is not None:
+            ff_pulse.assert_park(self, self.ff_segs)
         if active_reset.uses_feedback(cfg):
             reset_read_gain = cfg.get("reset_read_pulse_gain")
             if reset_read_gain is not None:
@@ -130,11 +134,14 @@ class RoundTripRamseyProgram(AveragerProgram):
         if arm != "g":
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.010))
-        ff_pulse.play_ramp_up_hold(
-            self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
-        self.sync_all(self.us2cycles(0.010))
-        ff_pulse.play_ramp_down(self, self.ff_segs)
-        self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+        if self.ff_segs is None:
+            self.sync_all(self.us2cycles(float(cfg.get("ramsey_flux_hold_us", 0.0))))
+        else:
+            ff_pulse.play_ramp_up_hold(
+                self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+            self.sync_all(self.us2cycles(0.010))
+            ff_pulse.play_ramp_down(self, self.ff_segs)
+            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
         if arm in ("i", "q"):
             phase = 0.0 if arm == "i" else float(cfg.get("ramsey_q_phase_deg", 90.0))
             self._set_qubit_pulse(int(cfg["qubit_pi2_gain"]), phase)
