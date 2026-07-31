@@ -200,7 +200,8 @@ class QubitPulseOptimize(_GridOptimizer):
             soc=self.soc, soccfg=self.soccfg, path=self.element,
             outerFolder=self.outerFolder, suffix="x90_validation_axes", cfg=cfg,
             ff_gain=float(cfg.get("ff_park_gain", 0.0)), flux_hold_us=0.0,
-            shots=shots, rounds=min(5, shots), calib_params=ss.calib_params,
+            shots=shots, rounds=min(int(cfg.get("x90_validation_rounds", 5)), shots),
+            calib_params=ss.calib_params,
             assignment_reference=assignment, min_reference_contrast=0.05,
             save=False)
         with suppress_stdout():

@@ -141,6 +141,7 @@ P_QUBIT_OPT = {
     "gain_max": 9000,
     "gain_points": 21,
     "x90_validation_shots": 500,
+    "x90_validation_rounds": 5,
 }
 
 
@@ -360,6 +361,7 @@ def run_qubit_opt(outer_folder, soc, soccfg):
                                  int(p["gain_points"]))).astype(int)
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     cfg["x90_validation_shots"] = int(p.get("x90_validation_shots", p["shots"]))
+    cfg["x90_validation_rounds"] = int(p.get("x90_validation_rounds", 5))
     print(f"[qubit opt] scanning qubit freq {freqs[0]:.3f}..{freqs[-1]:.3f} MHz x gain "
           f"{gains[0]}..{gains[-1]}, {p['pulse_type']} with "
           f"{p['num_pi']} logical pi rotations (passive)")

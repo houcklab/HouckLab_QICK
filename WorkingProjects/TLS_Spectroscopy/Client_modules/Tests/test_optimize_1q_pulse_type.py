@@ -136,10 +136,11 @@ def test_x90_validation_checks_population_return_and_phase_axes(monkeypatch,
             return None
 
     class FakeRoundTrip:
-        def __init__(self, cfg, ff_gain, flux_hold_us, **kw):
+        def __init__(self, cfg, ff_gain, flux_hold_us, rounds, **kw):
             seen["channel_cfg"] = dict(cfg)
             seen["ff_gain"] = ff_gain
             seen["flux_hold_us"] = flux_hold_us
+            seen["rounds"] = rounds
             self.metrics = {
                 "reference_contrast": 0.82,
                 "coherence_magnitude": 0.91,
@@ -155,15 +156,19 @@ def test_x90_validation_checks_population_return_and_phase_axes(monkeypatch,
     exp = optimizer(O.QubitPulseOptimize, tmp_path, pulse_type="X90")
     exp.soc = object()
     exp.soccfg = object()
+    exp.cfg["x90_validation_rounds"] = 3
     result = exp._validate_x90(2534.4, 2810)
     assert result["passed"] is True
     assert seen["ss_cfgs"][0][0]["qubit_gain"] == 5600
     assert np.isclose(result["population_1x"], 0.5)
     assert np.isclose(result["population_4x"], 0.0)
     assert seen["channel_cfg"]["qubit_pi2_gain"] == 2810
+    assert seen["channel_cfg"]["qubit_pi_freq"] == 2534.4
+    assert all(cfg["qubit_pi_freq"] == 2534.4 for cfg, repeats in seen["ss_cfgs"])
     assert seen["channel_cfg"]["reset_mode"] == "passive"
     assert seen["ff_gain"] == 0.0
     assert seen["flux_hold_us"] == 0.0
+    assert seen["rounds"] == 3
 
 
 def test_x180_qubit_optimizer_keeps_half_gain_as_seed_only(tmp_path):
