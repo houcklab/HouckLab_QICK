@@ -154,11 +154,14 @@ class RoundTripRamseyProgram(AveragerProgram):
             self.sync_all(self.us2cycles(0.010))
         self._play_excursion()
         if bool(self.__dict__.get("ramsey_echo", cfg.get("ramsey_echo", False))):
-            echo_gain = int(cfg["qubit_pi_gain"]) if arm in ("i", "q") else 0
-            self._set_qubit_pulse(
-                echo_gain, float(cfg.get("ramsey_echo_phase_deg", 0.0)))
-            self.pulse(ch=cfg["qubit_ch"])
-            self.sync_all(self.us2cycles(0.010))
+            if arm in ("i", "q"):
+                self._set_qubit_pulse(
+                    int(cfg["qubit_pi_gain"]),
+                    float(cfg.get("ramsey_echo_phase_deg", 0.0)))
+                self.pulse(ch=cfg["qubit_ch"])
+                self.sync_all(self.us2cycles(0.010))
+            else:
+                self.sync_all(self.us2cycles(4.0 * float(cfg["sigma"]) + 0.010))
             self._play_excursion()
         if arm in ("i", "q"):
             phase = 0.0 if arm == "i" else float(cfg.get("ramsey_q_phase_deg", 90.0))

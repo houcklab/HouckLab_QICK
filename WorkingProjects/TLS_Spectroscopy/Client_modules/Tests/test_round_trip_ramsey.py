@@ -180,7 +180,7 @@ def test_echo_keeps_longitudinal_arms_timing_matched(monkeypatch):
     program.ff_segs = {"park": 0}
     program.us2cycles = lambda value, **kw: value
     program.pulse = lambda ch: events.append(("pulse", ch))
-    program.sync_all = lambda cycles: None
+    program.sync_all = lambda cycles: events.append(("sync", cycles))
     program.measure = lambda **kw: None
     program._set_qubit_pulse = lambda gain, phase, *a, **kw: events.append(
         ("register", gain, phase))
@@ -188,7 +188,8 @@ def test_echo_keeps_longitudinal_arms_timing_matched(monkeypatch):
     monkeypatch.setattr(R.ff_pulse, "play_ramp_up_hold", lambda *a, **kw: None)
     monkeypatch.setattr(R.ff_pulse, "play_ramp_down", lambda *a, **kw: None)
     program.body()
-    assert events == [("register", 0, 0.0), ("pulse", 1)]
+    assert not [row for row in events if row[0] in ("register", "pulse")]
+    assert ("sync", 1.01) in events
 
 
 def test_herald_mode_retains_the_initial_measurement(monkeypatch):
