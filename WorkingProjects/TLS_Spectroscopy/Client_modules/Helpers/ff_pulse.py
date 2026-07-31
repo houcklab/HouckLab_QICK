@@ -61,7 +61,7 @@ def _warn_slew(delta, ramp_us):
 
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          dt_def_us=0.002, compensation=None, distortion_model=None,
-                         maxv=None, park_gain=None):
+                         maxv=None, park_gain=None, name_prefix="ff"):
     cfg = prog.cfg
     if maxv is None:
         maxv = prog.soccfg['gens'][0]['maxv']
@@ -113,15 +113,19 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     cfg["ff_ramp_length"] = ramp_us
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(first_level)
-    PulseFunctions.create_ff_ramp(prog, reversed=False, name="ff_ramp")
+    ramp_waveform = f"{name_prefix}_ramp"
+    reverse_waveform = f"{name_prefix}_ramp_reversed"
+    PulseFunctions.create_ff_ramp(prog, reversed=False, name=ramp_waveform)
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(last_level)
-    PulseFunctions.create_ff_ramp(prog, reversed=True, name="ff_ramp_reversed")
+    PulseFunctions.create_ff_ramp(prog, reversed=True, name=reverse_waveform)
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(ff_gain)
 
     return {"hold_segs": hold_segs, "dt_def_us": dt_def_us, "ramp_us": ramp_us,
-            "ff_gain": ff_gain, "park": int(park_gain)}
+            "ff_gain": ff_gain, "park": int(park_gain),
+            "ramp_waveform": ramp_waveform,
+            "reverse_waveform": reverse_waveform}
 
 
 STATE_SAFE_RAMP_US = 0.5
@@ -135,7 +139,8 @@ _MAX_CONST_LEN = 65000
 def play_ramp_up_hold(prog, segs, dt_play_us=None):
     cfg = prog.cfg
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp", outsel="input")
+                             gain=prog.soccfg['gens'][0]['maxv'],
+                             waveform=segs.get("ramp_waveform", "ff_ramp"), outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
     for g, dur_us in segs["hold_segs"]:
         total = max(int(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"])), 3)
@@ -153,7 +158,9 @@ def play_ramp_down(prog, segs):
     ff_rp = prog.ch_page(cfg["ff_ch"])
     ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp_reversed", outsel="input")
+                             gain=prog.soccfg['gens'][0]['maxv'],
+                             waveform=segs.get("reverse_waveform", "ff_ramp_reversed"),
+                             outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
     prog.safe_regwi(ff_rp, ff_gain_reg, int(segs.get("park", 0)))
 
