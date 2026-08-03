@@ -6,7 +6,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experimen
 import datetime
 from tqdm.notebook import tqdm
 import time
-from utils import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
