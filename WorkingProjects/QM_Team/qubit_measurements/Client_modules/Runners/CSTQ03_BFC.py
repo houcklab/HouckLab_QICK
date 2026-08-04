@@ -12,50 +12,67 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs impo
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. DEVICE PARAMETERS  (edit every session)
 # ══════════════════════════════════════════════════════════════════════════════
-temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC/Q4//"
+temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-07-25_BFC_cooldown/CSTQ03/RFSOC/Q4//"
 
 # ── Output folder root — edit this one line ────────────────────────────────
-_QubitFolderRoot = "V:/t1Team/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC"
+_QubitFolderRoot = "V:/t1Team/Data/2026-07-25_BFC_cooldown/CSTQ03/RFSOC"
 QubitFolders = {str(q): f"{_QubitFolderRoot}/Q{q}//" for q in range(1, 7)}
 
 ############## CSTQ03 (clone of CSTQ02_BFC.py + zero-span parity) ######
 Qubit_Parameters = {
-    # TODO
-    '1': {'Readout': {'Frequency': 6757.94, 'Gain': 200}, # 500 okay, 700 too much 520 maybe too much 530 too much
+    # currently working on 3
+    '1': {'Readout': {'Frequency': 6748, 'Gain': 3000}, # 500 okay, 700 too much 520 maybe too much 530 too much
           'Qubit': {'Frequency': 1752, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.2, "flattop_length": None},
           'outerfoldername': QubitFolders['1']},
 
-    # TODO
-    '2': {'Readout': {'Frequency': 7192.01, 'Gain': 4000}, # coarsely tuned to 4000, seeing behavior at 4500
-          'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
+    # currently working on 6
+    '2': {'Readout': {'Frequency': 7408.37, 'Gain': 3500}, # coarsely tuned to 4000, seeing behavior at 4500
+          'Qubit': {'Frequency': 4185.6, 'Gain': 2675, "pi2_Gain": 2400 // 2, "sigma": 0.1 , "flattop_length": None}, # qubit, T1 found
           'outerfoldername': QubitFolders['2']},
 
-    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 550}, # 600 too much
-          'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
+    # currently working on 4
+    '3': {'Readout': {'Frequency': 6870.8, 'Gain': 1500}, # 600 too much
+          'Qubit': {'Frequency': 2900, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
           'outerfoldername': QubitFolders['3']},
 
-    '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
-          'Qubit': {'Frequency':    2306.308975, 'Gain': 7009,  "pi2_Gain": 7009 // 2 ,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
+    # currently working on
+    '4': {'Readout': {'Frequency': 7535.96, 'Gain': 2000}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
+          'Qubit': {'Frequency':    4590, 'Gain': 2800,  "pi2_Gain": 2800 // 2 ,"sigma": 0.02, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
           'outerfoldername': QubitFolders['4']},
     
-    # TODO
-    '5': {'Readout': {'Frequency': 6970.59, 'Gain': 1500}, # 4500 with directional coupler 1500 good without-
+    # currently working on 5
+    '5': {'Readout': {'Frequency': 7050, 'Gain': 3000}, # 4500 with directional coupler 1500 good without-
           'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
           'outerfoldername': QubitFolders['5']}, # qubit, T1 found
 
-    # currently working on
-    '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800}, 
-          'Qubit': {'Frequency': 3055.2, 'Gain': 4600,  "pi2_Gain": 4750 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
+    # currently working on 2
+    '6': {'Readout': {'Frequency': 7244.8, 'Gain': 2000}, 
+          'Qubit': {'Frequency': 3258.1, 'Gain': 4600,  "pi2_Gain": 4750 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
           'outerfoldername': QubitFolders['6']},
     }
 ############## End Can D ############################
 
 start_voltage = 0.000 # sets voltage for the entire experiment #0.0059 working for good T2Rs
 
-Qubit_Readout = 6
-Qubit_Pulse = 6
+Qubit_Readout = 2
+Qubit_Pulse = 2
 yoko_fixed = False  # during a charge sweep; lazy way of sweeping two tone spec over time
 cavity_min = True   # look for dip, not peak
+
+# ── Readout window for the NON-single-shot experiments ──────────────────────
+# ADC integration window / trigger offset [us] for every experiment that runs
+# above the rebuild_singleshot_config() call in section 3: transmission,
+# two-tone, chi shift, Rabi, T1/T2/T2E, charge dispersion, ModifiedRamsey and
+# ActiveResetVerify. The resonator tone duration is derived automatically as
+# ADC_Offset + Readout_Time, so don't set "length" separately.
+# Longer window -> better SNR per shot, until it exceeds ~T1 of the qubit (the
+# tail of the integration then just averages in decayed |e> population).
+# The single-shot family below (SingleShot / T1SS / readout+qubit optimize /
+# AutoCoherence / ZeroSpanParity) has its OWN window in SS_params, and
+# ZeroSpanParity overrides again via ZSP_*Params["read_length"].
+Readout_Time = 10   # us, ADC integration window
+ADC_Offset   = 0.3 # us, delay from tone start to ADC trigger
+#                     (None -> keep BaseConfig["adc_trig_offset"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,20 +83,20 @@ tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
 RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 5}
+Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 10}
 
 RunTransmissionSweeps = False
-ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
+ts = {"start_ts_gain": 500, "end_ts_gain": 6000, "ts_step" : 100}
 
-Run2ToneSpec = True
+Run2ToneSpec = False
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
-charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 6000, "SpecSpan": 1000, "SpecNumPoints": 101, # 750 works Q5
+charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.002, } # 0.0001 has two periods in it
+Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
                         "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 20, 'rounds': 10,
-                        'Gauss': False, "sigma": 2, "gain": 6000,
+                        'Gauss': False, "sigma": 2, "gain": 1500,
                         'relax_delay' : 1500,
                         "display": True, 'min_sep_MHz':0.2,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
@@ -299,32 +316,43 @@ ChiShift_params = {"reps": 10,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 10000, 'number_of_steps': 101,
+                         "max_gain": 8000, 'number_of_steps': 201,
                          "reps": 20, 'rounds': 20,
-                         'relax_delay': 1500,
+                         'relax_delay': 500,
                          'fit' : False}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
-T1T2_params = {"T1_step": 50, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
-               "T2_step": 0.25, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
-               "relax_delay": 3500, # 5000
+T1T2_params = {"T1_step": 3, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
+               "T2_step": 0.1, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
+               "relax_delay": 500, # 5000
                'repetitions': 1000}
 
 RunT1T2E = False
 
-RunT1T2RT2E = False
+RunT1T2RT2E = True
 
 RunT2E = False
-T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,
-               "relax_delay": 3500, 'num_pi_pulses': 1, #need odd number of pulses
+T2E_params = {"T2_max_us": 20, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,
+               "relax_delay": 500, 'num_pi_pulses': 1, #need odd number of pulses
               "rotation_angle": None,
               "min_max": None,
               'repetitions': 3000}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 2500, "pi2_SS": False} # keep at 15
+SS_params = {"Shots": 1000, "Readout_Time": 10, "ADC_Offset": 0.3, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 1, 'relax_delay': 300, "pi2_SS": False} # keep at 15
+
+# Single-shot readout with NO qubit drive: just look at the IQ blobs the readout
+# produces on an undriven qubit. Uses the same readout tone/window as SingleShot
+# above (Readout_Time / ADC_Offset from SS_params); no qubit pulse is ever played,
+# so no readout fidelity is reported. Reports the cloud center/width and, when a
+# second blob is resolvable, its population.
+RunUndrivenSingleShot = False   # not "UndrivenSingleShot": that name is the imported experiment class
+US_params = {"Shots": 5000,            # more shots than SS: a small secondary blob needs statistics
+             "relax_delay": 2500,      # us, omit to inherit SS_params['relax_delay']
+             "min_separation_sigma": 2.0,  # blobs must be this far apart (combined sigma) to be called two
+             "plotDisp": True}
 
 RunT1SS = False
 T1SS_params = {"T1_step": 80, "T1_expts": 100,
@@ -335,10 +363,10 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'repetitions': 3000}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
+SS_R_params = {"gain_start": 3000, "gain_stop": 3600, "gain_pts": 7, "span": 0.1, "trans_pts": 21}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 11, "q_freq_span": 2, "q_freq_pts": 21,
+SS_Q_params = {"q_gain_span": 500, "q_gain_pts" : 21, "q_freq_span": 2, "q_freq_pts": 21,
                'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 # ── Automated T1 / T2 / T2Echo calibration ──────────────────────────────────
@@ -516,6 +544,7 @@ ctx = build_context(
     Spec_relevant_params=Spec_relevant_params,
     tl=tl, ts=ts, charge_params=charge_params,
     cavity_min=cavity_min, yoko_fixed=yoko_fixed,
+    readout_length_us=Readout_Time, adc_trig_offset_us=ADC_Offset,
 )
 
 # ── Regime A: transmission / spectroscopy / charge-parity / coherence / ARV ──
@@ -546,6 +575,7 @@ rebuild_singleshot_config(ctx, SS_params)
 
 # ── Regime B: single-shot family ──
 if SingleShot:                       run_single_shot(ctx, SS_params)
+if RunUndrivenSingleShot:            run_undriven_single_shot(ctx, US_params)
 if RunT1SS:                          run_t1_ss(ctx, T1SS_params, SS_params)
 if SingleShot_ReadoutOptimize:       run_readout_optimize(ctx, SS_R_params)
 if SingleShot_QubitOptimize:         run_qubit_optimize(ctx, SS_Q_params, SS_params)

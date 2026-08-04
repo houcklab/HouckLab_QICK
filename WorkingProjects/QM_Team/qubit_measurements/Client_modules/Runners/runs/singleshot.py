@@ -2,6 +2,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mOptimizeReadoutandPulse_FF import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mActiveResetVerify import ActiveResetVerify
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mUndrivenSingleShot import UndrivenSingleShot
 import numpy as np
 import matplotlib.pyplot as plt
 from .context import Context
@@ -170,6 +171,34 @@ def run_single_shot(ctx, SS_params):
     SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
     print('Angle: ', data_SingleShotProgram['data']['angle'][0])
     print('threshold: ', data_SingleShotProgram['data']['threshold'][0])
+
+
+def run_undriven_single_shot(ctx, US_params=None):
+    """Single-shot readout with the qubit drive off — just look at the blobs.
+
+    Runs under the same single-shot-regime config as `run_single_shot` (so the
+    readout tone, window and ADC offset are identical), but the experiment never
+    declares or pulses the qubit channel. `US_params` may override the shot count,
+    the relax delay, and the blob-separation threshold; everything else comes from
+    the config `rebuild_singleshot_config` already installed.
+    """
+    US_params = US_params or {}
+    overrides = {}
+    if 'Shots' in US_params:
+        overrides['shots'] = US_params['Shots']
+    if 'relax_delay' in US_params:
+        overrides['relax_delay'] = US_params['relax_delay']
+    if 'min_separation_sigma' in US_params:
+        overrides['blob_min_separation_sigma'] = US_params['min_separation_sigma']
+    cfg = ctx.working_config(overrides)
+
+    inst = UndrivenSingleShot(path="UndrivenSingleShot", outerFolder=ctx.outerFolder,
+                              cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg)
+    data = UndrivenSingleShot.acquire(inst)
+    UndrivenSingleShot.display(inst, data, plotDisp=US_params.get('plotDisp', True))
+    UndrivenSingleShot.save_data(inst, data)
+    UndrivenSingleShot.save_config(inst)
+    return data
 
 
 def run_readout_optimize(ctx, SS_R_params):

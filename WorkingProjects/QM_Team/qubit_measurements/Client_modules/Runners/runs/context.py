@@ -120,7 +120,8 @@ def rebuild_singleshot_config(ctx, SS_params):
 
 def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *,
                   Transmission_params, Spec_relevant_params, tl, ts, charge_params,
-                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR'):
+                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR',
+                  readout_length_us=15, adc_trig_offset_us=None):
     """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
     per-qubit scalars — the setup boilerplate that used to sit at the top of the
     CSTQ03_BFC.py script — returning a populated Context.
@@ -128,6 +129,15 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     The keyword param dicts (Transmission_params, Spec_relevant_params, tl, ts,
     charge_params) are the client's tuning dicts; they feed the initial config
     assembly exactly as the original script did.
+
+    `readout_length_us` / `adc_trig_offset_us` set the readout window for every
+    experiment that runs under this config, i.e. everything BEFORE the client's
+    `rebuild_singleshot_config()` call: transmission, two-tone, chi shift, Rabi,
+    T1/T2/T2E, charge dispersion, ModifiedRamsey, ActiveResetVerify. The
+    single-shot regime takes its window from SS_params["Readout_Time"] /
+    SS_params["ADC_Offset"] instead. `adc_trig_offset_us=None` keeps
+    BaseConfig["adc_trig_offset"]; the default readout_length_us=15 preserves the
+    value this function hardcoded before it was exposed to the runner.
     """
     soc, soccfg = makeProxy()
 
@@ -149,8 +159,23 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
     qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 
-    readout_length_us = 15
-    adc_trig_offset_us = BaseConfig["adc_trig_offset"]
+    readout_length_us = float(readout_length_us)
+    if readout_length_us <= 0:
+        raise ValueError(
+            f"readout_length_us must be positive, got {readout_length_us}. "
+            f"Set it from the runner (Readout_Time)."
+        )
+    if adc_trig_offset_us is None:
+        adc_trig_offset_us = BaseConfig["adc_trig_offset"]
+    adc_trig_offset_us = float(adc_trig_offset_us)
+    if adc_trig_offset_us < 0:
+        raise ValueError(
+            f"adc_trig_offset_us must be >= 0, got {adc_trig_offset_us}. "
+            f"Set it from the runner (ADC_Offset)."
+        )
+    print(f"[readout window] integration {readout_length_us} us, "
+          f"adc_trig_offset {adc_trig_offset_us} us, "
+          f"resonator tone {adc_trig_offset_us + readout_length_us} us")
     trans_config = {
         "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
         "pulse_style": "const",  # --Fixed
@@ -159,6 +184,9 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
         # must last through offset + window rather than merely equal the window.
         "length": adc_trig_offset_us + readout_length_us,
         "readout_length": readout_length_us,
+        # written explicitly (not left to BaseConfig) so a runner-side
+        # adc_trig_offset_us override actually reaches the programs
+        "adc_trig_offset": adc_trig_offset_us,
         "pulse_gain": cavity_gain,  # [DAC units]
         "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
         "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter

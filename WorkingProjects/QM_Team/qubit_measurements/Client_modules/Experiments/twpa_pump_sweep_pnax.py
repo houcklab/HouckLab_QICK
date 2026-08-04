@@ -49,18 +49,18 @@ from pywindfreak import SynthHD
 # ---------------------------------------------------------------------------
 # --- Pump source (Windfreak SynthHD, channels driven identically) -----------
 PUMP_SYNTH_PORT     = "COM5"            # SynthHD USB/serial COM port
-PUMP_CHANNELS       = (0, 1)            # SynthHD channels to drive identically
+PUMP_CHANNELS       = [0]            # SynthHD channels to drive identically
 
 # Frequency sweep (applied to BOTH channels identically)
-F_START_GHz         = 10.9225
-F_STOP_GHz          = 10.9275
-N_FREQ_POINTS       = 21                 # 25 MHz spacing across 12.0–13.5 GHz (centered on ~12.7 GHz)
+F_START_GHz         = 10.8
+F_STOP_GHz          = 11.2
+N_FREQ_POINTS       = 101                 # 25 MHz spacing across 12.0–13.5 GHz (centered on ~12.7 GHz)
 
 # Power sweep (applied to BOTH channels identically)
-P_START_dBm         = -30
-P_STOP_dBm          = 0
-N_POWER_POINTS      = 16                 # 0.5 dB spacing across -25 → 0 dBm
-PUMP_POWER_MAX_dBm  = 0.0                # hard ceiling — script refuses P > this
+P_START_dBm         = -5
+P_STOP_dBm          = -0
+N_POWER_POINTS      = 6                 # 0.5 dB spacing across -25 → 0 dBm
+PUMP_POWER_MAX_dBm  = 20.0                # hard ceiling — script refuses P > this
 
 # Sweep timing
 SETTLE_AFTER_FREQ_S  = 0.20              # PLL lock + thermal settle
@@ -73,16 +73,16 @@ SETTLE_AFTER_POWER_S = 0.05              # power-only update settle
 PNAX_ADDRESS         = "GPIB0::16::INSTR"
 PNAX_MEAS_MODE       = "BAND"
 PNAX_CW_FREQ_HZ      = 7.0e9           # CW tone (used only when PNAX_MEAS_MODE == "CW")
-PNAX_F_START_HZ      = 5e9            # TODO: low edge of the signal band to optimize over
+PNAX_F_START_HZ      = 6e9            # TODO: low edge of the signal band to optimize over
 PNAX_F_STOP_HZ       = 8e9            # TODO: high edge of the signal band to optimize over
-PNAX_N_FREQ_POINTS   = 201               # points across the band (BAND mode only)
+PNAX_N_FREQ_POINTS   = 21               # points across the band (BAND mode only)
 PNAX_IF_BW_HZ        = 500.0
-PNAX_POWER_dBm       = -10.0             # keep low — the TWPA may be under-pumped at start, prev -50 dBm
+PNAX_POWER_dBm       = -20.0             # keep low — the TWPA may be under-pumped at start, prev -50 dBm
 PNAX_N_AVG           = 10                # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS      = 30000
 
 # --- Output ----------------------------------------------------------------
-SAVE_DIR             = r"V:/t1Team/Data/2026-07-10_BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-07-25_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "pump_sweep"
 
 

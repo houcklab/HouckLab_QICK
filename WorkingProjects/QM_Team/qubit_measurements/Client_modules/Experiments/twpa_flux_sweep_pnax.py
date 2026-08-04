@@ -79,7 +79,7 @@ PNAX_N_AVG           = 4         # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS      = 30000
 
 # Output
-SAVE_DIR             = r"V:/t1Team/Data/2026-07-10_BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-07-25_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "first_period_sweep"
 
 
