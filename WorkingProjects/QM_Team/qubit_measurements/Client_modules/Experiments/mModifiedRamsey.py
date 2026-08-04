@@ -4,6 +4,190 @@ import numpy as np
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 
 
+# Numeric codes for the control state saved into the (numeric-only) h5 data.
+# The string itself lives in cfg["mr_control_type"], persisted via save_config.
+MR_CONTROL_TYPE_CODES = {
+    "parity": 0,           # parity-sensing run (no control modification)
+    "flip_final_pi2": 1,   # mapping inversion: parity signal must reverse
+    "echo_null": 2,        # Hahn-echo null: parity contrast must vanish
+    "tau_offset": 3,       # deliberately wrong tau: reduced contrast expected
+    "drive_detuned": 4,    # qubit drive detuned off both branches
+    "drive_off": 5,        # pi/2 pulses disabled (readout-only trace)
+}
+
+
+def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
+                        symmetric_ramsey=False, flip_final_pi2=False,
+                        max_bandwidth_ratio=1.0):
+    """
+    Hardware-free feasibility check of the parity -> state mapping.
+
+    Mirrors the timing/bandwidth math of ModifiedRamseyProgram.initialize()
+    with NOMINAL (un-quantized) 4*sigma envelopes, so it can run without a
+    soccfg. The realized values after clock quantization are reported by the
+    program itself (effective_tau_us); verify_ModifiedRamsey_timing.py checks
+    the two agree on real clock domains.
+
+    Conventions (tested in test_ModifiedRamseyParity_offline.py):
+      tau = 1/(2*df)                       (pulse-CENTRE-to-CENTRE)
+      gap = tau - 4*sigma                  (no pi)
+      gap = (tau - 8*sigma)/2 per gap      (echo)
+      final pi/2 base phase = 180 deg (standard) / 90 deg (symmetric),
+      +180 deg when flip_final_pi2.
+
+    Returns dict:
+      feasible          : bool -- envelopes fit inside tau AND bandwidth ratio
+                          is below max_bandwidth_ratio
+      errors, warnings  : lists of str (errors => infeasible)
+      tau_us, pulse_us, n_gaps, gap_us, df_max_mhz
+      rabi_pi2_mhz, branch_detuning_mhz, bandwidth_ratio
+      recommend_symmetric : True when the standard scheme is bandwidth-marginal
+                          and symmetric drive would halve the branch detuning
+      drive_freq_offset_mhz : add to f_ge to get the drive frequency
+      final_pi2_phase_deg
+    """
+    errors, warnings = [], []
+    if df_mhz <= 0:
+        raise ValueError("df_mhz must be positive")
+    if sigma_us <= 0:
+        raise ValueError("sigma_us must be positive")
+
+    tau_us = 1.0 / (2.0 * df_mhz)
+    pulse_us = 4.0 * sigma_us
+    n_gaps = 2 if use_pi_pulse else 1
+    gap_us = (tau_us - n_gaps * pulse_us) / n_gaps
+    df_max_mhz = 1.0 / (2.0 * n_gaps * pulse_us)
+    if gap_us <= 0:
+        errors.append(
+            f"df={df_mhz} MHz needs tau={tau_us:.4f} us but the "
+            f"{3 if use_pi_pulse else 2} pulses span "
+            f"{n_gaps * pulse_us:.4f} us; need df < {df_max_mhz:.4f} MHz at "
+            f"sigma={sigma_us} us (or shorter sigma)"
+        )
+
+    rabi_pi2_mhz = 0.0997 / sigma_us
+    branch_detuning_mhz = df_mhz / 2.0 if symmetric_ramsey else df_mhz
+    bandwidth_ratio = branch_detuning_mhz / rabi_pi2_mhz
+    recommend_symmetric = (not symmetric_ramsey) and bandwidth_ratio > 0.2
+    if bandwidth_ratio > max_bandwidth_ratio:
+        errors.append(
+            f"branch detuning {branch_detuning_mhz:.4f} MHz is "
+            f"{bandwidth_ratio:.2f}x the pi/2 Rabi rate "
+            f"({rabi_pi2_mhz:.4f} MHz): the off-resonant branch cannot be "
+            "rotated; shorten sigma"
+            + ("" if symmetric_ramsey else " or set symmetric_ramsey=True")
+        )
+    elif bandwidth_ratio > 0.2:
+        warnings.append(
+            f"branch detuning is {bandwidth_ratio:.2f}x the pi/2 Rabi rate; "
+            "the off-resonant branch will be under-rotated"
+            + (" -- symmetric_ramsey=True would halve the detuning"
+               if recommend_symmetric else "")
+        )
+    if use_pi_pulse:
+        warnings.append(
+            "use_pi_pulse=True is a Hahn-echo NULL control: it refocuses the "
+            "static parity detuning and should suppress the parity signal"
+        )
+
+    base = 90 if symmetric_ramsey else 180
+    final_phase = (base + (180 if flip_final_pi2 else 0)) % 360
+    return {
+        "feasible": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "tau_us": tau_us,
+        "pulse_us": pulse_us,
+        "n_gaps": n_gaps,
+        "gap_us": gap_us,
+        "df_max_mhz": df_max_mhz,
+        "rabi_pi2_mhz": rabi_pi2_mhz,
+        "branch_detuning_mhz": branch_detuning_mhz,
+        "bandwidth_ratio": bandwidth_ratio,
+        "recommend_symmetric": recommend_symmetric,
+        "drive_freq_offset_mhz": (-df_mhz / 2.0 if symmetric_ramsey else 0.0),
+        "final_pi2_phase_deg": final_phase,
+    }
+
+
+def build_control_variants(base_cfg,
+                           include=("parity", "flip_final_pi2", "echo_null",
+                                    "tau_offset", "drive_detuned",
+                                    "drive_off"),
+                           tau_offset_frac=0.25, detuning_mhz=None):
+    """
+    Build the cfg dicts for the parity run plus its validation controls.
+
+    Pure function (no hardware): each entry copies base_cfg, applies the
+    control modification, stamps cfg["mr_control_type"], and pre-validates
+    feasibility with plan_parity_mapping. Infeasible variants are returned
+    with cfg=None and a reason instead of raising, so a control suite can
+    skip them explicitly rather than crash mid-run.
+
+    Controls and their expected signatures:
+      parity          : the measurement itself
+      flip_final_pi2  : parity -> state mapping inverts; telegraph amplitude
+                        and rates must be unchanged
+      echo_null       : pi pulse refocuses the static parity detuning ->
+                        parity contrast suppressed
+      tau_offset      : tau scaled by (1 + tau_offset_frac) via df ->
+                        df/(1+frac); mapping rotation is off the pi condition,
+                        contrast reduced by ~cos(pi*(1+frac))... i.e. sign and
+                        amplitude change predictably
+      drive_detuned   : f_ge shifted by detuning_mhz (default +df, one full
+                        branch spacing): both branches off-resonant, mapping
+                        degraded
+      drive_off       : pi2_gain = 0; readout-only record measuring the
+                        readout/thermal baseline (no parity information)
+
+    Returns list of dicts: {"label", "control_type", "cfg" (or None),
+    "skip_reason" (or None), "expected", "plan"}.
+    """
+    out = []
+    for name in include:
+        if name not in MR_CONTROL_TYPE_CODES:
+            raise ValueError(f"unknown control type {name!r}")
+        cfg = dict(base_cfg)
+        cfg["mr_control_type"] = name
+        expected = ""
+        if name == "parity":
+            expected = "telegraph parity signal at tau = 1/(2 df)"
+        elif name == "flip_final_pi2":
+            cfg["flip_final_pi2"] = True
+            expected = "parity->state mapping inverted; same rates/amplitude"
+        elif name == "echo_null":
+            cfg["use_pi_pulse"] = True
+            expected = "parity contrast suppressed (echo refocuses df)"
+        elif name == "tau_offset":
+            cfg["df"] = float(base_cfg["df"]) / (1.0 + float(tau_offset_frac))
+            cfg["mr_control_tau_offset_frac"] = float(tau_offset_frac)
+            expected = (f"tau deliberately {tau_offset_frac:+.0%} off the pi "
+                        "condition; contrast reduced/rotated")
+        elif name == "drive_detuned":
+            det = float(detuning_mhz) if detuning_mhz is not None \
+                else float(base_cfg["df"])
+            cfg["f_ge"] = float(base_cfg["f_ge"]) + det
+            cfg["mr_control_detuning_mhz"] = det
+            expected = f"drive detuned {det:+.4f} MHz; mapping degraded"
+        elif name == "drive_off":
+            cfg["pi2_gain"] = 0
+            expected = "no Ramsey drive; readout baseline only"
+
+        plan = plan_parity_mapping(
+            cfg["df"], cfg["sigma"],
+            use_pi_pulse=cfg.get("use_pi_pulse", False),
+            symmetric_ramsey=cfg.get("symmetric_ramsey", False),
+            flip_final_pi2=cfg.get("flip_final_pi2", False),
+        )
+        skip = None
+        if not plan["feasible"]:
+            skip = "; ".join(plan["errors"])
+            cfg = None
+        out.append({"label": name, "control_type": name, "cfg": cfg,
+                    "skip_reason": skip, "expected": expected, "plan": plan})
+    return out
+
+
 class ModifiedRamseyProgram(AveragerProgram):
     """
     Fixed-tau Ramsey for charge-parity switching detection.
@@ -101,6 +285,16 @@ class ModifiedRamseyProgram(AveragerProgram):
         for delay_key in ("adc_trig_offset", "mr_relax_delay"):
             if cfg.get(delay_key, 0.0) < 0:
                 raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+        # The per-shot IQ record comes from di_buf, which holds only the LAST
+        # round's shots: rounds > 1 would silently discard all earlier rounds
+        # from the parity time series. Scale reps instead.
+        if int(cfg.get("rounds", 1)) != 1:
+            raise ValueError(
+                f"cfg['rounds']={cfg.get('rounds')} is not supported: the "
+                "shot buffer keeps only the final round, so earlier rounds "
+                "would be silently dropped from the parity record. Use "
+                "rounds=1 and increase cfg['reps']."
+            )
         # Every qubit pulse here is a plain 4*sigma gaussian ("arb"). A
         # flat_top-calibrated pi/pi2 gain would be silently replayed on the
         # wrong envelope, so refuse rather than mis-rotate.
@@ -311,6 +505,23 @@ class ModifiedRamseyProgram(AveragerProgram):
             cfg["df"] / 2.0 if self.symmetric_ramsey else cfg["df"]
         )
         self.drive_bandwidth_ratio = float(branch_detuning_mhz / rabi_pi2_mhz)
+        # Above max_drive_bandwidth_ratio the off-resonant branch is not
+        # rotated at all -- the parity mapping is unrealizable, so FAIL rather
+        # than run and produce a contrast-free record. Between 0.2 and the
+        # limit, warn. The limit is overridable for deliberate experiments.
+        max_bw_ratio = float(cfg.get("max_drive_bandwidth_ratio", 1.0))
+        if self.drive_bandwidth_ratio > max_bw_ratio:
+            raise ValueError(
+                f"branch detuning {branch_detuning_mhz:.4f} MHz is "
+                f"{self.drive_bandwidth_ratio:.2f}x the pi/2 Rabi rate "
+                f"({rabi_pi2_mhz:.4f} MHz at sigma={cfg['sigma']} us), above "
+                f"the max_drive_bandwidth_ratio={max_bw_ratio:g} limit: the "
+                "off-resonant parity branch cannot be rotated and the "
+                "parity -> state mapping is unrealizable. Shorten sigma"
+                + ("" if self.symmetric_ramsey
+                   else ", set symmetric_ramsey=True (halves the detuning),")
+                + " or raise cfg['max_drive_bandwidth_ratio'] deliberately."
+            )
         if self.drive_bandwidth_ratio > 0.2:
             print(
                 f"[ModifiedRamsey] WARNING: branch detuning "
@@ -559,6 +770,63 @@ class ModifiedRamseyProgram(AveragerProgram):
         shots_q = self.dq_buf[0][final::reads_per_rep].reshape((1, self.cfg["reps"])) / norm
         return shots_i, shots_q
 
+    def collect_reset_shots(self):
+        """
+        The per-cycle active-reset readouts, shape (reset_cycles, reps) each
+        for I and Q, in the same normalized units as collect_shots().
+
+        Reset readout k of a shot measures the qubit state BEFORE corrective
+        flip k, so row k's ground fraction reports the success of the k resets
+        that preceded it (row 0 = the pre-reset thermal/leftover population).
+        Saved so initialization fidelity can be validated offline instead of
+        assumed.
+        """
+        n_cycles = self.reset_cycles
+        reps = self.cfg["reps"]
+        if not n_cycles:
+            return (np.zeros((0, reps)), np.zeros((0, reps)))
+        ro_ch = self.cfg["ro_chs"][0]
+        norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
+        reads_per_rep = getattr(self, "reads_per_rep", n_cycles + 1)
+        reset_i = np.stack([
+            self.di_buf[0][k::reads_per_rep][:reps] / norm
+            for k in range(n_cycles)
+        ])
+        reset_q = np.stack([
+            self.dq_buf[0][k::reads_per_rep][:reps] / norm
+            for k in range(n_cycles)
+        ])
+        return reset_i, reset_q
+
+    def scheduled_rep_period_cycles(self):
+        """
+        Per-rep period of the EMITTED tProc schedule, in tProc cycles.
+
+        Walks the compiled instruction list between the LOOP_J label and the
+        loopnz, summing every synci immediate plus the register wait (r_wait,
+        the only register this program ever syncs on). This is the same ledger
+        verify_ModifiedRamsey_timing.py cross-checks against the
+        modified_ramsey_timing() model, computed here from the program itself
+        so the experiment layer needs no import from Runners. It includes the
+        active-reset overhead, so shot_time = index * period is the ACTUAL
+        scheduled sampling interval of the parity record.
+        """
+        plist = self.prog_list
+        start = next(i for i, x in enumerate(plist)
+                     if x.get("label") == "LOOP_J")
+        end = next(i for i, x in enumerate(plist) if x["name"] == "loopnz")
+        t = 0
+        for inst in plist[start:end]:
+            if inst["name"] == "synci":
+                t += inst["args"][0]
+            elif inst["name"] == "sync":
+                t += self.wait_cycles
+        return int(t)
+
+    def scheduled_rep_period_us(self):
+        f_time = float(self.soccfg["tprocs"][0]["f_time"])
+        return self.scheduled_rep_period_cycles() / f_time
+
 
 class ModifiedRamsey(ExperimentClass):
     """
@@ -588,6 +856,7 @@ class ModifiedRamsey(ExperimentClass):
 
         shots_i = np.asarray(shots_i).ravel()
         shots_q = np.asarray(shots_q).ravel()
+        reset_i, reset_q = prog.collect_reset_shots()
 
         # QICK streamer stats measure start_tproc -> completed data-transfer
         # chunks. This is useful for comparing end-to-end acquisition throughput
@@ -603,11 +872,37 @@ class ModifiedRamsey(ExperimentClass):
                     streamer_elapsed_s * 1e6 / float(last_shots)
                 )
 
+        # ACTUAL per-shot sampling interval: the emitted tProc schedule,
+        # including the full active-reset overhead. This -- not the streamer
+        # wall clock -- is the physical time base of the parity record.
+        rep_period_us = float(prog.scheduled_rep_period_us())
+        n_shots = shots_i.size
+        shot_index = np.arange(n_shots)
+        shot_time_us = shot_index * rep_period_us
+
+        ro_ch = self.cfg["ro_chs"][0]
+        readout_window_us = float(
+            prog.readout_window_cycles[ro_ch]
+            / float(self.soccfg["readouts"][ro_ch]["f_output"])
+        )
+        symmetric = self.cfg.get("symmetric_ramsey", False)
+        use_reset = self.cfg.get("use_active_reset", False)
+        control_type = self.cfg.get("mr_control_type", "parity")
+
         data = {
             'config': self.cfg,
             'data': {
+                # ---- unthresholded per-shot record + time base ------------
                 'shots_i': shots_i,
                 'shots_q': shots_q,
+                'shot_index': shot_index,
+                'shot_time_us': shot_time_us,
+                'scheduled_rep_period_us': rep_period_us,
+                # Continuous single acquisition (rounds == 1 enforced): no
+                # record gaps. Kept as an (empty) dataset so offline analysis
+                # can consume the same schema as stitched multi-chunk records.
+                'gap_indices': np.zeros(0, dtype=int),
+                # ---- Ramsey delay: requested vs realized ------------------
                 # Requested centre-to-centre precession time.
                 'tau_us': 1.0 / (2.0 * self.cfg["df"]),
                 # Centre-to-centre time actually realized after the edge-gap
@@ -617,26 +912,54 @@ class ModifiedRamsey(ExperimentClass):
                 # Programmed inter-pulse gap (per gap), i.e. what r_wait holds.
                 'wait_us': float(prog.wait_us),
                 'qubit_pulse_us': float(prog.pulse_us),
+                'sigma_us': float(self.cfg["sigma"]),
                 'drive_bandwidth_ratio': float(prog.drive_bandwidth_ratio),
+                # ---- parity branches + drive ------------------------------
+                # f_ge is passed as the UPPER parity branch; the lower branch
+                # sits df below it, and df is the branch separation.
                 'f_ge': self.cfg["f_ge"],
+                'f_branch_upper': self.cfg["f_ge"],
+                'f_branch_lower': self.cfg["f_ge"] - self.cfg["df"],
                 'df': self.cfg["df"],
+                'drive_freq': float(prog.drive_freq_mhz),
+                # ---- pulse gains and phases -------------------------------
+                'pi2_gain': self.cfg["pi2_gain"],
+                'pi_gain': self.cfg.get("pi_gain", np.nan),
+                'first_pi2_phase_deg': 0.0,
+                'final_pi2_phase_deg': float(prog.final_pi2_phase_deg),
+                # ---- sequence / control state -----------------------------
                 'use_pi_pulse': self.cfg.get("use_pi_pulse", False),
                 'flip_final_pi2': self.cfg.get("flip_final_pi2", False),
-                'symmetric_ramsey': self.cfg.get("symmetric_ramsey", False),
-                'final_pi2_phase_deg': (
-                    (90 if self.cfg.get("symmetric_ramsey", False) else 180)
-                    + (180 if self.cfg.get("flip_final_pi2", False) else 0)
-                ) % 360,
-                'drive_freq': (
-                    self.cfg["f_ge"] - self.cfg["df"] / 2.0
-                    if self.cfg.get("symmetric_ramsey", False)
-                    else self.cfg["f_ge"]
-                ),
-                'use_active_reset': self.cfg.get("use_active_reset", False),
+                'symmetric_ramsey': symmetric,
+                'mr_control_type_code': MR_CONTROL_TYPE_CODES.get(
+                    control_type, -1),
+                # ---- readout settings -------------------------------------
+                'read_pulse_freq': self.cfg["pulse_freq"],
+                'read_pulse_gain': self.cfg["pulse_gain"],
+                'res_phase': self.cfg["res_phase"],
+                'readout_length_us': self.cfg["readout_length"],
+                'readout_window_us': readout_window_us,
+                'adc_trig_offset_us': self.cfg["adc_trig_offset"],
+                'mr_relax_delay_us': self.cfg.get("mr_relax_delay", 0.0),
+                # ---- active reset -----------------------------------------
+                'use_active_reset': use_reset,
                 'reset_cycles': (
-                    int(self.cfg.get("reset_cycles", 1))
-                    if self.cfg.get("use_active_reset", False) else 0
+                    int(self.cfg.get("reset_cycles", 1)) if use_reset else 0
                 ),
+                # Per-cycle reset readouts, shape (reset_cycles, reps): row k
+                # measures the state before corrective flip k, so the ground
+                # fraction of row k validates the preceding k resets.
+                'reset_shots_i': reset_i,
+                'reset_shots_q': reset_q,
+                'readout_threshold': self.cfg.get("readout_threshold", np.nan)
+                if use_reset else np.nan,
+                'reset_ground_below_threshold': self.cfg.get(
+                    "reset_ground_below_threshold", True),
+                'reset_readout_relax_delay_us': self.cfg.get(
+                    "reset_readout_relax_delay", 1.0) if use_reset else 0.0,
+                'post_reset_wait_us': self.cfg.get(
+                    "post_reset_wait", 0.0) if use_reset else 0.0,
+                # ---- wall-clock throughput diagnostics --------------------
                 'streamer_elapsed_s': streamer_elapsed_s,
                 'streamer_average_rep_period_us': streamer_average_rep_period_us,
             }

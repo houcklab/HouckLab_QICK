@@ -163,6 +163,14 @@ def phase1(soccfg):
             f"model {model['scheduled_rep_period_tproc_cycles']} cyc "
             f"({model['scheduled_rep_period_us']:.4f} us)",
         )
+        # The program's own ledger walker (used by ModifiedRamsey.acquire to
+        # build the saved shot-time axis) must agree with the independent
+        # walk here and with the model.
+        ok_all &= check(
+            f"[{label}] prog.scheduled_rep_period_cycles() == walked ledger",
+            prog.scheduled_rep_period_cycles() == ledger,
+            f"program {prog.scheduled_rep_period_cycles()} vs walked {ledger}",
+        )
 
         # --- 4. realized centre-to-centre tau ----------------------------
         qubit_tproc_ch = soccfg["gens"][1]["tproc_ch"]
