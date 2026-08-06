@@ -33,7 +33,7 @@ Pipeline (orchestrated end-to-end by analyze_modified_ramsey_record):
                             analog trace
   rate_vs_bin_size          Stability of a simple threshold-rate estimate
                             against the visualization bin size
-  reset_success_vs_cycle    Ground-state fraction after each active-reset cycle
+  reset_success_vs_cycle    Pre-correction populations; final reset requires a verification readout
   compare_parity_controls   flip_final_pi2 / echo-null / detuning control checks
   assess_parity_record      Aggregated quality gates -> warnings, not verdicts
 
@@ -353,6 +353,51 @@ def _log_emissions(v, mu0, mu1, sigma0, sigma1):
     le1 = -0.5 * ((v - mu1) / sigma1) ** 2 - math.log(sigma1 * math.sqrt(2 * math.pi))
     return np.column_stack([le0, le1])
 
+def _log_gaussian_1d(v, mu, sigma):
+    if sigma <= 0:
+        raise ValueError("emission sigma must be positive")
+    return (-0.5 * ((np.asarray(v) - mu) / sigma) ** 2
+            - math.log(sigma * math.sqrt(2 * math.pi)))
+
+
+def _log_emissions_from_spec(v, spec):
+    """Parity likelihoods for direct Gaussians or imperfect g/e mapping."""
+    if spec.get("model", "gaussian") == "gaussian":
+        return _log_emissions(
+            v, spec["mu0"], spec["mu1"], spec["sigma0"], spec["sigma1"])
+    if spec.get("model") != "ge_mixture":
+        raise ValueError(f"unknown emission model {spec.get('model')!r}")
+    lg = _log_gaussian_1d(v, spec["mu_g"], spec["sigma_g"])
+    le = _log_gaussian_1d(v, spec["mu_e"], spec["sigma_e"])
+    out = []
+    for key in ("p_e_state0", "p_e_state1"):
+        p = float(spec[key])
+        if not 0 <= p <= 1:
+            raise ValueError(f"{key} must be in [0, 1]")
+        log_pg = math.log1p(-p) if p < 1 else -np.inf
+        log_pe = math.log(p) if p > 0 else -np.inf
+        out.append(np.logaddexp(log_pg + lg, log_pe + le))
+    return np.column_stack(out)
+
+
+def _emission_snr(spec):
+    if spec.get("model", "gaussian") == "gaussian":
+        means = (spec["mu0"], spec["mu1"])
+        variances = (spec["sigma0"] ** 2, spec["sigma1"] ** 2)
+    else:
+        mg, me = spec["mu_g"], spec["mu_e"]
+        vg, ve = spec["sigma_g"] ** 2, spec["sigma_e"] ** 2
+        moments = []
+        for p in (spec["p_e_state0"], spec["p_e_state1"]):
+            mean = (1 - p) * mg + p * me
+            var = ((1 - p) * (vg + (mg - mean) ** 2)
+                   + p * (ve + (me - mean) ** 2))
+            moments.append((mean, var))
+        means = (moments[0][0], moments[1][0])
+        variances = (moments[0][1], moments[1][1])
+    pooled = math.sqrt(0.5 * sum(variances))
+    return abs(means[1] - means[0]) / pooled if pooled > 0 else np.inf
+
 
 def _step_log_transitions(gamma01, gamma10, dt_steps):
     """
@@ -383,7 +428,7 @@ def _logaddexp2(a, b):
 
 
 def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
-                    pi0=None):
+                    pi0=None, emission_spec=None):
     """
     Likelihood-only log-space forward pass. Hot path of the rate fit: runs a
     scalar Python loop over pre-listed emission logs (much faster than
@@ -392,7 +437,9 @@ def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
     v = np.ravel(np.asarray(v, dtype=float))
     n = v.size
     dt_steps = np.ravel(np.asarray(dt_steps, dtype=float))
-    le = _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    le = (_log_emissions_from_spec(v, emission_spec)
+          if emission_spec is not None
+          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
     le0 = le[:, 0].tolist()
     le1 = le[:, 1].tolist()
 
@@ -434,7 +481,7 @@ def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
 
 
 def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
-                         sigma0, sigma1, pi0=None):
+                         sigma0, sigma1, pi0=None, emission_spec=None):
     """
     Log-space forward/backward for the 2-state continuous-emission HMM.
 
@@ -462,7 +509,9 @@ def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
     if dt_steps.size != n - 1:
         raise ValueError(f"dt_steps must have length N-1={n-1}, got {dt_steps.size}")
 
-    le = _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    le = (_log_emissions_from_spec(v, emission_spec)
+          if emission_spec is not None
+          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
     lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else \
         np.zeros((0, 2, 2))
 
@@ -504,12 +553,14 @@ def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
 
 
 def hmm_viterbi(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
-                pi0=None):
+                pi0=None, emission_spec=None):
     """Most likely state path (int array, values 0/1), log-space Viterbi."""
     v = np.ravel(np.asarray(v, dtype=float))
     n = v.size
     dt_steps = np.ravel(np.asarray(dt_steps, dtype=float))
-    le = _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    le = (_log_emissions_from_spec(v, emission_spec)
+          if emission_spec is not None
+          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
     lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else \
         np.zeros((0, 2, 2))
     s = gamma01 + gamma10
@@ -539,13 +590,16 @@ def hmm_viterbi(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
     return path
 
 
-def _hmm_nll(log_rates, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric):
+def _hmm_nll(log_rates, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
+             emission_spec=None):
     if symmetric:
         g01 = g10 = math.exp(log_rates[0])
     else:
         g01 = math.exp(log_rates[0])
         g10 = math.exp(log_rates[1])
-    return -_forward_loglik(v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1)
+    return -_forward_loglik(
+        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
+        emission_spec=emission_spec)
 
 
 def _single_gaussian_loglik(v):
@@ -571,11 +625,11 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         Sample interval(s) in SECONDS. Pass the per-step array when the record
         has gaps or missing samples; expm(Q*dt) handles them exactly.
     emissions : dict
-        {"mu0", "mu1", "sigma0", "sigma1"} from the readout calibration
-        (project the g/e centers and sigmas onto the analysis axis). FIXED
-        during the rate fit by default -- calibrated emissions are the
-        experiment's ground truth; refitting them on the parity record risks
-        absorbing drift into the means.
+        Either Gaussian state emissions (model="gaussian" with mu0/mu1 and
+        sigma0/sigma1), or imperfect Ramsey mapping (model="ge_mixture" with
+        calibrated mu_g/mu_e, sigma_g/sigma_e, and p_e_state0/p_e_state1).
+        Emissions are fixed during the rate fit by default; refitting them on
+        the parity record risks absorbing drift into the means.
     symmetric : bool
         True fits a single rate gamma (gamma01 = gamma10); False fits both.
     fit_emissions : bool
@@ -619,6 +673,11 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     n = v.size
     if n < 10:
         raise ValueError("trace too short for HMM analysis")
+    if not np.all(np.isfinite(v)):
+        bad = int(np.count_nonzero(~np.isfinite(v)))
+        raise ValueError(
+            f"trace contains {bad} non-finite samples; filter I/Q jointly and "
+            "carry skipped time into dt_s before fitting")
     if np.isscalar(dt_s):
         if dt_s <= 0:
             raise ValueError("dt_s must be positive")
@@ -627,18 +686,49 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         dt_steps = np.ravel(np.asarray(dt_s, dtype=float))
         if dt_steps.size != n - 1:
             raise ValueError("dt_s array must have length N-1")
-        if np.any(dt_steps <= 0):
+        if np.any(~np.isfinite(dt_steps)) or np.any(dt_steps <= 0):
             raise ValueError("all dt steps must be positive")
 
-    mu0 = float(emissions["mu0"])
-    mu1 = float(emissions["mu1"])
-    sigma0 = float(emissions["sigma0"])
-    sigma1 = float(emissions["sigma1"])
+    emission_model = emissions.get("model", "gaussian")
+    if emission_model == "gaussian":
+        emission_spec = {
+            "model": "gaussian",
+            "mu0": float(emissions["mu0"]),
+            "mu1": float(emissions["mu1"]),
+            "sigma0": float(emissions["sigma0"]),
+            "sigma1": float(emissions["sigma1"]),
+        }
+        mu0, mu1 = emission_spec["mu0"], emission_spec["mu1"]
+        sigma0, sigma1 = emission_spec["sigma0"], emission_spec["sigma1"]
+    elif emission_model == "ge_mixture":
+        if fit_emissions:
+            raise ValueError("fit_emissions is invalid for ge_mixture")
+        emission_spec = {
+            "model": "ge_mixture",
+            "mu_g": float(emissions["mu_g"]),
+            "mu_e": float(emissions["mu_e"]),
+            "sigma_g": float(emissions["sigma_g"]),
+            "sigma_e": float(emissions["sigma_e"]),
+            "p_e_state0": float(emissions["p_e_state0"]),
+            "p_e_state1": float(emissions["p_e_state1"]),
+        }
+        mu0, mu1 = emission_spec["mu_g"], emission_spec["mu_e"]
+        sigma0, sigma1 = emission_spec["sigma_g"], emission_spec["sigma_e"]
+        p0 = emission_spec["p_e_state0"]
+        p1 = emission_spec["p_e_state1"]
+        if not (0.0 <= p0 <= 1.0 and 0.0 <= p1 <= 1.0):
+            raise ValueError("mixture probabilities must lie in [0, 1]")
+        if p0 == p1:
+            raise ValueError(
+                "p_e_state0 and p_e_state1 must differ; identical mixtures "
+                "carry no state information")
+    else:
+        raise ValueError(f"unknown emission model {emission_model!r}")
     warnings = []
     reasons = []
 
     pooled = math.sqrt(0.5 * (sigma0 ** 2 + sigma1 ** 2))
-    emission_snr = abs(mu1 - mu0) / pooled if pooled > 0 else np.inf
+    emission_snr = _emission_snr(emission_spec)
     if emission_snr < min_emission_snr:
         reasons.append(
             f"emission separation SNR {emission_snr:.2f} < {min_emission_snr}: "
@@ -663,8 +753,7 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         "expected_transitions": float("nan"),
         "occupancy": np.array([np.nan, np.nan]),
         "dwell_mean_s": {"state0": float("nan"), "state1": float("nan")},
-        "emissions_used": {"mu0": mu0, "mu1": mu1,
-                           "sigma0": sigma0, "sigma1": sigma1},
+        "emissions_used": dict(emission_spec),
         "emission_snr": float(emission_snr),
         "symmetric": bool(symmetric),
         "rate_at_bound": False,
@@ -705,8 +794,9 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         mu0, mu1 = float(opt.x[n_rates]), float(opt.x[n_rates + 1])
         sigma0 = float(math.exp(opt.x[n_rates + 2]))
         sigma1 = float(math.exp(opt.x[n_rates + 3]))
-        result["emissions_used"] = {"mu0": mu0, "mu1": mu1,
-                                    "sigma0": sigma0, "sigma1": sigma1}
+        emission_spec = {"model": "gaussian", "mu0": mu0, "mu1": mu1,
+                         "sigma0": sigma0, "sigma1": sigma1}
+        result["emissions_used"] = dict(emission_spec)
         warnings.append(
             "emissions were REFIT on the parity record (fit_emissions=True); "
             "drift can be absorbed into the means"
@@ -714,11 +804,39 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     else:
         x0 = [math.log(g0)] if symmetric else [math.log(g0), math.log(g0)]
         bounds = [(math.log(lo), math.log(hi))] * len(x0)
-        opt = optimize.minimize(
-            _hmm_nll, x0, args=(v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric),
-            method="L-BFGS-B", bounds=bounds,
-        )
-        log_rates = opt.x[:len(x0)]
+        nll_args = (v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
+                    emission_spec)
+        if symmetric:
+            opt = optimize.minimize_scalar(
+                lambda lr: _hmm_nll(np.asarray([lr]), *nll_args),
+                bounds=bounds[0], method="bounded",
+                options={"xatol": 1e-8},
+            )
+            opt.x = np.asarray([opt.x])
+        else:
+            opt = optimize.minimize(
+                _hmm_nll, x0, args=nll_args,
+                method="L-BFGS-B", bounds=bounds,
+            )
+            if not (opt.success and np.all(np.isfinite(opt.x))
+                    and math.isfinite(float(opt.fun))):
+                warnings.append(
+                    "L-BFGS-B rate fit did not converge; retried with Powell")
+                opt = optimize.minimize(
+                    _hmm_nll, x0, args=nll_args,
+                    method="Powell", bounds=bounds,
+                    options={"xtol": 1e-7, "ftol": 1e-9},
+                )
+        log_rates = np.asarray(opt.x)[:len(x0)]
+
+    optimizer_ok = bool(opt.success and np.all(np.isfinite(opt.x))
+                        and math.isfinite(float(opt.fun)))
+    if not optimizer_ok:
+        reasons.append(
+            f"HMM optimizer failed: {getattr(opt, 'message', 'non-finite result')}")
+        result["unidentifiable_reasons"] = reasons
+        result["warnings"].append("HMM optimization did not converge")
+        return result
 
     if symmetric:
         g01 = g10 = math.exp(log_rates[0])
@@ -726,21 +844,32 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         g01, g10 = math.exp(log_rates[0]), math.exp(log_rates[1])
     loglik = -float(opt.fun)
 
-    fb = hmm_forward_backward(v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1)
+    fb = hmm_forward_backward(
+        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
+        emission_spec=emission_spec)
     post = fb["posteriors"]
     ambiguity = float(np.mean(1.0 - post.max(axis=1)))
     occupancy = post.mean(axis=0)
 
-    viterbi = hmm_viterbi(v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1) \
+    viterbi = hmm_viterbi(
+        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
+        emission_spec=emission_spec) \
         if compute_viterbi else None
     n_trans = int(np.count_nonzero(np.diff(viterbi))) if viterbi is not None else 0
 
-    # Posterior-weighted expected number of transitions (soft count): more
-    # honest than Viterbi's hard count when the posteriors are ambiguous.
-    p_prev = post[:-1]
-    p_next = post[1:]
-    exp_trans = float(np.sum(p_prev[:, 0] * p_next[:, 1]
-                             + p_prev[:, 1] * p_next[:, 0]))
+    # Pairwise posterior xi_t(i,j), not a product of adjacent marginals.
+    # Adjacent hidden states are correlated through the transition matrix.
+    le = _log_emissions_from_spec(v, emission_spec)
+    lt = _step_log_transitions(g01, g10, dt_steps)
+    exp_trans = 0.0
+    for k_step in range(n - 1):
+        log_xi = (
+            fb["log_alpha"][k_step, :, None] + lt[k_step]
+            + le[k_step + 1, None, :]
+            + fb["log_beta"][k_step + 1, None, :]
+        )
+        xi = np.exp(log_xi - np.logaddexp.reduce(log_xi.ravel()))
+        exp_trans += float(xi[0, 1] + xi[1, 0])
 
     delta_ll = loglik - result["loglik_single_gaussian"]
     if delta_ll < min_loglik_gain:
@@ -767,7 +896,9 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
 
     # Hessian errors in log-rate space via central finite differences.
     def nll_rates(lr):
-        return _hmm_nll(lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric)
+        return _hmm_nll(
+            lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
+            emission_spec)
 
     errs = [float("nan")] * len(log_rates)
     if not at_bound:
@@ -813,28 +944,66 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         for _ in range(int(n_boot)):
             sim = simulate_telegraph_trace(
                 n=n, dt_s=dt_steps, gamma01_hz=g01, gamma10_hz=g10,
-                mu0=mu0, mu1=mu1, sigma0=sigma0, sigma1=sigma1,
+                mu0=0.0, mu1=1.0, sigma0=1e-9, sigma1=1e-9,
                 seed=int(rng.integers(0, 2 ** 31 - 1)),
             )
-            x0b = [math.log(g01)] if symmetric else [math.log(g01), math.log(g10)]
-            ob = optimize.minimize(
-                _hmm_nll, x0b,
-                args=(sim["v"], dt_steps, mu0, mu1, sigma0, sigma1, symmetric),
-                method="L-BFGS-B",
-                bounds=[(math.log(lo), math.log(hi))] * len(x0b),
-            )
-            if symmetric:
-                boots.append((math.exp(ob.x[0]), math.exp(ob.x[0])))
+            if emission_spec["model"] == "ge_mixture":
+                hidden = sim["states"]
+                p_e = np.where(
+                    hidden == 0, emission_spec["p_e_state0"],
+                    emission_spec["p_e_state1"])
+                prepared_e = rng.random(n) < p_e
+                sim_v = rng.normal(
+                    np.where(prepared_e, emission_spec["mu_e"],
+                             emission_spec["mu_g"]),
+                    np.where(prepared_e, emission_spec["sigma_e"],
+                             emission_spec["sigma_g"]),
+                )
             else:
-                boots.append((math.exp(ob.x[0]), math.exp(ob.x[1])))
-        boots = np.asarray(boots)
-        result["gamma_boot_ci"] = {
-            "gamma01_hz": dict(zip(("p16", "p50", "p84"),
-                                   np.percentile(boots[:, 0], [16, 50, 84]))),
-            "gamma10_hz": dict(zip(("p16", "p50", "p84"),
-                                   np.percentile(boots[:, 1], [16, 50, 84]))),
-            "n_boot": int(n_boot),
-        }
+                hidden = sim["states"]
+                sim_v = rng.normal(
+                    np.where(hidden == 0, emission_spec["mu0"],
+                             emission_spec["mu1"]),
+                    np.where(hidden == 0, emission_spec["sigma0"],
+                             emission_spec["sigma1"]),
+                )
+            x0b = [math.log(g01)] if symmetric else [math.log(g01), math.log(g10)]
+            boot_args = (sim_v, dt_steps, mu0, mu1, sigma0, sigma1,
+                         symmetric, emission_spec)
+            boot_bounds = [(math.log(lo), math.log(hi))] * len(x0b)
+            if symmetric:
+                ob = optimize.minimize_scalar(
+                    lambda lr: _hmm_nll(np.asarray([lr]), *boot_args),
+                    bounds=boot_bounds[0], method="bounded",
+                    options={"xatol": 1e-8},
+                )
+                ob.x = np.asarray([ob.x])
+            else:
+                ob = optimize.minimize(
+                    _hmm_nll, x0b, args=boot_args, method="L-BFGS-B",
+                    bounds=boot_bounds,
+                )
+                if not (ob.success and np.all(np.isfinite(ob.x))):
+                    ob = optimize.minimize(
+                        _hmm_nll, x0b, args=boot_args, method="Powell",
+                        bounds=boot_bounds,
+                    )
+            if ob.success and np.all(np.isfinite(ob.x)):
+                if symmetric:
+                    boots.append((math.exp(ob.x[0]), math.exp(ob.x[0])))
+                else:
+                    boots.append((math.exp(ob.x[0]), math.exp(ob.x[1])))
+        if boots:
+            boots = np.asarray(boots)
+            result["gamma_boot_ci"] = {
+                "gamma01_hz": dict(zip(("p16", "p50", "p84"),
+                                       np.percentile(boots[:, 0], [16, 50, 84]))),
+                "gamma10_hz": dict(zip(("p16", "p50", "p84"),
+                                       np.percentile(boots[:, 1], [16, 50, 84]))),
+                "n_boot": int(boots.shape[0]),
+            }
+        else:
+            warnings.append("all parametric-bootstrap optimizations failed")
 
     # Mean dwell from the Viterbi path (empirical), per state.
     dwell_mean = {"state0": float("nan"), "state1": float("nan")}
@@ -1146,50 +1315,59 @@ def rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1, 2, 4, 8, 16, 32)):
 # 5. Active-reset validation (offline, from saved reset readouts)
 # =========================================================================
 
-def reset_success_vs_cycle(reset_I, reset_Q, calibration):
-    """
-    Ground-state fraction after each active-reset readout cycle.
+def reset_success_vs_cycle(reset_I, reset_Q, calibration,
+                           post_reset_I=None, post_reset_Q=None):
+    """Report what the saved active-reset readouts actually establish.
 
-    Parameters
-    ----------
-    reset_I, reset_Q : (n_cycles, n_shots) arrays
-        The per-cycle reset readouts saved by ModifiedRamsey (reset readout k
-        of every shot). Readout k measures the state BEFORE corrective flip k,
-        so cycle k's g-fraction reports the success of the preceding k resets
-        (k=0 reports the pre-reset thermal population).
-    calibration : output of calibrate_readout_from_labeled_shots
-
-    Returns dict:
-      g_fraction        : (n_cycles,) fraction of shots on the g side
-      n_cycles, n_shots : ints
-      converged         : bool, last-cycle g-fraction > 0.9
-      warnings          : list of str
+    Reset readout k is acquired before corrective flip k. Consequently row 0
+    is the pre-reset population and row k validates only the k corrections
+    preceding it. The last corrective flip is not observable unless an
+    explicit post-reset verification readout is supplied.
     """
     reset_I = np.atleast_2d(np.asarray(reset_I, dtype=float))
     reset_Q = np.atleast_2d(np.asarray(reset_Q, dtype=float))
     if reset_I.shape != reset_Q.shape:
         raise ValueError("reset_I and reset_Q shapes differ")
-    warnings = []
-    thr = calibration["threshold"]
+    threshold = calibration["threshold"]
     e_above = calibration["e_above_threshold"]
-    fracs = []
-    for k in range(reset_I.shape[0]):
-        vk = project_iq_trace(reset_I[k], reset_Q[k], calibration)
-        g_side = vk <= thr if e_above else vk > thr
-        fracs.append(float(np.mean(g_side)))
-    fracs = np.asarray(fracs)
-    converged = bool(fracs.size and fracs[-1] > 0.9)
-    if not converged:
-        warnings.append(
-            f"ground fraction after the last reset readout is "
-            f"{fracs[-1] if fracs.size else float('nan'):.3f} <= 0.9: active "
-            "reset has NOT established reliable initialization; do not assume "
-            "|g> at the start of the Ramsey sequence"
-        )
-    return {"g_fraction": fracs, "n_cycles": int(reset_I.shape[0]),
-            "n_shots": int(reset_I.shape[1]), "converged": converged,
-            "warnings": warnings}
 
+    def ground_fraction(i_values, q_values):
+        projected = project_iq_trace(i_values, q_values, calibration)
+        ground = (projected <= threshold if e_above
+                  else projected > threshold)
+        return float(np.mean(ground))
+
+    pre_correction = np.asarray([
+        ground_fraction(reset_I[k], reset_Q[k])
+        for k in range(reset_I.shape[0])
+    ])
+    warnings = []
+    final_fraction = float("nan")
+    converged = None
+    if post_reset_I is not None and post_reset_Q is not None:
+        final_fraction = ground_fraction(post_reset_I, post_reset_Q)
+        converged = bool(final_fraction > 0.9)
+        if not converged:
+            warnings.append(
+                f"post-reset ground fraction {final_fraction:.3f} <= 0.9: "
+                "active reset did not establish reliable initialization")
+    else:
+        warnings.append(
+            "no post-reset verification readout was saved; the final "
+            "corrective flip cannot be validated from ModifiedRamsey reset "
+            "buffers. Use mActiveResetVerify before trusting initialization")
+
+    return {
+        "g_fraction": pre_correction,
+        "pre_correction_g_fraction": pre_correction,
+        "validated_after_reset_g_fraction": pre_correction[1:],
+        "final_ground_fraction": final_fraction,
+        "n_cycles": int(reset_I.shape[0]),
+        "n_shots": int(reset_I.shape[1]),
+        "n_resets_observed": max(0, int(reset_I.shape[0]) - 1),
+        "converged": converged,
+        "warnings": warnings,
+    }
 
 # =========================================================================
 # 6. Control comparisons
@@ -1227,8 +1405,12 @@ def compare_parity_controls(main_result, control_results):
 
     main_amp = amp(main_result)
     main_occ1 = float(main_result.get("occupancy_state1", float("nan")))
+    main_identifiable = bool(
+        main_result.get("hmm", {}).get("identifiable", False))
+    main_valid = main_identifiable and math.isfinite(main_amp)
     entries = []
-    all_ok = True
+    all_ok = main_valid
+    n_decisive_checks = 0
     for ctl in control_results:
         ctype = ctl.get("control_type", "unknown")
         c_amp = amp(ctl)
@@ -1242,7 +1424,7 @@ def compare_parity_controls(main_result, control_results):
             survives = math.isfinite(ratio) and ratio > 0.25
             inverted = (math.isfinite(occ1) and math.isfinite(main_occ1)
                         and abs(occ1 - (1.0 - main_occ1)) < 0.15)
-            ok = survives and (inverted or not math.isfinite(occ1))
+            ok = main_valid and survives and inverted
             entry["checked"] = bool(ok)
             entry["note"] = (
                 f"amplitude ratio {ratio:.2f} (expect ~1), occupancy(state1) "
@@ -1250,8 +1432,9 @@ def compare_parity_controls(main_result, control_results):
             )
         elif ctype == "echo_null":
             hmm_ident = bool(ctl.get("hmm", {}).get("identifiable", False))
-            suppressed = (not math.isfinite(ratio)) or ratio < 0.25
-            ok = suppressed or not hmm_ident
+            suppressed = math.isfinite(ratio) and ratio < 0.25
+            null_evidence = suppressed or (not hmm_ident and main_valid)
+            ok = main_valid and null_evidence
             entry["checked"] = bool(ok)
             entry["note"] = (
                 f"amplitude ratio {ratio if math.isfinite(ratio) else float('nan'):.2f} "
@@ -1260,10 +1443,13 @@ def compare_parity_controls(main_result, control_results):
         else:
             entry["checked"] = None  # informational only
             entry["note"] = f"amplitude ratio {ratio}"
+        if entry["checked"] is not None:
+            n_decisive_checks += 1
         if entry["checked"] is False:
             all_ok = False
         entries.append(entry)
-    return {"controls": entries, "all_expected": bool(all_ok)}
+    return {"controls": entries,
+            "all_expected": bool(all_ok and n_decisive_checks > 0)}
 
 
 # =========================================================================
@@ -1324,8 +1510,27 @@ def _plot_hmm(t_s, v, hmm, out_path, max_pts=200_000):
     stride = max(1, v.size // max_pts)
     fig, axes = plt.subplots(3, 1, figsize=(11, 7), sharex=True)
     axes[0].plot(t_s[::stride], v[::stride], lw=0.4)
+    # Reference levels for the two PARITY states. Two emission models reach
+    # here and they do not share key names: the plain Gaussian model carries
+    # mu0/mu1 directly, while the ge_mixture model (which is what
+    # analyze_modified_ramsey_record always builds) carries the calibrated
+    # readout clouds mu_g/mu_e plus per-state excited-state probabilities. For
+    # the mixture, the level a parity state actually emits at is the
+    # probability-weighted mean of the two clouds, not either cloud itself.
     em = hmm["emissions_used"]
-    for mu, c in ((em["mu0"], "C0"), (em["mu1"], "C1")):
+    if em.get("model") == "ge_mixture":
+        mu_g, mu_e = em["mu_g"], em["mu_e"]
+        state_means = (
+            (1.0 - em["p_e_state0"]) * mu_g + em["p_e_state0"] * mu_e,
+            (1.0 - em["p_e_state1"]) * mu_g + em["p_e_state1"] * mu_e,
+        )
+        # the underlying g/e clouds, for context
+        for mu, lbl in ((mu_g, "readout |g>"), (mu_e, "readout |e>")):
+            axes[0].axhline(mu, color="0.6", ls=":", lw=0.8, label=lbl)
+        axes[0].legend(loc="best", fontsize="x-small")
+    else:
+        state_means = (em["mu0"], em["mu1"])
+    for mu, c in zip(state_means, ("C0", "C1")):
         axes[0].axhline(mu, color=c, ls="--", lw=1)
     axes[0].set_ylabel("v")
     if hmm["posteriors"] is not None:
@@ -1446,6 +1651,8 @@ def analyze_modified_ramsey_record(
         I, Q, dt_s, calibration,
         drift_timescale_s=0.2, expected_dwell_s=2.5e-3,
         symmetric_hmm=True, n_boot=0, seed=0,
+        mapping_probabilities=(0.1, 0.9),
+        mapping_probabilities_calibrated=False,
         reset_I=None, reset_Q=None,
         out_dir=None, base_name="mr_parity", save_plots=True,
         save_sidecars=True, hmm_kwargs=None):
@@ -1464,6 +1671,11 @@ def analyze_modified_ramsey_record(
     expected_dwell_s  : expected parity dwell (2-3 ms on BFC devices).
     symmetric_hmm : fit a single symmetric rate by default (charge parity has
                     no preferred branch); set False for asymmetric rates.
+    mapping_probabilities : assumed P(e|state0), P(e|state1) for the Ramsey
+                    mapping. These must come from a device-specific mapping
+                    calibration; g/e readout fidelity alone is not sufficient.
+    mapping_probabilities_calibrated : whether that independent calibration was
+                    performed; False adds an explicit quality warning.
     reset_I/Q     : optional (n_cycles, N) reset readouts for initialization
                     validation.
     out_dir/base_name/save_plots/save_sidecars : output control.
@@ -1474,40 +1686,114 @@ def analyze_modified_ramsey_record(
     """
     I = np.ravel(np.asarray(I, dtype=float))
     Q = np.ravel(np.asarray(Q, dtype=float))
-    v = project_iq_trace(I, Q, calibration)
+    if I.size != Q.size:
+        raise ValueError("I and Q must have the same length")
+    original_n = I.size
+    finite = np.isfinite(I) & np.isfinite(Q)
+    if np.count_nonzero(finite) < 10:
+        raise ValueError("fewer than 10 jointly finite IQ samples remain")
 
     if np.isscalar(dt_s):
-        dt_nominal = float(dt_s)
-        dt_steps = None
+        dt_value = float(dt_s)
+        if not math.isfinite(dt_value) or dt_value <= 0:
+            raise ValueError("dt_s must be finite and positive")
+        full_t = np.arange(original_n, dtype=float) * dt_value
     else:
-        dt_arr = np.ravel(np.asarray(dt_s, dtype=float))
-        dt_nominal = float(np.median(dt_arr))
-        dt_steps = dt_arr
+        raw_steps = np.ravel(np.asarray(dt_s, dtype=float))
+        if raw_steps.size != original_n - 1:
+            raise ValueError("dt_s array must have length original_N-1")
+        if np.any(~np.isfinite(raw_steps)) or np.any(raw_steps <= 0):
+            raise ValueError("all dt steps must be finite and positive")
+        full_t = np.concatenate([[0.0], np.cumsum(raw_steps)])
 
-    drift = remove_slow_drift(v, dt_nominal, drift_timescale_s,
-                              expected_dwell_s=expected_dwell_s)
+    I, Q = I[finite], Q[finite]
+    t_s = full_t[finite]
+    dt_steps = np.diff(t_s)
+    dt_nominal = float(np.median(dt_steps))
+    removed = int(original_n - I.size)
+    v = project_iq_trace(I, Q, calibration)
+
+    uniform_timing = bool(
+        np.allclose(dt_steps, dt_nominal, rtol=1e-6,
+                    atol=max(1e-15, dt_nominal * 1e-9)))
+    if uniform_timing:
+        drift = remove_slow_drift(
+            v, dt_nominal, drift_timescale_s,
+            expected_dwell_s=expected_dwell_s)
+    else:
+        warning = (
+            "nonuniform timing/gaps detected: drift filtering, "
+            "autocorrelation, PSD, and bin-size estimates were skipped; "
+            "the HMM alone uses exact per-step timing")
+        drift = {
+            "v_original": v.copy(), "v_corrected": v.copy(),
+            "drift": np.zeros_like(v), "window_samples": 0,
+            "drift_span": 0.0, "safe": False, "warnings": [warning],
+        }
+    if removed:
+        drift["warnings"].append(
+            f"removed {removed} non-finite IQ samples and carried their "
+            "elapsed time into HMM dt steps")
     v_corr = drift["v_corrected"]
 
+    p0, p1 = map(float, mapping_probabilities)
+    if not (0.0 <= p0 <= 1.0 and 0.0 <= p1 <= 1.0):
+        raise ValueError("mapping probabilities must lie in [0, 1]")
+    if p0 == p1:
+        raise ValueError(
+            "mapping probabilities must differ; identical probabilities carry "
+            "no parity information")
+    if not mapping_probabilities_calibrated:
+        drift["warnings"].append(
+            "Ramsey mapping probabilities are assumed rather than independently "
+            "calibrated; fitted rates are conditional on those assumptions")
     emissions = {
-        # Reference the calibrated cloud projections to the same midpoint
-        # origin used by project_iq_trace.
-        "mu0": calibration["proj_g_mean"],
-        "mu1": calibration["proj_e_mean"],
-        "sigma0": calibration["proj_g_sigma"],
-        "sigma1": calibration["proj_e_sigma"],
+        "model": "ge_mixture",
+        "mu_g": calibration["proj_g_mean"],
+        "mu_e": calibration["proj_e_mean"],
+        "sigma_g": calibration["proj_g_sigma"],
+        "sigma_e": calibration["proj_e_sigma"],
+        "p_e_state0": p0,
+        "p_e_state1": p1,
     }
+    fit_options = dict(hmm_kwargs or {})
+    if expected_dwell_s and expected_dwell_s > 0:
+        fit_options.setdefault("gamma_init_hz", 1.0 / expected_dwell_s)
     hmm = fit_two_state_hmm(
-        v_corr, dt_steps if dt_steps is not None else dt_nominal,
-        emissions, symmetric=symmetric_hmm, n_boot=n_boot, seed=seed,
-        **(hmm_kwargs or {}),
-    )
-    acf = autocorrelation_rate_estimate(v_corr, dt_nominal)
-    psd = psd_rate_estimate(v_corr, dt_nominal)
-    rvb = rate_vs_bin_size(v_corr, dt_nominal, calibration["threshold"])
+        v_corr, dt_steps, emissions, symmetric=symmetric_hmm,
+        n_boot=n_boot, seed=seed, **fit_options)
+
+    if uniform_timing:
+        acf = autocorrelation_rate_estimate(v_corr, dt_nominal)
+        psd = psd_rate_estimate(v_corr, dt_nominal)
+        rvb = rate_vs_bin_size(
+            v_corr, dt_nominal, calibration["threshold"])
+    else:
+        skipped = drift["warnings"][0]
+        acf = {
+            "tau_corr_s": float("nan"), "gamma_hz": float("nan"),
+            "amplitude": float("nan"), "noise_variance": float("nan"),
+            "acf": np.zeros(0), "lags_s": np.zeros(0),
+            "fit_ok": False, "warnings": [skipped],
+        }
+        psd = {
+            "f_corner_hz": float("nan"), "gamma_hz": float("nan"),
+            "s0": float("nan"), "white_floor": float("nan"),
+            "freqs_hz": np.zeros(0), "psd": np.zeros(0),
+            "fit_ok": False, "warnings": [skipped],
+        }
+        rvb = {
+            "bin_sizes": [], "bin_us": [], "rate_hz": [],
+            "n_switches": [], "warnings": [skipped],
+        }
+
     reset = None
     if reset_I is not None and reset_Q is not None and np.size(reset_I):
-        reset = reset_success_vs_cycle(reset_I, reset_Q, calibration)
-
+        reset_i = np.asarray(reset_I)
+        reset_q = np.asarray(reset_Q)
+        if reset_i.shape[-1] == original_n:
+            reset_i, reset_q = reset_i[..., finite], reset_q[..., finite]
+        reset = reset_success_vs_cycle(reset_i, reset_q, calibration)
     assessment = assess_parity_record(calibration=calibration, hmm=hmm,
                                       acf=acf, psd=psd, drift=drift,
                                       reset=reset)
@@ -1517,8 +1803,15 @@ def analyze_modified_ramsey_record(
 
     summary = {
         "n_samples": int(v.size),
+        "n_samples_removed_nonfinite": removed,
+        "uniform_timing": uniform_timing,
         "dt_nominal_s": dt_nominal,
         "record_duration_s": float(t_s[-1]) if v.size else 0.0,
+        "emission_model": "ge_mixture",
+        "mapping_p_e_state0": p0,
+        "mapping_p_e_state1": p1,
+        "mapping_probabilities_calibrated": bool(
+            mapping_probabilities_calibrated),
         "identifiable": hmm["identifiable"],
         "gamma01_hz": hmm["gamma01_hz"],
         "gamma10_hz": hmm["gamma10_hz"],
@@ -1552,11 +1845,13 @@ def analyze_modified_ramsey_record(
             _plot_dwells(hmm, base + "_dwells.png")
             if reset is not None:
                 fig, ax = plt.subplots(figsize=(5, 4))
-                ax.plot(np.arange(reset["n_cycles"]), reset["g_fraction"], "o-")
-                ax.set_xlabel("reset readout index")
-                ax.set_ylabel("ground fraction")
+                ax.plot(
+                    np.arange(reset["n_cycles"]),
+                    reset["pre_correction_g_fraction"], "o-")
+                ax.set_xlabel("pre-correction readout index")
+                ax.set_ylabel("ground fraction before correction")
                 ax.set_ylim(0, 1.02)
-                ax.set_title("Active-reset success vs cycle")
+                ax.set_title("Active-reset pre-correction populations")
                 fig.tight_layout()
                 fig.savefig(base + "_reset_success.png", dpi=150)
                 plt.close(fig)
@@ -1572,7 +1867,12 @@ def analyze_modified_ramsey_record(
                            "rate_vs_bin": rvb,
                            "gamma_boot_ci": hmm["gamma_boot_ci"],
                            "dwell_mean_s": hmm["dwell_mean_s"],
-                           "reset_g_fraction": (reset or {}).get("g_fraction"),
+                           "reset_pre_correction_g_fraction":
+                               (reset or {}).get("pre_correction_g_fraction"),
+                           "reset_validated_after_reset_g_fraction":
+                               (reset or {}).get("validated_after_reset_g_fraction"),
+                           "reset_final_ground_fraction":
+                               (reset or {}).get("final_ground_fraction"),
                            },
                           fh, indent=2, default=_json_default)
             try:

@@ -88,7 +88,7 @@ Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 10}
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 6000, "ts_step" : 100}
 
-Run2ToneSpec = False
+Run2ToneSpec = True
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
@@ -156,66 +156,167 @@ TwoToneChargeDispersion_params = {
 }
 
 ModifiedRamsey_params = {
-    # --- two-tone search settings (same role as TwoToneChargeDispersion_params) ---
-    "df": 0.5,                  # required peak separation in MHz before running Ramsey
-    "dV": 0.0005,               # voltage step size [V]
-    "voltage_min": 0.000,       # absolute lower voltage bound [V]
-    "voltage_max": 0.010,       # absolute upper voltage bound [V]
-    "max_voltage_tries": 1000,  # max search steps per cycle
-    "num_cycles": 1000,         # how many search -> Ramsey cycles to run
+    # --- parity branches (CONFIGURED, not searched) ------------------------
+    # The two-tone doublet search + yoko voltage walk has been REMOVED from
+    # run_modified_ramsey: it never worked reliably and was not used. df and
+    # f_ge are now taken straight from here, so:
+    #   * tau = 1/(2*df) is only correct if df really is the branch splitting;
+    #     measure it independently and set it here.
+    #   * the run stays at whatever voltage the yoko is already at. This
+    #     routine never moves the yoko.
+    # MEASURED 2026-08-04: branches at 4186.7 (top) and 4184.0 (bottom) MHz,
+    # so df = 2.7 MHz and the midpoint is 4185.35 MHz. NOTE this is 4x the
+    # cd_max_mhz=0.682 in ModifiedRamsey_Control_params below -- reconcile
+    # those, or confirm this doublet really is charge parity and not another
+    # transition, before trusting expected_parity_dwell_ms.
+    "df": 2.7,                  # parity branch separation [MHz] -> tau = k/(2*df)
+    # tau = k/(2*df) with ODD k. k=1 gives tau=0.185 us, which CANNOT WORK at
+    # sigma=0.1 us because the two pi/2 envelopes already span 4*sigma=0.4 us
+    # (the program raises). k=3 -> tau=0.5556 us, gap 0.156 us, realized phase
+    # 3.0008*pi (mapping contrast 1.000). Normally prefer the SMALLEST feasible
+    # odd k, since larger k means more T2 decay during tau and T2* is worst at
+    # maximum charge sensitivity.
+    #
+    # BUT k=3 silently costs the echo_null control: the echo uses THREE pulses
+    # and TWO gaps, so it needs tau > 8*sigma = 0.80 us. At tau=0.5556 us
+    # build_control_variants marks echo_null infeasible and SKIPS it (correctly,
+    # and it forces all_expected=False). echo_null is the single most decisive
+    # control, so k=5 is the better trade: tau=0.9259 us, echo gap 0.063 us,
+    # realized phase 4.997*pi -- keeps both the measurement and its null.
+    "tau_harmonic_k": 5,
+    # f_ge is the UPPER parity branch, NOT the doublet centre. Read the class
+    # docstring in mModifiedRamsey.py: the lower branch is taken as f_ge - df,
+    # and with symmetric_ramsey=True the drive goes to f_ge - df/2.
+    #
+    # !! With symmetric_ramsey=True this MUST be set explicitly. The fallback
+    # below is ctx.qubit_frequency_center (Qubit_Parameters -> 'Frequency'),
+    # which is the doublet CENTRE, not the upper branch. Leaving it unset would
+    # put the symmetric drive at centre - df/2, i.e. on the LOWER branch, with
+    # the 90 deg closing phase -- wrong scheme, and it would look like a
+    # contrast failure rather than a misconfiguration.
+    #   upper branch = doublet centre + df/2
+    "f_ge": 4186.7,             # measured TOP branch (bottom = 4184.0)
+    # df must leave room for the pi/2 envelopes: ModifiedRamsey requires
+    # df < 1/(8*sigma) (no pi) or 1/(16*sigma) (echo) and RAISES otherwise
+    # instead of silently running at the wrong effective tau. At sigma=0.1 us
+    # that is 1.25 MHz; at sigma=0.22 us only 0.57 MHz.
+    "num_cycles": 1000,         # how many Ramsey records to take
     "use_pi_pulse": False,
-    "center_peak_tol_mhz": 0.05,
-    "center_peak_df_for_tau": 0.5,
     "use_apriori_separator": True,
     "ss_calib_shots": 1000,
     "ss_recalib_every_n_cycles": 10,
 
-    # two-tone spec settings used during the voltage search
-    "SpecSpan": 1.0,
-    "SpecNumPoints": 201,
-    "reps": 10,
-    "rounds": 10,
-    "relax_delay": 3500,
-    "Gauss": True,
-    "sigma": 2,
-    "gain": 500,
-    "qubit_length": 2,
-
-    # --- parity-doublet peak-finder (utils.find_parity_doublet) ---
-    # The voltage search now uses the noise-floor-referenced doublet finder:
-    # symmetric-pair-about-center selection with sub-bin Lorentzian refinement.
-    "prominence_snr": 5.0,        # peak prominence threshold in units of noise sigma
-    "min_sep_MHz": 0.02,          # resolution limit for the doublet (NOT df)
-    # UPPER bound on the accepted doublet separation. tau = 1/(2*sep) must leave
-    # room for the pi/2 envelopes: ModifiedRamsey now requires sep < 1/(8*sigma)
-    # (no pi) or 1/(16*sigma) (echo) and RAISES otherwise instead of silently
-    # running at the wrong effective tau. At sigma=0.1 us that is 1.25 MHz;
-    # at sigma=0.22 us only 0.57 MHz. Set this below that limit so a
-    # well-separated doublet cannot abort the run mid-cycle. 1.0 leaves headroom
-    # at sigma=0.1; LOWER IT to <0.57 if you switch to a sigma=0.22 qubit.
-    # (None would mean "full swept span" and can now abort a cycle.)
-    "max_sep_MHz": 1.0,
-    "symmetry_tol_MHz": None,     # None -> half span; tighten to enforce symmetry
-    "min_height_balance": 0.3,    # min (weaker/stronger) peak-height ratio
-    "smooth_window": 5,           # Savitzky-Golay window (odd; <3 disables)
-    "fit_window_mhz": 0.1,        # half-width of the Lorentzian refinement window
-
-    # --- live, non-blocking two-tone plotting (utils.save_two_tone_plot) ---
-    "live_display": False,        # True -> refresh a persistent figure each attempt
-    "live_pause": 0.05,           # plt.pause() seconds per live refresh
-
     # --- Modified Ramsey settings ---
-    # tau is computed automatically as 1 / (2 * peak_sep_MHz)
-    # f_ge is set automatically to the higher-frequency peak
+    # tau is computed as 1 / (2 * df) above; f_ge is the upper parity branch.
     # No relax delay: the preceding measurement collapses the state, but does
     # not guarantee |g>. Enable use_active_reset for deterministic preparation.
-    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
-    "mr_reps": 40000,             # number of single-shot Ramsey measurements per cycle
-    "average_n_shots": 400,
+    # !! CONFIRMED ROOT CAUSE of the spurious kHz "parity" rate, measured on
+    # CSTQ03 Q2 2026-08-04 with a 4-arm diagnostic (analog SNR 0.91):
+    #
+    #   arm                        relax    r(1)     r(10)   ACF amp
+    #   parity                       0 us  +0.289   +0.099   0.004582
+    #   drive_off (pi2_gain=0)       0 us  +0.469   +0.301   0.011050
+    #   parity                     200 us  +0.072   +0.010   0.002301
+    #   drive_off                  200 us  +0.115   +0.032   0.000575
+    #
+    # drive_off plays NO pi/2 pulses, so it cannot carry parity information --
+    # yet it showed MORE shot-to-shot correlation than the parity record (2.4x
+    # the ACF amplitude). The correlation is therefore entirely an artifact,
+    # and it DOMINATES rather than merely contaminates. Adding 200 us of relax
+    # collapses it 4x (parity) and 19x (drive_off), which identifies the cause
+    # as incomplete inter-shot reset: with relax 0 and no active reset the
+    # readout collapses the qubit but never returns it to |g>, so residual
+    # excited population is carried into the next shot. The decay of r(1) with
+    # relax is consistent with the measured T1 ~= 50 us: at relax 0 the
+    # carryover between shots is exp(-11.75/50) = 79%, which is exactly the
+    # regime that produces r(1) ~ 0.3-0.5. At relax 200 us it is
+    # exp(-211.75/50) = 1.4%, i.e. negligible -- so the r(1) ~ 0.07-0.12 still
+    # seen in the 200 us arms is the slow readout drift (ACF tau ~122 ms), not
+    # T1. 250 us = 5x T1 leaves 0.5% carryover.
+    #
+    # Cost: rep period becomes ~262 us, so a 2.5 ms dwell is sampled ~9.6x
+    # instead of ~213x. Per-dwell SNR therefore drops from ~8.8 to ~2.3 -- the
+    # telegraph is still detectable but no longer comfortable, so compensate
+    # with MANY dwells (see mr_reps) rather than with a lower HMM gate.
+    "mr_relax_delay": 250.0,     # us after the final Ramsey readout (5x T1=50us)
+    # Record length. Rate precision is set by the NUMBER OF DWELLS observed,
+    # not by per-shot fidelity. With mr_relax_delay=250 us the rep period is
+    # ~262 us, so a 2.5 ms dwell spans ~9.6 shots:
+    #     100000 shots ~= 26 s  ~= 10500 dwells
+    #     400000 shots ~= 105 s ~= 42000 dwells  (relax-0 value; now slow)
+    # 100k is the sensible starting point at 250 us relax -- it already gives
+    # far more dwells than the 1880 the 4.7 s relax-0 record did, because the
+    # limit was never sample count. The streamer chunks transparently.
+    "mr_reps": 100000,            # number of single-shot Ramsey measurements per cycle
+    # Legacy hard-threshold diagnostic plots only -- NOT used for rate fitting.
+    # Keep this well below one dwell or the averaged trace washes the telegraph
+    # out: 25 shots ~= 294 us ~= 1/8.5 of a 2.5 ms dwell. (The old 400 spanned
+    # ~2 full dwells per bin, which is why that plot looked featureless.)
+    "average_n_shots": 25,
+    # Primary parity-rate analysis uses the continuous IQ trace and an exact
+    # two-state HMM. Each parity state is a calibrated g/e mixture, so these
+    # probabilities describe Ramsey mapping fidelity rather than assuming a
+    # perfect 0/1 map. Replace the starting values with measured mapping
+    # probabilities once a device-specific calibration is available.
+    "parity_analysis_enabled": True,
+    "expected_parity_dwell_ms": 2.5,
+    "drift_window_ms": 200.0,
+    "hmm_symmetric": True,
+    "hmm_bootstrap_samples": 0,
+    "mapping_p_e_state0": 0.1,
+    "mapping_p_e_state1": 0.9,
+    "mapping_probabilities_calibrated": False,
+    # Per-SAMPLE emission-separation gate inside fit_two_state_hmm.
+    #
+    # NOTE the emission separation the gate tests is
+    #     analog_readout_snr * |mapping_p_e_state1 - mapping_p_e_state0|
+    # i.e. it uses the ASSUMED mapping probabilities above, so improving the
+    # real mapping (symmetric_ramsey) does NOT move this number until you also
+    # update those probabilities from a measurement. At the measured analog SNR
+    # of ~0.77 the product is ~0.62, just under the 0.7 default -> the HMM
+    # withholds rates. That is a bookkeeping outcome, not a physics one: at
+    # ~213 samples per dwell the per-DWELL separation is ~8.8.
+    #
+    # DO NOT lower this to force a fit. Measured on CSTQ03 Q2 2026-08-04: at
+    # 0.3 the HMM returned a confident-looking 4921 +/- 68 Hz, but ACF said
+    # 9606 Hz and PSD said 15056 Hz (>3x disagreement, auto-flagged), and the
+    # echo_null control -- which CANNOT contain parity contrast, since a Hahn
+    # echo refocuses the static df -- showed 44% of the parity record's ACF
+    # amplitude. So the fit was locking onto a ~50-200 us shot-to-shot
+    # correlation that is NOT charge parity (see mr_relax_delay below).
+    # 0.7 correctly withheld that number. None -> keep the 0.7 library default.
+    "hmm_min_emission_snr": None,
+    # Escape hatch for any other fit_two_state_hmm kwarg (e.g. min_transitions).
+    "hmm_kwargs": None,
+    # Interleave the two decisive controls periodically: final-pi/2 inversion
+    # must preserve the telegraph and invert occupancy; echo must suppress it.
+    "validation_controls": ["flip_final_pi2", "echo_null"],
+    "validation_controls_every_n_cycles": 10,
+    "control_tau_offset_frac": 0.25,
+    "control_detuning_mhz": None,
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
     # off preserves the original standard-scheme behavior.
     "flip_final_pi2": False,      # add 180 deg to closing pi/2 (swap parity->state)
-    "symmetric_ramsey": False,    # drive at midpoint f_avg=f_ge-df/2 instead of upper
+    # Symmetric drive: both branches sit +/- df/2 from the drive instead of one
+    # branch sitting df away, which HALVES the branch detuning (0.50 -> 0.25 of
+    # the pi/2 Rabi rate at sigma=0.1 us, df=0.5 MHz). The off-resonant branch
+    # is then far less under-rotated, so the parity -> state mapping contrast
+    # |p1 - p0| improves. The closing pi/2 base phase moves 180 -> 90 deg
+    # automatically. REQUIRES "f_ge" above to be the true UPPER branch.
+    "symmetric_ramsey": True,     # drive at midpoint f_avg=f_ge-df/2 instead of upper
+    # !! UNRESOLVED PHYSICS LIMIT at df=2.7 MHz and sigma=0.1 us.
+    # A 4*sigma gaussian pi/2 has peak Rabi 0.0997/sigma = 0.997 MHz. Symmetric
+    # drive detunes each branch by df/2 = 1.35 MHz, i.e. ratio 1.354 -- ABOVE
+    # 1.0, so the off-resonant branch is not properly rotated and the parity ->
+    # state mapping contrast is degraded no matter what tau is used. (Standard
+    # drive is worse: ratio 2.708.) This is INDEPENDENT of tau and cannot be
+    # fixed by tau_harmonic_k.
+    #   ratio <= 1.0 needs sigma <= 0.0739 us (symmetric) / 0.0369 us (standard)
+    # The pi/2 pulse sits at only 3.7% of DAC full scale, so halving sigma
+    # (gain ~ 1/sigma -> ~2400, 7.3% FS) has ample headroom.
+    # 1.4 lets the run proceed under protest so the degraded contrast can be
+    # measured rather than guessed. Drop back to 1.0 once sigma allows it.
+    "max_drive_bandwidth_ratio": 1.4,
     # Hardware active reset to |g> per shot (opt-in). When True, the driver
     # runs calibrate_active_reset_readout() first: it rotates config["res_phase"]
     # so g/e separate ALONG I and derives the I threshold from the rotated
@@ -556,7 +657,7 @@ if Run2ToneSpec:                     run_two_tone_spec(ctx, Spec_relevant_params
 if RunSpecGainLengthSweep:           run_spec_gain_length_sweep(ctx, Spec_relevant_params)
 if RunChiShift:                      run_chi_shift(ctx, ChiShift_params)
 if Run2ToneChargeDispersionQuasiCW:  run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params)
-if RunModifiedRamsey:                run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params)
+if RunModifiedRamsey:                run_modified_ramsey(ctx, ModifiedRamsey_params)
 if RunModifiedRamsey_Control:        run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params)
 if RunChargeDispersionQuasiCW:       run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_params)
 if RunChargeDispersionRamsey:        run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params)

@@ -1,7 +1,15 @@
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mChargeDispersionQuasiCW import ChargeDispersionQuasiCW
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mChargeDispersion import ChargeDispersion
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mModifiedRamsey import ModifiedRamsey
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mModifiedRamsey import (
+    ModifiedRamsey,
+    build_control_variants,
+)
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ModifiedRamseyParity import (
+    analyze_modified_ramsey_record,
+    calibrate_readout_from_labeled_shots,
+    compare_parity_controls,
+)
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSpecSliceFF import QubitSpecSliceFF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
 import numpy as np
@@ -93,7 +101,7 @@ def modified_ramsey_timing(soccfg, cfg):
     # Mirror ModifiedRamseyProgram: tau is the pulse-CENTRE-to-CENTRE precession
     # time, while QICK schedules the wait between pulse EDGES, so the programmed
     # gap is tau/n_gaps - 4*sigma. See mModifiedRamsey.initialize().
-    tau_us = 1.0 / (2.0 * cfg["df"])
+    tau_us = float(cfg.get("ramsey_tau_us", 1.0 / (2.0 * cfg["df"])))
     qubit_pulse_us = float(qubit_native_cycles / qubit_f_fabric)
     wait_count = 2 if use_pi_pulse else 1
     wait_request_us = tau_us / wait_count - qubit_pulse_us
@@ -559,24 +567,28 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
         json.dump(cycle_summary, f, indent=2, default=float)
 
 
-def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
+def run_modified_ramsey(ctx, ModifiedRamsey_params):
     date_tag_mr = datetime.now().strftime("%Y_%m_%d")
     save_dir_mr = os.path.join(ctx.outerFolder, "ModifiedRamsey", date_tag_mr)
     os.makedirs(save_dir_mr, exist_ok=True)
 
-    df_required_mr = ModifiedRamsey_params["df"]
-    dV_mr = ModifiedRamsey_params["dV"]
-    voltage_min_mr = max(0.0, ModifiedRamsey_params["voltage_min"])
-    voltage_max_mr = ModifiedRamsey_params["voltage_max"]
-    max_tries_mr = ModifiedRamsey_params["max_voltage_tries"]
+    # Branch separation setting the parity-phase condition tau = 1/(2*df).
+    # This is a CONFIGURED value. The two-tone doublet search that used to
+    # measure it -- walking the yoko across a voltage window looking for a
+    # resolved parity doublet -- has been removed: it never worked reliably and
+    # was not used. Set ModifiedRamsey_params["df"] from an independent doublet
+    # measurement and treat the realized tau as conditional on it.
+    df_mr = float(ModifiedRamsey_params["df"])
+    if df_mr <= 0:
+        raise ValueError("ModifiedRamsey_params['df'] must be positive")
+    # Upper parity branch. Defaults to the qubit centre frequency; override via
+    # ModifiedRamsey_params["f_ge"] when the doublet position is known.
+    f_ge_mr = float(
+        ModifiedRamsey_params.get("f_ge", ctx.qubit_frequency_center))
     num_cycles_mr = ModifiedRamsey_params["num_cycles"]
 
-    ModifiedRamsey_params.setdefault("hysteresis_low", 0.2)
-    ModifiedRamsey_params.setdefault("hysteresis_high", 0.8)
-    ModifiedRamsey_params.setdefault("window_ms", 0.05)
-
+    # Recorded for provenance only: this routine never moves the yoko.
     current_voltage_mr = float(ctx.yoko.query(":SOUR:LEV?"))
-    direction_mr = +1
 
     cycle_summary_mr = []
 
@@ -618,196 +630,36 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
                 )
         print(f"\n================ ModifiedRamsey Cycle {cycle_idx_mr + 1}/{num_cycles_mr} ================")
 
-        success_mr = False
-        chosen_probe_freq_mr = None
-        chosen_peak_sep_mr = None
+        # f_ge and df come straight from configuration; there is no
+        # doublet search and no voltage walk.
+        chosen_probe_freq_mr = f_ge_mr
+        chosen_peak_sep_mr = df_mr
 
-        # ---------- two-tone voltage search ----------
-        for attempt_idx_mr in range(max_tries_mr):
-            print(
-                f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}/{num_cycles_mr}, "
-                f"attempt {attempt_idx_mr + 1}/{max_tries_mr}, V={current_voltage_mr:.6f} V"
-            )
-
-            cfg["current_voltage"] = current_voltage_mr
-            cfg["reps"] = ModifiedRamsey_params["reps"]
-            cfg["rounds"] = ModifiedRamsey_params["rounds"]
-            cfg["Gauss"] = ModifiedRamsey_params["Gauss"]
-            cfg["relax_delay"] = ModifiedRamsey_params["relax_delay"]
-
-            if cfg["Gauss"]:
-                cfg["sigma"] = ModifiedRamsey_params["sigma"]
-                cfg["qubit_gain"] = ModifiedRamsey_params["gain"]
-
-            cfg["qubit_length"] = ModifiedRamsey_params["qubit_length"]
-            cfg["SpecSpan"] = ModifiedRamsey_params["SpecSpan"]
-            cfg["SpecNumPoints"] = ModifiedRamsey_params["SpecNumPoints"]
-            cfg["step"] = 2 * cfg["SpecSpan"] / cfg["SpecNumPoints"]
-            cfg["start"] = ctx.qubit_frequency_center - cfg["SpecSpan"]
-            cfg["expts"] = cfg["SpecNumPoints"]
-
-            Instance_specSlice_mr = QubitSpecSliceFF(
-                path="ModifiedRamsey",
-                cfg=cfg,
-                soc=ctx.soc,
-                soccfg=ctx.soccfg,
-                outerFolder=ctx.outerFolder
-            )
-            data_specSlice_mr = QubitSpecSliceFF.acquire(Instance_specSlice_mr)
-            QubitSpecSliceFF.display(
-                Instance_specSlice_mr,
-                data_specSlice_mr,
-                plotDisp=False,
-                figNum=2,
-                min_sep=Spec_relevant_params["min_sep_MHz"],
-                fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
-                prominent_ratio=Spec_relevant_params["prominent_ratio"],
-            )
-            QubitSpecSliceFF.save_data(Instance_specSlice_mr, data_specSlice_mr)
-            QubitSpecSliceFF.save_config(Instance_specSlice_mr)
-
-            x_pts_mr = np.array(data_specSlice_mr["data"]["x_pts"])
-            avgi_mr = np.array(data_specSlice_mr["data"]["avgi"][0][0])
-            avgq_mr = np.array(data_specSlice_mr["data"]["avgq"][0][0])
-            # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
-            # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
-            # background quadrature and buries the qubit feature.
-            avgamp0_mr = project_iq_signal(avgi_mr, avgq_mr)
-
-            # Robust parity-doublet finder: noise-floor-referenced peak detection,
-            # symmetric-pair-about-center selection, sub-bin Lorentzian refinement.
-            doublet_mr = find_parity_doublet(
-                x_pts_mr,
-                avgamp0_mr,
-                center_freq=ctx.qubit_frequency_center,
-                min_sep_mhz=ModifiedRamsey_params.get("min_sep_MHz", 0.02),
-                max_sep_mhz=ModifiedRamsey_params.get("max_sep_MHz", None),
-                prominence_snr=ModifiedRamsey_params.get("prominence_snr", 5.0),
-                smooth_window=ModifiedRamsey_params.get("smooth_window", 5),
-                symmetry_tol_mhz=ModifiedRamsey_params.get("symmetry_tol_MHz", None),
-                min_height_balance=ModifiedRamsey_params.get("min_height_balance", 0.3),
-                fit_window_mhz=ModifiedRamsey_params.get("fit_window_mhz", 0.1),
-                refine=True,
-            )
-
-            # peak_info compatible with save_two_tone_plot and the summary file.
-            peak_info_mr = {
-                "peak_inds": doublet_mr["peak_inds"],
-                "peak_freqs": doublet_mr["peak_freqs"],
-                "peak_vals": doublet_mr["peak_vals"],
-                "peak_sep": doublet_mr["peak_sep"],
-                "source": doublet_mr["mode"],
-            }
-
-            save_base_mr = save_two_tone_plot(
-                x_pts=x_pts_mr,
-                avgi=avgi_mr,
-                avgq=avgq_mr,
-                avgamp0=avgamp0_mr,
-                peak_info=peak_info_mr,
-                current_voltage=current_voltage_mr,
-                attempt_idx=attempt_idx_mr + cycle_idx_mr * max_tries_mr,
-                save_dir=save_dir_mr,
-                qubit_gain=cfg.get("qubit_gain"),
-                qubit_length=cfg.get("qubit_length"),
-                center_freq=ctx.qubit_frequency_center,
-                fit=doublet_mr.get("fit"),
-                live_display=ModifiedRamsey_params.get("live_display", False),
-                live_pause=ModifiedRamsey_params.get("live_pause", 0.05),
-            )
-
-            with open(save_base_mr + "_summary.txt", "w") as f:
-                f.write(f"cycle_idx: {cycle_idx_mr}\n")
-                f.write(f"attempt_idx: {attempt_idx_mr}\n")
-                f.write(f"current_voltage: {current_voltage_mr:.9f}\n")
-                f.write(f"mode: {doublet_mr['mode']}\n")
-                f.write(f"lower: {doublet_mr['lower']}\n")
-                f.write(f"upper: {doublet_mr['upper']}\n")
-                f.write(f"center: {doublet_mr['center']}\n")
-                f.write(f"peak_sep: {doublet_mr['peak_sep']}\n")
-                f.write(f"noise_sigma: {doublet_mr['noise_sigma']}\n")
-                f.write(f"candidates: {doublet_mr['candidates']}\n")
-                f.write(f"df_required: {df_required_mr}\n")
-
-            center_peak_tol_mhz = ModifiedRamsey_params.get("center_peak_tol_mhz", 0.05)
-            center_peak_df_for_tau = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
-
-            doublet_centered_mr = (
-                doublet_mr["center"] is not None
-                and abs(doublet_mr["center"] - ctx.qubit_frequency_center) <= center_peak_tol_mhz
-            )
-
-            if (
-                doublet_mr["mode"] == "doublet"
-                and doublet_mr["peak_sep"] is not None
-                and doublet_mr["peak_sep"] >= df_required_mr
-            ):
-                # Parity mode: a resolved doublet split widely enough for Ramsey.
-                chosen_probe_freq_mr = float(doublet_mr["upper"])
-                chosen_peak_sep_mr = float(doublet_mr["peak_sep"])
-
-                print(
-                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: doublet found, "
-                    f"lower={doublet_mr['lower']:.6f} MHz, "
-                    f"upper={doublet_mr['upper']:.6f} MHz, "
-                    f"sep={chosen_peak_sep_mr:.6f} MHz, f_ge={chosen_probe_freq_mr:.6f} MHz, "
-                    f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
-                )
-
-                success_mr = True
-                break
-
-            elif doublet_centered_mr:
-                # Calibration mode: feature centered but not split enough; run MR at
-                # the center with the configured df-for-tau.
-                chosen_probe_freq_mr = float(doublet_mr["center"])
-                chosen_peak_sep_mr = float(center_peak_df_for_tau)
-
-                print(
-                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: centered feature "
-                    f"(mode={doublet_mr['mode']}), center={doublet_mr['center']:.6f} MHz, "
-                    f"|diff|={abs(doublet_mr['center'] - ctx.qubit_frequency_center):.6f} MHz <= "
-                    f"{center_peak_tol_mhz:.6f} MHz. Running calibration Ramsey with "
-                    f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
-                    f"df_for_tau={chosen_peak_sep_mr:.6f} MHz, "
-                    f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
-                )
-
-                success_mr = True
-                break
-
-            next_voltage_mr, direction_mr = choose_next_voltage(
-                current_v=current_voltage_mr,
-                dv=dV_mr,
-                vmin=voltage_min_mr,
-                vmax=voltage_max_mr,
-                direction=direction_mr
-            )
-
-            if abs(next_voltage_mr - current_voltage_mr) < 1e-15:
-                print("[ModifiedRamsey] Voltage step stalled at bounds.")
-                break
-
-            ramp_to(ctx.yoko, next_voltage_mr)
-            current_voltage_mr = next_voltage_mr
-
-        if not success_mr:
-            print(f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: failed to find sufficient peak separation.")
-            cycle_summary_mr.append({
-                "cycle_idx": cycle_idx_mr,
-                "success": False,
-                "final_voltage": current_voltage_mr,
-                "chosen_probe_freq": None,
-                "peak_sep": None,
-            })
-            continue
-
-        # ---------- run Modified Ramsey with auto-computed tau and f_ge ----------
-        tau_us_mr = 1.0 / (2.0 * chosen_peak_sep_mr)
+        # ---------- run Modified Ramsey at the configured f_ge and df ----------
+        # The parity condition is |relative phase| = pi MODULO 2*pi, so
+        # tau = k/(2*df) works for ANY ODD k, all with identical mapping
+        # contrast. k=1 is the shortest (least T2 decay) but needs
+        # 4*sigma < tau; a large df can make that impossible at a sigma you
+        # cannot shorten. Raising k to the next odd value relieves the timing
+        # constraint WITHOUT touching sigma and WITHOUT changing the physical
+        # branch separation. Even k would put the branches back in phase and
+        # destroy the mapping, so reject it loudly.
+        tau_k_mr = int(ModifiedRamsey_params.get("tau_harmonic_k", 1))
+        if tau_k_mr < 1 or tau_k_mr % 2 == 0:
+            raise ValueError(
+                f"ModifiedRamsey_params['tau_harmonic_k']={tau_k_mr} must be a "
+                "positive ODD integer: tau = k/(2*df) only satisfies the parity "
+                "pi condition for odd k (even k returns the branches to phase "
+                "and gives zero contrast)")
+        tau_us_mr = tau_k_mr / (2.0 * chosen_peak_sep_mr)
 
         mr_cfg = {
             "f_ge": chosen_probe_freq_mr,
             "df": chosen_peak_sep_mr,
+            # Programmed delay only; cfg["df"] above stays the PHYSICAL branch
+            # separation, so the saved record still reports the real splitting.
+            "ramsey_tau_us": tau_us_mr,
+            "mr_tau_harmonic_k": tau_k_mr,
             "pi2_gain": ctx.pi2_gain,
             "pi_gain": ctx.qubit_gain,
             "use_pi_pulse": ModifiedRamsey_params.get("use_pi_pulse", False),
@@ -815,6 +667,13 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             # the original standard-scheme behavior).
             "flip_final_pi2": ModifiedRamsey_params.get("flip_final_pi2", False),
             "symmetric_ramsey": ModifiedRamsey_params.get("symmetric_ramsey", False),
+            # Ceiling on branch_detuning / pi2_Rabi. Above 1.0 the off-resonant
+            # branch is barely rotated and the mapping degrades; the program
+            # RAISES past this so a contrast-free record is never mistaken for
+            # data. Raise it only deliberately, and read the saved
+            # drive_bandwidth_ratio when interpreting the result.
+            "max_drive_bandwidth_ratio": ModifiedRamsey_params.get(
+                "max_drive_bandwidth_ratio", 1.0),
             # Hardware active reset to |g> per shot (opt-in). See ModifiedRamsey
             # docstring: requires readout_threshold + I-axis g/e separation.
             "use_active_reset": ModifiedRamsey_params.get("use_active_reset", False),
@@ -854,13 +713,167 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         ModifiedRamsey.save_data(Instance_mr, data_mr)
         ModifiedRamsey.save_config(Instance_mr)
 
-        # ---------- classify shots and build averaged 0-to-1 trace ----------
+        # ---------- continuous analog parity analysis (primary output) ------
         raw_i_mr = np.ravel(np.array(data_mr["data"]["shots_i"]))
         raw_q_mr = np.ravel(np.array(data_mr["data"]["shots_q"]))
 
         if apriori_sep_mr is None:
-            raise RuntimeError("ModifiedRamsey now requires apriori_sep_mr from SingleShot calibration.")
+            raise RuntimeError("ModifiedRamsey requires a labeled SingleShot calibration.")
 
+        timestamp_mr = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        base_mr = os.path.join(
+            save_dir_mr, f"Cycle_{cycle_idx_mr:03d}_MR_{timestamp_mr}")
+        I_g_mr, Q_g_mr = _extract_iq_from_singleshot_data(
+            apriori_sep_mr["data_ss"], "g")
+        I_e_mr, Q_e_mr = _extract_iq_from_singleshot_data(
+            apriori_sep_mr["data_ss"], "e")
+        analog_cal_mr = calibrate_readout_from_labeled_shots(
+            I_g_mr, Q_g_mr, I_e_mr, Q_e_mr)
+        mapping_probabilities_mr = (
+            ModifiedRamsey_params.get("mapping_p_e_state0", 0.1),
+            ModifiedRamsey_params.get("mapping_p_e_state1", 0.9),
+        )
+        # Extra kwargs forwarded to fit_two_state_hmm. The one that matters here
+        # is min_emission_snr, which gates on PER-SAMPLE emission separation and
+        # defaults to 0.7 inside fit_two_state_hmm. That gate is the wrong
+        # quantity for a heavily oversampled telegraph: with a rep period of
+        # ~11.75 us and a 2.5 ms dwell there are ~213 samples per dwell, so the
+        # information per dwell is per_sample_snr * sqrt(213) ~= 15x the
+        # per-sample figure. Forward-backward already accumulates that, which is
+        # why the rate is recoverable well below the per-sample gate (see
+        # test_hmm_moderate_contrast in test_ModifiedRamseyParity_offline.py).
+        # Lower it deliberately and cross-check HMM against ACF/PSD; expect the
+        # posterior-ambiguity warning to fire, which correctly says "do not
+        # trust individual Viterbi samples", NOT "the rate is wrong".
+        hmm_kwargs_mr = dict(ModifiedRamsey_params.get("hmm_kwargs") or {})
+        if ModifiedRamsey_params.get("hmm_min_emission_snr") is not None:
+            hmm_kwargs_mr["min_emission_snr"] = float(
+                ModifiedRamsey_params["hmm_min_emission_snr"])
+        continuous_mr = None
+        if ModifiedRamsey_params.get("parity_analysis_enabled", True):
+            continuous_mr = analyze_modified_ramsey_record(
+                raw_i_mr,
+                raw_q_mr,
+                data_mr["data"]["scheduled_rep_period_us"] * 1e-6,
+                analog_cal_mr,
+                drift_timescale_s=(
+                    ModifiedRamsey_params.get("drift_window_ms", 200.0)
+                    * 1e-3),
+                expected_dwell_s=(
+                    ModifiedRamsey_params.get("expected_parity_dwell_ms", 2.5)
+                    * 1e-3),
+                symmetric_hmm=ModifiedRamsey_params.get("hmm_symmetric", True),
+                n_boot=ModifiedRamsey_params.get("hmm_bootstrap_samples", 0),
+                mapping_probabilities=mapping_probabilities_mr,
+                mapping_probabilities_calibrated=ModifiedRamsey_params.get(
+                    "mapping_probabilities_calibrated", False),
+                reset_I=data_mr["data"].get("reset_shots_i"),
+                reset_Q=data_mr["data"].get("reset_shots_q"),
+                out_dir=save_dir_mr,
+                base_name=os.path.basename(base_mr) + "_continuous",
+                hmm_kwargs=hmm_kwargs_mr,
+            )
+            print(
+                "[ModifiedRamsey] continuous-analysis verdict: "
+                f"identifiable={continuous_mr['summary']['identifiable']}, "
+                f"gamma={continuous_mr['summary']['gamma01_hz']} Hz")
+
+            # Optional interleaved validation controls. They use the same
+            # voltage, calibration, time base, and continuous-emission model as
+            # the parity record. Configure a cadence to bound added run time.
+            control_names_mr = tuple(
+                ModifiedRamsey_params.get("validation_controls", ()))
+            control_every_mr = int(
+                ModifiedRamsey_params.get(
+                    "validation_controls_every_n_cycles", 1))
+            if control_every_mr <= 0:
+                raise ValueError(
+                    "validation_controls_every_n_cycles must be positive")
+            if control_names_mr and cycle_idx_mr % control_every_mr == 0:
+                analyzed_controls_mr = []
+                skipped_controls_mr = []
+                for control_mr in build_control_variants(
+                        config_mr, include=control_names_mr,
+                        tau_offset_frac=ModifiedRamsey_params.get(
+                            "control_tau_offset_frac", 0.25),
+                        detuning_mhz=ModifiedRamsey_params.get(
+                            "control_detuning_mhz")):
+                    if control_mr["cfg"] is None:
+                        skipped_controls_mr.append({
+                            "control_type": control_mr["control_type"],
+                            "reason": control_mr["skip_reason"],
+                        })
+                        continue
+                    control_cfg_mr = control_mr["cfg"]
+                    control_timing_mr = modified_ramsey_timing(
+                        ctx.soccfg, control_cfg_mr)
+                    control_cfg_mr["modified_ramsey_timing"] = control_timing_mr
+                    control_inst_mr = ModifiedRamsey(
+                        path="ModifiedRamsey_Controls",
+                        cfg=control_cfg_mr,
+                        soc=ctx.soc,
+                        soccfg=ctx.soccfg,
+                        outerFolder=ctx.outerFolder,
+                    )
+                    control_data_mr = ModifiedRamsey.acquire(control_inst_mr)
+                    ModifiedRamsey.save_data(control_inst_mr, control_data_mr)
+                    ModifiedRamsey.save_config(control_inst_mr)
+                    control_type_mr = control_mr["control_type"]
+                    control_analysis_mr = analyze_modified_ramsey_record(
+                        control_data_mr["data"]["shots_i"],
+                        control_data_mr["data"]["shots_q"],
+                        control_data_mr["data"][
+                            "scheduled_rep_period_us"] * 1e-6,
+                        analog_cal_mr,
+                        drift_timescale_s=(
+                            ModifiedRamsey_params.get(
+                                "drift_window_ms", 200.0) * 1e-3),
+                        expected_dwell_s=(
+                            ModifiedRamsey_params.get(
+                                "expected_parity_dwell_ms", 2.5) * 1e-3),
+                        symmetric_hmm=ModifiedRamsey_params.get(
+                            "hmm_symmetric", True),
+                        n_boot=ModifiedRamsey_params.get(
+                            "hmm_bootstrap_samples", 0),
+                        mapping_probabilities=mapping_probabilities_mr,
+                        mapping_probabilities_calibrated=ModifiedRamsey_params.get(
+                            "mapping_probabilities_calibrated", False),
+                        reset_I=control_data_mr["data"].get("reset_shots_i"),
+                        reset_Q=control_data_mr["data"].get("reset_shots_q"),
+                        out_dir=save_dir_mr,
+                        base_name=(os.path.basename(base_mr)
+                                   + f"_{control_type_mr}"),
+                        # SAME gate as the parity record: comparing a control
+                        # fitted under a different identifiability threshold
+                        # would not be a control.
+                        hmm_kwargs=hmm_kwargs_mr,
+                    )
+                    analyzed_controls_mr.append({
+                        "label": control_type_mr,
+                        "control_type": control_type_mr,
+                        "hmm": control_analysis_mr["hmm"],
+                        "acf": control_analysis_mr["acf"],
+                        "occupancy_state1": control_analysis_mr[
+                            "summary"]["occupancy_state1"],
+                    })
+                comparison_mr = compare_parity_controls(
+                    {
+                        "label": "parity",
+                        "hmm": continuous_mr["hmm"],
+                        "acf": continuous_mr["acf"],
+                        "occupancy_state1": continuous_mr[
+                            "summary"]["occupancy_state1"],
+                    },
+                    analyzed_controls_mr,
+                )
+                comparison_mr["skipped"] = skipped_controls_mr
+                if skipped_controls_mr:
+                    comparison_mr["all_expected"] = False
+                with open(base_mr + "_control_comparison.json", "w") as f:
+                    json.dump(comparison_mr, f, indent=2, default=float)
+
+        # Retain the legacy hard-threshold plots as diagnostics only. Rate
+        # inference above uses every unthresholded IQ sample.
         average_n_shots_mr = ModifiedRamsey_params.get("average_n_shots", 25)
 
         classification_mr = classify_and_average_iq(
@@ -893,8 +906,6 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
                 * average_n_shots_mr * rep_period_us * 1e-3
         )
 
-        timestamp_mr = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        base_mr = os.path.join(save_dir_mr, f"Cycle_{cycle_idx_mr:03d}_MR_{timestamp_mr}")
 
         I_min_mr, I_max_mr = raw_i_mr.min(), raw_i_mr.max()
         Q_min_mr, Q_max_mr = raw_q_mr.min(), raw_q_mr.max()
@@ -1002,6 +1013,18 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             "tau_us": tau_us_mr,
             "scheduled_rep_period_us": rep_period_us,
             "streamer_average_rep_period_us": streamer_rep_period_us_mr,
+            "parity_identifiable": (
+                continuous_mr["summary"]["identifiable"]
+                if continuous_mr is not None else None),
+            "gamma01_hz": (
+                continuous_mr["summary"]["gamma01_hz"]
+                if continuous_mr is not None else None),
+            "gamma10_hz": (
+                continuous_mr["summary"]["gamma10_hz"]
+                if continuous_mr is not None else None),
+            "parity_analysis_warnings": (
+                continuous_mr["summary"]["warnings"]
+                if continuous_mr is not None else []),
         })
 
     summary_path_mr = os.path.join(

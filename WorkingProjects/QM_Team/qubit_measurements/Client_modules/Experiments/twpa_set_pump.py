@@ -42,14 +42,14 @@ from pywindfreak import SynthHD
 # ---------------------------------------------------------------------------
 # --- Pump source (Windfreak SynthHD, channels driven identically) -----------
 PUMP_SYNTH_PORT     = "COM5"          # SynthHD USB/serial COM port
-PUMP_CHANNELS       = [0]          # SynthHD channels to drive identically
+PUMP_CHANNELS       = [0, 1]          # SynthHD channels to drive identically
 
 # --- Operating point --------------------------------------------------------
 PUMP_FREQ_GHz       = 10.875      # TODO: pump frequency at the chosen operating point
 PUMP_POWER_dBm      = -1.05     # TODO: pump power at the chosen operating point
 PUMP_POWER_MAX_dBm  = 0.0       # hard ceiling — script refuses power above this
 
-DISABLE_PUMP        = True     # True (or pass '--off') to RF-disable the pump and exit
+DISABLE_PUMP        = True    # True (or pass '--off') to RF-disable the pump and exit
 
 
 # ---------------------------------------------------------------------------

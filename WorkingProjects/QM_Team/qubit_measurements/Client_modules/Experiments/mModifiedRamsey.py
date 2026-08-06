@@ -18,7 +18,8 @@ MR_CONTROL_TYPE_CODES = {
 
 def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
                         symmetric_ramsey=False, flip_final_pi2=False,
-                        max_bandwidth_ratio=1.0):
+                        max_bandwidth_ratio=1.0, tau_us=None,
+                        drive_freq_offset_mhz=None):
     """
     Hardware-free feasibility check of the parity -> state mapping.
 
@@ -52,7 +53,8 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
     if sigma_us <= 0:
         raise ValueError("sigma_us must be positive")
 
-    tau_us = 1.0 / (2.0 * df_mhz)
+    tau_us = (1.0 / (2.0 * df_mhz) if tau_us is None
+              else float(tau_us))
     pulse_us = 4.0 * sigma_us
     n_gaps = 2 if use_pi_pulse else 1
     gap_us = (tau_us - n_gaps * pulse_us) / n_gaps
@@ -66,7 +68,12 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
         )
 
     rabi_pi2_mhz = 0.0997 / sigma_us
-    branch_detuning_mhz = df_mhz / 2.0 if symmetric_ramsey else df_mhz
+    if drive_freq_offset_mhz is None:
+        drive_freq_offset_mhz = (-df_mhz / 2.0
+                                 if symmetric_ramsey else 0.0)
+    branch_detuning_mhz = max(
+        abs(float(drive_freq_offset_mhz)),
+        abs(float(drive_freq_offset_mhz) + df_mhz))
     bandwidth_ratio = branch_detuning_mhz / rabi_pi2_mhz
     recommend_symmetric = (not symmetric_ramsey) and bandwidth_ratio > 0.2
     if bandwidth_ratio > max_bandwidth_ratio:
@@ -105,7 +112,7 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
         "branch_detuning_mhz": branch_detuning_mhz,
         "bandwidth_ratio": bandwidth_ratio,
         "recommend_symmetric": recommend_symmetric,
-        "drive_freq_offset_mhz": (-df_mhz / 2.0 if symmetric_ramsey else 0.0),
+        "drive_freq_offset_mhz": float(drive_freq_offset_mhz),
         "final_pi2_phase_deg": final_phase,
     }
 
@@ -130,12 +137,13 @@ def build_control_variants(base_cfg,
                         and rates must be unchanged
       echo_null       : pi pulse refocuses the static parity detuning ->
                         parity contrast suppressed
-      tau_offset      : tau scaled by (1 + tau_offset_frac) via df ->
-                        df/(1+frac); mapping rotation is off the pi condition,
+      tau_offset      : programmed tau scaled by (1 + tau_offset_frac) while
+                        physical df is unchanged; mapping rotation is off the pi condition,
                         contrast reduced by ~cos(pi*(1+frac))... i.e. sign and
                         amplitude change predictably
-      drive_detuned   : f_ge shifted by detuning_mhz (default +df, one full
-                        branch spacing): both branches off-resonant, mapping
+      drive_detuned   : programmed drive shifted by detuning_mhz (default +df,
+                        one full branch spacing) while physical f_ge/df remain
+                        unchanged: both branches are off-resonant and mapping is
                         degraded
       drive_off       : pi2_gain = 0; readout-only record measuring the
                         readout/thermal baseline (no parity information)
@@ -153,20 +161,28 @@ def build_control_variants(base_cfg,
         if name == "parity":
             expected = "telegraph parity signal at tau = 1/(2 df)"
         elif name == "flip_final_pi2":
-            cfg["flip_final_pi2"] = True
+            cfg["flip_final_pi2"] = not bool(
+                base_cfg.get("flip_final_pi2", False))
             expected = "parity->state mapping inverted; same rates/amplitude"
         elif name == "echo_null":
             cfg["use_pi_pulse"] = True
             expected = "parity contrast suppressed (echo refocuses df)"
         elif name == "tau_offset":
-            cfg["df"] = float(base_cfg["df"]) / (1.0 + float(tau_offset_frac))
+            cfg["ramsey_tau_us"] = (
+                1.0 / (2.0 * float(base_cfg["df"]))
+                * (1.0 + float(tau_offset_frac)))
             cfg["mr_control_tau_offset_frac"] = float(tau_offset_frac)
             expected = (f"tau deliberately {tau_offset_frac:+.0%} off the pi "
                         "condition; contrast reduced/rotated")
         elif name == "drive_detuned":
             det = float(detuning_mhz) if detuning_mhz is not None \
                 else float(base_cfg["df"])
-            cfg["f_ge"] = float(base_cfg["f_ge"]) + det
+            base_drive = (
+                float(base_cfg["f_ge"]) - float(base_cfg["df"]) / 2.0
+                if base_cfg.get("symmetric_ramsey", False)
+                else float(base_cfg["f_ge"]))
+            cfg["ramsey_drive_freq_mhz"] = base_drive + det
+            cfg["max_drive_bandwidth_ratio"] = 1e12
             cfg["mr_control_detuning_mhz"] = det
             expected = f"drive detuned {det:+.4f} MHz; mapping degraded"
         elif name == "drive_off":
@@ -178,6 +194,12 @@ def build_control_variants(base_cfg,
             use_pi_pulse=cfg.get("use_pi_pulse", False),
             symmetric_ramsey=cfg.get("symmetric_ramsey", False),
             flip_final_pi2=cfg.get("flip_final_pi2", False),
+            tau_us=cfg.get("ramsey_tau_us"),
+            drive_freq_offset_mhz=(
+                cfg.get("ramsey_drive_freq_mhz") - cfg["f_ge"]
+                if cfg.get("ramsey_drive_freq_mhz") is not None else None),
+            max_bandwidth_ratio=cfg.get(
+                "max_drive_bandwidth_ratio", 1.0),
         )
         skip = None
         if not plan["feasible"]:
@@ -204,9 +226,9 @@ class ModifiedRamseyProgram(AveragerProgram):
     Echo/pi sequence:
         [active reset to |g>] -> pi/2 -> wait tau/2 -> pi -> wait tau/2 -> pi/2(final_phase) -> readout
 
-    tau = 1 / (2 * cfg["df"]), df in MHz => tau in us. (Same tau in both the
-    standard and symmetric-drive schemes; the |relative phase| between branches
-    is pi either way.)
+    By default tau = 1 / (2 * cfg["df"]), df in MHz => tau in us. A deliberate
+    control may override only the programmed delay with cfg["ramsey_tau_us"];
+    cfg["df"] always remains the measured physical branch separation.
 
     TIMING CONVENTION: tau is the pulse-CENTRE-to-pulse-CENTRE precession
     interval. QICK schedules waits between pulse EDGES, so the gap written into
@@ -345,7 +367,8 @@ class ModifiedRamseyProgram(AveragerProgram):
         # NOTE: tau is the PULSE-CENTRE-TO-PULSE-CENTRE precession interval, not
         # the inter-pulse gap. The gap actually programmed into r_wait is derived
         # from it below, after the envelope length is known.
-        self.tau_us = 1.0 / (2.0 * cfg["df"])
+        self.tau_us = float(
+            cfg.get("ramsey_tau_us", 1.0 / (2.0 * cfg["df"])))
         self.use_pi_pulse = cfg.get("use_pi_pulse", False)
         if self.use_pi_pulse:
             # A Hahn echo refocuses STATIC detuning -- and the parity branch
@@ -365,9 +388,11 @@ class ModifiedRamseyProgram(AveragerProgram):
         # the upper peak, so f_avg = f_ge - df/2. Both branches are then detuned by
         # +/- df/2 and rotate +/- 90 deg during tau.
         self.symmetric_ramsey = cfg.get("symmetric_ramsey", False)
-        self.drive_freq_mhz = (
-            cfg["f_ge"] - cfg["df"] / 2.0 if self.symmetric_ramsey else cfg["f_ge"]
-        )
+        default_drive = (
+            cfg["f_ge"] - cfg["df"] / 2.0
+            if self.symmetric_ramsey else cfg["f_ge"])
+        self.drive_freq_mhz = float(
+            cfg.get("ramsey_drive_freq_mhz", default_drive))
 
         # Closing-pi/2 phase sets the parity -> computational-state mapping. Base
         # phase is 180 deg (standard, undoes the first pi/2) or 90 deg (symmetric).
@@ -475,7 +500,8 @@ class ModifiedRamseyProgram(AveragerProgram):
         if wait_us <= 0:
             df_max = 1.0 / (2.0 * n_gaps * self.pulse_us)
             raise ValueError(
-                f"cfg['df']={cfg['df']} MHz needs tau={self.tau_us:.4f} us, but "
+                f"programmed tau={self.tau_us:.4f} us (physical "
+                f"df={cfg['df']} MHz), but "
                 f"the {'three' if self.use_pi_pulse else 'two'} qubit pulses "
                 f"already span {total_pulse_span_us:.4f} us "
                 f"(4*sigma = {self.pulse_us:.4f} us each). The parity phase "
@@ -501,9 +527,11 @@ class ModifiedRamseyProgram(AveragerProgram):
         # any timing error. Standard scheme detunes one branch by df; the
         # symmetric scheme detunes both by df/2 (hence its bandwidth advantage).
         rabi_pi2_mhz = 0.0997 / cfg["sigma"]
-        branch_detuning_mhz = (
-            cfg["df"] / 2.0 if self.symmetric_ramsey else cfg["df"]
-        )
+        branch_upper = float(cfg["f_ge"])
+        branch_lower = branch_upper - float(cfg["df"])
+        branch_detuning_mhz = max(
+            abs(self.drive_freq_mhz - branch_upper),
+            abs(self.drive_freq_mhz - branch_lower))
         self.drive_bandwidth_ratio = float(branch_detuning_mhz / rabi_pi2_mhz)
         # Above max_drive_bandwidth_ratio the off-resonant branch is not
         # rotated at all -- the parity mapping is unrealizable, so FAIL rather
@@ -904,7 +932,7 @@ class ModifiedRamsey(ExperimentClass):
                 'gap_indices': np.zeros(0, dtype=int),
                 # ---- Ramsey delay: requested vs realized ------------------
                 # Requested centre-to-centre precession time.
-                'tau_us': 1.0 / (2.0 * self.cfg["df"]),
+                'tau_us': float(prog.tau_us),
                 # Centre-to-centre time actually realized after the edge-gap
                 # correction and tProc-cycle quantization; this is the number
                 # the parity phase pi condition is set by.

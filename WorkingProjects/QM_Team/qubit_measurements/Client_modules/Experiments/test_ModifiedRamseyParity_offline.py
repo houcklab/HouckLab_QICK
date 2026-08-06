@@ -549,10 +549,14 @@ def test_planning_helpers():
                 by["flip_final_pi2"]["cfg"]["flip_final_pi2"] is True)
     ok &= check("echo variant sets use_pi_pulse",
                 by["echo_null"]["cfg"]["use_pi_pulse"] is True)
-    ok &= check("tau_offset scales df -> tau*(1+frac)",
-                abs(by["tau_offset"]["cfg"]["df"] - 0.5 / 1.25) < 1e-12)
-    ok &= check("detuned variant shifts f_ge by +df",
-                abs(by["drive_detuned"]["cfg"]["f_ge"] - 3055.7) < 1e-9)
+    ok &= check("tau_offset changes programmed tau, not physical df",
+                by["tau_offset"]["cfg"]["df"] == 0.5
+                and abs(by["tau_offset"]["cfg"]["ramsey_tau_us"] - 1.25)
+                < 1e-12)
+    ok &= check("detuned variant changes drive, not physical f_ge",
+                by["drive_detuned"]["cfg"]["f_ge"] == 3055.2
+                and abs(by["drive_detuned"]["cfg"]["ramsey_drive_freq_mhz"]
+                        - 3055.7) < 1e-9)
     ok &= check("drive_off variant zeroes pi2_gain",
                 by["drive_off"]["cfg"]["pi2_gain"] == 0)
     ok &= check("every variant stamps mr_control_type",
@@ -596,11 +600,25 @@ def test_reset_and_binsize():
     ok = check("g-fraction increases with reset cycle",
                np.all(np.diff(out["g_fraction"]) > 0),
                f"fractions {np.round(out['g_fraction'], 3)}")
-    ok &= check("converged flag set", out["converged"])
+    ok &= check("saved rows do not claim final reset convergence",
+                out["converged"] is None and out["n_resets_observed"] == 2
+                and out["warnings"],
+                str(out["warnings"]))
+    ok &= check("row k validates only preceding corrections",
+                np.allclose(out["validated_after_reset_g_fraction"],
+                            out["pre_correction_g_fraction"][1:]))
+
+    post_I, post_Q = cloud(0.01)
+    verified = reset_success_vs_cycle(
+        reset_I, reset_Q, cal, post_reset_I=post_I, post_reset_Q=post_Q)
+    ok &= check("explicit post-reset readout can establish convergence",
+                verified["converged"] is True
+                and verified["final_ground_fraction"] > 0.9)
 
     bad = reset_success_vs_cycle(reset_I[:1], reset_Q[:1], cal)
-    ok &= check("poor initialization flagged",
-                not bad["converged"] and bad["warnings"],
+    ok &= check("single pre-correction row cannot validate reset",
+                bad["converged"] is None
+                and bad["n_resets_observed"] == 0 and bad["warnings"],
                 bad["warnings"][0][:80] if bad["warnings"] else "")
 
     sim = simulate_telegraph_trace(60000, 20e-6, 300.0, 300.0, mu0=0.0,
@@ -636,8 +654,8 @@ def test_end_to_end():
 
     res = analyze_modified_ramsey_record(
         I, Q, dt, cal, drift_timescale_s=0.2, expected_dwell_s=1.0 / gamma,
-        symmetric_hmm=True, out_dir=None, save_plots=False,
-        save_sidecars=False)
+        symmetric_hmm=True, mapping_probabilities=(0.0, 1.0),
+        out_dir=None, save_plots=False, save_sidecars=False)
     s = res["summary"]
     ok = check("identifiable end-to-end", s["identifiable"],
                str(res["hmm"]["unidentifiable_reasons"]))
@@ -659,7 +677,8 @@ def test_end_to_end():
     Q0 = mid[1] + rng.normal(0, 1.0, 30000) * axis[1]
     cal0 = _make_cal(0.0, 0.02, 1.0, seed=23)   # overlapping calibration
     res0 = analyze_modified_ramsey_record(
-        I0, Q0, dt, cal0, out_dir=None, save_plots=False, save_sidecars=False)
+        I0, Q0, dt, cal0, mapping_probabilities=(0.0, 1.0),
+        out_dir=None, save_plots=False, save_sidecars=False)
     ok &= check("zero-contrast record -> unidentifiable end-to-end",
                 not res0["summary"]["identifiable"]
                 and math.isnan(res0["summary"]["gamma01_hz"]))
@@ -668,6 +687,154 @@ def test_end_to_end():
                                 acf=res0["acf"], psd=res0["psd"],
                                 drift=res0["drift"])
     ok &= check("quality gates carry the warnings", not gate["clean"])
+    return ok
+
+
+def test_imperfect_mapping_and_bad_samples():
+    print("\n=== 17. Imperfect mapping, NaNs, and nonuniform timing ===")
+    rng = np.random.default_rng(24)
+    gamma = 250.0
+    dt = 20e-6
+    n = 50000
+    hidden = simulate_telegraph_trace(
+        n, dt, gamma, gamma, mu0=0.0, mu1=1.0,
+        sigma0=1e-9, sigma1=1e-9, seed=25)["states"]
+    p0, p1 = 0.15, 0.85
+    prepared_e = rng.random(n) < np.where(hidden == 0, p0, p1)
+    v = rng.normal(np.where(prepared_e, 4.0, 0.0), 1.0)
+    emissions = {
+        "model": "ge_mixture", "mu_g": 0.0, "mu_e": 4.0,
+        "sigma_g": 1.0, "sigma_e": 1.0,
+        "p_e_state0": p0, "p_e_state1": p1,
+    }
+    fit = fit_two_state_hmm(v, dt, emissions, symmetric=True)
+    ok = check("imperfect-mapping mixture is identifiable", fit["identifiable"],
+               str(fit["unidentifiable_reasons"]))
+    ok &= check("mixture model recovers switching rate",
+                close(fit["gamma01_hz"], gamma, 0.25),
+                f"fit {fit['gamma01_hz']:.1f} vs {gamma}")
+
+    v_bad = v.copy(); v_bad[10] = np.nan
+    try:
+        fit_two_state_hmm(v_bad, dt, emissions, symmetric=True)
+        rejected = False
+    except ValueError:
+        rejected = True
+    ok &= check("direct HMM rejects non-finite samples", rejected)
+
+    cal = _make_cal(0.0, 4.0, 1.0, seed=26)
+    axis, mid = cal["axis"], cal["midpoint"]
+    I = mid[0] + v * axis[0]
+    Q = mid[1] + v * axis[1]
+    I[100] = np.nan
+    analyzed = analyze_modified_ramsey_record(
+        I, Q, dt, cal, mapping_probabilities=(p0, p1),
+        out_dir=None, save_plots=False, save_sidecars=False)
+    ok &= check("end-to-end analysis jointly filters bad IQ",
+                analyzed["summary"]["n_samples_removed_nonfinite"] == 1)
+    ok &= check("gap forces exact-time HMM and skips uniform estimators",
+                not analyzed["summary"]["uniform_timing"]
+                and not analyzed["acf"]["fit_ok"]
+                and not analyzed["psd"]["fit_ok"]
+                and any("nonuniform" in w for w in
+                        analyzed["summary"]["warnings"]))
+    return ok
+
+
+def test_plot_and_sidecar_paths():
+    """Exercise save_plots=True end to end.
+
+    Every other end-to-end test passes save_plots=False, so the plotting
+    helpers were never run against the "ge_mixture" emission spec that
+    analyze_modified_ramsey_record ALWAYS builds. _plot_hmm indexed em["mu0"],
+    which only exists on the plain-Gaussian spec, so every real run that saved
+    plots died with KeyError: 'mu0' after acquisition.
+    """
+    print("\n=== 19. Plot + sidecar output paths (ge_mixture emissions) ===")
+    import tempfile
+    cal = _make_cal(0.0, 4.0, 1.0, seed=31)
+    gamma, dt, n = 200.0, 20e-6, 30000
+    sim = simulate_telegraph_trace(
+        n, dt, gamma, gamma, mu0=cal["proj_g_mean"], mu1=cal["proj_e_mean"],
+        sigma0=cal["proj_g_sigma"], sigma1=cal["proj_e_sigma"], seed=32)
+    axis, mid = cal["axis"], cal["midpoint"]
+    I = mid[0] + sim["v"] * axis[0]
+    Q = mid[1] + sim["v"] * axis[1]
+
+    ok = True
+    with tempfile.TemporaryDirectory() as td:
+        # identifiable record, plots + sidecars ON (the production call shape)
+        res = analyze_modified_ramsey_record(
+            I, Q, dt, cal, expected_dwell_s=1.0 / gamma,
+            mapping_probabilities=(0.1, 0.9),
+            out_dir=td, base_name="plt", save_plots=True, save_sidecars=True)
+        ok &= check("ge_mixture record renders plots without KeyError",
+                    res["hmm"]["emissions_used"]["model"] == "ge_mixture")
+        written = sorted(os.listdir(td))
+        for suffix in ("_hmm.png", "_calibration.png", "_projected_trace.png",
+                       "_acf_psd.png", "_rate_vs_bin.png", "_dwells.png",
+                       "_analysis.json"):
+            ok &= check(f"wrote plt{suffix}", f"plt{suffix}" in written,
+                        str(written))
+        ok &= check("every written plot is non-empty",
+                    all(os.path.getsize(os.path.join(td, f)) > 0
+                        for f in written), str(written))
+
+    # an UNIDENTIFIABLE record must also render (rates withheld -> nan title)
+    with tempfile.TemporaryDirectory() as td:
+        rng = np.random.default_rng(33)
+        cal0 = _make_cal(0.0, 0.02, 1.0, seed=34)
+        I0 = cal0["midpoint"][0] + rng.normal(0, 1.0, 20000) * cal0["axis"][0]
+        Q0 = cal0["midpoint"][1] + rng.normal(0, 1.0, 20000) * cal0["axis"][1]
+        res0 = analyze_modified_ramsey_record(
+            I0, Q0, dt, cal0, mapping_probabilities=(0.1, 0.9),
+            out_dir=td, base_name="unid", save_plots=True, save_sidecars=True)
+        ok &= check("unidentifiable record still renders plots",
+                    not res0["summary"]["identifiable"]
+                    and "unid_hmm.png" in os.listdir(td))
+
+    # the plain-Gaussian emission spec must keep working through _plot_hmm
+    with tempfile.TemporaryDirectory() as td:
+        em = {"mu0": cal["proj_g_mean"], "mu1": cal["proj_e_mean"],
+              "sigma0": cal["proj_g_sigma"], "sigma1": cal["proj_e_sigma"]}
+        fit = fit_two_state_hmm(sim["v"], dt, em, symmetric=True)
+        from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ModifiedRamseyParity import (
+            _plot_hmm,
+        )
+        path = os.path.join(td, "gauss_hmm.png")
+        _plot_hmm(sim["t_s"], sim["v"], fit, path)
+        ok &= check("plain-Gaussian emission spec still plots",
+                    fit["emissions_used"].get("model", "gaussian") == "gaussian"
+                    and os.path.getsize(path) > 0)
+    return ok
+
+
+def test_controls_require_evidence():
+    print("\n=== 18. Control verdicts require actual evidence ===")
+    main = {
+        "label": "parity",
+        "hmm": {"identifiable": True},
+        "acf": {"amplitude": 1.0},
+        "occupancy_state1": 0.3,
+    }
+    missing_flip = {
+        "control_type": "flip_final_pi2",
+        "hmm": {"identifiable": True},
+        "acf": {"amplitude": 0.9},
+    }
+    missing_echo = {
+        "control_type": "echo_null",
+        "hmm": {"identifiable": True},
+        "acf": {"amplitude": float("nan")},
+    }
+    result = compare_parity_controls(main, [missing_flip, missing_echo])
+    ok = check("missing flip occupancy fails", result["controls"][0]["checked"] is False)
+    ok &= check("missing echo suppression evidence fails",
+                result["controls"][1]["checked"] is False)
+    ok &= check("missing evidence cannot produce all-expected verdict",
+                result["all_expected"] is False)
+    ok &= check("no controls cannot produce all-expected verdict",
+                compare_parity_controls(main, [])["all_expected"] is False)
     return ok
 
 
@@ -773,6 +940,9 @@ def main():
         test_planning_helpers,
         test_reset_and_binsize,
         test_end_to_end,
+        test_imperfect_mapping_and_bad_samples,
+        test_plot_and_sidecar_paths,
+        test_controls_require_evidence,
         test_program_buffer_and_ledger,
         test_forward_backward_consistency,
     ]
