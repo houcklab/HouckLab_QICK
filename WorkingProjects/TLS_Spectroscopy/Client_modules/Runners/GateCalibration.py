@@ -22,8 +22,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
-QUBIT = "q4"
-CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
+QUBIT = "q5"
+CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
 LIVE_PLOTS = True
 
 FF_HOLD_GAIN = 0
@@ -41,13 +41,13 @@ THERMALIZATION_US = 2.0
 PASSIVE_RESET_US = 1000.0
 
 P_TRANSMISSION = {
-    "run": False,
+    "run": True,
     "shots": 1000,
-    "freq_start_mhz": 7245,
-    "freq_stop_mhz": 7255,
-    "freq_points": 201,
-    "spec_amp": 2000,
-    "spec_len_us": 15,
+    "freq_start_mhz": 7114.0,
+    "freq_stop_mhz": 7124.0,
+    "freq_points": 251,
+    "spec_amp": 1200,
+    "spec_len_us": 10,
 }
 
 P_TRANSMISSION_SWEEP = {

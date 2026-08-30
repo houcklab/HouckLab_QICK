@@ -28,8 +28,7 @@ class TransReadProgram(AveragerProgram):
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         set_readout_pulse(self, read_freq)
         self.ff_segs = ff_pulse.build_park_hold(
-            self, hold_us=(float(cfg["read_length"])
-                           + float(cfg.get("adc_trig_offset", 0.0)) + 2.0))
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):

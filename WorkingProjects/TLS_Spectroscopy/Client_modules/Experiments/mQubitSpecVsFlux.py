@@ -60,17 +60,8 @@ class QubitSpecProgram(RAveragerProgram):
             self.set_pulse_registers(**kw)
 
         set_readout_pulse(self, f_res)
-        if True:
-            if style == "arb":
-                drive_us = 4.0 * float(cfg["sigma"])
-            elif style == "flat_top":
-                drive_us = (4.0 * float(cfg["sigma"])
-                            + float(cfg.get("flat_top_length") or 0.0))
-            else:
-                drive_us = float(cfg.get("qubit_length", 0.0))
-            self.ff_segs = ff_pulse.build_park_hold(
-                self, hold_us=(drive_us + float(cfg["read_length"])
-                               + float(cfg.get("adc_trig_offset", 0.0)) + 2.0))
+        self.ff_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.sync_all(self.us2cycles(1))
 
     def body(self):
