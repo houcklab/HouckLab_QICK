@@ -23,7 +23,9 @@ class QubitSpecProgram(RAveragerProgram):
         cfg = self.cfg
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        ff_pulse.declare_static_park(self)
+        self.ff_segs = None
+        if cfg.get("ff_ch", None) is not None:
+            ff_pulse.declare_ff(self)
         for ch in cfg["ro_chs"]:
             self.declare_readout(ch=ch,
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -59,19 +61,42 @@ class QubitSpecProgram(RAveragerProgram):
             self.set_pulse_registers(**kw)
 
         set_readout_pulse(self, f_res)
+        if cfg.get("ff_ch", None) is not None:
+            if style == "arb":
+                drive_us = 4.0 * float(cfg["sigma"])
+            elif style == "flat_top":
+                drive_us = (4.0 * float(cfg["sigma"])
+                            + float(cfg.get("flat_top_length") or 0.0))
+            else:
+                drive_us = float(cfg.get("qubit_length", 0.0))
+            self.ff_segs = ff_pulse.build_ramp_hold_ramp(
+                self,
+                hold_us=(drive_us + float(cfg["read_length"])
+                         + float(cfg.get("adc_trig_offset", 0.0)) + 2.0),
+                ff_gain=cfg.get("ff_gain", 0),
+                dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+                dt_def_us=cfg.get("dt_pulsedef", 0.002))
         self.sync_all(self.us2cycles(1))
 
     def body(self):
-        ff_pulse.play_static_park(
-            self, settle_us=self.cfg.get("ff_park_settle_us", 0.05))
+        cfg = self.cfg
+        if self.ff_segs is not None:
+            ff_pulse.assert_park(self, self.ff_segs)
+            self.sync_all(self.us2cycles(0.05))
+            ff_pulse.play_ramp_up_hold(self, self.ff_segs,
+                                       dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.05))
-        self.pulse(ch=self.cfg["qubit_ch"])
+        self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+        self.measure(pulse_ch=cfg["res_ch"],
+                     adcs=cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+                     syncdelay=self.us2cycles(0.01))
+        if self.ff_segs is not None:
+            ff_pulse.play_ramp_down(self, self.ff_segs)
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)
