@@ -40,25 +40,6 @@ def flux_settle_us(cfg):
     return float(cfg.get("flux_settle_time_us", DEFAULT_FLUX_SETTLE_US))
 
 
-def _warn_slew(delta, ramp_us):
-    if abs(delta) < 1e-9 or ramp_us <= 0:
-        return
-    slew = abs(delta) / float(ramp_us)
-    if slew <= MAX_SAFE_SLEW_DAC_PER_US:
-        return
-    key = (round(abs(delta)), round(float(ramp_us), 4))
-    if key in _SLEW_WARNED:
-        return
-    _SLEW_WARNED.add(key)
-    print(f"[ff_pulse] flux slew {slew:.0f} DAC/us "
-          f"({abs(delta):.0f} DAC in {ramp_us:g} us) exceeds the measured state-safe "
-          f"limit of {MAX_SAFE_SLEW_DAC_PER_US:.0f} DAC/us.")
-    print(f"[ff_pulse]   On q4 a 20 ns ramp to 8000 destroyed the excited state "
-          f"(blob separation 0.04x); 0.5 us kept 0.88x.")
-    print(f"[ff_pulse]   Intentional for step-response characterisation; for any "
-          f"experiment that must PRESERVE the qubit state, raise ff_ramp_length.")
-
-
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          dt_def_us=0.002, compensation=None, distortion_model=None,
                          maxv=None, park_gain=None, name_prefix="ff"):
@@ -71,7 +52,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     ff_gain = float(np.clip(ff_gain, -maxv, maxv))
     delta = ff_gain - park_gain
     hold_us = max(float(hold_us), dt_def_us)
-    _warn_slew(delta, ramp_us)
 
     def _lvl(mult):
         return int(np.clip(park_gain + float(mult) * delta, -maxv, maxv))
@@ -130,8 +110,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
 
 STATE_SAFE_RAMP_US = 0.5
 DEFAULT_FLUX_SETTLE_US = 0.5
-MAX_SAFE_SLEW_DAC_PER_US = 20000.0
-_SLEW_WARNED = set()
 _SWEEP_BASELINE_NOTED = set()
 
 _MAX_CONST_LEN = 65000
