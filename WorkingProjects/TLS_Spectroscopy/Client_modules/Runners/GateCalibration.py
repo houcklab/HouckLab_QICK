@@ -95,15 +95,17 @@ P_SS_CAL = {
 }
 
 P_RABI_CHEVRON_IQ = {
-    "run": False,
-    "shots": 100,
+    "run": True,
+    "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 2000,
-    "a_max": 12000,
+    "a_min": 0,
+    "a_max": 32000,
     "a_points": 21,
-    "freq_span_mhz": 2.0,
-    "freq_points": 21,
+    "sigma_us": 2.38,
+    "freq_span_mhz": 1.0,
+    "freq_points": 41,
+    "relax_delay_us": 500.0,
 }
 
 P_RABI_CHEVRON_SS = {
@@ -305,7 +307,9 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
         "reset_mode": "passive",
-        "relax_delay": PASSIVE_RESET_US,
+        "qubit_pulse_style": "arb",
+        "sigma": p["sigma_us"],
+        "relax_delay": p.get("relax_delay_us", PASSIVE_RESET_US),
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,

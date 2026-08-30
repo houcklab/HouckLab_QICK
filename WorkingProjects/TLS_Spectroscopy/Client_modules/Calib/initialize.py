@@ -4,7 +4,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import mak
 FF_CH = 3
 
 FF_Qubits = {
-    str(4): {'channel': FF_CH, 'delay_time': 0.0},
+    str(1): {'channel': FF_CH, 'delay_time': 0.0},
 }
 
 
@@ -14,34 +14,34 @@ BaseConfig = {
     "ff_ch": FF_CH,
     "ro_chs": [0],
     "nqz": 2,
-    "qubit_nqz": 1,
+    "qubit_nqz": 2,
     "ff_nqz": 1,
     "mixer_freq": 0.0,
     "cavity_LO": 0,
 
     "reps": 1000,
-    "relax_delay": 1500,
+    "relax_delay": 1200,
     "flux_settle_time_us": 0.5,
     "ff_ramp_length": 0.5,
     "adc_trig_offset": 0.5,
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 15.0,
+    "read_length": 50.0,
     "readout_guard_us": 1.0,
-    "read_pulse_gain": 3500,
-    "read_pulse_freq": 7248.967089,
+    "read_pulse_gain": 9000,
+    "read_pulse_freq": 6823.6700,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 2534.550,
-    "qubit_pi_freq": 2534.550,
-    "qubit_pi_gain": 13750,
-    "qubit_pi2_gain": 6875,
+    "qubit_freq": 5545.25,
+    "qubit_pi_freq": 5545.25,
+    "qubit_pi_gain": 32766,
+    "qubit_pi2_gain": 16383,
     "qubit_drag_beta": 0.0,
     "qubit_anharmonicity_mhz": -200.0,
-    "qubit_gain": 13750,
+    "qubit_gain": 32766,
     "qubit_length": 0.25,
-    "sigma": 0.10,
+    "sigma": 2.38,
     "flat_top_length": None,
 
     "ff_park_gain": 0,
@@ -62,4 +62,4 @@ FLUX_FIT_PARAMS = None
 FF_PARK_GAIN = 0
 FF_STEP_TARGET_GAIN = 8000
 
-outerFolder = 'Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC'
+outerFolder = 'Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_08_28/RFSOC'

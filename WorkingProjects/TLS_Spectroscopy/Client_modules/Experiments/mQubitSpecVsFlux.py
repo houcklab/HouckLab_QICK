@@ -6,6 +6,7 @@ from scipy import signal
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
@@ -22,6 +23,7 @@ class QubitSpecProgram(RAveragerProgram):
         cfg = self.cfg
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        ff_pulse.declare_static_park(self)
         for ch in cfg["ro_chs"]:
             self.declare_readout(ch=ch,
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -60,6 +62,8 @@ class QubitSpecProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(1))
 
     def body(self):
+        ff_pulse.play_static_park(
+            self, settle_us=self.cfg.get("ff_park_settle_us", 0.05))
         self.sync_all(self.us2cycles(0.05))
         self.pulse(ch=self.cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
