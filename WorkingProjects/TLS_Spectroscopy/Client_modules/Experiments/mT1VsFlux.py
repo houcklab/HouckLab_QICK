@@ -403,7 +403,8 @@ class FFT1Program(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        if cfg.get("do_ff", True):
+        ff_pulse.declare_park_hold(self)
+        if cfg.get("do_ff", True) and not getattr(self, "do_park_hold", False):
             ff_pulse.declare_ff(self)
         for ch in cfg["ro_chs"]:
             self.declare_readout(ch=ch,
@@ -432,6 +433,10 @@ class FFT1Program(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
+        ff_pulse.play_park_pulse(
+            self, hold_us=ff_pulse.sequence_hold_us(
+                cfg, drive_us=ff_pulse.drive_estimate_us(cfg), readouts=2,
+                extra_us=float(cfg.get("ff_hold", 0.0) or 0.0)))
         if cfg.get("do_ff", True):
             ff_pulse.assert_park(self, self.ff_segs)
         if active_reset.uses_feedback(cfg):

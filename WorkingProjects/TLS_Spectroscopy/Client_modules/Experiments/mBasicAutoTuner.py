@@ -1217,7 +1217,7 @@ def _declare_common(program, include_qubit=True):
                         ro_ch=cfg["ro_chs"][0])
     if include_qubit:
         program.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-    ff_pulse.declare_static_park(program)
+    ff_pulse.declare_park_hold(program)
     for ro_ch in cfg["ro_chs"]:
         program.declare_readout(
             ch=ro_ch, freq=cfg["read_pulse_freq"],
@@ -1228,7 +1228,7 @@ def _declare_common(program, include_qubit=True):
 
 
 def _replay_static_flux(program):
-    ff_pulse.play_static_park(
+    ff_pulse.play_park_pulse(
         program, settle_us=program.cfg.get("ff_park_settle_us", 0.05))
 
 

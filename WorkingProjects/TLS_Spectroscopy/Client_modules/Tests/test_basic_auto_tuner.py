@@ -4161,37 +4161,63 @@ def test_static_fast_flux_is_replayed_but_never_tuned():
     }
 
 
-def test_static_fast_flux_helper_forces_zero_and_nonzero_park():
-    class FakeProgram:
-        def __init__(self, gain):
-            self.cfg = {"ff_ch": 3, "ff_nqz": 1, "ff_park_gain": gain}
-            self.events = []
+class _FakeParkProgram:
+    def __init__(self, gain, **extra):
+        self.cfg = {"ff_ch": 3, "ff_nqz": 1, "ff_park_gain": gain}
+        self.cfg.update(extra)
+        self.events = []
 
-        def declare_gen(self, **kwargs):
-            self.events.append(("declare", kwargs))
+    def declare_gen(self, **kwargs):
+        self.events.append(("declare", kwargs))
 
-        def set_pulse_registers(self, **kwargs):
-            self.events.append(("registers", kwargs))
+    def set_pulse_registers(self, **kwargs):
+        self.events.append(("registers", kwargs))
 
-        def us2cycles(self, value, **kwargs):
-            del kwargs
-            return int(round(100 * float(value)))
+    def us2cycles(self, value, **kwargs):
+        del kwargs
+        return int(round(100 * float(value)))
 
-        def pulse(self, **kwargs):
-            self.events.append(("pulse", kwargs))
+    def pulse(self, **kwargs):
+        self.events.append(("pulse", kwargs))
 
-        def sync_all(self, cycles):
-            self.events.append(("sync", cycles))
+    def sync_all(self, cycles):
+        self.events.append(("sync", cycles))
 
-    for gain in (0, -7341, 8123):
-        program = FakeProgram(gain)
-        ff_pulse.declare_static_park(program)
-        ff_pulse.play_static_park(program, settle_us=0.05)
+    def synci(self, cycles):
+        self.events.append(("synci", cycles))
+
+
+def test_park_pulse_holds_the_park_gain_then_returns_to_zero():
+    for gain in (-7341, 8123):
+        program = _FakeParkProgram(gain)
+        ff_pulse.declare_park_hold(program)
+        ff_pulse.play_park_pulse(program, hold_us=40.0, settle_us=0.05)
         registers = [event[1] for event in program.events
                      if event[0] == "registers"]
-        assert len(registers) == 1
-        assert registers[0]["gain"] == gain
+        assert registers
+        assert all(r["gain"] == gain for r in registers)
+        assert registers[-1]["stdysel"] == "zero"
+        assert all(r["stdysel"] == "last" for r in registers[:-1])
         assert any(event[0] == "pulse" for event in program.events)
+        assert any(event[0] == "synci" for event in program.events)
+
+
+def test_park_pulse_is_a_noop_at_zero_park():
+    program = _FakeParkProgram(0)
+    ff_pulse.declare_park_hold(program)
+    ff_pulse.play_park_pulse(program, hold_us=40.0)
+    assert not [event for event in program.events if event[0] == "registers"]
+
+
+def test_static_park_refuses_a_nonzero_dc_park():
+    program = _FakeParkProgram(8123)
+    ff_pulse.declare_static_park(program)
+    try:
+        ff_pulse.play_static_park(program, settle_us=0.05)
+    except ValueError as exc:
+        assert "pulsed park hold" in str(exc)
+    else:
+        raise AssertionError("a nonzero DC park must be refused")
 
 
 def test_dynamic_flux_excursion_is_not_mistaken_for_static_park():

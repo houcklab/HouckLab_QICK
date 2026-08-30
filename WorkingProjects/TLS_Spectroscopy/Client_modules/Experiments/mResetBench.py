@@ -22,7 +22,7 @@ class BenchResetProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        ff_pulse.declare_static_park(self)
+        ff_pulse.declare_park_hold(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"],
@@ -41,7 +41,7 @@ class BenchResetProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_static_park(self, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        ff_pulse.play_park_pulse(self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         if cfg.get("prep_excited", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))

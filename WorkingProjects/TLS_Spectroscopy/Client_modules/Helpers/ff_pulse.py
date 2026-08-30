@@ -68,6 +68,12 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     if park_gain is None:
         park_gain = cfg.get("ff_park_gain", 0)
     park_gain = float(np.clip(park_gain, -maxv, maxv))
+    if park_gain != 0 and not getattr(prog, "do_park_hold", False):
+        raise ValueError(
+            "this excursion ramps from ff_park_gain=%g, but the program has no "
+            "pulsed park hold, so the flux line is not actually at that level.  "
+            "Migrate it with declare_park_hold/build_park_hold/play_park_up/"
+            "play_park_down, or set ff_park_gain=0." % park_gain)
     ff_gain = float(np.clip(ff_gain, -maxv, maxv))
     delta = ff_gain - park_gain
     hold_us = max(float(hold_us), dt_def_us)
@@ -196,6 +202,19 @@ def play_static_park(prog, settle_us=0.05):
         prog.sync_all(prog.us2cycles(settle_us))
 
 
+def sequence_hold_us(cfg, drive_us=0.0, readouts=1, extra_us=0.0):
+    read = (float(cfg.get("read_length", 0.0))
+            + float(cfg.get("adc_trig_offset", 0.0)) + 1.0)
+    reset = 0.0
+    if cfg.get("rot_reset") or str(cfg.get("reset_mode", "passive")) not in (
+            "passive", "none", "None"):
+        iters = int(cfg.get("reset_max_iters", 3) or 3)
+        sigma = float(cfg.get("sigma", 0.0) or 0.0)
+        reset = iters * (read + 4.0 * sigma
+                         + float(cfg.get("reset_thermalization_us", 2.0) or 2.0) + 1.0)
+    return reset + float(drive_us) + readouts * read + float(extra_us) + 2.0
+
+
 def park_hold_configured(cfg):
     return (static_park_configured(cfg)
             and int(cfg.get("ff_park_gain", 0) or 0) != 0)
@@ -234,6 +253,43 @@ def play_park_down(prog, segs):
     if segs is None:
         return
     play_ramp_down(prog, segs)
+
+
+def drive_estimate_us(cfg):
+    style = str(cfg.get("qubit_pulse_style", "const"))
+    sigma = float(cfg.get("sigma", 0.0) or 0.0)
+    if style == "arb":
+        one = 4.0 * sigma
+    elif style == "flat_top":
+        one = 4.0 * sigma + float(cfg.get("flat_top_length") or 0.0)
+    else:
+        one = float(cfg.get("qubit_length", 0.0) or 0.0)
+    n = max(int(cfg.get("n_pulses", 1) or 1), int(cfg.get("repeats", 1) or 1), 1)
+    return one * n
+
+
+def play_park_pulse(prog, hold_us=None, settle_us=0.05):
+    if not getattr(prog, "do_park_hold", False):
+        return
+    cfg = prog.cfg
+    park = int(cfg.get("ff_park_gain", 0) or 0)
+    if park == 0:
+        return
+    if hold_us is None:
+        hold_us = sequence_hold_us(cfg, drive_us=drive_estimate_us(cfg))
+    total = max(int(prog.us2cycles(float(hold_us), gen_ch=cfg["ff_ch"])), 3)
+    n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
+    base, extra = divmod(total, n_chunks)
+    for c in range(n_chunks):
+        length = max(base + (1 if c < extra else 0), 3)
+        prog.set_pulse_registers(
+            ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+            stdysel=('zero' if c == n_chunks - 1 else 'last'),
+            gain=park, length=int(length))
+        prog.pulse(ch=cfg["ff_ch"])
+    settle_us = max(float(settle_us), 0.0)
+    if settle_us > 0:
+        prog.synci(prog.us2cycles(settle_us))
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):

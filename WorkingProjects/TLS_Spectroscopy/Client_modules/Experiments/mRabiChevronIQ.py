@@ -24,14 +24,20 @@ def flux_hold_us(cfg, cover_readout):
 
 def flux_hold_declare(prog):
     prog.do_flux_hold = bool(prog.cfg.get("ff_hold_gain", 0))
-    prog.do_static_ff_park = bool(ff_pulse.static_park_configured(prog.cfg))
-    if prog.do_flux_hold or prog.do_static_ff_park:
+    prog.do_park_hold = bool(ff_pulse.park_hold_configured(prog.cfg))
+    if prog.do_flux_hold or prog.do_park_hold:
         ff_pulse.declare_ff(prog)
 
 
 def flux_hold_build(prog):
     if getattr(prog, "do_flux_hold", False):
         cfg = prog.cfg
+        if int(cfg.get("ff_park_gain", 0) or 0) != 0:
+            raise ValueError(
+                "a chevron flux excursion (ff_hold_gain) on top of a nonzero "
+                "ff_park_gain is not supported: the park and the excursion would "
+                "queue sequentially on the same generator instead of nesting.  "
+                "Use one or the other.")
         prog.ff_segs = ff_pulse.build_ramp_hold_ramp(
             prog, hold_us=flux_hold_us(cfg, cover_readout=not bool(cfg.get("readout_after_park", True))),
             ff_gain=int(cfg["ff_hold_gain"]),
@@ -93,8 +99,8 @@ def rabi_flux_body(prog):
         prog.sync_all(prog.us2cycles(max(float(cfg.get("baseline_rearm_us", 0.5)), 0.05)))
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         prog.sync_all(prog.us2cycles(0.01))
-    elif getattr(prog, "do_static_ff_park", False):
-        ff_pulse.play_static_park(
+    else:
+        ff_pulse.play_park_pulse(
             prog, settle_us=cfg.get("ff_park_settle_us", 0.05))
     for _ in range(int(cfg["n_pulses"])):
         prog.pulse(ch=cfg["qubit_ch"])
