@@ -20,23 +20,16 @@ class TransReadProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.ff_segs = None
-        if cfg.get("ff_ch", None) is not None:
-            ff_pulse.declare_ff(self)
+        ff_pulse.declare_park_hold(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
                                  gen_ch=cfg["res_ch"])
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         set_readout_pulse(self, read_freq)
-        if cfg.get("ff_ch", None) is not None:
-            self.ff_segs = ff_pulse.build_ramp_hold_ramp(
-                self,
-                hold_us=(float(cfg["read_length"])
-                         + float(cfg.get("adc_trig_offset", 0.0)) + 2.0),
-                ff_gain=cfg.get("ff_gain", 0),
-                dt_play_us=cfg.get("dt_pulseplay", 5.0),
-                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
-                dt_def_us=cfg.get("dt_pulsedef", 0.002))
+        self.ff_segs = ff_pulse.build_park_hold(
+            self, hold_us=(float(cfg["read_length"])
+                           + float(cfg.get("adc_trig_offset", 0.0)) + 2.0))
         self.synci(200)
 
     def body(self):
@@ -46,15 +39,11 @@ class TransReadProgram(AveragerProgram):
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
             return
-        ff_pulse.assert_park(self, self.ff_segs)
-        self.sync_all(self.us2cycles(0.05))
-        ff_pulse.play_ramp_up_hold(self, self.ff_segs,
-                                   dt_play_us=cfg.get("dt_pulseplay", 5.0))
-        self.sync_all(self.us2cycles(0.01))
+        ff_pulse.play_park_up(self, self.ff_segs)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_ramp_down(self, self.ff_segs)
+        ff_pulse.play_park_down(self, self.ff_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
 

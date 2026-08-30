@@ -179,6 +179,14 @@ def assert_park(prog, segs, dt_us=0.1, force=False):
 def play_static_park(prog, settle_us=0.05):
     if not getattr(prog, "do_static_ff_park", False):
         return
+    if int(prog.cfg.get("ff_park_gain", 0) or 0) != 0:
+        raise ValueError(
+            "play_static_park holds ff_park_gain on the flux line as DC for the "
+            "entire run, including while idle.  On FTT02_AlOxJJ a 12252 DAC park "
+            "took the mixing chamber from base to 43 mK and held it there.  This "
+            "program has not been migrated to the pulsed park hold "
+            "(declare_park_hold / build_park_hold / play_park_up / play_park_down).  "
+            "Set ff_park_gain=0, or migrate it.")
     assert_park(
         prog, {"park": int(prog.cfg.get("ff_park_gain", 0) or 0)},
         force=True,
@@ -186,6 +194,46 @@ def play_static_park(prog, settle_us=0.05):
     settle_us = max(float(settle_us), 0.0)
     if settle_us > 0:
         prog.sync_all(prog.us2cycles(settle_us))
+
+
+def park_hold_configured(cfg):
+    return (static_park_configured(cfg)
+            and int(cfg.get("ff_park_gain", 0) or 0) != 0)
+
+
+def declare_park_hold(prog):
+    prog.do_park_hold = bool(park_hold_configured(prog.cfg))
+    if prog.do_park_hold:
+        declare_ff(prog)
+
+
+def build_park_hold(prog, hold_us):
+    if not getattr(prog, "do_park_hold", False):
+        return None
+    cfg = prog.cfg
+    return build_ramp_hold_ramp(
+        prog, hold_us=float(hold_us),
+        ff_gain=int(cfg.get("ff_park_gain", 0) or 0),
+        dt_play_us=cfg.get("dt_pulseplay", 5.0),
+        ramp_us=cfg.get("ff_ramp_length", STATE_SAFE_RAMP_US),
+        dt_def_us=cfg.get("dt_pulsedef", 0.002),
+        park_gain=0, name_prefix="ffpark")
+
+
+def play_park_up(prog, segs, settle_us=None):
+    if segs is None:
+        return
+    cfg = prog.cfg
+    play_ramp_up_hold(prog, segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+    s = flux_settle_us(cfg) if settle_us is None else float(settle_us)
+    if s > 0:
+        prog.sync_all(prog.us2cycles(s))
+
+
+def play_park_down(prog, segs):
+    if segs is None:
+        return
+    play_ramp_down(prog, segs)
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):
