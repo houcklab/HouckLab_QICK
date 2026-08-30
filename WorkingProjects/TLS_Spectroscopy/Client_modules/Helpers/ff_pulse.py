@@ -68,12 +68,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     if park_gain is None:
         park_gain = cfg.get("ff_park_gain", 0)
     park_gain = float(np.clip(park_gain, -maxv, maxv))
-    if park_gain != 0 and not getattr(prog, "do_park_hold", False):
-        raise ValueError(
-            "this excursion ramps from ff_park_gain=%g, but the program has no "
-            "pulsed park hold, so the flux line is not actually at that level.  "
-            "Migrate it with declare_park_hold/build_park_hold/play_park_up/"
-            "play_park_down, or set ff_park_gain=0." % park_gain)
     ff_gain = float(np.clip(ff_gain, -maxv, maxv))
     delta = ff_gain - park_gain
     hold_us = max(float(hold_us), dt_def_us)
@@ -138,6 +132,7 @@ STATE_SAFE_RAMP_US = 0.5
 DEFAULT_FLUX_SETTLE_US = 0.5
 MAX_SAFE_SLEW_DAC_PER_US = 20000.0
 _SLEW_WARNED = set()
+_SWEEP_BASELINE_NOTED = set()
 
 _MAX_CONST_LEN = 65000
 
@@ -213,6 +208,21 @@ def sequence_hold_us(cfg, drive_us=0.0, readouts=1, extra_us=0.0):
         reset = iters * (read + 4.0 * sigma
                          + float(cfg.get("reset_thermalization_us", 2.0) or 2.0) + 1.0)
     return reset + float(drive_us) + readouts * read + float(extra_us) + 2.0
+
+
+def sweep_baseline(cfg, explicit=None):
+    if explicit is not None:
+        return float(explicit)
+    inherited = float(cfg.get("ff_park_gain", 0) or 0)
+    if inherited != 0:
+        key = round(inherited)
+        if key not in _SWEEP_BASELINE_NOTED:
+            _SWEEP_BASELINE_NOTED.add(key)
+            print(f"[ff_pulse] this experiment sweeps the flux itself, so the "
+                  f"ff_park_gain={inherited:g} in your config is not an operating "
+                  f"point here.  Sweeping from 0; pass park_gain=... to sweep from "
+                  f"a deliberate baseline instead.")
+    return 0.0
 
 
 def park_hold_configured(cfg):

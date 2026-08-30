@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ff_pulse import sweep_baseline
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
     interleaved_average, resolve_rounds, suppress_stdout)
@@ -55,9 +56,11 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Resonator_Spec_vs_Flux', cfg=None, meta_dict=None,
-                 save_resonator_lookup=True, resonator_lookup_smooth_points=None, **kw):
+                 save_resonator_lookup=True, resonator_lookup_smooth_points=None,
+                 park_gain=None, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
+        self.park_gain = park_gain
         self.save_resonator_lookup = bool(save_resonator_lookup)
         self.resonator_lookup_smooth_points = resonator_lookup_smooth_points
 
@@ -76,6 +79,7 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         cfg = self.cfg
+        cfg["ff_park_gain"] = float(sweep_baseline(cfg, self.park_gain))
         f_vec = self._freq_vec()
         dc_vec = self._gain_vec()
         r_lo = 0.0

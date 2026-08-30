@@ -56,8 +56,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.long_time_ns = max(16, int(round(float(long_time_ns) / 4.0)) * 4)
         self.average_window_ns = float(average_window_ns)
         self.average_step_ns = max(float(average_step_ns), 4.0)
-        self.park_voltage = (park_voltage if park_voltage is not None
-                             else cfg.get("ff_park_gain", 0))
+        self.park_voltage = ff_pulse.sweep_baseline(cfg, park_voltage)
+        cfg["ff_park_gain"] = float(self.park_voltage)
         self.inter_target_wait_ns = float(inter_target_wait_ns)
         self.readout_after_park = bool(readout_after_park)
         self.park_readout_settle_ns = (float(park_readout_settle_ns)
