@@ -91,12 +91,13 @@ class SingleShotProgram(RAveragerProgram):
                                      length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
 
         set_readout_pulse(self, read_freq)
+        self.ff_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_pulse(
-            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        ff_pulse.play_park_up(self, self.ff_segs)
         feedback = active_reset.uses_feedback(cfg)
         if feedback:
             # The raw reset threshold is calibrated with a fixed readout drive gain.
@@ -145,9 +146,11 @@ class SingleShotProgram(RAveragerProgram):
                 self.sync_all(self.us2cycles(0.010))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(
-                         cfg.get("active_reset_post_measure_delay_us", 0.05)
-                         if feedback else cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        ff_pulse.play_park_down(self, self.ff_segs)
+        self.sync_all(self.us2cycles(
+            cfg.get("active_reset_post_measure_delay_us", 0.05)
+            if feedback else cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])
