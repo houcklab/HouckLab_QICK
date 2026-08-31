@@ -419,6 +419,15 @@ class FFT1Program(AveragerProgram):
 
         set_readout_pulse(self, read_freq)
 
+        self.do_herald_read = bool(active_reset.heralds(cfg))
+        self.do_park_hold = bool(ff_pulse.park_hold_configured(cfg))
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
+        if self.do_park_hold and self.ff_park_segs is None:
+            raise RuntimeError(
+                "ff_park_gain=%s is set but the park ramp was not built; "
+                "the flux would be stepped on and never released"
+                % cfg.get("ff_park_gain"))
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
         self.stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
         if cfg.get("do_ff", True) and self.stepping:
@@ -430,10 +439,6 @@ class FFT1Program(AveragerProgram):
                 ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
                 distortion_model=ff_pulse.make_distortion_model(self))
-        self.do_herald_read = bool(active_reset.heralds(cfg))
-        self.do_park_hold = bool(ff_pulse.park_hold_configured(cfg))
-        self.ff_park_segs = ff_pulse.build_park_hold(
-            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
