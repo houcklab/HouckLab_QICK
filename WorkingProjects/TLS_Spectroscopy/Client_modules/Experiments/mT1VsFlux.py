@@ -429,6 +429,7 @@ class FFT1Program(AveragerProgram):
                 ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
                 distortion_model=ff_pulse.make_distortion_model(self))
+        self.do_herald_read = bool(active_reset.heralds(cfg))
         self.do_park_hold = bool(ff_pulse.park_hold_configured(cfg))
         self.ff_park_segs = ff_pulse.build_park_hold(
             self, hold_us=ff_pulse.flux_settle_us(cfg))
@@ -457,9 +458,11 @@ class FFT1Program(AveragerProgram):
                 self._set_qubit_pulse()
             if read_gain is not None:
                 set_readout_pulse(self, self._read_freq_reg)
-        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))
+        if self.do_herald_read:
+            self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                         adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                         wait=True,
+                         syncdelay=self.us2cycles(cfg.get("herald_delay", 8.0)))
         if cfg.get("do_pi", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
@@ -476,15 +479,19 @@ class FFT1Program(AveragerProgram):
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)
-        super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=2 + n_reset,
+        n_herald = 1 if active_reset.heralds(self.cfg) else 0
+        super().acquire(soc, load_pulses=load_pulses,
+                        readouts_per_experiment=1 + n_herald + n_reset,
                         progress=progress)
         return self.collect_shots()
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
         n_reset = active_reset.active_reset_readouts(self.cfg)
-        h, f = n_reset, n_reset + 1
-        reads = 2 + n_reset
+        n_herald = 1 if active_reset.heralds(self.cfg) else 0
+        h = n_reset
+        f = n_reset + n_herald
+        reads = 1 + n_herald + n_reset
         buf_i = self.di_buf[0].reshape((self.cfg["reps"], reads))
         buf_q = self.dq_buf[0].reshape((self.cfg["reps"], reads))
         i0 = buf_i[:, h] / length
