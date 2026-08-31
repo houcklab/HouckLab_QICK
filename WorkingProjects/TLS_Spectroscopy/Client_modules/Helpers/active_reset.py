@@ -1,3 +1,6 @@
+import json
+import os
+
 import numpy as np
 
 
@@ -402,6 +405,50 @@ def active_reset_readouts(cfg):
     if not uses_feedback(cfg):
         return 0
     return int(cfg.get("reset_max_iters", 3))
+
+
+RESET_PROFILE_KEYS = ("read_pulse_freq", "read_pulse_gain", "read_length",
+                      "qubit_pi_freq", "qubit_pi_gain", "sigma", "ff_park_gain",
+                      "qubit_pulse_style")
+
+
+def _profile_path(outer_folder, path):
+    return os.path.join(str(outer_folder or "."), f"reset_profile_{path}.json")
+
+
+def _profile_key(cfg):
+    return {k: cfg.get(k) for k in RESET_PROFILE_KEYS}
+
+
+def load_reset_profile(cfg, path="q", outer_folder=""):
+    fname = _profile_path(outer_folder, path)
+    try:
+        with open(fname) as fh:
+            saved = json.load(fh)
+    except Exception:
+        return None
+    if saved.get("key") != _profile_key(cfg):
+        print(f"[reset] cached profile {fname} was taken at different readout/pulse "
+              f"settings; re-probing")
+        return None
+    rec = saved.get("record")
+    if not rotated_probe_record(rec):
+        return None
+    print(f"[reset] reusing the validated reset profile from {fname}")
+    return rec
+
+
+def save_reset_profile(rec, cfg, path="q", outer_folder=""):
+    if not rotated_probe_record(rec):
+        return
+    fname = _profile_path(outer_folder, path)
+    try:
+        os.makedirs(os.path.dirname(fname) or ".", exist_ok=True)
+        with open(fname, "w") as fh:
+            json.dump({"key": _profile_key(cfg), "record": rec}, fh, indent=2)
+        print(f"[reset] saved the validated reset profile to {fname}")
+    except Exception as exc:
+        print(f"[reset] could not save the reset profile ({type(exc).__name__})")
 
 
 def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000,

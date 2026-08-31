@@ -33,7 +33,7 @@ RESET_MODE = "feedback"
 PROBE_RESET = True
 ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
-RESET_THRESHOLD_RAW = 7087
+RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
@@ -385,17 +385,21 @@ def main():
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS
-    feedback_requested = (active_reset.uses_feedback(RESET_MODE)
-                          and bool(P_RABI_CHEVRON_SS["run"]))
+    feedback_requested = active_reset.uses_feedback(RESET_MODE)
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
               "its own projection angle every probe and does not need it.")
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
     if feedback_requested and PROBE_RESET:
-        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder,
-                                 reset_max_iters=int(RESET_MAX_ITERS))
+        rec = active_reset.load_reset_profile(
+            BaseConfig, path=QUBIT, outer_folder=outer_folder)
+        if rec is None:
+            rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
+                                     outer_folder=outer_folder,
+                                     reset_max_iters=int(RESET_MAX_ITERS))
+            active_reset.save_reset_profile(
+                rec, BaseConfig, path=QUBIT, outer_folder=outer_folder)
         if rec is None:
             RESET_MODE = "passive"
             ROT_RESET_PARAMS = None

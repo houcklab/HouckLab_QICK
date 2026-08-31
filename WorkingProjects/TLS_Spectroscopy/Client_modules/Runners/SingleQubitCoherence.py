@@ -186,8 +186,7 @@ def main():
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS
-    feedback_requested = (active_reset.uses_feedback(RESET_MODE) and any((
-        P_SS_FLUX_RAMP["run"], P_T1["run"], P_T1_FLUX_RAMP["run"])))
+    feedback_requested = active_reset.uses_feedback(RESET_MODE)
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
@@ -199,9 +198,14 @@ def main():
             print(f"[res-phase] applied res_phase={best:.1f} deg for this session "
                   f"(aligns |g>/|e> on one raw quadrature; initialize.py unchanged)")
     if feedback_requested and PROBE_RESET:
-        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder,
-                                 reset_max_iters=int(RESET_MAX_ITERS))
+        rec = active_reset.load_reset_profile(
+            BaseConfig, path=QUBIT, outer_folder=outer_folder)
+        if rec is None:
+            rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
+                                     outer_folder=outer_folder,
+                                     reset_max_iters=int(RESET_MAX_ITERS))
+            active_reset.save_reset_profile(
+                rec, BaseConfig, path=QUBIT, outer_folder=outer_folder)
         if rec is None:
             RESET_MODE = "passive"
             ROT_RESET_PARAMS = None
