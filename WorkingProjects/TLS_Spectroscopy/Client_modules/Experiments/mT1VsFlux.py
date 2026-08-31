@@ -419,9 +419,10 @@ class FFT1Program(AveragerProgram):
 
         set_readout_pulse(self, read_freq)
 
-        if cfg.get("do_ff", True):
-            park_gain = float(cfg.get("ff_park_gain", 0) or 0)
-            stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+        park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+        self.stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+        if cfg.get("do_ff", True) and self.stepping:
+            stepping = True
             self.ff_settle_us = (ff_pulse.flux_settle_us(cfg) if stepping else 0.0)
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
                 self, hold_us=float(cfg["ff_hold"]) + self.ff_settle_us,
@@ -466,11 +467,14 @@ class FFT1Program(AveragerProgram):
         if cfg.get("do_pi", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
-        if cfg.get("do_ff", True):
-            ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+        if cfg.get("do_ff", True) and self.stepping:
+            ff_pulse.play_ramp_up_hold(self, self.ff_segs,
+                                       dt_play_us=cfg.get("dt_pulseplay", 5.0))
             self.sync_all(self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self.ff_segs)
-        self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+        else:
+            self.sync_all(self.us2cycles(max(float(cfg["ff_hold"]), 0.01)))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
