@@ -30,6 +30,12 @@ def flux_hold_declare(prog):
 
 
 def flux_hold_build(prog):
+    prog.ff_park_segs = ff_pulse.build_park_hold(
+        prog, hold_us=ff_pulse.flux_settle_us(prog.cfg))
+    if getattr(prog, "do_park_hold", False) and prog.ff_park_segs is None:
+        raise RuntimeError(
+            "ff_park_gain=%s is set but the park ramp was not built"
+            % prog.cfg.get("ff_park_gain"))
     if getattr(prog, "do_flux_hold", False):
         cfg = prog.cfg
         if int(cfg.get("ff_park_gain", 0) or 0) != 0:
@@ -100,8 +106,7 @@ def rabi_flux_body(prog):
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         prog.sync_all(prog.us2cycles(0.01))
     else:
-        ff_pulse.play_park_pulse(
-            prog, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        ff_pulse.play_park_up(prog, prog.ff_park_segs)
     for _ in range(int(cfg["n_pulses"])):
         prog.pulse(ch=cfg["qubit_ch"])
         prog.sync_all(prog.us2cycles(0.010))
@@ -112,7 +117,11 @@ def rabi_flux_body(prog):
     _reset_sync = 0.05 if feedback else (cfg["relax_delay"] if read_at_park else 0.01)
     prog.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                  adc_trig_offset=prog.us2cycles(cfg["adc_trig_offset"]),
-                 wait=True, syncdelay=prog.us2cycles(_reset_sync))
+                 wait=True,
+                 syncdelay=prog.us2cycles(0.01 if not hold else _reset_sync))
+    if not hold:
+        ff_pulse.play_park_down(prog, prog.ff_park_segs)
+        prog.sync_all(prog.us2cycles(_reset_sync))
     if hold and not read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
         prog.sync_all(prog.us2cycles(0.05 if feedback else cfg["relax_delay"]))
