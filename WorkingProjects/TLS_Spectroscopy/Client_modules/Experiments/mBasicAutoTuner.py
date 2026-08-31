@@ -1225,11 +1225,16 @@ def _declare_common(program, include_qubit=True):
             gen_ch=cfg["res_ch"],
         )
     set_readout_pulse(program)
+    program.ff_park_segs = ff_pulse.build_park_hold(
+        program, hold_us=ff_pulse.flux_settle_us(cfg))
 
 
 def _replay_static_flux(program):
-    ff_pulse.play_park_pulse(
-        program, settle_us=program.cfg.get("ff_park_settle_us", 0.05))
+    ff_pulse.play_park_up(program, getattr(program, "ff_park_segs", None))
+
+
+def _release_static_flux(program):
+    ff_pulse.play_park_down(program, getattr(program, "ff_park_segs", None))
 
 
 class BasicTransmissionProgram(AveragerProgram):
@@ -1244,7 +1249,9 @@ class BasicTransmissionProgram(AveragerProgram):
         _replay_static_flux(self)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        _release_static_flux(self)
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
 
 class BasicSpecProgram(RAveragerProgram):
@@ -1272,7 +1279,9 @@ class BasicSpecProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.02))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        _release_static_flux(self)
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
         self.mathi(
@@ -1309,7 +1318,9 @@ class BasicRabiProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        _release_static_flux(self)
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, "+", int(self.cfg["step"]))
@@ -1413,9 +1424,11 @@ class BasicSequenceProgram(AveragerProgram):
                 self.sync_all(gap)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(
-                         cfg.get("active_reset_post_measure_delay_us", 0.05)
-                         if feedback else cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        _release_static_flux(self)
+        self.sync_all(self.us2cycles(
+            cfg.get("active_reset_post_measure_delay_us", 0.05)
+            if feedback else cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)

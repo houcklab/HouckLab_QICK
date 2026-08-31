@@ -4187,25 +4187,24 @@ class _FakeParkProgram:
         self.events.append(("synci", cycles))
 
 
-def test_park_pulse_holds_the_park_gain_then_returns_to_zero():
+def test_assert_park_staircases_up_to_the_park_gain():
     for gain in (-7341, 8123):
         program = _FakeParkProgram(gain)
-        ff_pulse.declare_park_hold(program)
-        ff_pulse.play_park_pulse(program, hold_us=40.0, settle_us=0.05)
+        program.cfg["ff_ramp_length"] = 4.0
+        ff_pulse.assert_park(program, {"park": gain})
         registers = [event[1] for event in program.events
                      if event[0] == "registers"]
-        assert registers
-        assert all(r["gain"] == gain for r in registers)
-        assert registers[-1]["stdysel"] == "zero"
-        assert all(r["stdysel"] == "last" for r in registers[:-1])
-        assert any(event[0] == "pulse" for event in program.events)
-        assert any(event[0] == "synci" for event in program.events)
+        assert len(registers) > 1
+        assert all(r["stdysel"] == "last" for r in registers)
+        gains = [r["gain"] for r in registers]
+        assert gains[-1] == gain
+        assert all(abs(a) <= abs(b) for a, b in zip(gains, gains[1:]))
+        assert max(abs(b - a) for a, b in zip([0] + gains, gains)) < abs(gain)
 
 
-def test_park_pulse_is_a_noop_at_zero_park():
+def test_assert_park_is_a_noop_at_zero_park():
     program = _FakeParkProgram(0)
-    ff_pulse.declare_park_hold(program)
-    ff_pulse.play_park_pulse(program, hold_us=40.0)
+    ff_pulse.assert_park(program, {"park": 0})
     assert not [event for event in program.events if event[0] == "registers"]
 
 

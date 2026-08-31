@@ -149,10 +149,17 @@ def assert_park(prog, segs, dt_us=0.1, force=False):
     if park == 0 and not force:
         return
     cfg = prog.cfg
-    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
-                             stdysel='last', gain=park,
-                             length=prog.us2cycles(dt_us, gen_ch=cfg["ff_ch"]))
-    prog.pulse(ch=cfg["ff_ch"])
+    ramp_us = float(cfg.get("ff_ramp_length", 0.0) or 0.0)
+    steps = 1
+    if park != 0 and ramp_us > dt_us:
+        steps = int(min(max(round(ramp_us / dt_us), 1), 32))
+    step_us = (ramp_us / steps) if steps > 1 else dt_us
+    length = max(int(prog.us2cycles(step_us, gen_ch=cfg["ff_ch"])), 3)
+    for k in range(1, steps + 1):
+        prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+                                 stdysel='last',
+                                 gain=int(round(park * k / steps)), length=length)
+        prog.pulse(ch=cfg["ff_ch"])
 
 
 def play_static_park(prog, settle_us=0.05):
@@ -254,40 +261,6 @@ def drive_estimate_us(cfg):
         one = float(cfg.get("qubit_length", 0.0) or 0.0)
     n = max(int(cfg.get("n_pulses", 1) or 1), int(cfg.get("repeats", 1) or 1), 1)
     return one * n
-
-
-def play_park_pulse(prog, hold_us=None, settle_us=0.05):
-    if not getattr(prog, "do_park_hold", False):
-        return
-    cfg = prog.cfg
-    park = int(cfg.get("ff_park_gain", 0) or 0)
-    if park == 0:
-        return
-    if hold_us is None:
-        hold_us = sequence_hold_us(cfg, drive_us=drive_estimate_us(cfg))
-    total = max(int(prog.us2cycles(float(hold_us), gen_ch=cfg["ff_ch"])), 3)
-    n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
-    base, extra = divmod(total, n_chunks)
-    for c in range(n_chunks):
-        length = max(base + (1 if c < extra else 0), 3)
-        prog.set_pulse_registers(
-            ch=cfg["ff_ch"], freq=0, style='const', phase=0,
-            stdysel=('zero' if c == n_chunks - 1 else 'last'),
-            gain=park, length=int(length))
-        prog.pulse(ch=cfg["ff_ch"])
-    settle_us = max(float(settle_us), 0.0)
-    if settle_us > 0:
-        prog.synci(prog.us2cycles(settle_us))
-
-
-def release_park(prog):
-    cfg = prog.cfg
-    if cfg.get("ff_ch", None) is None:
-        return
-    n = max(int(prog.us2cycles(0.05, gen_ch=cfg["ff_ch"])), 3)
-    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
-                             stdysel='zero', gain=0, length=n)
-    prog.pulse(ch=cfg["ff_ch"])
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):

@@ -33,12 +33,13 @@ class ReadProbeProgram(AveragerProgram):
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq, phase=0,
                                  gain=int(cfg["probe_gain"]), waveform="qubit")
         set_readout_pulse(self, read_freq)
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_pulse(
-            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         page = self.ch_page(cfg["qubit_ch"])
         tproc_ch = int(cfg["tproc_ch"])
         if int(cfg["probe_gain"]) != 0:
@@ -51,6 +52,7 @@ class ReadProbeProgram(AveragerProgram):
         self.read(tproc_ch, page, "upper", _REG_Q)
         self.memwi(page, _REG_I, _ADDR_I)
         self.memwi(page, _REG_Q, _ADDR_Q)
+        ff_pulse.play_park_down(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg.get("relax_delay", 500.0)))
 
 
@@ -73,12 +75,13 @@ class ResetCheckProgram(AveragerProgram):
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq, phase=0,
                                  gain=int(cfg["qubit_pi_gain"]), waveform="qubit")
         set_readout_pulse(self, read_freq)
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_pulse(
-            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         if cfg.get("prep_excited", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
@@ -116,7 +119,9 @@ class ResetCheckProgram(AveragerProgram):
                     ro_ch=cfg["ro_chs"][0]))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg.get("relax_delay", 500.0)))
+                     wait=True, syncdelay=self.us2cycles(0.01))
+        ff_pulse.play_park_down(self, self.ff_park_segs)
+        self.sync_all(self.us2cycles(cfg.get("relax_delay", 500.0)))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         reads = (int(self.cfg.get("reset_max_iters", 3)) if self.cfg.get("do_reset", False)
