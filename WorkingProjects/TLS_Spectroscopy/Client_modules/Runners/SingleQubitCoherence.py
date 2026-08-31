@@ -153,7 +153,8 @@ def run_t1(outer_folder, soc, soccfg, calib_params):
     p = P_T1
     cfg = _base_cfg(p)
     exp = T1(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder, suffix="T1",
-             cfg=cfg, calib_params=calib_params, t_vec_us=_log_t_vec(p), ff_gain=0.0,
+             cfg=cfg, calib_params=calib_params, t_vec_us=_log_t_vec(p),
+             ff_gain=float(cfg.get("ff_park_gain", 0) or 0),
              reset_mode=RESET_MODE, live_plot=LIVE_PLOTS)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()

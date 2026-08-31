@@ -280,6 +280,16 @@ def play_park_pulse(prog, hold_us=None, settle_us=0.05):
         prog.synci(prog.us2cycles(settle_us))
 
 
+def release_park(prog):
+    cfg = prog.cfg
+    if cfg.get("ff_ch", None) is None:
+        return
+    n = max(int(prog.us2cycles(0.05, gen_ch=cfg["ff_ch"])), 3)
+    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+                             stdysel='zero', gain=0, length=n)
+    prog.pulse(ch=cfg["ff_ch"])
+
+
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):
     play_ramp_up_hold(prog, segs, dt_play_us=dt_play_us)
     play_ramp_down(prog, segs)
