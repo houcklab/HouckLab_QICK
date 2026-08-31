@@ -429,14 +429,14 @@ class FFT1Program(AveragerProgram):
                 ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
                 distortion_model=ff_pulse.make_distortion_model(self))
+        self.do_park_hold = bool(ff_pulse.park_hold_configured(cfg))
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        if cfg.get("do_ff", True):
-            ff_pulse.assert_park(self, self.ff_segs)
-            self.sync_all(self.us2cycles(
-                cfg.get("ff_park_settle_us", 0.05)))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         if active_reset.uses_feedback(cfg):
             read_gain = cfg.get("reset_read_pulse_gain", None)
             pi_gain = cfg.get("reset_pi_gain", None)
@@ -471,7 +471,7 @@ class FFT1Program(AveragerProgram):
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.release_park(self)
+        ff_pulse.play_park_down(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
