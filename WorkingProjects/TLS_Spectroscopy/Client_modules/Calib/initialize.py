@@ -20,31 +20,31 @@ BaseConfig = {
     "cavity_LO": 0,
 
     "reps": 1000,
-    "relax_delay": 1200,
+    "relax_delay": 1000,
     "flux_settle_time_us": 0.5,
-    "ff_ramp_length": 1.0,
+    "ff_ramp_length": 4.0,
     "adc_trig_offset": 0.5,
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 10.0,
+    "read_length": 30.0,
     "readout_guard_us": 1.0,
-    "read_pulse_gain": 1200,
-    "read_pulse_freq": 7118.35,
+    "read_pulse_gain": 9000,
+    "read_pulse_freq": 6932.820,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 2994.5,
-    "qubit_pi_freq": 2994.5,
-    "qubit_pi_gain": 20218,
-    "qubit_pi2_gain": 10109,
+    "qubit_freq": 4340.30,
+    "qubit_pi_freq": 4340.30,
+    "qubit_pi_gain": 27334,
+    "qubit_pi2_gain": 13667,
     "qubit_drag_beta": 0.0,
-    "qubit_anharmonicity_mhz": -200.0,
-    "qubit_gain": 20218,
-    "qubit_length": 0.25,
-    "sigma": 0.25,
+    "qubit_anharmonicity_mhz": -180.0,
+    "qubit_gain": 27334,
+    "qubit_length": 0.08,
+    "sigma": 0.09,
     "flat_top_length": None,
 
-    "ff_park_gain": 1000,
+    "ff_park_gain": 32000,
     "ff_park_settle_us": 1.0,
     "FF_Qubits": FF_Qubits,
 
@@ -60,9 +60,9 @@ BaseConfig = {
 
 FLUX_FIT_PARAMS = None
 
-RESONATOR_FIT_PARAMS = [7115362032.567416, 110917843.54213749, 11.283057766395405,
-                        0.21945247382116667, 23929.719229908005, 12252.43722306208,
-                        0.5152813948431779]
+RESONATOR_FIT_PARAMS = [6919889429.986164, 159395191.9380423, 8.527237958782948,
+                        0.43159362534331014, 45258.49879177061, 28901.253263960287,
+                        0.9042938856800486]
 
 FF_STEP_TARGET_GAIN = 8000
 
