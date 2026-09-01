@@ -222,7 +222,8 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
                            use_latch=False, three_zone=False, regs=None,
                            adc_trig_offset_us=None, settle_us=None,
                            meas_syncdelay_us=None, thermalization_us=None,
-                           page=None, read_delay_us=None, trace_base_addr=None):
+                           page=None, read_delay_us=None, trace_base_addr=None,
+                           set_pi=None, pi_freq_mhz=None, pi_freq_step_mhz=0.0):
     if c_int is None or s_int is None:
         raise ValueError("active_reset_rot_block needs c_int/s_int from "
                          "fixed_point_coeffs(); calibrate with Runners/ResetRotationDev.py")
@@ -339,6 +340,8 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
 
         done = f"ARR_DONE_{uid}_{i}"
         nopi = f"ARR_NOPI_{uid}_{i}"
+        if set_pi is not None and pi_freq_mhz is not None:
+            set_pi(freq_mhz=float(pi_freq_mhz) + i * float(pi_freq_step_mhz or 0.0))
         prog.condj(page, r_i, skip_pi_op, r_excite, nopi)
         prog.pulse(ch=qubit_ch)
         if three_zone:

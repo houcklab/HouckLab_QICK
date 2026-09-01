@@ -278,7 +278,8 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        adc_trig_offset_us=None, settle_us=None, meas_syncdelay_us=None,
                        thermalization_us=None, page=None, reg_val=None, reg_thr=None,
                        read_delay_us=None, force_flip=None, trace_base_addr=None,
-                       reg_flag=None, allow_legacy=False):
+                       reg_flag=None, allow_legacy=False, set_pi=None,
+                       pi_freq_mhz=None, pi_freq_step_mhz=None):
     try:
         rot_params = prog.cfg.get("rot_reset")
     except Exception:
@@ -300,7 +301,10 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
             adc_trig_offset_us=adc_trig_offset_us, settle_us=settle_us,
             meas_syncdelay_us=meas_syncdelay_us,
             thermalization_us=thermalization_us, page=page,
-            read_delay_us=read_delay_us, three_zone=False, use_latch=False)
+            read_delay_us=read_delay_us, three_zone=False, use_latch=False,
+            set_pi=set_pi, pi_freq_mhz=pi_freq_mhz,
+            pi_freq_step_mhz=(prog.cfg.get("reset_pi_freq_step_mhz", 0.0)
+                              if pi_freq_step_mhz is None else pi_freq_step_mhz))
     if not allow_legacy:
         raise RuntimeError(
             "feedback reset requires a validated cfg['rot_reset']; use passive "
@@ -663,6 +667,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
 
 DRIFT_PI_SPAN_MHZ = 6.0
 DRIFT_PI_STEP_MHZ = 0.75
+DRIFT_PI_STEPS_MHZ = (0.0, 0.5, 1.0, 1.5, 2.0)
 
 
 def reset_cfg_from_record(cfg, rec, max_iters=None, thermalization_us=None):
@@ -727,12 +732,13 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
                   f"{base_contrast:.3f}; fix the pi pulse first")
         return None
 
-    def contrast(reset_off, post_off):
+    def measure(reset_off, post_off, freq_step):
         c = reset_cfg_from_record(common, rec, max_iters, thermalization_us)
         c.update({"reset_mode": "feedback",
                   "relax_delay": float(feedback_relax_us),
                   "reset_pi_freq": qf + float(reset_off),
                   "reset_pi_gain": int(base_cfg["qubit_pi_gain"]),
+                  "reset_pi_freq_step_mhz": float(freq_step),
                   "post_reset_pi_freq": qf + float(post_off)})
         c["do_pi"] = False
         r_g = float((_drift_shots(soc, soccfg, c) @ u >= thr).mean())
@@ -745,17 +751,24 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
         print(f"[reset] calibrating the drift-compensated pi at park {park:g}: "
               f"passive contrast {base_contrast:.3f} at {passive_relax_us:g} us relax, "
               f"scoring feedback at the {feedback_relax_us:g} us relax the run uses")
-    scan = [(o,) + contrast(0.0, o) for o in offs]
-    post_off = max(scan, key=lambda r: r[1])[0]
-    scan2 = [(o,) + contrast(o, post_off) for o in offs]
-    reset_off, best_c, resid = max(scan2, key=lambda r: r[1])
+    post_off = max(((o,) + measure(0.0, o, 0.0) for o in offs),
+                   key=lambda r: r[1])[0]
+    reset_off = min(((o,) + measure(o, post_off, 0.0) for o in offs),
+                    key=lambda r: r[2])[0]
+    freq_step = min(((st,) + measure(reset_off, post_off, st)
+                     for st in DRIFT_PI_STEPS_MHZ), key=lambda r: r[2])[0]
+    best_c, resid = measure(reset_off, post_off, freq_step)
     if verbose:
-        print(f"[reset] drift-compensated pi: reset {reset_off:+.2f} MHz, "
-              f"post-reset {post_off:+.2f} MHz -> contrast {best_c:.3f} "
-              f"({best_c / base_contrast * 100:.0f}% of passive), residual {resid:.3f}")
+        print(f"[reset] drift-compensated pi: reset {reset_off:+.2f} MHz "
+              f"stepping {freq_step:+.2f} MHz per iteration, post-reset "
+              f"{post_off:+.2f} MHz")
+        print(f"[reset]   residual {resid:.3f} (floor {rec.get('floor', float('nan')):.3f}), "
+              f"contrast {best_c:.3f} = {best_c / base_contrast * 100:.0f}% of passive "
+              f"at {feedback_relax_us:g} us relax")
     out = {"reset_pi_offset_mhz": float(reset_off),
            "post_reset_pi_offset_mhz": float(post_off),
            "qubit_pi_freq": qf, "ff_park_gain": park,
+           "reset_pi_freq_step_mhz": float(freq_step),
            "feedback_relax_us": float(feedback_relax_us),
            "reset_max_iters": (None if max_iters is None else int(max_iters)),
            "reset_thermalization_us": float(thermalization_us),
@@ -795,4 +808,5 @@ def apply_drift_pi(cfg, rec):
     cfg["reset_pi_freq"] = qf + float(d["reset_pi_offset_mhz"])
     cfg["reset_pi_gain"] = int(cfg["qubit_pi_gain"])
     cfg["post_reset_pi_freq"] = qf + float(d["post_reset_pi_offset_mhz"])
+    cfg["reset_pi_freq_step_mhz"] = float(d.get("reset_pi_freq_step_mhz", 0.0))
     return cfg

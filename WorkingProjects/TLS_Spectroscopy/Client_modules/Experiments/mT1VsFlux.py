@@ -455,11 +455,16 @@ class FFT1Program(AveragerProgram):
                     gain=int(pi_gain) if pi_gain is not None else cfg["qubit_pi_gain"],
                     freq_mhz=float(pi_freq) if pi_freq is not None
                     else cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
+            step = float(cfg.get("reset_pi_freq_step_mhz", 0.0) or 0.0)
             active_reset.active_reset_block(
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
-                max_iters=int(cfg.get("reset_max_iters", 3)))
+                max_iters=int(cfg.get("reset_max_iters", 3)),
+                set_pi=(self._set_qubit_pulse if step else None),
+                pi_freq_mhz=(pi_freq if pi_freq is not None
+                             else cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
+                pi_freq_step_mhz=step)
             post_freq = cfg.get("post_reset_pi_freq", None)
             if pi_gain is not None or pi_freq is not None or post_freq is not None:
                 self._set_qubit_pulse(
