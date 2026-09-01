@@ -529,7 +529,7 @@ def ff_maxv(prog, scaled=False):
         return maxv
 
 
-def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
+def create_ff_ramp(prog: AcquireProgram, reversed: bool, name=None, allow_steps=False):
     """
     This function takes a program prog with a defined configuration dictionary prog.cfg, and sets up creates a fast flux
     ramp pulse. For now, the only type of pulse supported is "linear". The pulse is DC, and goes from
@@ -580,6 +580,8 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
     if shared is None:
         budget = ff_envelope_samples(prog)
         used = sum(n for (c, _, _, n) in cache if c == int(ch))
+        if used + idata.size > budget and allow_steps:
+            return None
         if used + idata.size > budget:
             raise RuntimeError(
                 f"flux ramp '{name}' needs {idata.size} envelope samples but only "

@@ -88,18 +88,30 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(first_level)
     ramp_waveform = PulseFunctions.create_ff_ramp(
-        prog, reversed=False, name=f"{name_prefix}_ramp")
+        prog, reversed=False, name=f"{name_prefix}_ramp", allow_steps=True)
+    ramp_steps = (None if ramp_waveform
+                  else ramp_staircase(prog, park_gain, first_level, ramp_us))
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(last_level)
     reverse_waveform = PulseFunctions.create_ff_ramp(
-        prog, reversed=True, name=f"{name_prefix}_ramp_reversed")
+        prog, reversed=True, name=f"{name_prefix}_ramp_reversed", allow_steps=True)
+    reverse_steps = (None if reverse_waveform
+                     else ramp_staircase(prog, last_level, park_gain, ramp_us))
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(ff_gain)
+    if (ramp_steps or reverse_steps) and not _STAIRCASE_NOTED:
+        _STAIRCASE_NOTED.append(1)
+        print(f"[ff_pulse] the flux generator cannot store every distinct "
+              f"{ramp_us:g} us ramp this program needs, so ramps are played as "
+              f"{len(ramp_steps or reverse_steps)}-step const staircases instead: "
+              f"same endpoints and duration, quantised in between.")
 
     return {"hold_segs": hold_segs, "dt_def_us": dt_def_us, "ramp_us": ramp_us,
             "ff_gain": ff_gain, "park": int(park_gain),
             "ramp_waveform": ramp_waveform,
-            "reverse_waveform": reverse_waveform}
+            "reverse_waveform": reverse_waveform,
+            "ramp_steps": ramp_steps,
+            "reverse_steps": reverse_steps}
 
 
 STATE_SAFE_RAMP_US = 0.5
@@ -109,12 +121,41 @@ _SWEEP_BASELINE_NOTED = set()
 _MAX_CONST_LEN = 65000
 
 
+FF_RAMP_MAX_STEPS = 32
+_STAIRCASE_NOTED = []
+
+
+def ramp_staircase(prog, start, stop, ramp_us, max_steps=FF_RAMP_MAX_STEPS):
+    ch = prog.cfg["ff_ch"]
+    total = max(int(prog.us2cycles(float(ramp_us), gen_ch=ch)), 3)
+    n = int(max(1, min(int(max_steps), total // 3)))
+    steps = []
+    for k in range(1, n + 1):
+        cycles = max(total * k // n - total * (k - 1) // n, 3)
+        gain = int(round(float(start) + (float(stop) - float(start)) * k / n))
+        steps.append((gain, cycles))
+    return steps
+
+
+def _play_staircase(prog, steps):
+    ch = prog.cfg["ff_ch"]
+    for gain, cycles in steps:
+        prog.set_pulse_registers(ch=ch, freq=0, style='const', phase=0,
+                                 stdysel='last', gain=int(gain), length=int(cycles))
+        prog.pulse(ch=ch)
+
+
 def play_ramp_up_hold(prog, segs, dt_play_us=None):
     cfg = prog.cfg
-    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=PulseFunctions.ff_maxv(prog),
-                             waveform=segs.get("ramp_waveform", "ff_ramp"), outsel="input")
-    prog.pulse(ch=cfg["ff_ch"])
+    if segs.get("ramp_steps"):
+        _play_staircase(prog, segs["ramp_steps"])
+    else:
+        prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0,
+                                 stdysel='last',
+                                 gain=PulseFunctions.ff_maxv(prog),
+                                 waveform=segs.get("ramp_waveform", "ff_ramp"),
+                                 outsel="input")
+        prog.pulse(ch=cfg["ff_ch"])
     for g, dur_us in segs["hold_segs"]:
         total = max(int(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"])), 3)
         n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
@@ -130,11 +171,16 @@ def play_ramp_down(prog, segs):
     cfg = prog.cfg
     ff_rp = prog.ch_page(cfg["ff_ch"])
     ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
-    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=PulseFunctions.ff_maxv(prog),
-                             waveform=segs.get("reverse_waveform", "ff_ramp_reversed"),
-                             outsel="input")
-    prog.pulse(ch=cfg["ff_ch"])
+    if segs.get("reverse_steps"):
+        _play_staircase(prog, segs["reverse_steps"])
+    else:
+        prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0,
+                                 stdysel='last',
+                                 gain=PulseFunctions.ff_maxv(prog),
+                                 waveform=segs.get("reverse_waveform",
+                                                   "ff_ramp_reversed"),
+                                 outsel="input")
+        prog.pulse(ch=cfg["ff_ch"])
     prog.safe_regwi(ff_rp, ff_gain_reg, int(segs.get("park", 0)))
 
 
