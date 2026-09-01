@@ -1,11 +1,11 @@
 import Pyro4
 from qick import QickConfig
 
-def makeProxy():
+def makeProxy(ns_host_ip:str="192.168.1.136"):
     Pyro4.config.SERIALIZER = "pickle"
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
-    ns_host = "192.168.1.125"
+    ns_host = ns_host_ip
     ns_port = 8888
     server_name = "myqick"
 

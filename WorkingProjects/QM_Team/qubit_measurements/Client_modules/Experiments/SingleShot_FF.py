@@ -40,7 +40,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1AC
 # from q4diamond.Client_modules.Experiment_Scripts.mOptimizeReadoutandPulse_FF import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
 
 
-soc, soccfg = makeProxy_RFSOC_143()
+soc, soccfg = makeProxy() # makeProxy_RFSOC_143()
 
 # # Device 2 old
 # Qubit_Parameters = {
@@ -118,6 +118,7 @@ Qubit_Parameters = {
         },
         "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
     },
+
 
     # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
     #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
