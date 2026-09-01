@@ -1,7 +1,7 @@
 import Pyro4
 from qick import QickConfig
 
-DEFAULT_NS_HOST = "192.168.1.139"
+DEFAULT_NS_HOST = "192.168.1.136"
 NS_PORT = 8888
 SERVER_NAME = "myqick"
 

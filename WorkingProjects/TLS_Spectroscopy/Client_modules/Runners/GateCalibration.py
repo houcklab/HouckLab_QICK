@@ -22,7 +22,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
-QUBIT = "q5"
+QUBIT = "q3"
 CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
 LIVE_PLOTS = True
 
@@ -41,7 +41,7 @@ THERMALIZATION_US = 2.0
 PASSIVE_RESET_US = 1000.0
 
 P_TRANSMISSION = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "freq_start_mhz": 7114.0,
     "freq_stop_mhz": 7124.0,
@@ -65,8 +65,8 @@ P_TRANSMISSION_SWEEP = {
 P_QUBIT_SPEC = {
     "run": False,
     "shots": 1000,
-    "freq_start_mhz": 2500,
-    "freq_stop_mhz": 2560,
+    "freq_start_mhz": 4280,
+    "freq_stop_mhz": 4400,
     "freq_points": 201,
     "spec_gain": 1000,
     "spec_length_us": 1.0,
@@ -95,7 +95,7 @@ P_SS_CAL = {
 }
 
 P_RABI_CHEVRON_IQ = {
-    "run": True,
+    "run": False,
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",
@@ -125,15 +125,15 @@ P_READOUT_OPT = {
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",
-    "freq_span_mhz": 1.0,
-    "freq_points": 11,
-    "gain_min": 1000,
-    "gain_max": 10000,
+    "freq_span_mhz": 2.0,
+    "freq_points": 21,
+    "gain_min": 5000,
+    "gain_max": 20000,
     "gain_points": 21,
 }
 
 P_QUBIT_OPT = {
-    "run": True,
+    "run": False,
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",

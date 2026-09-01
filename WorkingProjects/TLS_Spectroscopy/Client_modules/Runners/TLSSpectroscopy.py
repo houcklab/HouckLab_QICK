@@ -43,8 +43,8 @@ matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
 import matplotlib.pyplot as plt
 import gc
 
-CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
-QUBIT = "q4"
+CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
+QUBIT = "q3"
 
 
 SET_YOKO = False
@@ -80,7 +80,7 @@ RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = False
 THERMALIZATION_US = 2.0
-T1_RESET_BACKSTOP_US = 2000.0
+T1_RESET_BACKSTOP_US = 400.0
 T1_FEEDBACK_RELAX_US = 25.0
 RESET_REPROBE_MIN = 30.0
 
@@ -137,7 +137,7 @@ P3_STEP_RESPONSE = {
 }
 
 P4_LONG_TIME = {
-    "run": True,
+    "run": False,
     "advanced_fit": True,
     "shots": 300,
     "relax_delay_us": 500.0,
@@ -160,7 +160,7 @@ P5_SS_CAL = {
     "run": False,
     "ss_shots": 1000,
     "min_F": 0.60,
-    "reset_mode": "feedback",
+    "reset_mode": "passive",
     "reset_probe_shots": 2000,
     "reset_max_iters": 3,
     "reset_thermalization_us": 2.0,
@@ -168,18 +168,19 @@ P5_SS_CAL = {
 
 
 P6_3PT_T1 = {
-    "run": False,
-    "apply_flux_tail_compensation": True,
-    "shots": 2000,
-    "dc_min": 0,
-    "dc_max": 12000,
-    "dc_step": 60,
-    "freq_step_mhz": 1,
-    "wall_clock_duration_min": None,
-    "Ts_us": 60.0,
+    "run": True,
+    "apply_flux_tail_compensation": False,
+    "shots": 100,
+    "interleave_rounds": 1,
+    "dc_min": 28500,
+    "dc_max": 32500,
+    "dc_step": 10,
+    "freq_step_mhz": None,
+    "wall_clock_duration_min": 1440,
+    "Ts_us": 70.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    "reset_mode": "feedback",
+    "reset_mode": "passive",
     "reset_threshold_raw": None,
     "reset_oper": "lower",
     "reset_ground_below": False,

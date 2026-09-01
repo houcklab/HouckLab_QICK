@@ -21,7 +21,7 @@ LIVE_PLOTS = True
 FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
-RESET_MODE = "feedback"
+RESET_MODE = "passive"
 PROBE_RESET = True
 ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
@@ -33,7 +33,7 @@ RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
 THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
-PASSIVE_RESET_US = 1500.0
+PASSIVE_RESET_US = 400.0
 CALIBRATE_DRIFT_PI = True
 DRIFT_PI_PROFILE = None
 
@@ -59,14 +59,14 @@ P_T1 = {
     "run": True,
     "shots": 1000,
     "t_min_us": 1.0,
-    "t_max_us": 1500.0,
+    "t_max_us": 800.0,
     "t_points": 71,
 }
 
 P_T1_FLUX_RAMP = {
     "run": False,
     "shots": 1000,
-    "excursion_gain": 8000,
+    "excursion_gain": 20000,
     "flux_tail_compensation": None,
     "t_min_us": 1.0,
     "t_max_us": 1500.0,

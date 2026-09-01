@@ -27,10 +27,10 @@ BaseConfig = {
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 30.0,
+    "read_length": 10.0,
     "readout_guard_us": 1.0,
-    "read_pulse_gain": 9000,
-    "read_pulse_freq": 6932.820,
+    "read_pulse_gain": 15000,
+    "read_pulse_freq": 6933.020,
 
     "qubit_pulse_style": "arb",
     "qubit_freq": 4340.30,
@@ -43,6 +43,10 @@ BaseConfig = {
     "qubit_length": 0.08,
     "sigma": 0.09,
     "flat_top_length": None,
+
+    "reset_read_delay_us": 2.0,
+    "reset_meas_syncdelay_us": 2.0,
+    "reset_max_iters": 3,
 
     "ff_park_gain": 32000,
     "ff_park_settle_us": 1.0,
