@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 import numpy as np
 import h5py
+import matplotlib.pyplot as plt
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
     modulated_strobe_acquire,
@@ -22,7 +23,31 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analy
     contrast_from_sweeps,
     dwell_time_statistics,
     sliding_window_switch_rate,
+    bin_size_sweep,
+    threshold_stability,
+    detect_bursts,
 )
+
+# Default classifier for every stage that has to turn IQ into parity bits.
+# "apriori_axis" (not "apriori"): these are driven steady-state traces, so both
+# parity states sit on the same side of the g/e midpoint and midpoint
+# thresholding labels the whole trace one state. See classify_parity_trace.
+DEFAULT_CLASSIFIER = "apriori_axis"
+
+
+def _classify(I, Q, separator, method=None):
+    """Classify a trace, falling back to kmeans when no separator is available.
+
+    Every stage used to hard-code method="apriori", which raises ValueError when
+    separator is None -- and the orchestrator passes None whenever the run is
+    configured for kmeans classification, so stages 3/7/8 crashed outright in that
+    configuration.
+    """
+    if method is None:
+        method = DEFAULT_CLASSIFIER
+    if separator is None and method in ("apriori", "apriori_axis"):
+        method = "kmeans"
+    return classify_parity_trace(I, Q, separator=separator, method=method)
 
 
 @contextmanager
@@ -69,7 +94,12 @@ def _stage_sidecar(experiment, stage, scalars, arrays=None, extra_meta=None, out
         "read_pulse_gain": cfg.get("pulse_gain"),
         "bin_us": (extra_meta or {}).get("bin_us"),
         "threshold": (extra_meta or {}).get("threshold"),
-        "gap_indices_present": bool((arrays or {}).get("gap_indices")),
+        # len(), not bool(): gap_indices arrives as an ndarray from the
+        # acquisition modules, and bool() on an array raises "truth value of an
+        # array is ambiguous" (including on an empty one, under numpy 2).
+        "gap_indices_present": len(np.atleast_1d(
+            (arrays or {}).get("gap_indices") if (arrays or {}).get("gap_indices")
+            is not None else [])) > 0,
         "analysis_version": ANALYSIS_VERSION,
     }
     meta.update(extra_meta or {})
@@ -86,6 +116,13 @@ def _stage_sidecar(experiment, stage, scalars, arrays=None, extra_meta=None, out
                     continue
                 if k == "gap_indices":
                     f.create_dataset(k, data=np.asarray(list(v), dtype=int))
+                elif (isinstance(v, (list, tuple)) and len(v)
+                      and all(isinstance(x, (str, bytes, type(None))) for x in v)):
+                    # e.g. chunk_wall_clock_starts: h5py cannot write numpy's '<U..'
+                    # dtype, so encode as variable-length UTF-8.
+                    f.create_dataset(
+                        k, data=np.asarray([("" if x is None else str(x)) for x in v],
+                                           dtype=h5py.string_dtype("utf-8")))
                 else:
                     f.create_dataset(k, data=np.asarray(v))
             for mk, mv in meta.items():
@@ -96,9 +133,10 @@ def _stage_sidecar(experiment, stage, scalars, arrays=None, extra_meta=None, out
 
 
 def _plot_modulation(scores, t_us, reference, vm, out_path):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    # No matplotlib.use() here (or anywhere in this module): use() switches the
+    # backend for the whole session, so calling it inside a plot helper silently
+    # disables every interactive plot in the runner from that point on. savefig +
+    # close works on any backend.
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_us / 1e6, scores, lw=0.5, label="V(t) recovered")
     span = np.nanmax(scores) - np.nanmin(scores) if scores.size else 1.0
@@ -114,7 +152,7 @@ def _plot_modulation(scores, t_us, reference, vm, out_path):
 
 
 def run_modulation_check(experiment, separator, modulation_freq_hz=25.0, n_periods=10,
-                         progress=False, out_dir=None):
+                         progress=False, out_dir=None, classifier_method=None):
     """Stage 3: artificial square-wave modulation sanity gate.
 
     One block = one half-period (explicit factor of 2). Builds an alternating
@@ -127,10 +165,18 @@ def run_modulation_check(experiment, separator, modulation_freq_hz=25.0, n_perio
     actual_freq = 1.0 / (2.0 * reps_per_block * sp_us * 1e-6)
     schedule = [g_on, 0] * int(n_periods)
     acq = modulated_strobe_acquire(experiment, schedule, reps_per_block, progress=progress)
-    cls = classify_parity_trace(acq["I"], acq["Q"], separator=separator, method="apriori")
+    cls = _classify(acq["I"], acq["Q"], separator, classifier_method)
     vm = verify_modulation(cls["scores"], acq["t_us"], acq["modulation_reference"],
                            gap_indices=acq["gap_indices"])
+    # The schedule's true frequency, from the integer reps_per_block actually used.
+    # verify_modulation also estimates it from the reference; keep BOTH so a
+    # disagreement is visible rather than overwritten -- that disagreement is
+    # exactly what exposed modulated_strobe_acquire silently running a different
+    # block length than requested.
+    vm["injected_freq_hz_estimated"] = vm.get("injected_freq_hz")
     vm["injected_freq_hz"] = actual_freq
+    vm["reps_per_block"] = reps_per_block
+    vm["samples_per_block_actual"] = int(acq["I"].size // max(len(schedule), 1))
     arrays = {"I": acq["I"], "Q": acq["Q"], "t_us": acq["t_us"],
               "scores": cls["scores"], "modulation_reference": acq["modulation_reference"],
               "gap_indices": acq["gap_indices"]}
@@ -149,9 +195,6 @@ def _mean_complex_response(experiment, progress=False):
 
 
 def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(c["freqs"], np.abs(c["Z_on"]), label="|Z_on|")
     ax.plot(c["freqs"], np.abs(c["Z_off"]), label="|Z_off|")
@@ -244,8 +287,9 @@ class CrossRunComparison:
 
     Used by stage 7 (run_environment_sweep) to record multiple metrics per
     environment setting, because readout power changes both measurement SNR and
-    real parity dynamics. (Stages 5/6 are declared in _STAGE_ORDER but not yet
-    implemented here; stage 8 builds its own results dict.)
+    real parity dynamics. (Stages 5/6 have their own comparison shapes -- see
+    run_bin_size_sweep / run_threshold_stability -- and stage 8 builds its own
+    results dict.)
     """
     METRICS = ("switch_rate", "separation_snr", "mean_dwell", "mean_signal_level")
 
@@ -267,9 +311,6 @@ class CrossRunComparison:
         return out
 
     def plot(self, out_path):
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         tbl = self.table()
         metrics = [k for k in self.METRICS if k in tbl]
         fig, axes = plt.subplots(len(metrics), 1, figsize=(8, 2.4 * max(1, len(metrics))), sharex=True)
@@ -287,13 +328,22 @@ class CrossRunComparison:
         return out_path
 
 
-def _trace_metrics(experiment, separator, window_us=1000.0, progress=False):
+def _trace_metrics(experiment, separator, window_us=1000.0, progress=False,
+                   classifier_method=None):
     """Acquire one strobe trace, classify, return the 4 stage-7 metrics."""
     data = experiment.acquire(progress=progress)
-    cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori")
-    rate = sliding_window_switch_rate(cls["binary_states"], data["t_us"], window_us)
-    dw = dwell_time_statistics(cls["binary_states"], data["t_us"],
-                              merge_short_segments=True, min_dwell_bins=2)
+    cls = _classify(data["I"], data["Q"], separator, classifier_method)
+    # Debounce before BOTH derived quantities so the reported rate and the
+    # reported dwell times describe the same bit sequence.
+    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import (
+        _debounce_bits_segmented,
+    )
+    bits = _debounce_bits_segmented(cls["binary_states"],
+                                    data.get("gap_indices"), 2)
+    rate = sliding_window_switch_rate(bits, data["t_us"], window_us,
+                                      gap_indices=data.get("gap_indices"))
+    dw = dwell_time_statistics(bits, data["t_us"],
+                               gap_indices=data.get("gap_indices"))
     h = projected_histogram_snr(cls["scores"])
     return {"switch_rate": float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
             "separation_snr": h["separation_snr"],
@@ -302,7 +352,8 @@ def _trace_metrics(experiment, separator, window_us=1000.0, progress=False):
 
 
 def run_environment_sweep(experiment, separator, param_name, param_values, set_param,
-                          window_us=1000.0, progress=False, out_dir=None):
+                          window_us=1000.0, progress=False, out_dir=None,
+                          classifier_method=None):
     """Stage 7: vary an environment knob (power/detuning/drive-off), record 4 metrics each.
 
     set_param(experiment, value) applies the swept parameter (caller-provided so this
@@ -311,7 +362,9 @@ def run_environment_sweep(experiment, separator, param_name, param_values, set_p
     cmp = CrossRunComparison(param_name)
     for v in param_values:
         set_param(experiment, v)
-        cmp.add(v, _trace_metrics(experiment, separator, window_us=window_us, progress=progress))
+        cmp.add(v, _trace_metrics(experiment, separator, window_us=window_us,
+                                  progress=progress,
+                                  classifier_method=classifier_method))
     tbl = cmp.table()
     json_path, _ = _stage_sidecar(experiment, f"7_environment_{param_name}",
                                   scalars={"n_points": len(param_values)},
@@ -320,16 +373,17 @@ def run_environment_sweep(experiment, separator, param_name, param_values, set_p
     return {"table": tbl, "comparison": cmp, "sidecar": json_path}
 
 
-def _signed_level(experiment, separator, progress=False):
+def _signed_level(experiment, separator, progress=False, classifier_method=None):
     """Mean projected V relative to the separator midpoint, plus separation SNR."""
     data = experiment.acquire(progress=progress)
-    cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori")
+    cls = _classify(data["I"], data["Q"], separator, classifier_method)
     h = projected_histogram_snr(cls["scores"])
     return float(np.mean(cls["scores"])), h["separation_snr"]
 
 
 def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detune_mhz=50.0,
-                      parity_freqs=None, progress=False, out_dir=None):
+                      parity_freqs=None, progress=False, out_dir=None,
+                      classifier_method=None):
     """Stage 8: A=drive off, B=detuned, C=probe off-res, D=swap branch (auto both).
 
     Contrast should vanish for A/B/C; assignment should reverse for D
@@ -343,32 +397,32 @@ def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detu
     with _preserve_cfg(experiment, "qubit_gain", "parity_drive_freq", "read_pulse_freq"):
         # drive-off reference for sign baseline
         experiment.set_qubit_gain(0)
-        off_level, _ = _signed_level(experiment, separator, progress=progress)
+        off_level, _ = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
         experiment.set_qubit_gain(base["qubit_gain"])
 
         if "A" in variants:
             experiment.set_qubit_gain(0)
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            lvl, snr = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
             results["A"] = {"label": "drive_off", "mean_level": lvl, "separation_snr": snr}
             experiment.set_qubit_gain(base["qubit_gain"])
         if "B" in variants:
             experiment.cfg["parity_drive_freq"] = (base["parity_drive_freq"] or 0.0) + detune_mhz
             experiment.set_qubit_gain(base["qubit_gain"])
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            lvl, snr = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
             results["B"] = {"label": "drive_detuned", "mean_level": lvl, "separation_snr": snr}
             experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
         if "C" in variants:
             experiment.cfg["read_pulse_freq"] = (base["read_pulse_freq"] or 0.0) + detune_mhz
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            lvl, snr = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
             results["C"] = {"label": "probe_off_resonance", "mean_level": lvl, "separation_snr": snr}
             experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
         if "D" in variants:
             pf = parity_freqs or {"lower": base["parity_drive_freq"], "higher": base["parity_drive_freq"]}
             experiment.cfg["parity_drive_freq"] = float(pf["lower"])
             experiment.set_qubit_gain(base["qubit_gain"])
-            lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress)
+            lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
             experiment.cfg["parity_drive_freq"] = float(pf["higher"])
-            lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress)
+            lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress, classifier_method=classifier_method)
             sgn_lo = int(np.sign(lvl_lo - off_level))
             sgn_hi = int(np.sign(lvl_hi - off_level))
             results["D"] = {"label": "swap_branch", "mean_level_lower": lvl_lo, "mean_level_higher": lvl_hi,
@@ -382,6 +436,231 @@ def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detu
                                   scalars={"off_level": off_level},
                                   arrays=None, extra_meta={"variants": results}, out_dir=out_dir)
     return {"variants": results, "off_level": off_level, "sidecar": json_path}
+
+
+# ---------------------------------------------------------------------------
+# Stages 4, 5, 6 -- the telegraph itself and its two robustness checks.
+#
+# The three analysis primitives (projected_histogram_snr, bin_size_sweep,
+# threshold_stability) already existed but nothing called them, so the evidence
+# chain had a hole exactly where the telegraph gets characterised: stages 1-3
+# proved the signal is parity-dependent and the pipeline works, stages 7-8 proved
+# it responds to the environment and vanishes under controls, and nothing in
+# between actually showed it was a two-level telegraph with an exponential dwell
+# distribution.
+# ---------------------------------------------------------------------------
+
+
+def _plot_histogram(scores, h, out_path):
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if h["hist"].size and h["bin_edges"].size:
+        centers = 0.5 * (h["bin_edges"][:-1] + h["bin_edges"][1:])
+        ax.plot(centers, h["hist"], drawstyle="steps-mid", lw=1.0)
+    for c in np.atleast_1d(h["centers"]):
+        if np.isfinite(c):
+            ax.axvline(float(c), color="r", ls="--", lw=1)
+    ax.set_xlabel("projected V")
+    ax.set_ylabel("counts")
+    ax.set_title(f"Telegraph histogram  sep_snr={h['separation_snr']:.2f}  "
+                 f"dBIC={h['delta_bic']:.0f}  bimodal={h['is_bimodal']}")
+    fig.tight_layout(); fig.savefig(out_path, dpi=200); plt.close(fig)
+
+
+def _plot_trace_and_bits(scores, bits, t_us, out_path, max_pts=50_000):
+    fig, axes = plt.subplots(2, 1, figsize=(10, 5), sharex=True)
+    stride = max(1, int(np.ceil(scores.size / max_pts)))
+    axes[0].plot(t_us[::stride] / 1e6, scores[::stride], lw=0.4)
+    axes[0].set_ylabel("projected V")
+    axes[1].step(t_us[::stride] / 1e6, bits[::stride], where="post", lw=0.5)
+    axes[1].set_ylabel("parity state")
+    axes[1].set_xlabel("time (s)")
+    axes[0].set_title("Stage 4 telegraph")
+    fig.tight_layout(); fig.savefig(out_path, dpi=200); plt.close(fig)
+
+
+def run_telegraph(experiment, separator, window_us=1000.0, n_chunks=1,
+                  progress=False, out_dir=None, classifier_method=None,
+                  min_dwell_bins=2, k_sigma=5.0):
+    """Stage 4: continuous acquisition -> projected trace -> bimodality test.
+
+    Acquires one (optionally chunked) strobe record, projects it, and asks
+    projected_histogram_snr whether the distribution is genuinely two-level.
+    `is_bimodal` is deliberately conservative (delta_BIC > 0 AND
+    separation_snr > 1.5 AND both weights in (0.1, 0.9)) because a 2-component
+    GMM "finds" two peaks in almost anything.
+
+    Also reports the switch rate, dwell statistics and any bursts, so the single
+    reference trace everything else is compared against is fully characterised in
+    one sidecar. No pass/fail -- the numbers go into the stage-9 report.
+    """
+    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
+        chunked_acquire,
+    )
+    if int(n_chunks) > 1:
+        data = chunked_acquire(experiment, n_chunks=int(n_chunks), progress=progress)
+    else:
+        data = experiment.acquire(progress=progress)
+
+    cls = _classify(data["I"], data["Q"], separator, classifier_method)
+    gaps = data.get("gap_indices")
+    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import (
+        _debounce_bits_segmented,
+    )
+    bits = _debounce_bits_segmented(cls["binary_states"], gaps, min_dwell_bins)
+
+    h = projected_histogram_snr(cls["scores"])
+    rate = sliding_window_switch_rate(bits, data["t_us"], window_us, gap_indices=gaps)
+    bursts = detect_bursts(rate["rate_Hz"], rate["window_t_us"], k_sigma=k_sigma,
+                           window_us=rate["window_us"])
+    dw = dwell_time_statistics(bits, data["t_us"], gap_indices=gaps)
+
+    scalars = {
+        "separation_snr": h["separation_snr"],
+        "delta_bic": h["delta_bic"],
+        "overlap": h["overlap"],
+        "center_0": float(h["centers"][0]), "center_1": float(h["centers"][1]),
+        "sigma_0": float(h["sigmas"][0]), "sigma_1": float(h["sigmas"][1]),
+        "weight_0": float(h["weights"][0]), "weight_1": float(h["weights"][1]),
+        "mean_rate_Hz": float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
+        "median_rate_Hz": float(np.median(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
+        "mean_dwell_0_us": dw["mean_0"], "mean_dwell_1_us": dw["mean_1"],
+        "exp_fit_tau_0_us": dw["exp_fit_0"]["tau_us"],
+        "exp_fit_tau_1_us": dw["exp_fit_1"]["tau_us"],
+        "n_runs_0": dw["n_runs_0"], "n_runs_1": dw["n_runs_1"],
+        "n_bursts": len(bursts),
+        "n_samples": int(bits.size),
+        # is_bimodal is a bool: keep it out of `scalars` (which float()s values)
+        # and put it in the metadata instead.
+    }
+    arrays = {"I": data["I"], "Q": data["Q"], "t_us": data["t_us"],
+              "scores": cls["scores"], "binary_states": bits,
+              "window_t_us": rate["window_t_us"], "rate_Hz": rate["rate_Hz"],
+              "dwell_0_us": dw["dwell_0_us"], "dwell_1_us": dw["dwell_1_us"],
+              "gap_indices": gaps,
+              # Per-chunk wall-clock stamps, when the record was chunked. t_us is
+              # stitched as if the chunks were contiguous, so it UNDERSTATES real
+              # elapsed time by the inter-chunk overhead. These stamps are the only
+              # way to recover the true elapsed time (and hence an absolute
+              # switch-rate-vs-wall-clock axis) after the fact.
+              "chunk_wall_clock_starts": data.get("chunk_wall_clock_starts")}
+    json_path, _ = _stage_sidecar(
+        experiment, "4_telegraph", scalars=scalars, arrays=arrays,
+        extra_meta={"is_bimodal": bool(h["is_bimodal"]),
+                    "classifier_method": cls["method"],
+                    "threshold": float(cls.get("threshold", 0.0)),
+                    "window_us": rate["window_us"],
+                    "min_dwell_bins": int(min_dwell_bins),
+                    "n_chunks": int(n_chunks)},
+        out_dir=out_dir)
+    _plot_histogram(cls["scores"], h, json_path.replace(".json", ".png"))
+    _plot_trace_and_bits(cls["scores"], bits, data["t_us"],
+                         json_path.replace(".json", "_trace.png"))
+    return {"histogram": h, "rate": rate, "dwell": dw, "bursts": bursts,
+            "classification": cls, "data": data, "is_bimodal": bool(h["is_bimodal"]),
+            "sidecar": json_path}
+
+
+def _plot_bin_sweep(res, out_path):
+    fig, axes = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
+    bins = np.asarray(res["bin_list_us"], dtype=float)
+    axes[0].plot(bins, res["separation_snr_per_bin"], "o-")
+    axes[0].set_ylabel("separation SNR")
+    axes[1].plot(bins, res["exp_tau_per_bin"], "o-", label="exp fit tau")
+    axes[1].plot(bins, res["mean_dwell_per_bin"], "s--", label="mean dwell")
+    axes[1].set_ylabel("dwell (us)")
+    axes[1].set_xlabel("analysis bin (us)")
+    axes[1].legend(loc="best", fontsize=8)
+    axes[0].set_xscale("log"); axes[1].set_xscale("log")
+    axes[0].set_title(f"Stage 5 bin-size sweep  best={res['best_bin_us']:.0f} us")
+    fig.tight_layout(); fig.savefig(out_path, dpi=200); plt.close(fig)
+
+
+def run_bin_size_sweep(experiment, separator, bin_list_us=(100, 200, 500, 1000),
+                       data=None, progress=False, out_dir=None,
+                       classifier_method=None):
+    """Stage 5: reprocess ONE raw trace at several analysis bin sizes.
+
+    Pass `data` (e.g. the dict returned by run_telegraph) to reuse an existing
+    record; otherwise a fresh trace is acquired. Reusing is preferable -- the point
+    of this stage is that the SAME samples separate better or worse depending on
+    the integration bin, which is only a clean statement within one record.
+
+    Deliberately makes NO monotonic-then-degrade assertion: the optimum can occur
+    well before the parity lifetime depending on SNR and switching rate. The shape
+    is a qualitative signature for the stage-9 report to surface, not a test.
+    """
+    if data is None:
+        data = experiment.acquire(progress=progress)
+    method = classifier_method or DEFAULT_CLASSIFIER
+    if separator is None and method in ("apriori", "apriori_axis"):
+        method = "kmeans"
+    res = bin_size_sweep(data["I"], data["Q"], data["t_us"], separator,
+                         list(bin_list_us), gap_indices=data.get("gap_indices"),
+                         method=method)
+    scalars = {"best_bin_us": res["best_bin_us"]}
+    for b, s, tau in zip(res["bin_list_us"], res["separation_snr_per_bin"],
+                         res["exp_tau_per_bin"]):
+        scalars[f"separation_snr_{int(b)}us"] = s
+        scalars[f"exp_tau_{int(b)}us"] = tau
+    json_path, _ = _stage_sidecar(
+        experiment, "5_bin_size_sweep", scalars=scalars,
+        arrays={"bin_list_us": np.asarray(res["bin_list_us"], dtype=float),
+                "separation_snr_per_bin": np.asarray(res["separation_snr_per_bin"], dtype=float),
+                "mean_dwell_per_bin": np.asarray(res["mean_dwell_per_bin"], dtype=float),
+                "exp_tau_per_bin": np.asarray(res["exp_tau_per_bin"], dtype=float)},
+        extra_meta={"classifier_method": method,
+                    "bin_us": float(res["best_bin_us"])},
+        out_dir=out_dir)
+    _plot_bin_sweep(res, json_path.replace(".json", ".png"))
+    return {**res, "sidecar": json_path}
+
+
+def _plot_threshold_stability(res, out_path):
+    fig, ax = plt.subplots(figsize=(7, 4))
+    th = np.asarray(res["threshold_list"], dtype=float)
+    ax.plot(th, res["tau0_per_threshold"], "o-", label="tau state 0")
+    ax.plot(th, res["tau1_per_threshold"], "s-", label="tau state 1")
+    ax.set_xlabel("threshold (projected V)")
+    ax.set_ylabel("fitted tau (us)")
+    ax.set_title(f"Stage 6 threshold stability  tau_cv={res['tau_cv']:.3f}")
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout(); fig.savefig(out_path, dpi=200); plt.close(fig)
+
+
+def run_threshold_stability(experiment, separator, data=None, threshold_list=None,
+                            min_dwell_bins=2, progress=False, out_dir=None,
+                            classifier_method=None):
+    """Stage 6: is the fitted dwell time robust to where the threshold sits?
+
+    Sweeps the classification threshold across the valley between the two levels
+    and refits tau at each. A low `tau_cv` (coefficient of variation of tau across
+    thresholds) means a real telegraph; a high one means the transitions are noise
+    crossings that move with the threshold.
+
+    The default grid is valley-centred, NOT percentile-based -- see
+    analyze_ZeroSpanParity._default_threshold_grid for why percentiles invert this
+    metric on exactly the well-separated data it is meant to reward.
+    """
+    if data is None:
+        data = experiment.acquire(progress=progress)
+    cls = _classify(data["I"], data["Q"], separator, classifier_method)
+    res = threshold_stability(cls["scores"], data["t_us"],
+                              threshold_list=threshold_list,
+                              gap_indices=data.get("gap_indices"),
+                              min_dwell_bins=min_dwell_bins)
+    scalars = {"tau_cv": res["tau_cv"],
+               "n_thresholds": len(res["threshold_list"])}
+    json_path, _ = _stage_sidecar(
+        experiment, "6_threshold_stability", scalars=scalars,
+        arrays={"threshold_list": np.asarray(res["threshold_list"], dtype=float),
+                "tau0_per_threshold": np.asarray(res["tau0_per_threshold"], dtype=float),
+                "tau1_per_threshold": np.asarray(res["tau1_per_threshold"], dtype=float),
+                "scores": cls["scores"]},
+        extra_meta={"classifier_method": cls["method"],
+                    "min_dwell_bins": int(min_dwell_bins)},
+        out_dir=out_dir)
+    _plot_threshold_stability(res, json_path.replace(".json", ".png"))
+    return {**res, "sidecar": json_path}
 
 
 _STAGE_ORDER = ["1_static_contrast", "2_contrast_vs_qubit_freq", "3_modulation_check",
@@ -441,6 +720,11 @@ def build_evidence_report(run_dir, out_path):
 
 if __name__ == "__main__":
     import tempfile
+    # Headless test run: pick a non-interactive backend HERE, never at module or
+    # function scope, so importing this module from a runner leaves the session's
+    # interactive backend alone.
+    import matplotlib
+    matplotlib.use("Agg")
 
     class _StrobeFakeExp:
         """Fake ZeroSpanParity: acquire() returns a single IQ cloud shifted to
@@ -452,12 +736,26 @@ if __name__ == "__main__":
                         "sample_period_us": sp_us, "read_pulse_freq": 100.0,
                         "parity_drive_freq": 4000.0, "device": "TEST", "mode": "strobe",
                         "pulse_gain": 300}
-            self._n = n
             self._sp = sp_us
             self._rng = np.random.default_rng(0)
             self.fname = os.path.join(out_dir, "fake.h5")
+
+        @property
+        def _n(self):
+            """Sample count per acquire, from cfg -- like the real ZeroSpanParity.
+
+            Must NOT be a fixed attribute: callers (modulated_strobe_acquire) change
+            cfg['reps_per_chunk'] to set the block length, and a fake that ignores
+            that cannot exercise the reps_per_block path at all.
+            """
+            return int(self.cfg["reps"])
+
         def set_qubit_gain(self, gain):
             self.cfg["qubit_gain"] = gain
+            # Mirror ZeroSpanParity.set_qubit_gain: re-sync reps from reps_per_chunk
+            # and rebuild, so a caller's reps_per_chunk override takes effect.
+            if "reps_per_chunk" in self.cfg:
+                self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
         def acquire(self, progress=False):
             g = self.cfg["qubit_gain"]
             level = 5.0 if g > 0 else 0.0
@@ -588,3 +886,146 @@ if __name__ == "__main__":
         assert "1_static_contrast" in text and "3_modulation_check" in text
         assert "correlation" in text
     print("validate_ZeroSpanParity build_evidence_report: OK")
+
+    # =====================================================================
+    # Stages 4/5/6 (previously declared in _STAGE_ORDER but never implemented)
+    # and the separator=None crash guard.
+    # =====================================================================
+
+    class _TelegraphFakeExp(_StrobeFakeExp):
+        """Time-correlated two-level telegraph, i.e. what the real measurement
+        looks like rather than an IID 50/50 mix.
+
+        The state persists with a mean dwell of ~`tau_us`, and — crucially — both
+        levels sit BELOW the g/e midpoint (0.8 and 1.4 on a g=0 / e=10 axis),
+        because the zero-span drive produces a driven steady state, not a
+        pi-pulsed |g>/|e> mixture. A midpoint-thresholding classifier sees one
+        state here; the axis-plus-data-threshold classifier resolves both.
+        """
+        def __init__(self, n, sp_us, out_dir, tau_us=3000.0, noise=0.12, seed=5):
+            super().__init__(n, sp_us, out_dir)
+            self._rng = np.random.default_rng(seed)
+            self._tau = tau_us
+            self._noise = noise
+            self._state = 0
+        def acquire(self, progress=False):
+            p = self._sp / self._tau
+            bits = np.empty(self._n, dtype=int)
+            for i in range(self._n):
+                if self._rng.random() < p:
+                    self._state ^= 1
+                bits[i] = self._state
+            lvl = np.where(bits == 1, 1.4, 0.8)
+            I = lvl + self._rng.normal(0, self._noise, self._n)
+            Q = self._rng.normal(0, self._noise, self._n)
+            t = np.arange(self._n) * self._sp
+            return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
+                    "gap_indices": np.array([], dtype=int),
+                    "sample_period_us": self._sp, "read_length_us": 30.0,
+                    "wall_clock_start": "2026-01-01T00:00:00"}
+
+    _sep_drv = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([10.0, 0.0])}
+
+    # --- Stage 4: run_telegraph ---
+    with tempfile.TemporaryDirectory() as d:
+        exp = _TelegraphFakeExp(40_000, 40.0, d, tau_us=3000.0)
+        res4 = run_telegraph(exp, separator=_sep_drv, window_us=5000.0, out_dir=d)
+        assert res4["is_bimodal"], (res4["histogram"]["delta_bic"],
+                                    res4["histogram"]["separation_snr"],
+                                    res4["histogram"]["weights"])
+        assert res4["histogram"]["separation_snr"] > 2.0, res4["histogram"]["separation_snr"]
+        # Dwell times must land near the injected 3 ms, both states populated.
+        for _tau in (res4["dwell"]["exp_fit_0"]["tau_us"],
+                     res4["dwell"]["exp_fit_1"]["tau_us"]):
+            assert np.isfinite(_tau) and 1000.0 < _tau < 9000.0, _tau
+        assert res4["dwell"]["n_runs_0"] > 3 and res4["dwell"]["n_runs_1"] > 3, res4["dwell"]
+        files = os.listdir(d)
+        assert any(f.startswith("4_telegraph") and f.endswith(".json") for f in files), files
+        assert any(f.startswith("4_telegraph") and f.endswith(".png") for f in files), files
+        assert any(f.startswith("4_telegraph") and f.endswith("_trace.png") for f in files), files
+        assert any(f.startswith("4_telegraph") and f.endswith(".h5") for f in files), files
+        with open(os.path.join(d, sorted(f for f in files if f.startswith("4_telegraph")
+                                         and f.endswith(".json"))[0])) as fh:
+            m4 = json.load(fh)
+        assert m4["stage"] == "4_telegraph"
+        assert m4["is_bimodal"] is True, m4
+        assert m4["classifier_method"] == "apriori_axis", m4
+        # A unimodal (drive-off) trace must NOT be called bimodal.
+        exp_uni = _StrobeFakeExp(20_000, 40.0, d)
+        exp_uni.set_qubit_gain(0)
+        res4u = run_telegraph(exp_uni, separator=_sep_drv, window_us=5000.0, out_dir=d)
+        assert not res4u["is_bimodal"], (res4u["histogram"]["delta_bic"],
+                                         res4u["histogram"]["separation_snr"])
+    print("validate_ZeroSpanParity run_telegraph (stage 4): OK")
+
+    # --- Stage 5: run_bin_size_sweep, reusing the stage-4 record ---
+    with tempfile.TemporaryDirectory() as d:
+        exp = _TelegraphFakeExp(60_000, 20.0, d, tau_us=3000.0, noise=1.2, seed=9)
+        data = exp.acquire()
+        res5 = run_bin_size_sweep(exp, separator=_sep_drv,
+                                  bin_list_us=(100, 200, 500, 1000),
+                                  data=data, out_dir=d)
+        assert np.isfinite(res5["best_bin_us"]), res5
+        assert res5["best_bin_us"] in (100.0, 200.0, 500.0, 1000.0), res5["best_bin_us"]
+        assert len(res5["separation_snr_per_bin"]) == 4, res5
+        # Noise averages down with the bin, so a larger bin must not separate worse
+        # than the smallest one here (no monotonic assertion beyond that).
+        _snr = np.asarray(res5["separation_snr_per_bin"], dtype=float)
+        assert np.nanmax(_snr) >= _snr[0], _snr
+        files = os.listdir(d)
+        assert any(f.startswith("5_bin_size_sweep") and f.endswith(".png") for f in files), files
+    print("validate_ZeroSpanParity run_bin_size_sweep (stage 5): OK")
+
+    # --- Stage 6: run_threshold_stability, clean vs noise ---
+    with tempfile.TemporaryDirectory() as d:
+        exp_clean = _TelegraphFakeExp(60_000, 40.0, d, tau_us=3000.0, noise=0.1, seed=3)
+        res6 = run_threshold_stability(exp_clean, separator=_sep_drv, out_dir=d)
+        assert np.isfinite(res6["tau_cv"]), res6
+        # A real telegraph: tau must barely move as the threshold sweeps the valley.
+        assert res6["tau_cv"] < 0.5, res6["tau_cv"]
+        # Pure noise (drive off, unimodal) must look far less stable.
+        exp_noise = _StrobeFakeExp(60_000, 40.0, d)
+        exp_noise.set_qubit_gain(0)
+        res6n = run_threshold_stability(exp_noise, separator=_sep_drv, out_dir=d)
+        assert res6n["tau_cv"] > res6["tau_cv"], (res6n["tau_cv"], res6["tau_cv"])
+        files = os.listdir(d)
+        assert any(f.startswith("6_threshold_stability") and f.endswith(".png") for f in files), files
+    print("validate_ZeroSpanParity run_threshold_stability (stage 6): OK")
+
+    # --- separator=None must fall back to kmeans, not raise ------------------
+    # Every stage used to hard-code method="apriori", which raises ValueError on a
+    # None separator -- and the orchestrator passes None whenever the run is
+    # configured for kmeans classification, so stages 3/7/8 crashed in that
+    # configuration instead of clustering the trace.
+    with tempfile.TemporaryDirectory() as d:
+        exp = _TelegraphFakeExp(4_000, 40.0, d, tau_us=3000.0)
+        cls_none = _classify(np.array([0.0, 1.0, 0.0, 1.0]),
+                             np.array([0.0, 0.0, 0.0, 0.0]), None)
+        assert cls_none["method"] == "kmeans", cls_none["method"]
+        m = run_modulation_check(exp, separator=None, modulation_freq_hz=100.0,
+                                 n_periods=3, out_dir=d)
+        assert np.isfinite(m["correlation"]), m
+        c = run_control_suite(exp, separator=None, variants=("A",), out_dir=d)
+        assert "A" in c["variants"], c
+        e = run_environment_sweep(exp, separator=None, param_name="probe_gain",
+                                  param_values=[100, 200],
+                                  set_param=lambda _e, v: _e.cfg.__setitem__("pulse_gain", v),
+                                  window_us=5000.0, out_dir=d)
+        assert len(e["table"]["probe_gain"]) == 2, e["table"]
+    print("validate_ZeroSpanParity separator=None falls back to kmeans: OK")
+
+    # --- build_evidence_report covers all 8 stages in canonical order ---------
+    with tempfile.TemporaryDirectory() as d:
+        for stage in _STAGE_ORDER:
+            with open(os.path.join(d, f"{stage}_2026_01_01_00_00_00.json"), "w") as fh:
+                json.dump({"stage": stage, "timestamp": "t", "mode": "strobe",
+                           "analysis_version": ANALYSIS_VERSION,
+                           "scalars": {"dummy": 1.0}}, fh)
+        report = build_evidence_report(d, os.path.join(d, "EVIDENCE.md"))
+        text = open(report).read()
+        for stage in _STAGE_ORDER:
+            assert stage in text, f"{stage} missing from the evidence report"
+        # Canonical order, not alphabetical / filesystem order.
+        positions = [text.index(s) for s in _STAGE_ORDER]
+        assert positions == sorted(positions), positions
+    print("validate_ZeroSpanParity evidence report covers stages 1-8: OK")

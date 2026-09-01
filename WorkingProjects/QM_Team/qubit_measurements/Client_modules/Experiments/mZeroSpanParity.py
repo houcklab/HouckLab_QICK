@@ -35,15 +35,32 @@ cfg keys consumed by ZeroSpanParity (see spec §5.2 for the full contract):
                      gap_indices marks the boundaries.
   allow_soft_avgs    bool, opt-in to soft_avgs > 1 (non-time-resolved).
 
+  === optional (all modes) ===
+  allow_reps_over_avg_maxlen
+                     bool, opt-in to reps_per_chunk > avg_maxlen. The
+                     accumulated buffer is a circular buffer streamed during the
+                     run, so this is legal and reduces the number of chunk gaps
+                     in the record; see rule 4 below.
+
 Validation errors include the spec rule number, the offending value, and the
 violated bound.
 
-NOTE: For decimated mode the time axis t_us is computed from
-soccfg['readouts'][ro_ch]['f_output']. On some firmware revisions this is
-empirically not the true decimated sample rate (see
-_loopback_check_ZeroSpanParity.py). Metadata fields read_length_us,
-capture_length_us, samples_per_capture, and decimated_fs_source are persisted
-so the time axis can be reconstructed post-hoc once the true rate is known.
+DECIMATED-MODE CAPACITY (Path B). The decimated buffer holds
+soccfg['readouts'][ro_ch]['buf_maxlen'] samples at the readout output rate
+f_output. On the BFG ZCU216 that is 1024 samples at 307.2 MHz, i.e. a maximum
+capture of ~3.3 us. Path B is therefore not usable for parity telegraph work on
+this firmware -- run mode="strobe" until a DDR4-streaming path exists.
+
+For decimated mode the time axis t_us is computed from f_output, which IS the
+true decimated sample rate: declare_readout's `length` is in decimated samples
+(tProc v1), so the returned sample count is us2cycles(read_length, ro_ch)
+== read_length * f_output. (An earlier revision of this module converted that
+length with the tProc clock instead, which made the returned count 1.4x larger
+than read_length * f_output and looked like an f_output mismatch. It was a unit
+bug here, not a firmware quirk.) The metadata fields read_length_us,
+capture_length_us, samples_per_capture and decimated_fs_source are still
+persisted so a time axis can be rebuilt post-hoc if a firmware change ever does
+break the relation.
 """
 
 import numpy as np
@@ -110,7 +127,10 @@ def _validate_cfg(cfg, soccfg):
                 f"Increase sample_period_us or shorten read_length."
             )
 
-    # Rules 2 & 3: const-pulse 16-bit cycle cap (< 65535 cycles on both channels).
+    # Rules 2 & 3: const-pulse length must fit QICK's mode register. asm_v1's
+    # AbsGenManager.get_mode_code raises for length >= 2**16 OR length < 3, so
+    # both bounds are checked here (the minimum is unreachable given rules 1/9,
+    # but a bad cfg should say which bound it broke, not fail inside QICK).
     # us2cycles depends on the channel; soccfg exposes us2cycles via soccfg.us2cycles.
     def _check_cycle_cap(length_key, rule_no):
         for label in ("qubit_ch", "res_ch"):
@@ -119,6 +139,13 @@ def _validate_cfg(cfg, soccfg):
                 raise RuntimeError(
                     f"[ZeroSpanParity §5.3 rule {rule_no}] {length_key} yields "
                     f"{cyc} cycles on {label} > 65535 cap. Reduce {length_key}."
+                )
+            if cyc < 3:
+                raise RuntimeError(
+                    f"[ZeroSpanParity §5.3 rule {rule_no}] {length_key}="
+                    f"{cfg[length_key]} us yields {cyc} cycles on {label}, below "
+                    f"the 3-cycle minimum const-pulse length. Increase "
+                    f"{length_key}."
                 )
     if mode == "strobe":
         _check_cycle_cap("sample_period_us", 2)
@@ -134,38 +161,55 @@ def _validate_cfg(cfg, soccfg):
             f"[ZeroSpanParity cfg] cannot read soccfg['readouts'][{ro_ch}]: {ex!r}"
         )
     if mode == "strobe":
+        # Rule 4 (relaxed). The accumulated buffer is NOT a hard cap: qick
+        # streams it during the run and wraps modulo avg_maxlen
+        # (qick/streamer.py, `addr = last_shots * reads_per_count % avg_maxlen`),
+        # and there is no reps <= avg_maxlen assertion anywhere in qick. The only
+        # real limits are the host keeping up (streamer raises only if Python
+        # falls >= avg_maxlen shots behind) and RAM (acc_buf is 16 B/rep).
+        #
+        # Exceeding avg_maxlen is therefore *desirable*: every chunk boundary is
+        # a real time gap in the parity record, so fewer, longer chunks give a
+        # cleaner trace. It stays opt-in because falling behind raises mid-run,
+        # so verify it in the loopback check before relying on it.
         avg_maxlen = int(ro_info["avg_maxlen"])
         reps = int(cfg["reps_per_chunk"])
-        if reps > avg_maxlen:
+        if reps > avg_maxlen and not cfg.get("allow_reps_over_avg_maxlen", False):
             raise RuntimeError(
                 f"[ZeroSpanParity §5.3 rule 4] reps_per_chunk={reps} > "
-                f"avg_maxlen={avg_maxlen} for readout ch {ro_ch}. "
-                f"Reduce reps_per_chunk (and increase n_chunks if longer record "
-                f"is needed)."
+                f"avg_maxlen={avg_maxlen} for readout ch {ro_ch}. This is "
+                f"legal (qick streams the accumulated buffer and wraps modulo "
+                f"avg_maxlen) but raises mid-run if the host cannot keep up. "
+                f"Either reduce reps_per_chunk and raise n_chunks, or set "
+                f"cfg['allow_reps_over_avg_maxlen']=True to take one long "
+                f"gapless chunk."
             )
     else:
         # The decimated buffer is sized by the declared readout length
-        # (declare_readout(length=us2cycles(read_length))), NOT by the const
-        # pulse length (capture_length_us). Check read_length against the
+        # (declare_readout(length=us2cycles(read_length, ro_ch=ch))), NOT by the
+        # const pulse length (capture_length_us). Check read_length against the
         # buffer cap.
         #
-        # CAVEAT: this estimate uses the nominal decimated rate from
-        # soccfg["readouts"][ro_ch]["f_output"]. The actual buffer length
-        # depends on how declare_readout converts `us2cycles(read_length)`
-        # (without ro_ch) into readout-clock cycles, then decimates. On
-        # firmware where tProc and readout clocks differ, the exact returned
-        # sample count may disagree with this estimate by O(1) sample.
-        # The check remains a useful pre-flight bound (sufficient, not
-        # exact); hardware loopback should confirm the exact count.
+        # This bound is now EXACT rather than an estimate: _setup_two_tones
+        # declares the readout with us2cycles(read_length, ro_ch=ch), which IS
+        # the decimated sample count qick allocates, so compute it the same way
+        # instead of via read_length * f_output.
+        #
+        # The comparison is >= because qick's readout.transfer_buf raises on
+        # `length >= buf_maxlen`. (acquire_decimated's own pre-check uses >, so a
+        # length of exactly buf_maxlen passes there and still fails in the
+        # transfer.)
         buf_maxlen = int(ro_info["buf_maxlen"])
         decimated_fs_MHz = float(ro_info["f_output"])
-        n_samples = int(round(float(cfg["read_length"]) * decimated_fs_MHz))
-        if n_samples > buf_maxlen:
+        n_samples = int(soccfg.us2cycles(cfg["read_length"], ro_ch=ro_ch))
+        if n_samples >= buf_maxlen:
             raise RuntimeError(
                 f"[ZeroSpanParity §5.3 rule 5] read_length={cfg['read_length']} "
-                f"us => {n_samples} decimated samples > buf_maxlen={buf_maxlen} "
-                f"for readout ch {ro_ch} at {decimated_fs_MHz} MHz. "
-                f"Reduce read_length."
+                f"us => {n_samples} decimated samples >= buf_maxlen={buf_maxlen} "
+                f"for readout ch {ro_ch} at {decimated_fs_MHz} MHz. Reduce "
+                f"read_length below {(buf_maxlen - 1) / decimated_fs_MHz:.3f} us. "
+                f"NOTE: that caps decimated mode at a very short capture on this "
+                f"firmware -- use mode='strobe' for parity telegraph work."
             )
         # Sanity check: pulse must cover the readout window. The readout fires
         # at adc_trig_offset and lasts read_length, so capture_length_us must
@@ -235,9 +279,21 @@ class _ZeroSpanParityProgBase(AveragerProgram):
                           mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
         for ch in cfg["ro_chs"]:
+            # `length` is in DECIMATED READOUT SAMPLES for tProc-v1 programs
+            # (qick_asm.py declare_readout: USER_DURATIONS is False here, so the
+            # value is taken verbatim as a sample count and interpreted against
+            # the readout's f_output). us2cycles WITHOUT ro_ch uses the tProc
+            # clock instead -- on the BFG board that is 430.08 vs 307.2 MHz, so
+            # omitting ro_ch declares a window 1.4x longer than read_length. That
+            # skews the accumulated I/Q scale away from the single-shot
+            # separator, pushes the sync_all() reference past sample_period (so
+            # t_us no longer matches the real rep period), and leaves the tail of
+            # the integration window undriven. Every sibling program here
+            # (mSingleShotProgramFFMUX, mModifiedRamsey, mUndrivenSingleShot,
+            # mActiveResetVerify) passes ro_ch; so must this one.
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["read_length"]),
+                length=self.us2cycles(cfg["read_length"], ro_ch=ch),
                 freq=cfg["read_pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -301,10 +357,14 @@ class ZeroSpanParityProgDecimated(_ZeroSpanParityProgBase):
 
     Sample period = 1 / soccfg['readouts'][ro_ch]['f_output'] (us). The returned
     trace length per capture is set by the DECLARED readout window
-    (declare_readout(length=us2cycles(read_length))) — i.e. read_length_us *
-    f_output_MHz samples, capped by buf_maxlen — NOT by capture_length_us.
-    capture_length_us only sets the const-pulse duration, which must cover the
-    readout window (spec §5.3 rule 9).
+    (declare_readout(length=us2cycles(read_length, ro_ch=ch))) — i.e.
+    read_length_us * f_output_MHz samples, capped by buf_maxlen — NOT by
+    capture_length_us. capture_length_us only sets the const-pulse duration,
+    which must cover the readout window (spec §5.3 rule 9).
+
+    CAPACITY WARNING: buf_maxlen is only 1024 samples on the BFG ZCU216, i.e.
+    ~3.3 us per capture at f_output = 307.2 MHz. Path B cannot record a parity
+    telegraph on this firmware; use ZeroSpanParityProgStrobe.
     """
 
     def _const_length_us(self):
@@ -337,6 +397,14 @@ class ZeroSpanParity(ExperimentClass):
         # whole capture is one shot (averaged in software via soft_avgs).
         if mode == "strobe":
             self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
+            # AveragerProgram.__init__ sets self.rounds from cfg["soft_avgs"], or
+            # cfg["rounds"] if present. acc_buf is re-zeroed at the start of every
+            # round, so with rounds > 1 the per-rep stream we read back would be
+            # the LAST round only — silently discarding (rounds-1)/rounds of the
+            # record at rounds x the runtime. A strobe trace is inherently
+            # single-round; pin both keys rather than trusting the caller's cfg.
+            self.cfg["soft_avgs"] = 1
+            self.cfg["rounds"] = 1
             self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
         elif mode == "decimated":
             self.cfg["reps"] = 1
@@ -390,18 +458,23 @@ class ZeroSpanParity(ExperimentClass):
             save_experiments=None,
         )
         ro_ch = cfg["ro_chs"][0]
-        # Normalize accumulated di_buf/dq_buf by the number of readout-window
-        # cycles so I/Q are in the same units as g/e centroids computed by
-        # mSingleShotProgramFFMUX.collect_shots (which divides by
-        # us2cycles(readout_length, ro_ch=0) — ro_ch HARD-CODED to 0). Without
-        # this the apriori separator from get_apriori_separator_from_singleshot is
-        # on a different scale than the strobe trace and classification is wrong.
-        # Divide by the SAME cycles/us the separator was calibrated with: use
-        # ro_ch=0 to mirror collect_shots exactly, NOT ro_chs[0]. On a MUX setup
-        # where ro_chs[0] != 0 the two channels can have different decimated
-        # clocks, so keying off ro_chs[0] would silently rescale the trace
-        # relative to the separator.
-        ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=0))
+        # Normalize the accumulated I/Q by the number of decimated samples the
+        # readout actually integrated, so the trace is in the same per-sample
+        # units as the g/e centroids from mSingleShotProgramFFMUX.collect_shots.
+        # That method divides by us2cycles(readout_length, ro_ch=cfg["ro_chs"][i])
+        # — keyed off the ABSOLUTE channel from ro_chs, not hard-coded to 0 — so
+        # key off ro_chs[0] here to match it on a MUX setup where ro_chs[0] != 0.
+        #
+        # Read the divisor from the program itself (prog.ro_chs[ro_ch]["length"],
+        # set by declare_readout) rather than recomputing it. Recomputing is how
+        # the two drifted apart before: the declaration used the tProc clock while
+        # the divisor used the readout clock, leaving the trace 1.4x off the
+        # separator's scale. Taking the authoritative value makes that class of
+        # mismatch impossible.
+        try:
+            ro_cycles = float(prog.ro_chs[ro_ch]["length"])
+        except (AttributeError, KeyError, TypeError):
+            ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=ro_ch))
         if ro_cycles <= 0:
             ro_cycles = 1.0
         # di_buf/dq_buf are indexed by readout DECLARATION ORDER, not absolute
@@ -580,23 +653,55 @@ class ZeroSpanParity(ExperimentClass):
                     except TypeError:
                         f.attrs[k] = str(data[k])
 
+    def save_config(self):
+        """Write the cfg JSON only, without reopening the .h5.
+
+        The base ExperimentClass.save_config also does
+        ``self.datafile().attrs['config'] = ...``, which opens self.fname in 'a'
+        mode and drops the handle without closing it. That survives today only on
+        CPython refcounting, and the caller sequence here is
+        save_data() -> save_config() -> analyze_parity_run() opening the same file
+        'r', so a lingering write handle would be an HDF5 lock error. Everything
+        that attr would carry is already in the .h5 attrs written by save_data
+        plus the .json written here, so skip the reopen entirely.
+        """
+        import json
+        from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import (
+            NpEncoder,
+        )
+        with open(self.cname, "w") as fid:
+            json.dump(self.cfg, fid, cls=NpEncoder)
+
     def display(self, data=None, plotDisp=False, **kwargs):
         """No-op for live display; analysis module generates plots from the .h5."""
         return None
 
 
 if __name__ == "__main__":
-    # Synthetic soccfg-like object for unit testing _validate_cfg without QICK hardware.
+    # Synthetic soccfg-like object for unit testing _validate_cfg without QICK
+    # hardware. The clocks deliberately MATCH the real BFG ZCU216 board and, more
+    # importantly, DIFFER between domains: tProc/gen fabric 430.08 MHz vs readout
+    # output 307.2 MHz. An earlier version of this stub returned us*384.0 for
+    # every channel, collapsing the two domains into one number — which is
+    # exactly why its "normalization matches single-shot units" guard could not
+    # detect that _setup_two_tones was declaring the readout window on the tProc
+    # clock. Keep these two rates distinct or that class of bug goes unseen again.
+    _F_TIME = 430.08     # tProc + generator fabric clock (MHz)
+    _F_OUTPUT = 307.2    # readout decimated output clock (MHz)
+
     class _FakeSocCfg:
         def __init__(self):
             self._d = {
                 "readouts": {0: {"avg_maxlen": 16384, "buf_maxlen": 8192,
-                                 "f_output": 100.0}},
+                                 "f_output": _F_OUTPUT}},
                 "gens": {0: {"f_dds": 6144.0}, 1: {"f_dds": 6144.0}},
             }
         def us2cycles(self, us, gen_ch=None, ro_ch=None):
-            # Pretend 384 MHz clock on every channel.
-            return int(round(us * 384.0))
+            # ro_ch -> readout output clock; gen_ch or neither -> tProc clock.
+            # (QICK's real us2cycles picks the generator's f_fabric for gen_ch,
+            # which equals f_time on this board, and f_time when given neither.)
+            fclk = _F_OUTPUT if ro_ch is not None else _F_TIME
+            return int(round(us * fclk))
         def __getitem__(self, k): return self._d[k]
         def __contains__(self, k): return k in self._d
 
@@ -627,25 +732,70 @@ if __name__ == "__main__":
     except RuntimeError as ex: assert "rule 2" in str(ex), ex
     else: raise AssertionError("expected rule 2 to fire")
 
-    # Rule 4: reps_per_chunk too large
+    # Rule 3: const pulse under QICK's 3-cycle minimum. In strobe mode rule 1's
+    # 1.0 us floor always dominates, so the minimum is only reachable through the
+    # decimated path (where capture_length_us has no such floor -- rule 9 only
+    # requires it to cover adc_trig_offset + read_length).
+    bad = dict(base)
+    bad.update({"mode": "decimated", "soft_avgs": 1,
+                "capture_length_us": 0.005, "adc_trig_offset": 0.0,
+                "read_length": 0.0})
+    del bad["sample_period_us"]; del bad["reps_per_chunk"]
+    try: _validate_cfg(bad, sc)
+    except RuntimeError as ex:
+        assert "rule 3" in str(ex) and "3-cycle" in str(ex), ex
+    else: raise AssertionError("expected rule 3 to fire on the 3-cycle minimum")
+
+    # Rule 4: reps_per_chunk above avg_maxlen raises WITHOUT the opt-in ...
     bad = dict(base); bad["reps_per_chunk"] = 10**6
     try: _validate_cfg(bad, sc)
     except RuntimeError as ex: assert "rule 4" in str(ex), ex
     else: raise AssertionError("expected rule 4 to fire")
+    # ... and is accepted WITH it. qick streams the accumulated buffer and wraps
+    # modulo avg_maxlen, so a single long gapless chunk is legal; the opt-in
+    # exists only because falling behind raises mid-run.
+    ok = dict(base)
+    ok.update({"reps_per_chunk": 10**6, "allow_reps_over_avg_maxlen": True})
+    _validate_cfg(ok, sc)
 
-    # Rule 5: read_length too long (decimated mode) — buffer cap is sized
-    # by the declared readout window, not by the const-pulse length.
+    # Rule 5: read_length too long (decimated mode) — buffer cap is sized by the
+    # declared readout window (us2cycles(read_length, ro_ch), i.e. f_output
+    # samples), not by the const-pulse length and not by the tProc clock.
     dec_base = dict(base)
     dec_base.update({"mode": "decimated", "capture_length_us": 50.0,
                      "soft_avgs": 1})
     del dec_base["sample_period_us"]
     del dec_base["reps_per_chunk"]
-    _validate_cfg(dec_base, sc)  # read_length=5 us * 100 MHz = 500 samples < 8192
-    bad = dict(dec_base); bad["read_length"] = 90.0  # 9000 samples > 8192
+    # read_length=5 us * 307.2 MHz = 1536 samples < buf_maxlen 8192
+    _validate_cfg(dec_base, sc)
+    bad = dict(dec_base); bad["read_length"] = 90.0  # 27648 samples >= 8192
     bad["capture_length_us"] = 100.0                  # keep capture >= read+offset
     try: _validate_cfg(bad, sc)
     except RuntimeError as ex: assert "rule 5]" in str(ex), ex
     else: raise AssertionError("expected rule 5 to fire")
+
+    # Rule 5 boundary: exactly buf_maxlen samples must be REJECTED. qick's
+    # readout.transfer_buf raises on `length >= buf_maxlen` while
+    # acquire_decimated's own pre-check uses `>`, so a length of exactly
+    # buf_maxlen would pass validation and still blow up in the transfer.
+    _edge_us = 8192 / _F_OUTPUT           # -> exactly 8192 decimated samples
+    bad = dict(dec_base)
+    bad["read_length"] = _edge_us
+    bad["capture_length_us"] = _edge_us + 1.0
+    assert sc.us2cycles(bad["read_length"], ro_ch=0) == 8192
+    try: _validate_cfg(bad, sc)
+    except RuntimeError as ex: assert "rule 5]" in str(ex), ex
+    else: raise AssertionError("expected rule 5 to reject exactly buf_maxlen")
+
+    # Rule 5 must be computed on the READOUT clock, not the tProc clock. At
+    # read_length = 20 us the two disagree: 20*307.2 = 6144 samples (legal,
+    # < 8192) vs 20*430.08 = 8602 (would be rejected). If someone reverts rule 5
+    # to the tProc conversion this config starts failing for no reason.
+    ok = dict(dec_base)
+    ok["read_length"] = 20.0
+    ok["capture_length_us"] = 30.0
+    assert sc.us2cycles(20.0, ro_ch=0) == 6144 and sc.us2cycles(20.0) == 8602
+    _validate_cfg(ok, sc)
 
     # Rule 9: pulse shorter than readout window — pulse ends before readout closes.
     bad = dict(dec_base); bad["capture_length_us"] = 3.0  # < adc_trig_offset + read_length = 5.5
@@ -703,20 +853,33 @@ if __name__ == "__main__":
     print("_acquire_decimated soft_avgs gate fires without opt-in: OK")
 
     # --- strobe I/Q normalization matches single-shot units ------------------
-    # Per Codex review: strobe raw di_buf values are integrated over the
-    # readout window (~us2cycles(read_length, ro_ch) summands), but the
-    # apriori separator from mSingleShotProgramFFMUX.collect_shots is in
-    # per-cycle units (di_buf / us2cycles(readout_length, ro_ch=0)). The fix
-    # in _acquire_strobe divides I/Q by the same divisor. Regression guard:
-    # synthesize a di_buf that mimics 100-cycle integration of a unit signal,
-    # call the normalization path, and confirm the resulting per-sample I is
-    # ~1.0 (per-cycle) rather than ~100.
+    # Raw accumulated I/Q are sums over the readout window, but the apriori
+    # separator from mSingleShotProgramFFMUX.collect_shots is per-decimated-
+    # sample (raw acc_buf / us2cycles(readout_length, ro_ch)). _acquire_strobe
+    # must divide by the SAME count or the separator's midpoint lands on the
+    # wrong scale and parity classification is biased.
+    #
+    # The divisor is taken from prog.ro_chs[ro_ch]["length"] — the value
+    # declare_readout actually used — precisely so it cannot drift from the
+    # declaration. With _F_OUTPUT = 307.2, a 5 us window is 1536 samples.
+    _RO_SAMPLES = int(round(5.0 * _F_OUTPUT))     # 1536
+    assert _RO_SAMPLES == 1536
+
     class _FakeProg:
-        def __init__(self, di_val, dq_val, n):
+        """Stands in for a run ZeroSpanParityProgStrobe.
+
+        ro_chs mirrors what declare_readout(length=us2cycles(read_length,
+        ro_ch=ch)) leaves behind, keyed by absolute channel; di_buf/dq_buf stand
+        in for the pre-0.2.29x raw buffers that raw_shot_buffers falls back to
+        when acc_buf is absent.
+        """
+        def __init__(self, di_val, dq_val, n, ro_ch=0, ro_length=_RO_SAMPLES):
             self.di_buf = {0: np.full(n, di_val, dtype=float)}
             self.dq_buf = {0: np.full(n, dq_val, dtype=float)}
+            self.ro_chs = {ro_ch: {"length": ro_length}}
         def acquire(self, *_a, **_k):
             return None
+
     class _StrobeStub:
         _acquire_strobe = ZeroSpanParity._acquire_strobe
         def __init__(self, cfg, soccfg, prog):
@@ -724,21 +887,42 @@ if __name__ == "__main__":
             self.soccfg = soccfg
             self.soc = None
             self.prog = prog
-    # 100-cycle readout (5 us * 100 MHz / 5 us * 384 MHz tProc - whichever the
-    # fake uses): with our _FakeSocCfg, us2cycles(5, ro_ch=0) returns
-    # 5 * 384 = 1920 (the fake hardcodes 384 MHz regardless of channel). The
-    # important check is that I_normalized = di_val / 1920, not I = di_val.
+
     cfg_strobe = dict(base)
     n_reps = 1000
     cfg_strobe["reps_per_chunk"] = n_reps
-    fake = _FakeProg(di_val=192000.0, dq_val=0.0, n=n_reps)
+    # di_val chosen so the per-sample answer is a round 100.0
+    di_val = 100.0 * _RO_SAMPLES
+    fake = _FakeProg(di_val=di_val, dq_val=0.0, n=n_reps)
     stub = _StrobeStub(cfg_strobe, sc, fake)
     out = stub._acquire_strobe(progress=False)
-    # Expected I per sample = 192000 / us2cycles(5, ro_ch=0) = 192000/1920 = 100.0
-    assert abs(float(out["I"][0]) - 100.0) < 1e-6, (
+    assert abs(float(out["I"][0]) - 100.0) < 1e-9, (
         f"strobe normalization wrong: got {out['I'][0]}, expected 100.0"
     )
-    assert out["ro_norm_cycles"] == 1920.0, out["ro_norm_cycles"]
+    assert out["ro_norm_cycles"] == float(_RO_SAMPLES), out["ro_norm_cycles"]
     assert out["read_length_us"] == 5.0
     assert out["mode"] == "strobe"
-    print("_acquire_strobe normalizes I/Q by us2cycles(read_length, ro_ch=0): OK")
+
+    # Regression guard for the clock-domain bug: the divisor must be the READOUT
+    # sample count, never the tProc-cycle count. Those differ by f_time/f_output
+    # = 1.4 on this board, so assert the wrong value is not what came out.
+    _WRONG = float(sc.us2cycles(5.0))              # 2150 tProc cycles
+    assert _WRONG != float(_RO_SAMPLES)
+    assert out["ro_norm_cycles"] != _WRONG, (
+        "ro_norm_cycles is on the tProc clock; declare_readout takes decimated "
+        "samples, so read_length must be converted with ro_ch="
+    )
+
+    # Fallback path: no prog.ro_chs (e.g. a stub or a future qick refactor) must
+    # still land on the same divisor via us2cycles(..., ro_ch=ro_chs[0]).
+    class _FakeProgNoRoChs(_FakeProg):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            del self.ro_chs
+    stub2 = _StrobeStub(dict(cfg_strobe), sc,
+                        _FakeProgNoRoChs(di_val=di_val, dq_val=0.0, n=n_reps))
+    out2 = stub2._acquire_strobe(progress=False)
+    assert out2["ro_norm_cycles"] == float(_RO_SAMPLES), out2["ro_norm_cycles"]
+    assert abs(float(out2["I"][0]) - 100.0) < 1e-9
+
+    print("_acquire_strobe normalizes I/Q by the declared readout sample count: OK")

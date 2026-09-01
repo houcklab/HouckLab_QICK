@@ -1016,7 +1016,7 @@ def project_iq_onto_separator(I, Q, separator):
     return scores, binary_states
 
 
-def pick_parity_drive_freq(spec_data, which="lower"):
+def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
     """
     Pick one of the two parity-doublet peaks from a QubitSpecSliceFF-style
     spec_data dict, using the existing choose_two_tone_freqs_from_lorentz_or_peaks
@@ -1026,6 +1026,11 @@ def pick_parity_drive_freq(spec_data, which="lower"):
     ----------
     spec_data : dict (output of QubitSpecSliceFF.acquire or compatible)
     which     : "lower" or "higher" — which doublet peak to park at
+    min_sep_mhz : float, minimum separation for two features to count as a
+        doublet. Pass the same value used for the spec fit (the orchestrator's
+        ZSP_ParitySpec_params["min_sep_MHz"]); leaving it at the default while the
+        spec was fitted with a different resolution silently applies two different
+        definitions of "resolved doublet" to the same data.
 
     Returns
     -------
@@ -1038,7 +1043,8 @@ def pick_parity_drive_freq(spec_data, which="lower"):
     """
     if which not in ("lower", "higher"):
         raise ValueError(f"which must be 'lower' or 'higher', got {which!r}")
-    result = choose_two_tone_freqs_from_lorentz_or_peaks(spec_data)
+    result = choose_two_tone_freqs_from_lorentz_or_peaks(
+        spec_data, min_sep_mhz=min_sep_mhz)
     freqs = np.asarray(result["freqs"], dtype=float)
     if freqs.size < 2:
         raise RuntimeError(
@@ -1169,6 +1175,26 @@ def chunked_acquire(experiment, n_chunks, progress=False):
     return stitched
 
 
+def _modulated_blocks(experiment, gain_schedule, progress=False):
+    """Acquire one strobe block per entry in gain_schedule; return [(gain, data)].
+
+    Split out of modulated_strobe_acquire so the reps_per_block override can be
+    applied and restored around the whole acquisition with try/finally.
+    """
+    out = []
+    iterator = list(enumerate(gain_schedule))
+    if progress:
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(iterator, desc="modulated_strobe_acquire")
+        except ImportError:
+            pass
+    for _bi, gain in iterator:
+        experiment.set_qubit_gain(gain)
+        out.append((gain, experiment.acquire(progress=False)))
+    return out
+
+
 def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress=False):
     """Run strobe acquisition in blocks, setting qubit_gain per block, and stitch.
 
@@ -1186,9 +1212,32 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
     cum_offset_us = 0.0
     sample_period = float(experiment.cfg.get("sample_period_us", 0.0))
     first_meta = {}
-    for bi, gain in enumerate(gain_schedule):
-        experiment.set_qubit_gain(gain)
-        data = experiment.acquire(progress=False)
+
+    # APPLY reps_per_block. Previously this argument was accepted, echoed into the
+    # returned dict, and otherwise ignored: each block was just experiment.acquire(),
+    # which uses cfg["reps_per_chunk"]. The caller computes reps_per_block from the
+    # requested modulation frequency, so ignoring it silently delivered a DIFFERENT
+    # frequency than asked for -- e.g. a 25 Hz request ran at 6.25 Hz because
+    # reps_per_chunk happened to be 2000 rather than the required 500, and the
+    # reported modulation_freq_hz (derived from reps_per_block) then described a
+    # schedule that was never played.
+    #
+    # set_qubit_gain() re-syncs cfg["reps"] from cfg["reps_per_chunk"] and rebuilds
+    # the program, so writing reps_per_chunk here is enough -- but write both, so
+    # the intent survives if that re-sync ever changes.
+    reps_per_block = int(reps_per_block)
+    if reps_per_block < 1:
+        raise ValueError(f"reps_per_block must be >= 1, got {reps_per_block}")
+    saved_reps = (experiment.cfg.get("reps_per_chunk"), experiment.cfg.get("reps"))
+    experiment.cfg["reps_per_chunk"] = reps_per_block
+    experiment.cfg["reps"] = reps_per_block
+    try:
+        _blocks = _modulated_blocks(experiment, gain_schedule, progress)
+    finally:
+        # Restore, so a later stage does not inherit the block length.
+        experiment.cfg["reps_per_chunk"], experiment.cfg["reps"] = saved_reps
+
+    for bi, (gain, data) in enumerate(_blocks):
         I_c = np.asarray(data["I"]).ravel()
         Q_c = np.asarray(data["Q"]).ravel()
         t_c = np.asarray(data["t_us"], dtype=float).ravel()
@@ -1209,6 +1258,16 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
         ref_parts.append(np.full(I_c.size, 1.0 if gain > 0 else 0.0))
         wall_starts.append(data.get("wall_clock_start"))
         cum_idx += I_c.size
+        # Fail loudly if the hardware did not deliver the requested block length:
+        # modulation_freq_hz is derived from reps_per_block, so a silent mismatch
+        # means the reported frequency describes a schedule that was never played.
+        if I_c.size != reps_per_block:
+            raise RuntimeError(
+                f"modulated_strobe_acquire: block {bi} returned {I_c.size} samples "
+                f"but reps_per_block={reps_per_block}. modulation_freq_hz would be "
+                f"wrong by {reps_per_block / max(I_c.size, 1):.3g}x. Check that "
+                f"set_qubit_gain() re-syncs cfg['reps'] from cfg['reps_per_chunk']."
+            )
     stitched = {
         "I": np.concatenate(I_parts),
         "Q": np.concatenate(Q_parts),
@@ -1465,4 +1524,52 @@ if __name__ == "__main__":
     assert acq["block_labels"] == schedule, acq["block_labels"]
     # 500 reps/half-period at 20 us -> half=10 ms -> period 20 ms -> 50 Hz
     assert abs(acq["modulation_freq_hz"] - 50.0) < 1.0, acq["modulation_freq_hz"]
-    print("utils.py modulated_strobe_acquire: OK")
+
+    # reps_per_block must actually be APPLIED, not just echoed. Found on hardware
+    # 2026-07-29: a 25 Hz request ran at 6.25 Hz because each block used
+    # cfg["reps_per_chunk"] (2000) instead of the reps_per_block the caller derived
+    # from the requested frequency (500), and the reported modulation_freq_hz then
+    # described a schedule that was never played.
+    class _RepsAwareFakeExp:
+        """Honours cfg['reps_per_chunk'], like the real ZeroSpanParity."""
+        def __init__(self, sp_us):
+            self.cfg = {"sample_period_us": sp_us, "qubit_gain": 0,
+                        "reps_per_chunk": 2000, "reps": 2000, "mode": "strobe"}
+            self.acquires = []
+        def set_qubit_gain(self, gain):
+            self.cfg["qubit_gain"] = gain
+            self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
+        def acquire(self, progress=False):
+            n = int(self.cfg["reps"])
+            self.acquires.append(n)
+            sp = self.cfg["sample_period_us"]
+            lvl = 5.0 if self.cfg["qubit_gain"] > 0 else 0.0
+            return {"I": np.full(n, lvl), "Q": np.zeros(n),
+                    "t_us": np.arange(n) * sp, "mode": "strobe",
+                    "sample_period_us": sp}
+
+    exp_r = _RepsAwareFakeExp(40.0)
+    sched_r = [100, 0] * 4
+    acq_r = modulated_strobe_acquire(exp_r, sched_r, 500)
+    assert set(exp_r.acquires) == {500}, (
+        f"reps_per_block was not applied: blocks ran at {sorted(set(exp_r.acquires))} "
+        f"samples instead of 500")
+    assert acq_r["I"].size == 500 * len(sched_r), acq_r["I"].size
+    assert acq_r["gap_indices"] == [500 * k for k in range(1, len(sched_r))]
+    # 500 x 40 us = 20 ms half-period -> 25 Hz, and that must be what is reported.
+    assert abs(acq_r["modulation_freq_hz"] - 25.0) < 0.01, acq_r["modulation_freq_hz"]
+    # cfg must be restored so a later stage does not inherit the block length.
+    assert exp_r.cfg["reps_per_chunk"] == 2000, exp_r.cfg["reps_per_chunk"]
+
+    # A block that returns the wrong length must raise, not silently mis-report.
+    class _WrongLenExp(_RepsAwareFakeExp):
+        def acquire(self, progress=False):
+            d = super().acquire(progress)
+            return {**d, "I": d["I"][:-1], "Q": d["Q"][:-1], "t_us": d["t_us"][:-1]}
+    try:
+        modulated_strobe_acquire(_WrongLenExp(40.0), [100, 0], 500)
+    except RuntimeError as ex:
+        assert "reps_per_block" in str(ex), ex
+    else:
+        raise AssertionError("expected a raise on a short block")
+    print("utils.py modulated_strobe_acquire applies reps_per_block: OK")

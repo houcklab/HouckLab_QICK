@@ -132,23 +132,35 @@ def modified_ramsey_timing(soccfg, cfg):
         if reset_cycles else 0
     )
 
+    # The reset is driven by the FINAL RAMSEY READOUT (mModifiedRamsey.body ->
+    # reset_from_final_readout), so that readout's syncdelay is the ring-down
+    # delay the corrective pi needs, not mr_relax_delay. mr_relax_delay moves
+    # into the reset block, after the flip. With reset off nothing changes.
+    final_readout_syncdelay_tproc_cycles = (
+        reset_delay_tproc_cycles if reset_cycles else mr_relax_tproc_cycles
+    )
     ramsey_sequence_tproc_cycles = (
         ramsey_pulse_count * qubit_pulse_tproc_cycles
         + wait_tproc_cycles
         + final_padding_tproc_cycles
         + readout_slot_tproc_cycles
-        + mr_relax_tproc_cycles
+        + final_readout_syncdelay_tproc_cycles
     )
     reset_block_tproc_cycles = (
         # The corrective pi is conditional at runtime, but QICK's compile-time
         # timestamp tracking sees the pulse before the shared sync_all(). The
         # generated synci therefore reserves its full duration on both branches.
-        reset_cycles * (
+        reset_cycles * qubit_pulse_tproc_cycles
+        # Cycle 0 rides the Ramsey readout already counted above; only the EXTRA
+        # cycles pay for a readout slot and its ring-down delay.
+        + max(0, reset_cycles - 1) * (
             readout_slot_tproc_cycles
             + reset_delay_tproc_cycles
-            + qubit_pulse_tproc_cycles
         )
         + post_reset_wait_tproc_cycles
+        # Spent after the flip rather than before it (see above), but still once
+        # per rep. Zero when reset is off, where it sits on the readout instead.
+        + (mr_relax_tproc_cycles if reset_cycles else 0)
     )
     scheduled_rep_period_tproc_cycles = (
         ramsey_sequence_tproc_cycles + reset_block_tproc_cycles
@@ -194,6 +206,11 @@ def modified_ramsey_timing(soccfg, cfg):
         "reset_cycles": int(reset_cycles),
         "reset_readout_relax_delay_us": to_us(reset_delay_tproc_cycles),
         "post_reset_wait_us": to_us(post_reset_wait_tproc_cycles),
+        "final_readout_syncdelay_us": to_us(final_readout_syncdelay_tproc_cycles),
+        # Reset cycle 0 consumes the Ramsey readout, so a rep holds
+        # max(1, reset_cycles) readouts and the parity shot is read 0.
+        "reads_per_rep": int(max(1, reset_cycles)),
+        "reset_uses_final_readout": bool(reset_cycles),
         "f_time_mhz": f_time,
         "res_f_fabric_mhz": res_f_fabric,
         "qubit_f_fabric_mhz": qubit_f_fabric,
@@ -564,6 +581,131 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
         json.dump(cycle_summary, f, indent=2, default=float)
 
 
+def _two_tone_doublet_attempt(ctx, ModifiedRamsey_params, Spec_relevant_params,
+                              cfg, save_dir, *,
+                              spec_center_mhz, current_voltage, cycle_idx,
+                              attempt_idx, plot_index, df_required):
+    """Run ONE two-tone spec at the present voltage and locate the parity doublet.
+
+    Shared by the per-cycle voltage search and the periodic re-check
+    (two_tone_every_n_cycles), so both leave identical artifacts on disk: the
+    QubitSpecSliceFF h5/json, the annotated two-tone png, and the _summary.txt
+    next to it.
+
+    `spec_center_mhz` centres the swept span; the caller also uses it as the
+    reference for the "centered feature" test, so the doublet finder is handed
+    the same reference it will be judged against.
+
+    Mutates `cfg` with the transient spec knobs, exactly as the inline search did.
+    Returns (doublet, save_base).
+    """
+    cfg["current_voltage"] = current_voltage
+    cfg["reps"] = ModifiedRamsey_params["reps"]
+    cfg["rounds"] = ModifiedRamsey_params["rounds"]
+    cfg["Gauss"] = ModifiedRamsey_params["Gauss"]
+    cfg["relax_delay"] = ModifiedRamsey_params["relax_delay"]
+
+    if cfg["Gauss"]:
+        cfg["sigma"] = ModifiedRamsey_params["sigma"]
+        cfg["qubit_gain"] = ModifiedRamsey_params["gain"]
+
+    cfg["qubit_length"] = ModifiedRamsey_params["qubit_length"]
+    cfg["SpecSpan"] = ModifiedRamsey_params["SpecSpan"]
+    cfg["SpecNumPoints"] = ModifiedRamsey_params["SpecNumPoints"]
+    cfg["step"] = 2 * cfg["SpecSpan"] / cfg["SpecNumPoints"]
+    cfg["start"] = spec_center_mhz - cfg["SpecSpan"]
+    cfg["expts"] = cfg["SpecNumPoints"]
+
+    Instance_specSlice_mr = QubitSpecSliceFF(
+        path="ModifiedRamsey",
+        cfg=cfg,
+        soc=ctx.soc,
+        soccfg=ctx.soccfg,
+        outerFolder=ctx.outerFolder
+    )
+    data_specSlice_mr = QubitSpecSliceFF.acquire(Instance_specSlice_mr)
+    QubitSpecSliceFF.display(
+        Instance_specSlice_mr,
+        data_specSlice_mr,
+        plotDisp=False,
+        figNum=2,
+        # QubitSpecSliceFF's own display annotations, tuned by the spec params --
+        # NOT the doublet finder below, which uses the ModifiedRamsey_params
+        # peak-finder settings.
+        min_sep=Spec_relevant_params["min_sep_MHz"],
+        fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
+        prominent_ratio=Spec_relevant_params["prominent_ratio"],
+    )
+    QubitSpecSliceFF.save_data(Instance_specSlice_mr, data_specSlice_mr)
+    QubitSpecSliceFF.save_config(Instance_specSlice_mr)
+
+    x_pts_mr = np.array(data_specSlice_mr["data"]["x_pts"])
+    avgi_mr = np.array(data_specSlice_mr["data"]["avgi"][0][0])
+    avgq_mr = np.array(data_specSlice_mr["data"]["avgq"][0][0])
+    # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
+    # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
+    # background quadrature and buries the qubit feature.
+    avgamp0_mr = project_iq_signal(avgi_mr, avgq_mr)
+
+    # Robust parity-doublet finder: noise-floor-referenced peak detection,
+    # symmetric-pair-about-center selection, sub-bin Lorentzian refinement.
+    doublet_mr = find_parity_doublet(
+        x_pts_mr,
+        avgamp0_mr,
+        center_freq=spec_center_mhz,
+        min_sep_mhz=ModifiedRamsey_params.get("min_sep_MHz", 0.02),
+        max_sep_mhz=ModifiedRamsey_params.get("max_sep_MHz", None),
+        prominence_snr=ModifiedRamsey_params.get("prominence_snr", 5.0),
+        smooth_window=ModifiedRamsey_params.get("smooth_window", 5),
+        symmetry_tol_mhz=ModifiedRamsey_params.get("symmetry_tol_MHz", None),
+        min_height_balance=ModifiedRamsey_params.get("min_height_balance", 0.3),
+        fit_window_mhz=ModifiedRamsey_params.get("fit_window_mhz", 0.1),
+        refine=True,
+    )
+
+    # peak_info compatible with save_two_tone_plot and the summary file.
+    peak_info_mr = {
+        "peak_inds": doublet_mr["peak_inds"],
+        "peak_freqs": doublet_mr["peak_freqs"],
+        "peak_vals": doublet_mr["peak_vals"],
+        "peak_sep": doublet_mr["peak_sep"],
+        "source": doublet_mr["mode"],
+    }
+
+    save_base_mr = save_two_tone_plot(
+        x_pts=x_pts_mr,
+        avgi=avgi_mr,
+        avgq=avgq_mr,
+        avgamp0=avgamp0_mr,
+        peak_info=peak_info_mr,
+        current_voltage=current_voltage,
+        attempt_idx=plot_index,
+        save_dir=save_dir,
+        qubit_gain=cfg.get("qubit_gain"),
+        qubit_length=cfg.get("qubit_length"),
+        center_freq=spec_center_mhz,
+        fit=doublet_mr.get("fit"),
+        live_display=ModifiedRamsey_params.get("live_display", False),
+        live_pause=ModifiedRamsey_params.get("live_pause", 0.05),
+    )
+
+    with open(save_base_mr + "_summary.txt", "w") as f:
+        f.write(f"cycle_idx: {cycle_idx}\n")
+        f.write(f"attempt_idx: {attempt_idx}\n")
+        f.write(f"current_voltage: {current_voltage:.9f}\n")
+        f.write(f"spec_center: {spec_center_mhz}\n")
+        f.write(f"mode: {doublet_mr['mode']}\n")
+        f.write(f"lower: {doublet_mr['lower']}\n")
+        f.write(f"upper: {doublet_mr['upper']}\n")
+        f.write(f"center: {doublet_mr['center']}\n")
+        f.write(f"peak_sep: {doublet_mr['peak_sep']}\n")
+        f.write(f"noise_sigma: {doublet_mr['noise_sigma']}\n")
+        f.write(f"candidates: {doublet_mr['candidates']}\n")
+        f.write(f"df_required: {df_required}\n")
+
+    return doublet_mr, save_base_mr
+
+
 def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
     date_tag_mr = datetime.now().strftime("%Y_%m_%d")
     save_dir_mr = os.path.join(ctx.outerFolder, "ModifiedRamsey", date_tag_mr)
@@ -585,23 +727,43 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
 
     # ---------- fixed-frequency mode (no two-tone calibration) ----------
     # skip_two_tone_search=True bypasses the per-cycle QubitSpecSliceFF sweep AND
-    # the yoko voltage walk: every cycle runs the Ramsey straight away at
-    # fixed_f_ge with tau = 1/(2*fixed_df). Use it when the doublet position is
-    # already known (or the spec is too slow / too weak to resolve the peaks) and
-    # the device is stable enough not to need re-centering each cycle.
-    #   fixed_f_ge   [MHz] drive frequency; None -> ctx.qubit_frequency_center
-    #   fixed_df     [MHz] separation that sets tau; None -> center_peak_df_for_tau
-    #   fixed_voltage [V]  one-time yoko move before the cycles; None -> hold
-    #                      whatever voltage the yoko is already at
+    # the yoko voltage walk: every cycle runs the Ramsey straight away at the
+    # frequency set here with tau = 1/(2*fixed_df). Use it when the doublet
+    # position is already known (or the spec is too slow / too weak to resolve the
+    # peaks) and the device is stable enough not to need re-centering each cycle.
+    #
+    # WHICH FREQUENCY YOU ARE SETTING IS LOAD-BEARING. mModifiedRamsey consumes
+    # cfg["f_ge"] as the UPPER parity peak (the two-tone path feeds it
+    # doublet["upper"]) and derives the drive from it:
+    #     standard  (symmetric_ramsey=False): drive = f_ge
+    #     symmetric (symmetric_ramsey=True) : drive = f_ge - df/2
+    # Writing the doublet CENTRE into f_ge therefore mis-places the drive by df/2,
+    # and df/2 is exactly the null of the parity contrast in BOTH schemes:
+    #     contrast = |sin(pi*df*tau)| * |sin(2*pi*eps*tau)|   standard
+    #                                 * |cos(2*pi*eps*tau)|   symmetric
+    # with eps = drive - doublet_midpoint and tau = 1/(2*df). At eps = -df/2 the
+    # symmetric factor is cos(pi/2) = 0: both parity branches land on the equator,
+    # every shot is 50/50, and the averaged trace is a flat line at 0.5 with no
+    # error raised anywhere. That is what the old
+    # "fixed_f_ge=None -> ctx.qubit_frequency_center" default did, since
+    # qubit_frequency_center is a CENTRE, not an upper peak (measured flat on
+    # TATQ01-SiO2/BFG Q3, 2026-07-29: predicted contrast 0.0003).
+    #
+    # So state the reference point explicitly; the derivation to f_ge happens here:
+    #   fixed_f_center [MHz] doublet CENTRE  -> f_ge = center + df/2
+    #   fixed_f_ge     [MHz] UPPER peak      -> used as-is
+    #                        Set exactly one. Neither -> ctx.qubit_frequency_center
+    #                        is treated as a CENTRE (that is what it is).
+    #   fixed_df       [MHz] separation that sets tau; None -> center_peak_df_for_tau
+    #                        NOTE this is asserted, not measured: if the real
+    #                        splitting differs, tau is wrong and both branches
+    #                        accumulate nearly the same phase -- also a flat trace.
+    #   fixed_voltage  [V]   one-time yoko move before the cycles; None -> hold
+    #                        whatever voltage the yoko is already at
     skip_two_tone_mr = ModifiedRamsey_params.get("skip_two_tone_search", False)
     fixed_f_ge_mr = None
     fixed_df_mr = None
     if skip_two_tone_mr:
-        fixed_f_ge_mr = ModifiedRamsey_params.get("fixed_f_ge", None)
-        if fixed_f_ge_mr is None:
-            fixed_f_ge_mr = ctx.qubit_frequency_center
-        fixed_f_ge_mr = float(fixed_f_ge_mr)
-
         fixed_df_mr = ModifiedRamsey_params.get("fixed_df", None)
         if fixed_df_mr is None:
             fixed_df_mr = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
@@ -610,6 +772,32 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             raise RuntimeError(
                 f"[ModifiedRamsey] skip_two_tone_search=True requires a positive "
                 f"fixed_df (it sets tau = 1/(2*df)); got {fixed_df_mr}."
+            )
+
+        # Resolve the drive reference point. Exactly one of the two keys, so a
+        # centre can never be silently consumed as an upper peak.
+        f_center_in = ModifiedRamsey_params.get("fixed_f_center", None)
+        f_upper_in = ModifiedRamsey_params.get("fixed_f_ge", None)
+        if f_center_in is not None and f_upper_in is not None:
+            raise RuntimeError(
+                "[ModifiedRamsey] set only ONE of fixed_f_center (doublet centre) "
+                f"or fixed_f_ge (upper peak); got fixed_f_center={f_center_in} "
+                f"and fixed_f_ge={f_upper_in}. They differ by df/2 = "
+                f"{fixed_df_mr / 2.0:.6f} MHz, which is the parity-contrast null."
+            )
+        if f_upper_in is not None:
+            fixed_f_center_mr = float(f_upper_in) - fixed_df_mr / 2.0
+            fixed_f_ge_mr = float(f_upper_in)
+            ref_src = "fixed_f_ge (upper peak)"
+        else:
+            fixed_f_center_mr = float(
+                f_center_in if f_center_in is not None
+                else ctx.qubit_frequency_center
+            )
+            fixed_f_ge_mr = fixed_f_center_mr + fixed_df_mr / 2.0
+            ref_src = (
+                "fixed_f_center (doublet centre)" if f_center_in is not None
+                else "ctx.qubit_frequency_center, treated as the doublet centre"
             )
 
         fixed_voltage_mr = ModifiedRamsey_params.get("fixed_voltage", None)
@@ -624,12 +812,87 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             ramp_to(ctx.yoko, fixed_voltage_mr)
             current_voltage_mr = fixed_voltage_mr
 
-        print(
-            f"[ModifiedRamsey] fixed-frequency mode: skipping the two-tone search. "
-            f"f_ge={fixed_f_ge_mr:.6f} MHz, df={fixed_df_mr:.6f} MHz, "
-            f"tau={1.0 / (2.0 * fixed_df_mr):.4f} us, V={current_voltage_mr:.6f} V "
-            f"(held)"
+        # Print the drive frequency the program will actually synthesize, so a
+        # mis-placed reference point is visible in the log rather than only as a
+        # flat trace hours later.
+        symmetric_mr = ModifiedRamsey_params.get("symmetric_ramsey", False)
+        drive_freq_mr = (
+            fixed_f_ge_mr - fixed_df_mr / 2.0 if symmetric_mr else fixed_f_ge_mr
         )
+        print(
+            f"[ModifiedRamsey] fixed-frequency mode: skipping the two-tone search.\n"
+            f"    reference     : {ref_src}\n"
+            f"    doublet centre: {fixed_f_center_mr:.6f} MHz  "
+            f"(lower {fixed_f_center_mr - fixed_df_mr / 2.0:.6f}, "
+            f"upper {fixed_f_ge_mr:.6f})\n"
+            f"    df            : {fixed_df_mr:.6f} MHz  -> "
+            f"tau = {1.0 / (2.0 * fixed_df_mr):.4f} us\n"
+            f"    drive          : {drive_freq_mr:.6f} MHz  "
+            f"({'symmetric, f_ge - df/2' if symmetric_mr else 'standard, f_ge'})"
+            f", offset from centre {drive_freq_mr - fixed_f_center_mr:+.6f} MHz\n"
+            f"    V             : {current_voltage_mr:.6f} V (held)"
+        )
+
+    # ---------- periodic two-tone (every Nth trace) ----------
+    # two_tone_every_n_cycles = N: run the two-tone spec at the START of every Nth
+    # cycle only; the N-1 cycles in between go straight to the Ramsey. The device
+    # drifts far more slowly than one trace takes, and a spec attempt is
+    # SpecNumPoints x reps x rounds x relax_delay (seconds to minutes), so a spec
+    # per trace mostly costs duty cycle.
+    #   None / 0 -> unchanged behaviour: two-tone EVERY cycle
+    #               (or never, when skip_two_tone_search=True).
+    #   N >= 1   -> two-tone on cycles 0, N, 2N, ...
+    #
+    # Composes with skip_two_tone_search in the two ways you would want:
+    #   skip_two_tone_search=False -> the full voltage-walk search runs every Nth
+    #       cycle and the intervening cycles reuse the doublet it resolved.
+    #   skip_two_tone_search=True  -> the run stays at the asserted fixed_f_ge /
+    #       fixed_df, and every Nth cycle interleaves ONE two-tone spec at the held
+    #       voltage (no yoko walk -- holding the voltage is the point of fixed
+    #       mode) so the doublet is recorded alongside the parity traces and drift
+    #       shows up in the log. That spec does NOT move the drive by default: tau
+    #       stays constant over the whole run. Set
+    #       two_tone_recheck_updates_freq=True to let a resolved doublet re-centre
+    #       f_ge/df for the following cycles.
+    two_tone_every_n_mr = ModifiedRamsey_params.get("two_tone_every_n_cycles", None)
+    if two_tone_every_n_mr is not None:
+        two_tone_every_n_mr = int(two_tone_every_n_mr)
+        if two_tone_every_n_mr < 0:
+            raise RuntimeError(
+                "[ModifiedRamsey] two_tone_every_n_cycles must be >= 0 (0 or None "
+                f"disables the periodic two-tone); got {two_tone_every_n_mr}."
+            )
+        if two_tone_every_n_mr == 0:
+            two_tone_every_n_mr = None
+    # None (or absent) -> per-mode default: a real search always sets the drive,
+    # while a fixed-mode re-check is diagnostic unless asked to re-centre.
+    recheck_updates_freq_mr = ModifiedRamsey_params.get(
+        "two_tone_recheck_updates_freq", None
+    )
+    if recheck_updates_freq_mr is None:
+        recheck_updates_freq_mr = not skip_two_tone_mr
+    recheck_updates_freq_mr = bool(recheck_updates_freq_mr)
+    if two_tone_every_n_mr:
+        if skip_two_tone_mr:
+            print(
+                f"[ModifiedRamsey] periodic two-tone ON: one spec at the held "
+                f"voltage every {two_tone_every_n_mr} cycles (single attempt, no "
+                f"yoko walk). A resolved doublet "
+                f"{'RE-CENTRES f_ge/df for the following cycles' if recheck_updates_freq_mr else 'is recorded and logged only -- f_ge/df stay at the fixed values, so tau is constant across the run'}."
+            )
+        else:
+            print(
+                f"[ModifiedRamsey] two-tone voltage search every "
+                f"{two_tone_every_n_mr} cycles; the cycles in between reuse the "
+                f"last resolved doublet."
+            )
+
+    # Working doublet carried across cycles: (upper peak -> f_ge, separation -> df).
+    # Seeded from the fixed-frequency values in skip_two_tone mode; overwritten by
+    # a two-tone search whenever that search is allowed to update the drive.
+    working_f_ge_mr = fixed_f_ge_mr
+    working_df_mr = fixed_df_mr
+    working_source_mr = "fixed" if skip_two_tone_mr else None
 
     cycle_summary_mr = []
 
@@ -674,135 +937,155 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         success_mr = False
         chosen_probe_freq_mr = None
         chosen_peak_sep_mr = None
+        search_mode_mr = None
 
-        if skip_two_tone_mr:
-            chosen_probe_freq_mr = fixed_f_ge_mr
-            chosen_peak_sep_mr = fixed_df_mr
-            success_mr = True
-            print(
-                f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: fixed frequency "
-                f"(no two-tone), f_ge={chosen_probe_freq_mr:.6f} MHz, "
-                f"df={chosen_peak_sep_mr:.6f} MHz, "
-                f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us, "
-                f"V={current_voltage_mr:.6f} V"
-            )
+        # Does the two-tone block run on THIS cycle? Without the periodic setting
+        # this reduces to the old rule: every cycle unless skip_two_tone_search.
+        if two_tone_every_n_mr:
+            run_two_tone_mr = (cycle_idx_mr % two_tone_every_n_mr == 0)
+        else:
+            run_two_tone_mr = not skip_two_tone_mr
+        # Fixed mode re-checks with ONE spec at the held voltage; search mode keeps
+        # the full voltage walk.
+        attempts_mr = (
+            (1 if skip_two_tone_mr else max_tries_mr) if run_two_tone_mr else 0
+        )
 
-        # ---------- two-tone voltage search ----------
-        # Fixed-frequency mode runs zero attempts, so the search below is skipped
-        # entirely and the fixed f_ge / df set above stand for this cycle.
-        for attempt_idx_mr in range(0 if skip_two_tone_mr else max_tries_mr):
+        # Cycles that do not re-measure run at the carried-over doublet: the
+        # asserted fixed values, or the last one a search resolved.
+        if not run_two_tone_mr:
+            if working_f_ge_mr is None:
+                # Search mode + periodic re-check, and no search has succeeded yet.
+                print(
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: no doublet from a "
+                    f"previous two-tone search yet -- skipping this cycle."
+                )
+            else:
+                chosen_probe_freq_mr = working_f_ge_mr
+                chosen_peak_sep_mr = working_df_mr
+                # "fixed" = the asserted params; "reused" = measured on an earlier
+                # cycle. Never "two_tone": no spec ran on this cycle.
+                search_mode_mr = (
+                    "fixed" if working_source_mr == "fixed" else "reused"
+                )
+                success_mr = True
+                print(
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: "
+                    + ("fixed frequency (no two-tone)"
+                       if working_source_mr == "fixed"
+                       else "reusing last two-tone doublet")
+                    + f", f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                    f"df={chosen_peak_sep_mr:.6f} MHz, "
+                    f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us, "
+                    f"V={current_voltage_mr:.6f} V"
+                )
+
+        # Centre the swept span on the doublet actually being tracked (the working
+        # values hold the UPPER peak) so a drifted doublet stays inside the span.
+        # Only when the periodic two-tone is enabled -- the per-cycle search keeps
+        # centring on ctx.qubit_frequency_center as before.
+        spec_center_mr = ctx.qubit_frequency_center
+        if (two_tone_every_n_mr and working_f_ge_mr is not None
+                and working_df_mr is not None):
+            spec_center_mr = working_f_ge_mr - working_df_mr / 2.0
+
+        # ---------- two-tone search / re-check ----------
+        for attempt_idx_mr in range(attempts_mr):
             print(
                 f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}/{num_cycles_mr}, "
-                f"attempt {attempt_idx_mr + 1}/{max_tries_mr}, V={current_voltage_mr:.6f} V"
+                f"two-tone attempt {attempt_idx_mr + 1}/{attempts_mr}, "
+                f"spec centre {spec_center_mr:.6f} MHz, V={current_voltage_mr:.6f} V"
             )
 
-            cfg["current_voltage"] = current_voltage_mr
-            cfg["reps"] = ModifiedRamsey_params["reps"]
-            cfg["rounds"] = ModifiedRamsey_params["rounds"]
-            cfg["Gauss"] = ModifiedRamsey_params["Gauss"]
-            cfg["relax_delay"] = ModifiedRamsey_params["relax_delay"]
-
-            if cfg["Gauss"]:
-                cfg["sigma"] = ModifiedRamsey_params["sigma"]
-                cfg["qubit_gain"] = ModifiedRamsey_params["gain"]
-
-            cfg["qubit_length"] = ModifiedRamsey_params["qubit_length"]
-            cfg["SpecSpan"] = ModifiedRamsey_params["SpecSpan"]
-            cfg["SpecNumPoints"] = ModifiedRamsey_params["SpecNumPoints"]
-            cfg["step"] = 2 * cfg["SpecSpan"] / cfg["SpecNumPoints"]
-            cfg["start"] = ctx.qubit_frequency_center - cfg["SpecSpan"]
-            cfg["expts"] = cfg["SpecNumPoints"]
-
-            Instance_specSlice_mr = QubitSpecSliceFF(
-                path="ModifiedRamsey",
-                cfg=cfg,
-                soc=ctx.soc,
-                soccfg=ctx.soccfg,
-                outerFolder=ctx.outerFolder
-            )
-            data_specSlice_mr = QubitSpecSliceFF.acquire(Instance_specSlice_mr)
-            QubitSpecSliceFF.display(
-                Instance_specSlice_mr,
-                data_specSlice_mr,
-                plotDisp=False,
-                figNum=2,
-                min_sep=Spec_relevant_params["min_sep_MHz"],
-                fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
-                prominent_ratio=Spec_relevant_params["prominent_ratio"],
-            )
-            QubitSpecSliceFF.save_data(Instance_specSlice_mr, data_specSlice_mr)
-            QubitSpecSliceFF.save_config(Instance_specSlice_mr)
-
-            x_pts_mr = np.array(data_specSlice_mr["data"]["x_pts"])
-            avgi_mr = np.array(data_specSlice_mr["data"]["avgi"][0][0])
-            avgq_mr = np.array(data_specSlice_mr["data"]["avgq"][0][0])
-            # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
-            # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
-            # background quadrature and buries the qubit feature.
-            avgamp0_mr = project_iq_signal(avgi_mr, avgq_mr)
-
-            # Robust parity-doublet finder: noise-floor-referenced peak detection,
-            # symmetric-pair-about-center selection, sub-bin Lorentzian refinement.
-            doublet_mr = find_parity_doublet(
-                x_pts_mr,
-                avgamp0_mr,
-                center_freq=ctx.qubit_frequency_center,
-                min_sep_mhz=ModifiedRamsey_params.get("min_sep_MHz", 0.02),
-                max_sep_mhz=ModifiedRamsey_params.get("max_sep_MHz", None),
-                prominence_snr=ModifiedRamsey_params.get("prominence_snr", 5.0),
-                smooth_window=ModifiedRamsey_params.get("smooth_window", 5),
-                symmetry_tol_mhz=ModifiedRamsey_params.get("symmetry_tol_MHz", None),
-                min_height_balance=ModifiedRamsey_params.get("min_height_balance", 0.3),
-                fit_window_mhz=ModifiedRamsey_params.get("fit_window_mhz", 0.1),
-                refine=True,
-            )
-
-            # peak_info compatible with save_two_tone_plot and the summary file.
-            peak_info_mr = {
-                "peak_inds": doublet_mr["peak_inds"],
-                "peak_freqs": doublet_mr["peak_freqs"],
-                "peak_vals": doublet_mr["peak_vals"],
-                "peak_sep": doublet_mr["peak_sep"],
-                "source": doublet_mr["mode"],
-            }
-
-            save_base_mr = save_two_tone_plot(
-                x_pts=x_pts_mr,
-                avgi=avgi_mr,
-                avgq=avgq_mr,
-                avgamp0=avgamp0_mr,
-                peak_info=peak_info_mr,
+            doublet_mr, save_base_mr = _two_tone_doublet_attempt(
+                ctx,
+                ModifiedRamsey_params,
+                Spec_relevant_params,
+                cfg,
+                save_dir_mr,
+                spec_center_mhz=spec_center_mr,
                 current_voltage=current_voltage_mr,
-                attempt_idx=attempt_idx_mr + cycle_idx_mr * max_tries_mr,
-                save_dir=save_dir_mr,
-                qubit_gain=cfg.get("qubit_gain"),
-                qubit_length=cfg.get("qubit_length"),
-                center_freq=ctx.qubit_frequency_center,
-                fit=doublet_mr.get("fit"),
-                live_display=ModifiedRamsey_params.get("live_display", False),
-                live_pause=ModifiedRamsey_params.get("live_pause", 0.05),
+                cycle_idx=cycle_idx_mr,
+                attempt_idx=attempt_idx_mr,
+                plot_index=attempt_idx_mr + cycle_idx_mr * max_tries_mr,
+                df_required=df_required_mr,
             )
-
-            with open(save_base_mr + "_summary.txt", "w") as f:
-                f.write(f"cycle_idx: {cycle_idx_mr}\n")
-                f.write(f"attempt_idx: {attempt_idx_mr}\n")
-                f.write(f"current_voltage: {current_voltage_mr:.9f}\n")
-                f.write(f"mode: {doublet_mr['mode']}\n")
-                f.write(f"lower: {doublet_mr['lower']}\n")
-                f.write(f"upper: {doublet_mr['upper']}\n")
-                f.write(f"center: {doublet_mr['center']}\n")
-                f.write(f"peak_sep: {doublet_mr['peak_sep']}\n")
-                f.write(f"noise_sigma: {doublet_mr['noise_sigma']}\n")
-                f.write(f"candidates: {doublet_mr['candidates']}\n")
-                f.write(f"df_required: {df_required_mr}\n")
 
             center_peak_tol_mhz = ModifiedRamsey_params.get("center_peak_tol_mhz", 0.05)
             center_peak_df_for_tau = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
 
             doublet_centered_mr = (
                 doublet_mr["center"] is not None
-                and abs(doublet_mr["center"] - ctx.qubit_frequency_center) <= center_peak_tol_mhz
+                and abs(doublet_mr["center"] - spec_center_mr) <= center_peak_tol_mhz
             )
+
+            # ---------- fixed-frequency periodic re-check ----------
+            # One spec, no voltage walk, and the asserted f_ge/df stand unless
+            # two_tone_recheck_updates_freq says otherwise. df_required (the
+            # "walk until the peaks split far enough" gate) does not apply here:
+            # fixed mode is deliberately parked at whatever splitting the user
+            # asserted, which is routinely below it.
+            if skip_two_tone_mr:
+                resolved_mr = (
+                    doublet_mr["mode"] == "doublet"
+                    and doublet_mr["peak_sep"] is not None
+                    and doublet_mr["center"] is not None
+                )
+                if resolved_mr:
+                    drift_mr = doublet_mr["center"] - spec_center_mr
+                    print(
+                        f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: re-check "
+                        f"resolved a doublet -- lower={doublet_mr['lower']:.6f}, "
+                        f"upper={doublet_mr['upper']:.6f}, "
+                        f"centre={doublet_mr['center']:.6f} MHz "
+                        f"(sep {doublet_mr['peak_sep']:.6f} MHz), "
+                        f"centre drift vs the tracked doublet {drift_mr:+.6f} MHz"
+                    )
+                    if abs(drift_mr) > center_peak_tol_mhz:
+                        print(
+                            f"[ModifiedRamsey] WARNING: measured doublet centre is "
+                            f"{abs(drift_mr):.6f} MHz off the drive reference "
+                            f"(> center_peak_tol_mhz = {center_peak_tol_mhz:.6f} "
+                            f"MHz). The drive is walking off the doublet, which "
+                            f"costs parity contrast."
+                            + ("" if recheck_updates_freq_mr else
+                               " two_tone_recheck_updates_freq is False, so f_ge/df "
+                               "are NOT being corrected.")
+                        )
+                    if recheck_updates_freq_mr:
+                        working_f_ge_mr = float(doublet_mr["upper"])
+                        working_df_mr = float(doublet_mr["peak_sep"])
+                        working_source_mr = "two_tone"
+                        print(
+                            f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: re-centred "
+                            f"on the measured doublet -- "
+                            f"f_ge={working_f_ge_mr:.6f} MHz, "
+                            f"df={working_df_mr:.6f} MHz, "
+                            f"tau={1.0 / (2.0 * working_df_mr):.4f} us"
+                        )
+                else:
+                    print(
+                        f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: re-check "
+                        f"resolved no doublet (mode={doublet_mr['mode']}); keeping "
+                        f"the tracked f_ge/df and running the trace anyway."
+                    )
+                # Whatever the re-check saw, the trace runs at the working doublet.
+                chosen_probe_freq_mr = working_f_ge_mr
+                chosen_peak_sep_mr = working_df_mr
+                search_mode_mr = (
+                    "two_tone" if (resolved_mr and recheck_updates_freq_mr)
+                    else ("fixed_recheck" if working_source_mr == "fixed"
+                          else "reused_recheck")
+                )
+                success_mr = True
+                print(
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: running the trace at "
+                    f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                    f"df={chosen_peak_sep_mr:.6f} MHz, "
+                    f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us, "
+                    f"V={current_voltage_mr:.6f} V"
+                )
+                break
 
             if (
                 doublet_mr["mode"] == "doublet"
@@ -821,6 +1104,11 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
                     f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
                 )
 
+                # Carry it to the cycles that skip the search (two_tone_every_n).
+                working_f_ge_mr = chosen_probe_freq_mr
+                working_df_mr = chosen_peak_sep_mr
+                working_source_mr = "two_tone"
+                search_mode_mr = "two_tone"
                 success_mr = True
                 break
 
@@ -833,13 +1121,17 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
                 print(
                     f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: centered feature "
                     f"(mode={doublet_mr['mode']}), center={doublet_mr['center']:.6f} MHz, "
-                    f"|diff|={abs(doublet_mr['center'] - ctx.qubit_frequency_center):.6f} MHz <= "
+                    f"|diff|={abs(doublet_mr['center'] - spec_center_mr):.6f} MHz <= "
                     f"{center_peak_tol_mhz:.6f} MHz. Running calibration Ramsey with "
                     f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
                     f"df_for_tau={chosen_peak_sep_mr:.6f} MHz, "
                     f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
                 )
 
+                working_f_ge_mr = chosen_probe_freq_mr
+                working_df_mr = chosen_peak_sep_mr
+                working_source_mr = "two_tone"
+                search_mode_mr = "centered_feature"
                 success_mr = True
                 break
 
@@ -858,11 +1150,35 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             ramp_to(ctx.yoko, next_voltage_mr)
             current_voltage_mr = next_voltage_mr
 
+        # A periodic search that comes up empty falls back to the doublet the last
+        # successful search resolved, rather than dropping this trace: the N-1
+        # non-search cycles around it run on exactly those values anyway, so
+        # dropping only the search cycle would punch inconsistent holes in the
+        # series. Without two_tone_every_n_cycles the old behaviour stands (a failed
+        # search means no trace).
+        if (not success_mr and two_tone_every_n_mr and run_two_tone_mr
+                and working_f_ge_mr is not None):
+            chosen_probe_freq_mr = working_f_ge_mr
+            chosen_peak_sep_mr = working_df_mr
+            search_mode_mr = "reused_after_failed_search"
+            success_mr = True
+            print(
+                f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: two-tone search found "
+                f"no acceptable doublet; falling back to the last resolved one -- "
+                f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                f"df={chosen_peak_sep_mr:.6f} MHz, "
+                f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us, "
+                f"V={current_voltage_mr:.6f} V (the walk has moved the voltage; "
+                f"the stale doublet may no longer sit there)."
+            )
+
         if not success_mr:
             print(f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: failed to find sufficient peak separation.")
             cycle_summary_mr.append({
                 "cycle_idx": cycle_idx_mr,
                 "success": False,
+                "search_mode": search_mode_mr,
+                "ran_two_tone": bool(run_two_tone_mr),
                 "final_voltage": current_voltage_mr,
                 "chosen_probe_freq": None,
                 "peak_sep": None,
@@ -1051,6 +1367,10 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             tau_us=np.array(tau_us_mr),
             final_voltage=np.array(current_voltage_mr),
             cycle_idx=np.array(cycle_idx_mr),
+            # Provenance of f_ge/df for this trace: measured by a two-tone spec on
+            # this cycle, or carried over from an earlier one (two_tone_every_n).
+            search_mode=np.array(str(search_mode_mr)),
+            ran_two_tone=np.array(bool(run_two_tone_mr)),
             scheduled_rep_period_us=np.array(rep_period_us),
             streamer_average_rep_period_us=np.array(streamer_rep_period_us_mr),
             timing_breakdown=np.array(timing_mr, dtype=object),
@@ -1063,7 +1383,10 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         cycle_summary_mr.append({
             "cycle_idx": cycle_idx_mr,
             "success": True,
-            "search_mode": "fixed" if skip_two_tone_mr else "two_tone",
+            # How this cycle's f_ge/df were obtained: two_tone / centered_feature
+            # (measured this cycle), fixed / reused / *_recheck (carried over).
+            "search_mode": search_mode_mr,
+            "ran_two_tone": bool(run_two_tone_mr),
             "final_voltage": current_voltage_mr,
             "chosen_probe_freq": chosen_probe_freq_mr,
             "peak_sep": chosen_peak_sep_mr,

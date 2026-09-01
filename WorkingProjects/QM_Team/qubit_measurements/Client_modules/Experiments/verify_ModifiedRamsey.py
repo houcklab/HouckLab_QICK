@@ -17,13 +17,18 @@ F5  config validation (positives, non-negative delays, non-empty ro_chs)
 F6  sign-safe tProc compare: regwi(thresh + cmp_offset) + mathi(r_read +=
     cmp_offset) before condj
 F7  modified_ramsey_timing() models the scheduled rep period exactly
-F8  buffer de-interleave: the final Ramsey read is the last read of each rep
+F8  buffer de-interleave: the Ramsey read is read 0 of each rep (it fires at the
+    end of the sequence and doubles as the reset-decision readout, so any extra
+    reset readouts follow it)
 F9  raw_shot_buffers() sources per-shot data from prog.acc_buf
-F10 a STALLING instruction separates the reset readout from the `read` that
+F10 a STALLING instruction separates the informing readout from the `read` that
     feeds the condj, with a real settle margin measured in tProc cycles
-    (mModifiedRamsey/mActiveResetVerify.active_reset_to_g)
-F11 the two active_reset_to_g() implementations emit identical reset asm
+    (mModifiedRamsey.feedback_flip_to_g / mActiveResetVerify.active_reset_to_g)
+F11 the two feedback implementations emit identical feedback asm
 F12 the r_read capture diagnostic is exact, and inert when disabled
+F13 the reset decision comes from the FINAL RAMSEY READOUT: reset_cycles=1 costs
+    ONE readout per rep, the feedback runs after the sequence, and enabling reset
+    adds less than a readout slot to the rep period
 
 Why F10 exists: measure(wait=True) emits waiti (which stalls) while syncdelay
 emits synci (which only advances the tProc time reference). Before the fix the
@@ -490,13 +495,23 @@ def read_settle_timings(prog):
 
 
 def reset_asm_signature(prog):
-    """Canonical, label-agnostic signature of one program's reset block.
+    """Canonical, label-agnostic signature of one program's FEEDBACK blocks.
 
-    The block runs from the first body instruction through the instruction
-    carrying the LAST done-label (which is the synci that sync_all() emits after
-    the corrective pi, so the branch-reconvergence delay is included). Label
-    strings are normalized away: the two programs use RESET_DONE_n and
-    VRESET_DONE_n for the same jump target.
+    One block per reset cycle, delimited from the stalling waiti that guards the
+    `read` through the instruction carrying that cycle's done-label (the synci
+    that sync_all() emits after the corrective pi, so branch reconvergence is
+    included). Label strings are normalized away: the two programs use
+    RESET_DONE_n and VRESET_DONE_n for the same jump target.
+
+    Delimiting on the waiti rather than on body[0] is what makes the comparison
+    position-independent, and it now has to be: ModifiedRamsey runs its feedback
+    AFTER the whole Ramsey sequence, off the final readout, while
+    ActiveResetVerify runs it right after the prep pulse off a dedicated one.
+    Every instruction inside a block carries a time RELATIVE to the tProc
+    reference, which the informing measure()'s sync_all has just zeroed, so the
+    two windows are directly comparable despite sitting at different absolute
+    times in their bodies. What is deliberately NOT compared here is the
+    informing readout itself -- that is what read_settle_margin_cycles() covers.
     """
     body, _ = _loop_body(prog)
     labelled = [i for i, x in enumerate(body)
@@ -504,13 +519,31 @@ def reset_asm_signature(prog):
     if len(labelled) != prog.reset_cycles:
         raise RuntimeError(
             f"found {len(labelled)} *RESET_DONE_* labels, expected "
-            f"{prog.reset_cycles}; cannot delimit the reset block")
+            f"{prog.reset_cycles}; cannot delimit the feedback blocks")
     sig = []
-    for x in body[:labelled[-1] + 1]:
-        args = tuple("<label>" if isinstance(a, str) and "RESET_DONE_" in a else a
-                     for a in x["args"])
-        sig.append((x["name"], args))
+    start = 0
+    for cycle, end in enumerate(labelled):
+        stalls = [i for i in range(start, end) if body[i]["name"] == "waiti"]
+        if not stalls:
+            raise RuntimeError(
+                f"reset cycle {cycle}: no stalling waiti before the done label; "
+                "F10 is gone, and the block cannot be delimited")
+        for x in body[stalls[-1]:end + 1]:
+            args = tuple("<label>" if isinstance(a, str) and "RESET_DONE_" in a
+                         else a for a in x["args"])
+            sig.append((cycle, x["name"], args))
+        start = end + 1
     return sig
+
+
+def read_settle_margin_cycles(prog):
+    """Only the margins from read_settle_margins(): absolute times dropped.
+
+    adc_close/stall are positions within the rep, not properties of the feedback.
+    ModifiedRamsey's informing readout closes the body while ActiveResetVerify's
+    opens it, so only the margin BETWEEN the two is comparable across programs.
+    """
+    return [m["margin_cycles"] for m in read_settle_margins(prog)]
 
 
 # ---------------------------------------------------------------------------
@@ -537,8 +570,13 @@ def check_shot_buffers(soccfg):
         cfg = (reset_cfg(reps=reps, reset_cycles=reset_cycles)
                if reset_cycles else base_cfg(reps=reps))
         prog = ModifiedRamseyProgram(soccfg, dict(cfg))
-        nreads = reset_cycles + 1
-        prog.reads_per_rep = nreads
+        # Reset cycle 0 rides the Ramsey readout, so only the EXTRA cycles add a
+        # read: reads_per_rep = max(1, reset_cycles), and initialize() must
+        # already agree with that (collect_shots strides on it).
+        nreads = max(1, reset_cycles)
+        r.expect(prog.reads_per_rep == nreads,
+                 f"reset_cycles={reset_cycles}: initialize() set reads_per_rep="
+                 f"{prog.reads_per_rep}, expected {nreads}")
 
         # Raw accumulator fingerprint: I = rep*1000 + read, Q negative (the sign
         # case the F6 compare cares about, and a check that nothing takes abs).
@@ -563,12 +601,14 @@ def check_shot_buffers(soccfg):
 
         norm = soccfg.us2cycles(cfg["readout_length"], ro_ch=cfg["ro_chs"][0])
         shots_i, shots_q = prog.collect_shots()
-        expected_i = (np.arange(reps) * 1000 + (nreads - 1)) / norm
+        # read 0, not read nreads-1: the Ramsey readout comes first now.
+        expected_i = (np.arange(reps) * 1000 + 0) / norm
         r.expect(shots_i.shape == (1, reps),
                  f"reset_cycles={reset_cycles}: shots_i shape {shots_i.shape}")
         r.expect(np.allclose(shots_i.ravel(), expected_i),
-                 f"reset_cycles={reset_cycles}: collect_shots did not select the "
-                 "FINAL read of each rep")
+                 f"reset_cycles={reset_cycles}: collect_shots did not select read 0 "
+                 "of each rep (the Ramsey/parity readout, which also drives the "
+                 "reset decision -- extra reset readouts follow it)")
         r.expect(np.allclose(shots_q.ravel(), -expected_i),
                  f"reset_cycles={reset_cycles}: shots_q mismatch")
 
@@ -674,10 +714,9 @@ def check_ro_ch_normalization(soccfg):
         thresholds[ro_ch] = _resolve_reg(plist, len(plist), prog.q_rp, prog.r_thresh)
 
         # collect_shots must divide by the SAME window
-        prog.reads_per_rep = prog.reset_cycles + 1
         nreads = prog.reads_per_rep
         acc = np.zeros((cfg["reps"], nreads, 2), dtype=np.int64)
-        acc[:, -1, 0] = window  # one normalized unit
+        acc[:, 0, 0] = window  # one normalized unit, on the Ramsey read
         prog.acc_buf = [acc]
         shots_i, _ = prog.collect_shots()
         r.expect(np.allclose(shots_i, 1.0),
@@ -823,6 +862,102 @@ def check_reset_asm(soccfg):
     return r
 
 
+def _adc_trigger_indices(prog, body):
+    """Body indices of the seti instructions that START a readout window.
+
+    trigger() emits regwi(out_word) then seti(port,...,t_start) and
+    seti(port,...,0) to clear; only the one whose out-word carries this readout's
+    trigger bit opens a window, so this counts readouts, not seti instructions.
+    """
+    _, plist = _loop_body(prog)
+    offset = plist.index(body[0])
+    rocfg = prog.soccfg["readouts"][prog.cfg["ro_chs"][0]]
+    port = int(rocfg["trigger_port"])
+    bits = 1 << int(rocfg["trigger_bit"])
+    out = []
+    for i, inst in enumerate(body):
+        if inst["name"] != "seti" or inst["args"][0] != port:
+            continue
+        val = _resolve_reg(plist, offset + i, inst["args"][1], inst["args"][2])
+        if val is not None and (int(val) & bits):
+            out.append(i)
+    return out
+
+
+def check_reset_from_final_readout(soccfg):
+    """F13 -- the reset decision is read off the FINAL RAMSEY READOUT.
+
+    The point of the scheme is that the parity readout and the reset-conditioning
+    readout are the SAME readout, so reset_cycles=1 costs one readout per rep
+    instead of two. A regression to a dedicated pre-sequence reset readout would
+    still pass F6/F10/F11 -- the feedback block itself would be untouched -- and
+    would silently halve the parity sampling rate while moving the parity shot
+    back to the last read of the rep. This is the check that pins it.
+    """
+    r = CheckResult("reset_from_final_readout", "F13, F8")
+    slot = None
+
+    for reset_cycles in (0, 1, 2):
+        cfg = (reset_cfg(reset_cycles=reset_cycles, readout_threshold=1.0)
+               if reset_cycles else base_cfg())
+        prog = ModifiedRamseyProgram(soccfg, dict(cfg))
+        body, _ = _loop_body(prog)
+        trigs = _adc_trigger_indices(prog, body)
+        reads = [i for i, x in enumerate(body) if x["name"] == "read"]
+        # sync(page, r_wait) is the Ramsey free-evolution wait -- the marker that
+        # the sequence itself has already run.
+        ramsey_waits = [i for i, x in enumerate(body) if x["name"] == "sync"]
+        tag = f"reset_cycles={reset_cycles}"
+
+        r.expect(len(trigs) == max(1, reset_cycles),
+                 f"{tag}: {len(trigs)} readouts per rep, expected "
+                 f"{max(1, reset_cycles)}. Reset cycle 0 must consume the final "
+                 "Ramsey readout, not fire its own.")
+        r.expect(len(reads) == reset_cycles,
+                 f"{tag}: {len(reads)} feedback reads, expected {reset_cycles}")
+        r.expect(prog.reads_per_rep == max(1, reset_cycles),
+                 f"{tag}: reads_per_rep={prog.reads_per_rep}")
+        r.notes[tag] = {"readouts": len(trigs), "reads": len(reads),
+                        "reads_per_rep": int(prog.reads_per_rep)}
+        if reset_cycles:
+            r.expect(bool(ramsey_waits) and ramsey_waits[0] < reads[0],
+                     f"{tag}: the first feedback read precedes the Ramsey "
+                     "precession wait, i.e. the reset block has moved back to the "
+                     "START of the shot and is no longer reading the final readout")
+            r.expect(trigs[0] < reads[0],
+                     f"{tag}: the first feedback read is not preceded by a readout")
+            # cycle 0's read must belong to the FIRST (= Ramsey) readout, i.e. no
+            # other readout may open between them.
+            r.expect(len([i for i in trigs if i < reads[0]]) == 1,
+                     f"{tag}: {len([i for i in trigs if i < reads[0]])} readouts "
+                     "fire before the first feedback read; cycle 0 must read the "
+                     "Ramsey readout itself")
+
+        if reset_cycles == 0:
+            slot = float(
+                prog.readout_window_cycles[cfg["ro_chs"][0]]
+                * float(soccfg["tprocs"][0]["f_time"])
+                / float(soccfg["readouts"][cfg["ro_chs"][0]]["f_output"])
+            )
+
+    # Enabling one round of reset must cost LESS than a readout slot: that
+    # inequality is exactly what reusing the Ramsey readout buys, and it is false
+    # for any implementation that measures again to decide.
+    base_period = rep_period_cycles_from_asm(ModifiedRamseyProgram(soccfg, base_cfg()))
+    reset_period = rep_period_cycles_from_asm(
+        ModifiedRamseyProgram(soccfg, dict(reset_cfg(readout_threshold=1.0))))
+    delta = reset_period - base_period
+    r.expect(delta < slot,
+             f"reset_cycles=1 adds {delta} tProc cycles to the rep period, which "
+             f"is not less than one readout window ({slot:.0f} cycles) -- the "
+             "reset is paying for a measurement of its own")
+    r.notes["rep_period_cycles"] = {"reset_off": int(base_period),
+                                    "reset_1": int(reset_period),
+                                    "delta": int(delta),
+                                    "readout_window_cycles": round(slot, 1)}
+    return r
+
+
 # Hard floor on the settle margin, in us. Well above the avg_buf -> tProc
 # propagation (two clock-domain crossings, tens to ~150 ns) and above the 200
 # tProc cycles (0.47 us) the canonical qick active-reset demo waits.
@@ -961,12 +1096,16 @@ def check_reset_read_settle(soccfg):
 
 
 def check_reset_parity(soccfg):
-    """F11 -- the two active_reset_to_g() bodies must emit identical asm.
+    """F11 -- the two feedback blocks must emit identical asm.
 
     ActiveResetVerify only validates ModifiedRamsey's reset if it runs the same
     instructions. check_reset_asm compares cmp_offset; this compares the whole
-    emitted reset block, so a fix applied to one file and not the other fails
-    here instead of silently invalidating every tier-C conclusion.
+    emitted feedback block (read -> sign-safe offset -> condj -> pi -> reconverge)
+    plus the settle margin of the readout that informs it, so a fix applied to one
+    file and not the other fails here instead of silently invalidating every
+    tier-C conclusion. What ARV does NOT reproduce -- deliberately -- is WHICH
+    readout informs the flip: ModifiedRamsey uses its final Ramsey readout, ARV
+    fires a dedicated one so it can add verification reads afterwards.
     """
     r = CheckResult("reset_parity", "F11, F6, F10")
     for reset_cycles in (1, 2):
@@ -998,8 +1137,10 @@ def check_reset_parity(soccfg):
                 r.expect(getattr(mr, attr) == getattr(arv, attr),
                          f"{tag}: {attr} is {getattr(mr, attr)} in ModifiedRamsey "
                          f"and {getattr(arv, attr)} in ActiveResetVerify")
-            r.expect(read_settle_timings(mr) == read_settle_timings(arv),
-                     f"{tag}: the two programs give different read settle margins")
+            r.expect(read_settle_margin_cycles(mr) == read_settle_margin_cycles(arv),
+                     f"{tag}: the two programs give different read settle margins "
+                     f"({read_settle_margin_cycles(mr)} vs "
+                     f"{read_settle_margin_cycles(arv)})")
     r.notes["signature_len_rc1"] = len(reset_asm_signature(
         ModifiedRamseyProgram(soccfg, dict(reset_cfg(readout_threshold=1.0)))))
     return r
@@ -1167,6 +1308,13 @@ def check_timing_model(soccfg):
         "reset_2": reset_cfg(reset_cycles=2),
         "reset_2_echo_wait": reset_cfg(reset_cycles=2, use_pi_pulse=True,
                                        post_reset_wait=1.5, mr_relax_delay=3.0),
+        # Under reset, mr_relax_delay is emitted AFTER the flip rather than as the
+        # final readout's syncdelay. Both cases have to land on the same rep
+        # period the asm actually schedules, or the model is describing a program
+        # that is not running.
+        "reset_1_mr_relax": reset_cfg(mr_relax_delay=7.0),
+        "reset_1_relax0": reset_cfg(reset_readout_relax_delay=0.0,
+                                    mr_relax_delay=7.0),
     }
     for label, cfg in cases.items():
         prog = ModifiedRamseyProgram(soccfg, dict(cfg))
@@ -1249,6 +1397,7 @@ def run_offline_suite(soccfg=None, snapshot_path=None, out_dir=None, verbose=Tru
         _run(check_ro_ch_normalization, soccfg),
         _run(check_config_validation, soccfg),
         _run(check_reset_asm, soccfg),
+        _run(check_reset_from_final_readout, soccfg),
         _run(check_reset_read_settle, soccfg),
         _run(check_reset_parity, soccfg),
         _run(check_reset_capture_asm, soccfg),
@@ -1386,7 +1535,8 @@ def check_buffer_shape(soc, soccfg, cfg_base, reps=200):
             prime_board(soc, soccfg, cfg_base)
             prog = ModifiedRamseyProgram(soccfg, dict(cfg))
             shots_i, shots_q = prog.acquire(soc, load_pulses=True, progress=False)
-        nreads = reset_cycles + 1
+        # Cycle 0 reads the Ramsey readout, so only extra cycles add reads.
+        nreads = max(1, reset_cycles)
         r.expect(prog.acc_buf[0].shape == (reps, nreads, 2),
                  f"reset_cycles={reset_cycles}: acc_buf shape "
                  f"{prog.acc_buf[0].shape} != {(reps, nreads, 2)}")

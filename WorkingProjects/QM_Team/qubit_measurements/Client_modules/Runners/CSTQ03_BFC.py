@@ -141,12 +141,28 @@ TwoToneChargeDispersion_params = {
 ModifiedRamsey_params = {
     # --- fixed-frequency mode: skip the two-tone calibration entirely ---------
     # True  -> no per-cycle spec sweep and no yoko voltage walk. Every cycle runs
-    #          the Ramsey at fixed_f_ge with tau = 1/(2*fixed_df).
+    #          the Ramsey at the frequency set here with tau = 1/(2*fixed_df).
     # False -> the two-tone doublet search below picks f_ge and df each cycle.
     "skip_two_tone_search": False,
-    "fixed_f_ge": None,        # MHz drive frequency; None -> qubit_frequency_center
+    # Set exactly ONE of fixed_f_center / fixed_f_ge. They differ by df/2, which is
+    # exactly where the parity contrast is ZERO -- swapping them gives a dead-flat
+    # trace at 0.5 with no error (see the long note in runs/charge_parity.py).
+    "fixed_f_center": None,    # MHz CENTRE of the parity doublet
+    "fixed_f_ge": None,        # MHz UPPER parity peak (alternative to the centre)
     "fixed_df": None,          # MHz separation that sets tau; None -> center_peak_df_for_tau
     "fixed_voltage": None,     # V one-time yoko move before cycling; None -> hold current V
+
+    # --- periodic two-tone: run the search every N traces instead of every one --
+    # N -> the two-tone block runs at the START of cycles 0, N, 2N, ... and the
+    #      cycles in between reuse the doublet it last resolved (the device drifts
+    #      much more slowly than one trace takes, and each spec attempt costs
+    #      SpecNumPoints x reps x rounds x relax_delay).
+    # None / 0 -> old behaviour: search every cycle.
+    "two_tone_every_n_cycles": None,
+    # Only meaningful with skip_two_tone_search=True (where it defaults to False):
+    # whether a re-checked doublet is allowed to re-centre f_ge/df. In search mode
+    # a successful search always sets them.
+    "two_tone_recheck_updates_freq": None,
 
     # --- two-tone search settings (same role as TwoToneChargeDispersion_params) ---
     "df": 0.5,                  # required peak separation in MHz before running Ramsey
@@ -201,14 +217,18 @@ ModifiedRamsey_params = {
     # f_ge is set automatically to the higher-frequency peak
     # No relax delay: the preceding measurement collapses the state, but does
     # not guarantee |g>. Enable use_active_reset for deterministic preparation.
-    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
+    # us of extra inter-shot idle: after the final readout with reset off, after
+    # the corrective flip with reset on. Separate from the search relax_delay.
+    "mr_relax_delay": 0.0,
     "mr_reps": 40000,             # number of single-shot Ramsey measurements per cycle
     "average_n_shots": 400,
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
     # off preserves the original standard-scheme behavior.
     "flip_final_pi2": False,      # add 180 deg to closing pi/2 (swap parity->state)
     "symmetric_ramsey": False,    # drive at midpoint f_avg=f_ge-df/2 instead of upper
-    # Hardware active reset to |g> per shot (opt-in). When True, the driver
+    # Hardware active reset to |g> per shot (opt-in). The decision is read off
+    # the shot's OWN final Ramsey readout, so at reset_cycles=1 the reset costs no
+    # extra readout -- a rep is one readout, as with reset off. When True, the driver
     # runs calibrate_active_reset_readout() first: it rotates config["res_phase"]
     # so g/e separate ALONG I and derives the I threshold from the rotated
     # SingleShot blobs (requires use_apriori_separator=True). The threshold is
@@ -293,7 +313,9 @@ ModifiedRamsey_Control_params = {
     # tau is computed from S1 (the separation found at V1), NOT from S_sweet
     # (which is ~0), so it matches the tau that ModifiedRamsey would use at V1.
     # f_ge is set from the two-tone at V_sweet (average of peaks, or single peak).
-    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
+    # us of extra inter-shot idle: after the final readout with reset off, after
+    # the corrective flip with reset on. Separate from the search relax_delay.
+    "mr_relax_delay": 0.0,
     "mr_reps": 500,
     # hysteresis / moving-average: set via setdefault below (same as ModifiedRamsey)
 }
@@ -432,11 +454,19 @@ AutoCoherence_override_params = {
 # qubit_gain, cavity_gain, qubit_frequency_center). Set RunZeroSpanParity = True,
 # edit the blocks here, then run this file.
 #
-# Hard constraints (validated fail-fast in ZeroSpanParity.__init__, spec §5.3):
+# Hard constraints (validated fail-fast in ZeroSpanParity.__init__, spec §5.3).
+# Numbers below are for the BFG ZCU216: tProc 430.08 MHz, readout f_output
+# 307.2 MHz, avg_maxlen 16384, buf_maxlen 1024. Run
+# Experiments/_loopback_check_ZeroSpanParity.py to print the live values.
 #   sample_period_us >= adc_trig_offset + read_length + 1.0
-#   us2cycles(sample_period_us | capture_length_us) <= 65535
-#   reps_per_chunk <= soccfg['readouts'][ro_ch]['avg_maxlen']
-#   decimated read_length samples <= soccfg['readouts'][ro_ch]['buf_maxlen']
+#   us2cycles(sample_period_us | capture_length_us) <= 65535  -> <= 152 us
+#   reps_per_chunk <= avg_maxlen (16384), unless allow_reps_over_avg_maxlen=True
+#   decimated read_length < buf_maxlen / f_output  -> < 3.33 us  (see below)
+#
+# BEFORE THE FIRST RUN ON A QUBIT: pass the loopback gate
+# (Experiments/_loopback_check_ZeroSpanParity.py). It is what verifies the readout
+# window, the per-rep cadence, and the I/Q scale against the single-shot
+# separator — none of which are visible in the saved data if they are wrong.
 RunZeroSpanParity = False
 
 # Acquisition mode + trigger source
@@ -466,57 +496,126 @@ ZSP_ParitySpec_params = {
     "min_sep_MHz": 0.2, "fit_window_mhz": 0.5, "prominent_ratio": 0.1,
 }
 
-# Strobe-mode params (Path A). sample_period_us floor = adc_trig_offset +
-# read_length + 1.0 us; reps_per_chunk capped at avg_maxlen; total record (s) =
-# reps_per_chunk * n_chunks * sample_period_us * 1e-6 (~12 s for defaults below).
+# Strobe-mode params (Path A). Total record (s) =
+# reps_per_chunk * n_chunks * sample_period_us * 1e-6 (~24 s for the values below).
+#
+# read_length is the SNR knob and it dominates whether parity is resolvable at
+# all: per-sample discrimination scales as sqrt(read_length), and the parity
+# contrast is only a fraction of the full g/e separation to begin with. Keep it
+# equal to SS_params["Readout_Time"] so the g/e separator is calibrated in the
+# same readout regime the strobe trace is taken in — otherwise the fidelity you
+# measured in SingleShot is not the fidelity you get here.
+#
+# There is no reason to spend that SNR on a fast cadence: parity lifetimes are
+# expected in the ms range, so a 40 us sample period already oversamples by ~75x.
+# sample_period_us also sets the const-tone length, so it must clear the rule-1
+# floor (adc_trig_offset + read_length + 1.0) and stay under ~152 us.
 ZSP_StrobeParams = {
-    "sample_period_us": 20.0,
-    "reps_per_chunk":   10000,
-    "n_chunks":         60,
-    "read_length":      5.0,
-    "adc_trig_offset":  0.488,
+    "sample_period_us": 40.0,    # >= adc_trig_offset + read_length + 1 (rule 1)
+    "reps_per_chunk":   10000,   # <= avg_maxlen 16384; 0.4 s per chunk
+    "n_chunks":         60,      # -> 24 s total record
+    "read_length":      15.0,    # == SS_params["Readout_Time"] on this device
+    "adc_trig_offset":  1.0,     # == SS_params["ADC_Offset"]
+    # Opt in to reps_per_chunk > avg_maxlen. The accumulated buffer is circular and
+    # streamed during the run, so a single long chunk is legal and avoids the real
+    # time gap that every chunk boundary puts in the record. It stays opt-in
+    # because the run raises if the host cannot keep up — confirm with the loopback
+    # gate before using it for a long record.
+    "allow_reps_over_avg_maxlen": False,
 }
 
-# Decimated-mode params (Path B). capture_length_us must cover the readout window
-# (adc_trig_offset + read_length) and stay under the 16-bit cycle cap. soft_avgs
-# must be 1 unless allow_soft_avgs=True (>1 destroys parity trajectories).
-# n_captures>1 concatenates back-to-back captures, marking boundaries in
-# gap_indices.
+# Decimated-mode params (Path B).
+#
+# NOT USABLE ON THIS BOARD for a parity telegraph: buf_maxlen is 1024 decimated
+# samples at f_output = 307.2 MHz, i.e. a maximum capture of 3.33 us. Path B needs
+# a DDR4-streaming path to be useful here; run ZSP_RunMode = "strobe".
+# The values below are legal (so the mode can still be smoke-tested) but far too
+# short to hold parity dynamics. capture_length_us must cover
+# adc_trig_offset + read_length; soft_avgs must be 1 unless allow_soft_avgs=True
+# (>1 averages independent captures and destroys the trajectory).
 ZSP_DecimatedParams = {
-    "capture_length_us": 100.0,
+    "capture_length_us": 6.0,
     "soft_avgs":         1,
     "n_captures":        1,
-    "read_length":       80.0,
-    "adc_trig_offset":   0.488,
+    "read_length":       3.0,    # must be < buf_maxlen / f_output = 3.33 us
+    "adc_trig_offset":   1.0,
     "allow_soft_avgs":   False,
 }
 
 # Drive params (mode-independent). qubit_gain/pulse_gain = None -> use the active
-# qubit's tuned values (qubit_gain / cavity_gain globals).
+# qubit's tuned values (qubit_gain / cavity_gain globals). res_phase = None ->
+# inherit the session's calibrated ctx.config["res_phase"], which is what the g/e
+# separator was measured in; a hard-coded value that disagrees with it rotates the
+# strobe IQ relative to the projection axis.
 ZSP_DriveParams = {
     "qubit_gain": None,
     "pulse_gain": None,
-    "res_phase":  0,
+    "res_phase":  None,
 }
 
 # Offline-analysis params (see analyze_parity_run docstring).
 ZSP_AnalysisParams = {
-    "classifier_method":     "apriori",   # "apriori" | "kmeans"
+    # "apriori_axis" (default): project onto the g->e axis from the single-shot
+    #   calibration, but take the THRESHOLD from the trace's own two-component fit.
+    #   Correct for zero-span, which measures a driven steady state: both parity
+    #   states sit at small |e> population, so both land on the same side of the
+    #   g/e midpoint.
+    # "apriori": thresholds at the g/e midpoint. On a driven trace this labels
+    #   every sample the same -> zero switches and a nan tau, with no error.
+    # "kmeans": cluster the trace itself; needs no separator.
+    "classifier_method":     "apriori_axis",
     "window_us":             1000.0,
     "k_sigma":               5.0,
     "step_us":               None,
     "min_burst_duration_us": None,
     "analysis_bin_us":       None,        # set < read_length for decimated apriori
     "save_plots":            True,
+    # Dwell-time debouncing. Runs shorter than min_dwell_bins samples are absorbed
+    # into a neighbour before the switch rate AND the dwell statistics are
+    # computed. Without it a single-sample classification flicker reads as two
+    # parity switches, which biases tau low by >2x at only a few percent
+    # misclassification and inflates the burst threshold. Set False for the raw
+    # numbers.
+    "merge_short_segments":  True,
+    "min_dwell_bins":        2,
 }
 
 # ============================ VALIDATION HARNESS (spec 2026-06-01) ============================
 # Strobe-only. Each block reuses ZSP_Separator_Cached / ZSP_ParityFreqs_Cached and the
-# zsp_cfg already built for ZeroSpanParity. Run order: stage1 -> stage2 -> stage1 refine ->
-# stage3 (gate) -> stage4 -> 5/6 -> 8 -> 7 -> 9.  See spec 6.3.
+# zsp_cfg already built for ZeroSpanParity.
+#
+# Run ONE stage per session, in this order (spec §6.3), reading the printed verdict
+# before enabling the next:
+#   1  StaticContrast        optimise read_pulse_freq at a rough qubit branch
+#   2  ContrastVsQubitFreq   confirm the f+/f- doublet at that probe point
+#   1  StaticContrast again  refine the probe point at the chosen branch
+#   3  ModulationCheck       *** THE GATE *** — an injected square wave must come
+#                            back in the projected trace. If it does not, the
+#                            projection axis / demod / timing is wrong and nothing
+#                            downstream means anything. Do not proceed.
+#   4  Telegraph             the reference record: is it genuinely two-level?
+#   5  BinSizeSweep          pick the analysis bin (reprocesses the stage-4 record)
+#   6  ThresholdStability    is tau robust to where the threshold sits?
+#   8  ControlSuite          A/B/C must kill the contrast; D should flip the sign
+#   7  EnvironmentSweep      does the rate respond to the environment?
+#   9  Build_EvidenceReport  collate every sidecar into EVIDENCE.md
+#
+# Stages 5 and 6 only REPROCESS samples, so they do not need stage 4 re-run every
+# time. Precedence for the record they analyse:
+#   1. Validate_Telegraph on  -> the record stage 4 just acquired
+#   2. otherwise              -> the most recent saved 4_telegraph*.h5 sidecar,
+#                                loaded from disk (no acquisition -- iterate on
+#                                bin_list_us / threshold_list for free)
+#   3. nothing saved          -> a fresh Telegraph_params["n_chunks"] trace
+# Either way 5 and 6 see the SAME samples, which is the point: a bin-size or
+# threshold comparison across two separately-acquired traces also compares drift
+# and a different noise realisation. Each run prints which record it used.
 Validate_StaticContrast      = False
 Validate_ContrastVsQubitFreq = False
 Validate_ModulationCheck     = False     # pipeline-sanity gate -- run first
+Validate_Telegraph           = False     # stage 4: bimodality + dwell of one record
+Validate_BinSizeSweep        = False     # stage 5: reuses the stage-4 record (see above)
+Validate_ThresholdStability  = False     # stage 6: reuses the stage-4 record (see above)
 Validate_ControlSuite        = False
 Validate_EnvironmentSweep    = False
 Build_EvidenceReport         = False
@@ -524,8 +623,20 @@ Build_EvidenceReport         = False
 StaticContrast_params = {"freq_span_mhz": 2.0, "n_points": 41, "reps_per_point": 2000}
 ContrastVsQubit_params = {"qfreq_span_mhz": 10.0, "n_points": 81}
 Modulation_params = {"modulation_freq_hz": 25, "n_periods": 10}
+# n_chunks for the stage-4 reference record: 10 x 10000 x 40 us = 4 s, long enough
+# for a few hundred switches at a ms-scale parity lifetime.
+Telegraph_params = {"n_chunks": 10}
+# Analysis bins to compare. Keep the largest below the expected parity lifetime:
+# a bin that spans several switches averages them away.
+BinSize_params = {"bin_list_us": [40, 100, 200, 500, 1000]}
+# None -> a valley-centred grid derived from the trace's own two-component fit
+# (NOT percentiles, which for well-separated data sit inside the lobes).
+Threshold_params = {"threshold_list": None}
 Control_params = {"variants": ["A", "B", "C", "D"], "detune_mhz": 50.0}
-Environment_params = {"param_name": "power_dB", "values": [-10, -8, -6, -4]}
+# NOTE: the stage-7 hook currently sweeps the readout DAC gain, not true power.
+# For a real power sweep, point _set_power in runs/zero_span.py at the Vaunix
+# attenuator (PythonDrivers/control_atten.py).
+Environment_params = {"param_name": "readout_dac_gain", "values": [400, 600, 800, 1000]}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. EXECUTE  (don't edit below)
@@ -589,6 +700,12 @@ if RunZeroSpanParity:
         "ContrastVsQubit_params": ContrastVsQubit_params,
         "Validate_ModulationCheck": Validate_ModulationCheck,
         "Modulation_params": Modulation_params,
+        "Validate_Telegraph": Validate_Telegraph,
+        "Telegraph_params": Telegraph_params,
+        "Validate_BinSizeSweep": Validate_BinSizeSweep,
+        "BinSize_params": BinSize_params,
+        "Validate_ThresholdStability": Validate_ThresholdStability,
+        "Threshold_params": Threshold_params,
         "Validate_ControlSuite": Validate_ControlSuite,
         "Control_params": Control_params,
         "Validate_EnvironmentSweep": Validate_EnvironmentSweep,

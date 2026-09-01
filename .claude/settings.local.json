@@ -15,7 +15,18 @@
       "Bash(C:/Users/newforce/miniconda3/envs/qsim/python.exe *)",
       "Bash(PYTHONPATH=\"C:\\\\\\\\Users\\\\\\\\newforce\\\\\\\\Documents\\\\\\\\tensuan\\\\\\\\HouckLab_QICK-BFC\" timeout 120 C:/Users/newforce/miniconda3/envs/qsim/python.exe \"WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/TATQ01-SiO2_BFG.py\")",
       "Bash(PYTHONPATH='C:\\\\Users\\\\newforce\\\\Documents\\\\tensuan\\\\HouckLab_QICK-BFC' C:/Users/newforce/miniconda3/envs/qsim/python.exe -c ' *)",
-      "Bash(python -c \"import qick, os; print\\(qick.__version__, os.path.dirname\\(qick.__file__\\)\\)\")"
+      "Bash(python -c \"import qick, os; print\\(qick.__version__, os.path.dirname\\(qick.__file__\\)\\)\")",
+      "Bash(command -v claude)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//c/Users/ece-houck-j409/.claude/**)",
+      "Read(//c/Users/ece-houck-j409/AppData/Roaming/**)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.local\\\\bin\" -Force | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize; \"=== .local\\\\share\\\\claude ===\"; Get-ChildItem \"$env:USERPROFILE\\\\.local\\\\share\\\\claude\" -Force -ErrorAction SilentlyContinue | Select-Object Name,LastWriteTime | Format-Table -AutoSize)",
+      "PowerShell(& \".venv\\\\Scripts\\\\python.exe\" -c \"import ast,sys; ast.parse\\(open\\(r'WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/TATQ01-SiO2_BFG.py',encoding='utf-8'\\).read\\(\\)\\); print\\('syntax ok'\\)\")",
+      "PowerShell($py = Join-Path \\(Get-Location\\) \".venv\\\\Scripts\\\\python.exe\"; & $py -c \"import ast; ast.parse\\(open\\(r'WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/TATQ01-SiO2_BFG.py',encoding='utf-8'\\).read\\(\\)\\); print\\('syntax ok'\\)\")",
+      "PowerShell(& \"C:/Users/ece-houck-j409/AppData/Local/Programs/Python/Python311/python.exe\" -m pip list 2>$null | Out-String)",
+      "PowerShell(& \"C:/Users/ece-houck-j409/AppData/Local/Programs/Python/Python311/python.exe\" \"C:\\\\Users\\\\ECE-HO~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-ece-houck-j409-Documents-tensuan-HouckLab-QICK\\\\9f34ec40-5547-4c86-b446-2d19e786a3cc\\\\scratchpad\\\\scan_imports.py\" \"C:\\\\Users\\\\ece-houck-j409\\\\Documents\\\\tensuan\\\\HouckLab_QICK\\\\WorkingProjects\\\\QM_Team\\\\qubit_measurements\" | Out-String)",
+      "PowerShell(& \"C:/Users/ece-houck-j409/AppData/Local/Programs/Python/Python311/python.exe\" -m pip install pyvisa pyvisa-py h5py scipy scikit-learn pandas seaborn Pyro5 2>&1 | Select-Object -Last 15 | Out-String)",
+      "PowerShell($p = \\(Get-Command python\\).Source; Write-Output $p; python -c \"import qick, os; print\\(os.path.dirname\\(qick.__file__\\)\\)\")"
     ]
   }
 }

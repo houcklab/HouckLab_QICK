@@ -168,8 +168,11 @@ def phase1(soccfg):
         qubit_tproc_ch = soccfg["gens"][1]["tproc_ch"]
         starts = [t for ch, t in pulse_times(prog, prog.wait_cycles)
                   if ch == qubit_tproc_ch]
+        # The corrective reset pi pulses now come AFTER the sequence (they are fed
+        # by the final Ramsey readout), so the Ramsey pulses are the LEADING ones.
         n_reset_pi = prog.reset_cycles
-        ramsey_starts = starts[n_reset_pi:]          # drop the reset pi pulses
+        ramsey_starts = (starts[:len(starts) - n_reset_pi] if n_reset_pi
+                         else starts)
         env = prog.pulse_us * f_time                 # envelope, tProc cycles
         c2c = (ramsey_starts[-1] + env / 2) - (ramsey_starts[0] + env / 2)
         c2c_us = c2c / f_time
@@ -269,8 +272,9 @@ def phase2(soc, soccfg, reps=4000):
     ok = check("returned shot count == cfg['reps']", shots_i.size == reps,
                f"got {shots_i.size}")
 
-    nreads = prog.reset_cycles + 1
-    ok &= check("raw buffer length == reps * (reset_cycles+1)",
+    # Reset cycle 0 reads the final Ramsey readout, so it adds no readout.
+    nreads = max(1, prog.reset_cycles)
+    ok &= check("raw buffer length == reps * max(1, reset_cycles)",
                 prog.di_buf[0].size == reps * nreads,
                 f"{prog.di_buf[0].size} vs {reps*nreads}")
 

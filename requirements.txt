@@ -1,0 +1,39 @@
+# HouckLab_QICK client-side dependencies (Windows measurement PCs, Python 3.11).
+#
+# Setup on a new machine:
+#     python -m pip install -r requirements.txt
+#
+# This is the CLIENT half only. The RFSoC board runs its own PYNQ image and QICK
+# server; nothing here is installed on the board.
+#
+# Not installable from PyPI (install/copy by hand where needed):
+#   * Vaunix attenuators -> VNX_atten64.dll, loaded via os.add_dll_directory()
+#     from Client_modules/PythonDrivers/. Ships with the repo, no pip package.
+#   * NI-VISA runtime -> only needed for GPIB instruments (YOKO GS200, PNA-X).
+#     pyvisa-py below covers TCPIP/serial without it.
+#   * houck-lab-qua -> internal lab package, not on PyPI.
+
+# --- Hardware control -------------------------------------------------------
+# qick MUST match the firmware image loaded on the RFSoC. Do not bump this
+# without confirming the board's image; a mismatch fails at acquire() time.
+qick==0.2.401
+Pyro4==4.82            # socProxy.py -> QickSoc nameserver proxy
+Pyro5==5.17            # sc5510a_client.py -> SC5510A synth server
+pyvisa==1.16.2         # YOKO GS200, PNA-X (initialize4Q.py, twpa_*_pnax.py)
+pyvisa-py==0.8.1       # pure-Python VISA backend; avoids needing NI-VISA
+
+# --- Numerics / data --------------------------------------------------------
+numpy==2.4.4
+scipy==1.17.1          # curve_fit in mT1FF, mAmplitudeRabiFF, mAutoCoherence
+h5py==3.16.0           # Experiment.py / MakeFile -> .h5 data files
+pandas==3.0.5          # Helpers/MixedShots_analysis.py
+scikit-learn==1.9.0    # single-shot & parity blob discrimination
+
+# --- Plotting ---------------------------------------------------------------
+matplotlib==3.10.8
+seaborn==0.13.2        # Helpers/MixedShots_analysis.py
+
+# --- Misc -------------------------------------------------------------------
+tqdm==4.67.3
+psutil==7.2.2
+ipython==9.10.1        # interactive runner sessions

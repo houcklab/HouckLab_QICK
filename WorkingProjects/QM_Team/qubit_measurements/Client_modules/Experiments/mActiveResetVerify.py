@@ -294,10 +294,19 @@ class ActiveResetVerifyProgram(AveragerProgram):
 
         [prep pi -> |e>]  ->  [active reset -> |g>]  ->  N verification readouts
 
-    The active-reset block here is a faithful copy of
-    ModifiedRamseyProgram.active_reset_to_g() so this experiment validates the
-    EXACT mechanism the Modified Ramsey relies on (measure -> read accumulated I
-    -> conditionally apply a corrective pi only when the qubit is found in |e>).
+    The feedback block here is a faithful copy of
+    ModifiedRamseyProgram.feedback_flip_to_g() so this experiment validates the
+    EXACT mechanism the Modified Ramsey relies on (read the accumulated I of the
+    readout that just closed -> conditionally apply a corrective pi only when the
+    qubit is found in |e>). verify_ModifiedRamsey.check_reset_parity compares the
+    two emitted blocks instruction by instruction.
+
+    What differs by design is WHICH readout informs the flip. ModifiedRamsey uses
+    its final Ramsey readout -- the one that carries the parity signal -- so its
+    reset costs no measurement. Here the reset must be followed by independent
+    verification reads, so it fires a dedicated readout of its own; that readout
+    plays the same role (same syncdelay, same settle stall, same feedback), it
+    just is not also data.
 
     The point of the verification is differential. Resetting from thermal
     equilibrium (already mostly |g>) cannot distinguish a working reset from a
@@ -469,9 +478,9 @@ class ActiveResetVerifyProgram(AveragerProgram):
         # 4608-cycle window (shots below -2^24 still wrap, i.e. the original bug
         # survives), and 2^28 stops covering it past a ~26.7 us readout.
         # Must match ModifiedRamseyProgram.cmp_offset -- verify_ModifiedRamsey
-        # asserts it (F11), since the two active_reset_to_g() implementations
-        # have to emit identical asm or ARV validates a compare the Ramsey never
-        # runs. 0 here; set for real in initialize() when active reset is on.
+        # asserts it (F11), since the two feedback implementations have to emit
+        # identical asm or ARV validates a compare the Ramsey never runs. 0 here;
+        # set for real in initialize() when active reset is on.
         self.cmp_offset = 0
         # Feedback-read settle. reset_read_settle is the MINIMUM real stall
         # required between the reset readout window closing and the `read`; the
@@ -726,9 +735,11 @@ class ActiveResetVerifyProgram(AveragerProgram):
 
     def active_reset_to_g(self):
         """
-        Real measurement-feedback reset to |g>. Copied verbatim (logic) from
-        ModifiedRamseyProgram.active_reset_to_g() so this experiment validates the
-        identical sequence.
+        Real measurement-feedback reset to |g>: one dedicated readout per cycle,
+        each followed by the feedback block copied verbatim (logic) from
+        ModifiedRamseyProgram.feedback_flip_to_g(), so this experiment validates
+        the identical decision path. ModifiedRamsey supplies its final Ramsey
+        readout in place of the measure() below.
         """
         cfg = self.cfg
         ro_ch = self.reset_ro_ch
