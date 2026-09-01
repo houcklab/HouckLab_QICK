@@ -227,12 +227,20 @@ def main():
             else:
                 print("[reset] ROTATED reset selected (probe-validated).")
             DRIFT_PI_PROFILE = rec.get("drift_pi")
+            if DRIFT_PI_PROFILE is not None and not active_reset.drift_pi_matches(
+                    DRIFT_PI_PROFILE, BaseConfig, FEEDBACK_RELAX_US,
+                    RESET_MAX_ITERS, THERMALIZATION_US):
+                print("[reset] the cached drift-pi calibration was taken at different "
+                      "reset timing or relax; re-calibrating")
+                DRIFT_PI_PROFILE = None
+                rec.pop("drift_pi", None)
             if DRIFT_PI_PROFILE is None and CALIBRATE_DRIFT_PI:
                 DRIFT_PI_PROFILE = active_reset.calibrate_drift_pi(
                     soc, soccfg, BaseConfig, rec,
                     max_iters=int(RESET_MAX_ITERS),
                     thermalization_us=THERMALIZATION_US,
-                    passive_relax_us=PASSIVE_RESET_US)
+                    passive_relax_us=PASSIVE_RESET_US,
+                    feedback_relax_us=FEEDBACK_RELAX_US)
                 if DRIFT_PI_PROFILE is not None:
                     active_reset.save_reset_profile(
                         rec, BaseConfig, path=QUBIT, outer_folder=outer_folder)

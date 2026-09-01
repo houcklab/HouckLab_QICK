@@ -695,7 +695,8 @@ def _drift_shots(soc, soccfg, cfg):
 
 
 def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
-                       passive_relax_us=1500.0, delay_us=1.0,
+                       passive_relax_us=1500.0, feedback_relax_us=25.0,
+                       delay_us=1.0,
                        span_mhz=DRIFT_PI_SPAN_MHZ, step_mhz=DRIFT_PI_STEP_MHZ,
                        max_iters=None, thermalization_us=0.0, verbose=True):
     park = float(base_cfg.get("ff_park_gain", 0) or 0)
@@ -729,6 +730,7 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
     def contrast(reset_off, post_off):
         c = reset_cfg_from_record(common, rec, max_iters, thermalization_us)
         c.update({"reset_mode": "feedback",
+                  "relax_delay": float(feedback_relax_us),
                   "reset_pi_freq": qf + float(reset_off),
                   "reset_pi_gain": int(base_cfg["qubit_pi_gain"]),
                   "post_reset_pi_freq": qf + float(post_off)})
@@ -740,8 +742,9 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
 
     offs = np.arange(-step_mhz, float(span_mhz) + 1e-9, float(step_mhz))
     if verbose:
-        print(f"[reset] calibrating the drift-compensated pi at park {park:g} "
-              f"(passive contrast {base_contrast:.3f})")
+        print(f"[reset] calibrating the drift-compensated pi at park {park:g}: "
+              f"passive contrast {base_contrast:.3f} at {passive_relax_us:g} us relax, "
+              f"scoring feedback at the {feedback_relax_us:g} us relax the run uses")
     scan = [(o,) + contrast(0.0, o) for o in offs]
     post_off = max(scan, key=lambda r: r[1])[0]
     scan2 = [(o,) + contrast(o, post_off) for o in offs]
@@ -753,10 +756,30 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
     out = {"reset_pi_offset_mhz": float(reset_off),
            "post_reset_pi_offset_mhz": float(post_off),
            "qubit_pi_freq": qf, "ff_park_gain": park,
+           "feedback_relax_us": float(feedback_relax_us),
+           "reset_max_iters": (None if max_iters is None else int(max_iters)),
+           "reset_thermalization_us": float(thermalization_us),
            "contrast": float(best_c), "passive_contrast": float(base_contrast),
            "residual": float(resid)}
     rec["drift_pi"] = out
     return out
+
+
+def drift_pi_matches(d, cfg, feedback_relax_us, max_iters, thermalization_us):
+    if not isinstance(d, dict):
+        return False
+    want = (("qubit_pi_freq", float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))),
+            ("ff_park_gain", float(cfg.get("ff_park_gain", 0) or 0)),
+            ("feedback_relax_us", float(feedback_relax_us)),
+            ("reset_thermalization_us", float(thermalization_us)))
+    for key, value in want:
+        if key not in d or d[key] is None:
+            return False
+        if abs(float(d[key]) - value) > 1e-6:
+            return False
+    if max_iters is not None and d.get("reset_max_iters") is not None:
+        return int(d["reset_max_iters"]) == int(max_iters)
+    return True
 
 
 def apply_drift_pi(cfg, rec):
