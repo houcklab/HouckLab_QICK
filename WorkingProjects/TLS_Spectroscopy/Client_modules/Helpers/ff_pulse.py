@@ -87,12 +87,12 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     cfg["ff_ramp_length"] = ramp_us
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(first_level)
-    ramp_waveform = f"{name_prefix}_ramp"
-    reverse_waveform = f"{name_prefix}_ramp_reversed"
-    PulseFunctions.create_ff_ramp(prog, reversed=False, name=ramp_waveform)
+    ramp_waveform = PulseFunctions.create_ff_ramp(
+        prog, reversed=False, name=f"{name_prefix}_ramp")
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(last_level)
-    PulseFunctions.create_ff_ramp(prog, reversed=True, name=reverse_waveform)
+    reverse_waveform = PulseFunctions.create_ff_ramp(
+        prog, reversed=True, name=f"{name_prefix}_ramp_reversed")
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(ff_gain)
 

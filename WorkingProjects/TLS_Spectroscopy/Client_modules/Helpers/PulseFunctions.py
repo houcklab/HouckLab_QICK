@@ -508,6 +508,16 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
 
     return pulse_length
 
+def ff_envelope_samples(prog, default=65536):
+    gen = prog.soccfg['gens'][int(prog.cfg["ff_ch"])]
+    for key in ("maxlen", "samps_per_clk_max", "envelope_samples"):
+        try:
+            return int(gen[key])
+        except (KeyError, TypeError, IndexError, ValueError):
+            continue
+    return int(default)
+
+
 def ff_maxv(prog, scaled=False):
     gen = prog.soccfg['gens'][int(prog.cfg["ff_ch"])]
     maxv = int(gen['maxv'])
@@ -557,26 +567,35 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
     # print(f"idata = {idata}")
     # TODO figure out how does i and q work for DC signals and for arb with gain
 
-    if reversed:
-        if name is None:
-            name = "ramp_reversed"
+    if name is None:
+        name = "ramp_reversed" if reversed else "ramp"
 
-        prog.add_pulse(ch=prog.cfg["ff_ch"], name=name, idata=idata, qdata=qdata)
+    ch = prog.cfg["ff_ch"]
+    cache = getattr(prog, "_ff_ramp_cache", None)
+    if cache is None:
+        cache = {}
+        prog._ff_ramp_cache = cache
+    key = (int(ch), float(idata[0]), float(idata[-1]), int(idata.size))
+    shared = cache.get(key)
+    if shared is None:
+        budget = ff_envelope_samples(prog)
+        used = sum(n for (c, _, _, n) in cache if c == int(ch))
+        if used + idata.size > budget:
+            raise RuntimeError(
+                f"flux ramp '{name}' needs {idata.size} envelope samples but only "
+                f"{budget - used} of {budget} remain on generator {ch}.  Each distinct "
+                f"ramp costs us2cycles(ff_ramp_length)*16 samples, so the whole program "
+                f"can hold about {budget / 16 / max(prog.us2cycles(1.0, gen_ch=ch), 1):.1f} "
+                f"us of ramp in total.  Lower cfg['ff_ramp_length'] (currently "
+                f"{prog.cfg['ff_ramp_length']:g} us) or use fewer distinct ramp levels.")
+        prog.add_pulse(ch=ch, name=name, idata=idata, qdata=qdata)
+        cache[key] = name
+        shared = name
 
-        # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
-        prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = ff_maxv(prog),
-                                 waveform=name, outsel="input",
-                                 # mode = "periodic",
-                                 )
-    else:
-        if name is None:
-            name = "ramp"
-        prog.add_pulse(ch=prog.cfg["ff_ch"], name=name, idata = idata, qdata = qdata)
-
-        # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
-        prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = ff_maxv(prog),
-                                 waveform=name, outsel="input",
-                                 # mode = "periodic",
-                                 )
+    # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
+    prog.set_pulse_registers(ch=ch, freq=0, style='arb',
+                             phase=0, gain=ff_maxv(prog),
+                             waveform=shared, outsel="input",
+                             # mode = "periodic",
+                             )
+    return shared
