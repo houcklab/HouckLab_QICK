@@ -460,8 +460,10 @@ class FFT1Program(AveragerProgram):
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)))
-            if pi_gain is not None or pi_freq is not None:
-                self._set_qubit_pulse()
+            post_freq = cfg.get("post_reset_pi_freq", None)
+            if pi_gain is not None or pi_freq is not None or post_freq is not None:
+                self._set_qubit_pulse(
+                    freq_mhz=float(post_freq) if post_freq is not None else None)
             if read_gain is not None:
                 set_readout_pulse(self, self._read_freq_reg)
         if self.do_herald_read:

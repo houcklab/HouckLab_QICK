@@ -3971,20 +3971,18 @@ def test_single_shot_feedback_uses_fixed_reset_gain_then_restores_scoring_gain()
     program.pulse = lambda *_args, **_kwargs: None
     program.sync_all = lambda *_args, **_kwargs: None
     program.measure = lambda *_args, **_kwargs: None
+    program.ff_segs = None
     calls = []
     original_set = SS.set_readout_pulse
     original_reset = SS.active_reset.active_reset_block
-    original_park = SS.ff_pulse.play_static_park
     try:
         SS.set_readout_pulse = lambda prog, *args, gain=None, **kwargs: calls.append(
             int(prog.cfg["read_pulse_gain"] if gain is None else gain))
         SS.active_reset.active_reset_block = lambda *_args, **_kwargs: None
-        SS.ff_pulse.play_static_park = lambda *_args, **_kwargs: None
         program.body()
     finally:
         SS.set_readout_pulse = original_set
         SS.active_reset.active_reset_block = original_reset
-        SS.ff_pulse.play_static_park = original_park
     assert calls == [5000, 7300]
 
 
@@ -4206,17 +4204,6 @@ def test_assert_park_is_a_noop_at_zero_park():
     program = _FakeParkProgram(0)
     ff_pulse.assert_park(program, {"park": 0})
     assert not [event for event in program.events if event[0] == "registers"]
-
-
-def test_static_park_refuses_a_nonzero_dc_park():
-    program = _FakeParkProgram(8123)
-    ff_pulse.declare_static_park(program)
-    try:
-        ff_pulse.play_static_park(program, settle_us=0.05)
-    except ValueError as exc:
-        assert "pulsed park hold" in str(exc)
-    else:
-        raise AssertionError("a nonzero DC park must be refused")
 
 
 def test_dynamic_flux_excursion_is_not_mistaken_for_static_park():
@@ -7563,7 +7550,6 @@ def main():
         test_concise_console_hides_diagnostics_but_keeps_the_saved_report,
         test_self_contained_diagnostic_bundle_round_trips_raw_iq_and_run_data,
         test_static_fast_flux_is_replayed_but_never_tuned,
-        test_static_fast_flux_helper_forces_zero_and_nonzero_park,
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,
         test_global_discovery_recovers_exact_far_frequency_seeds,
         test_relative_100mhz_prior_recovers_without_device_frequency_constants,

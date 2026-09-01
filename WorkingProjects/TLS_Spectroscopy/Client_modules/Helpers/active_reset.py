@@ -659,3 +659,117 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
           f"ground_below={rec['ground_below']}")
     return rec
+
+
+DRIFT_PI_SPAN_MHZ = 6.0
+DRIFT_PI_STEP_MHZ = 0.75
+
+
+def reset_cfg_from_record(cfg, rec, max_iters=None, thermalization_us=None):
+    out = dict(cfg)
+    rp = rec.get("rot_reset") or {}
+    out["reset_threshold_raw"] = int(rec["threshold_raw"])
+    out["reset_oper"] = str(rec["oper"])
+    out["reset_ground_below"] = bool(rec["ground_below"])
+    if rp:
+        out["rot_reset"] = dict(rp)
+        out["rot_c_int"] = rp["c_int"]
+        out["rot_s_int"] = rp["s_int"]
+        out["rot_excite_threshold"] = rp["excite_threshold"]
+    if max_iters is not None:
+        out["reset_max_iters"] = int(max_iters)
+    if thermalization_us is not None:
+        out["reset_thermalization_us"] = float(thermalization_us)
+    return out
+
+
+def _drift_shots(soc, soccfg, cfg):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import (
+        FFT1Program)
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+        suppress_stdout)
+    with suppress_stdout():
+        i0, q0, i1, q1 = FFT1Program(soccfg, cfg).acquire(soc, load_pulses=True,
+                                                          progress=False)
+    return np.column_stack([np.asarray(i1, float), np.asarray(q1, float)])
+
+
+def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
+                       passive_relax_us=1500.0, delay_us=1.0,
+                       span_mhz=DRIFT_PI_SPAN_MHZ, step_mhz=DRIFT_PI_STEP_MHZ,
+                       max_iters=None, thermalization_us=0.0, verbose=True):
+    park = float(base_cfg.get("ff_park_gain", 0) or 0)
+    if park == 0:
+        return None
+    qf = float(base_cfg.get("qubit_pi_freq", base_cfg["qubit_freq"]))
+    common = dict(base_cfg)
+    common.update({"shots": int(shots), "reps": int(shots),
+                   "relax_delay": float(passive_relax_us),
+                   "ff_gain": park, "ff_hold": float(delay_us), "do_ff": True})
+
+    def passive(do_pi):
+        c = dict(common)
+        c.update({"reset_mode": "passive", "do_pi": bool(do_pi)})
+        return _drift_shots(soc, soccfg, c)
+
+    g, e = passive(False), passive(True)
+    axis = e.mean(axis=0) - g.mean(axis=0)
+    u = axis / max(float(np.hypot(*axis)), 1e-12)
+    pg, pe = g @ u, e @ u
+    grid = np.linspace(min(pg.min(), pe.min()), max(pg.max(), pe.max()), 400)
+    thr = float(grid[int(np.argmax(0.5 * ((pg[:, None] < grid).mean(axis=0)
+                                          + (pe[:, None] >= grid).mean(axis=0))))])
+    base_contrast = float((pe >= thr).mean()) - float((pg >= thr).mean())
+    if base_contrast <= 0.2:
+        if verbose:
+            print(f"[reset] drift-pi calibration skipped: passive contrast is only "
+                  f"{base_contrast:.3f}; fix the pi pulse first")
+        return None
+
+    def contrast(reset_off, post_off):
+        c = reset_cfg_from_record(common, rec, max_iters, thermalization_us)
+        c.update({"reset_mode": "feedback",
+                  "reset_pi_freq": qf + float(reset_off),
+                  "reset_pi_gain": int(base_cfg["qubit_pi_gain"]),
+                  "post_reset_pi_freq": qf + float(post_off)})
+        c["do_pi"] = False
+        r_g = float((_drift_shots(soc, soccfg, c) @ u >= thr).mean())
+        c["do_pi"] = True
+        r_e = float((_drift_shots(soc, soccfg, c) @ u >= thr).mean())
+        return r_e - r_g, r_g
+
+    offs = np.arange(-step_mhz, float(span_mhz) + 1e-9, float(step_mhz))
+    if verbose:
+        print(f"[reset] calibrating the drift-compensated pi at park {park:g} "
+              f"(passive contrast {base_contrast:.3f})")
+    scan = [(o,) + contrast(0.0, o) for o in offs]
+    post_off = max(scan, key=lambda r: r[1])[0]
+    scan2 = [(o,) + contrast(o, post_off) for o in offs]
+    reset_off, best_c, resid = max(scan2, key=lambda r: r[1])
+    if verbose:
+        print(f"[reset] drift-compensated pi: reset {reset_off:+.2f} MHz, "
+              f"post-reset {post_off:+.2f} MHz -> contrast {best_c:.3f} "
+              f"({best_c / base_contrast * 100:.0f}% of passive), residual {resid:.3f}")
+    out = {"reset_pi_offset_mhz": float(reset_off),
+           "post_reset_pi_offset_mhz": float(post_off),
+           "qubit_pi_freq": qf, "ff_park_gain": park,
+           "contrast": float(best_c), "passive_contrast": float(base_contrast),
+           "residual": float(resid)}
+    rec["drift_pi"] = out
+    return out
+
+
+def apply_drift_pi(cfg, rec):
+    d = (rec or {}).get("drift_pi")
+    if not d:
+        return cfg
+    qf = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
+    if abs(qf - float(d.get("qubit_pi_freq", qf))) > 1e-6:
+        return cfg
+    if abs(float(cfg.get("ff_park_gain", 0) or 0)
+           - float(d.get("ff_park_gain", 0))) > 1e-6:
+        return cfg
+    cfg["reset_pi_freq"] = qf + float(d["reset_pi_offset_mhz"])
+    cfg["reset_pi_gain"] = int(cfg["qubit_pi_gain"])
+    cfg["post_reset_pi_freq"] = qf + float(d["post_reset_pi_offset_mhz"])
+    return cfg

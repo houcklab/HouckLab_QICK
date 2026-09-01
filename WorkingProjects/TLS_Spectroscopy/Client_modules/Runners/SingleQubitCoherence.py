@@ -34,6 +34,8 @@ POINT_ORDER_SEED = None
 THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
 PASSIVE_RESET_US = 1500.0
+CALIBRATE_DRIFT_PI = True
+DRIFT_PI_PROFILE = None
 
 P_SS_CAL = {
     "run": False,
@@ -96,6 +98,8 @@ def _base_cfg(p, extra=None):
         cfg["rot_reset"] = dict(ROT_RESET_PARAMS)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
         cfg["reset_thermalization_us"] = THERMALIZATION_US
+        if DRIFT_PI_PROFILE:
+            active_reset.apply_drift_pi(cfg, {"drift_pi": DRIFT_PI_PROFILE})
     cfg["relax_delay"] = (FEEDBACK_RELAX_US if active_reset.uses_feedback(cfg)
                           else PASSIVE_RESET_US)
     return cfg
@@ -185,8 +189,9 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
-    global ROT_RESET_PARAMS
+    global ROT_RESET_PARAMS, DRIFT_PI_PROFILE
     feedback_requested = active_reset.uses_feedback(RESET_MODE)
+    DRIFT_PI_PROFILE = None
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
@@ -221,6 +226,16 @@ def main():
                       "but above the validated bar this probe.")
             else:
                 print("[reset] ROTATED reset selected (probe-validated).")
+            DRIFT_PI_PROFILE = rec.get("drift_pi")
+            if DRIFT_PI_PROFILE is None and CALIBRATE_DRIFT_PI:
+                DRIFT_PI_PROFILE = active_reset.calibrate_drift_pi(
+                    soc, soccfg, BaseConfig, rec,
+                    max_iters=int(RESET_MAX_ITERS),
+                    thermalization_us=THERMALIZATION_US,
+                    passive_relax_us=PASSIVE_RESET_US)
+                if DRIFT_PI_PROFILE is not None:
+                    active_reset.save_reset_profile(
+                        rec, BaseConfig, path=QUBIT, outer_folder=outer_folder)
         else:
             RESET_MODE = "passive"
             ROT_RESET_PARAMS = None

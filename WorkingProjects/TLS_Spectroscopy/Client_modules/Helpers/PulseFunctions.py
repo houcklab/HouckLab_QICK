@@ -508,6 +508,17 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
 
     return pulse_length
 
+def ff_maxv(prog, scaled=False):
+    gen = prog.soccfg['gens'][int(prog.cfg["ff_ch"])]
+    maxv = float(gen['maxv'])
+    if not scaled:
+        return maxv
+    try:
+        return maxv * float(gen['maxv_scale'])
+    except (KeyError, TypeError, IndexError):
+        return maxv
+
+
 def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
     """
     This function takes a program prog with a defined configuration dictionary prog.cfg, and sets up creates a fast flux
@@ -525,7 +536,7 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
         raise ValueError("cfg[\"ff_ramp_style_\"] must be \"linear\"; received \"" + prog.cfg["ff_ramp_style"] + "\" instead.")
 
     if "ff_ramp_start" in prog.cfg or 'ff_ramp_stop' in prog.cfg :
-        if np.max([np.abs(prog.cfg["ff_ramp_start"]), np.abs(prog.cfg["ff_ramp_stop"])]) > prog.soccfg['gens'][0]['maxv']:
+        if np.max([np.abs(prog.cfg["ff_ramp_start"]), np.abs(prog.cfg["ff_ramp_stop"])]) > ff_maxv(prog):
             raise ValueError("cfg[\"ffr_ramp_start\"] and cfg[\"ff_ramp_stop\"] must not exceed max value in magnitude.")
 
     length = prog.us2cycles(prog.cfg["ff_ramp_length"], gen_ch = prog.cfg["ff_ch"])
@@ -554,7 +565,7 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
 
         # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
         prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = prog.soccfg['gens'][0]['maxv'],
+                                 phase=0, gain = ff_maxv(prog),
                                  waveform=name, outsel="input",
                                  # mode = "periodic",
                                  )
@@ -565,7 +576,7 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool, name = None ) -> None:
 
         # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
         prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = prog.soccfg['gens'][0]['maxv'],
+                                 phase=0, gain = ff_maxv(prog),
                                  waveform=name, outsel="input",
                                  # mode = "periodic",
                                  )

@@ -14,12 +14,6 @@ def static_park_configured(cfg):
             and cfg.get("ff_park_gain", None) is not None)
 
 
-def declare_static_park(prog):
-    prog.do_static_ff_park = bool(static_park_configured(prog.cfg))
-    if prog.do_static_ff_park:
-        declare_ff(prog)
-
-
 def _avg_segs(seg, dt_def_us, dt_play_us):
     seg = np.asarray(seg, dtype=float)
     if seg.size == 0:
@@ -45,7 +39,7 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          maxv=None, park_gain=None, name_prefix="ff"):
     cfg = prog.cfg
     if maxv is None:
-        maxv = prog.soccfg['gens'][0]['maxv']
+        maxv = PulseFunctions.ff_maxv(prog, scaled=True)
     if park_gain is None:
         park_gain = cfg.get("ff_park_gain", 0)
     park_gain = float(np.clip(park_gain, -maxv, maxv))
@@ -118,7 +112,7 @@ _MAX_CONST_LEN = 65000
 def play_ramp_up_hold(prog, segs, dt_play_us=None):
     cfg = prog.cfg
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=prog.soccfg['gens'][0]['maxv'],
+                             gain=PulseFunctions.ff_maxv(prog),
                              waveform=segs.get("ramp_waveform", "ff_ramp"), outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
     for g, dur_us in segs["hold_segs"]:
@@ -137,7 +131,7 @@ def play_ramp_down(prog, segs):
     ff_rp = prog.ch_page(cfg["ff_ch"])
     ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
-                             gain=prog.soccfg['gens'][0]['maxv'],
+                             gain=PulseFunctions.ff_maxv(prog),
                              waveform=segs.get("reverse_waveform", "ff_ramp_reversed"),
                              outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
@@ -160,26 +154,6 @@ def assert_park(prog, segs, dt_us=0.1, force=False):
                                  stdysel='last',
                                  gain=int(round(park * k / steps)), length=length)
         prog.pulse(ch=cfg["ff_ch"])
-
-
-def play_static_park(prog, settle_us=0.05):
-    if not getattr(prog, "do_static_ff_park", False):
-        return
-    if int(prog.cfg.get("ff_park_gain", 0) or 0) != 0:
-        raise ValueError(
-            "play_static_park holds ff_park_gain on the flux line as DC for the "
-            "entire run, including while idle.  On FTT02_AlOxJJ a 12252 DAC park "
-            "took the mixing chamber from base to 43 mK and held it there.  This "
-            "program has not been migrated to the pulsed park hold "
-            "(declare_park_hold / build_park_hold / play_park_up / play_park_down).  "
-            "Set ff_park_gain=0, or migrate it.")
-    assert_park(
-        prog, {"park": int(prog.cfg.get("ff_park_gain", 0) or 0)},
-        force=True,
-    )
-    settle_us = max(float(settle_us), 0.0)
-    if settle_us > 0:
-        prog.sync_all(prog.us2cycles(settle_us))
 
 
 def sequence_hold_us(cfg, drive_us=0.0, readouts=1, extra_us=0.0):
