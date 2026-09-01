@@ -14,8 +14,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
-QUBIT = "q4"
-CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
+QUBIT = "q3"
+CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
 LIVE_PLOTS = True
 
 FF_HOLD_GAIN = 0
@@ -38,7 +38,7 @@ CALIBRATE_DRIFT_PI = True
 DRIFT_PI_PROFILE = None
 
 P_SS_CAL = {
-    "run": False,
+    "run": True,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
@@ -56,7 +56,7 @@ P_SS_FLUX_RAMP = {
 }
 
 P_T1 = {
-    "run": False,
+    "run": True,
     "shots": 1000,
     "t_min_us": 1.0,
     "t_max_us": 1500.0,
