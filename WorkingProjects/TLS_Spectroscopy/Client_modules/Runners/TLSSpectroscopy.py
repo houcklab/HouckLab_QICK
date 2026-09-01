@@ -169,6 +169,7 @@ P5_SS_CAL = {
 
 P6_3PT_T1 = {
     "run": False,
+    "apply_flux_tail_compensation": True,
     "shots": 2000,
     "dc_min": 0,
     "dc_max": 12000,
@@ -188,6 +189,7 @@ P6_3PT_T1 = {
 
 P6_FULL_T1 = {
     "run": False,
+    "apply_flux_tail_compensation": True,
     "shots": 2000,
     "dc_min": 0,
     "dc_max": 12000,
@@ -258,6 +260,14 @@ def _load_correction(correction_json, outer_folder):
     print(f"    Applying flux-tail compensation: {correction_json}")
     print(f"      segments = {len(compensation['segment_edges_ns'])}, gain = {FLUX_TAIL_COMPENSATION_GAIN}")
     return compensation
+
+
+def _resolve_step6_correction(p, correction_json, outer_folder):
+    if not bool(p.get("apply_flux_tail_compensation", True)):
+        print("[6] Flux-tail compensation disabled by "
+              "apply_flux_tail_compensation=False; running uncorrected.")
+        return None, "uncorrected"
+    return _load_correction(correction_json, outer_folder), "distortion-corrected"
 
 
 def _wall_clock_seconds(duration_min):
@@ -810,6 +820,8 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "randomize_point_order": bool(RANDOMIZE_POINT_ORDER),
         "point_order_seed": POINT_ORDER_SEED,
         "ff_gain_vec": dc_vec,
+        "apply_flux_tail_compensation": bool(
+            p.get("apply_flux_tail_compensation", True)),
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
         "relax_delay": (T1_FEEDBACK_RELAX_US
@@ -887,16 +899,18 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     dc_vec = _step6_dc_vec(p)
     p["_projected_points"] = len(dc_vec) * 3
     p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
-    flux_tail_compensation = _load_correction(correction_json, outer_folder)
+    flux_tail_compensation, correction_mode = _resolve_step6_correction(
+        p, correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
-    print(f"[6] 3-point T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "
+    print(f"[6] 3-point T1 vs flux ({correction_mode}): {len(dc_vec)} DC points, "
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
+    correction_suffix = correction_mode.replace("-", "_")
 
     def factory(repeat_metadata):
         return T13PointVsFlux(
             soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-            suffix="TLS_3pt_T1_vs_Flux_distortion_corrected", cfg=dict(base),
+            suffix=f"TLS_3pt_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
             dc_vec=dc_vec, Ts_ns=int(round(p["Ts_us"] * 1e3)),
             shots=int(p["shots"]), calib_params=calib_params,
             park_voltage=BASELINE_DC_OFFSET,
@@ -926,11 +940,13 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
     dc_vec = _step6_dc_vec(p)
     p["_projected_points"] = len(dc_vec) * int(p.get("t_points_default", 41))
     p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
-    flux_tail_compensation = _load_correction(correction_json, outer_folder)
+    flux_tail_compensation, correction_mode = _resolve_step6_correction(
+        p, correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
-    print(f"[6] Full T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "
+    print(f"[6] Full T1 vs flux ({correction_mode}): {len(dc_vec)} DC points, "
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
+    correction_suffix = correction_mode.replace("-", "_")
 
     q_factor = p.get("quality_factor", None)
     notebook_fit = fx.flux_fit_params_to_notebook(FLUX_FIT_PARAMS) if q_factor is not None else None
@@ -944,7 +960,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
 
     def factory(repeat_metadata):
         common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-                      suffix="TLS_Full_T1_vs_Flux_distortion_corrected", cfg=dict(base),
+                      suffix=f"TLS_Full_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
                       dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
                       park_voltage=BASELINE_DC_OFFSET,
                       auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
