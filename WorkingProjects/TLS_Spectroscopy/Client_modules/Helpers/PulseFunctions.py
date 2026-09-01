@@ -510,11 +510,11 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
 
 def ff_maxv(prog, scaled=False):
     gen = prog.soccfg['gens'][int(prog.cfg["ff_ch"])]
-    maxv = float(gen['maxv'])
+    maxv = int(gen['maxv'])
     if not scaled:
         return maxv
     try:
-        return maxv * float(gen['maxv_scale'])
+        return int(maxv * float(gen['maxv_scale']))
     except (KeyError, TypeError, IndexError):
         return maxv
 
