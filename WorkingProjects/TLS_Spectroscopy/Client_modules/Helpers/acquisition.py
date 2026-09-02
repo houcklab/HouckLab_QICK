@@ -24,6 +24,15 @@ def split_reps(shots, rounds):
     return [base + (1 if r < extra else 0) for r in range(rounds)]
 
 
+def apply_device_interleave(cfg, default_rounds=1):
+    shots = int(cfg.get("shots", cfg.get("reps", 1000)) or 1)
+    rounds = resolve_rounds(cfg, shots, default=default_rounds)
+    reps = max(shots // rounds, 1)
+    cfg["reps"] = int(reps)
+    cfg["rounds"] = int(rounds)
+    return int(reps), int(rounds), int(reps * rounds)
+
+
 def interleaved_average(run_point, n_points, shots, rounds=None, live=None, progress=None):
     if rounds is None:
         rounds = min(int(shots), 10)

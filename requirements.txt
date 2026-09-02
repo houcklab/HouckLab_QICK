@@ -19,7 +19,9 @@ kiwisolver==1.4.7
 matplotlib==3.9.4
 matplotlib-inline==0.2.1
 nest-asyncio==1.6.0
-numpy==2.0.2
+# qick's get_mode_code does `mc << 16 | np.uint16(length)`; NEP 50 in
+# numpy 2.0 makes that raise OverflowError on every set_pulse_registers
+numpy<2
 packaging==26.1
 parso==0.8.6
 pillow==11.3.0

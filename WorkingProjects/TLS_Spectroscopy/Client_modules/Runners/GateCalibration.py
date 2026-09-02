@@ -23,13 +23,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 QUBIT = "q3"
-CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
+CHIP_NAME_FOR_CONFIG = "FTT02_SiOxJJ"
 LIVE_PLOTS = True
 
 FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
-RESET_MODE = "feedback"
+RESET_MODE = "passive"
 PROBE_RESET = True
 ROT_RESET_PARAMS = None
 CAL_RES_PHASE = False
@@ -43,10 +43,10 @@ PASSIVE_RESET_US = 1000.0
 P_TRANSMISSION = {
     "run": False,
     "shots": 1000,
-    "freq_start_mhz": 7114.0,
-    "freq_stop_mhz": 7124.0,
+    "freq_start_mhz": 6917.0,
+    "freq_stop_mhz": 6920.0,
     "freq_points": 251,
-    "spec_amp": 1200,
+    "spec_amp": 5000,
     "spec_len_us": 10,
 }
 
@@ -65,10 +65,10 @@ P_TRANSMISSION_SWEEP = {
 P_QUBIT_SPEC = {
     "run": False,
     "shots": 1000,
-    "freq_start_mhz": 4280,
-    "freq_stop_mhz": 4400,
+    "freq_start_mhz": 4900,
+    "freq_stop_mhz": 5020,
     "freq_points": 201,
-    "spec_gain": 1000,
+    "spec_gain": 25000,
     "spec_length_us": 1.0,
     "relax_delay_us": 100.0,
 }
@@ -87,7 +87,7 @@ P_QUBIT_SPEC_SWEEP = {
 }
 
 P_SS_CAL = {
-    "run": False,
+    "run": True,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
@@ -99,12 +99,12 @@ P_RABI_CHEVRON_IQ = {
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 0,
-    "a_max": 32000,
+    "a_min": 8000,
+    "a_max": 18000,
     "a_points": 21,
-    "sigma_us": 2.38,
-    "freq_span_mhz": 1.0,
-    "freq_points": 41,
+    "sigma_us": 0.5,
+    "freq_span_mhz": 2.0,
+    "freq_points": 21,
     "relax_delay_us": 500.0,
 }
 
@@ -113,10 +113,10 @@ P_RABI_CHEVRON_SS = {
     "shots": 1000,
     "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 500,
-    "a_max": 30000,
+    "a_min": 20000,
+    "a_max": 25000,
     "a_points": 21,
-    "freq_span_mhz": 10.0,
+    "freq_span_mhz": 1.0,
     "freq_points": 21,
 }
 
