@@ -27,28 +27,28 @@ BaseConfig = {
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 10.0,
+    "read_length": 20.0,
     "readout_guard_us": 1.0,
-    "read_pulse_gain": 15000,
-    "read_pulse_freq": 6933.020,
+    "read_pulse_gain": 10000,
+    "read_pulse_freq": 6918.380,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 4340.30,
-    "qubit_pi_freq": 4340.30,
-    "qubit_pi_gain": 27334,
-    "qubit_pi2_gain": 13667,
+    "qubit_freq": 4964.860,
+    "qubit_pi_freq": 4964.860,
+    "qubit_pi_gain": 12500,
+    "qubit_pi2_gain": 6250,
     "qubit_drag_beta": 0.0,
     "qubit_anharmonicity_mhz": -180.0,
-    "qubit_gain": 27334,
-    "qubit_length": 0.08,
-    "sigma": 0.09,
+    "qubit_gain": 12500,
+    "qubit_length": 0.5,
+    "sigma": 0.5,
     "flat_top_length": None,
 
     "reset_read_delay_us": 2.0,
     "reset_meas_syncdelay_us": 2.0,
     "reset_max_iters": 3,
 
-    "ff_park_gain": 32000,
+    "ff_park_gain": 9401,
     "ff_park_settle_us": 1.0,
     "FF_Qubits": FF_Qubits,
 
@@ -64,10 +64,8 @@ BaseConfig = {
 
 FLUX_FIT_PARAMS = None
 
-RESONATOR_FIT_PARAMS = [6919889429.986164, 159395191.9380423, 8.527237958782948,
-                        0.43159362534331014, 45258.49879177061, 28901.253263960287,
-                        0.9042938856800486]
+RESONATOR_FIT_PARAMS = [6874670073.295661, 43750274.39379951, 26.839114267816303, 0.23544808740620699, 67520.12869273516, 9400.565057109374, 0.9986913174586942]
 
 FF_STEP_TARGET_GAIN = 8000
 
-outerFolder = 'Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC'
+outerFolder = 'Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_08_28/RFSOC'

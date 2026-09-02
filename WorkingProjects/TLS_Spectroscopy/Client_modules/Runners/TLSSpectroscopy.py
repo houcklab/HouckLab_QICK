@@ -43,7 +43,7 @@ matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
 import matplotlib.pyplot as plt
 import gc
 
-CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
+CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
 QUBIT = "q3"
 
 
@@ -64,11 +64,11 @@ BASELINE_DC_OFFSET = 0
 TARGET_DC_OFFSET = 4000
 FLUX_TAIL_COMPENSATION_GAIN = 0.75
 
-SAVE_RESONATOR_LOOKUP = True
+SAVE_RESONATOR_LOOKUP = False
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
-RESONATOR_FIT_PARAMS = None #[7246069361.953229,113435289.31239134,5.073521417128309,0.23663454523911054,62987.59314475978,-4611.599933061799,0.5368760162762044]
+RESONATOR_FIT_PARAMS = [6874670073.295661, 43750274.39379951, 26.839114267816303, 0.23544808740620699, 67520.12869273516, 9400.565057109374, 0.9986913174586942]
 
 INTERLEAVE_ROUNDS = 10
 RANDOMIZE_POINT_ORDER = True
@@ -101,17 +101,17 @@ P1_RESONATOR = {
 }
 
 P2_QUBIT_SPEC_FULL = {
-    "run": False,
+    "run": True,
     "advanced_fit": True,
     "shots": 300,
     "relax_delay_us": 100.0,
     "spec_amp": 20000,
     "spec_len_us": 0.5,
-    "freq_min": 2300.0,
-    "freq_max": 2570.0,
+    "freq_min": 4900.0,
+    "freq_max": 5200.0,
     "freq_step": 1.0,
-    "dc_min": 0,
-    "dc_max": 7000,
+    "dc_min": 8000,
+    "dc_max": 11000,
     "dc_step": 100,
     "live_plot": True,
 }
@@ -168,7 +168,7 @@ P5_SS_CAL = {
 
 
 P6_3PT_T1 = {
-    "run": True,
+    "run": False,
     "apply_flux_tail_compensation": False,
     "shots": 100,
     "interleave_rounds": 1,

@@ -15,7 +15,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
 QUBIT = "q3"
-CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
+CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
 LIVE_PLOTS = True
 
 FF_HOLD_GAIN = 0
@@ -33,7 +33,7 @@ RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
 THERMALIZATION_US = 2.0
 FEEDBACK_RELAX_US = 25.0
-PASSIVE_RESET_US = 400.0
+PASSIVE_RESET_US = 1000.0
 CALIBRATE_DRIFT_PI = True
 DRIFT_PI_PROFILE = None
 
@@ -57,9 +57,9 @@ P_SS_FLUX_RAMP = {
 
 P_T1 = {
     "run": True,
-    "shots": 1000,
+    "shots": 5000,
     "t_min_us": 1.0,
-    "t_max_us": 800.0,
+    "t_max_us": 1000.0,
     "t_points": 71,
 }
 
