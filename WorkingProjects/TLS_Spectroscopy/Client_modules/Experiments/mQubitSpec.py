@@ -58,14 +58,18 @@ class QubitSpec(ExperimentClass):
 
     def _plot(self, fpts, mag, phase, f0, plotDisp=False):
         fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8, 6))
+        ax: list[plt.Axes]
         ax[0].plot(fpts / 1e3, mag, '.-', ms=3)
         ax[0].axvline(f0 / 1e3, color='r', lw=1)
         ax[0].set_ylabel("|IQ| (a.u.)")
         ax[0].set_title(f"{self.element} two-tone spectroscopy  "
                         f"(f = {f0 / 1e3:.5f} GHz, gain {self.cfg['qubit_gain']} DAC)")
+        ax[0].grid(True)
         ax[1].plot(fpts / 1e3, phase, '.-', ms=3)
         ax[1].axvline(f0 / 1e3, color='r', lw=1)
         ax[1].set_xlabel("Qubit drive frequency (GHz)"); ax[1].set_ylabel("phase (rad)")
+        ax[1].grid(True)
+        ax[1].xaxis.minorticks_on()
         plt.tight_layout()
         plt.savefig(self.iname, bbox_inches="tight")
         if plotDisp:

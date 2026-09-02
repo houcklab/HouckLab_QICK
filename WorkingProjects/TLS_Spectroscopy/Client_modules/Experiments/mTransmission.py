@@ -91,6 +91,7 @@ class Transmission(ExperimentClass):
             ax.set_title(f"{self.element} Transmission, F = {dip:.3f} MHz, "
                          f"read gain {cfg.get('read_pulse_gain')}")
             ax.legend(loc="best", fontsize=8)
+            ax.grid(True)
             plt.savefig(self.iname, bbox_inches="tight")
             if plotDisp:
                 plt.show(block=False)
