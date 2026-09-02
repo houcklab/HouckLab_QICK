@@ -166,9 +166,20 @@ def set_readout_pulse(prog, read_freq=None, *, gain=None, length_us=None,
         raise ValueError("readout gain is outside the 0..32767 DAC range")
     if not np.isfinite(drive_length) or drive_length <= 0.0:
         raise ValueError("readout generator length must be positive and finite")
+    length_cycles = int(prog.us2cycles(drive_length, gen_ch=rch))
+    if length_cycles > 0xFFFF:
+        per_us = max(int(prog.us2cycles(1.0, gen_ch=rch)), 1)
+        raise ValueError(
+            "readout drive is %g us = %d cycles on generator %d, but the pulse "
+            "length field is 16 bits (max %d cycles = %.2f us).  read_length=%s "
+            "plus adc_trig_offset=%s plus readout_guard_us=%s sets this.  If those "
+            "look right, the firmware on the board is not the one this config was "
+            "written for."
+            % (drive_length, length_cycles, rch, 0xFFFF, 0xFFFF / per_us,
+               cfg.get("read_length"), cfg.get("adc_trig_offset"),
+               cfg.get("readout_guard_us", 1.0)))
     kwargs = dict(ch=rch, style="const", freq=read_freq, phase=phase,
-                  gain=pulse_gain,
-                  length=prog.us2cycles(drive_length, gen_ch=rch))
+                  gain=pulse_gain, length=length_cycles)
     if bool(cfg.get("ro_mode_periodic", False)):
         kwargs["mode"] = "periodic"
     prog.set_pulse_registers(**kwargs)
