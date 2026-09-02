@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+    apply_device_interleave)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpecVsFlux import QubitSpecProgram
 
@@ -38,6 +40,10 @@ class QubitSpec(ExperimentClass):
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         fpts = _freq_axis(cfg)
+        reps, rounds, total = apply_device_interleave(cfg)
+        if rounds > 1:
+            print(f"[Qubit Spec] {cfg['expts']} freqs interleaved on the tProc: "
+                  f"{rounds} rounds x {reps} shots = {total} shots/point, one upload")
         _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
             self.soc, load_pulses=True, progress=progress)
         sig = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
