@@ -487,6 +487,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
         print("[reset] no usable feedback discrimination -- falling back to passive relax.")
         return None
     results = data.get("results", {})
+    lower = upper = 0
     try:
         lower = abs(int(results["excited"]["raw_lower"])
                     - int(results["ground"]["raw_lower"]))
@@ -496,9 +497,12 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     except Exception:
         purity_ok = False
     if not purity_ok:
-        print("[reset] discrimination is not concentrated on one raw accumulator "
-              "half -- falling back to passive relax.")
-        return None
+        print(f"[reset] the |g>/|e> split straddles both raw accumulator halves "
+              f"({min(lower, upper)} vs {max(lower, upper)}); the LEGACY "
+              f"single-quadrature reset cannot use that, but the ROTATED reset "
+              f"projects the full vector and does not care about the angle.  "
+              f"Skipping legacy validation and judging the rotated scheme on its "
+              f"own end-to-end residual.")
     raw_fidelity = float(data.get("raw_assignment_fidelity", -float("inf")))
     try:
         buffered_shots = int(data.get("raw_assignment_shots", 0))
@@ -522,11 +526,11 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     rec["raw_assignment_fidelity"] = raw_fidelity
     rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
     rec["raw_assignment_shots"] = buffered_shots
-    legacy_ok = True
+    legacy_ok = bool(purity_ok)
     legacy_residual = None
     rot_residual = None
     rot_params_kept = None
-    if validate:
+    if validate and purity_ok:
         try:
             residual = probe._residual_at(
                 float(cfg.get("res_phase", 0.0)), int(rec["threshold_raw"]),
