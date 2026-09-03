@@ -27,3 +27,6 @@ WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/AutoTune.py
 
 venv/
 tls-spec-env/
+
+WorkingProjects/TLS_Spectroscopy/tmp/
+WorkingProjects/TLS_Spectroscopy/Client_modules/logs/
