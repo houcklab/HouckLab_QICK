@@ -241,6 +241,12 @@ def _spec_cfg(p, extra=None):
         cfg["qubit_pulse_style"] = "const"
     if "spec_len_us" in p:
         cfg["qubit_length"] = float(p["spec_len_us"])
+    if "read_gain" in p:
+        cfg["read_pulse_gain"] = int(p["read_gain"])
+    if "read_len_us" in p:
+        cfg["read_length"] = float(p["read_len_us"])
+    if "read_freq_mhz" in p:
+        cfg["read_pulse_freq"] = float(p["read_freq_mhz"])
     if extra:
         cfg.update(extra)
     return cfg
