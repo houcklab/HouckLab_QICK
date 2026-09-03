@@ -497,12 +497,14 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     except Exception:
         purity_ok = False
     if not purity_ok:
+        gate_policy = "strict"
         print(f"[reset] the |g>/|e> split straddles both raw accumulator halves "
               f"({min(lower, upper)} vs {max(lower, upper)}); the LEGACY "
               f"single-quadrature reset cannot use that, but the ROTATED reset "
               f"projects the full vector and does not care about the angle.  "
-              f"Skipping legacy validation and judging the rotated scheme on its "
-              f"own end-to-end residual.")
+              f"Skipping legacy validation and holding the rotated scheme to the "
+              f"STRICT bar: it is used only if it passes end-to-end validation "
+              f"outright, otherwise passive relax.")
     raw_fidelity = float(data.get("raw_assignment_fidelity", -float("inf")))
     try:
         buffered_shots = int(data.get("raw_assignment_shots", 0))
