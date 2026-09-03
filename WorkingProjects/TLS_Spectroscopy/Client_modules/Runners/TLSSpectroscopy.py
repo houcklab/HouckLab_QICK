@@ -247,6 +247,8 @@ def _spec_cfg(p, extra=None):
         cfg["read_length"] = float(p["read_len_us"])
     if "read_freq_mhz" in p:
         cfg["read_pulse_freq"] = float(p["read_freq_mhz"])
+    if "baseline_rearm_us" in p:
+        cfg["baseline_rearm_us"] = float(p["baseline_rearm_us"])
     if extra:
         cfg.update(extra)
     return cfg
