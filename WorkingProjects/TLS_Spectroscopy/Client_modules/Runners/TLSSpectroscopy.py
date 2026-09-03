@@ -43,7 +43,7 @@ matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
 import matplotlib.pyplot as plt
 import gc
 
-CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
+CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
 QUBIT = "q3"
 
 
@@ -86,22 +86,22 @@ RESET_REPROBE_MIN = 30.0
 
 
 P1_RESONATOR = {
-    "run": False,
+    "run": True,
     "shots": 300,
-    "freq_min": 7248.2,
-    "freq_max": 7249.2,
-    "freq_step": 0.01,
-    "dc_min": 0,
+    "freq_min": 6931,
+    "freq_max": 6934,
+    "freq_step": 0.05,
+    "dc_min": -30000,
     "dc_max": 30000,
-    "dc_step": 300,
+    "dc_step": 500,
     "lookup_smooth_points": None,
     "live_plot": True,
-    "spec_amp": 3000,
-    "spec_len_us": 15.0,
+    "spec_amp": 1000,
+    "spec_len_us": 10.0,
 }
 
 P2_QUBIT_SPEC_FULL = {
-    "run": True,
+    "run": False,
     "advanced_fit": True,
     "shots": 300,
     "relax_delay_us": 100.0,
