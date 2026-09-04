@@ -4,6 +4,42 @@ This folder is an isolated QICK/tProc-v1 implementation of the reset state
 machine used by the QUA coherence experiments. It is not imported by the
 production T1, T1-vs-flux, TLS, or Rabi programs.
 
+## Park stability comes first
+
+The QUA configuration applies `flux_dc_offset` as a persistent controller
+analog-output offset. A QUA flux experiment temporarily changes that offset,
+then restores `park_voltage`; active reset and the inter-shot wait therefore
+happen at a nonzero, time-independent park.
+
+The QICK code cannot assume equivalent behavior merely because
+`stdysel="last"` retains the final digital sample. Its present safe waveform
+ramps channel 3 from zero to `ff_park_gain` inside every shot, actively plays
+the hold through the measurement/reset sequence, then ramps back to zero.
+Earlier q3 testing at +32000 DAC found nearly the same qubit-frequency drift
+for a latched sample and an actively played constant waveform, and a separate
+continuous-park attempt heated the mixing chamber. The analog path must
+therefore pass a bounded stability test before active-reset results at a
+nonzero park are meaningful.
+
+Run this first on the measurement PC:
+
+```powershell
+C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
+  C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\park_stability_q3.py
+```
+
+The runner inherits the live `ff_park_gain` and qubit frequency from
+`Calib/initialize.py`. It applies no tail-correction JSON, performs qubit
+spectroscopy while a constant channel-3 waveform is actively playing, covers
+0.5--160 us at park, and checks the approximately 120 us worst-case reset
+window. It always ramps back to zero each shot. A result is `pass` only when
+the extracted frequency stays within the configured 0.5 MHz limit; a trace at
+the edge of the spectroscopy window is reported as inconclusive. Send back
+the entire printed output folder.
+
+Do not run `benchmark_q3.py` again until this prerequisite either passes or
+the park path/correction has been repaired and revalidated.
+
 ## What is different from the current QICK reset
 
 The payload experiment's final measurement is decision zero. The tProc then
@@ -132,5 +168,7 @@ AC-coupled physical output path and does not replace a DC-coupled flux source.
 - `programs.py`: fixed-shape calibration and variable-runtime benchmark programs;
 - `calibration.py`: calibration acquisition and JSON/NPZ serialization;
 - `analysis.py`: population projection, confidence intervals, CSV, and summaries;
+- `park_stability.py`: hardware-independent park trace checks and safety limits;
+- `park_stability_q3.py`: standalone q3 park-prerequisite measurement;
 - `benchmark_q3.py`: standalone user-editable q3 runner;
 - `tests/`: hardware-independent regression suite.
