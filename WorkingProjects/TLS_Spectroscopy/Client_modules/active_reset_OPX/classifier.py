@@ -146,15 +146,15 @@ def fit_classifier(
     pe_train = project(ei[train], eq[train])
     if float(np.median(pe_train)) <= float(np.median(pg_train)):
         raise RuntimeError("internal error: fitted projection does not point toward excited")
-    # Put the ambiguous zone between the high tail of |g> and the low tail of
-    # |e>.  The helper names describe the error they constrain, not which final
-    # boundary they supply.
-    ground_threshold = _excited_threshold(pg_train, float(false_pi_limit))
-    excited_threshold = _ground_threshold(pe_train, float(false_ground_limit))
-    if ground_threshold >= excited_threshold:
-        raise ValueError(
-            "the requested confidence limits leave no non-overlapping ground/ambiguous/excited zones"
-        )
+    # One candidate limits false acceptance of |e> as ground; the other limits
+    # false pi pulses on |g>.  Sorting them creates the conservative deadband.
+    # When the blobs overlap, the gap widens instead of weakening either limit.
+    false_ground_boundary = _ground_threshold(pe_train, float(false_ground_limit))
+    false_pi_boundary = _excited_threshold(pg_train, float(false_pi_limit))
+    ground_threshold = min(false_ground_boundary, false_pi_boundary)
+    excited_threshold = max(false_ground_boundary, false_pi_boundary)
+    if ground_threshold == excited_threshold:
+        ground_threshold -= 1
 
     pg_hold = project(gi[holdout], gq[holdout])
     pe_hold = project(ei[holdout], eq[holdout])
