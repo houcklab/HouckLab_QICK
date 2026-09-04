@@ -28,6 +28,7 @@ class FakeTProc:
         self.done_addr = 1
         self.started = False
         self.reset_called = False
+        self.events = []
         if not expose_bulk:
             self.read_dmem = None
 
@@ -40,6 +41,7 @@ class FakeTProc:
         return int(self.memory[int(addr)])
 
     def read_dmem(self, addr, length):
+        self.events.append("read_dmem")
         return self.memory[int(addr):int(addr) + int(length)].copy()
 
     def start(self):
@@ -47,6 +49,7 @@ class FakeTProc:
 
     def reset(self):
         self.reset_called = True
+        self.events.append("reset")
 
 
 class FakeSoc:
@@ -138,6 +141,7 @@ def test_timeout_fails_closed_and_preserves_complete_partial_records():
     assert caught.value.partial_records == RECORDS[:1]
     assert tproc.reset_called
     assert soc.reset_gens_called
+    assert tproc.events.index("reset") < tproc.events.index("read_dmem")
 
 
 def test_block_rejects_a_record_allocation_larger_than_dmem():

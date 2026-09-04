@@ -123,6 +123,11 @@ def run_dmem_block(
                     f"invalid tProc completion counter {completed}; expected 0..{reps}"
                 )
             if clock() >= deadline:
+                # Freeze all writers before reading the prefix whose completion
+                # counter we just observed.  The tProc reset erases program memory,
+                # not DMem, and reset_gens then returns latched outputs to zero.
+                _safe_abort(soc)
+                started = False
                 words = _read_words(
                     soc, program.record_base, completed * program.record_words
                 )
