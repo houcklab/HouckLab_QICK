@@ -4,7 +4,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.park_stabi
     build_park_probe_config,
     build_frequency_axis_mhz,
     fit_local_frequency_slope,
+    fit_sweet_spot_frequency_curve,
     frequency_trace_to_step_response,
+    frequency_trace_to_step_response_from_sweet_spot,
     scale_park_compensation,
     summarize_park_trace,
     summarize_target_trace,
@@ -258,3 +260,63 @@ def test_target_trace_fails_when_stable_trace_is_at_wrong_frequency():
 
     assert result["status"] == "fail"
     assert result["max_abs_target_error_mhz"] == pytest.approx(0.75)
+
+
+def test_sweet_spot_curve_recovers_one_sided_quadratic_tuning():
+    result = fit_sweet_spot_frequency_curve(
+        gains=[-25790, -25540, -25290, -25090],
+        frequencies_mhz=[4367.25, 4364.75, 4357.25, 4347.65],
+        park_gain=-25790,
+        min_frequency_excursion_mhz=2.0,
+        min_r_squared=0.98,
+    )
+
+    assert result["direction_toward_zero"] == 1
+    assert result["curvature_mhz_per_dac_squared"] == pytest.approx(-0.00004)
+    assert result["frequency_at_park_mhz"] == pytest.approx(4367.25)
+    assert result["r_squared"] == pytest.approx(1.0)
+
+
+def test_sweet_spot_curve_rejects_points_on_both_sides_of_park():
+    with pytest.raises(ValueError, match="toward zero"):
+        fit_sweet_spot_frequency_curve(
+            gains=[-26040, -25790, -25540, -25290],
+            frequencies_mhz=[4364.75, 4367.25, 4364.75, 4357.25],
+            park_gain=-25790,
+            min_frequency_excursion_mhz=2.0,
+            min_r_squared=0.98,
+        )
+
+
+def test_sweet_spot_curve_rejects_insufficient_frequency_excursion():
+    with pytest.raises(ValueError, match="excursion"):
+        fit_sweet_spot_frequency_curve(
+            gains=[-25790, -25540, -25290, -25090],
+            frequencies_mhz=[4367.25, 4367.20, 4367.10, 4367.00],
+            park_gain=-25790,
+            min_frequency_excursion_mhz=2.0,
+            min_r_squared=0.0,
+        )
+
+
+def test_frequency_trace_uses_sweet_spot_curvature_to_recover_effective_gain():
+    result = frequency_trace_to_step_response_from_sweet_spot(
+        delay_us=[1.0, 10.0, 50.0, 100.0],
+        frequency_mhz=[4367.25, 4367.25, 4366.85, 4365.65],
+        park_gain=-25790,
+        frequency_curve={
+            "direction_toward_zero": 1,
+            "curvature_mhz_per_dac_squared": -0.00004,
+            "frequency_at_park_mhz": 4367.25,
+        },
+        reference_window_us=10.0,
+    )
+
+    assert result["directed_offset_dac"] == pytest.approx([0.0, 0.0, 100.0, 200.0])
+    assert result["effective_gain_dac"] == pytest.approx([-25790, -25790, -25690, -25590])
+    assert result["step_response"] == pytest.approx([
+        1.0,
+        1.0,
+        25690 / 25790,
+        25590 / 25790,
+    ])

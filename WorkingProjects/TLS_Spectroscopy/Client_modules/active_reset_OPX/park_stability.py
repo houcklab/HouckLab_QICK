@@ -338,3 +338,110 @@ def summarize_target_trace(
         "max_abs_target_error_mhz": maximum_error,
     })
     return result
+
+
+def fit_sweet_spot_frequency_curve(
+    gains,
+    frequencies_mhz,
+    *,
+    park_gain,
+    min_frequency_excursion_mhz,
+    min_r_squared,
+):
+    gains = np.asarray(gains, dtype=float).reshape(-1)
+    frequencies = np.asarray(frequencies_mhz, dtype=float).reshape(-1)
+    if gains.size != frequencies.size or gains.size < 4:
+        raise ValueError("gain and frequency vectors must have matching lengths of at least four")
+    if not np.all(np.isfinite(gains)) or not np.all(np.isfinite(frequencies)):
+        raise ValueError("gain and frequency vectors must be finite")
+    park_gain = float(park_gain)
+    if not math.isfinite(park_gain) or park_gain == 0:
+        raise ValueError("park gain must be finite and nonzero")
+    direction = int(-np.sign(park_gain))
+    offsets = direction * (gains - park_gain)
+    if np.any(offsets < -1e-9):
+        raise ValueError("gain calibration points must all move from park toward zero")
+    if not np.any(np.isclose(offsets, 0.0, rtol=0.0, atol=1e-9)):
+        raise ValueError("gain calibration must include the park gain")
+    if np.unique(offsets).size != offsets.size:
+        raise ValueError("gain calibration points must be unique")
+    excursion = float(np.ptp(frequencies))
+    minimum_excursion = float(min_frequency_excursion_mhz)
+    minimum_r_squared = float(min_r_squared)
+    if not math.isfinite(minimum_excursion) or minimum_excursion <= 0:
+        raise ValueError("minimum frequency excursion must be positive and finite")
+    if excursion < minimum_excursion:
+        raise ValueError("measured frequency excursion is too small for a sweet-spot fit")
+    if not math.isfinite(minimum_r_squared) or not 0 <= minimum_r_squared <= 1:
+        raise ValueError("minimum r-squared must be between zero and one")
+    squared_offsets = offsets**2
+    curvature, frequency_at_park = np.polyfit(squared_offsets, frequencies, 1)
+    prediction = frequency_at_park + curvature * squared_offsets
+    residual_sum = float(np.sum((frequencies - prediction) ** 2))
+    total_sum = float(np.sum((frequencies - np.mean(frequencies)) ** 2))
+    r_squared = 1.0 if total_sum <= 1e-24 and residual_sum <= 1e-24 else 1.0 - residual_sum / total_sum
+    if r_squared < minimum_r_squared:
+        raise ValueError("measured frequency-versus-gain response is not quadratic enough")
+    if abs(float(curvature)) < 1e-15:
+        raise ValueError("measured sweet-spot curvature is too small")
+    return {
+        "park_gain_dac": park_gain,
+        "direction_toward_zero": direction,
+        "directed_offsets_dac": [float(value) for value in offsets],
+        "curvature_mhz_per_dac_squared": float(curvature),
+        "frequency_at_park_mhz": float(frequency_at_park),
+        "frequency_excursion_mhz": excursion,
+        "r_squared": float(r_squared),
+        "residuals_mhz": [float(value) for value in frequencies - prediction],
+    }
+
+
+def frequency_trace_to_step_response_from_sweet_spot(
+    *,
+    delay_us,
+    frequency_mhz,
+    park_gain,
+    frequency_curve,
+    reference_window_us,
+):
+    delay = np.asarray(delay_us, dtype=float).reshape(-1)
+    frequency = np.asarray(frequency_mhz, dtype=float).reshape(-1)
+    if delay.size != frequency.size or delay.size < 3:
+        raise ValueError("delay and frequency vectors must have matching lengths of at least three")
+    if not np.all(np.isfinite(delay)) or not np.all(np.isfinite(frequency)):
+        raise ValueError("delay and frequency vectors must be finite")
+    park_gain = float(park_gain)
+    direction = int(frequency_curve["direction_toward_zero"])
+    curvature = float(frequency_curve["curvature_mhz_per_dac_squared"])
+    frequency_at_park = float(frequency_curve["frequency_at_park_mhz"])
+    reference_window = float(reference_window_us)
+    if park_gain == 0 or not math.isfinite(park_gain):
+        raise ValueError("park gain must be finite and nonzero")
+    if direction not in {-1, 1} or direction != int(-np.sign(park_gain)):
+        raise ValueError("frequency curve has an invalid direction toward zero")
+    if not math.isfinite(curvature) or abs(curvature) < 1e-15:
+        raise ValueError("sweet-spot curvature must be finite and nonzero")
+    if not math.isfinite(frequency_at_park):
+        raise ValueError("sweet-spot frequency must be finite")
+    if not math.isfinite(reference_window) or reference_window <= 0:
+        raise ValueError("reference window must be positive and finite")
+    reference_mask = delay <= reference_window
+    if np.count_nonzero(reference_mask) < 2:
+        raise ValueError("reference window must contain at least two measured points")
+    measured_reference = float(np.median(frequency[reference_mask]))
+    alignment_mhz = frequency_at_park - measured_reference
+    aligned_frequency = frequency + alignment_mhz
+    squared_offset = (aligned_frequency - frequency_at_park) / curvature
+    clipped = squared_offset < 0
+    directed_offset = np.sqrt(np.maximum(squared_offset, 0.0))
+    effective_gain = park_gain + direction * directed_offset
+    step_response = effective_gain / park_gain
+    return {
+        "reference_frequency_mhz": measured_reference,
+        "curve_alignment_mhz": alignment_mhz,
+        "aligned_frequency_mhz": [float(value) for value in aligned_frequency],
+        "directed_offset_dac": [float(value) for value in directed_offset],
+        "clipped_points": [bool(value) for value in clipped],
+        "effective_gain_dac": [float(value) for value in effective_gain],
+        "step_response": [float(value) for value in step_response],
+    }
