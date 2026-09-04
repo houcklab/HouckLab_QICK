@@ -35,7 +35,9 @@ Pyro4==4.82
 python-dateutil==2.9.0.post0
 pywin32==311
 pyzmq==27.1.0
-qick==0.2.401
+# the board serves a get_cfg() with no tproccfg['type']; qick 0.2.4xx
+# asm_v1.py reads that key unconditionally -> KeyError on every program
+qick==0.2.133
 serpent==1.42
 six==1.17.0
 stack-data==0.6.3
