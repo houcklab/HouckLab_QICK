@@ -1,0 +1,118 @@
+import numpy as np
+import pytest
+
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
+    ClassifierCalibration,
+    Zone,
+    classify,
+    fit_classifier,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.config import (
+    OPXResetConfig,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
+    RECORD_WORDS,
+    ShotRecord,
+    TerminalStatus,
+    decode_records,
+    max_records,
+)
+
+
+def _separated_blobs(seed=4, n=4000):
+    rng = np.random.default_rng(seed)
+    gi = rng.normal(1000, 700, n).astype(np.int64)
+    gq = rng.normal(-2000, 700, n).astype(np.int64)
+    ei = rng.normal(-11000, 900, n).astype(np.int64)
+    eq = rng.normal(17000, 900, n).astype(np.int64)
+    return gi, gq, ei, eq
+
+
+def test_fit_orients_projection_from_ground_toward_excited():
+    gi, gq, ei, eq = _separated_blobs()
+    cal = fit_classifier(gi, gq, ei, eq, context="payload")
+
+    assert np.median(cal.project(ei, eq)) > np.median(cal.project(gi, gq))
+    assert cal.ground_threshold < cal.excited_threshold
+    assert cal.context == "payload"
+    assert cal.holdout["false_ground_accept"] <= 0.02
+    assert cal.holdout["false_pi"] <= 0.02
+
+
+def test_classifier_uses_strict_three_zone_boundaries():
+    cal = ClassifierCalibration(
+        schema_version=1,
+        context="loop",
+        theta_rad=0.0,
+        shift=0,
+        c_int=1,
+        s_int=0,
+        ground_threshold=-10,
+        excited_threshold=10,
+        max_abs_raw=100,
+        holdout={},
+    )
+
+    assert classify(-10, cal) is Zone.GROUND
+    assert classify(-9, cal) is Zone.AMBIGUOUS
+    assert classify(10, cal) is Zone.AMBIGUOUS
+    assert classify(11, cal) is Zone.EXCITED
+
+
+def test_classifier_json_round_trip_preserves_assembly_thresholds():
+    gi, gq, ei, eq = _separated_blobs()
+    original = fit_classifier(gi, gq, ei, eq, context="loop")
+    restored = ClassifierCalibration.from_dict(original.to_dict())
+
+    assert restored == original
+    assert restored.assembly_plan() == original.assembly_plan()
+    assert restored.assembly_thresholds() == original.assembly_thresholds()
+
+
+def test_config_rejects_more_than_eight_corrective_attempts():
+    with pytest.raises(ValueError, match="1..8"):
+        OPXResetConfig.from_mapping({"opx_max_reset_attempts": 9})
+
+
+def test_config_accepts_user_facing_prefixed_keys():
+    cfg = OPXResetConfig.from_mapping({
+        "opx_max_reset_attempts": 8,
+        "opx_read_delay_us": 1.5,
+        "opx_feedback_syncdelay_us": 3.0,
+        "opx_verification_delay_us": 0.25,
+        "opx_record_base": 40,
+    })
+
+    assert cfg.max_reset_attempts == 8
+    assert cfg.read_delay_us == 1.5
+    assert cfg.feedback_syncdelay_us == 3.0
+    assert cfg.verification_delay_us == 0.25
+    assert cfg.record_base == 40
+
+
+def test_record_round_trip_converts_unsigned_hardware_words_to_signed():
+    record = ShotRecord(
+        preparation=1,
+        initial_z=-123,
+        reset_attempts=2,
+        pi_pulses=1,
+        terminal_status=TerminalStatus.CONFIRMED_GROUND,
+        final_i=-456,
+        final_q=789,
+        last_z=-12,
+    )
+    unsigned = np.asarray(record.to_words(), dtype=np.int64) & 0xFFFFFFFF
+
+    assert decode_records(unsigned, expected_records=1) == [record]
+
+
+def test_record_decoder_rejects_truncated_blocks():
+    with pytest.raises(ValueError, match="multiple"):
+        decode_records(np.zeros(RECORD_WORDS - 1, dtype=np.int64))
+
+
+def test_capacity_arithmetic_never_overruns_dmem():
+    assert max_records(dmem_words=4096, record_base=32) == (4096 - 32) // RECORD_WORDS
+    assert 32 + max_records(4096, 32) * RECORD_WORDS <= 4096
+    with pytest.raises(ValueError, match="record_base"):
+        max_records(dmem_words=32, record_base=32)
