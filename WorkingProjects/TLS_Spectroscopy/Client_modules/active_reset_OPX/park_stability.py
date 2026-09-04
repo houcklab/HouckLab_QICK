@@ -180,3 +180,161 @@ def summarize_park_trace(
         "minimum_sweep_edge_distance_mhz": float(np.min(edge_distance)),
     })
     return summary
+
+
+def fit_local_frequency_slope(
+    gains,
+    frequencies_mhz,
+    *,
+    min_abs_slope_mhz_per_dac,
+    min_r_squared,
+):
+    gains = np.asarray(gains, dtype=float).reshape(-1)
+    frequencies = np.asarray(frequencies_mhz, dtype=float).reshape(-1)
+    if gains.size != frequencies.size or gains.size < 3:
+        raise ValueError("gain and frequency vectors must have matching lengths of at least three")
+    if not np.all(np.isfinite(gains)) or not np.all(np.isfinite(frequencies)):
+        raise ValueError("gain and frequency vectors must be finite")
+    if np.unique(gains).size != gains.size:
+        raise ValueError("gain values must be unique")
+    min_abs_slope = float(min_abs_slope_mhz_per_dac)
+    min_r_squared = float(min_r_squared)
+    if not math.isfinite(min_abs_slope) or min_abs_slope <= 0:
+        raise ValueError("minimum slope must be positive and finite")
+    if not math.isfinite(min_r_squared) or not 0 <= min_r_squared <= 1:
+        raise ValueError("minimum r-squared must be between zero and one")
+
+    slope, intercept = np.polyfit(gains, frequencies, 1)
+    prediction = slope * gains + intercept
+    residual_sum = float(np.sum((frequencies - prediction) ** 2))
+    total_sum = float(np.sum((frequencies - np.mean(frequencies)) ** 2))
+    r_squared = 1.0 if total_sum <= 1e-24 and residual_sum <= 1e-24 else 1.0 - residual_sum / total_sum
+    if r_squared < min_r_squared:
+        raise ValueError("measured frequency-versus-gain response is not linear enough")
+    if abs(float(slope)) < min_abs_slope:
+        raise ValueError("measured frequency-versus-gain slope is too small")
+
+    center_gain = float(np.median(gains))
+    return {
+        "slope_mhz_per_dac": float(slope),
+        "intercept_mhz": float(intercept),
+        "r_squared": float(r_squared),
+        "center_gain_dac": center_gain,
+        "center_frequency_mhz": float(slope * center_gain + intercept),
+        "residuals_mhz": [float(value) for value in frequencies - prediction],
+    }
+
+
+def frequency_trace_to_step_response(
+    *,
+    delay_us,
+    frequency_mhz,
+    park_gain,
+    slope_mhz_per_dac,
+    reference_window_us,
+):
+    delay = np.asarray(delay_us, dtype=float).reshape(-1)
+    frequency = np.asarray(frequency_mhz, dtype=float).reshape(-1)
+    if delay.size != frequency.size or delay.size < 3:
+        raise ValueError("delay and frequency vectors must have matching lengths of at least three")
+    if not np.all(np.isfinite(delay)) or not np.all(np.isfinite(frequency)):
+        raise ValueError("delay and frequency vectors must be finite")
+    park_gain = float(park_gain)
+    slope = float(slope_mhz_per_dac)
+    reference_window = float(reference_window_us)
+    if park_gain == 0 or not math.isfinite(park_gain):
+        raise ValueError("park gain must be finite and nonzero")
+    if not math.isfinite(slope) or abs(slope) < 1e-12:
+        raise ValueError("frequency-versus-gain slope must be finite and nonzero")
+    if not math.isfinite(reference_window) or reference_window <= 0:
+        raise ValueError("reference window must be positive and finite")
+    reference_mask = delay <= reference_window
+    if np.count_nonzero(reference_mask) < 2:
+        raise ValueError("reference window must contain at least two measured points")
+
+    reference_frequency = float(np.median(frequency[reference_mask]))
+    effective_gain = park_gain + (frequency - reference_frequency) / slope
+    step_response = effective_gain / park_gain
+    return {
+        "reference_frequency_mhz": reference_frequency,
+        "effective_gain_dac": [float(value) for value in effective_gain],
+        "step_response": [float(value) for value in step_response],
+    }
+
+
+def scale_park_compensation(compensation, *, scale, park_gain, max_abs_gain):
+    edges = np.asarray(compensation.get("segment_edges_ns", []), dtype=float).reshape(-1)
+    multipliers = np.asarray(compensation.get("multipliers", []), dtype=float).reshape(-1)
+    if edges.size == 0 or edges.size != multipliers.size:
+        raise ValueError("compensation edges and multipliers must have matching nonzero lengths")
+    if not np.all(np.isfinite(edges)) or not np.all(np.isfinite(multipliers)):
+        raise ValueError("compensation edges and multipliers must be finite")
+    scale = float(scale)
+    park_gain = int(park_gain)
+    max_abs_gain = int(max_abs_gain)
+    if not math.isfinite(scale) or scale < 0:
+        raise ValueError("compensation scale must be finite and non-negative")
+    if park_gain == 0 or max_abs_gain <= 0:
+        raise ValueError("park gain must be nonzero and maximum gain positive")
+
+    scaled = 1.0 + scale * (multipliers - 1.0)
+    commands = [int(np.clip(park_gain * value, -max_abs_gain, max_abs_gain)) for value in scaled]
+    requested = park_gain * scaled
+    if np.any(np.abs(requested) > max_abs_gain + 1e-9):
+        raise ValueError("park correction exceeds available DAC headroom")
+    result = dict(compensation)
+    result["segment_edges_ns"] = [float(value) for value in edges]
+    result["multipliers"] = [float(value) for value in scaled]
+    result["commanded_gains_dac"] = commands
+    result["correction_scale"] = scale
+    return result
+
+
+def summarize_target_trace(
+    *,
+    delay_us,
+    frequency_mhz,
+    supported,
+    target_frequency_mhz,
+    reference_window_us,
+    active_reset_window_us,
+    max_allowed_error_mhz,
+):
+    delay = np.asarray(delay_us, dtype=float).reshape(-1)
+    frequency = np.asarray(frequency_mhz, dtype=float).reshape(-1)
+    support = np.asarray(supported, dtype=bool).reshape(-1)
+    if not (delay.size == frequency.size == support.size) or delay.size == 0:
+        raise ValueError("delay, frequency, and supported vectors must have matching nonzero lengths")
+    target = float(target_frequency_mhz)
+    reference_window = float(reference_window_us)
+    active_window = float(active_reset_window_us)
+    limit = float(max_allowed_error_mhz)
+    if not all(math.isfinite(value) for value in (target, reference_window, active_window, limit)):
+        raise ValueError("target-trace settings must be finite")
+    if reference_window <= 0 or active_window <= 0 or limit < 0:
+        raise ValueError("target-trace windows must be positive and the error limit non-negative")
+    usable = support & np.isfinite(delay) & np.isfinite(frequency)
+    reference = usable & (delay <= reference_window)
+    active = usable & (delay <= active_window)
+    result = {
+        "status": "inconclusive_insufficient_trace",
+        "target_frequency_mhz": target,
+        "reference_window_us": reference_window,
+        "active_reset_window_us": active_window,
+        "max_allowed_error_mhz": limit,
+        "early_frequency_mhz": None,
+        "early_target_error_mhz": None,
+        "max_abs_target_error_mhz": None,
+        "points_in_reset_window": int(np.count_nonzero(active)),
+    }
+    if np.count_nonzero(reference) < 2 or np.count_nonzero(active) < 3:
+        return result
+    early_frequency = float(np.median(frequency[reference]))
+    maximum_error = float(np.max(np.abs(frequency[active] - target)))
+    result.update({
+        "status": "pass" if maximum_error <= limit else "fail",
+        "early_frequency_mhz": early_frequency,
+        "early_target_error_mhz": early_frequency - target,
+        "max_abs_target_error_mhz": maximum_error,
+    })
+    return result

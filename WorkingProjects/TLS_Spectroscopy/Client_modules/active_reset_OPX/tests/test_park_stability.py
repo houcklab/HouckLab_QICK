@@ -3,7 +3,11 @@ import pytest
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.park_stability import (
     build_park_probe_config,
     build_frequency_axis_mhz,
+    fit_local_frequency_slope,
+    frequency_trace_to_step_response,
+    scale_park_compensation,
     summarize_park_trace,
+    summarize_target_trace,
 )
 
 
@@ -151,3 +155,106 @@ def test_park_trace_rejects_mismatched_vectors():
             active_reset_window_us=120.0,
             max_allowed_drift_mhz=0.5,
         )
+
+
+def test_local_frequency_slope_recovers_linear_tuning_curve():
+    result = fit_local_frequency_slope(
+        gains=[-25890, -25790, -25690],
+        frequencies_mhz=[4371.25, 4367.25, 4363.25],
+        min_abs_slope_mhz_per_dac=0.005,
+        min_r_squared=0.99,
+    )
+
+    assert result["slope_mhz_per_dac"] == pytest.approx(-0.04)
+    assert result["r_squared"] == pytest.approx(1.0)
+    assert result["center_frequency_mhz"] == pytest.approx(4367.25)
+
+
+def test_local_frequency_slope_rejects_nonlinear_calibration():
+    with pytest.raises(ValueError, match="linear enough"):
+        fit_local_frequency_slope(
+            gains=[-25890, -25790, -25690],
+            frequencies_mhz=[4367.0, 4370.0, 4367.0],
+            min_abs_slope_mhz_per_dac=0.005,
+            min_r_squared=0.99,
+        )
+
+
+def test_frequency_trace_converts_drift_to_effective_gain_response():
+    result = frequency_trace_to_step_response(
+        delay_us=[1.0, 10.0, 50.0, 100.0],
+        frequency_mhz=[5000.0, 5000.0, 4999.5, 4999.0],
+        park_gain=-25000,
+        slope_mhz_per_dac=-0.05,
+        reference_window_us=10.0,
+    )
+
+    assert result["reference_frequency_mhz"] == pytest.approx(5000.0)
+    assert result["effective_gain_dac"] == pytest.approx([-25000, -25000, -24990, -24980])
+    assert result["step_response"] == pytest.approx([1.0, 1.0, 0.9996, 0.9992])
+
+
+def test_frequency_trace_rejects_a_nearly_flat_gain_slope():
+    with pytest.raises(ValueError, match="slope"):
+        frequency_trace_to_step_response(
+            delay_us=[1.0, 10.0, 50.0],
+            frequency_mhz=[5000.0, 5000.0, 4999.5],
+            park_gain=-25000,
+            slope_mhz_per_dac=0.0,
+            reference_window_us=10.0,
+        )
+
+
+def test_scale_park_compensation_scales_about_unity():
+    result = scale_park_compensation(
+        {"segment_edges_ns": [0.0, 40000.0], "multipliers": [1.0, 1.1]},
+        scale=0.5,
+        park_gain=-25000,
+        max_abs_gain=32767,
+    )
+
+    assert result["segment_edges_ns"] == pytest.approx([0.0, 40000.0])
+    assert result["multipliers"] == pytest.approx([1.0, 1.05])
+    assert result["commanded_gains_dac"] == [-25000, -26250]
+
+
+def test_scale_park_compensation_rejects_a_command_beyond_dac_headroom():
+    with pytest.raises(ValueError, match="headroom"):
+        scale_park_compensation(
+            {"segment_edges_ns": [0.0, 40000.0], "multipliers": [1.0, 1.4]},
+            scale=1.0,
+            park_gain=-25790,
+            max_abs_gain=32767,
+        )
+
+
+def test_target_trace_includes_absolute_park_frequency_error():
+    result = summarize_target_trace(
+        delay_us=[0.5, 20.0, 60.0, 120.0, 160.0],
+        frequency_mhz=[4367.5, 4367.4, 4367.0, 4366.8, 4360.0],
+        supported=[True] * 5,
+        target_frequency_mhz=4367.25,
+        reference_window_us=20.0,
+        active_reset_window_us=120.0,
+        max_allowed_error_mhz=0.5,
+    )
+
+    assert result["status"] == "pass"
+    assert result["early_frequency_mhz"] == pytest.approx(4367.45)
+    assert result["early_target_error_mhz"] == pytest.approx(0.2)
+    assert result["max_abs_target_error_mhz"] == pytest.approx(0.45)
+
+
+def test_target_trace_fails_when_stable_trace_is_at_wrong_frequency():
+    result = summarize_target_trace(
+        delay_us=[0.5, 20.0, 60.0, 120.0],
+        frequency_mhz=[4368.0, 4368.0, 4368.0, 4368.0],
+        supported=[True] * 4,
+        target_frequency_mhz=4367.25,
+        reference_window_us=20.0,
+        active_reset_window_us=120.0,
+        max_allowed_error_mhz=0.5,
+    )
+
+    assert result["status"] == "fail"
+    assert result["max_abs_target_error_mhz"] == pytest.approx(0.75)
