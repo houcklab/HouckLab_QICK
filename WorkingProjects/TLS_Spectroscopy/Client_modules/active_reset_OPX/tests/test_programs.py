@@ -58,15 +58,15 @@ class RecordingProgram:
         self.asm.append(("memw", value_reg, address_reg))
 
 
-def test_register_allocator_returns_ten_distinct_nonreserved_registers():
+def test_register_allocator_returns_eleven_distinct_nonreserved_registers():
     prog = RecordingProgram(reserved={0, 1, 2, 3, 13, 14, 15, 31})
     regs = allocate_registers(prog, page=1, reserved=prog._reserved)
 
     assert set(regs) == {
-        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "i", "q", "q_projected", "z", "ground", "excited", "attempts", "pi_count",
         "status", "initial_z", "address",
     }
-    assert len(set(regs.values())) == 10
+    assert len(set(regs.values())) == 11
     assert not set(regs.values()) & prog._reserved
 
 
@@ -291,6 +291,34 @@ def test_t1_shot_can_measure_a_no_pi_reference():
     )
 
     assert events == ["up", "wait", "payload", "down"]
+
+
+def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
+    prog = RecordingProgram()
+    prog.cfg = {}
+    prog.reset_page = 1
+    prog.reset_regs = {
+        "i": 1,
+        "q": 2,
+        "q_projected": 3,
+        "z": 4,
+    }
+    prog.reset_config = type(
+        "ResetConfig",
+        (),
+        {"reset_settle_us": 0.05, "feedback_syncdelay_us": 8.0},
+    )()
+    prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
+    prog.us2cycles = lambda value: int(round(100 * value))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync_all", cycles))
+    prog.math = lambda page, dst, left, op, right: prog.asm.append(
+        ("math", dst, left, op, right)
+    )
+
+    OPXResetBenchmarkProgram._measure_project(prog, CAL, "payload")
+
+    assert ("mathi", 3, 2, "*", 0) in prog.asm
+    assert not any(op[0] == "mathi" and op[1] == 2 for op in prog.asm)
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():

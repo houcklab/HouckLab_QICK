@@ -26,6 +26,7 @@ except Exception as exc:  # analysis and unit-test computers do not have PYNQ/QI
 REGISTER_NAMES = (
     "i",
     "q",
+    "q_projected",
     "z",
     "ground",
     "excited",
@@ -440,7 +441,7 @@ class OPXResetBenchmarkProgram(QickProgram):
         )
         self.mathi(
             self.reset_page,
-            self.reset_regs["q"],
+            self.reset_regs["q_projected"],
             self.reset_regs["q"],
             "*",
             int(plan["s_abs"]),
@@ -450,7 +451,7 @@ class OPXResetBenchmarkProgram(QickProgram):
             self.reset_regs["z"],
             self.reset_regs["z"],
             plan["combine_op"],
-            self.reset_regs["q"],
+            self.reset_regs["q_projected"],
         )
         self.sync_all(self.us2cycles(float(self.reset_config.feedback_syncdelay_us)))
 
