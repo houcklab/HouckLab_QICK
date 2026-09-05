@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     ReferenceAxis,
     append_records_csv,
     build_interleaved_schedule,
+    fit_t1_decay,
     summarize_post_readout_pi,
     summarize_records,
     wilson_interval,
@@ -51,6 +52,18 @@ def test_reference_axis_recovers_mixture_population_from_mean_iq():
 
     assert axis.population(i, q) == pytest.approx([0, 1, 1, 0])
     assert axis.mean_population(i, q) == pytest.approx(0.5)
+
+
+def test_t1_fit_recovers_a_known_exponential_decay():
+    times = np.logspace(0, np.log10(750.0), 21)
+    populations = 0.035 + 0.81 * np.exp(-times / 150.0)
+
+    fit = fit_t1_decay(times, populations, shots=np.full(times.size, 500))
+
+    assert fit["decaying"] is True
+    assert fit["tau_us"] == pytest.approx(150.0, rel=1e-3)
+    assert fit["P0"] == pytest.approx(0.035, abs=1e-4)
+    assert fit["P1"] == pytest.approx(0.845, abs=1e-4)
 
 
 def test_wilson_interval_contains_observed_fraction_and_handles_zero_shots():

@@ -60,6 +60,75 @@ def wilson_interval(successes, trials, z=1.959963984540054):
     return float(center - half), float(center + half)
 
 
+def fit_t1_decay(times_us, populations, shots=None):
+    from scipy.optimize import curve_fit
+
+    times = np.asarray(times_us, dtype=float).ravel()
+    values = np.asarray(populations, dtype=float).ravel()
+    if times.size != values.size or times.size < 4:
+        raise ValueError("T1 fit needs at least four matching time and population values")
+    finite = np.isfinite(times) & np.isfinite(values) & (times >= 0)
+    if shots is not None:
+        counts = np.asarray(shots, dtype=float).ravel()
+        if counts.size != times.size:
+            raise ValueError("shots must match the T1 vectors")
+        finite &= np.isfinite(counts) & (counts > 0)
+    else:
+        counts = None
+    times = times[finite]
+    values = values[finite]
+    if counts is not None:
+        counts = counts[finite]
+    if times.size < 4 or np.unique(times).size < 4:
+        raise ValueError("T1 fit needs at least four finite distinct delay values")
+    order = np.argsort(times)
+    times = times[order]
+    values = values[order]
+    if counts is not None:
+        counts = counts[order]
+    contrast = float(np.max(values) - np.min(values))
+    if contrast < 1e-6:
+        raise ValueError("T1 population contrast is too small to fit")
+    p0_seed = float(np.mean(values[-max(2, values.size // 5):]))
+    p1_seed = float(values[0])
+    amplitude = p1_seed - p0_seed
+    target = p0_seed + amplitude / math.e
+    tau_seed = max(0.01, float(times[np.argmin(np.abs(values - target))]))
+    lower_population = min(-0.5, float(np.min(values)) - 0.25)
+    upper_population = max(1.5, float(np.max(values)) + 0.25)
+    upper_tau = max(1e6, float(np.max(times)) * 1000.0)
+    sigma = None
+    if counts is not None:
+        clipped = np.clip(values, 0.5 / counts, 1.0 - 0.5 / counts)
+        sigma = np.sqrt(clipped * (1.0 - clipped) / counts)
+    model = lambda t, p0, p1, tau: p0 + (p1 - p0) * np.exp(-t / tau)
+    fitted, covariance = curve_fit(
+        model,
+        times,
+        values,
+        p0=[p0_seed, p1_seed, tau_seed],
+        sigma=sigma,
+        absolute_sigma=sigma is not None,
+        bounds=(
+            [lower_population, lower_population, 0.01],
+            [upper_population, upper_population, upper_tau],
+        ),
+        maxfev=50000,
+    )
+    errors = np.sqrt(np.diag(covariance))
+    predicted = model(times, *fitted)
+    return {
+        "P0": float(fitted[0]),
+        "P1": float(fitted[1]),
+        "tau_us": float(fitted[2]),
+        "P0_err": float(errors[0]),
+        "P1_err": float(errors[1]),
+        "tau_err_us": float(errors[2]),
+        "decaying": bool(fitted[1] > fitted[0]),
+        "rmse": float(np.sqrt(np.mean((values - predicted) ** 2))),
+    }
+
+
 def assignment_threshold(calibration):
     metrics = calibration.holdout or {}
     if "ground_median" in metrics and "excited_median" in metrics:

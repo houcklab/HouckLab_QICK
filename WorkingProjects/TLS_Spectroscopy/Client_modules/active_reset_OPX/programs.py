@@ -146,6 +146,51 @@ def emit_benchmark_shot(
     park_down()
 
 
+def emit_t1_shot(
+    prog,
+    *,
+    page,
+    regs,
+    reset_scheme,
+    payload_calibration,
+    loop_calibration,
+    park_up,
+    park_down,
+    prepare_excited,
+    wait_payload,
+    measure_project,
+    play_pi,
+    label_prefix,
+):
+    park_up()
+    prepare_excited()
+    wait_payload()
+    measure_project(payload_calibration, "payload")
+    prog.mathi(page, regs["initial_z"], regs["z"], "+", 0)
+    scheme = str(reset_scheme).strip().lower()
+    if scheme == "opx_unbounded":
+        emit_unbounded_reset_state_machine(
+            prog,
+            page=page,
+            regs=regs,
+            payload_calibration=payload_calibration,
+            loop_calibration=loop_calibration,
+            measure_next=lambda: measure_project(loop_calibration, "loop"),
+            play_pi=play_pi,
+            label_prefix=label_prefix,
+        )
+    elif scheme == "none":
+        prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
+        prog.regwi(page, regs["pi_count"], 0, "no-reset pi count")
+        prog.regwi(page, regs["status"], int(TerminalStatus.NO_RESET), "no reset")
+    else:
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    prog.regwi(page, regs["i"], 0, "unused verification I")
+    prog.regwi(page, regs["q"], 0, "unused verification Q")
+    emit_record(prog, page=page, regs=regs, preparation=1)
+    park_down()
+
+
 def _declare_common(prog):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
@@ -446,3 +491,27 @@ class OPXResetBenchmarkProgram(QickProgram):
         self.memwi(outer_page, done_reg, self.done_addr)
         self.loopnz(outer_page, loop_reg, "OPX_SHOT_LOOP")
         self.end()
+
+
+class OPXResetT1Program(OPXResetBenchmarkProgram):
+    def _emit_body(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        emit_t1_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=lambda: ff_pulse.play_park_up(self, self._opx_park_segments),
+            park_down=lambda: ff_pulse.play_park_down(self, self._opx_park_segments),
+            prepare_excited=lambda: _pulse_pi_and_align(self),
+            wait_payload=lambda: self.sync_all(
+                self.us2cycles(float(self.cfg["t1_wait_us"]))
+            ),
+            measure_project=self._measure_project,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix="OPX_T1_RESET",
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))

@@ -6,10 +6,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
+    OPXResetT1Program,
     TimingMatchedReferenceProgram,
     allocate_registers,
     emit_benchmark_shot,
     emit_record,
+    emit_t1_shot,
     emit_timing_matched_reference_shot,
     reshape_interleaved_readouts,
 )
@@ -200,6 +202,65 @@ def test_benchmark_shot_dispatches_unbounded_reset_before_verification():
     assert "pi" in events
 
 
+def test_t1_shot_uses_payload_as_the_unbounded_reset_decision():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="opx_unbounded",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="T1_UNBOUNDED",
+    )
+
+    assert events[:4] == ["up", "prep", "wait", "payload"]
+    assert events[-1] == "down"
+    assert "loop" in events
+    assert "reset_pi" in events
+    assert sum(op[0] == "memw" for op in prog.asm) == RECORD_WORDS
+
+
+def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="none",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="T1_PASSIVE",
+    )
+
+    assert events == ["up", "prep", "wait", "payload", "down"]
+    assert ("regwi", regs["status"], 2) in prog.asm
+
+
 def test_loop_reference_matches_the_runtime_feedback_timing():
     events = []
 
@@ -259,3 +320,4 @@ def test_readout_pair_extraction_preserves_per_shot_trigger_order():
 def test_qick_program_classes_are_exposed_even_on_analysis_computers():
     assert TimingMatchedReferenceProgram is not None
     assert OPXResetBenchmarkProgram is not None
+    assert OPXResetT1Program is not None
