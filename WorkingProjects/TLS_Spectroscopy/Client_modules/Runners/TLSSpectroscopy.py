@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 _d = os.path.dirname(os.path.abspath(__file__))
 while _d != os.path.dirname(_d):
@@ -35,6 +36,15 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    q3_benchmark_settings,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
+    acquire_calibration,
+    save_calibration,
+    save_raw_calibration,
+    validate_confident_calibration,
+)
 
 
 LIVE_PLOTS = True
@@ -83,6 +93,11 @@ THERMALIZATION_US = 2.0
 T1_RESET_BACKSTOP_US = 400.0
 T1_FEEDBACK_RELAX_US = 25.0
 RESET_REPROBE_MIN = 30.0
+OPX_RESET_CALIBRATION = None
+OPX_CALIBRATION_SHOTS = 2000
+OPX_CALIBRATION_RELAX_US = 1000.0
+OPX_MIN_CONFIDENT_STATE_FRACTION = 0.2
+OPX_HOST_WATCHDOG_S = 2.0
 
 
 P1_RESONATOR = {
@@ -180,7 +195,7 @@ P6_3PT_T1 = {
     "Ts_us": 70.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    "reset_mode": "passive",
+    "reset_mode": "opx_unbounded",
     "reset_threshold_raw": None,
     "reset_oper": "lower",
     "reset_ground_below": False,
@@ -803,6 +818,17 @@ def _make_reset_recalibrator(p, base, soc, soccfg, outer_folder):
     if not (PROBE_RESET and active_reset.uses_feedback(p.get("reset_mode"))):
         return None
 
+    if active_reset.uses_opx_unbounded(p.get("reset_mode")):
+        def recalibrate():
+            calibration = _acquire_step6_opx_calibration(
+                p, soc, soccfg, outer_folder
+            )
+            base["opx_reset_calibration"] = calibration
+            p["opx_reset_calibration"] = calibration
+            print("  [6] OPX reset calibration refreshed for following passes.")
+
+        return recalibrate
+
     def recalibrate():
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
@@ -822,6 +848,16 @@ def _make_reset_recalibrator(p, base, soc, soccfg, outer_folder):
 
 
 def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
+    opx_unbounded = active_reset.uses_opx_unbounded(p.get("reset_mode"))
+    feedback = active_reset.uses_feedback(p.get("reset_mode"))
+    if opx_unbounded:
+        relax_delay = float(
+            p.get("opx_inter_shot_delay_us", T1_FEEDBACK_RELAX_US)
+        )
+    elif feedback:
+        relax_delay = T1_FEEDBACK_RELAX_US
+    else:
+        relax_delay = T1_RESET_BACKSTOP_US
     base = dict(BaseConfig)
     base.update({
         "shots": int(p["shots"]),
@@ -833,12 +869,23 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
             p.get("apply_flux_tail_compensation", True)),
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": (T1_FEEDBACK_RELAX_US
-                        if active_reset.uses_feedback(p.get("reset_mode"))
-                        else T1_RESET_BACKSTOP_US),
+        "relax_delay": relax_delay,
+        "reset_mode": p.get("reset_mode", "passive"),
         "qubit_pulse_style": "arb",
     })
-    if active_reset.uses_feedback(p.get("reset_mode")):
+    if opx_unbounded:
+        calibration = p.get("opx_reset_calibration")
+        if calibration is None:
+            raise RuntimeError(
+                "reset_mode='opx_unbounded' needs a same-session calibration"
+            )
+        base["opx_reset_calibration"] = calibration
+        base.update(q3_benchmark_settings().opx_overrides())
+        base["opx_unbounded_watchdog_s"] = float(
+            p.get("opx_host_watchdog_s", OPX_HOST_WATCHDOG_S)
+        )
+        base["opx_inter_shot_delay_us"] = relax_delay
+    elif feedback:
         if not p.get("rot_reset"):
             raise RuntimeError("reset_mode='feedback' needs a validated rotated reset "
                                "profile.")
@@ -856,7 +903,69 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     return base
 
 
+def _acquire_step6_opx_calibration(p, soc, soccfg, outer_folder):
+    cfg = dict(BaseConfig)
+    cfg.update(q3_benchmark_settings().opx_overrides())
+    cfg["relax_delay"] = float(
+        p.get("opx_calibration_relax_us", OPX_CALIBRATION_RELAX_US)
+    )
+    cfg["opx_inter_shot_delay_us"] = float(
+        p.get("opx_inter_shot_delay_us", T1_FEEDBACK_RELAX_US)
+    )
+    cfg["opx_unbounded_watchdog_s"] = float(
+        p.get("opx_host_watchdog_s", OPX_HOST_WATCHDOG_S)
+    )
+    now = datetime.now()
+    output = (
+        Path(outer_folder)
+        / QUBIT
+        / f"{QUBIT}_{now:%Y_%m_%d}"
+        / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_step6_calibration"
+    )
+    output.mkdir(parents=True, exist_ok=False)
+    bundle, raw = acquire_calibration(
+        soc,
+        soccfg,
+        cfg,
+        shots=int(p.get("opx_calibration_shots", OPX_CALIBRATION_SHOTS)),
+        **q3_benchmark_settings().calibration_options(),
+        metadata={
+            "qubit": QUBIT,
+            "created": now.isoformat(),
+            "purpose": "TLSSpectroscopy Step 6 opx_unbounded",
+        },
+    )
+    save_calibration(output / "calibration.json", bundle)
+    save_raw_calibration(output / "calibration_raw.npz", raw)
+    validate_confident_calibration(
+        bundle,
+        min_confident_fraction=float(
+            p.get(
+                "opx_min_confident_state_fraction",
+                OPX_MIN_CONFIDENT_STATE_FRACTION,
+            )
+        ),
+    )
+    print(f"[6] OPX reset calibration saved: {output}")
+    return bundle.to_dict()
+
+
 def _resolve_step6_reset(p, soc, soccfg, outer_folder):
+    if active_reset.uses_opx_unbounded(p.get("reset_mode")):
+        if PROBE_RESET:
+            p["opx_reset_calibration"] = _acquire_step6_opx_calibration(
+                p, soc, soccfg, outer_folder
+            )
+            return p
+        calibration = p.get("opx_reset_calibration", OPX_RESET_CALIBRATION)
+        if calibration is None:
+            raise RuntimeError(
+                "reset_mode='opx_unbounded' needs PROBE_RESET=True or an explicit "
+                "OPX_RESET_CALIBRATION"
+            )
+        p["opx_reset_calibration"] = calibration
+        print("[6] PROBE_RESET=False -> using the configured OPX reset calibration")
+        return p
     if not active_reset.uses_feedback(p.get("reset_mode")):
         return p
     if PROBE_RESET:
