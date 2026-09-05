@@ -83,7 +83,9 @@ class RabiSSProgram(RAveragerProgram):
         return shots_i, shots_q
 
 
-def sweep_gain_populations(experiment, cfg, gains, calib_params, progress=False):
+def sweep_gain_populations(
+    experiment, cfg, gains, calib_params, progress=False, return_iq=False
+):
     gains = np.asarray(gains, dtype=int).reshape(-1)
     if gains.size == 0:
         raise ValueError("Rabi gain sweep needs at least one gain")
@@ -116,6 +118,8 @@ def sweep_gain_populations(experiment, cfg, gains, calib_params, progress=False)
     pops = np.empty(len(gains), dtype=float)
     for j in range(len(gains)):
         pops[j] = discriminate_shots(shots_i[j], shots_q[j], calib_params).mean()
+    if return_iq:
+        return pops, shots_i, shots_q
     return pops
 
 

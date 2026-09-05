@@ -140,6 +140,7 @@ def acquire_pulse_sweep_iq(
     excursion_gain=None,
     flux_hold_us=0.05,
     herald=False,
+    reset_scheme="opx_unbounded",
 ):
     bundle = runtime_bundle(cfg)
     gains = np.asarray(gains, dtype=int).reshape(-1)
@@ -157,6 +158,9 @@ def acquire_pulse_sweep_iq(
     )
     if total_shots <= 0:
         raise ValueError("payload shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     capacity = max_records(
         dmem_words_from_soccfg(soccfg),
         int(cfg.get("opx_record_base", 32)),
@@ -177,7 +181,7 @@ def acquire_pulse_sweep_iq(
     for chunk in chunk_sizes(total_shots, shots_per_block):
         run_cfg = dict(cfg)
         run_cfg.update({
-            "opx_reset_scheme": "opx_unbounded",
+            "opx_reset_scheme": reset_scheme,
             "opx_payload_shots_per_expt": int(chunk),
             "opx_payload_expts": int(gains.size),
             "opx_payload_gain_start": int(gains[0]),

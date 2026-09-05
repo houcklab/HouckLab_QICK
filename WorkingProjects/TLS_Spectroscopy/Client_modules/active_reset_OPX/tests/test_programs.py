@@ -339,6 +339,35 @@ def test_compact_payload_shot_records_iq_then_resets_and_releases_park():
     assert [operation[1] for operation in writes] == [regs["i"], regs["q"]]
 
 
+def test_compact_payload_shot_can_use_passive_delay_without_reset():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "address",
+    ))}
+    events = []
+
+    emit_payload_reset_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="none",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        emit_payload=lambda: events.append("payload_sequence"),
+        measure_project=lambda calibration, context: events.append(context),
+        prepare_reset=lambda: events.append("prepare_reset"),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="PAYLOAD_PASSIVE",
+    )
+
+    assert events == ["up", "payload_sequence", "payload", "down"]
+    writes = [operation for operation in prog.asm if operation[0] == "memw"]
+    assert len(writes) == 2
+
+
 def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
     prog = RecordingProgram()
     prog.cfg = {}

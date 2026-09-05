@@ -23,9 +23,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import Bas
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import NpEncoder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import sweep_gain_populations
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q, discriminate_shots
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import ReferenceAxis, assignment_threshold
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import q3_benchmark_settings
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import acquire_calibration, save_calibration, save_raw_calibration, validate_confident_calibration
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import acquire_pulse_sweep_iq
 
 
 QUBIT = "q3"
@@ -143,14 +145,38 @@ def main():
         "opx_reset_calibration": bundle.to_dict(),
     })
     started = time.monotonic()
-    passive = sweep_gain_populations(
-        experiment, passive_cfg, gains, calib_params, progress=False
+    passive, passive_i, passive_q = sweep_gain_populations(
+        experiment, passive_cfg, gains, calib_params, progress=False, return_iq=True
     )
     passive_seconds = time.monotonic() - started
+    compact_cfg = dict(active_cfg)
+    compact_cfg.update({
+        "reset_mode": "opx_unbounded",
+        "relax_delay": float(PASSIVE_RESET_US),
+        "opx_inter_shot_delay_us": float(PASSIVE_RESET_US),
+    })
+    started = time.monotonic()
+    compact_i, compact_q, compact_telemetry = acquire_pulse_sweep_iq(
+        soc,
+        soccfg,
+        compact_cfg,
+        gains=gains,
+        pulses=1,
+        frequency_mhz=float(BaseConfig["qubit_pi_freq"]),
+        shots=int(RABI_SHOTS),
+        pulse_placement="excursion",
+        reset_scheme="none",
+    )
+    compact = np.asarray([
+        discriminate_shots(compact_i[j], compact_q[j], calib_params).mean()
+        for j in range(len(gains))
+    ])
+    compact_seconds = time.monotonic() - started
     started = time.monotonic()
     try:
-        active = sweep_gain_populations(
-            experiment, active_cfg, gains, calib_params, progress=False
+        active, active_i, active_q = sweep_gain_populations(
+            experiment, active_cfg, gains, calib_params, progress=False,
+            return_iq=True,
         )
     finally:
         reset_gens = getattr(soc, "reset_gens", None)
@@ -159,6 +185,43 @@ def main():
     active_seconds = time.monotonic() - started
     finite = bool(np.all(np.isfinite(passive)) and np.all(np.isfinite(active)))
     rmse = float(np.sqrt(np.mean((active - passive) ** 2))) if finite else float("inf")
+    compact_rmse = float(np.sqrt(np.mean((compact - passive) ** 2)))
+    active_compact_rmse = float(np.sqrt(np.mean((active - compact) ** 2)))
+    if compact_rmse > MAX_CURVE_RMSE and active_compact_rmse < compact_rmse:
+        diagnosis = "compact_payload_path"
+    elif compact_rmse <= MAX_CURVE_RMSE and rmse > MAX_CURVE_RMSE:
+        diagnosis = "active_reset_lifecycle"
+    elif rmse <= MAX_CURVE_RMSE:
+        diagnosis = "equivalent"
+    else:
+        diagnosis = "inconclusive"
+    read_cycles = int(soccfg.us2cycles(
+        BaseConfig["read_length"], ro_ch=BaseConfig["ro_chs"][0]
+    ))
+    payload_axis = ReferenceAxis.from_centers(
+        np.mean(raw["payload"]["ground"]["i"]),
+        np.mean(raw["payload"]["ground"]["q"]),
+        np.mean(raw["payload"]["excited"]["i"]),
+        np.mean(raw["payload"]["excited"]["q"]),
+    )
+    payload_threshold = assignment_threshold(bundle.payload)
+
+    def timing_populations(i_values, q_values):
+        raw_i = np.rint(np.asarray(i_values) * read_cycles).astype(np.int64)
+        raw_q = np.rint(np.asarray(q_values) * read_cycles).astype(np.int64)
+        assigned = np.asarray([
+            np.mean(bundle.payload.project(raw_i[j], raw_q[j]) > payload_threshold)
+            for j in range(len(gains))
+        ])
+        projected = np.asarray([
+            payload_axis.mean_population(raw_i[j], raw_q[j])
+            for j in range(len(gains))
+        ])
+        return assigned, projected
+
+    passive_timing, passive_projected = timing_populations(passive_i, passive_q)
+    compact_timing, compact_projected = timing_populations(compact_i, compact_q)
+    active_timing, active_projected = timing_populations(active_i, active_q)
     gain_step = int(gains[1] - gains[0])
     passive_peak = int(gains[int(np.argmax(passive))])
     active_peak = int(gains[int(np.argmax(active))])
@@ -177,8 +240,18 @@ def main():
         "rabi_equivalent": passed,
         "gains_dac": gains,
         "passive_population": passive,
+        "compact_passive_population": compact,
         "active_population": active,
         "curve_rmse": rmse,
+        "compact_vs_legacy_rmse": compact_rmse,
+        "active_vs_compact_rmse": active_compact_rmse,
+        "diagnosis": diagnosis,
+        "legacy_timing_classifier_population": passive_timing,
+        "compact_timing_classifier_population": compact_timing,
+        "active_timing_classifier_population": active_timing,
+        "legacy_projected_population": passive_projected,
+        "compact_projected_population": compact_projected,
+        "active_projected_population": active_projected,
         "maximum_curve_rmse": float(MAX_CURVE_RMSE),
         "passive_peak_gain_dac": passive_peak,
         "active_peak_gain_dac": active_peak,
@@ -188,11 +261,13 @@ def main():
         "active_contrast": active_contrast,
         "minimum_contrast": float(MIN_CONTRAST),
         "passive_seconds": float(passive_seconds),
+        "compact_passive_seconds": float(compact_seconds),
         "active_seconds": float(active_seconds),
         "speedup": float(passive_seconds / active_seconds),
         "single_shot_fidelity": float(ss.max_F),
         "payload_holdout": bundle.payload.holdout,
         "loop_holdout": bundle.loop.holdout,
+        "compact_telemetry": compact_telemetry,
     }
     metadata = {
         "created": now.isoformat(),
@@ -200,6 +275,7 @@ def main():
         "qubit": QUBIT,
         "base_config": BaseConfig,
         "passive_config": passive_cfg,
+        "compact_passive_config": compact_cfg,
         "active_config": active_cfg,
     }
     (output_dir / "summary.json").write_text(
@@ -212,10 +288,22 @@ def main():
         output_dir / "raw.npz",
         gains_dac=gains,
         passive_population=passive,
+        compact_passive_population=compact,
         active_population=active,
+        passive_i=passive_i,
+        passive_q=passive_q,
+        compact_i=compact_i,
+        compact_q=compact_q,
+        active_i=active_i,
+        active_q=active_q,
+        single_shot_ground_i=ss.I_0,
+        single_shot_ground_q=ss.Q_0,
+        single_shot_excited_i=ss.I_1,
+        single_shot_excited_q=ss.Q_1,
     )
     fig, axis = plt.subplots(figsize=(8, 5))
     axis.plot(gains, passive, "o-", label="passive 400 us")
+    axis.plot(gains, compact, "o-", label="compact passive 400 us")
     axis.plot(gains, active, "o-", label="opx unbounded 25 us")
     axis.set_xlabel("Qubit gain [DAC]")
     axis.set_ylabel("Excited population")
@@ -227,6 +315,9 @@ def main():
     plt.close(fig)
     print(f"status={summary['status']}")
     print(f"curve_rmse={rmse:.6f}")
+    print(f"compact_vs_legacy_rmse={compact_rmse:.6f}")
+    print(f"active_vs_compact_rmse={active_compact_rmse:.6f}")
+    print(f"diagnosis={diagnosis}")
     print(f"passive_peak_gain_dac={passive_peak}")
     print(f"active_peak_gain_dac={active_peak}")
     print(f"speedup={summary['speedup']:.3f}")

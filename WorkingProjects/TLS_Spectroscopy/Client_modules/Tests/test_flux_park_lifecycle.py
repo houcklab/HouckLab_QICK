@@ -194,6 +194,40 @@ def test_rabi_ss_dispatches_unbounded_gain_sweep(monkeypatch):
     assert populations.tolist() == [0.0, 1.0, 1.0]
 
 
+def test_rabi_ss_can_return_the_shots_used_for_population(monkeypatch):
+    gains = np.asarray([1000, 2000])
+    cfg = {
+        "reset_mode": "opx_unbounded",
+        "shots": 2,
+        "n_pulses": 1,
+        "rabi_drive_freq": 4367.25,
+        "ff_hold_gain": 0,
+        "readout_after_park": True,
+        "sigma": 0.25,
+        "read_length": 5.0,
+        "adc_trig_offset": 0.5,
+    }
+    shots_i = np.asarray([[-1.0, 1.0], [2.0, 3.0]])
+    shots_q = np.zeros_like(shots_i)
+
+    monkeypatch.setattr(
+        RSS,
+        "acquire_pulse_sweep_iq",
+        lambda *args, **kwargs: (shots_i, shots_q, {}),
+    )
+    populations, returned_i, returned_q = RSS.sweep_gain_populations(
+        types.SimpleNamespace(soc=object(), soccfg=object()),
+        cfg,
+        gains,
+        {"read_theta": 0.0, "scale_factor": 1.0, "threshold": 0.0},
+        return_iq=True,
+    )
+
+    assert populations.tolist() == [0.5, 1.0]
+    assert np.array_equal(returned_i, shots_i)
+    assert np.array_equal(returned_q, shots_q)
+
+
 def test_rabi_ss_passive_sweep_derives_program_gain_registers(monkeypatch):
     gains = np.asarray([1000, 2000, 3000])
     cfg = {"reset_mode": "passive"}
@@ -272,3 +306,40 @@ def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
         "blocks": 2,
         "records": 21,
     }
+
+
+def test_compact_dmem_sweep_forwards_passive_reset_control(monkeypatch):
+    bundle = types.SimpleNamespace(payload=object(), loop=object())
+    monkeypatch.setattr(integration, "runtime_bundle", lambda cfg: bundle)
+    captured = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, payload, loop):
+            self.cfg = dict(cfg)
+            self.reps = cfg["opx_payload_shots_per_expt"] * cfg["opx_payload_expts"]
+            captured.append(self.cfg)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    def run(soc, program, **kwargs):
+        return [PayloadRecord(0, 0) for _ in range(program.reps)]
+
+    monkeypatch.setattr(integration, "OPXResetPulseSweepProgram", Program)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    integration.acquire_pulse_sweep_iq(
+        object(),
+        {"tprocs": [{"dmem_size": 64}]},
+        {
+            "shots": 2,
+            "read_length": 5.0,
+            "ro_chs": [0],
+            "opx_record_base": 32,
+        },
+        gains=[1000, 2000],
+        pulses=1,
+        frequency_mhz=4367.25,
+        reset_scheme="none",
+    )
+
+    assert captured[0]["opx_reset_scheme"] == "none"

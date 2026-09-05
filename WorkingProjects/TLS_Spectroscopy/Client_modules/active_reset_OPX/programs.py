@@ -222,6 +222,7 @@ def emit_payload_reset_shot(
     *,
     page,
     regs,
+    reset_scheme="opx_unbounded",
     payload_calibration,
     loop_calibration,
     park_up,
@@ -239,17 +240,21 @@ def emit_payload_reset_shot(
     prog.mathi(page, regs["address"], regs["address"], "+", 1)
     prog.memw(page, regs["q"], regs["address"])
     prog.mathi(page, regs["address"], regs["address"], "+", 1)
-    prepare_reset()
-    emit_unbounded_reset_state_machine(
-        prog,
-        page=page,
-        regs=regs,
-        payload_calibration=payload_calibration,
-        loop_calibration=loop_calibration,
-        measure_next=lambda: measure_project(loop_calibration, "loop"),
-        play_pi=play_pi,
-        label_prefix=label_prefix,
-    )
+    scheme = str(reset_scheme).strip().lower()
+    if scheme == "opx_unbounded":
+        prepare_reset()
+        emit_unbounded_reset_state_machine(
+            prog,
+            page=page,
+            regs=regs,
+            payload_calibration=payload_calibration,
+            loop_calibration=loop_calibration,
+            measure_next=lambda: measure_project(loop_calibration, "loop"),
+            play_pi=play_pi,
+            label_prefix=label_prefix,
+        )
+    elif scheme != "none":
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     park_down()
 
 
@@ -783,6 +788,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self,
             page=self.reset_page,
             regs=self.reset_regs,
+            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
             payload_calibration=self.payload_calibration,
             loop_calibration=self.loop_calibration,
             park_up=lambda: ff_pulse.play_park_up(
