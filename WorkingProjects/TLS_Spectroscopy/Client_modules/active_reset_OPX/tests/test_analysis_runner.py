@@ -555,6 +555,140 @@ def test_t1_flux_lifecycle_runner_crosses_reset_with_recovery():
     }
 
 
+def test_t1_flux_recovery_sweep_selects_first_delay_passing_every_round():
+    fits = {
+        "passive_1000": {
+            "P0": 0.03, "P1": 0.80, "tau_us": 100.0, "decaying": True
+        },
+        "active_400": {
+            "P0": 0.03, "P1": 0.79, "tau_us": 96.0, "decaying": True
+        },
+        "active_600": {
+            "P0": 0.04, "P1": 0.78, "tau_us": 102.0, "decaying": True
+        },
+        "active_800": {
+            "P0": 0.04, "P1": 0.79, "tau_us": 101.0, "decaying": True
+        },
+    }
+    round_fits = {
+        "0": {
+            "passive_1000": {
+                "P0": 0.03, "P1": 0.80, "tau_us": 100.0, "decaying": True
+            },
+            "active_400": {
+                "P0": 0.03, "P1": 0.79, "tau_us": 72.0, "decaying": True
+            },
+            "active_600": {
+                "P0": 0.04, "P1": 0.78, "tau_us": 104.0, "decaying": True
+            },
+            "active_800": {
+                "P0": 0.04, "P1": 0.79, "tau_us": 99.0, "decaying": True
+            },
+        },
+        "1": {
+            "passive_1000": {
+                "P0": 0.02, "P1": 0.79, "tau_us": 98.0, "decaying": True
+            },
+            "active_400": {
+                "P0": 0.03, "P1": 0.78, "tau_us": 101.0, "decaying": True
+            },
+            "active_600": {
+                "P0": 0.03, "P1": 0.78, "tau_us": 100.0, "decaying": True
+            },
+            "active_800": {
+                "P0": 0.03, "P1": 0.78, "tau_us": 102.0, "decaying": True
+            },
+        },
+    }
+
+    result = analysis.evaluate_t1_recovery_sweep(
+        fits,
+        round_fits,
+        candidate_delays_us={
+            "active_400": 400.0,
+            "active_600": 600.0,
+            "active_800": 800.0,
+        },
+        baseline_method="passive_1000",
+        max_relative_tau_difference=0.20,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["status"] == "pass"
+    assert result["selected_active_relax_us"] == pytest.approx(600.0)
+    assert [row["passed"] for row in result["rows"]] == [False, True, True]
+    assert result["rows"][0]["failed_rounds"] == ["0"]
+
+
+def test_t1_flux_recovery_sweep_fails_closed_for_missing_round_fit():
+    baseline = {
+        "P0": 0.03, "P1": 0.80, "tau_us": 100.0, "decaying": True
+    }
+    active = {
+        "P0": 0.03, "P1": 0.79, "tau_us": 102.0, "decaying": True
+    }
+
+    result = analysis.evaluate_t1_recovery_sweep(
+        {"passive_1000": baseline, "active_400": active},
+        {"0": {"passive_1000": baseline}},
+        candidate_delays_us={"active_400": 400.0},
+        baseline_method="passive_1000",
+        max_relative_tau_difference=0.20,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["status"] == "fail"
+    assert result["selected_active_relax_us"] is None
+    assert result["rows"][0]["complete"] is False
+
+
+def test_t1_runner_fits_each_acquisition_round_independently():
+    delays = np.asarray([1.0, 10.0, 50.0, 100.0, 300.0, 750.0])
+    round_rows = {}
+    for round_index, tau in ((0, 100.0), (1, 130.0)):
+        rows = []
+        for method in ("passive", "opx_unbounded"):
+            for delay_index, delay in enumerate(delays):
+                probability = 0.02 + 0.78 * np.exp(-delay / tau)
+                rows.append({
+                    "method": method,
+                    "delay_index": delay_index,
+                    "delay_us": delay,
+                    "shots": 200,
+                    "excited_fraction": round(200 * probability) / 200,
+                })
+        round_rows[round_index] = rows
+
+    fits, errors = analysis.fit_t1_rounds(
+        round_rows,
+        methods=("passive", "opx_unbounded"),
+    )
+
+    assert errors == {"0": {}, "1": {}}
+    assert fits["0"]["passive"]["tau_us"] == pytest.approx(100.0, rel=0.08)
+    assert fits["1"]["opx_unbounded"]["tau_us"] == pytest.approx(130.0, rel=0.08)
+
+
+def test_t1_flux_recovery_runner_scans_only_reset_recovery_time():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_recovery_t1_q3 as runner,
+    )
+
+    observed = {
+        name: runner._method_config(name) for name in runner.METHODS
+    }
+
+    assert observed == {
+        "passive_1000": ("none", 1000.0),
+        "active_400": ("opx_unbounded", 400.0),
+        "active_600": ("opx_unbounded", 600.0),
+        "active_800": ("opx_unbounded", 800.0),
+        "active_1000": ("opx_unbounded", 1000.0),
+    }
+
+
 def test_attempt_limit_sweep_selects_smallest_limit_passing_both_preparations():
     rows = [
         {

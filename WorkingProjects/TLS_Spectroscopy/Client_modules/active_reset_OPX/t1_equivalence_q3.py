@@ -32,6 +32,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     evaluate_t1_equivalence,
     fit_t1_decay,
+    fit_t1_rounds,
     wilson_interval,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_q3 import (
@@ -245,6 +246,10 @@ def _equivalence(fits):
     )
 
 
+def _final_evaluation(fits, round_fits):
+    return _equivalence(fits)
+
+
 def _write_summary_csv(path, rows):
     with Path(path).open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SUMMARY_FIELDS)
@@ -362,6 +367,9 @@ def main():
         "host_watchdog_s": float(HOST_WATCHDOG_S),
         "random_seed": int(RANDOM_SEED),
         "schedule": schedule,
+        "method_configs": {
+            method: _method_config(method) for method in METHODS
+        },
         "opx_overrides": cfg,
     }
     _write_json(output_dir / "run_metadata.json", metadata)
@@ -384,6 +392,7 @@ def main():
     _plot_calibration(raw, bundle, output_dir / "calibration.png")
 
     accumulated = {}
+    round_accumulated = {round_index: {} for round_index in range(ROUNDS)}
     shots_path = output_dir / "shots.csv"
     assembly_saved = set()
     for run_index, (round_index, method, delay_index) in enumerate(schedule, start=1):
@@ -451,17 +460,31 @@ def main():
             bundle=bundle,
         )
         accumulated.setdefault((method, delay_index), []).extend(records)
+        round_accumulated[round_index].setdefault(
+            (method, delay_index), []
+        ).extend(records)
         partial_rows = _summarize(accumulated, delays, bundle)
         _write_json(output_dir / "summary_partial.json", partial_rows)
 
     rows = _summarize(accumulated, delays, bundle)
     fits, fit_errors = _fit_methods(rows)
-    equivalence = _equivalence(fits)
+    round_rows = {
+        round_index: _summarize(values, delays, bundle)
+        for round_index, values in round_accumulated.items()
+    }
+    round_fits, round_fit_errors = fit_t1_rounds(
+        round_rows,
+        methods=METHODS,
+    )
+    equivalence = _final_evaluation(fits, round_fits)
     _write_summary_csv(output_dir / "summary.csv", rows)
     _write_json(output_dir / "summary.json", {
         "equivalence": equivalence,
         "fits": fits,
         "fit_errors": fit_errors,
+        "round_fits": round_fits,
+        "round_fit_errors": round_fit_errors,
+        "round_points": round_rows,
         "points": rows,
     })
     _plot(rows, fits, equivalence, output_dir / "t1_equivalence.png")

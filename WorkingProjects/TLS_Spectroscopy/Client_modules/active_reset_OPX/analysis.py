@@ -181,6 +181,26 @@ def fit_t1_decay(times_us, populations, shots=None):
     }
 
 
+def fit_t1_rounds(round_rows, *, methods):
+    fits = {}
+    errors = {}
+    for round_index, rows in sorted(dict(round_rows).items()):
+        key = str(round_index)
+        fits[key] = {}
+        errors[key] = {}
+        for method in tuple(str(value) for value in methods):
+            selected = [row for row in rows if str(row["method"]) == method]
+            try:
+                fits[key][method] = fit_t1_decay(
+                    [row["delay_us"] for row in selected],
+                    [row["excited_fraction"] for row in selected],
+                    shots=[row["shots"] for row in selected],
+                )
+            except Exception as exc:
+                errors[key][method] = f"{type(exc).__name__}: {exc}"
+    return fits, errors
+
+
 def evaluate_t1_equivalence(
     passive,
     active,
@@ -290,6 +310,90 @@ def evaluate_t1_flux_lifecycle(
         "diagnosis": diagnosis,
         "missing_fits": [],
         "comparisons": comparisons,
+    }
+
+
+def evaluate_t1_recovery_sweep(
+    fits,
+    round_fits,
+    *,
+    candidate_delays_us,
+    baseline_method,
+    max_relative_tau_difference,
+    max_abs_p0_difference,
+    max_abs_p1_difference,
+):
+    fits = dict(fits)
+    round_fits = {str(key): dict(value) for key, value in dict(round_fits).items()}
+    candidate_delays = {
+        str(method): float(delay)
+        for method, delay in dict(candidate_delays_us).items()
+    }
+    baseline_method = str(baseline_method)
+    if not candidate_delays:
+        raise ValueError("at least one active recovery candidate is required")
+    delays = np.asarray(list(candidate_delays.values()), dtype=float)
+    if not np.all(np.isfinite(delays)) or np.any(delays < 0):
+        raise ValueError("active recovery delays must be finite and nonnegative")
+    if np.unique(delays).size != delays.size:
+        raise ValueError("active recovery delays must be unique")
+    rows = []
+    for method, delay in sorted(candidate_delays.items(), key=lambda item: item[1]):
+        aggregate_complete = baseline_method in fits and method in fits
+        aggregate = (
+            evaluate_t1_equivalence(
+                fits[baseline_method],
+                fits[method],
+                max_relative_tau_difference=max_relative_tau_difference,
+                max_abs_p0_difference=max_abs_p0_difference,
+                max_abs_p1_difference=max_abs_p1_difference,
+            )
+            if aggregate_complete
+            else {"status": "fail", "reason": "missing aggregate fit"}
+        )
+        comparisons = {}
+        failed_rounds = []
+        for round_index, values in sorted(round_fits.items()):
+            if baseline_method not in values or method not in values:
+                comparison = {"status": "fail", "reason": "missing round fit"}
+            else:
+                comparison = evaluate_t1_equivalence(
+                    values[baseline_method],
+                    values[method],
+                    max_relative_tau_difference=max_relative_tau_difference,
+                    max_abs_p0_difference=max_abs_p0_difference,
+                    max_abs_p1_difference=max_abs_p1_difference,
+                )
+            comparisons[round_index] = comparison
+            if comparison["status"] != "pass":
+                failed_rounds.append(round_index)
+        complete = bool(aggregate_complete and round_fits and not any(
+            comparison.get("reason") == "missing round fit"
+            for comparison in comparisons.values()
+        ))
+        passed = bool(
+            complete
+            and aggregate["status"] == "pass"
+            and not failed_rounds
+        )
+        rows.append({
+            "method": method,
+            "active_relax_us": delay,
+            "complete": complete,
+            "passed": passed,
+            "aggregate": aggregate,
+            "rounds": comparisons,
+            "failed_rounds": failed_rounds,
+        })
+    selected = next((row for row in rows if row["passed"]), None)
+    return {
+        "status": "pass" if selected is not None else "fail",
+        "baseline_method": baseline_method,
+        "selected_method": selected["method"] if selected is not None else None,
+        "selected_active_relax_us": (
+            selected["active_relax_us"] if selected is not None else None
+        ),
+        "rows": rows,
     }
 
 
