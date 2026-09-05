@@ -556,8 +556,14 @@ class OPXResetBenchmarkProgram(QickProgram):
 
         ff_pulse.play_park_down(self, self._opx_park_segments)
 
+    def _refresh_park(self):
+        self._park_down()
+        self._park_up()
+
     def _shot_park_callbacks(self):
         if self.reset_config.persistent_park:
+            if getattr(self.reset_config, "refresh_park_before_shot", False):
+                return self._refresh_park, lambda: None
             return lambda: None, lambda: None
         return self._park_up, self._park_down
 

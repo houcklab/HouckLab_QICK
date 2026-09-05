@@ -440,6 +440,34 @@ def test_per_shot_park_lifecycle_preserves_existing_behavior():
     assert events == ["up", "shot_1", "down", "up", "shot_2", "down"]
 
 
+def test_persistent_park_refresh_cycles_immediately_before_each_shot():
+    prog = RecordingProgram()
+    prog.reset_config = type(
+        "ResetConfig",
+        (),
+        {"persistent_park": True, "refresh_park_before_shot": True},
+    )()
+    events = []
+    prog._park_up = lambda: events.append("up")
+    prog._park_down = lambda: events.append("down")
+    prog._refresh_park = lambda: OPXResetBenchmarkProgram._refresh_park(prog)
+
+    OPXResetBenchmarkProgram._begin_park_lifecycle(prog)
+    park_up, park_down = OPXResetBenchmarkProgram._shot_park_callbacks(prog)
+    for shot in (1, 2):
+        park_up()
+        events.append(f"shot_{shot}")
+        park_down()
+    OPXResetBenchmarkProgram._end_park_lifecycle(prog)
+
+    assert events == [
+        "up",
+        "down", "up", "shot_1",
+        "down", "up", "shot_2",
+        "down",
+    ]
+
+
 def test_compact_payload_shot_records_iq_then_resets_and_releases_park():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((

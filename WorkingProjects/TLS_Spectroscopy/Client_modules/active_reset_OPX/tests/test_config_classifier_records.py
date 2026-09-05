@@ -187,6 +187,7 @@ def test_config_accepts_user_facing_prefixed_keys():
         "opx_loop_recovery_us": 25.0,
         "opx_verification_delay_us": 0.25,
         "opx_persistent_park": True,
+        "opx_refresh_park_before_shot": True,
         "opx_record_base": 40,
     })
 
@@ -196,12 +197,18 @@ def test_config_accepts_user_facing_prefixed_keys():
     assert cfg.loop_recovery_us == 25.0
     assert cfg.verification_delay_us == 0.25
     assert cfg.persistent_park is True
+    assert cfg.refresh_park_before_shot is True
     assert cfg.record_base == 40
 
 
 def test_config_rejects_negative_loop_recovery():
     with pytest.raises(ValueError, match="loop_recovery_us"):
         OPXResetConfig.from_mapping({"opx_loop_recovery_us": -0.01})
+
+
+def test_config_rejects_park_refresh_without_persistent_park():
+    with pytest.raises(ValueError, match="requires opx_persistent_park"):
+        OPXResetConfig.from_mapping({"opx_refresh_park_before_shot": True})
 
 
 def test_record_round_trip_converts_unsigned_hardware_words_to_signed():
