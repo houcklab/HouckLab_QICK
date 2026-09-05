@@ -58,15 +58,15 @@ class RecordingProgram:
         self.asm.append(("memw", value_reg, address_reg))
 
 
-def test_register_allocator_returns_eleven_distinct_nonreserved_registers():
+def test_register_allocator_returns_ten_distinct_nonreserved_registers():
     prog = RecordingProgram(reserved={0, 1, 2, 3, 13, 14, 15, 31})
     regs = allocate_registers(prog, page=1, reserved=prog._reserved)
 
     assert set(regs) == {
-        "i", "q", "q_projected", "z", "ground", "excited", "attempts", "pi_count",
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
         "status", "initial_z", "address",
     }
-    assert len(set(regs.values())) == 11
+    assert len(set(regs.values())) == 10
     assert not set(regs.values()) & prog._reserved
 
 
@@ -300,7 +300,7 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
     prog.reset_regs = {
         "i": 1,
         "q": 2,
-        "q_projected": 3,
+        "status": 3,
         "z": 4,
     }
     prog.reset_config = type(
