@@ -415,6 +415,109 @@ def evaluate_t1_recovery_sweep(
     }
 
 
+def evaluate_paired_t1_recovery_sweep(
+    fits,
+    round_fits,
+    *,
+    candidate_delays_us,
+    baseline_method,
+    control_method,
+    max_relative_tau_difference,
+    max_abs_p0_difference,
+    max_abs_p1_difference,
+    max_heterogeneity_i2=0.5,
+):
+    candidate_delays = {
+        str(method): float(delay)
+        for method, delay in dict(candidate_delays_us).items()
+    }
+    if not candidate_delays:
+        raise ValueError("at least one active recovery candidate is required")
+    delays = np.asarray(list(candidate_delays.values()), dtype=float)
+    if not np.all(np.isfinite(delays)) or np.any(delays < 0):
+        raise ValueError("active recovery delays must be finite and nonnegative")
+    if np.unique(delays).size != delays.size:
+        raise ValueError("active recovery delays must be unique")
+    control_method = str(control_method)
+    if control_method not in candidate_delays:
+        raise ValueError("control method must be an active recovery candidate")
+    staged_methods = {
+        method: f"active_recovery_{delay:g}us"
+        for method, delay in candidate_delays.items()
+        if method != control_method
+    }
+    attribution = evaluate_t1_load_attribution(
+        fits,
+        round_fits,
+        baseline_method=baseline_method,
+        active_method=control_method,
+        staged_methods=staged_methods,
+        max_relative_tau_difference=max_relative_tau_difference,
+        max_abs_p0_difference=max_abs_p0_difference,
+        max_abs_p1_difference=max_abs_p1_difference,
+        max_heterogeneity_i2=max_heterogeneity_i2,
+    )
+    rows = []
+    for method, delay in sorted(candidate_delays.items(), key=lambda item: item[1]):
+        comparison = attribution["comparisons"][method]
+        aggregate = comparison["aggregate"]
+        meta = comparison["meta"]
+        ratio = float(meta.get("ratio", float("nan")))
+        i2 = float(meta.get("I2", float("nan")))
+        ratio_passed = bool(
+            np.isfinite(ratio)
+            and 1.0 - float(max_relative_tau_difference)
+            <= ratio
+            <= 1.0 + float(max_relative_tau_difference)
+        )
+        heterogeneity_passed = bool(
+            np.isfinite(i2) and i2 <= float(max_heterogeneity_i2)
+        )
+        complete = bool(
+            aggregate.get("status") in {"pass", "fail"}
+            and "reason" not in aggregate
+            and meta.get("complete", False)
+        )
+        passed = bool(
+            complete
+            and aggregate["status"] == "pass"
+            and ratio_passed
+            and heterogeneity_passed
+        )
+        rows.append({
+            "method": method,
+            "active_relax_us": delay,
+            "complete": complete,
+            "passed": passed,
+            "aggregate": aggregate,
+            "meta": meta,
+            "ratio_passed": ratio_passed,
+            "heterogeneity_passed": heterogeneity_passed,
+            "rounds": comparison["rounds"],
+            "failed_rounds": [
+                round_index
+                for round_index, values in comparison["rounds"].items()
+                if values.get("status") != "pass"
+            ],
+        })
+    by_method = {row["method"]: row for row in rows}
+    control_passed = bool(by_method[control_method]["passed"])
+    selected = next((row for row in rows if row["passed"]), None)
+    status = "pass" if control_passed and selected is not None else "fail"
+    return {
+        "status": status,
+        "baseline_method": str(baseline_method),
+        "control_method": control_method,
+        "control_passed": control_passed,
+        "selected_method": selected["method"] if selected is not None else None,
+        "selected_active_relax_us": (
+            selected["active_relax_us"] if selected is not None else None
+        ),
+        "max_heterogeneity_i2": float(max_heterogeneity_i2),
+        "rows": rows,
+    }
+
+
 def evaluate_t1_load_attribution(
     fits,
     round_fits,

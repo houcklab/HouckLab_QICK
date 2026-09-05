@@ -644,6 +644,96 @@ def test_t1_flux_recovery_sweep_fails_closed_for_missing_round_fit():
     assert result["rows"][0]["complete"] is False
 
 
+def test_paired_t1_recovery_sweep_selects_shortest_stable_delay():
+    methods = (
+        "passive_1000",
+        "active_25",
+        "active_100",
+        "active_400",
+        "active_1000",
+    )
+    aggregate_taus = {
+        "passive_1000": 100.0,
+        "active_25": 75.0,
+        "active_100": 97.0,
+        "active_400": 101.0,
+        "active_1000": 100.0,
+    }
+    fits = {
+        method: {
+            "P0": 0.03,
+            "P1": 0.80,
+            "tau_us": tau,
+            "tau_err_us": 4.0,
+            "decaying": True,
+        }
+        for method, tau in aggregate_taus.items()
+    }
+    round_fits = {}
+    for round_index, baseline_tau in enumerate((96.0, 100.0, 104.0)):
+        round_fits[str(round_index)] = {
+            method: {
+                "P0": 0.03,
+                "P1": 0.80,
+                "tau_us": (
+                    0.75 * baseline_tau
+                    if method == "active_25"
+                    else aggregate_taus[method] * baseline_tau / 100.0
+                ),
+                "tau_err_us": 5.0,
+                "decaying": True,
+            }
+            for method in methods
+        }
+
+    result = analysis.evaluate_paired_t1_recovery_sweep(
+        fits,
+        round_fits,
+        candidate_delays_us={
+            "active_25": 25.0,
+            "active_100": 100.0,
+            "active_400": 400.0,
+            "active_1000": 1000.0,
+        },
+        baseline_method="passive_1000",
+        control_method="active_1000",
+        max_relative_tau_difference=0.15,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+        max_heterogeneity_i2=0.5,
+    )
+
+    assert result["status"] == "pass"
+    assert result["control_passed"] is True
+    assert result["selected_active_relax_us"] == pytest.approx(100.0)
+    assert [row["passed"] for row in result["rows"]] == [False, True, True, True]
+
+
+def test_paired_active_delay_runner_keeps_each_delay_matched_across_methods():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_active_delay_paired_q3 as runner,
+    )
+
+    observed = {
+        method: runner._method_config(method) for method in runner.METHODS
+    }
+
+    assert observed == {
+        "passive_1000": ("none", 1000.0),
+        "active_25": ("opx_unbounded", 25.0),
+        "active_100": ("opx_unbounded", 100.0),
+        "active_400": ("opx_unbounded", 400.0),
+        "active_1000": ("opx_unbounded", 1000.0),
+    }
+    schedule = runner._schedule(np.asarray([1.0, 100.0, 750.0]))
+    assert len(schedule) == runner.ROUNDS * 3 * len(runner.METHODS)
+    for start in range(0, len(schedule), len(runner.METHODS)):
+        group = schedule[start:start + len(runner.METHODS)]
+        assert len({round_index for round_index, _, _ in group}) == 1
+        assert len({delay_index for _, _, delay_index in group}) == 1
+        assert {method for _, method, _ in group} == set(runner.METHODS)
+
+
 def test_t1_runner_fits_each_acquisition_round_independently():
     delays = np.asarray([1.0, 10.0, 50.0, 100.0, 300.0, 750.0])
     round_rows = {}
