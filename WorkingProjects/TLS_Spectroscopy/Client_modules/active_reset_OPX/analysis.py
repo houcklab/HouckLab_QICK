@@ -261,12 +261,24 @@ def evaluate_inter_shot_recovery_sweep(
             raise ValueError(f"duplicate active recovery delay: {delay}")
         seen.add(delay)
         population_difference = population - passive
+        round_differences = np.asarray(
+            row.get("round_population_differences", []), dtype=float
+        ).ravel()
+        if not np.all(np.isfinite(round_differences)) or np.any(
+            np.abs(round_differences) > 1.0
+        ):
+            raise ValueError("round population differences must be finite and in range")
+        worst_population_difference = max(
+            [abs(population_difference)] + np.abs(round_differences).tolist()
+        )
         row.update({
             "active_relax_us": delay,
             "excited_fraction": population,
             "shot_drift": drift,
             "population_difference": population_difference,
-            "population_passed": abs(population_difference) <= population_limit,
+            "round_population_differences": round_differences.tolist(),
+            "worst_abs_population_difference": worst_population_difference,
+            "population_passed": worst_population_difference <= population_limit,
             "drift_passed": abs(drift) <= drift_limit,
         })
         row["passed"] = bool(row["population_passed"] and row["drift_passed"])

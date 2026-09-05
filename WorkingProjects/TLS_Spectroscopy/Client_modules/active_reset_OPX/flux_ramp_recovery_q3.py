@@ -224,13 +224,26 @@ def _summarize(accumulated, bundle):
     return rows
 
 
-def _evaluate(rows):
+def _evaluate(rows, accumulated, bundle):
     passive = next(row for row in rows if row["method"] == "passive")
+    passive_batches = accumulated[_condition_key("passive", PASSIVE_RELAX_US)]
+    sign = 1 if bundle.payload.assembly_plan()["excited_above"] else -1
+    threshold = int(bundle.payload.excited_threshold)
     active = [
         {
             "active_relax_us": row["active_relax_us"],
             "excited_fraction": row["excited_fraction"],
             "shot_drift": row["shot_drift"],
+            "round_population_differences": [
+                _fraction(active_batch, sign, threshold)
+                - _fraction(passive_batch, sign, threshold)
+                for active_batch, passive_batch in zip(
+                    accumulated[
+                        _condition_key("opx_unbounded", row["active_relax_us"])
+                    ],
+                    passive_batches,
+                )
+            ],
         }
         for row in rows
         if row["method"] == "opx_unbounded"
@@ -433,7 +446,7 @@ def main():
         )
 
     rows = _summarize(accumulated, bundle)
-    evaluation = _evaluate(rows)
+    evaluation = _evaluate(rows, accumulated, bundle)
     _write_summary_csv(output_dir / "summary.csv", rows)
     _write_json(output_dir / "summary.json", {
         "evaluation": evaluation,

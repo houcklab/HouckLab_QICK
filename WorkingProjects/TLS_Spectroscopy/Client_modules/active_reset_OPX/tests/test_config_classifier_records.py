@@ -100,7 +100,7 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
 
     assert reset.feedback_syncdelay_us == 8.0
     assert reset.loop_recovery_us == 25.0
-    assert reset.inter_shot_delay_us == 50.0
+    assert reset.inter_shot_delay_us == 200.0
     assert calibration.holdout["ground_accept"] == pytest.approx(0.5)
     assert calibration.holdout["excited_fire"] == pytest.approx(1.0)
     assert calibration.holdout["ground_confidence_fidelity"] == pytest.approx(0.7)

@@ -27,7 +27,7 @@ def q3_benchmark_settings():
     return Q3BenchmarkSettings(
         feedback_syncdelay_us=8.0,
         loop_recovery_us=25.0,
-        inter_shot_delay_us=50.0,
+        inter_shot_delay_us=200.0,
         ground_confidence_fidelity=0.7,
         qua_threshold_steps=100,
     )

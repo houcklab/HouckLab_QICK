@@ -148,6 +148,32 @@ def test_inter_shot_recovery_sweep_fails_closed_when_no_delay_matches():
     assert result["selected_active_relax_us"] is None
 
 
+def test_inter_shot_recovery_sweep_requires_every_round_to_match_population():
+    result = evaluate_inter_shot_recovery_sweep(
+        passive_excited_fraction=0.76,
+        rows=[
+            {
+                "active_relax_us": 100,
+                "excited_fraction": 0.678,
+                "shot_drift": 0.05,
+                "round_population_differences": [-0.04, -0.124],
+            },
+            {
+                "active_relax_us": 200,
+                "excited_fraction": 0.728,
+                "shot_drift": 0.09,
+                "round_population_differences": [-0.04, -0.024],
+            },
+        ],
+        max_abs_population_difference=0.12,
+        max_abs_shot_drift=0.10,
+    )
+
+    assert result["selected_active_relax_us"] == pytest.approx(200.0)
+    assert result["rows"][0]["population_passed"] is False
+    assert result["rows"][0]["worst_abs_population_difference"] == pytest.approx(0.124)
+
+
 def test_json_safe_converts_nested_numpy_arrays_and_nonfinite_values():
     converted = json_safe({"delays": np.asarray([1.0, 2.0]), "bad": np.float64(np.nan)})
 
