@@ -10,7 +10,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     ReferenceAxis,
     append_records_csv,
     build_interleaved_schedule,
+    diagnose_t1_flux_lifecycle,
     evaluate_inter_shot_recovery_sweep,
+    evaluate_t1_flux_lifecycle,
     evaluate_t1_equivalence,
     fit_t1_decay,
     json_safe,
@@ -482,6 +484,75 @@ def test_rabi_lifecycle_diagnosis_rejects_nonfinite_metrics():
             active_short_rmse=0.05,
             max_rmse=0.15,
         )
+
+
+@pytest.mark.parametrize(
+    "short_passed,reset_passed,combined_passed,expected",
+    [
+        (True, True, True, "equivalent"),
+        (False, True, False, "short_inter_shot_lifecycle"),
+        (True, False, False, "active_reset_lifecycle"),
+        (False, False, False, "short_inter_shot_and_active_reset"),
+        (True, True, False, "short_inter_shot_active_reset_interaction"),
+    ],
+)
+def test_t1_flux_lifecycle_diagnosis_separates_factorial_effects(
+    short_passed, reset_passed, combined_passed, expected
+):
+    result = diagnose_t1_flux_lifecycle(
+        short_passed=short_passed,
+        reset_passed=reset_passed,
+        combined_passed=combined_passed,
+    )
+
+    assert result == expected
+
+
+def test_t1_flux_lifecycle_evaluation_compares_each_factor_to_long_passive():
+    fits = {
+        "passive_1000": {
+            "P0": 0.03, "P1": 0.80, "tau_us": 100.0, "decaying": True
+        },
+        "passive_400": {
+            "P0": 0.04, "P1": 0.78, "tau_us": 105.0, "decaying": True
+        },
+        "active_1000": {
+            "P0": 0.03, "P1": 0.79, "tau_us": 70.0, "decaying": True
+        },
+        "active_400": {
+            "P0": 0.04, "P1": 0.77, "tau_us": 65.0, "decaying": True
+        },
+    }
+
+    result = evaluate_t1_flux_lifecycle(
+        fits,
+        max_relative_tau_difference=0.20,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["status"] == "fail"
+    assert result["diagnosis"] == "active_reset_lifecycle"
+    assert result["comparisons"]["short_interval"]["status"] == "pass"
+    assert result["comparisons"]["active_reset"]["status"] == "fail"
+    assert result["comparisons"]["combined"]["status"] == "fail"
+
+
+def test_t1_flux_lifecycle_runner_crosses_reset_with_recovery():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_lifecycle_q3 as runner,
+    )
+
+    observed = {
+        name: runner._method_config(name) for name in runner.METHODS
+    }
+
+    assert observed == {
+        "passive_1000": ("none", 1000.0),
+        "passive_400": ("none", 400.0),
+        "active_1000": ("opx_unbounded", 1000.0),
+        "active_400": ("opx_unbounded", 400.0),
+    }
 
 
 def test_attempt_limit_sweep_selects_smallest_limit_passing_both_preparations():

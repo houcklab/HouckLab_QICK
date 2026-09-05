@@ -45,6 +45,21 @@ def diagnose_rabi_lifecycle(
     return "equivalent"
 
 
+def diagnose_t1_flux_lifecycle(*, short_passed, reset_passed, combined_passed):
+    short_passed = bool(short_passed)
+    reset_passed = bool(reset_passed)
+    combined_passed = bool(combined_passed)
+    if short_passed and reset_passed and combined_passed:
+        return "equivalent"
+    if short_passed and reset_passed:
+        return "short_inter_shot_active_reset_interaction"
+    if not short_passed and reset_passed:
+        return "short_inter_shot_lifecycle"
+    if short_passed and not reset_passed:
+        return "active_reset_lifecycle"
+    return "short_inter_shot_and_active_reset"
+
+
 @dataclass(frozen=True)
 class ReferenceAxis:
     ground_i: float
@@ -227,6 +242,54 @@ def evaluate_t1_equivalence(
         "P0_passed": bool(p0_passed),
         "P1_passed": bool(p1_passed),
         "failed_checks": [name for name, passed in checks.items() if not passed],
+    }
+
+
+def evaluate_t1_flux_lifecycle(
+    fits,
+    *,
+    max_relative_tau_difference,
+    max_abs_p0_difference,
+    max_abs_p1_difference,
+):
+    required = ("passive_1000", "passive_400", "active_1000", "active_400")
+    missing = [name for name in required if name not in fits]
+    if missing:
+        return {
+            "status": "fail",
+            "diagnosis": "fit_failed",
+            "missing_fits": missing,
+            "comparisons": {},
+        }
+    baseline = fits["passive_1000"]
+    options = {
+        "short_interval": fits["passive_400"],
+        "active_reset": fits["active_1000"],
+        "combined": fits["active_400"],
+    }
+    comparisons = {
+        name: evaluate_t1_equivalence(
+            baseline,
+            fit,
+            max_relative_tau_difference=max_relative_tau_difference,
+            max_abs_p0_difference=max_abs_p0_difference,
+            max_abs_p1_difference=max_abs_p1_difference,
+        )
+        for name, fit in options.items()
+    }
+    passed = {
+        name: result["status"] == "pass" for name, result in comparisons.items()
+    }
+    diagnosis = diagnose_t1_flux_lifecycle(
+        short_passed=passed["short_interval"],
+        reset_passed=passed["active_reset"],
+        combined_passed=passed["combined"],
+    )
+    return {
+        "status": "pass" if all(passed.values()) else "fail",
+        "diagnosis": diagnosis,
+        "missing_fits": [],
+        "comparisons": comparisons,
     }
 
 
