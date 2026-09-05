@@ -1,6 +1,8 @@
 import sys
 import types
 
+import numpy as np
+
 
 qick = sys.modules.get("qick")
 if qick is None:
@@ -12,9 +14,13 @@ if qick is None:
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
     mRabiChevronIQ as R,
+    mRabiChevronSS as RSS,
+    mSingleShot1Q as SS,
     mTransmissionVsFlux as TVF,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import integration
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import PayloadRecord
 
 
 class FakeProgram:
@@ -120,3 +126,120 @@ def test_external_flux_transmission_bounds_static_rfsoc_park(monkeypatch):
 
     names = [event[0] for event in program.events]
     assert names == ["park_up", "measure", "park_down", "sync"]
+
+
+def test_single_shot_dispatches_unbounded_reset_through_dmem(monkeypatch):
+    experiment = object.__new__(SS.SingleShot1Q)
+    experiment.cfg = {
+        "reset_mode": "opx_unbounded",
+        "shots": 3,
+        "qubit_gain": 11000,
+        "qubit_pi_freq": 4367.25,
+        "qubit_freq": 4367.25,
+    }
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.repeats = 1
+    calls = []
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        calls.append(kwargs)
+        value = float(kwargs["gain"])
+        return np.full(3, value), np.full(3, -value), {}
+
+    monkeypatch.setattr(SS, "acquire_pulse_iq", acquire)
+
+    shots_i, shots_q = experiment._acquire_shots()
+
+    assert [call["gain"] for call in calls] == [0, 11000]
+    assert shots_i.tolist() == [[0.0, 0.0, 0.0], [11000.0, 11000.0, 11000.0]]
+    assert shots_q.tolist() == [[0.0, 0.0, 0.0], [-11000.0, -11000.0, -11000.0]]
+
+
+def test_rabi_ss_dispatches_unbounded_gain_sweep(monkeypatch):
+    gains = np.asarray([1000, 2000, 3000])
+    cfg = {
+        "reset_mode": "opx_unbounded",
+        "shots": 4,
+        "n_pulses": 1,
+        "rabi_drive_freq": 4367.25,
+        "ff_hold_gain": 0,
+        "readout_after_park": True,
+        "sigma": 0.25,
+        "read_length": 5.0,
+        "adc_trig_offset": 0.5,
+    }
+    experiment = types.SimpleNamespace(soc=object(), soccfg=object())
+    observed = {}
+
+    def acquire(soc, soccfg, passed_cfg, **kwargs):
+        observed.update(kwargs)
+        i_values = np.asarray([
+            np.full(4, -1.0),
+            np.full(4, 1.0),
+            np.full(4, 2.0),
+        ])
+        return i_values, np.zeros_like(i_values), {}
+
+    monkeypatch.setattr(RSS, "acquire_pulse_sweep_iq", acquire)
+    populations = RSS.sweep_gain_populations(
+        experiment,
+        cfg,
+        gains,
+        {"read_theta": 0.0, "scale_factor": 1.0, "threshold": 0.0},
+    )
+
+    assert np.array_equal(observed["gains"], gains)
+    assert observed["pulses"] == 1
+    assert populations.tolist() == [0.0, 1.0, 1.0]
+
+
+def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
+    bundle = types.SimpleNamespace(payload=object(), loop=object())
+    monkeypatch.setattr(integration, "runtime_bundle", lambda cfg: bundle)
+    programs = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, payload, loop):
+            self.cfg = dict(cfg)
+            self.reps = cfg["opx_payload_shots_per_expt"] * cfg["opx_payload_expts"]
+            programs.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    def run(soc, program, **kwargs):
+        shots = program.cfg["opx_payload_shots_per_expt"]
+        expts = program.cfg["opx_payload_expts"]
+        return [
+            PayloadRecord(100 * expt + shot, -(100 * expt + shot))
+            for expt in range(expts)
+            for shot in range(shots)
+        ]
+
+    monkeypatch.setattr(integration, "OPXResetPulseSweepProgram", Program)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    i_values, q_values, telemetry = integration.acquire_pulse_sweep_iq(
+        object(),
+        {"tprocs": [{"dmem_size": 64}]},
+        {
+            "shots": 7,
+            "read_length": 5.0,
+            "ro_chs": [0],
+            "opx_record_base": 32,
+        },
+        gains=[1000, 2000, 3000],
+        pulses=1,
+        frequency_mhz=4367.25,
+    )
+
+    assert [program.cfg["opx_payload_shots_per_expt"] for program in programs] == [5, 2]
+    assert i_values.shape == (3, 7)
+    assert q_values.shape == (3, 7)
+    assert i_values[2].tolist() == [20.0, 20.1, 20.2, 20.3, 20.4, 20.0, 20.1]
+    assert telemetry == {
+        "shots_per_point": 7,
+        "points": 3,
+        "blocks": 2,
+        "records": 21,
+    }

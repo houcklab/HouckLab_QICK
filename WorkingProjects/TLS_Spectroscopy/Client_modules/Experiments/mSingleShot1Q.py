@@ -12,6 +12,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, set_readout_pulse,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_iq,
+)
 
 
 def discriminate_shots(i, q, calib_params):
@@ -338,6 +341,26 @@ class SingleShot1Q(ExperimentClass):
         self.element = str(path)
 
     def _acquire_shots(self, progress=False):
+        if active_reset.uses_opx_unbounded(self.cfg):
+            acquired = {}
+            for prep_excited in (False, True):
+                gain = int(self.cfg["qubit_gain"]) if prep_excited else 0
+                i_values, q_values, _ = acquire_pulse_iq(
+                    self.soc,
+                    self.soccfg,
+                    self.cfg,
+                    gain=gain,
+                    pulses=int(self.repeats),
+                    frequency_mhz=float(self.cfg.get(
+                        "qubit_pi_freq", self.cfg["qubit_freq"])),
+                    shots=int(self.cfg["shots"]),
+                    pulse_placement="park",
+                )
+                acquired[prep_excited] = i_values, q_values
+            return (
+                np.asarray([acquired[False][0], acquired[True][0]]),
+                np.asarray([acquired[False][1], acquired[True][1]]),
+            )
         prog = SingleShotProgram(self.soccfg, self.cfg)
         return prog.acquire(self.soc, load_pulses=True, progress=progress)
 
@@ -504,9 +527,33 @@ class SingleShotFluxRamp(SingleShot1Q):
         for prep_excited in states:
             cfg = dict(self.cfg)
             cfg["prep_excited"] = bool(prep_excited)
-            prog = SingleShotFluxRampProgram(self.soccfg, cfg)
-            _, _, final_i, final_q = prog.acquire(
-                self.soc, load_pulses=True, progress=progress)
+            if active_reset.uses_opx_unbounded(cfg):
+                park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+                stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0
+                hold_us = float(cfg.get("ss_flux_hold_us", cfg.get("ff_hold", 0.0)))
+                if stepping:
+                    hold_us += ff_pulse.flux_settle_us(cfg)
+                gain = int(cfg.get("ss_flux_pi_gain", cfg["qubit_pi_gain"])) \
+                    if prep_excited else 0
+                final_i, final_q, _ = acquire_pulse_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    gain=gain,
+                    pulses=int(self.repeats),
+                    frequency_mhz=float(cfg.get(
+                        "qubit_pi_freq", cfg["qubit_freq"])),
+                    shots=int(cfg["shots"]),
+                    pulse_placement="park",
+                    do_excursion=stepping,
+                    excursion_gain=(cfg["ff_gain"] if stepping else None),
+                    flux_hold_us=hold_us,
+                    herald=True,
+                )
+            else:
+                prog = SingleShotFluxRampProgram(self.soccfg, cfg)
+                _, _, final_i, final_q = prog.acquire(
+                    self.soc, load_pulses=True, progress=progress)
             acquired[bool(prep_excited)] = final_i, final_q
         return (np.asarray([acquired[False][0], acquired[True][0]]),
                 np.asarray([acquired[False][1], acquired[True][1]]))

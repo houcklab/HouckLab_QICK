@@ -6,6 +6,7 @@ import numpy as np
 
 RECORD_SCHEMA_VERSION = 1
 RECORD_WORDS = 8
+PAYLOAD_RECORD_WORDS = 2
 
 
 class TerminalStatus(IntEnum):
@@ -37,6 +38,15 @@ class ShotRecord:
             int(self.final_q),
             int(self.last_z),
         ]
+
+
+@dataclass(frozen=True)
+class PayloadRecord:
+    final_i: int
+    final_q: int
+
+    def to_words(self):
+        return [int(self.final_i), int(self.final_q)]
 
 
 def signed32(value):
@@ -71,6 +81,22 @@ def decode_records(words, expected_records=None):
             last_z=int(row[7]),
         ))
     return records
+
+
+def decode_payload_records(words, expected_records=None):
+    flat = np.asarray(words).ravel()
+    if flat.size % PAYLOAD_RECORD_WORDS:
+        raise ValueError(
+            f"data-memory payload length {flat.size} is not a multiple of "
+            f"{PAYLOAD_RECORD_WORDS}"
+        )
+    count = flat.size // PAYLOAD_RECORD_WORDS
+    if expected_records is not None and count != int(expected_records):
+        raise ValueError(f"expected {int(expected_records)} records, received {count}")
+    signed = np.asarray(
+        [signed32(value) for value in flat], dtype=np.int64
+    ).reshape(count, PAYLOAD_RECORD_WORDS)
+    return [PayloadRecord(final_i=int(row[0]), final_q=int(row[1])) for row in signed]
 
 
 def max_records(dmem_words, record_base, record_words=RECORD_WORDS):

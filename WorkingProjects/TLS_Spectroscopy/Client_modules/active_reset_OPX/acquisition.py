@@ -89,6 +89,13 @@ def _safe_abort(soc):
             reset_gens()
 
 
+def _decode_program_records(program, words, expected_records):
+    decoder = getattr(program, "decode_dmem_records", None)
+    if callable(decoder):
+        return decoder(words, expected_records=expected_records)
+    return decode_records(words, expected_records=expected_records)
+
+
 def run_dmem_block(
     soc,
     program,
@@ -148,7 +155,9 @@ def run_dmem_block(
                 words = _read_words(
                     soc, program.record_base, completed * program.record_words
                 )
-                partial = decode_records(words, expected_records=completed)
+                partial = _decode_program_records(
+                    program, words, expected_records=completed
+                )
                 raise AcquisitionTimeout(
                     f"OPX reset block timed out after {timeout_s:g} s "
                     f"({completed}/{reps} complete shots)",
@@ -158,7 +167,7 @@ def run_dmem_block(
             sleeper(poll_interval_s)
 
         words = _read_words(soc, program.record_base, reps * program.record_words)
-        return decode_records(words, expected_records=reps)
+        return _decode_program_records(program, words, expected_records=reps)
     except Exception:
         if started:
             _safe_abort(soc)

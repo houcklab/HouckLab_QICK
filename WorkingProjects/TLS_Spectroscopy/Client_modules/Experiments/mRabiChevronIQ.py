@@ -13,6 +13,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remea
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, set_readout_pulse,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_sweep_iq,
+)
 
 
 def flux_hold_us(cfg, cover_readout):
@@ -209,10 +212,32 @@ class RabiChevronIQ(ExperimentClass):
 
         def measure_row(i):
             cfg["rabi_drive_freq"] = pi_freq + float(df_vec[int(i)])
-            prog = RabiChevronIQProgram(self.soccfg, cfg)
-            _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            I[int(i), :] = np.asarray(avgi[0][0])
-            Q[int(i), :] = np.asarray(avgq[0][0])
+            if active_reset.uses_opx_unbounded(cfg):
+                do_excursion = bool(cfg.get("ff_hold_gain", 0))
+                shots_i, shots_q, _ = acquire_pulse_sweep_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    gains=gains,
+                    pulses=int(cfg["n_pulses"]),
+                    frequency_mhz=cfg["rabi_drive_freq"],
+                    shots=int(cfg["shots"]),
+                    pulse_placement="excursion",
+                    do_excursion=do_excursion,
+                    excursion_gain=(cfg.get("ff_hold_gain") if do_excursion else None),
+                    flux_hold_us=flux_hold_us(
+                        cfg,
+                        cover_readout=not bool(cfg.get("readout_after_park", True)),
+                    ),
+                )
+                I[int(i), :] = np.mean(shots_i, axis=1)
+                Q[int(i), :] = np.mean(shots_q, axis=1)
+            else:
+                prog = RabiChevronIQProgram(self.soccfg, cfg)
+                _x, avgi, avgq = prog.acquire(
+                    self.soc, load_pulses=True, progress=False)
+                I[int(i), :] = np.asarray(avgi[0][0])
+                Q[int(i), :] = np.asarray(avgq[0][0])
 
         start_time = time.time()
         for step, i in enumerate(order):

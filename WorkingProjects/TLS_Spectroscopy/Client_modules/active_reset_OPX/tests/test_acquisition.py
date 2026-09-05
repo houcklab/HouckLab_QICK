@@ -8,9 +8,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
     timeout_for_reset_scheme,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
+    PAYLOAD_RECORD_WORDS,
+    PayloadRecord,
     RECORD_WORDS,
     ShotRecord,
     TerminalStatus,
+    decode_payload_records,
 )
 
 
@@ -175,3 +178,21 @@ def test_block_rejects_a_record_allocation_larger_than_dmem():
         run_dmem_block(FakeSoc(tproc), program, timeout_s=1.0)
 
     assert not tproc.started
+
+
+def test_block_uses_program_specific_compact_record_decoder():
+    records = [PayloadRecord(-20, 30), PayloadRecord(-10, 40)]
+    tproc = FakeTProc(records, done_values=[2])
+    program = FakeProgram(reps=2)
+    program.record_words = PAYLOAD_RECORD_WORDS
+    program.decode_dmem_records = decode_payload_records
+
+    observed = run_dmem_block(
+        FakeSoc(tproc),
+        program,
+        timeout_s=1.0,
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert observed == records

@@ -8,8 +8,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     OPXResetBenchmarkProgram,
     OPXResetT1Program,
     TimingMatchedReferenceProgram,
+    allocate_named_registers,
     allocate_registers,
     emit_benchmark_shot,
+    emit_payload_reset_shot,
     emit_record,
     emit_t1_shot,
     emit_timing_matched_reference_shot,
@@ -73,6 +75,19 @@ def test_register_allocator_returns_ten_distinct_nonreserved_registers():
 def test_register_allocator_rejects_insufficient_scratch_space():
     with pytest.raises(ValueError, match="scratch registers"):
         allocate_registers(RecordingProgram(), page=1, reserved=set(range(1, 25)))
+
+
+def test_named_register_allocator_can_leave_room_for_payload_state():
+    names = ("i", "q", "z", "ground", "excited", "attempts", "pi_count",
+             "status", "address")
+    prog = RecordingProgram(reserved={0, 1, 2, 3, 13, 14, 15, 31})
+
+    regs = allocate_named_registers(
+        prog, page=1, names=names, reserved=prog._reserved)
+
+    assert tuple(regs) == names
+    assert len(set(regs.values())) == len(names)
+    assert not set(regs.values()) & prog._reserved
 
 
 def test_emit_record_writes_exactly_eight_words_and_advances_address():
@@ -291,6 +306,37 @@ def test_t1_shot_can_measure_a_no_pi_reference():
     )
 
     assert events == ["up", "wait", "payload", "down"]
+
+
+def test_compact_payload_shot_records_iq_then_resets_and_releases_park():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "address",
+    ))}
+    events = []
+
+    emit_payload_reset_shot(
+        prog,
+        page=1,
+        regs=regs,
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        emit_payload=lambda: events.append("payload_sequence"),
+        measure_project=lambda calibration, context: events.append(context),
+        prepare_reset=lambda: events.append("prepare_reset"),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="PAYLOAD",
+    )
+
+    assert events[:3] == ["up", "payload_sequence", "payload"]
+    assert events[-1] == "down"
+    assert events.index("prepare_reset") < events.index("reset_pi")
+    writes = [operation for operation in prog.asm if operation[0] == "memw"]
+    assert len(writes) == 2
+    assert [operation[1] for operation in writes] == [regs["i"], regs["q"]]
 
 
 def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():

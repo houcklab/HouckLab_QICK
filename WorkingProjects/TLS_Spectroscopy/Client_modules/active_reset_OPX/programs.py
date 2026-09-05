@@ -5,7 +5,13 @@ import numpy as np
 from .classifier import ClassifierCalibration
 from .config import OPXResetConfig
 from .control_flow import emit_reset_state_machine, emit_unbounded_reset_state_machine
-from .records import RECORD_WORDS, TerminalStatus, signed32
+from .records import (
+    PAYLOAD_RECORD_WORDS,
+    RECORD_WORDS,
+    TerminalStatus,
+    decode_payload_records,
+    signed32,
+)
 
 
 try:
@@ -58,15 +64,24 @@ def _reserved_registers(prog, page):
     return reserved
 
 
-def allocate_registers(prog, page, reserved=None):
+def allocate_named_registers(prog, page, names, reserved=None):
+    names = tuple(names)
+    if not names or len(set(names)) != len(names):
+        raise ValueError("scratch register names must be distinct and nonempty")
     reserved = set(_reserved_registers(prog, page) if reserved is None else reserved)
     available = [reg for reg in range(1, 31) if reg not in reserved]
-    if len(available) < len(REGISTER_NAMES):
+    if len(available) < len(names):
         raise ValueError(
-            f"OPX reset needs {len(REGISTER_NAMES)} scratch registers on page {page}, "
+            f"OPX reset needs {len(names)} scratch registers on page {page}, "
             f"but only {len(available)} are free; reserved={sorted(reserved)}"
         )
-    return dict(zip(REGISTER_NAMES, available[:len(REGISTER_NAMES)]))
+    return dict(zip(names, available[:len(names)]))
+
+
+def allocate_registers(prog, page, reserved=None):
+    return allocate_named_registers(
+        prog, page, REGISTER_NAMES, reserved=reserved
+    )
 
 
 def emit_record(prog, *, page, regs, preparation):
@@ -199,6 +214,42 @@ def emit_t1_shot(
     prog.mathi(page, regs["address"], regs["address"], "+", 2)
     prog.memw(page, regs["z"], regs["address"])
     prog.mathi(page, regs["address"], regs["address"], "+", 1)
+    park_down()
+
+
+def emit_payload_reset_shot(
+    prog,
+    *,
+    page,
+    regs,
+    payload_calibration,
+    loop_calibration,
+    park_up,
+    park_down,
+    emit_payload,
+    measure_project,
+    prepare_reset,
+    play_pi,
+    label_prefix,
+):
+    park_up()
+    emit_payload()
+    measure_project(payload_calibration, "payload")
+    prog.memw(page, regs["i"], regs["address"])
+    prog.mathi(page, regs["address"], regs["address"], "+", 1)
+    prog.memw(page, regs["q"], regs["address"])
+    prog.mathi(page, regs["address"], regs["address"], "+", 1)
+    prepare_reset()
+    emit_unbounded_reset_state_machine(
+        prog,
+        page=page,
+        regs=regs,
+        payload_calibration=payload_calibration,
+        loop_calibration=loop_calibration,
+        measure_next=lambda: measure_project(loop_calibration, "loop"),
+        play_pi=play_pi,
+        label_prefix=label_prefix,
+    )
     park_down()
 
 
@@ -573,3 +624,241 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             do_prepare=bool(self.cfg.get("do_pi", True)),
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+
+class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        shots = int(run_cfg.get("opx_payload_shots_per_expt", 0))
+        expts = int(run_cfg.get("opx_payload_expts", 1))
+        if shots <= 0 or expts <= 0:
+            raise ValueError("payload shots and experiment count must be positive")
+        run_cfg["reps"] = shots * expts
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _set_payload_pulse(self):
+        cfg = self.cfg
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.freq2reg(
+                float(cfg.get("opx_payload_frequency_mhz", cfg.get(
+                    "qubit_pi_freq", cfg["qubit_freq"]))),
+                gen_ch=cfg["qubit_ch"],
+            ),
+            phase=self.deg2reg(
+                float(cfg.get("opx_payload_phase_deg", 0.0)),
+                gen_ch=cfg["qubit_ch"],
+            ),
+            gain=0,
+            waveform="qubit",
+        )
+        self.mathi(
+            self.reset_page,
+            self.sreg(cfg["qubit_ch"], "gain"),
+            self.reset_regs["payload_gain"],
+            "+",
+            0,
+        )
+
+    def _set_reset_pulse(self):
+        cfg = self.cfg
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.freq2reg(
+                float(cfg.get("reset_pi_freq", cfg.get(
+                    "qubit_pi_freq", cfg["qubit_freq"]))),
+                gen_ch=cfg["qubit_ch"],
+            ),
+            phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+            gain=int(cfg.get("reset_pi_gain", cfg["qubit_pi_gain"])),
+            waveform="qubit_reset",
+        )
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+
+        set_readout_pulse(
+            self,
+            self._payload_read_freq_reg,
+            gain=int(cfg.get("reset_read_pulse_gain", cfg["read_pulse_gain"])),
+        )
+
+    def _declare_experiment(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian
+
+        cfg = self.cfg
+        if str(cfg.get("qubit_pulse_style", "arb")).lower() != "arb":
+            raise ValueError("OPX pulse-sweep reset requires an arb qubit pulse")
+        reset_read_frequency = float(cfg.get(
+            "reset_read_pulse_freq", cfg["read_pulse_freq"]))
+        if not np.isclose(
+            reset_read_frequency,
+            float(cfg["read_pulse_freq"]),
+            rtol=0.0,
+            atol=1e-9,
+        ):
+            raise ValueError("payload and reset readout frequencies must match")
+        self._payload_shots = int(cfg["opx_payload_shots_per_expt"])
+        self._payload_expts = int(cfg.get("opx_payload_expts", 1))
+        self._payload_pulses = int(cfg.get("opx_payload_pulses", 1))
+        if self._payload_pulses < 0:
+            raise ValueError("opx_payload_pulses must be non-negative")
+        placement = str(cfg.get("opx_payload_pulse_placement", "excursion")).lower()
+        if placement not in ("park", "excursion"):
+            raise ValueError("opx_payload_pulse_placement must be 'park' or 'excursion'")
+        self._payload_pulse_placement = placement
+        add_qubit_gaussian(
+            self,
+            name="qubit_reset",
+            sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+            drag_beta=float(cfg.get(
+                "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))),
+        )
+        self._payload_read_freq_reg = self.freq2reg(
+            cfg["read_pulse_freq"],
+            gen_ch=cfg["res_ch"],
+            ro_ch=cfg["ro_chs"][0],
+        )
+        self._payload_do_excursion = bool(cfg.get("opx_payload_do_excursion", False))
+        self._payload_excursion_segments = None
+        if self._payload_do_excursion:
+            if not getattr(self, "do_park_hold", False):
+                ff_pulse.declare_ff(self)
+            if not bool(cfg.get("readout_after_park", True)):
+                raise ValueError(
+                    "OPX pulse-sweep reset requires readout_after_park=True"
+                )
+            self._payload_excursion_segments = ff_pulse.build_ramp_hold_ramp(
+                self,
+                hold_us=float(cfg.get("opx_payload_flux_hold_us", 0.05)),
+                ff_gain=float(cfg["opx_payload_excursion_gain"]),
+                dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+                dt_def_us=cfg.get("dt_pulsedef", 0.002),
+                compensation=ff_pulse.load_compensation(cfg),
+                distortion_model=ff_pulse.make_distortion_model(self),
+            )
+
+    def _emit_payload_pulses(self):
+        cfg = self.cfg
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+
+        set_readout_pulse(
+            self,
+            self._payload_read_freq_reg,
+            gain=int(cfg["read_pulse_gain"]),
+        )
+        if bool(cfg.get("opx_payload_herald", False)):
+            self._measure_raw()
+            self.sync_all(self.us2cycles(float(cfg.get("herald_delay", 8.0))))
+        self._set_payload_pulse()
+        if self._payload_pulse_placement == "park":
+            for _ in range(self._payload_pulses):
+                self.pulse(ch=cfg["qubit_ch"])
+                self.sync_all(self.us2cycles(0.01))
+        if self._payload_do_excursion:
+            ff_pulse.play_ramp_up_hold(
+                self,
+                self._payload_excursion_segments,
+                dt_play_us=cfg.get("dt_pulseplay", 5.0),
+            )
+            self.sync_all(self.us2cycles(0.01))
+        if self._payload_pulse_placement == "excursion":
+            for _ in range(self._payload_pulses):
+                self.pulse(ch=cfg["qubit_ch"])
+                self.sync_all(self.us2cycles(0.01))
+        if self._payload_do_excursion:
+            ff_pulse.play_ramp_down(self, self._payload_excursion_segments)
+            self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
+
+    def _emit_body(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        emit_payload_reset_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=lambda: ff_pulse.play_park_up(
+                self, self._opx_park_segments
+            ),
+            park_down=lambda: ff_pulse.play_park_down(
+                self, self._opx_park_segments
+            ),
+            emit_payload=self._emit_payload_pulses,
+            measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix="OPX_PAYLOAD_RESET",
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def make_program(self):
+        _declare_common(self)
+        self._declare_experiment()
+        self.reset_page = self.ch_page(self.cfg["qubit_ch"])
+        names = (
+            "i",
+            "q",
+            "z",
+            "ground",
+            "excited",
+            "attempts",
+            "pi_count",
+            "status",
+            "address",
+            "payload_gain",
+        )
+        self.reset_regs = allocate_named_registers(self, self.reset_page, names)
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            ("shot_loop", "expt_loop", "done"),
+            reserved=control_reserved,
+        )
+        self.regwi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.record_base,
+            "OPX payload record address",
+        )
+        self.regwi(
+            self.reset_page,
+            self.reset_regs["payload_gain"],
+            int(self.cfg.get("opx_payload_gain_start", self.cfg["qubit_pi_gain"])),
+            "OPX payload gain",
+        )
+        self.regwi(0, controls["done"], 0, "completed OPX payload shots")
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(
+            0, controls["expt_loop"], self._payload_expts - 1,
+            "OPX payload experiment loop",
+        )
+        self.label("OPX_PAYLOAD_EXPT_LOOP")
+        self.regwi(
+            0, controls["shot_loop"], self._payload_shots - 1,
+            "OPX payload shot loop",
+        )
+        self.label("OPX_PAYLOAD_SHOT_LOOP")
+        self._emit_body()
+        self.mathi(0, controls["done"], controls["done"], "+", 1)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.loopnz(0, controls["shot_loop"], "OPX_PAYLOAD_SHOT_LOOP")
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["payload_gain"],
+            self.reset_regs["payload_gain"],
+            "+",
+            int(self.cfg.get("opx_payload_gain_step", 0)),
+        )
+        self.loopnz(0, controls["expt_loop"], "OPX_PAYLOAD_EXPT_LOOP")
+        self.end()

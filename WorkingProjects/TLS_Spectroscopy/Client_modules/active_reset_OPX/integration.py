@@ -7,8 +7,13 @@ from .acquisition import (
     run_dmem_block,
 )
 from .calibration import CalibrationBundle
-from .programs import OPXResetT1Program
-from .records import RECORD_WORDS, TerminalStatus, max_records
+from .programs import OPXResetPulseSweepProgram, OPXResetT1Program
+from .records import (
+    PAYLOAD_RECORD_WORDS,
+    RECORD_WORDS,
+    TerminalStatus,
+    max_records,
+)
 
 
 def runtime_bundle(cfg):
@@ -119,3 +124,136 @@ def acquire_t1_iq(soc, soccfg, cfg, shots=None):
     )
     i_values, q_values = payload_iq(records, read_cycles)
     return i_values, q_values, reset_telemetry(records)
+
+
+def acquire_pulse_sweep_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    gains,
+    pulses,
+    frequency_mhz,
+    shots=None,
+    pulse_placement="excursion",
+    do_excursion=False,
+    excursion_gain=None,
+    flux_hold_us=0.05,
+    herald=False,
+):
+    bundle = runtime_bundle(cfg)
+    gains = np.asarray(gains, dtype=int).reshape(-1)
+    if gains.size == 0:
+        raise ValueError("at least one payload gain is required")
+    if gains.size > 1:
+        steps = np.diff(gains)
+        if not np.all(steps == steps[0]):
+            raise ValueError("payload gains must be uniformly spaced")
+        gain_step = int(steps[0])
+    else:
+        gain_step = 0
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("payload shots must be positive")
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // gains.size
+    if shots_per_block <= 0:
+        raise ValueError(
+            f"{gains.size} payload points do not fit in tProc data memory"
+        )
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": "opx_unbounded",
+            "opx_payload_shots_per_expt": int(chunk),
+            "opx_payload_expts": int(gains.size),
+            "opx_payload_gain_start": int(gains[0]),
+            "opx_payload_gain_step": int(gain_step),
+            "opx_payload_pulses": int(pulses),
+            "opx_payload_frequency_mhz": float(frequency_mhz),
+            "opx_payload_pulse_placement": str(pulse_placement),
+            "opx_payload_do_excursion": bool(do_excursion),
+            "opx_payload_flux_hold_us": float(flux_hold_us),
+            "opx_payload_herald": bool(herald),
+        })
+        if do_excursion:
+            if excursion_gain is None:
+                raise ValueError("excursion_gain is required when do_excursion=True")
+            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+        program = OPXResetPulseSweepProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(run_cfg, chunk * gains.size),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_block = np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(gains.size, chunk)
+        q_block = np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(gains.size, chunk)
+        i_blocks.append(i_block)
+        q_blocks.append(q_block)
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "points": int(gains.size),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * gains.size),
+    }
+
+
+def acquire_pulse_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    gain,
+    pulses,
+    frequency_mhz,
+    shots=None,
+    pulse_placement="excursion",
+    do_excursion=False,
+    excursion_gain=None,
+    flux_hold_us=0.05,
+    herald=False,
+):
+    i_values, q_values, telemetry = acquire_pulse_sweep_iq(
+        soc,
+        soccfg,
+        cfg,
+        gains=[int(gain)],
+        pulses=pulses,
+        frequency_mhz=frequency_mhz,
+        shots=shots,
+        pulse_placement=pulse_placement,
+        do_excursion=do_excursion,
+        excursion_gain=excursion_gain,
+        flux_hold_us=flux_hold_us,
+        herald=herald,
+    )
+    return i_values[0], q_values[0], telemetry

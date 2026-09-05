@@ -11,9 +11,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import pro
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
-    n_drive_pulses, flux_hold_declare, flux_hold_build, rabi_flux_body)
+    n_drive_pulses, flux_hold_declare, flux_hold_build, flux_hold_us,
+    rabi_flux_body)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, set_readout_pulse,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_sweep_iq,
 )
 
 
@@ -80,8 +84,27 @@ class RabiSSProgram(RAveragerProgram):
 
 
 def sweep_gain_populations(experiment, cfg, gains, calib_params, progress=False):
-    shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(experiment.soc, load_pulses=True,
-                                                                     progress=progress)
+    if active_reset.uses_opx_unbounded(cfg):
+        do_excursion = bool(cfg.get("ff_hold_gain", 0))
+        shots_i, shots_q, _ = acquire_pulse_sweep_iq(
+            experiment.soc,
+            experiment.soccfg,
+            cfg,
+            gains=gains,
+            pulses=int(cfg["n_pulses"]),
+            frequency_mhz=cfg["rabi_drive_freq"],
+            shots=int(cfg["shots"]),
+            pulse_placement="excursion",
+            do_excursion=do_excursion,
+            excursion_gain=(cfg.get("ff_hold_gain") if do_excursion else None),
+            flux_hold_us=flux_hold_us(
+                cfg,
+                cover_readout=not bool(cfg.get("readout_after_park", True)),
+            ),
+        )
+    else:
+        shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(
+            experiment.soc, load_pulses=True, progress=progress)
     pops = np.empty(len(gains), dtype=float)
     for j in range(len(gains)):
         pops[j] = discriminate_shots(shots_i[j], shots_q[j], calib_params).mean()
