@@ -194,6 +194,35 @@ def test_rabi_ss_dispatches_unbounded_gain_sweep(monkeypatch):
     assert populations.tolist() == [0.0, 1.0, 1.0]
 
 
+def test_rabi_ss_passive_sweep_derives_program_gain_registers(monkeypatch):
+    gains = np.asarray([1000, 2000, 3000])
+    cfg = {"reset_mode": "passive"}
+    captured = {}
+
+    class Program:
+        def __init__(self, soccfg, passed_cfg):
+            captured.update(passed_cfg)
+
+        def acquire(self, soc, **kwargs):
+            return (
+                np.asarray([[-1.0], [1.0], [2.0]]),
+                np.zeros((3, 1)),
+            )
+
+    monkeypatch.setattr(RSS, "RabiSSProgram", Program)
+    populations = RSS.sweep_gain_populations(
+        types.SimpleNamespace(soc=object(), soccfg=object()),
+        cfg,
+        gains,
+        {"read_theta": 0.0, "scale_factor": 1.0, "threshold": 0.0},
+    )
+
+    assert captured["amp_start"] == 1000
+    assert captured["amp_step"] == 1000
+    assert captured["amp_expts"] == 3
+    assert populations.tolist() == [0.0, 1.0, 1.0]
+
+
 def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
     bundle = types.SimpleNamespace(payload=object(), loop=object())
     monkeypatch.setattr(integration, "runtime_bundle", lambda cfg: bundle)

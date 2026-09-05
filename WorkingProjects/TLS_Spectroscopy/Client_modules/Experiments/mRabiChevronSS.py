@@ -84,6 +84,14 @@ class RabiSSProgram(RAveragerProgram):
 
 
 def sweep_gain_populations(experiment, cfg, gains, calib_params, progress=False):
+    gains = np.asarray(gains, dtype=int).reshape(-1)
+    if gains.size == 0:
+        raise ValueError("Rabi gain sweep needs at least one gain")
+    cfg["amp_start"] = int(gains[0])
+    cfg["amp_step"] = int(round(
+        (int(gains[-1]) - int(gains[0])) / max(gains.size - 1, 1)
+    ))
+    cfg["amp_expts"] = int(gains.size)
     if active_reset.uses_opx_unbounded(cfg):
         do_excursion = bool(cfg.get("ff_hold_gain", 0))
         shots_i, shots_q, _ = acquire_pulse_sweep_iq(
