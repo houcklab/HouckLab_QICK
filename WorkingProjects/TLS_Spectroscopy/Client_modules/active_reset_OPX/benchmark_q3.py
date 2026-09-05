@@ -69,7 +69,7 @@ QUBIT = "q3"
 # "smoke" is the first run to send back for inspection.  Change to "full" only
 # after the smoke run has sane calibration clouds and zero malformed/time-out
 # records.
-PROFILE = "smoke"
+PROFILE = "full"
 
 RUN_CALIBRATION = True
 RUN_BENCHMARK = True
