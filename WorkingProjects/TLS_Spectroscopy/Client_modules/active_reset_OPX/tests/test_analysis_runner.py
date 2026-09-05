@@ -348,6 +348,39 @@ def test_feedback_delay_sweep_fails_closed_for_incomplete_or_nonpassing_delays()
     assert result["delays"][0]["complete"] is False
 
 
+@pytest.mark.parametrize(
+    "baseline_rmse,short_interval_rmse,active_short_rmse,expected",
+    [
+        (0.04, 0.03, 0.05, "equivalent"),
+        (0.20, 0.03, 0.05, "compact_payload_path"),
+        (0.04, 0.20, 0.05, "short_inter_shot_lifecycle"),
+        (0.04, 0.03, 0.20, "active_reset_state_machine"),
+        (0.04, 0.20, 0.20, "short_inter_shot_and_active_reset"),
+    ],
+)
+def test_rabi_lifecycle_diagnosis_separates_short_interval_from_feedback(
+    baseline_rmse, short_interval_rmse, active_short_rmse, expected
+):
+    result = analysis.diagnose_rabi_lifecycle(
+        baseline_rmse=baseline_rmse,
+        short_interval_rmse=short_interval_rmse,
+        active_short_rmse=active_short_rmse,
+        max_rmse=0.15,
+    )
+
+    assert result == expected
+
+
+def test_rabi_lifecycle_diagnosis_rejects_nonfinite_metrics():
+    with pytest.raises(ValueError, match="finite"):
+        analysis.diagnose_rabi_lifecycle(
+            baseline_rmse=0.04,
+            short_interval_rmse=float("nan"),
+            active_short_rmse=0.05,
+            max_rmse=0.15,
+        )
+
+
 def test_attempt_limit_sweep_selects_smallest_limit_passing_both_preparations():
     rows = [
         {

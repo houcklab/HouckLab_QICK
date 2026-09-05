@@ -22,6 +22,29 @@ def json_safe(value):
     return value
 
 
+def diagnose_rabi_lifecycle(
+    *, baseline_rmse, short_interval_rmse, active_short_rmse, max_rmse
+):
+    values = np.asarray(
+        [baseline_rmse, short_interval_rmse, active_short_rmse, max_rmse],
+        dtype=float,
+    )
+    if not np.all(np.isfinite(values)):
+        raise ValueError("Rabi lifecycle metrics must be finite")
+    if np.any(values[:3] < 0) or values[3] <= 0:
+        raise ValueError("Rabi lifecycle RMSE values must be nonnegative")
+    baseline_bad, short_bad, active_bad = values[:3] > values[3]
+    if baseline_bad:
+        return "compact_payload_path"
+    if short_bad and active_bad:
+        return "short_inter_shot_and_active_reset"
+    if short_bad:
+        return "short_inter_shot_lifecycle"
+    if active_bad:
+        return "active_reset_state_machine"
+    return "equivalent"
+
+
 @dataclass(frozen=True)
 class ReferenceAxis:
     ground_i: float
