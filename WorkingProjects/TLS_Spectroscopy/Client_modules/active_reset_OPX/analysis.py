@@ -397,6 +397,91 @@ def evaluate_t1_recovery_sweep(
     }
 
 
+def evaluate_t1_load_attribution(
+    fits,
+    round_fits,
+    *,
+    baseline_method,
+    active_method,
+    staged_methods,
+    max_relative_tau_difference,
+    max_abs_p0_difference,
+    max_abs_p1_difference,
+):
+    fits = dict(fits)
+    round_fits = {str(key): dict(value) for key, value in dict(round_fits).items()}
+    baseline_method = str(baseline_method)
+    active_method = str(active_method)
+    staged_methods = {
+        str(method): str(diagnosis)
+        for method, diagnosis in dict(staged_methods).items()
+    }
+    methods = tuple(staged_methods) + (active_method,)
+    comparisons = {}
+    for method in methods:
+        if baseline_method in fits and method in fits:
+            aggregate = evaluate_t1_equivalence(
+                fits[baseline_method],
+                fits[method],
+                max_relative_tau_difference=max_relative_tau_difference,
+                max_abs_p0_difference=max_abs_p0_difference,
+                max_abs_p1_difference=max_abs_p1_difference,
+            )
+        else:
+            aggregate = {"status": "fail", "reason": "missing aggregate fit"}
+        rounds = {}
+        for round_index, values in sorted(round_fits.items()):
+            if baseline_method in values and method in values:
+                rounds[round_index] = evaluate_t1_equivalence(
+                    values[baseline_method],
+                    values[method],
+                    max_relative_tau_difference=max_relative_tau_difference,
+                    max_abs_p0_difference=max_abs_p0_difference,
+                    max_abs_p1_difference=max_abs_p1_difference,
+                )
+            else:
+                rounds[round_index] = {
+                    "status": "fail",
+                    "reason": "missing round fit",
+                }
+        comparisons[method] = {"aggregate": aggregate, "rounds": rounds}
+
+    complete = baseline_method in fits and all(method in fits for method in methods)
+    active_comparison = comparisons[active_method]["aggregate"]
+
+    def shortened(comparison):
+        return bool(
+            "relative_difference" in comparison
+            and comparison["relative_difference"]
+            < -float(max_relative_tau_difference)
+        )
+
+    if not complete:
+        diagnosis = "fit_failed"
+    elif not shortened(active_comparison):
+        diagnosis = "no_active_effect"
+    else:
+        diagnosis = "feedback_dependent_reset"
+        for method, candidate in staged_methods.items():
+            if shortened(comparisons[method]["aggregate"]):
+                diagnosis = candidate
+                break
+    for method, values in comparisons.items():
+        values["shortened"] = shortened(values["aggregate"])
+        values["shortened_rounds"] = [
+            round_index
+            for round_index, comparison in values["rounds"].items()
+            if shortened(comparison)
+        ]
+    return {
+        "status": "complete" if complete else "fail",
+        "diagnosis": diagnosis,
+        "baseline_method": baseline_method,
+        "active_method": active_method,
+        "comparisons": comparisons,
+    }
+
+
 def evaluate_inter_shot_recovery_sweep(
     passive_excited_fraction,
     rows,

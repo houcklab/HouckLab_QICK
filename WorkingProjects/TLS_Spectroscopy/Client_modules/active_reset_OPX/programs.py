@@ -177,6 +177,8 @@ def emit_t1_shot(
     play_pi,
     label_prefix,
     do_prepare=True,
+    wait_diagnostic_hold=None,
+    diagnostic_cycles=2,
 ):
     park_up()
     if bool(do_prepare):
@@ -205,8 +207,31 @@ def emit_t1_shot(
         prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
         prog.regwi(page, regs["pi_count"], 0, "no-reset pi count")
         prog.regwi(page, regs["status"], int(TerminalStatus.NO_RESET), "no reset")
+    elif scheme == "diagnostic_hold":
+        if wait_diagnostic_hold is None:
+            raise ValueError("diagnostic_hold requires wait_diagnostic_hold")
+        wait_diagnostic_hold()
+        prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
+        prog.regwi(page, regs["pi_count"], 0, "no-reset pi count")
+        prog.regwi(page, regs["status"], int(TerminalStatus.NO_RESET), "no reset")
+    elif scheme in ("diagnostic_readout", "diagnostic_pi_readout"):
+        cycles = int(diagnostic_cycles)
+        if cycles < 1:
+            raise ValueError("diagnostic_cycles must be positive")
+        for _ in range(cycles):
+            if scheme == "diagnostic_pi_readout":
+                play_pi()
+            measure_project(loop_calibration, "loop")
+        pi_count = cycles if scheme == "diagnostic_pi_readout" else 0
+        prog.regwi(page, regs["attempts"], cycles, "fixed diagnostic readouts")
+        prog.regwi(page, regs["pi_count"], pi_count, "fixed diagnostic pi count")
+        prog.regwi(page, regs["status"], int(TerminalStatus.NO_RESET), "no reset")
     else:
-        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+        raise ValueError(
+            "reset_scheme must be 'opx_unbounded', 'none', "
+            "'diagnostic_hold', 'diagnostic_readout', or "
+            "'diagnostic_pi_readout'"
+        )
     prog.regwi(page, regs["ground"], int(bool(do_prepare)), "preparation label")
     for name in ("ground", "initial_z", "attempts", "pi_count", "status"):
         prog.memw(page, regs[name], regs["address"])
@@ -633,6 +658,10 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix="OPX_T1_RESET",
             do_prepare=bool(self.cfg.get("do_pi", True)),
+            wait_diagnostic_hold=lambda: self.sync_all(
+                self.us2cycles(float(self.cfg.get("opx_diagnostic_hold_us", 65.1)))
+            ),
+            diagnostic_cycles=int(self.cfg.get("opx_diagnostic_cycles", 2)),
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 

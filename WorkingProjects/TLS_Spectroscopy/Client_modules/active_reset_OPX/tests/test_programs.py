@@ -280,6 +280,102 @@ def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
     assert writes[1][1] == regs["q"]
 
 
+def test_t1_shot_diagnostic_hold_keeps_park_up_without_reset_load():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="diagnostic_hold",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        wait_diagnostic_hold=lambda: events.append("hold"),
+        diagnostic_cycles=2,
+        label_prefix="T1_HOLD",
+    )
+
+    assert events == ["up", "prep", "wait", "payload", "hold", "down"]
+    assert ("regwi", regs["attempts"], 0) in prog.asm
+    assert ("regwi", regs["pi_count"], 0) in prog.asm
+
+
+def test_t1_shot_diagnostic_readout_emits_two_readouts_without_pi():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="diagnostic_readout",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        wait_diagnostic_hold=lambda: events.append("hold"),
+        diagnostic_cycles=2,
+        label_prefix="T1_READOUT",
+    )
+
+    assert events == ["up", "prep", "wait", "payload", "loop", "loop", "down"]
+    assert ("regwi", regs["attempts"], 2) in prog.asm
+    assert ("regwi", regs["pi_count"], 0) in prog.asm
+
+
+def test_t1_shot_diagnostic_pi_readout_emits_two_fixed_cycles():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="diagnostic_pi_readout",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        wait_diagnostic_hold=lambda: events.append("hold"),
+        diagnostic_cycles=2,
+        label_prefix="T1_PI_READOUT",
+    )
+
+    assert events == [
+        "up", "prep", "wait", "payload",
+        "reset_pi", "loop", "reset_pi", "loop", "down",
+    ]
+    assert ("regwi", regs["attempts"], 2) in prog.asm
+    assert ("regwi", regs["pi_count"], 2) in prog.asm
+
+
 def test_t1_shot_can_measure_a_no_pi_reference():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((

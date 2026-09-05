@@ -759,3 +759,76 @@ def test_attempt_limit_sweep_fails_closed_for_incomplete_limits():
     assert result["status"] == "fail"
     assert result["selected_max_reset_attempts"] is None
     assert result["attempt_limits"][0]["complete"] is False
+
+
+@pytest.mark.parametrize(
+    "taus, expected",
+    [
+        ((100.0, 100.0, 100.0, 100.0, 95.0), "no_active_effect"),
+        ((100.0, 80.0, 80.0, 80.0, 80.0), "park_dwell"),
+        ((100.0, 100.0, 80.0, 80.0, 80.0), "reset_readout_load"),
+        ((100.0, 100.0, 100.0, 80.0, 80.0), "reset_pi_load"),
+        ((100.0, 100.0, 100.0, 100.0, 80.0), "feedback_dependent_reset"),
+    ],
+)
+def test_t1_load_attribution_reports_the_first_shortening_stage(taus, expected):
+    methods = (
+        "passive_1000",
+        "park_hold_1000",
+        "readout_x2_1000",
+        "pi_readout_x2_1000",
+        "active_1000",
+    )
+    fits = {
+        method: {
+            "tau_us": tau,
+            "P0": 0.03,
+            "P1": 0.82,
+            "decaying": True,
+        }
+        for method, tau in zip(methods, taus)
+    }
+    round_fits = {
+        str(round_index): {
+            method: dict(fit) for method, fit in fits.items()
+        }
+        for round_index in range(3)
+    }
+
+    result = analysis.evaluate_t1_load_attribution(
+        fits,
+        round_fits,
+        baseline_method="passive_1000",
+        active_method="active_1000",
+        staged_methods={
+            "park_hold_1000": "park_dwell",
+            "readout_x2_1000": "reset_readout_load",
+            "pi_readout_x2_1000": "reset_pi_load",
+        },
+        max_relative_tau_difference=0.15,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["diagnosis"] == expected
+    assert set(result["comparisons"]) == set(methods[1:])
+
+
+def test_t1_load_attribution_runner_holds_recovery_constant_across_loads():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_reset_load_q3 as runner,
+    )
+
+    observed = {
+        method: runner._method_config(method) for method in runner.METHODS
+    }
+
+    assert observed == {
+        "passive_1000": ("none", 1000.0),
+        "park_hold_1000": ("diagnostic_hold", 1000.0),
+        "readout_x2_1000": ("diagnostic_readout", 1000.0),
+        "pi_readout_x2_1000": ("diagnostic_pi_readout", 1000.0),
+        "active_1000": ("opx_unbounded", 1000.0),
+    }
+    assert runner.DIAGNOSTIC_CYCLES == 2
+    assert runner.DIAGNOSTIC_HOLD_US == pytest.approx(65.1)
