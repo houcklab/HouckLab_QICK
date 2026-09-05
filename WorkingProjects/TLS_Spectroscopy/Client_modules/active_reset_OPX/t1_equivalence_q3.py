@@ -144,6 +144,10 @@ def _method_config(method):
     raise ValueError(f"unknown T1 reset method {method!r}")
 
 
+def _method_overrides(method):
+    return {}
+
+
 def _write_assembly(program, output_dir, method, delay_us):
     tag = f"{method}_{float(delay_us):g}us"
     assembly_path = output_dir / f"{tag}.asm"
@@ -375,6 +379,9 @@ def main():
         "method_configs": {
             method: _method_config(method) for method in METHODS
         },
+        "method_overrides": {
+            method: _method_overrides(method) for method in METHODS
+        },
         "opx_overrides": cfg,
     }
     _write_json(output_dir / "run_metadata.json", metadata)
@@ -411,6 +418,7 @@ def main():
             delay_us=delay_us,
             excursion_gain=EXCURSION_GAIN,
         )
+        run_cfg.update(_method_overrides(method))
         program = OPXResetT1Program(
             soccfg, run_cfg, bundle.payload, bundle.loop
         )

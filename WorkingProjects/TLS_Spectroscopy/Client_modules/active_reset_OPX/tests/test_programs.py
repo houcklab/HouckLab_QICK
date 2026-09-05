@@ -404,6 +404,42 @@ def test_t1_shot_can_measure_a_no_pi_reference():
     assert events == ["up", "wait", "payload", "down"]
 
 
+def test_persistent_park_lifecycle_hoists_park_outside_the_shot_body():
+    prog = RecordingProgram()
+    prog.reset_config = type("ResetConfig", (), {"persistent_park": True})()
+    events = []
+    prog._park_up = lambda: events.append("up")
+    prog._park_down = lambda: events.append("down")
+
+    OPXResetBenchmarkProgram._begin_park_lifecycle(prog)
+    park_up, park_down = OPXResetBenchmarkProgram._shot_park_callbacks(prog)
+    for shot in (1, 2):
+        park_up()
+        events.append(f"shot_{shot}")
+        park_down()
+    OPXResetBenchmarkProgram._end_park_lifecycle(prog)
+
+    assert events == ["up", "shot_1", "shot_2", "down"]
+
+
+def test_per_shot_park_lifecycle_preserves_existing_behavior():
+    prog = RecordingProgram()
+    prog.reset_config = type("ResetConfig", (), {"persistent_park": False})()
+    events = []
+    prog._park_up = lambda: events.append("up")
+    prog._park_down = lambda: events.append("down")
+
+    OPXResetBenchmarkProgram._begin_park_lifecycle(prog)
+    park_up, park_down = OPXResetBenchmarkProgram._shot_park_callbacks(prog)
+    for shot in (1, 2):
+        park_up()
+        events.append(f"shot_{shot}")
+        park_down()
+    OPXResetBenchmarkProgram._end_park_lifecycle(prog)
+
+    assert events == ["up", "shot_1", "down", "up", "shot_2", "down"]
+
+
 def test_compact_payload_shot_records_iq_then_resets_and_releases_park():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((

@@ -734,6 +734,35 @@ def test_paired_active_delay_runner_keeps_each_delay_matched_across_methods():
         assert {method for _, method, _ in group} == set(runner.METHODS)
 
 
+def test_persistent_park_runner_scans_park_lifecycle_and_recovery_together():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_persistent_park_paired_q3 as runner,
+    )
+
+    observed = {
+        method: (
+            runner._method_config(method),
+            runner._method_overrides(method),
+        )
+        for method in runner.METHODS
+    }
+
+    assert observed == {
+        "passive_1000": (("none", 1000.0), {"opx_persistent_park": False}),
+        "persistent_25": (("opx_unbounded", 25.0), {"opx_persistent_park": True}),
+        "persistent_100": (("opx_unbounded", 100.0), {"opx_persistent_park": True}),
+        "persistent_400": (("opx_unbounded", 400.0), {"opx_persistent_park": True}),
+        "per_shot_1000": (("opx_unbounded", 1000.0), {"opx_persistent_park": False}),
+    }
+    schedule = runner._schedule(np.asarray([1.0, 100.0, 750.0]))
+    assert len(schedule) == runner.ROUNDS * 3 * len(runner.METHODS)
+    for start in range(0, len(schedule), len(runner.METHODS)):
+        group = schedule[start:start + len(runner.METHODS)]
+        assert len({round_index for round_index, _, _ in group}) == 1
+        assert len({delay_index for _, _, delay_index in group}) == 1
+        assert {method for _, method, _ in group} == set(runner.METHODS)
+
+
 def test_t1_runner_fits_each_acquisition_round_independently():
     delays = np.asarray([1.0, 10.0, 50.0, 100.0, 300.0, 750.0])
     round_rows = {}

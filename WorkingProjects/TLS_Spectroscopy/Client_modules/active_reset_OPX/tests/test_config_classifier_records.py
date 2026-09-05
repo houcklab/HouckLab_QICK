@@ -186,6 +186,7 @@ def test_config_accepts_user_facing_prefixed_keys():
         "opx_feedback_syncdelay_us": 3.0,
         "opx_loop_recovery_us": 25.0,
         "opx_verification_delay_us": 0.25,
+        "opx_persistent_park": True,
         "opx_record_base": 40,
     })
 
@@ -194,6 +195,7 @@ def test_config_accepts_user_facing_prefixed_keys():
     assert cfg.feedback_syncdelay_us == 3.0
     assert cfg.loop_recovery_us == 25.0
     assert cfg.verification_delay_us == 0.25
+    assert cfg.persistent_park is True
     assert cfg.record_base == 40
 
 

@@ -546,10 +546,32 @@ class OPXResetBenchmarkProgram(QickProgram):
         self._measure_raw()
         self.sync_all(0)
 
-    def _emit_body(self):
+    def _park_up(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
+        ff_pulse.play_park_up(self, self._opx_park_segments)
+
+    def _park_down(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        ff_pulse.play_park_down(self, self._opx_park_segments)
+
+    def _shot_park_callbacks(self):
+        if self.reset_config.persistent_park:
+            return lambda: None, lambda: None
+        return self._park_up, self._park_down
+
+    def _begin_park_lifecycle(self):
+        if self.reset_config.persistent_park:
+            self._park_up()
+
+    def _end_park_lifecycle(self):
+        if self.reset_config.persistent_park:
+            self._park_down()
+
+    def _emit_body(self):
         preparation = int(bool(self.cfg.get("prep_excited", False)))
+        park_up, park_down = self._shot_park_callbacks()
         emit_benchmark_shot(
             self,
             page=self.reset_page,
@@ -559,8 +581,8 @@ class OPXResetBenchmarkProgram(QickProgram):
             payload_calibration=self.payload_calibration,
             loop_calibration=self.loop_calibration,
             max_reset_attempts=self.reset_config.max_reset_attempts,
-            park_up=lambda: ff_pulse.play_park_up(self, self._opx_park_segments),
-            park_down=lambda: ff_pulse.play_park_down(self, self._opx_park_segments),
+            park_up=park_up,
+            park_down=park_down,
             prepare_excited=lambda: _pulse_pi_and_align(self),
             measure_project=self._measure_project,
             measure_verification=self._measure_verification,
@@ -587,11 +609,13 @@ class OPXResetBenchmarkProgram(QickProgram):
         self.regwi(outer_page, done_reg, 0, "completed OPX shots")
         self.memwi(outer_page, done_reg, self.done_addr)
         self.regwi(outer_page, loop_reg, self.reps - 1, "OPX shot loop")
+        self._begin_park_lifecycle()
         self.label("OPX_SHOT_LOOP")
         self._emit_body()
         self.mathi(outer_page, done_reg, done_reg, "+", 1)
         self.memwi(outer_page, done_reg, self.done_addr)
         self.loopnz(outer_page, loop_reg, "OPX_SHOT_LOOP")
+        self._end_park_lifecycle()
         self.end()
 
 
@@ -641,8 +665,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             )
 
     def _emit_body(self):
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
-
+        park_up, park_down = self._shot_park_callbacks()
         emit_t1_shot(
             self,
             page=self.reset_page,
@@ -650,8 +673,8 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
             payload_calibration=self.payload_calibration,
             loop_calibration=self.loop_calibration,
-            park_up=lambda: ff_pulse.play_park_up(self, self._opx_park_segments),
-            park_down=lambda: ff_pulse.play_park_down(self, self._opx_park_segments),
+            park_up=park_up,
+            park_down=park_down,
             prepare_excited=lambda: _pulse_pi_and_align(self),
             wait_payload=self._wait_t1_payload,
             measure_project=self._measure_project,
@@ -817,8 +840,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
 
     def _emit_body(self):
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
-
+        park_up, park_down = self._shot_park_callbacks()
         emit_payload_reset_shot(
             self,
             page=self.reset_page,
@@ -826,12 +848,8 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
             payload_calibration=self.payload_calibration,
             loop_calibration=self.loop_calibration,
-            park_up=lambda: ff_pulse.play_park_up(
-                self, self._opx_park_segments
-            ),
-            park_down=lambda: ff_pulse.play_park_down(
-                self, self._opx_park_segments
-            ),
+            park_up=park_up,
+            park_down=park_down,
             emit_payload=self._emit_payload_pulses,
             measure_project=self._measure_project,
             prepare_reset=self._set_reset_pulse,
@@ -884,6 +902,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             0, controls["expt_loop"], self._payload_expts - 1,
             "OPX payload experiment loop",
         )
+        self._begin_park_lifecycle()
         self.label("OPX_PAYLOAD_EXPT_LOOP")
         self.regwi(
             0, controls["shot_loop"], self._payload_shots - 1,
@@ -902,4 +921,5 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             int(self.cfg.get("opx_payload_gain_step", 0)),
         )
         self.loopnz(0, controls["expt_loop"], "OPX_PAYLOAD_EXPT_LOOP")
+        self._end_park_lifecycle()
         self.end()
