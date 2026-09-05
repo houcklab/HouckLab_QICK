@@ -9,6 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     allocate_registers,
     emit_benchmark_shot,
     emit_record,
+    emit_timing_matched_reference_shot,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
     RECORD_WORDS,
@@ -163,6 +164,47 @@ def test_no_reset_still_uses_payload_and_independent_verification_readouts():
     )
 
     assert events == ["up", "payload", "verification", "down"]
+
+
+def test_loop_reference_matches_the_runtime_feedback_timing():
+    events = []
+
+    emit_timing_matched_reference_shot(
+        context="loop",
+        prep_excited=True,
+        measure=lambda: events.append("measure"),
+        prepare_excited=lambda: events.append("pi"),
+        wait_read_delay=lambda: events.append("read_delay"),
+        wait_feedback_delay=lambda: events.append("feedback_delay"),
+        wait_reset_settle=lambda: events.append("reset_settle"),
+        wait_payload_alignment=lambda: events.append("payload_alignment"),
+    )
+
+    assert events == [
+        "measure",
+        "read_delay",
+        "feedback_delay",
+        "pi",
+        "reset_settle",
+        "measure",
+    ]
+
+
+def test_payload_reference_keeps_the_existing_preparation_sequence():
+    events = []
+
+    emit_timing_matched_reference_shot(
+        context="payload",
+        prep_excited=True,
+        measure=lambda: events.append("measure"),
+        prepare_excited=lambda: events.append("pi"),
+        wait_read_delay=lambda: events.append("read_delay"),
+        wait_feedback_delay=lambda: events.append("feedback_delay"),
+        wait_reset_settle=lambda: events.append("reset_settle"),
+        wait_payload_alignment=lambda: events.append("payload_alignment"),
+    )
+
+    assert events == ["pi", "payload_alignment", "measure"]
 
 
 def test_qick_program_classes_are_exposed_even_on_analysis_computers():

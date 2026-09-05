@@ -185,6 +185,35 @@ def _pulse_pi_and_align(prog, delay_us=0.01):
     prog.sync_all(prog.us2cycles(float(delay_us)))
 
 
+def emit_timing_matched_reference_shot(
+    *,
+    context,
+    prep_excited,
+    measure,
+    prepare_excited,
+    wait_read_delay,
+    wait_feedback_delay,
+    wait_reset_settle,
+    wait_payload_alignment,
+):
+    context = str(context).lower()
+    if context not in ("payload", "loop"):
+        raise ValueError("opx_reference_context must be 'payload' or 'loop'")
+    if context == "loop":
+        measure()
+        wait_read_delay()
+        wait_feedback_delay()
+        if bool(prep_excited):
+            prepare_excited()
+        wait_reset_settle()
+        measure()
+        return
+    if bool(prep_excited):
+        prepare_excited()
+        wait_payload_alignment()
+    measure()
+
+
 class TimingMatchedReferenceProgram(AveragerProgram):
     """Fixed-shape reference acquisition for payload or in-loop timing."""
 
@@ -203,24 +232,34 @@ class TimingMatchedReferenceProgram(AveragerProgram):
             adcs=self.cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
             wait=True,
-            syncdelay=self.us2cycles(float(self.cfg.get("opx_feedback_syncdelay_us", 2.0))),
+            syncdelay=None,
         )
+
+    def _wait_read_delay(self):
+        adc_end = int(max(self._adc_ts))
+        delay = max(
+            int(self.us2cycles(float(self.cfg.get("opx_read_delay_us", 2.0)))), 0
+        )
+        self.waiti(0, adc_end + delay)
 
     def body(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
         ff_pulse.play_park_up(self, self._opx_park_segments)
-        if self.reference_context == "loop":
-            self._measure()
-            if bool(self.cfg.get("prep_excited", False)):
-                _pulse_pi_and_align(self)
-            else:
-                self.sync_all(self.us2cycles(float(self.cfg.get("opx_reset_settle_us", 0.05))))
-            self._measure()
-        else:
-            if bool(self.cfg.get("prep_excited", False)):
-                _pulse_pi_and_align(self)
-            self._measure()
+        emit_timing_matched_reference_shot(
+            context=self.reference_context,
+            prep_excited=bool(self.cfg.get("prep_excited", False)),
+            measure=self._measure,
+            prepare_excited=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            wait_read_delay=self._wait_read_delay,
+            wait_feedback_delay=lambda: self.sync_all(
+                self.us2cycles(float(self.cfg.get("opx_feedback_syncdelay_us", 2.0)))
+            ),
+            wait_reset_settle=lambda: self.sync_all(
+                self.us2cycles(float(self.cfg.get("opx_reset_settle_us", 0.05)))
+            ),
+            wait_payload_alignment=lambda: self.sync_all(self.us2cycles(0.01)),
+        )
         ff_pulse.play_park_down(self, self._opx_park_segments)
         self.sync_all(self.us2cycles(float(self.cfg.get("relax_delay", 400.0))))
 

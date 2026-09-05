@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 import math
 
 import numpy as np
@@ -15,6 +16,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibratio
     CalibrationBundle,
     load_calibration,
     save_calibration,
+    validate_confident_calibration,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
     ClassifierCalibration,
@@ -87,6 +89,25 @@ def test_calibration_bundle_round_trips_through_json(tmp_path):
 def test_loading_missing_calibration_fails_closed(tmp_path):
     with pytest.raises(FileNotFoundError, match="calibration"):
         load_calibration(tmp_path / "missing.json")
+
+
+def test_calibration_rejects_a_loop_classifier_with_no_confident_states():
+    payload = replace(CAL, holdout={"ground_accept": 0.4, "excited_fire": 0.5})
+    loop = replace(
+        CAL,
+        context="loop",
+        holdout={"ground_accept": 0.07, "excited_fire": 0.03},
+    )
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=payload,
+        loop=loop,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="confident.*loop"):
+        validate_confident_calibration(bundle, min_confident_fraction=0.2)
 
 
 def test_incremental_csv_has_one_row_per_shot_and_preserves_method(tmp_path):

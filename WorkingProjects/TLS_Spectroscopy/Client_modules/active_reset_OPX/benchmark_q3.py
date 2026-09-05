@@ -44,6 +44,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibratio
     load_calibration,
     save_calibration,
     save_raw_calibration,
+    validate_confident_calibration,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
@@ -92,6 +93,7 @@ PROFILES = {
 RANDOM_SEED = 20260904
 FALSE_GROUND_ACCEPT_LIMIT = 0.02
 FALSE_PI_LIMIT = 0.02
+MIN_CONFIDENT_STATE_FRACTION = 0.2
 CURRENT_RESET_ITERS = 3
 
 # At eight words/shot, a 4096-word tProc DMem fits 508 shots from address 32.
@@ -322,6 +324,7 @@ def main():
     profile = dict(PROFILES[PROFILE])
     cfg = dict(BaseConfig)
     cfg.update(OPX_OVERRIDES)
+    cfg.pop("flux_tail_compensation", None)
     output_dir = _make_output_dir()
     print(f"\nOPX-style active reset | {QUBIT} | profile={PROFILE}")
     print(f"Output: {output_dir}")
@@ -368,6 +371,11 @@ def main():
                 "stale calibrations are never auto-selected"
             )
         bundle = load_calibration(CALIBRATION_JSON)
+
+    validate_confident_calibration(
+        bundle,
+        min_confident_fraction=MIN_CONFIDENT_STATE_FRACTION,
+    )
 
     if not RUN_BENCHMARK:
         print("RUN_BENCHMARK=False: calibration complete; stopping.")
@@ -437,7 +445,7 @@ def main():
             f"timeouts={values['timeout_fraction']:.4f}, "
             f"mean attempts={values['mean_reset_attempts']:.2f}"
         )
-    print(f"\nSend back the entire output folder: {output_dir}")
+    print(f"\nCompleted: {output_dir}")
 
 
 if __name__ == "__main__":

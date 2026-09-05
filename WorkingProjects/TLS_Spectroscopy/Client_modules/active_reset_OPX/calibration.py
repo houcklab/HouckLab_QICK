@@ -139,6 +139,27 @@ def acquire_calibration(
     )
 
 
+def validate_confident_calibration(bundle, min_confident_fraction=0.2):
+    minimum = float(min_confident_fraction)
+    if not 0.0 < minimum <= 1.0:
+        raise ValueError("min_confident_fraction must be in (0, 1]")
+    failures = []
+    for context in ("payload", "loop"):
+        calibration = getattr(bundle, context)
+        metrics = dict(calibration.holdout or {})
+        for metric in ("ground_accept", "excited_fire"):
+            value = float(metrics.get(metric, 0.0))
+            if not np.isfinite(value) or value < minimum:
+                failures.append(f"{context}.{metric}={value:.4f}")
+    if failures:
+        joined = ", ".join(failures)
+        raise ValueError(
+            f"calibration has too few confident state assignments ({joined}); "
+            f"minimum={minimum:.4f}"
+        )
+    return bundle
+
+
 def save_raw_calibration(path, raw):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
