@@ -67,6 +67,14 @@ def test_model_cannot_execute_a_ninth_corrective_attempt():
     assert result.pi_pulses == 8
 
 
+def test_model_supports_a_bounded_24_attempt_qua_approximation():
+    result = simulate_reset([0] * 24 + [-11], CAL, CAL, max_reset_attempts=24)
+
+    assert result.terminal_status is TerminalStatus.CONFIRMED_GROUND
+    assert result.reset_attempts == 24
+    assert result.pi_pulses == 0
+
+
 class RecordingProgram:
     def __init__(self):
         self.asm = []
@@ -190,6 +198,18 @@ def test_emitter_evaluates_final_readout_and_never_executes_attempt_nine():
     }
     assert timeout["attempts"] == timeout["measures"] == timeout["pulses"] == 8
     assert timeout["status"] is TerminalStatus.MAX_ITERATIONS_REACHED
+
+
+def test_emitter_supports_a_bounded_24_attempt_qua_approximation():
+    success = _interpret(_build(max_attempts=24), [0] * 24 + [-11])
+
+    assert success == {
+        "attempts": 24,
+        "pi_pulses": 0,
+        "status": TerminalStatus.CONFIRMED_GROUND,
+        "measures": 24,
+        "pulses": 0,
+    }
 
 
 def test_emitter_handles_the_reversed_assembly_orientation():

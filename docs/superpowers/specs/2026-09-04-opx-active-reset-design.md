@@ -66,7 +66,7 @@ terminal = MAX_ITERATIONS_REACHED
 
 The first `z` is the final readout of the payload experiment. It is not an extra herald measurement. A separate post-reset verification readout is added only by the isolated benchmark program and is never part of the reset decision loop.
 
-The default safety ceiling is eight corrective reset attempts after decision zero, matching the intended `max_active_reset_iters=8` QUA experiment configuration while preventing an unbounded hardware loop. At most eight reset remeasurements and nine decisions (including the payload measurement) occur. The eighth remeasurement is evaluated before a timeout is declared. Reaching the ceiling without confirming ground is a recorded reset failure, not a successful ground preparation.
+The QUA coherence reference uses an unbounded `while_` loop. The QICK prototype retains a hardware safety ceiling: eight corrective attempts by default and up to 32 during isolated diagnostics. The final remeasurement is evaluated before a timeout is declared. Reaching the configured ceiling without confirming ground is a recorded reset failure, not a successful ground preparation.
 
 ## Why a New Implementation Is Required
 
@@ -74,7 +74,7 @@ The current production QICK reset emits a fixed number of reset-measurement bloc
 
 QICK 0.2.133 and tProc v1 already provide the required primitives: feedback-port reads, conditional jumps, register arithmetic, and data-memory writes. The hardware can therefore make the reset decision without returning to Python. The incompatibility is in the current program and acquisition abstractions, not in the fundamental tProc instruction set.
 
-The new implementation will use generated, bounded branch blocks rather than the existing fixed-readout helper. The initial decision and eight corrective-attempt blocks are unrolled at compile time, but a ground branch jumps directly to the terminal label, so runtime and number of readouts genuinely vary shot by shot.
+The new implementation will use generated, bounded branch blocks rather than the existing fixed-readout helper. The initial decision and configured corrective-attempt blocks are unrolled at compile time, but a ground branch jumps directly to the terminal label, so runtime and number of readouts genuinely vary shot by shot.
 
 ## Package Layout
 
@@ -152,7 +152,7 @@ Training and evaluation shots are separated. The saved calibration includes the 
 
 `programs.py` will expose a small assembly-emitting component that is called immediately after a measurement whose I/Q result is available on the feedback input. It receives dedicated register and label allocations instead of using hard-coded global register numbers.
 
-For the initial decision and each of the eight compile-time corrective-attempt blocks it will:
+For the initial decision and each configured compile-time corrective-attempt block it will:
 
 1. wait until the integrated result is valid on the feedback path;
 2. read I and Q from the feedback port;
@@ -163,7 +163,7 @@ For the initial decision and each of the eight compile-time corrective-attempt b
 7. wait/align for the calibrated cadence;
 8. issue the next measurement and continue to the next decision block when another attempt remains.
 
-After the eighth corrective attempt, the program evaluates its remeasurement once and branches either to `confirmed_ground` or `max_iterations_reached`; it does not emit another pi pulse or measurement. Both terminal paths write status telemetry. No path can execute a ninth corrective attempt or a tenth decision.
+After the final corrective attempt, the program evaluates its remeasurement once and branches either to `confirmed_ground` or `max_iterations_reached`; it does not emit another pi pulse or measurement. Both terminal paths write status telemetry. No path can execute more than the configured safety ceiling.
 
 The branch behavior will first be verified with a small instruction-level interpreter in the unit tests. Test vectors will cover immediate ground, excited then ground, repeated ambiguity, reversed raw-I/Q orientation, signed boundary values, and the maximum-iteration path.
 
@@ -283,7 +283,7 @@ Any stale-readout signature, register collision, unexplained status word, buffer
 The subsystem may be proposed for production integration only when all of the following are true:
 
 - zero program hangs, memory overruns, corrupt records, or unexplained terminal states occur in the accepted data set;
-- no shot executes more than eight corrective attempts or nine decisions including the payload readout;
+- no shot executes more than its configured corrective-attempt ceiling or one additional decision including the payload readout;
 - the maximum-iteration fraction is at most 1% for both ground-prepared and excited-prepared inputs;
 - post-reset residual excitation is at most 10% for both input preparations;
 - the one-sided 95% confidence bound on `(QICK OPX residual - QUA residual)` is no greater than two percentage points for both preparations in a same-day matched comparison;

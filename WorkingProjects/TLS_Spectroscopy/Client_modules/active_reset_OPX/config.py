@@ -2,6 +2,9 @@ from dataclasses import asdict, dataclass
 import math
 
 
+MAX_RESET_ATTEMPTS = 32
+
+
 @dataclass(frozen=True)
 class OPXResetConfig:
     """Timing and memory settings for the isolated reset state machine."""
@@ -42,8 +45,10 @@ class OPXResetConfig:
         return cfg
 
     def validate(self):
-        if not 1 <= int(self.max_reset_attempts) <= 8:
-            raise ValueError("opx_max_reset_attempts must be in the range 1..8")
+        if not 1 <= int(self.max_reset_attempts) <= MAX_RESET_ATTEMPTS:
+            raise ValueError(
+                f"opx_max_reset_attempts must be in the range 1..{MAX_RESET_ATTEMPTS}"
+            )
         for name in (
             "read_delay_us",
             "feedback_syncdelay_us",

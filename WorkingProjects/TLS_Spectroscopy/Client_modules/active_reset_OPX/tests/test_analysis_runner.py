@@ -278,3 +278,75 @@ def test_feedback_delay_sweep_fails_closed_for_incomplete_or_nonpassing_delays()
     assert result["status"] == "fail"
     assert result["selected_feedback_syncdelay_us"] is None
     assert result["delays"][0]["complete"] is False
+
+
+def test_attempt_limit_sweep_selects_smallest_limit_passing_both_preparations():
+    rows = [
+        {
+            "max_reset_attempts": 16,
+            "preparation": 1,
+            "timeout_fraction": 0.008,
+            "verification_excited_fraction": 0.06,
+        },
+        {
+            "max_reset_attempts": 8,
+            "preparation": 0,
+            "timeout_fraction": 0.009,
+            "verification_excited_fraction": 0.04,
+        },
+        {
+            "max_reset_attempts": 12,
+            "preparation": 1,
+            "timeout_fraction": 0.009,
+            "verification_excited_fraction": 0.07,
+        },
+        {
+            "max_reset_attempts": 16,
+            "preparation": 0,
+            "timeout_fraction": 0.004,
+            "verification_excited_fraction": 0.04,
+        },
+        {
+            "max_reset_attempts": 8,
+            "preparation": 1,
+            "timeout_fraction": 0.05,
+            "verification_excited_fraction": 0.09,
+        },
+        {
+            "max_reset_attempts": 12,
+            "preparation": 0,
+            "timeout_fraction": 0.005,
+            "verification_excited_fraction": 0.04,
+        },
+    ]
+
+    result = analysis.evaluate_attempt_limit_sweep(
+        rows,
+        max_timeout_fraction=0.01,
+        max_verification_excited_fraction=0.1,
+    )
+
+    assert result["status"] == "pass"
+    assert result["selected_max_reset_attempts"] == 12
+    assert [row["passed"] for row in result["attempt_limits"]] == [False, True, True]
+
+
+def test_attempt_limit_sweep_fails_closed_for_incomplete_limits():
+    rows = [
+        {
+            "max_reset_attempts": 16,
+            "preparation": 0,
+            "timeout_fraction": 0.0,
+            "verification_excited_fraction": 0.04,
+        }
+    ]
+
+    result = analysis.evaluate_attempt_limit_sweep(
+        rows,
+        max_timeout_fraction=0.01,
+        max_verification_excited_fraction=0.1,
+    )
+
+    assert result["status"] == "fail"
+    assert result["selected_max_reset_attempts"] is None
+    assert result["attempt_limits"][0]["complete"] is False

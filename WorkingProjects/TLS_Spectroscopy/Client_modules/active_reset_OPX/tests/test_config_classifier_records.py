@@ -132,9 +132,12 @@ def test_classifier_json_round_trip_preserves_assembly_thresholds():
     assert restored.assembly_thresholds() == original.assembly_thresholds()
 
 
-def test_config_rejects_more_than_eight_corrective_attempts():
-    with pytest.raises(ValueError, match="1..8"):
-        OPXResetConfig.from_mapping({"opx_max_reset_attempts": 9})
+def test_config_accepts_diagnostic_attempt_limits_and_rejects_more_than_32():
+    cfg = OPXResetConfig.from_mapping({"opx_max_reset_attempts": 24})
+
+    assert cfg.max_reset_attempts == 24
+    with pytest.raises(ValueError, match="1..32"):
+        OPXResetConfig.from_mapping({"opx_max_reset_attempts": 33})
 
 
 def test_config_accepts_user_facing_prefixed_keys():

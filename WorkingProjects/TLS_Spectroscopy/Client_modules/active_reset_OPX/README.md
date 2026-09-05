@@ -151,6 +151,19 @@ C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
   C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\feedback_delay_sweep_q3.py
 ```
 
+If that result is not monotonic with feedback delay, run
+`attempt_limit_sweep_q3.py`. The QUA coherence code uses an unbounded loop,
+whereas the prototype defaults to an eight-attempt hardware safety ceiling.
+This diagnostic holds the established 8 us feedback timing fixed and compares
+ceilings of 8, 12, 16, and 24 attempts in four interleaved 250-shot blocks per
+preparation. It selects the smallest ceiling meeting the same 1% timeout and
+10% residual limits.
+
+```powershell
+C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
+  C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\attempt_limit_sweep_q3.py
+```
+
 ## Reusing a calibration
 
 For a deliberate same-session rerun, set:
@@ -187,4 +200,5 @@ AC-coupled physical output path and does not replace a DC-coupled flux source.
 - `park_stability_q3.py`: standalone q3 park-prerequisite measurement;
 - `benchmark_q3.py`: standalone user-editable q3 runner;
 - `feedback_delay_sweep_q3.py`: timing-matched reset-ceiling diagnostic;
+- `attempt_limit_sweep_q3.py`: interleaved safety-ceiling diagnostic;
 - `tests/`: hardware-independent regression suite.

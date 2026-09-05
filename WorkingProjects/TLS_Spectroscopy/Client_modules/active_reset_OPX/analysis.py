@@ -317,3 +317,76 @@ def evaluate_feedback_delay_sweep(
         "max_verification_excited_fraction": residual_limit,
         "delays": delays,
     }
+
+
+def evaluate_attempt_limit_sweep(
+    rows,
+    *,
+    max_timeout_fraction,
+    max_verification_excited_fraction,
+):
+    timeout_limit = float(max_timeout_fraction)
+    residual_limit = float(max_verification_excited_fraction)
+    if not 0.0 <= timeout_limit <= 1.0:
+        raise ValueError("max_timeout_fraction must be in [0, 1]")
+    if not 0.0 <= residual_limit <= 1.0:
+        raise ValueError("max_verification_excited_fraction must be in [0, 1]")
+    grouped = {}
+    for raw in rows:
+        row = dict(raw)
+        attempts = int(row["max_reset_attempts"])
+        preparation = int(row["preparation"])
+        timeout = float(row["timeout_fraction"])
+        residual = float(row["verification_excited_fraction"])
+        if attempts <= 0:
+            raise ValueError("max_reset_attempts must be positive")
+        if preparation not in (0, 1):
+            raise ValueError("preparation must be zero or one")
+        if not math.isfinite(timeout) or not 0.0 <= timeout <= 1.0:
+            raise ValueError("timeout_fraction must be finite and in [0, 1]")
+        if not math.isfinite(residual) or not 0.0 <= residual <= 1.0:
+            raise ValueError(
+                "verification_excited_fraction must be finite and in [0, 1]"
+            )
+        if preparation in grouped.setdefault(attempts, {}):
+            raise ValueError(
+                f"duplicate attempt limit/preparation row: {attempts}, {preparation}"
+            )
+        grouped[attempts][preparation] = row
+    attempt_limits = []
+    for attempts in sorted(grouped):
+        preparations = grouped[attempts]
+        complete = set(preparations) == {0, 1}
+        worst_timeout = max(
+            (float(row["timeout_fraction"]) for row in preparations.values()),
+            default=float("nan"),
+        )
+        worst_residual = max(
+            (
+                float(row["verification_excited_fraction"])
+                for row in preparations.values()
+            ),
+            default=float("nan"),
+        )
+        passed = bool(
+            complete
+            and worst_timeout <= timeout_limit
+            and worst_residual <= residual_limit
+        )
+        attempt_limits.append({
+            "max_reset_attempts": attempts,
+            "complete": complete,
+            "worst_timeout_fraction": worst_timeout,
+            "worst_verification_excited_fraction": worst_residual,
+            "passed": passed,
+        })
+    selected = next((row for row in attempt_limits if row["passed"]), None)
+    return {
+        "status": "pass" if selected is not None else "fail",
+        "selected_max_reset_attempts": (
+            selected["max_reset_attempts"] if selected is not None else None
+        ),
+        "max_timeout_fraction": timeout_limit,
+        "max_verification_excited_fraction": residual_limit,
+        "attempt_limits": attempt_limits,
+    }

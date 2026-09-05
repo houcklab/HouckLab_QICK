@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from .classifier import Zone, classify
+from .config import MAX_RESET_ATTEMPTS
 from .records import TerminalStatus
 
 
@@ -20,8 +21,10 @@ def simulate_reset(decisions, payload_calibration, loop_calibration, *, max_rese
     remeasurement produced by one corrective attempt.
     """
     max_attempts = int(max_reset_attempts)
-    if not 1 <= max_attempts <= 8:
-        raise ValueError("max_reset_attempts must be in the range 1..8")
+    if not 1 <= max_attempts <= MAX_RESET_ATTEMPTS:
+        raise ValueError(
+            f"max_reset_attempts must be in the range 1..{MAX_RESET_ATTEMPTS}"
+        )
     decisions = [int(value) for value in decisions]
     if not decisions:
         raise ValueError("at least the payload decision is required")
@@ -88,12 +91,14 @@ def emit_reset_state_machine(
 
     The caller must place the payload decision value in ``regs['z']`` first.
     ``measure_next`` must issue one reset readout and replace that register with
-    the loop-context projected result.  The emitted graph executes zero to eight
-    such callbacks at runtime even though all paths exist in program memory.
+    the loop-context projected result.  The emitted graph executes zero to the
+    configured number of callbacks even though all paths exist in program memory.
     """
     max_attempts = int(max_reset_attempts)
-    if not 1 <= max_attempts <= 8:
-        raise ValueError("max_reset_attempts must be in the range 1..8")
+    if not 1 <= max_attempts <= MAX_RESET_ATTEMPTS:
+        raise ValueError(
+            f"max_reset_attempts must be in the range 1..{MAX_RESET_ATTEMPTS}"
+        )
     required = {"z", "ground", "excited", "attempts", "pi_count", "status"}
     missing = sorted(required - set(regs))
     if missing:
