@@ -180,3 +180,67 @@ def build_interleaved_schedule(*, methods, blocks, seed=None):
             method, prep = conditions[int(index)]
             schedule.append((block, method, prep))
     return schedule
+
+
+def summarize_post_readout_pi(
+    *,
+    pre_pi_delay_us,
+    read_delay_us,
+    first_ground_population,
+    first_pi_population,
+    second_ground_population,
+    second_pi_population,
+    min_transfer_contrast,
+    max_first_preparation_delta,
+    min_second_pi_population,
+    max_abs_second_ground_population,
+):
+    vectors = [
+        np.asarray(values, dtype=float).ravel()
+        for values in (
+            pre_pi_delay_us,
+            first_ground_population,
+            first_pi_population,
+            second_ground_population,
+            second_pi_population,
+        )
+    ]
+    lengths = {values.size for values in vectors}
+    if len(lengths) != 1 or not lengths or next(iter(lengths)) == 0:
+        raise ValueError("post-readout pi vectors must have one matching nonzero length")
+    if not all(np.all(np.isfinite(values)) for values in vectors):
+        raise ValueError("post-readout pi vectors must be finite")
+    delay, first_ground, first_pi, second_ground, second_pi = vectors
+    read_delay = float(read_delay_us)
+    if not np.isfinite(read_delay) or read_delay < 0:
+        raise ValueError("read delay must be finite and nonnegative")
+    if np.any(delay < read_delay):
+        raise ValueError("pre-pi delay must be at least the read delay")
+    rows = []
+    for index in range(delay.size):
+        first_delta = float(first_pi[index] - first_ground[index])
+        contrast = float(second_pi[index] - second_ground[index])
+        passed = bool(
+            contrast >= float(min_transfer_contrast)
+            and abs(first_delta) <= float(max_first_preparation_delta)
+            and second_pi[index] >= float(min_second_pi_population)
+            and abs(second_ground[index]) <= float(max_abs_second_ground_population)
+        )
+        rows.append({
+            "pre_pi_delay_us": float(delay[index]),
+            "first_ground_population": float(first_ground[index]),
+            "first_pi_population": float(first_pi[index]),
+            "first_preparation_delta": first_delta,
+            "second_ground_population": float(second_ground[index]),
+            "second_pi_population": float(second_pi[index]),
+            "transfer_contrast": contrast,
+            "passed": passed,
+        })
+    selected = next((row for row in rows if row["passed"]), None)
+    return {
+        "status": "pass" if selected is not None else "fail",
+        "selected_pre_pi_delay_us": (
+            selected["pre_pi_delay_us"] if selected is not None else None
+        ),
+        "rows": rows,
+    }

@@ -9,6 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     ReferenceAxis,
     append_records_csv,
     build_interleaved_schedule,
+    summarize_post_readout_pi,
     summarize_records,
     wilson_interval,
 )
@@ -141,3 +142,38 @@ def test_interleaved_schedule_contains_every_condition_once_per_block():
             for method in ("none", "opx", "current")
             for preparation in (0, 1)
         }
+
+
+def test_post_readout_pi_summary_selects_the_earliest_working_delay():
+    summary = summarize_post_readout_pi(
+        pre_pi_delay_us=[2.0, 4.0, 10.0],
+        read_delay_us=2.0,
+        first_ground_population=[0.02, 0.01, 0.00],
+        first_pi_population=[0.03, 0.02, 0.01],
+        second_ground_population=[0.05, 0.04, 0.03],
+        second_pi_population=[0.20, 0.72, 0.90],
+        min_transfer_contrast=0.5,
+        max_first_preparation_delta=0.2,
+        min_second_pi_population=0.5,
+        max_abs_second_ground_population=0.3,
+    )
+
+    assert summary["selected_pre_pi_delay_us"] == pytest.approx(4.0)
+    assert [row["pre_pi_delay_us"] for row in summary["rows"]] == [2.0, 4.0, 10.0]
+    assert [row["passed"] for row in summary["rows"]] == [False, True, True]
+
+
+def test_post_readout_pi_summary_rejects_delay_shorter_than_read_wait():
+    with pytest.raises(ValueError, match="at least the read delay"):
+        summarize_post_readout_pi(
+            pre_pi_delay_us=[1.0, 2.0],
+            read_delay_us=2.0,
+            first_ground_population=[0.0, 0.0],
+            first_pi_population=[0.0, 0.0],
+            second_ground_population=[0.0, 0.0],
+            second_pi_population=[0.0, 1.0],
+            min_transfer_contrast=0.5,
+            max_first_preparation_delta=0.2,
+            min_second_pi_population=0.5,
+            max_abs_second_ground_population=0.3,
+        )

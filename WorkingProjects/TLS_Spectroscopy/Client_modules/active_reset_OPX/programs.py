@@ -214,6 +214,26 @@ def emit_timing_matched_reference_shot(
     measure()
 
 
+def reshape_interleaved_readouts(i_values, q_values, *, reps, readouts_per_rep):
+    reps = int(reps)
+    reads = int(readouts_per_rep)
+    if reps <= 0 or reads <= 0:
+        raise ValueError("reps and readouts_per_rep must be positive")
+    usable = reps * reads
+    outputs = []
+    for values in (i_values, q_values):
+        signed = np.asarray(
+            [signed32(value) for value in np.asarray(values).ravel()],
+            dtype=np.int64,
+        )
+        if signed.size < usable:
+            raise ValueError(
+                f"readout buffer has {signed.size} values but {usable} are required"
+            )
+        outputs.append(signed[:usable].reshape(reps, reads))
+    return outputs[0], outputs[1]
+
+
 class TimingMatchedReferenceProgram(AveragerProgram):
     """Fixed-shape reference acquisition for payload or in-loop timing."""
 
@@ -263,7 +283,7 @@ class TimingMatchedReferenceProgram(AveragerProgram):
         ff_pulse.play_park_down(self, self._opx_park_segments)
         self.sync_all(self.us2cycles(float(self.cfg.get("relax_delay", 400.0))))
 
-    def acquire(self, soc, load_pulses=True, progress=False, **kwargs):
+    def acquire_readouts(self, soc, load_pulses=True, progress=False, **kwargs):
         super().acquire(
             soc,
             readouts_per_experiment=self.readouts_per_rep,
@@ -271,14 +291,21 @@ class TimingMatchedReferenceProgram(AveragerProgram):
             progress=progress,
             **kwargs,
         )
-        outputs = []
-        for buffer in (self.di_buf[0], self.dq_buf[0]):
-            values = np.asarray([signed32(v) for v in np.asarray(buffer).ravel()], dtype=np.int64)
-            usable = self.cfg["reps"] * self.readouts_per_rep
-            outputs.append(
-                values[:usable].reshape(self.cfg["reps"], self.readouts_per_rep)[:, -1]
-            )
-        return outputs[0], outputs[1]
+        return reshape_interleaved_readouts(
+            self.di_buf[0],
+            self.dq_buf[0],
+            reps=self.cfg["reps"],
+            readouts_per_rep=self.readouts_per_rep,
+        )
+
+    def acquire(self, soc, load_pulses=True, progress=False, **kwargs):
+        i_reads, q_reads = self.acquire_readouts(
+            soc,
+            load_pulses=load_pulses,
+            progress=progress,
+            **kwargs,
+        )
+        return i_reads[:, -1], q_reads[:, -1]
 
 
 class OPXResetBenchmarkProgram(QickProgram):

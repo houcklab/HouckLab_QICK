@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
@@ -10,6 +11,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     emit_benchmark_shot,
     emit_record,
     emit_timing_matched_reference_shot,
+    reshape_interleaved_readouts,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
     RECORD_WORDS,
@@ -205,6 +207,21 @@ def test_payload_reference_keeps_the_existing_preparation_sequence():
     )
 
     assert events == ["pi", "payload_alignment", "measure"]
+
+
+def test_readout_pair_extraction_preserves_per_shot_trigger_order():
+    i_values = np.asarray([10, 11, 20, 21, 30, 31], dtype=np.int64)
+    q_values = np.asarray([-10, -11, -20, -21, -30, -31], dtype=np.int64)
+
+    i_reads, q_reads = reshape_interleaved_readouts(
+        i_values,
+        q_values,
+        reps=3,
+        readouts_per_rep=2,
+    )
+
+    assert i_reads.tolist() == [[10, 11], [20, 21], [30, 31]]
+    assert q_reads.tolist() == [[-10, -11], [-20, -21], [-30, -31]]
 
 
 def test_qick_program_classes_are_exposed_even_on_analysis_computers():
