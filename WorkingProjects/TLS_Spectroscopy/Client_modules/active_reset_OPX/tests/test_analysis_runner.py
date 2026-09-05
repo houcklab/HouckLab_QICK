@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pytest
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import analysis
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     ReferenceAxis,
     append_records_csv,
@@ -193,3 +194,87 @@ def test_post_readout_pi_summary_rejects_delay_shorter_than_read_wait():
             min_second_pi_population=0.5,
             max_abs_second_ground_population=0.3,
         )
+
+
+def test_feedback_delay_sweep_selects_shortest_delay_passing_both_preparations():
+    rows = [
+        {
+            "feedback_syncdelay_us": 16.0,
+            "preparation": 1,
+            "timeout_fraction": 0.006,
+            "verification_excited_fraction": 0.07,
+        },
+        {
+            "feedback_syncdelay_us": 8.0,
+            "preparation": 0,
+            "timeout_fraction": 0.008,
+            "verification_excited_fraction": 0.05,
+        },
+        {
+            "feedback_syncdelay_us": 12.0,
+            "preparation": 1,
+            "timeout_fraction": 0.009,
+            "verification_excited_fraction": 0.08,
+        },
+        {
+            "feedback_syncdelay_us": 16.0,
+            "preparation": 0,
+            "timeout_fraction": 0.004,
+            "verification_excited_fraction": 0.05,
+        },
+        {
+            "feedback_syncdelay_us": 8.0,
+            "preparation": 1,
+            "timeout_fraction": 0.03,
+            "verification_excited_fraction": 0.09,
+        },
+        {
+            "feedback_syncdelay_us": 12.0,
+            "preparation": 0,
+            "timeout_fraction": 0.005,
+            "verification_excited_fraction": 0.05,
+        },
+    ]
+
+    result = analysis.evaluate_feedback_delay_sweep(
+        rows,
+        max_timeout_fraction=0.01,
+        max_verification_excited_fraction=0.1,
+    )
+
+    assert result["status"] == "pass"
+    assert result["selected_feedback_syncdelay_us"] == pytest.approx(12.0)
+    assert [row["passed"] for row in result["delays"]] == [False, True, True]
+
+
+def test_feedback_delay_sweep_fails_closed_for_incomplete_or_nonpassing_delays():
+    rows = [
+        {
+            "feedback_syncdelay_us": 8.0,
+            "preparation": 0,
+            "timeout_fraction": 0.0,
+            "verification_excited_fraction": 0.04,
+        },
+        {
+            "feedback_syncdelay_us": 12.0,
+            "preparation": 0,
+            "timeout_fraction": 0.0,
+            "verification_excited_fraction": 0.04,
+        },
+        {
+            "feedback_syncdelay_us": 12.0,
+            "preparation": 1,
+            "timeout_fraction": 0.02,
+            "verification_excited_fraction": 0.08,
+        },
+    ]
+
+    result = analysis.evaluate_feedback_delay_sweep(
+        rows,
+        max_timeout_fraction=0.01,
+        max_verification_excited_fraction=0.1,
+    )
+
+    assert result["status"] == "fail"
+    assert result["selected_feedback_syncdelay_us"] is None
+    assert result["delays"][0]["complete"] is False

@@ -136,6 +136,21 @@ True equivalence still requires same-day QUA data with matching preparation and
 verification definitions. The design promotion gate is in
 `docs/superpowers/specs/2026-09-04-opx-active-reset-design.md`.
 
+## Feedback-delay diagnostic
+
+If the full comparison meets the residual-excitation limit but exceeds the 1%
+max-iteration limit, run `feedback_delay_sweep_q3.py`. It tests 8, 12, 16, 24,
+and 32 us while holding the threshold policy, attempt cap, and every other reset
+setting fixed. Each delay receives a fresh timing-matched calibration followed
+by 1,000 shots per preparation. The result selects the shortest delay for which
+both preparations have at most 1% max-iteration outcomes and at most 10%
+verification excitation.
+
+```powershell
+C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
+  C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\feedback_delay_sweep_q3.py
+```
+
 ## Reusing a calibration
 
 For a deliberate same-session rerun, set:
@@ -171,4 +186,5 @@ AC-coupled physical output path and does not replace a DC-coupled flux source.
 - `park_stability.py`: hardware-independent park trace checks and safety limits;
 - `park_stability_q3.py`: standalone q3 park-prerequisite measurement;
 - `benchmark_q3.py`: standalone user-editable q3 runner;
+- `feedback_delay_sweep_q3.py`: timing-matched reset-ceiling diagnostic;
 - `tests/`: hardware-independent regression suite.
