@@ -98,6 +98,7 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
     )
 
     assert reset.feedback_syncdelay_us == 8.0
+    assert reset.loop_recovery_us == 25.0
     assert calibration.holdout["ground_accept"] == pytest.approx(0.5)
     assert calibration.holdout["excited_fire"] == pytest.approx(1.0)
     assert calibration.holdout["ground_confidence_fidelity"] == pytest.approx(0.7)
@@ -147,6 +148,7 @@ def test_config_accepts_user_facing_prefixed_keys():
         "opx_max_reset_attempts": 8,
         "opx_read_delay_us": 1.5,
         "opx_feedback_syncdelay_us": 3.0,
+        "opx_loop_recovery_us": 25.0,
         "opx_verification_delay_us": 0.25,
         "opx_record_base": 40,
     })
@@ -154,8 +156,14 @@ def test_config_accepts_user_facing_prefixed_keys():
     assert cfg.max_reset_attempts == 8
     assert cfg.read_delay_us == 1.5
     assert cfg.feedback_syncdelay_us == 3.0
+    assert cfg.loop_recovery_us == 25.0
     assert cfg.verification_delay_us == 0.25
     assert cfg.record_base == 40
+
+
+def test_config_rejects_negative_loop_recovery():
+    with pytest.raises(ValueError, match="loop_recovery_us"):
+        OPXResetConfig.from_mapping({"opx_loop_recovery_us": -0.01})
 
 
 def test_record_round_trip_converts_unsigned_hardware_words_to_signed():

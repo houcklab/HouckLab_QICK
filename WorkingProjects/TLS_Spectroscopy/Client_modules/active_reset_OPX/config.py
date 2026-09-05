@@ -12,6 +12,7 @@ class OPXResetConfig:
     max_reset_attempts: int = 8
     read_delay_us: float = 2.0
     feedback_syncdelay_us: float = 2.0
+    loop_recovery_us: float = 0.0
     reset_settle_us: float = 0.05
     verification_delay_us: float = 0.25
     inter_shot_delay_us: float = 400.0
@@ -27,6 +28,7 @@ class OPXResetConfig:
             "max_reset_attempts": "opx_max_reset_attempts",
             "read_delay_us": "opx_read_delay_us",
             "feedback_syncdelay_us": "opx_feedback_syncdelay_us",
+            "loop_recovery_us": "opx_loop_recovery_us",
             "reset_settle_us": "opx_reset_settle_us",
             "verification_delay_us": "opx_verification_delay_us",
             "inter_shot_delay_us": "opx_inter_shot_delay_us",
@@ -52,6 +54,7 @@ class OPXResetConfig:
         for name in (
             "read_delay_us",
             "feedback_syncdelay_us",
+            "loop_recovery_us",
             "reset_settle_us",
             "verification_delay_us",
             "inter_shot_delay_us",

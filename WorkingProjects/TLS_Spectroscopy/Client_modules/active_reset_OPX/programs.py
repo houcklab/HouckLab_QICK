@@ -508,7 +508,13 @@ class OPXResetBenchmarkProgram(QickProgram):
             plan["combine_op"],
             self.reset_regs["status"],
         )
-        self.sync_all(self.us2cycles(float(self.reset_config.feedback_syncdelay_us)))
+        recovery_us = float(self.reset_config.feedback_syncdelay_us)
+        if context == "loop":
+            recovery_us = max(
+                recovery_us,
+                float(self.reset_config.loop_recovery_us),
+            )
+        self.sync_all(self.us2cycles(recovery_us))
 
     def _measure_verification(self):
         self.sync_all(self.us2cycles(float(self.reset_config.verification_delay_us)))

@@ -381,7 +381,11 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
     prog.reset_config = type(
         "ResetConfig",
         (),
-        {"reset_settle_us": 0.05, "feedback_syncdelay_us": 8.0},
+        {
+            "reset_settle_us": 0.05,
+            "feedback_syncdelay_us": 8.0,
+            "loop_recovery_us": 25.0,
+        },
     )()
     prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
     prog.us2cycles = lambda value: int(round(100 * value))
@@ -394,6 +398,38 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
 
     assert ("mathi", 3, 2, "*", 0) in prog.asm
     assert not any(op[0] == "mathi" and op[1] == 2 for op in prog.asm)
+
+
+def test_loop_measurement_waits_for_qua_resonator_recovery():
+    prog = RecordingProgram()
+    prog.cfg = {}
+    prog.reset_page = 1
+    prog.reset_regs = {
+        "i": 1,
+        "q": 2,
+        "status": 3,
+        "z": 4,
+    }
+    prog.reset_config = type(
+        "ResetConfig",
+        (),
+        {
+            "reset_settle_us": 0.05,
+            "feedback_syncdelay_us": 8.0,
+            "loop_recovery_us": 25.0,
+        },
+    )()
+    prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
+    prog.us2cycles = lambda value: int(round(100 * value))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync_all", cycles))
+    prog.math = lambda page, dst, left, op, right: prog.asm.append(
+        ("math", dst, left, op, right)
+    )
+
+    OPXResetBenchmarkProgram._measure_project(prog, CAL, "loop")
+
+    syncs = [operation for operation in prog.asm if operation[0] == "sync_all"]
+    assert syncs == [("sync_all", 5), ("sync_all", 2500)]
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():
