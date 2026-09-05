@@ -86,6 +86,8 @@ class TLSSaturationProbeProgram(AveragerProgram):
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
         stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0.0
         self.ff_settle_us = ff_pulse.flux_settle_us(cfg) if stepping else 0.0
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         common = {
             "ff_gain": float(cfg["ff_gain"]),
             "dt_play_us": cfg.get("dt_pulseplay", 5.0),
@@ -147,8 +149,7 @@ class TLSSaturationProbeProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.assert_park(self, self.pump_segs)
-        self.sync_all(self.us2cycles(0.010))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         self._pump_excursion()
         self._reset_qubit()
         self.sync_all(self.us2cycles(self.recovery_us))
@@ -156,7 +157,10 @@ class TLSSaturationProbeProgram(AveragerProgram):
         self.measure(
             pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-            wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+            wait=True, syncdelay=self.us2cycles(0.01))
+        ff_pulse.play_park_down(self, self.ff_park_segs)
+        self.sync_all(self.us2cycles(
+            cfg.get("active_reset_post_measure_delay_us", 0.05)))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)

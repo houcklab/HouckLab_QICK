@@ -38,12 +38,6 @@ def flux_hold_build(prog):
             % prog.cfg.get("ff_park_gain"))
     if getattr(prog, "do_flux_hold", False):
         cfg = prog.cfg
-        if int(cfg.get("ff_park_gain", 0) or 0) != 0:
-            raise ValueError(
-                "a chevron flux excursion (ff_hold_gain) on top of a nonzero "
-                "ff_park_gain is not supported: the park and the excursion would "
-                "queue sequentially on the same generator instead of nesting.  "
-                "Use one or the other.")
         prog.ff_segs = ff_pulse.build_ramp_hold_ramp(
             prog, hold_us=flux_hold_us(cfg, cover_readout=not bool(cfg.get("readout_after_park", True))),
             ff_gain=int(cfg["ff_hold_gain"]),
@@ -96,17 +90,15 @@ def _rabi_feedback_reset(prog):
 
 def rabi_flux_body(prog):
     cfg = prog.cfg
+    ff_pulse.play_park_up(prog, prog.ff_park_segs)
     feedback = active_reset.uses_feedback(cfg)
     if feedback:
         _rabi_feedback_reset(prog)
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
-        ff_pulse.assert_park(prog, prog.ff_segs, force=True)
         prog.sync_all(prog.us2cycles(max(float(cfg.get("baseline_rearm_us", 0.5)), 0.05)))
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         prog.sync_all(prog.us2cycles(0.01))
-    else:
-        ff_pulse.play_park_up(prog, prog.ff_park_segs)
     for _ in range(int(cfg["n_pulses"])):
         prog.pulse(ch=cfg["qubit_ch"])
         prog.sync_all(prog.us2cycles(0.010))
@@ -114,17 +106,16 @@ def rabi_flux_body(prog):
     if hold and read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
         prog.sync_all(prog.us2cycles(ff_pulse.flux_settle_us(cfg)))
-    _reset_sync = 0.05 if feedback else (cfg["relax_delay"] if read_at_park else 0.01)
     prog.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                  adc_trig_offset=prog.us2cycles(cfg["adc_trig_offset"]),
                  wait=True,
-                 syncdelay=prog.us2cycles(0.01 if not hold else _reset_sync))
-    if not hold:
-        ff_pulse.play_park_down(prog, prog.ff_park_segs)
-        prog.sync_all(prog.us2cycles(_reset_sync))
+                 syncdelay=prog.us2cycles(0.01))
     if hold and not read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
-        prog.sync_all(prog.us2cycles(0.05 if feedback else cfg["relax_delay"]))
+    ff_pulse.play_park_down(prog, prog.ff_park_segs)
+    prog.sync_all(prog.us2cycles(
+        cfg.get("active_reset_post_measure_delay_us", 0.05)
+        if feedback else cfg["relax_delay"]))
 
 
 class RabiChevronIQProgram(RAveragerProgram):

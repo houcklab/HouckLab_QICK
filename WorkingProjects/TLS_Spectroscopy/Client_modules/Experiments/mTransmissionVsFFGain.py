@@ -31,6 +31,8 @@ class FFTransProgram(AveragerProgram):
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
         f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         set_readout_pulse(self, f_res)
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=max(cfg.get("ff_settle_us", 20.0), cfg.get("dt_pulseplay", 5.0)),
             ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
@@ -41,14 +43,14 @@ class FFTransProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.assert_park(self, self.ff_segs)
-        self.sync_all(self.us2cycles(0.05))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
         ff_pulse.play_ramp_down(self, self.ff_segs)
+        ff_pulse.play_park_down(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
 

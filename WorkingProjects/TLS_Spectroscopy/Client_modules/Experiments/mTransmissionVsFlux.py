@@ -8,6 +8,7 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 
@@ -19,20 +20,26 @@ class TransmissionProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        ff_pulse.declare_park_hold(self)
         for ch in cfg["ro_chs"]:
             self.declare_readout(ch=ch,
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
         f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         set_readout_pulse(self, f_res)
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.synci(200)
 
     def body(self):
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+                     syncdelay=self.us2cycles(0.01))
+        ff_pulse.play_park_down(self, self.ff_park_segs)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
 
 class TransmissionVsFlux(ExperimentClass):

@@ -82,6 +82,8 @@ class FFStepResponseSpecProgram(RAveragerProgram):
                                  length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
         set_readout_pulse(self, f_res)
 
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=cfg["ff_hold"], ff_gain=cfg["ff_gain"],
             dt_play_us=cfg.get("dt_pulseplay", 5.0), ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
@@ -92,9 +94,10 @@ class FFStepResponseSpecProgram(RAveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.assert_park(self, self.ff_segs)
-        rearm = cfg.get("baseline_rearm_us", 0.0)
-        self.sync_all(self.us2cycles(max(rearm, 0.05)))
+        ff_pulse.play_park_up(self, self.ff_park_segs)
+        rearm = float(cfg.get("baseline_rearm_us", 0.0))
+        if rearm > 0:
+            self.sync_all(self.us2cycles(rearm))
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))
         self.pulse(ch=cfg["qubit_ch"])
@@ -104,13 +107,14 @@ class FFStepResponseSpecProgram(RAveragerProgram):
             self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                         wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+                         wait=True, syncdelay=self.us2cycles(0.01))
         else:
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self.ff_segs)
-            self.sync_all(self.us2cycles(cfg["relax_delay"]))
+        ff_pulse.play_park_down(self, self.ff_park_segs)
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)

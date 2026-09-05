@@ -242,7 +242,7 @@ def declare_park_hold(prog):
 
 
 def build_park_hold(prog, hold_us):
-    if not getattr(prog, "do_park_hold", False):
+    if not park_hold_configured(prog.cfg):
         return None
     cfg = prog.cfg
     return build_ramp_hold_ramp(

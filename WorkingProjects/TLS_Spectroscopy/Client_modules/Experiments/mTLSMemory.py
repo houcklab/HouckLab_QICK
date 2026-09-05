@@ -68,6 +68,8 @@ class TLSMemoryProgram(AveragerProgram):
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
         stepping = abs(float(cfg["ff_gain"]) - park_gain) > 0.0
         self.ff_settle_us = ff_pulse.flux_settle_us(cfg) if stepping else 0.0
+        self.ff_park_segs = ff_pulse.build_park_hold(
+            self, hold_us=ff_pulse.flux_settle_us(cfg))
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=interaction_us + self.ff_settle_us,
             ff_gain=float(cfg["ff_gain"]),
@@ -95,7 +97,7 @@ class TLSMemoryProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.assert_park(self, self.ff_segs)
+        ff_pulse.play_park_up(self, self.ff_park_segs)
         if active_reset.uses_feedback(cfg):
             reset_read_gain = cfg.get("reset_read_pulse_gain")
             if reset_read_gain is not None:
@@ -130,7 +132,11 @@ class TLSMemoryProgram(AveragerProgram):
         self.measure(
             pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-            wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+            wait=True, syncdelay=self.us2cycles(0.01))
+        ff_pulse.play_park_down(self, self.ff_park_segs)
+        self.sync_all(self.us2cycles(
+            cfg.get("active_reset_post_measure_delay_us", 0.05)
+            if active_reset.uses_feedback(cfg) else cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)
