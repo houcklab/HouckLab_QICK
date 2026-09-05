@@ -18,6 +18,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
     acquire_with_retry, order_rng, resolve_rounds, split_reps, suppress_stdout,
     visit_order)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_t1_iq,
+)
 
 
 NOTEBOOK_FIT_PARAM_ORDER = ("f_max_GHz", "E_C_GHz", "d", "V_period_V", "V_sweet_V")
@@ -399,6 +402,11 @@ class FFT1Program(AveragerProgram):
 
     def initialize(self):
         cfg = self.cfg
+        if active_reset.uses_opx_unbounded(cfg):
+            raise ValueError(
+                "FFT1Program cannot stream variable unbounded-reset readouts; "
+                "use the OPX DMem T1 acquisition path"
+            )
         cfg["reps"] = cfg["shots"]
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
@@ -554,6 +562,7 @@ class _T1VsFluxBase(ExperimentClass):
         cfg["reset_mode"] = reset_mode
         self.repeat_metadata = dict(repeat_metadata or {})
         self.write_outputs = bool(write_outputs)
+        self.opx_reset_telemetry = []
         if flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = flux_tail_compensation
         cfg["shots"] = self.shots
@@ -576,9 +585,29 @@ class _T1VsFluxBase(ExperimentClass):
         cfg["do_ff"] = bool(do_ff)
         if reps is not None:
             cfg["shots"] = int(reps)
-        with suppress_stdout():
-            prog = FFT1Program(self.soccfg, cfg)
-            i0, q0, i1, q1 = acquire_with_retry(prog, self.soc, load_pulses=True)
+        if active_reset.uses_opx_unbounded(self.reset_mode):
+            with suppress_stdout():
+                i1, q1, telemetry = acquire_t1_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    shots=cfg["shots"],
+                )
+            telemetry.update({
+                "ff_gain": float(ff_gain),
+                "wait_us": float(wait_us),
+                "do_pi": bool(do_pi),
+                "do_ff": bool(do_ff),
+            })
+            self.opx_reset_telemetry.append(telemetry)
+            self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
+            i0 = q0 = None
+        else:
+            with suppress_stdout():
+                prog = FFT1Program(self.soccfg, cfg)
+                i0, q0, i1, q1 = acquire_with_retry(
+                    prog, self.soc, load_pulses=True
+                )
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)

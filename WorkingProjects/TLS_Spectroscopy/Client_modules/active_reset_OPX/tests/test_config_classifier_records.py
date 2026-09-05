@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
     q3_benchmark_settings,
 )
@@ -182,3 +184,12 @@ def test_capacity_arithmetic_never_overruns_dmem():
     assert 32 + max_records(4096, 32) * RECORD_WORDS <= 4096
     with pytest.raises(ValueError, match="record_base"):
         max_records(dmem_words=32, record_base=32)
+
+
+def test_unbounded_reset_mode_is_feedback_without_heralding():
+    assert "opx_unbounded" in active_reset.RESET_MODES
+    assert active_reset.uses_feedback("opx_unbounded")
+    assert active_reset.uses_opx_unbounded("opx_unbounded")
+    assert not active_reset.heralds("opx_unbounded")
+    with pytest.raises(RuntimeError, match="no fixed readout count"):
+        active_reset.active_reset_readouts({"reset_mode": "opx_unbounded"})

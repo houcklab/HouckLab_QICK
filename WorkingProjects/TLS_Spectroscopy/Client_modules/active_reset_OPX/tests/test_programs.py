@@ -259,6 +259,38 @@ def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
 
     assert events == ["up", "prep", "wait", "payload", "down"]
     assert ("regwi", regs["status"], 2) in prog.asm
+    writes = [op for op in prog.asm if op[0] == "memw"]
+    assert len(writes) == RECORD_WORDS
+    assert writes[0][1] == regs["i"]
+    assert writes[1][1] == regs["q"]
+
+
+def test_t1_shot_can_measure_a_no_pi_reference():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="none",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="T1_P0",
+        do_prepare=False,
+    )
+
+    assert events == ["up", "wait", "payload", "down"]
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():

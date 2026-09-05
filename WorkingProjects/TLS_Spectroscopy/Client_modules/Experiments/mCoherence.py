@@ -12,6 +12,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import FFT1Program
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_t1_iq,
+)
 
 
 def _fit_exp_decay(t_us, pe):
@@ -57,6 +60,7 @@ class _CoherenceBase(ExperimentClass):
         cfg["reset_mode"] = reset_mode
         self.live_plot = bool(live_plot)
         self.save = bool(save)
+        self.opx_reset_telemetry = []
 
     def _run_point_counts(self, wait_us, reps=None):
         raise NotImplementedError
@@ -146,9 +150,26 @@ class T1(_CoherenceBase):
         cfg["do_ff"] = True
         if reps is not None:
             cfg["shots"] = int(reps)
-        with suppress_stdout():
-            prog = FFT1Program(self.soccfg, cfg)
-            i0, q0, i1, q1 = acquire_with_retry(prog, self.soc, load_pulses=True)
+        if active_reset.uses_opx_unbounded(self.reset_mode):
+            with suppress_stdout():
+                i1, q1, telemetry = acquire_t1_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    shots=cfg["shots"],
+                )
+            telemetry.update({
+                "ff_gain": float(self.ff_gain),
+                "wait_us": float(wait_us),
+            })
+            self.opx_reset_telemetry.append(telemetry)
+            i0 = q0 = None
+        else:
+            with suppress_stdout():
+                prog = FFT1Program(self.soccfg, cfg)
+                i0, q0, i1, q1 = acquire_with_retry(
+                    prog, self.soc, load_pulses=True
+                )
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)
@@ -194,6 +215,7 @@ class T1(_CoherenceBase):
             'point_visit_orders': getattr(self, "point_visit_orders", None),
             'randomize_point_order': bool(self.cfg.get("randomize_point_order", False)),
             'point_order_seed': self.cfg.get("point_order_seed", None),
+            'opx_reset_telemetry': self.opx_reset_telemetry,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         tag = f"[T1{' flux ramp' if held else ''}]"

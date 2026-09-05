@@ -26,6 +26,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibratio
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
     ClassifierCalibration,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    payload_iq,
+    runtime_bundle,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
     ShotRecord,
     TerminalStatus,
@@ -125,6 +129,32 @@ def test_calibration_save_sanitizes_numpy_metadata(tmp_path):
 
     loaded = load_calibration(path)
     assert loaded.metadata == {"delays_us": [1.0, 2.0], "missing": None}
+
+
+def test_runtime_bundle_accepts_serialized_calibration_and_rejects_missing_config():
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 1, 10, 11),
+        metadata={},
+    )
+
+    assert runtime_bundle({"opx_reset_calibration": bundle.to_dict()}) == bundle
+    with pytest.raises(ValueError, match="opx_reset_calibration"):
+        runtime_bundle({})
+
+
+def test_payload_iq_returns_normalized_main_readout_from_t1_records():
+    records = [
+        ShotRecord(1, 100, 3, 2, TerminalStatus.CONFIRMED_GROUND, 120, -60, -100),
+        ShotRecord(0, -100, 0, 0, TerminalStatus.NO_RESET, -40, 80, -100),
+    ]
+
+    i_values, q_values = payload_iq(records, read_length_cycles=20)
+
+    assert i_values == pytest.approx([6.0, -2.0])
+    assert q_values == pytest.approx([-3.0, 4.0])
 
 
 def test_loading_missing_calibration_fails_closed(tmp_path):

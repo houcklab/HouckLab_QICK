@@ -1,4 +1,6 @@
 import gc
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import matplotlib
@@ -13,6 +15,15 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence impo
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    q3_benchmark_settings,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
+    acquire_calibration,
+    save_calibration,
+    save_raw_calibration,
+    validate_confident_calibration,
+)
 
 QUBIT = "q3"
 CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
@@ -21,9 +32,13 @@ LIVE_PLOTS = True
 FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
-RESET_MODE = "feedback"
+RESET_MODE = "opx_unbounded"
 PROBE_RESET = True
 ROT_RESET_PARAMS = None
+OPX_RESET_CALIBRATION = None
+OPX_CALIBRATION_SHOTS = 2000
+OPX_MIN_CONFIDENT_STATE_FRACTION = 0.2
+OPX_HOST_WATCHDOG_S = 2.0
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
@@ -86,7 +101,14 @@ def _base_cfg(p, extra=None):
     cfg["reset_mode"] = RESET_MODE
     if extra:
         cfg.update(extra)
-    if active_reset.uses_feedback(cfg):
+    if active_reset.uses_opx_unbounded(cfg):
+        if OPX_RESET_CALIBRATION is None:
+            raise RuntimeError("opx_unbounded reset needs a same-session calibration")
+        cfg["opx_reset_calibration"] = dict(OPX_RESET_CALIBRATION)
+        cfg.update(q3_benchmark_settings().opx_overrides())
+        cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
+        cfg["opx_inter_shot_delay_us"] = float(FEEDBACK_RELAX_US)
+    elif active_reset.uses_feedback(cfg):
         if not ROT_RESET_PARAMS:
             raise RuntimeError("feedback reset needs a validated rotated reset profile")
         if RESET_THRESHOLD_RAW is None:
@@ -110,6 +132,42 @@ def _log_t_vec(p):
                        np.log10(float(p["t_max_us"])), int(p["t_points"]))
 
 
+def _calibrate_opx_reset(outer_folder, soc, soccfg):
+    cfg = dict(BaseConfig)
+    cfg.update(q3_benchmark_settings().opx_overrides())
+    cfg["relax_delay"] = float(PASSIVE_RESET_US)
+    cfg["opx_inter_shot_delay_us"] = float(FEEDBACK_RELAX_US)
+    cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
+    now = datetime.now()
+    output = (
+        Path(outer_folder)
+        / QUBIT
+        / f"{QUBIT}_{now:%Y_%m_%d}"
+        / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_production_calibration"
+    )
+    output.mkdir(parents=True, exist_ok=False)
+    bundle, raw = acquire_calibration(
+        soc,
+        soccfg,
+        cfg,
+        shots=int(OPX_CALIBRATION_SHOTS),
+        **q3_benchmark_settings().calibration_options(),
+        metadata={
+            "qubit": QUBIT,
+            "created": now.isoformat(),
+            "purpose": "SingleQubitCoherence opx_unbounded",
+        },
+    )
+    save_calibration(output / "calibration.json", bundle)
+    save_raw_calibration(output / "calibration_raw.npz", raw)
+    validate_confident_calibration(
+        bundle,
+        min_confident_fraction=OPX_MIN_CONFIDENT_STATE_FRACTION,
+    )
+    print(f"[reset] OPX calibration saved: {output}")
+    return bundle.to_dict()
+
+
 def run_ss_cal(outer_folder, soc, soccfg):
     p = P_SS_CAL
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
@@ -127,7 +185,7 @@ def run_ss_cal(outer_folder, soc, soccfg):
 
 def run_ss_flux_ramp(outer_folder, soc, soccfg):
     p = P_SS_FLUX_RAMP
-    cfg = _base_cfg(p)
+    cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     if p.get("qubit_pi_gain") is not None:
         cfg["ss_flux_pi_gain"] = int(p["qubit_pi_gain"])
     comp = p.get("flux_tail_compensation")
@@ -189,9 +247,20 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
-    global ROT_RESET_PARAMS, DRIFT_PI_PROFILE
-    feedback_requested = active_reset.uses_feedback(RESET_MODE)
+    global ROT_RESET_PARAMS, DRIFT_PI_PROFILE, OPX_RESET_CALIBRATION
+    opx_requested = active_reset.uses_opx_unbounded(RESET_MODE)
+    feedback_requested = active_reset.uses_feedback(RESET_MODE) and not opx_requested
     DRIFT_PI_PROFILE = None
+    if opx_requested:
+        if not PROBE_RESET and OPX_RESET_CALIBRATION is None:
+            raise RuntimeError(
+                "RESET_MODE='opx_unbounded' needs PROBE_RESET=True or an explicit "
+                "OPX_RESET_CALIBRATION"
+            )
+        if PROBE_RESET:
+            OPX_RESET_CALIBRATION = _calibrate_opx_reset(
+                outer_folder, soc, soccfg
+            )
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "

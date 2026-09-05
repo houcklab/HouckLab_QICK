@@ -4,8 +4,8 @@ import os
 import numpy as np
 
 
-RESET_MODES = ("passive", "active", "feedback", "feedback_herald")
-FEEDBACK_MODES = ("feedback", "feedback_herald")
+RESET_MODES = ("passive", "active", "feedback", "feedback_herald", "opx_unbounded")
+FEEDBACK_MODES = ("feedback", "feedback_herald", "opx_unbounded")
 HERALD_MODES = ("active", "feedback_herald")
 
 
@@ -17,6 +17,10 @@ def reset_mode_of(cfg_or_mode):
 
 def uses_feedback(cfg_or_mode):
     return reset_mode_of(cfg_or_mode) in FEEDBACK_MODES
+
+
+def uses_opx_unbounded(cfg_or_mode):
+    return reset_mode_of(cfg_or_mode) == "opx_unbounded"
 
 
 def uses_rotated(cfg):
@@ -280,6 +284,10 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        read_delay_us=None, force_flip=None, trace_base_addr=None,
                        reg_flag=None, allow_legacy=False, set_pi=None,
                        pi_freq_mhz=None, pi_freq_step_mhz=None):
+    if uses_opx_unbounded(getattr(prog, "cfg", {})):
+        raise RuntimeError(
+            "opx_unbounded reset requires a variable-readout DMem experiment adapter"
+        )
     try:
         rot_params = prog.cfg.get("rot_reset")
     except Exception:
@@ -406,6 +414,10 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
 
 
 def active_reset_readouts(cfg):
+    if uses_opx_unbounded(cfg):
+        raise RuntimeError(
+            "opx_unbounded reset has no fixed readout count; use a DMem experiment adapter"
+        )
     if not uses_feedback(cfg):
         return 0
     return int(cfg.get("reset_max_iters", 3))
