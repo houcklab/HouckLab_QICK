@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     ReferenceAxis,
     append_records_csv,
     build_interleaved_schedule,
+    evaluate_t1_equivalence,
     fit_t1_decay,
     json_safe,
     summarize_post_readout_pi,
@@ -69,6 +70,41 @@ def test_t1_fit_recovers_a_known_exponential_decay():
     assert fit["tau_us"] == pytest.approx(150.0, rel=1e-3)
     assert fit["P0"] == pytest.approx(0.035, abs=1e-4)
     assert fit["P1"] == pytest.approx(0.845, abs=1e-4)
+
+
+def test_t1_equivalence_requires_matching_decay_and_population_endpoints():
+    passive = {"P0": 0.05, "P1": 0.82, "tau_us": 100.0, "decaying": True}
+    active = {"P0": 0.06, "P1": 0.42, "tau_us": 105.0, "decaying": True}
+
+    result = evaluate_t1_equivalence(
+        passive,
+        active,
+        max_relative_tau_difference=0.20,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["status"] == "fail"
+    assert result["tau_passed"] is True
+    assert result["P0_passed"] is True
+    assert result["P1_passed"] is False
+    assert result["failed_checks"] == ["P1"]
+
+
+def test_t1_equivalence_passes_matching_curves():
+    passive = {"P0": 0.05, "P1": 0.82, "tau_us": 100.0, "decaying": True}
+    active = {"P0": 0.07, "P1": 0.76, "tau_us": 112.0, "decaying": True}
+
+    result = evaluate_t1_equivalence(
+        passive,
+        active,
+        max_relative_tau_difference=0.20,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["status"] == "pass"
+    assert result["failed_checks"] == []
 
 
 def test_json_safe_converts_nested_numpy_arrays_and_nonfinite_values():

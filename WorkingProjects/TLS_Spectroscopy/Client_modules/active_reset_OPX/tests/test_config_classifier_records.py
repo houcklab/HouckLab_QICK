@@ -4,6 +4,7 @@ import pytest
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    build_t1_point_config,
     q3_benchmark_settings,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
@@ -104,6 +105,40 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
     assert calibration.holdout["excited_fire"] == pytest.approx(1.0)
     assert calibration.holdout["ground_confidence_fidelity"] == pytest.approx(0.7)
     assert calibration.holdout["threshold_steps"] == 100
+
+
+def test_t1_point_config_applies_flux_excursion_without_changing_park():
+    cfg = build_t1_point_config(
+        {"ff_park_gain": -25790, "ff_gain": -25790},
+        reset_scheme="opx_unbounded",
+        inter_shot_delay_us=50.0,
+        shots=250,
+        delay_us=12.5,
+        excursion_gain=-20000,
+    )
+
+    assert cfg["ff_park_gain"] == -25790
+    assert cfg["ff_gain"] == -20000
+    assert cfg["do_ff"] is True
+    assert cfg["ff_hold"] == pytest.approx(12.5)
+    assert cfg["t1_wait_us"] == pytest.approx(12.5)
+    assert cfg["shots"] == 250
+    assert cfg["reps"] == 250
+    assert cfg["opx_reset_scheme"] == "opx_unbounded"
+    assert cfg["opx_inter_shot_delay_us"] == pytest.approx(50.0)
+
+
+def test_t1_point_config_leaves_park_t1_at_the_park_gain():
+    cfg = build_t1_point_config(
+        {"ff_park_gain": -25790},
+        reset_scheme="none",
+        inter_shot_delay_us=1000.0,
+        shots=250,
+        delay_us=100.0,
+    )
+
+    assert cfg["ff_gain"] == -25790
+    assert cfg["do_ff"] is False
 
 
 def test_classifier_uses_strict_three_zone_boundaries():

@@ -166,6 +166,70 @@ def fit_t1_decay(times_us, populations, shots=None):
     }
 
 
+def evaluate_t1_equivalence(
+    passive,
+    active,
+    *,
+    max_relative_tau_difference,
+    max_abs_p0_difference,
+    max_abs_p1_difference,
+):
+    tolerances = np.asarray([
+        max_relative_tau_difference,
+        max_abs_p0_difference,
+        max_abs_p1_difference,
+    ], dtype=float)
+    if not np.all(np.isfinite(tolerances)) or np.any(tolerances < 0):
+        raise ValueError("T1 equivalence tolerances must be finite and nonnegative")
+    passive_tau = float(passive["tau_us"])
+    active_tau = float(active["tau_us"])
+    values = np.asarray([
+        passive_tau,
+        active_tau,
+        passive["P0"],
+        active["P0"],
+        passive["P1"],
+        active["P1"],
+    ], dtype=float)
+    if not np.all(np.isfinite(values)) or passive_tau <= 0 or active_tau <= 0:
+        raise ValueError("T1 equivalence fits must contain finite positive lifetimes")
+    tau_difference = active_tau - passive_tau
+    relative_tau_difference = tau_difference / passive_tau
+    p0_difference = float(active["P0"] - passive["P0"])
+    p1_difference = float(active["P1"] - passive["P1"])
+    decaying_passed = bool(passive.get("decaying", False) and active.get("decaying", False))
+    tau_passed = abs(relative_tau_difference) <= float(max_relative_tau_difference)
+    p0_passed = abs(p0_difference) <= float(max_abs_p0_difference)
+    p1_passed = abs(p1_difference) <= float(max_abs_p1_difference)
+    checks = {
+        "decaying": decaying_passed,
+        "tau": bool(tau_passed),
+        "P0": bool(p0_passed),
+        "P1": bool(p1_passed),
+    }
+    return {
+        "status": "pass" if all(checks.values()) else "fail",
+        "passive_tau_us": passive_tau,
+        "active_tau_us": active_tau,
+        "difference_us": tau_difference,
+        "relative_difference": relative_tau_difference,
+        "relative_tolerance": float(max_relative_tau_difference),
+        "passive_P0": float(passive["P0"]),
+        "active_P0": float(active["P0"]),
+        "P0_difference": p0_difference,
+        "P0_tolerance": float(max_abs_p0_difference),
+        "passive_P1": float(passive["P1"]),
+        "active_P1": float(active["P1"]),
+        "P1_difference": p1_difference,
+        "P1_tolerance": float(max_abs_p1_difference),
+        "decaying_passed": decaying_passed,
+        "tau_passed": bool(tau_passed),
+        "P0_passed": bool(p0_passed),
+        "P1_passed": bool(p1_passed),
+        "failed_checks": [name for name, passed in checks.items() if not passed],
+    }
+
+
 def assignment_threshold(calibration):
     metrics = calibration.holdout or {}
     if "ground_median" in metrics and "excited_median" in metrics:

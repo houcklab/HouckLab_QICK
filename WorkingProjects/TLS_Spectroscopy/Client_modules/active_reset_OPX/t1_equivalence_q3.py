@@ -30,6 +30,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
     timeout_for_reset_scheme,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
+    evaluate_t1_equivalence,
     fit_t1_decay,
     wilson_interval,
 )
@@ -41,6 +42,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_
     _worst_case_timeout_s,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    build_t1_point_config,
     q3_benchmark_settings,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
@@ -70,8 +72,13 @@ ACTIVE_RELAX_US = q3_benchmark_settings().inter_shot_delay_us
 HOST_WATCHDOG_S = 2.0
 MIN_CONFIDENT_STATE_FRACTION = 0.2
 T1_MATCH_RELATIVE_TOLERANCE = 0.20
+P0_MATCH_ABSOLUTE_TOLERANCE = 0.12
+P1_MATCH_ABSOLUTE_TOLERANCE = 0.12
 RANDOM_SEED = 20260905
 METHODS = ("passive", "opx_unbounded")
+EXCURSION_GAIN = None
+OUTPUT_TAG = "T1_equivalence"
+RAISE_ON_FAILURE = False
 Q3_BENCHMARK_SETTINGS = q3_benchmark_settings()
 SHOT_FIELDS = (
     "round",
@@ -110,7 +117,7 @@ def _write_json(path, values):
 def _make_output_dir():
     now = datetime.now()
     day = Path(outerFolder) / QUBIT / f"{QUBIT}_{now:%Y_%m_%d}"
-    output = day / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_T1_equivalence"
+    output = day / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_{OUTPUT_TAG}"
     output.mkdir(parents=True, exist_ok=False)
     return output
 
@@ -229,21 +236,13 @@ def _fit_methods(rows):
 def _equivalence(fits):
     if set(fits) != set(METHODS):
         return {"status": "fail", "reason": "one or both T1 fits failed"}
-    passive = fits["passive"]
-    active = fits["opx_unbounded"]
-    if not passive["decaying"] or not active["decaying"]:
-        return {"status": "fail", "reason": "one or both fitted curves are not decays"}
-    difference = float(active["tau_us"] - passive["tau_us"])
-    relative = float(difference / passive["tau_us"])
-    passed = abs(relative) <= T1_MATCH_RELATIVE_TOLERANCE
-    return {
-        "status": "pass" if passed else "fail",
-        "passive_tau_us": float(passive["tau_us"]),
-        "active_tau_us": float(active["tau_us"]),
-        "difference_us": difference,
-        "relative_difference": relative,
-        "relative_tolerance": float(T1_MATCH_RELATIVE_TOLERANCE),
-    }
+    return evaluate_t1_equivalence(
+        fits["passive"],
+        fits["opx_unbounded"],
+        max_relative_tau_difference=T1_MATCH_RELATIVE_TOLERANCE,
+        max_abs_p0_difference=P0_MATCH_ABSOLUTE_TOLERANCE,
+        max_abs_p1_difference=P1_MATCH_ABSOLUTE_TOLERANCE,
+    )
 
 
 def _write_summary_csv(path, rows):
@@ -319,7 +318,8 @@ def _plot(rows, fits, equivalence, path):
 
 def main():
     output_dir = _make_output_dir()
-    print(f"\nT1 equivalence | {QUBIT} | passive vs true-unbounded reset")
+    measurement = "T1 flux-ramp" if EXCURSION_GAIN is not None else "T1"
+    print(f"\n{measurement} equivalence | {QUBIT} | passive vs true-unbounded reset")
     print(f"Output: {output_dir}\n")
 
     import qick
@@ -356,6 +356,9 @@ def main():
         "delays_us": delays,
         "passive_relax_us": float(PASSIVE_RELAX_US),
         "active_relax_us": float(ACTIVE_RELAX_US),
+        "excursion_gain": (
+            None if EXCURSION_GAIN is None else float(EXCURSION_GAIN)
+        ),
         "host_watchdog_s": float(HOST_WATCHDOG_S),
         "random_seed": int(RANDOM_SEED),
         "schedule": schedule,
@@ -386,14 +389,14 @@ def main():
     for run_index, (round_index, method, delay_index) in enumerate(schedule, start=1):
         delay_us = float(delays[delay_index])
         reset_scheme, inter_shot_delay_us = _method_config(method)
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "shots": int(SHOTS_PER_POINT_PER_ROUND),
-            "reps": int(SHOTS_PER_POINT_PER_ROUND),
-            "t1_wait_us": delay_us,
-            "opx_reset_scheme": reset_scheme,
-            "opx_inter_shot_delay_us": float(inter_shot_delay_us),
-        })
+        run_cfg = build_t1_point_config(
+            cfg,
+            reset_scheme=reset_scheme,
+            inter_shot_delay_us=inter_shot_delay_us,
+            shots=SHOTS_PER_POINT_PER_ROUND,
+            delay_us=delay_us,
+            excursion_gain=EXCURSION_GAIN,
+        )
         program = OPXResetT1Program(
             soccfg, run_cfg, bundle.payload, bundle.loop
         )
@@ -474,9 +477,17 @@ def main():
             print(f"  {method:<15} fit failed: {fit_errors.get(method)}")
     print(
         f"  equivalence={equivalence['status']} "
-        f"tolerance={100 * T1_MATCH_RELATIVE_TOLERANCE:.0f}%"
+        f"T1 tolerance={100 * T1_MATCH_RELATIVE_TOLERANCE:.0f}%"
     )
+    if "P0_difference" in equivalence:
+        print(
+            f"  delta_P0={equivalence['P0_difference']:+.4f} "
+            f"delta_P1={equivalence['P1_difference']:+.4f} "
+            f"endpoint tolerance={P1_MATCH_ABSOLUTE_TOLERANCE:.2f}"
+        )
     print(f"Completed: {output_dir}")
+    if RAISE_ON_FAILURE and equivalence["status"] != "pass":
+        raise RuntimeError(f"{measurement} active-reset equivalence gate failed")
 
 
 if __name__ == "__main__":
