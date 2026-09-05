@@ -1,6 +1,8 @@
 import csv
 from dataclasses import replace
+import ast
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -177,3 +179,18 @@ def test_post_readout_pi_summary_rejects_delay_shorter_than_read_wait():
             min_second_pi_population=0.5,
             max_abs_second_ground_population=0.3,
         )
+
+
+def test_q3_benchmark_uses_measured_post_readout_pi_plateau():
+    runner = Path(__file__).parents[1] / "benchmark_q3.py"
+    tree = ast.parse(runner.read_text())
+    assignments = {
+        node.targets[0].id: ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "OPX_OVERRIDES"
+    }
+
+    assert assignments["OPX_OVERRIDES"]["opx_feedback_syncdelay_us"] == 8.0
