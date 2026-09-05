@@ -43,6 +43,10 @@ METHOD_SCHEMES = {
 DIAGNOSTIC_CYCLES = 2
 DIAGNOSTIC_HOLD_US = 65.1
 INTER_SHOT_DELAY_US = 1000.0
+ROUNDS = 12
+SHOTS_PER_POINT_PER_ROUND = 40
+T1_DELAYS_US = np.asarray([1.0, 35.0, 100.0, 250.0, 750.0])
+RANDOM_SEED = 20260905
 T1_MATCH_RELATIVE_TOLERANCE = 0.15
 P0_MATCH_ABSOLUTE_TOLERANCE = 0.12
 P1_MATCH_ABSOLUTE_TOLERANCE = 0.12
@@ -53,6 +57,18 @@ def _method_config(method):
     if method not in METHOD_SCHEMES:
         raise ValueError(f"unknown T1 reset-load method {method!r}")
     return METHOD_SCHEMES[method], INTER_SHOT_DELAY_US
+
+
+def _schedule(delays):
+    rng = np.random.default_rng(RANDOM_SEED)
+    output = []
+    for round_index in range(ROUNDS):
+        for delay_index in rng.permutation(len(delays)):
+            for method_index in rng.permutation(len(METHODS)):
+                output.append(
+                    (round_index, METHODS[int(method_index)], int(delay_index))
+                )
+    return output
 
 
 def _final_evaluation(fits, round_fits):
@@ -172,15 +188,13 @@ def main():
     )
 
     benchmark.METHODS = METHODS
-    benchmark.ROUNDS = 3
-    benchmark.SHOTS_PER_POINT_PER_ROUND = 150
-    benchmark.T1_MIN_US = 1.0
-    benchmark.T1_MAX_US = 750.0
-    benchmark.T1_POINTS = 9
+    benchmark.ROUNDS = ROUNDS
+    benchmark.SHOTS_PER_POINT_PER_ROUND = SHOTS_PER_POINT_PER_ROUND
+    benchmark.T1_DELAYS_US = T1_DELAYS_US
     benchmark.PASSIVE_RELAX_US = INTER_SHOT_DELAY_US
     benchmark.ACTIVE_RELAX_US = INTER_SHOT_DELAY_US
     benchmark.EXCURSION_GAIN = -20000.0
-    benchmark.OUTPUT_TAG = "T1_flux_ramp_reset_load"
+    benchmark.OUTPUT_TAG = "T1_flux_ramp_reset_load_paired"
     benchmark.T1_MATCH_RELATIVE_TOLERANCE = T1_MATCH_RELATIVE_TOLERANCE
     benchmark.P0_MATCH_ABSOLUTE_TOLERANCE = P0_MATCH_ABSOLUTE_TOLERANCE
     benchmark.P1_MATCH_ABSOLUTE_TOLERANCE = P1_MATCH_ABSOLUTE_TOLERANCE
@@ -191,6 +205,7 @@ def main():
         "opx_diagnostic_hold_us": DIAGNOSTIC_HOLD_US,
     })
     benchmark._method_config = _method_config
+    benchmark._schedule = _schedule
     benchmark._final_evaluation = _final_evaluation
     benchmark._plot = _plot
     benchmark.main()

@@ -112,6 +112,24 @@ def wilson_interval(successes, trials, z=1.959963984540054):
     return float(center - half), float(center + half)
 
 
+def resolve_t1_delays(*, explicit_delays_us, minimum_us, maximum_us, points):
+    if explicit_delays_us is None:
+        minimum = float(minimum_us)
+        maximum = float(maximum_us)
+        count = int(points)
+        if not np.isfinite(minimum) or not np.isfinite(maximum):
+            raise ValueError("T1 delay limits must be finite")
+        if minimum <= 0 or maximum <= minimum or count < 4:
+            raise ValueError("T1 logspace needs 0 < minimum < maximum and at least 4 points")
+        return np.logspace(np.log10(minimum), np.log10(maximum), count)
+    delays = np.asarray(explicit_delays_us, dtype=float).ravel()
+    if delays.size < 4 or not np.all(np.isfinite(delays)) or np.any(delays <= 0):
+        raise ValueError("explicit T1 delays need at least 4 finite positive values")
+    if np.any(np.diff(delays) <= 0):
+        raise ValueError("explicit T1 delays must be strictly increasing")
+    return delays
+
+
 def fit_t1_decay(times_us, populations, shots=None):
     from scipy.optimize import curve_fit
 
@@ -407,6 +425,7 @@ def evaluate_t1_load_attribution(
     max_relative_tau_difference,
     max_abs_p0_difference,
     max_abs_p1_difference,
+    max_heterogeneity_i2=0.5,
 ):
     fits = dict(fits)
     round_fits = {str(key): dict(value) for key, value in dict(round_fits).items()}
@@ -417,6 +436,9 @@ def evaluate_t1_load_attribution(
         for method, diagnosis in dict(staged_methods).items()
     }
     methods = tuple(staged_methods) + (active_method,)
+    max_heterogeneity_i2 = float(max_heterogeneity_i2)
+    if not np.isfinite(max_heterogeneity_i2) or not 0 <= max_heterogeneity_i2 <= 1:
+        raise ValueError("max_heterogeneity_i2 must be finite and in [0, 1]")
     comparisons = {}
     for method in methods:
         if baseline_method in fits and method in fits:
@@ -444,7 +466,56 @@ def evaluate_t1_load_attribution(
                     "status": "fail",
                     "reason": "missing round fit",
                 }
-        comparisons[method] = {"aggregate": aggregate, "rounds": rounds}
+        log_ratios = []
+        variances = []
+        for values in round_fits.values():
+            if baseline_method not in values or method not in values:
+                continue
+            baseline = values[baseline_method]
+            candidate = values[method]
+            try:
+                baseline_tau = float(baseline["tau_us"])
+                candidate_tau = float(candidate["tau_us"])
+                baseline_error = float(baseline["tau_err_us"])
+                candidate_error = float(candidate["tau_err_us"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            raw = np.asarray(
+                [baseline_tau, candidate_tau, baseline_error, candidate_error],
+                dtype=float,
+            )
+            if not np.all(np.isfinite(raw)) or np.any(raw <= 0):
+                continue
+            log_ratios.append(math.log(candidate_tau / baseline_tau))
+            variances.append(
+                (candidate_error / candidate_tau) ** 2
+                + (baseline_error / baseline_tau) ** 2
+            )
+        if len(log_ratios) >= 2:
+            log_ratios = np.asarray(log_ratios, dtype=float)
+            variances = np.asarray(variances, dtype=float)
+            weights = 1.0 / variances
+            mean = float(np.sum(weights * log_ratios) / np.sum(weights))
+            error = float(np.sqrt(1.0 / np.sum(weights)))
+            q_value = float(np.sum(weights * (log_ratios - mean) ** 2))
+            degrees = len(log_ratios) - 1
+            i2 = max(0.0, (q_value - degrees) / q_value) if q_value > 0 else 0.0
+            meta = {
+                "complete": True,
+                "rounds": len(log_ratios),
+                "ratio": math.exp(mean),
+                "ratio_ci95_low": math.exp(mean - 1.96 * error),
+                "ratio_ci95_high": math.exp(mean + 1.96 * error),
+                "Q": q_value,
+                "I2": i2,
+            }
+        else:
+            meta = {"complete": False, "rounds": len(log_ratios)}
+        comparisons[method] = {
+            "aggregate": aggregate,
+            "rounds": rounds,
+            "meta": meta,
+        }
 
     complete = baseline_method in fits and all(method in fits for method in methods)
     active_comparison = comparisons[active_method]["aggregate"]
@@ -456,16 +527,6 @@ def evaluate_t1_load_attribution(
             < -float(max_relative_tau_difference)
         )
 
-    if not complete:
-        diagnosis = "fit_failed"
-    elif not shortened(active_comparison):
-        diagnosis = "no_active_effect"
-    else:
-        diagnosis = "feedback_dependent_reset"
-        for method, candidate in staged_methods.items():
-            if shortened(comparisons[method]["aggregate"]):
-                diagnosis = candidate
-                break
     for method, values in comparisons.items():
         values["shortened"] = shortened(values["aggregate"])
         values["shortened_rounds"] = [
@@ -473,11 +534,32 @@ def evaluate_t1_load_attribution(
             for round_index, comparison in values["rounds"].items()
             if shortened(comparison)
         ]
+        meta = values["meta"]
+        values["robust_shortened"] = bool(
+            values["shortened"]
+            and meta.get("complete", False)
+            and meta["ratio_ci95_high"] < 1.0
+            and meta["I2"] <= max_heterogeneity_i2
+        )
+
+    if not complete:
+        diagnosis = "fit_failed"
+    elif not shortened(active_comparison):
+        diagnosis = "no_active_effect"
+    elif not comparisons[active_method]["robust_shortened"]:
+        diagnosis = "time_dependent_or_inconclusive"
+    else:
+        diagnosis = "feedback_dependent_reset"
+        for method, candidate in staged_methods.items():
+            if comparisons[method]["robust_shortened"]:
+                diagnosis = candidate
+                break
     return {
         "status": "complete" if complete else "fail",
         "diagnosis": diagnosis,
         "baseline_method": baseline_method,
         "active_method": active_method,
+        "max_heterogeneity_i2": max_heterogeneity_i2,
         "comparisons": comparisons,
     }
 

@@ -33,6 +33,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     evaluate_t1_equivalence,
     fit_t1_decay,
     fit_t1_rounds,
+    resolve_t1_delays,
     wilson_interval,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_q3 import (
@@ -68,6 +69,7 @@ SHOTS_PER_POINT_PER_ROUND = 250
 T1_MIN_US = 1.0
 T1_MAX_US = 750.0
 T1_POINTS = 21
+T1_DELAYS_US = None
 PASSIVE_RELAX_US = 1000.0
 ACTIVE_RELAX_US = q3_benchmark_settings().inter_shot_delay_us
 HOST_WATCHDOG_S = 2.0
@@ -339,8 +341,11 @@ def main():
     cfg.update(Q3_BENCHMARK_SETTINGS.opx_overrides())
     cfg["opx_unbounded_watchdog_s"] = float(HOST_WATCHDOG_S)
     cfg.pop("flux_tail_compensation", None)
-    delays = np.logspace(
-        np.log10(T1_MIN_US), np.log10(T1_MAX_US), T1_POINTS
+    delays = resolve_t1_delays(
+        explicit_delays_us=T1_DELAYS_US,
+        minimum_us=T1_MIN_US,
+        maximum_us=T1_MAX_US,
+        points=T1_POINTS,
     )
     schedule = _schedule(delays)
     capacity = max_records(

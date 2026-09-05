@@ -782,6 +782,7 @@ def test_t1_load_attribution_reports_the_first_shortening_stage(taus, expected):
     fits = {
         method: {
             "tau_us": tau,
+            "tau_err_us": 5.0,
             "P0": 0.03,
             "P1": 0.82,
             "decaying": True,
@@ -814,6 +815,64 @@ def test_t1_load_attribution_reports_the_first_shortening_stage(taus, expected):
     assert set(result["comparisons"]) == set(methods[1:])
 
 
+def test_t1_load_attribution_rejects_a_heterogeneous_apparent_cause():
+    methods = (
+        "passive_1000",
+        "park_hold_1000",
+        "readout_x2_1000",
+        "pi_readout_x2_1000",
+        "active_1000",
+    )
+    aggregate_taus = (115.25, 85.30, 103.66, 98.78, 97.86)
+    fits = {
+        method: {
+            "tau_us": tau,
+            "tau_err_us": 7.0,
+            "P0": 0.03,
+            "P1": 0.78,
+            "decaying": True,
+        }
+        for method, tau in zip(methods, aggregate_taus)
+    }
+    round_taus = {
+        "0": (98.52, 87.48, 128.77, 95.53, 113.49),
+        "1": (139.90, 68.05, 86.87, 106.16, 88.40),
+        "2": (102.49, 108.13, 93.69, 92.20, 89.81),
+    }
+    round_fits = {
+        round_index: {
+            method: {
+                "tau_us": tau,
+                "tau_err_us": 10.0,
+                "P0": 0.03,
+                "P1": 0.78,
+                "decaying": True,
+            }
+            for method, tau in zip(methods, taus)
+        }
+        for round_index, taus in round_taus.items()
+    }
+
+    result = analysis.evaluate_t1_load_attribution(
+        fits,
+        round_fits,
+        baseline_method="passive_1000",
+        active_method="active_1000",
+        staged_methods={
+            "park_hold_1000": "park_dwell",
+            "readout_x2_1000": "reset_readout_load",
+            "pi_readout_x2_1000": "reset_pi_load",
+        },
+        max_relative_tau_difference=0.15,
+        max_abs_p0_difference=0.12,
+        max_abs_p1_difference=0.12,
+    )
+
+    assert result["diagnosis"] == "time_dependent_or_inconclusive"
+    assert result["comparisons"]["park_hold_1000"]["robust_shortened"] is False
+    assert result["comparisons"]["active_1000"]["robust_shortened"] is False
+
+
 def test_t1_load_attribution_runner_holds_recovery_constant_across_loads():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
         t1_flux_ramp_reset_load_q3 as runner,
@@ -832,3 +891,29 @@ def test_t1_load_attribution_runner_holds_recovery_constant_across_loads():
     }
     assert runner.DIAGNOSTIC_CYCLES == 2
     assert runner.DIAGNOSTIC_HOLD_US == pytest.approx(65.1)
+
+
+def test_t1_runner_resolves_explicit_delays_without_replacing_them_with_logspace():
+    delays = analysis.resolve_t1_delays(
+        explicit_delays_us=(1.0, 35.0, 100.0, 250.0, 750.0),
+        minimum_us=1.0,
+        maximum_us=750.0,
+        points=9,
+    )
+
+    assert delays.tolist() == [1.0, 35.0, 100.0, 250.0, 750.0]
+
+
+def test_reset_load_schedule_keeps_each_delay_matched_across_methods():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_reset_load_q3 as runner,
+    )
+
+    schedule = runner._schedule(np.asarray([1.0, 100.0, 750.0]))
+
+    assert len(schedule) == runner.ROUNDS * 3 * len(runner.METHODS)
+    for start in range(0, len(schedule), len(runner.METHODS)):
+        group = schedule[start:start + len(runner.METHODS)]
+        assert len({round_index for round_index, _, _ in group}) == 1
+        assert len({delay_index for _, _, delay_index in group}) == 1
+        assert {method for _, method, _ in group} == set(runner.METHODS)
