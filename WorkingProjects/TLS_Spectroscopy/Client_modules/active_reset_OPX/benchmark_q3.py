@@ -105,6 +105,7 @@ MAX_SHOTS_PER_TPROC_BLOCK = 400
 
 Q3_BENCHMARK_SETTINGS = q3_benchmark_settings()
 OPX_OVERRIDES = {
+    **Q3_BENCHMARK_SETTINGS.opx_overrides(),
     "opx_max_reset_attempts": 8,
     "opx_read_delay_us": 2.0,
     "opx_reset_settle_us": 0.05,
@@ -116,7 +117,6 @@ OPX_OVERRIDES = {
     "opx_timeout_margin": 3.0,
     "opx_unbounded_watchdog_s": 2.0,
     "opx_park_latch_us": 0.02,
-    **Q3_BENCHMARK_SETTINGS.opx_overrides(),
 }
 
 

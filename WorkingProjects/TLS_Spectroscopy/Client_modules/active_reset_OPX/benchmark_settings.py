@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class Q3BenchmarkSettings:
     feedback_syncdelay_us: float
     loop_recovery_us: float
+    inter_shot_delay_us: float
     ground_confidence_fidelity: float
     qua_threshold_steps: int
 
@@ -12,6 +13,7 @@ class Q3BenchmarkSettings:
         return {
             "opx_feedback_syncdelay_us": float(self.feedback_syncdelay_us),
             "opx_loop_recovery_us": float(self.loop_recovery_us),
+            "opx_inter_shot_delay_us": float(self.inter_shot_delay_us),
         }
 
     def calibration_options(self):
@@ -25,6 +27,7 @@ def q3_benchmark_settings():
     return Q3BenchmarkSettings(
         feedback_syncdelay_us=8.0,
         loop_recovery_us=25.0,
+        inter_shot_delay_us=50.0,
         ground_confidence_fidelity=0.7,
         qua_threshold_steps=100,
     )

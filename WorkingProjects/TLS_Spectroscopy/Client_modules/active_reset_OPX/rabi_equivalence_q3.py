@@ -37,7 +37,7 @@ RABI_SHOTS = 200
 GAIN_POINTS = 9
 GAIN_MAX_FACTOR = 2.0
 PASSIVE_RESET_US = 400.0
-ACTIVE_INTER_SHOT_US = 25.0
+ACTIVE_INTER_SHOT_US = q3_benchmark_settings().inter_shot_delay_us
 COMPACT_INTER_SHOT_US = (400.0, 25.0, 50.0, 100.0, 200.0)
 HOST_WATCHDOG_S = 2.0
 MIN_CONFIDENT_STATE_FRACTION = 0.2
@@ -364,8 +364,18 @@ def main():
     fig, axis = plt.subplots(figsize=(8, 5))
     axis.plot(gains, passive, "o-", label="passive 400 us")
     axis.plot(gains, compact, "o-", label="compact passive 400 us")
-    axis.plot(gains, compact_short, "o-", label="compact passive 25 us")
-    axis.plot(gains, active, "o-", label="opx unbounded 25 us")
+    axis.plot(
+        gains,
+        compact_short,
+        "o-",
+        label=f"compact passive {ACTIVE_INTER_SHOT_US:g} us",
+    )
+    axis.plot(
+        gains,
+        active,
+        "o-",
+        label=f"opx unbounded {ACTIVE_INTER_SHOT_US:g} us",
+    )
     axis.set_xlabel("Qubit gain [DAC]")
     axis.set_ylabel("Excited population")
     axis.set_ylim(-0.05, 1.05)
@@ -377,8 +387,14 @@ def main():
     print(f"status={summary['status']}")
     print(f"curve_rmse={rmse:.6f}")
     print(f"compact_vs_legacy_rmse={compact_rmse:.6f}")
-    print(f"compact_25_vs_compact_400_rmse={short_compact_rmse:.6f}")
-    print(f"active_vs_compact_25_rmse={active_short_rmse:.6f}")
+    print(
+        f"compact_{ACTIVE_INTER_SHOT_US:g}_vs_compact_400_rmse="
+        f"{short_compact_rmse:.6f}"
+    )
+    print(
+        f"active_vs_compact_{ACTIVE_INTER_SHOT_US:g}_rmse="
+        f"{active_short_rmse:.6f}"
+    )
     print(f"diagnosis={diagnosis}")
     print(f"passive_peak_gain_dac={passive_peak}")
     print(f"active_peak_gain_dac={active_peak}")
