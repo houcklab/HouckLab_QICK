@@ -46,6 +46,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibratio
     save_raw_calibration,
     validate_confident_calibration,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    q3_benchmark_settings,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
 )
@@ -91,8 +94,6 @@ PROFILES = {
 }
 
 RANDOM_SEED = 20260904
-FALSE_GROUND_ACCEPT_LIMIT = 0.02
-FALSE_PI_LIMIT = 0.02
 MIN_CONFIDENT_STATE_FRACTION = 0.2
 CURRENT_RESET_ITERS = 3
 
@@ -100,10 +101,10 @@ CURRENT_RESET_ITERS = 3
 # Smaller chunks save progress more often and make failures easier to localize.
 MAX_SHOTS_PER_TPROC_BLOCK = 400
 
+Q3_BENCHMARK_SETTINGS = q3_benchmark_settings()
 OPX_OVERRIDES = {
     "opx_max_reset_attempts": 8,
     "opx_read_delay_us": 2.0,
-    "opx_feedback_syncdelay_us": 8.0,
     "opx_reset_settle_us": 0.05,
     "opx_verification_delay_us": 0.25,
     "opx_inter_shot_delay_us": 400.0,
@@ -112,6 +113,7 @@ OPX_OVERRIDES = {
     "opx_poll_interval_s": 0.002,
     "opx_timeout_margin": 3.0,
     "opx_park_latch_us": 0.02,
+    **Q3_BENCHMARK_SETTINGS.opx_overrides(),
 }
 
 
@@ -354,8 +356,7 @@ def main():
             soccfg,
             cfg,
             shots=int(profile["calibration_shots"]),
-            false_ground_limit=FALSE_GROUND_ACCEPT_LIMIT,
-            false_pi_limit=FALSE_PI_LIMIT,
+            **Q3_BENCHMARK_SETTINGS.calibration_options(),
             metadata=metadata,
         )
         calibration_path = save_calibration(output_dir / "calibration.json", bundle)

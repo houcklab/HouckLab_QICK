@@ -1,8 +1,6 @@
 import csv
 from dataclasses import replace
-import ast
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,6 +17,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibratio
     CalibrationBundle,
     load_calibration,
     save_calibration,
+    threshold_policy_metadata,
     validate_confident_calibration,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
@@ -113,6 +112,21 @@ def test_calibration_rejects_a_loop_classifier_with_no_confident_states():
         validate_confident_calibration(bundle, min_confident_fraction=0.2)
 
 
+def test_qua_calibration_metadata_does_not_claim_tail_error_limits():
+    metadata = threshold_policy_metadata(
+        false_ground_limit=0.01,
+        false_pi_limit=0.01,
+        ground_confidence_fidelity=0.7,
+        qua_threshold_steps=100,
+    )
+
+    assert metadata == {
+        "threshold_policy": "qua_fidelity",
+        "ground_confidence_fidelity": 0.7,
+        "qua_threshold_steps": 100,
+    }
+
+
 def test_incremental_csv_has_one_row_per_shot_and_preserves_method(tmp_path):
     axis = ReferenceAxis.from_centers(0, 0, 100, 0)
     records = [
@@ -179,18 +193,3 @@ def test_post_readout_pi_summary_rejects_delay_shorter_than_read_wait():
             min_second_pi_population=0.5,
             max_abs_second_ground_population=0.3,
         )
-
-
-def test_q3_benchmark_uses_measured_post_readout_pi_plateau():
-    runner = Path(__file__).parents[1] / "benchmark_q3.py"
-    tree = ast.parse(runner.read_text())
-    assignments = {
-        node.targets[0].id: ast.literal_eval(node.value)
-        for node in tree.body
-        if isinstance(node, ast.Assign)
-        and len(node.targets) == 1
-        and isinstance(node.targets[0], ast.Name)
-        and node.targets[0].id == "OPX_OVERRIDES"
-    }
-
-    assert assignments["OPX_OVERRIDES"]["opx_feedback_syncdelay_us"] == 8.0

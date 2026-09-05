@@ -1,11 +1,15 @@
 import numpy as np
 import pytest
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    q3_benchmark_settings,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
     ClassifierCalibration,
     Zone,
     classify,
     fit_classifier,
+    qua_thresholds,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.config import (
     OPXResetConfig,
@@ -37,6 +41,65 @@ def test_fit_orients_projection_from_ground_toward_excited():
     assert cal.context == "payload"
     assert cal.holdout["false_ground_accept"] <= 0.02
     assert cal.holdout["false_pi"] <= 0.02
+
+
+def test_qua_thresholds_use_first_confident_and_peak_fidelity_points():
+    ground = np.repeat(np.arange(-9, 1), 4)
+    excited = np.repeat(np.arange(0, 10), 4)
+
+    thresholds = qua_thresholds(
+        ground,
+        excited,
+        ground_confidence_fidelity=0.7,
+        threshold_steps=7,
+    )
+
+    assert thresholds["ground"] == -3
+    assert thresholds["excited"] == 0
+    assert thresholds["peak_fidelity"] == pytest.approx(0.95)
+
+
+def test_classifier_can_fit_the_qua_confidence_policy():
+    ground_i = np.repeat(np.arange(-9, 1), 4)
+    excited_i = np.repeat(np.arange(0, 10), 4)
+    zeros = np.zeros(40, dtype=np.int64)
+
+    calibration = fit_classifier(
+        ground_i,
+        zeros,
+        excited_i,
+        zeros,
+        context="loop",
+        ground_confidence_fidelity=0.7,
+        qua_threshold_steps=7,
+    )
+
+    assert calibration.ground_threshold == -3 * calibration.c_int
+    assert calibration.excited_threshold == 0
+    assert calibration.holdout["ground_accept"] == pytest.approx(0.7)
+    assert calibration.holdout["excited_fire"] == pytest.approx(0.9)
+
+
+def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
+    settings = q3_benchmark_settings()
+    reset = OPXResetConfig.from_mapping(settings.opx_overrides())
+    ground_i = np.repeat(np.arange(-9, 1), 4)
+    excited_i = np.repeat(np.arange(0, 10), 4)
+    zeros = np.zeros(40, dtype=np.int64)
+    calibration = fit_classifier(
+        ground_i,
+        zeros,
+        excited_i,
+        zeros,
+        context="loop",
+        **settings.calibration_options(),
+    )
+
+    assert reset.feedback_syncdelay_us == 8.0
+    assert calibration.holdout["ground_accept"] == pytest.approx(0.5)
+    assert calibration.holdout["excited_fire"] == pytest.approx(1.0)
+    assert calibration.holdout["ground_confidence_fidelity"] == pytest.approx(0.7)
+    assert calibration.holdout["threshold_steps"] == 100
 
 
 def test_classifier_uses_strict_three_zone_boundaries():

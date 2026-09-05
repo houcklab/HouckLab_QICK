@@ -67,6 +67,26 @@ def _config_digest(cfg):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def threshold_policy_metadata(
+    *,
+    false_ground_limit,
+    false_pi_limit,
+    ground_confidence_fidelity,
+    qua_threshold_steps,
+):
+    if ground_confidence_fidelity is None:
+        return {
+            "threshold_policy": "tail_limits",
+            "false_ground_limit": float(false_ground_limit),
+            "false_pi_limit": float(false_pi_limit),
+        }
+    return {
+        "threshold_policy": "qua_fidelity",
+        "ground_confidence_fidelity": float(ground_confidence_fidelity),
+        "qua_threshold_steps": int(qua_threshold_steps),
+    }
+
+
 def _capture_context(soc, soccfg, cfg, *, context, shots):
     from .programs import TimingMatchedReferenceProgram
 
@@ -96,6 +116,8 @@ def acquire_calibration(
     shots=4000,
     false_ground_limit=0.01,
     false_pi_limit=0.01,
+    ground_confidence_fidelity=None,
+    qua_threshold_steps=100,
     metadata=None,
 ):
     shots = int(shots)
@@ -108,12 +130,16 @@ def acquire_calibration(
         payload_raw["excited"]["i"], payload_raw["excited"]["q"],
         context="payload", false_ground_limit=false_ground_limit,
         false_pi_limit=false_pi_limit,
+        ground_confidence_fidelity=ground_confidence_fidelity,
+        qua_threshold_steps=qua_threshold_steps,
     )
     loop = fit_classifier(
         loop_raw["ground"]["i"], loop_raw["ground"]["q"],
         loop_raw["excited"]["i"], loop_raw["excited"]["q"],
         context="loop", false_ground_limit=false_ground_limit,
         false_pi_limit=false_pi_limit,
+        ground_confidence_fidelity=ground_confidence_fidelity,
+        qua_threshold_steps=qua_threshold_steps,
     )
     axis = ReferenceAxis.from_centers(
         np.mean(loop_raw["ground"]["i"]),
@@ -125,9 +151,13 @@ def acquire_calibration(
     bundle_metadata.update({
         "shots_per_state_per_context": shots,
         "config_sha256": _config_digest(cfg),
-        "false_ground_limit": float(false_ground_limit),
-        "false_pi_limit": float(false_pi_limit),
     })
+    bundle_metadata.update(threshold_policy_metadata(
+        false_ground_limit=false_ground_limit,
+        false_pi_limit=false_pi_limit,
+        ground_confidence_fidelity=ground_confidence_fidelity,
+        qua_threshold_steps=qua_threshold_steps,
+    ))
     try:
         import qick
         bundle_metadata["qick_version"] = str(qick.__version__)
