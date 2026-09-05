@@ -168,6 +168,38 @@ def test_no_reset_still_uses_payload_and_independent_verification_readouts():
     assert events == ["up", "payload", "verification", "down"]
 
 
+def test_benchmark_shot_dispatches_unbounded_reset_before_verification():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_benchmark_shot(
+        prog,
+        page=1,
+        regs=regs,
+        preparation=1,
+        reset_scheme="opx_unbounded",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        max_reset_attempts=1,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("prep"),
+        measure_project=lambda calibration, context: events.append(context),
+        measure_verification=lambda: events.append("verification"),
+        play_pi=lambda: events.append("pi"),
+        label_prefix="UNBOUNDED",
+    )
+
+    assert events[:3] == ["up", "prep", "payload"]
+    assert events[-2:] == ["verification", "down"]
+    assert "loop" in events
+    assert "pi" in events
+
+
 def test_loop_reference_matches_the_runtime_feedback_timing():
     events = []
 

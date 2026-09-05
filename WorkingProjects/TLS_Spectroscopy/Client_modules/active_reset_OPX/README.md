@@ -42,8 +42,8 @@ the park path/correction has been repaired and revalidated.
 
 ## What is different from the current QICK reset
 
-The payload experiment's final measurement is decision zero. The tProc then
-executes this logic without returning to Python:
+The payload experiment's final measurement is decision zero. The bounded
+`opx` mode then executes this logic without returning to Python:
 
 1. confidently ground: exit immediately;
 2. confidently excited: play X180, then remeasure;
@@ -132,6 +132,13 @@ The order of all six method/preparation conditions is randomized independently
 within each block. Completed data are appended to CSV after each tProc chunk, so
 a later hardware fault does not erase earlier shots.
 
+The `opx_unbounded` mode implements the QUA `while_` structure directly with a
+backward tProc branch. Its normal path has no attempt ceiling and exits only
+after the reset readout enters the confident-ground zone. A separate host
+watchdog aborts the entire tProc block and zeros every generator if a classifier
+or hardware fault prevents exit; the watchdog is not a reset outcome and does
+not silently admit the shot.
+
 True equivalence still requires same-day QUA data with matching preparation and
 verification definitions. The design promotion gate is in
 `docs/superpowers/specs/2026-09-04-opx-active-reset-design.md`.
@@ -163,6 +170,18 @@ preparation. It selects the smallest ceiling meeting the same 1% timeout and
 C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
   C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\attempt_limit_sweep_q3.py
 ```
+
+The attempt-limit sweep showed that the fixed ceiling was truncating valid
+reset trajectories. Test the direct QUA-style loop with:
+
+```powershell
+C:\Users\my\Documents\GitHub\HouckLab_QICK\venv\Scripts\python.exe `
+  C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\TLS_Spectroscopy\Client_modules\active_reset_OPX\unbounded_reset_q3.py
+```
+
+This runner compares no reset with `opx_unbounded` in four interleaved blocks,
+records the complete attempt-count distribution, saves the generated backward-
+branch assembly, and uses a two-second per-block host watchdog as a fault exit.
 
 ## Reusing a calibration
 
@@ -201,4 +220,5 @@ AC-coupled physical output path and does not replace a DC-coupled flux source.
 - `benchmark_q3.py`: standalone user-editable q3 runner;
 - `feedback_delay_sweep_q3.py`: timing-matched reset-ceiling diagnostic;
 - `attempt_limit_sweep_q3.py`: interleaved safety-ceiling diagnostic;
+- `unbounded_reset_q3.py`: direct QUA-style unbounded-loop diagnostic;
 - `tests/`: hardware-independent regression suite.

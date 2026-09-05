@@ -72,6 +72,8 @@ def test_summary_includes_timeouts_in_unconditional_residual():
     assert summary["timeout_fraction"] == 0.5
     assert summary["verification_excited_fraction"] == 0.5
     assert summary["verification_population"] == pytest.approx(0.5)
+    assert summary["max_reset_attempts"] == 8
+    assert summary["p99_reset_attempts"] == pytest.approx(7.93)
 
 
 def test_calibration_bundle_round_trips_through_json(tmp_path):

@@ -22,6 +22,23 @@ def chunk_sizes(total_shots, capacity):
     return [capacity] * full + ([remainder] if remainder else [])
 
 
+def timeout_for_reset_scheme(
+    reset_scheme,
+    *,
+    bounded_timeout_s,
+    unbounded_watchdog_s,
+):
+    bounded_timeout_s = float(bounded_timeout_s)
+    if not np.isfinite(bounded_timeout_s) or bounded_timeout_s <= 0:
+        raise ValueError("bounded timeout must be positive and finite")
+    if str(reset_scheme).strip().lower() != "opx_unbounded":
+        return bounded_timeout_s
+    unbounded_watchdog_s = float(unbounded_watchdog_s)
+    if not np.isfinite(unbounded_watchdog_s) or unbounded_watchdog_s <= 0:
+        raise ValueError("unbounded reset watchdog must be positive and finite")
+    return unbounded_watchdog_s
+
+
 def dmem_words_from_soccfg(soccfg):
     try:
         words = int(soccfg["tprocs"][0]["dmem_size"])

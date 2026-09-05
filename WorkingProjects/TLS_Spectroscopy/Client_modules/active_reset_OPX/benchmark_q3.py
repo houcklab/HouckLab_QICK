@@ -33,6 +33,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
     chunk_sizes,
     dmem_words_from_soccfg,
     run_dmem_block,
+    timeout_for_reset_scheme,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     append_records_csv,
@@ -112,6 +113,7 @@ OPX_OVERRIDES = {
     "opx_done_addr": 1,
     "opx_poll_interval_s": 0.002,
     "opx_timeout_margin": 3.0,
+    "opx_unbounded_watchdog_s": 2.0,
     "opx_park_latch_us": 0.02,
     **Q3_BENCHMARK_SETTINGS.opx_overrides(),
 }
@@ -200,7 +202,7 @@ def _run_custom_condition(
         program = OPXResetBenchmarkProgram(
             soccfg, run_cfg, bundle.payload, bundle.loop
         )
-        if not assembly_saved and method == "opx":
+        if not assembly_saved and method in ("opx", "opx_unbounded"):
             Path(assembly_path).write_text(program.asm())
             binary = np.asarray(program.compile(), dtype=np.uint64)
             Path(str(assembly_path) + ".sha256").write_text(
@@ -211,7 +213,11 @@ def _run_custom_condition(
             records = run_dmem_block(
                 soc,
                 program,
-                timeout_s=_worst_case_timeout_s(run_cfg, chunk),
+                timeout_s=timeout_for_reset_scheme(
+                    method,
+                    bounded_timeout_s=_worst_case_timeout_s(run_cfg, chunk),
+                    unbounded_watchdog_s=run_cfg["opx_unbounded_watchdog_s"],
+                ),
                 poll_interval_s=float(run_cfg["opx_poll_interval_s"]),
             )
         except AcquisitionTimeout as exc:

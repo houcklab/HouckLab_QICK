@@ -61,6 +61,38 @@ def simulate_reset(decisions, payload_calibration, loop_calibration, *, max_rese
     return ResetOutcome(status, attempts, pi_pulses, value, tuple(zones))
 
 
+def simulate_unbounded_reset(decisions, payload_calibration, loop_calibration):
+    decisions = [int(value) for value in decisions]
+    if not decisions:
+        raise ValueError("at least the payload decision is required")
+
+    attempts = 0
+    pi_pulses = 0
+    value = decisions[0]
+    calibration = payload_calibration
+    zones = []
+    while True:
+        zone = classify(value, calibration)
+        zones.append(zone)
+        if zone is Zone.GROUND:
+            return ResetOutcome(
+                TerminalStatus.CONFIRMED_GROUND,
+                attempts,
+                pi_pulses,
+                value,
+                tuple(zones),
+            )
+        if zone is Zone.EXCITED:
+            pi_pulses += 1
+        attempts += 1
+        if len(decisions) <= attempts:
+            raise ValueError(
+                f"decision sequence ended before remeasurement {attempts}"
+            )
+        value = decisions[attempts]
+        calibration = loop_calibration
+
+
 def _comparison_ops(excited_above):
     if bool(excited_above):
         return "<=", "<="
@@ -147,3 +179,75 @@ def emit_reset_state_machine(
         "OPX reset confirmed ground",
     )
     prog.label(terminal_label)
+
+
+def emit_unbounded_reset_state_machine(
+    prog,
+    *,
+    page,
+    regs,
+    payload_calibration,
+    loop_calibration,
+    measure_next,
+    play_pi,
+    label_prefix,
+):
+    required = {"z", "ground", "excited", "attempts", "pi_count", "status"}
+    missing = sorted(required - set(regs))
+    if missing:
+        raise ValueError(f"missing reset registers: {missing}")
+    selected = {name: int(regs[name]) for name in required}
+    if len(set(selected.values())) != len(selected):
+        raise ValueError(f"reset registers must be distinct: {selected}")
+
+    ground_label = f"{label_prefix}_GROUND"
+    payload_no_pi_label = f"{label_prefix}_PAYLOAD_NO_PI"
+    loop_label = f"{label_prefix}_LOOP"
+    loop_no_pi_label = f"{label_prefix}_LOOP_NO_PI"
+    prog.regwi(page, regs["attempts"], 0, "OPX reset attempts")
+    prog.regwi(page, regs["pi_count"], 0, "OPX reset pi count")
+    _write_thresholds(prog, page, regs, payload_calibration, "payload")
+
+    ground_op, no_pi_op = _comparison_ops(
+        payload_calibration.assembly_plan()["excited_above"]
+    )
+    prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+    prog.condj(
+        page,
+        regs["z"],
+        no_pi_op,
+        regs["excited"],
+        payload_no_pi_label,
+    )
+    play_pi()
+    prog.mathi(page, regs["pi_count"], regs["pi_count"], "+", 1)
+    prog.label(payload_no_pi_label)
+    prog.mathi(page, regs["attempts"], regs["attempts"], "+", 1)
+    measure_next()
+    _write_thresholds(prog, page, regs, loop_calibration, "loop")
+
+    ground_op, no_pi_op = _comparison_ops(
+        loop_calibration.assembly_plan()["excited_above"]
+    )
+    prog.label(loop_label)
+    prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+    prog.condj(
+        page,
+        regs["z"],
+        no_pi_op,
+        regs["excited"],
+        loop_no_pi_label,
+    )
+    play_pi()
+    prog.mathi(page, regs["pi_count"], regs["pi_count"], "+", 1)
+    prog.label(loop_no_pi_label)
+    prog.mathi(page, regs["attempts"], regs["attempts"], "+", 1)
+    measure_next()
+    prog.condj(page, regs["attempts"], "==", regs["attempts"], loop_label)
+    prog.label(ground_label)
+    prog.regwi(
+        page,
+        regs["status"],
+        int(TerminalStatus.CONFIRMED_GROUND),
+        "OPX reset confirmed ground",
+    )

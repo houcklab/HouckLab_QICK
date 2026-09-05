@@ -87,6 +87,8 @@ def summarize_records(records, axis, assignment):
             "verification_excited_fraction": float("nan"),
             "verification_excited_ci95": (float("nan"), float("nan")),
             "verification_population": float("nan"),
+            "max_reset_attempts": float("nan"),
+            "p99_reset_attempts": float("nan"),
         }
     excited = verification_excited(records, assignment)
     timeouts = np.asarray([
@@ -113,6 +115,8 @@ def summarize_records(records, axis, assignment):
         "verification_population": axis.mean_population(i_values, q_values),
         "mean_reset_attempts": float(np.mean(attempts)),
         "p95_reset_attempts": float(np.percentile(attempts, 95)),
+        "p99_reset_attempts": float(np.percentile(attempts, 99)),
+        "max_reset_attempts": int(np.max(attempts)),
         "mean_pi_pulses": (
             float(np.mean(pi_pulses[pi_pulses >= 0]))
             if np.any(pi_pulses >= 0) else float("nan")

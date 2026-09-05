@@ -5,6 +5,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
     AcquisitionTimeout,
     chunk_sizes,
     run_dmem_block,
+    timeout_for_reset_scheme,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
     RECORD_WORDS,
@@ -84,6 +85,28 @@ def test_chunk_sizes_cover_requested_shots_without_exceeding_capacity():
     assert chunk_sizes(0, 508) == []
     with pytest.raises(ValueError, match="capacity"):
         chunk_sizes(10, 0)
+
+
+def test_unbounded_reset_uses_independent_host_watchdog():
+    assert timeout_for_reset_scheme(
+        "opx_unbounded",
+        bounded_timeout_s=15.0,
+        unbounded_watchdog_s=1.5,
+    ) == pytest.approx(1.5)
+    assert timeout_for_reset_scheme(
+        "opx",
+        bounded_timeout_s=15.0,
+        unbounded_watchdog_s=1.5,
+    ) == pytest.approx(15.0)
+
+
+def test_unbounded_reset_rejects_a_disabled_host_watchdog():
+    with pytest.raises(ValueError, match="watchdog"):
+        timeout_for_reset_scheme(
+            "opx_unbounded",
+            bounded_timeout_s=15.0,
+            unbounded_watchdog_s=0.0,
+        )
 
 
 def test_successful_block_uses_direct_tproc_execution_and_decodes_records():

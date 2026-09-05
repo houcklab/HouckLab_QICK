@@ -4,7 +4,7 @@ import numpy as np
 
 from .classifier import ClassifierCalibration
 from .config import OPXResetConfig
-from .control_flow import emit_reset_state_machine
+from .control_flow import emit_reset_state_machine, emit_unbounded_reset_state_machine
 from .records import RECORD_WORDS, TerminalStatus, signed32
 
 
@@ -123,12 +123,23 @@ def emit_benchmark_shot(
             play_pi=play_pi,
             label_prefix=label_prefix,
         )
+    elif scheme == "opx_unbounded":
+        emit_unbounded_reset_state_machine(
+            prog,
+            page=page,
+            regs=regs,
+            payload_calibration=payload_calibration,
+            loop_calibration=loop_calibration,
+            measure_next=lambda: measure_project(loop_calibration, "loop"),
+            play_pi=play_pi,
+            label_prefix=label_prefix,
+        )
     elif scheme == "none":
         prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
         prog.regwi(page, regs["pi_count"], 0, "no-reset pi count")
         prog.regwi(page, regs["status"], int(TerminalStatus.NO_RESET), "no reset")
     else:
-        raise ValueError("reset_scheme must be 'opx' or 'none'")
+        raise ValueError("reset_scheme must be 'opx', 'opx_unbounded', or 'none'")
 
     measure_verification()
     emit_record(prog, page=page, regs=regs, preparation=preparation)

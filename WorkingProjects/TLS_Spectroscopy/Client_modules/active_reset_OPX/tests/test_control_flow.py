@@ -6,7 +6,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier
     ClassifierCalibration,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.control_flow import (
+    emit_unbounded_reset_state_machine,
     emit_reset_state_machine,
+    simulate_unbounded_reset,
     simulate_reset,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
@@ -125,6 +127,29 @@ def _build(max_attempts=8, calibration=CAL):
     return prog.asm
 
 
+def _build_unbounded(calibration=CAL, loop_calibration=None):
+    prog = RecordingProgram()
+    loop_calibration = calibration if loop_calibration is None else loop_calibration
+
+    def measure_next():
+        prog.asm.append(("measure_next", REGS["z"]))
+
+    def play_pi():
+        prog.asm.append(("pulse",))
+
+    emit_unbounded_reset_state_machine(
+        prog,
+        page=0,
+        regs=REGS,
+        payload_calibration=calibration,
+        loop_calibration=loop_calibration,
+        measure_next=measure_next,
+        play_pi=play_pi,
+        label_prefix="TEST_UNBOUNDED",
+    )
+    return prog.asm
+
+
 def _interpret(asm, decisions):
     labels = {op[1]: idx for idx, op in enumerate(asm) if op[0] == "label"}
     regs = {REGS["z"]: int(decisions[0])}
@@ -138,7 +163,10 @@ def _interpret(asm, decisions):
         "==": lambda a, b: a == b,
     }
     pc = 0
+    executed = 0
     while pc < len(asm):
+        executed += 1
+        assert executed < 10000
         op = asm[pc]
         if op[0] == "regwi":
             regs[op[1]] = op[2]
@@ -157,7 +185,6 @@ def _interpret(asm, decisions):
             regs[op[1]] = int(decisions[min(read_index, len(decisions) - 1)])
             read_index += 1
         pc += 1
-        assert pc < 10000
     return {
         "attempts": regs[REGS["attempts"]],
         "pi_pulses": regs[REGS["pi_count"]],
@@ -210,6 +237,42 @@ def test_emitter_supports_a_bounded_24_attempt_qua_approximation():
         "measures": 24,
         "pulses": 0,
     }
+
+
+def test_unbounded_model_and_emitter_exit_after_one_hundred_corrective_attempts():
+    decisions = [0] * 100 + [-11]
+
+    model = simulate_unbounded_reset(decisions, CAL, CAL)
+    observed = _interpret(_build_unbounded(), decisions)
+
+    assert model.terminal_status is TerminalStatus.CONFIRMED_GROUND
+    assert model.reset_attempts == 100
+    assert model.pi_pulses == 0
+    assert observed == {
+        "attempts": 100,
+        "pi_pulses": 0,
+        "status": TerminalStatus.CONFIRMED_GROUND,
+        "measures": 100,
+        "pulses": 0,
+    }
+
+
+def test_unbounded_emitter_switches_comparison_orientation_after_payload():
+    reversed_loop = replace(
+        CAL,
+        context="loop",
+        c_int=-1,
+        ground_threshold=-10,
+        excited_threshold=10,
+    )
+
+    observed = _interpret(
+        _build_unbounded(loop_calibration=reversed_loop),
+        [0, 11],
+    )
+
+    assert observed["status"] is TerminalStatus.CONFIRMED_GROUND
+    assert observed["attempts"] == 1
 
 
 def test_emitter_handles_the_reversed_assembly_orientation():
