@@ -11,6 +11,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     append_records_csv,
     build_interleaved_schedule,
     fit_t1_decay,
+    json_safe,
     summarize_post_readout_pi,
     summarize_records,
     wilson_interval,
@@ -64,6 +65,12 @@ def test_t1_fit_recovers_a_known_exponential_decay():
     assert fit["tau_us"] == pytest.approx(150.0, rel=1e-3)
     assert fit["P0"] == pytest.approx(0.035, abs=1e-4)
     assert fit["P1"] == pytest.approx(0.845, abs=1e-4)
+
+
+def test_json_safe_converts_nested_numpy_arrays_and_nonfinite_values():
+    converted = json_safe({"delays": np.asarray([1.0, 2.0]), "bad": np.float64(np.nan)})
+
+    assert converted == {"delays": [1.0, 2.0], "bad": None}
 
 
 def test_wilson_interval_contains_observed_fraction_and_handles_zero_shots():

@@ -38,6 +38,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     append_records_csv,
     build_interleaved_schedule,
+    json_safe,
     summarize_records,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
@@ -129,15 +130,7 @@ def _git_commit():
 
 
 def _json_safe(value):
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, float) and not np.isfinite(value):
-        return None
-    return value
+    return json_safe(value)
 
 
 def _write_json(path, values):
