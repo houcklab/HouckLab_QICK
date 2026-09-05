@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     ReferenceAxis,
     append_records_csv,
     build_interleaved_schedule,
+    evaluate_inter_shot_recovery_sweep,
     evaluate_t1_equivalence,
     fit_t1_decay,
     json_safe,
@@ -105,6 +106,46 @@ def test_t1_equivalence_passes_matching_curves():
 
     assert result["status"] == "pass"
     assert result["failed_checks"] == []
+
+
+def test_inter_shot_recovery_sweep_selects_first_population_and_drift_match():
+    result = evaluate_inter_shot_recovery_sweep(
+        passive_excited_fraction=0.80,
+        rows=[
+            {"active_relax_us": 50, "excited_fraction": 0.48, "shot_drift": 0.28},
+            {"active_relax_us": 100, "excited_fraction": 0.63, "shot_drift": 0.18},
+            {"active_relax_us": 200, "excited_fraction": 0.70, "shot_drift": 0.11},
+            {"active_relax_us": 400, "excited_fraction": 0.74, "shot_drift": 0.07},
+            {"active_relax_us": 800, "excited_fraction": 0.76, "shot_drift": 0.04},
+        ],
+        max_abs_population_difference=0.12,
+        max_abs_shot_drift=0.10,
+    )
+
+    assert result["status"] == "pass"
+    assert result["selected_active_relax_us"] == pytest.approx(400.0)
+    assert [row["passed"] for row in result["rows"]] == [
+        False,
+        False,
+        False,
+        True,
+        True,
+    ]
+
+
+def test_inter_shot_recovery_sweep_fails_closed_when_no_delay_matches():
+    result = evaluate_inter_shot_recovery_sweep(
+        passive_excited_fraction=0.80,
+        rows=[
+            {"active_relax_us": 50, "excited_fraction": 0.48, "shot_drift": 0.28},
+            {"active_relax_us": 100, "excited_fraction": 0.63, "shot_drift": 0.18},
+        ],
+        max_abs_population_difference=0.12,
+        max_abs_shot_drift=0.10,
+    )
+
+    assert result["status"] == "fail"
+    assert result["selected_active_relax_us"] is None
 
 
 def test_json_safe_converts_nested_numpy_arrays_and_nonfinite_values():

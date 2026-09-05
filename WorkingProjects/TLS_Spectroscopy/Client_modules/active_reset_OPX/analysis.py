@@ -230,6 +230,61 @@ def evaluate_t1_equivalence(
     }
 
 
+def evaluate_inter_shot_recovery_sweep(
+    passive_excited_fraction,
+    rows,
+    *,
+    max_abs_population_difference,
+    max_abs_shot_drift,
+):
+    passive = float(passive_excited_fraction)
+    population_limit = float(max_abs_population_difference)
+    drift_limit = float(max_abs_shot_drift)
+    if not math.isfinite(passive) or not 0.0 <= passive <= 1.0:
+        raise ValueError("passive_excited_fraction must be finite and in [0, 1]")
+    limits = np.asarray([population_limit, drift_limit], dtype=float)
+    if not np.all(np.isfinite(limits)) or np.any(limits < 0) or np.any(limits > 1):
+        raise ValueError("recovery sweep tolerances must be finite and in [0, 1]")
+    evaluated = []
+    seen = set()
+    for raw in rows:
+        row = dict(raw)
+        delay = float(row["active_relax_us"])
+        population = float(row["excited_fraction"])
+        drift = float(row["shot_drift"])
+        values = np.asarray([delay, population, drift], dtype=float)
+        if not np.all(np.isfinite(values)) or delay < 0:
+            raise ValueError("recovery sweep rows must contain finite nonnegative delays")
+        if not 0.0 <= population <= 1.0 or not -1.0 <= drift <= 1.0:
+            raise ValueError("recovery sweep populations and drifts must be in range")
+        if delay in seen:
+            raise ValueError(f"duplicate active recovery delay: {delay}")
+        seen.add(delay)
+        population_difference = population - passive
+        row.update({
+            "active_relax_us": delay,
+            "excited_fraction": population,
+            "shot_drift": drift,
+            "population_difference": population_difference,
+            "population_passed": abs(population_difference) <= population_limit,
+            "drift_passed": abs(drift) <= drift_limit,
+        })
+        row["passed"] = bool(row["population_passed"] and row["drift_passed"])
+        evaluated.append(row)
+    evaluated.sort(key=lambda row: row["active_relax_us"])
+    selected = next((row for row in evaluated if row["passed"]), None)
+    return {
+        "status": "pass" if selected is not None else "fail",
+        "passive_excited_fraction": passive,
+        "selected_active_relax_us": (
+            selected["active_relax_us"] if selected is not None else None
+        ),
+        "max_abs_population_difference": population_limit,
+        "max_abs_shot_drift": drift_limit,
+        "rows": evaluated,
+    }
+
+
 def assignment_threshold(calibration):
     metrics = calibration.holdout or {}
     if "ground_median" in metrics and "excited_median" in metrics:
