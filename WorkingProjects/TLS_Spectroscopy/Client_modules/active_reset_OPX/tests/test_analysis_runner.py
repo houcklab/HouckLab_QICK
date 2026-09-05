@@ -111,6 +111,22 @@ def test_calibration_bundle_round_trips_through_json(tmp_path):
     assert load_calibration(path) == bundle
 
 
+def test_calibration_save_sanitizes_numpy_metadata(tmp_path):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 1, 10, 11),
+        metadata={"delays_us": np.asarray([1.0, 2.0]), "missing": np.float64(np.nan)},
+    )
+    path = tmp_path / "calibration_numpy.json"
+
+    save_calibration(path, bundle)
+
+    loaded = load_calibration(path)
+    assert loaded.metadata == {"delays_us": [1.0, 2.0], "missing": None}
+
+
 def test_loading_missing_calibration_fails_closed(tmp_path):
     with pytest.raises(FileNotFoundError, match="calibration"):
         load_calibration(tmp_path / "missing.json")

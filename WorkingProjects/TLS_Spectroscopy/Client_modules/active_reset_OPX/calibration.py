@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .analysis import ReferenceAxis
+from .analysis import ReferenceAxis, json_safe
 from .classifier import ClassifierCalibration, fit_classifier
 
 
@@ -45,7 +45,7 @@ class CalibrationBundle:
 def save_calibration(path, bundle):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(bundle.to_dict(), indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(json_safe(bundle.to_dict()), indent=2, sort_keys=True) + "\n")
     return path
 
 
