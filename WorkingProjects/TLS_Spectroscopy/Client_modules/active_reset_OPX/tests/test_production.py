@@ -317,3 +317,63 @@ def test_full_qubit_spec_runner_uses_gate_calibration_path(monkeypatch):
         },
         "selected": [False, False, True, False, False, False, False, False, False],
     }]
+
+
+def test_qubit_opt_smoke_runner_selects_only_qubit_optimization(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        RESET_MODE="active",
+        P_TRANSMISSION={"run": True},
+        P_TRANSMISSION_SWEEP={"run": True},
+        P_QUBIT_SPEC={"run": True},
+        P_QUBIT_SPEC_SWEEP={"run": True},
+        P_SS_CAL={"run": True},
+        P_RABI_CHEVRON_IQ={"run": True},
+        P_RABI_CHEVRON_SS={"run": True},
+        P_READOUT_OPT={"run": True},
+        P_QUBIT_OPT={"run": False},
+    )
+    runner.main = lambda: calls.append({
+        "reset_mode": runner.RESET_MODE,
+        "qubit_opt": dict(runner.P_QUBIT_OPT),
+        "selected": [
+            runner.P_TRANSMISSION["run"],
+            runner.P_TRANSMISSION_SWEEP["run"],
+            runner.P_QUBIT_SPEC["run"],
+            runner.P_QUBIT_SPEC_SWEEP["run"],
+            runner.P_SS_CAL["run"],
+            runner.P_RABI_CHEVRON_IQ["run"],
+            runner.P_RABI_CHEVRON_SS["run"],
+            runner.P_READOUT_OPT["run"],
+            runner.P_QUBIT_OPT["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.GateCalibration"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "GateCalibration", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_qubit_opt_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "reset_mode": "passive",
+        "qubit_opt": {
+            "run": True,
+            "shots": 50,
+            "num_pi": 1,
+            "pulse_type": "X180",
+            "freq_span_mhz": 1.0,
+            "freq_points": 5,
+            "gain_min": 11500,
+            "gain_max": 15500,
+            "gain_points": 5,
+            "x90_validation_shots": 100,
+            "x90_validation_rounds": 2,
+        },
+        "selected": [False, False, False, False, False, False, False, False, True],
+    }]
