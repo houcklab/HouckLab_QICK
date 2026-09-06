@@ -41,6 +41,9 @@ def main():
             "shots": SHOTS,
             "reps": SHOTS,
             "read_length": READOUT_INTEGRATION_US,
+            "read_pulse_length": READOUT_INTEGRATION_US,
+            "adc_trig_offset": 0.0,
+            "readout_guard_us": 0.0,
             "readout_thermalization_us": READOUT_THERMALIZATION_US,
             "relax_delay": READOUT_THERMALIZATION_US,
         }
