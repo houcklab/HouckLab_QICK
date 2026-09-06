@@ -1077,7 +1077,7 @@ def acquire_passive_readout_grid(
     excursion_gain=None,
     progress=None,
     access_mode="direct_mmio",
-    command_mode="split",
+    command_mode="packed_frequency",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
