@@ -348,6 +348,122 @@ def test_resident_server_precomputes_readout_dds_registers_once():
     assert result["ready_polls"] == 4
 
 
+def test_resident_server_can_hold_readout_write_enable_during_sweep():
+    class Readout:
+        def __init__(self):
+            self._freq_reg = 0
+            self._we_reg = 0
+            self.events = []
+
+        @property
+        def freq_reg(self):
+            return self._freq_reg
+
+        @freq_reg.setter
+        def freq_reg(self, value):
+            self._freq_reg = int(value)
+            self.events.append(("freq", int(value), self._we_reg))
+
+        @property
+        def we_reg(self):
+            return self._we_reg
+
+        @we_reg.setter
+        def we_reg(self, value):
+            self._we_reg = int(value)
+            self.events.append(("we", int(value)))
+
+    class Buffer:
+        def __init__(self):
+            self.readout = Readout()
+            self.frequency_conversions = []
+
+        def set_freq(self, frequency, gen_ch=0):
+            self.frequency_conversions.append((float(frequency), int(gen_ch)))
+            self.readout._freq_reg = int(round(float(frequency) * 10))
+
+    class HeldWriteEnableSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.avg_bufs = [Buffer()]
+
+    soc = HeldWriteEnableSoc()
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        configs,
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        readout_update_mode="held_write_enable",
+        program_factory=ResidentProgram,
+    )
+    assert soc.avg_bufs[0].frequency_conversions == [(10.0, 0), (20.0, 0)]
+    assert soc.avg_bufs[0].readout.events == [
+        ("we", 1),
+        ("freq", 100, 1),
+        ("freq", 200, 1),
+        ("freq", 100, 1),
+        ("freq", 200, 1),
+        ("we", 0),
+    ]
+    assert result["frequency_update_mode"] == "held_write_enable"
+
+
+def test_resident_server_releases_held_write_enable_after_failure():
+    class Readout:
+        def __init__(self):
+            self.freq_reg = 0
+            self.we_reg = 0
+
+    class Buffer:
+        def __init__(self):
+            self.readout = Readout()
+
+        def set_freq(self, frequency, gen_ch=0):
+            self.readout.freq_reg = int(round(float(frequency) * 10))
+
+    class StalledSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.avg_bufs = [Buffer()]
+
+        def start_readout(
+            self, total_reps, counter_addr=1, ch_list=None, reads_per_rep=1
+        ):
+            self.expected = int(total_reps) * int(reads_per_rep)
+
+    soc = StalledSoc()
+    try:
+        acquire_qick_resident_readout(
+            soc,
+            {**program(7), "reps": 8},
+            [
+                {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+                {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            ],
+            [101, 202],
+            shots=2,
+            command_addr=2,
+            ready_addr=3,
+            frequency_addr=4,
+            timeout_s=0.001,
+            readout_update_mode="held_write_enable",
+            program_factory=ResidentProgram,
+        )
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("resident timeout did not run")
+    assert soc.avg_bufs[0].readout.we_reg == 0
+
+
 def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     class BackpressureTProc(ResidentTProc):
         def __init__(self, owner):

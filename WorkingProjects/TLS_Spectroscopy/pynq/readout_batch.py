@@ -158,6 +158,33 @@ def _apply_readout_frequency_update(update):
         setter(frequency_register)
 
 
+def _prepare_held_readout_frequency_updates(soc, readout_configs):
+    updates = []
+    readouts = {}
+    for config in readout_configs:
+        prepared = []
+        for ch, cfg in config.items():
+            try:
+                buffer = soc.avg_bufs[int(ch)]
+                if hasattr(buffer, "readoutport"):
+                    return None
+                readout = buffer.readout
+                readout.we_reg
+                buffer.set_freq(float(cfg["freq"]), gen_ch=cfg["gen_ch"])
+                frequency_register = int(readout.freq_reg)
+            except (AttributeError, IndexError, KeyError, TypeError):
+                return None
+            prepared.append((readout, frequency_register))
+            readouts[int(ch)] = readout
+        updates.append(tuple(prepared))
+    return tuple(updates), tuple(readouts.values())
+
+
+def _apply_held_readout_frequency_update(update):
+    for readout, frequency_register in update:
+        readout.freq_reg = frequency_register
+
+
 def _wait_for_ready(tproc, ready_addr, expected, timeout_s):
     deadline = time.monotonic() + float(timeout_s)
     polls = 0
@@ -230,6 +257,7 @@ def acquire_qick_resident_readout(
     command_addr,
     ready_addr,
     frequency_addr,
+    readout_update_mode="latched",
     timeout_s=10.0,
     program_factory=None,
 ):
@@ -238,6 +266,7 @@ def acquire_qick_resident_readout(
     command_addr = int(command_addr)
     ready_addr = int(ready_addr)
     frequency_addr = int(frequency_addr)
+    readout_update_mode = str(readout_update_mode)
     if shots <= 0:
         raise ValueError("shots must be positive")
     if timeout_s <= 0:
@@ -246,6 +275,8 @@ def acquire_qick_resident_readout(
         raise ValueError("resident handshake addresses must be distinct")
     if min(command_addr, ready_addr, frequency_addr) < 0:
         raise ValueError("resident handshake addresses must be non-negative")
+    if readout_update_mode not in ("latched", "held_write_enable"):
+        raise ValueError("invalid resident readout update mode")
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and max(
         command_addr, ready_addr, frequency_addr
@@ -285,9 +316,18 @@ def acquire_qick_resident_readout(
     compiled = program.compile()
     soc.init_readouts()
     _configure_readouts(soc, configurations[0])
-    frequency_updates = _prepare_readout_frequency_updates(
-        soc, configurations
-    )
+    held_readouts = ()
+    if readout_update_mode == "held_write_enable":
+        prepared = _prepare_held_readout_frequency_updates(
+            soc, configurations
+        )
+        if prepared is None:
+            raise RuntimeError("held readout write-enable is unavailable")
+        frequency_updates, held_readouts = prepared
+    else:
+        frequency_updates = _prepare_readout_frequency_updates(
+            soc, configurations
+        )
     soc.load_bin_program(compiled, reset=False)
     soc.start_src("internal")
     program.config_bufs(soc, enable_avg=True, enable_buf=False)
@@ -297,6 +337,8 @@ def acquire_qick_resident_readout(
     setup_s = time.perf_counter() - setup_started
     acquisition_started = time.perf_counter()
     try:
+        for readout in held_readouts:
+            readout.we_reg = 1
         soc.start_readout(
             total_records,
             counter_addr=program.counter_addr,
@@ -324,7 +366,11 @@ def acquire_qick_resident_readout(
             ready_wait_s += time.perf_counter() - phase_started
             frequency_index = block % len(configurations)
             phase_started = time.perf_counter()
-            if frequency_updates is None:
+            if held_readouts:
+                _apply_held_readout_frequency_update(
+                    frequency_updates[frequency_index]
+                )
+            elif frequency_updates is None:
                 _set_readout_frequencies(
                     soc, configurations[frequency_index]
                 )
@@ -371,6 +417,12 @@ def acquire_qick_resident_readout(
     except Exception:
         _abort_resident_readout(soc)
         raise
+    finally:
+        for readout in held_readouts:
+            try:
+                readout.we_reg = 0
+            except Exception:
+                pass
     acquisition_s = time.perf_counter() - acquisition_started
     read_length = next(iter(read_lengths))
     records = (d_buf[0] / read_length).reshape(
@@ -392,9 +444,13 @@ def acquire_qick_resident_readout(
         "stream_drain_s": float(stream_drain_s),
         "ready_polls": int(ready_polls),
         "frequency_update_mode": (
-            "dynamic"
-            if frequency_updates is None
-            else "precomputed_register"
+            "held_write_enable"
+            if held_readouts
+            else (
+                "dynamic"
+                if frequency_updates is None
+                else "precomputed_register"
+            )
         ),
     }
 
@@ -423,6 +479,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
         command_addr,
         ready_addr,
         frequency_addr,
+        readout_update_mode="latched",
     ):
         return acquire_qick_resident_readout(
             self,
@@ -433,6 +490,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
             command_addr,
             ready_addr,
             frequency_addr,
+            readout_update_mode=readout_update_mode,
         )
 
     qicksoc_class.acquire_qick_program_batch = program_batch
