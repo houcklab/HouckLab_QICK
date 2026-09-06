@@ -30,3 +30,4 @@ tls-spec-env/
 
 WorkingProjects/TLS_Spectroscopy/tmp/
 WorkingProjects/TLS_Spectroscopy/Client_modules/logs/
+.worktrees/
