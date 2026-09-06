@@ -179,3 +179,44 @@ def test_transmission_sweep_smoke_selects_only_the_production_sweep():
     assert assignments[("P_TRANSMISSION_SWEEP", "freq_points")] == 41
     assert assignments[("P_TRANSMISSION_SWEEP", "gain_points")] == 3
     assert assignments[("P_SS_CAL", "run")] is False
+
+
+def test_qubit_spec_equivalence_runner_uses_identical_passive_and_active_grids():
+    import ast
+
+    path = Path(__file__).parents[1] / "production_qubit_spec_equivalence_q3.py"
+    tree = ast.parse(path.read_text())
+    updates = []
+    modes = []
+    main_calls = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "update" and isinstance(node.func.value, ast.Attribute):
+                if node.func.value.attr == "P_QUBIT_SPEC":
+                    updates.append(ast.literal_eval(node.args[0]))
+            if node.func.attr == "main" and isinstance(node.func.value, ast.Name):
+                if node.func.value.id == "runner":
+                    main_calls += 1
+        if not isinstance(node, ast.Assign):
+            continue
+        target = node.targets[0]
+        if (
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "runner"
+            and target.attr == "RESET_MODE"
+        ):
+            modes.append(ast.literal_eval(node.value))
+
+    assert updates == [{
+        "run": True,
+        "shots": 300,
+        "freq_start_mhz": 4364.5,
+        "freq_stop_mhz": 4367.5,
+        "freq_points": 31,
+        "spec_gain": 15000,
+        "spec_length_us": 1.0,
+        "relax_delay_us": 1000.0,
+    }]
+    assert modes == ["passive", "active"]
+    assert main_calls == 2
