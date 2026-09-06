@@ -142,6 +142,7 @@ class ResidentTProc:
         self.total_blocks = 0
         self.completed_blocks = 0
         self.releases = []
+        self.frequency_writes = 0
         self.reset_count = 0
 
     def single_read(self, addr):
@@ -151,6 +152,8 @@ class ResidentTProc:
         addr = int(addr)
         data = int(data)
         self.memory[addr] = data
+        if addr == self.frequency_addr:
+            self.frequency_writes += 1
         if addr == self.command_addr and data == 1:
             self.releases.append(self.memory[self.frequency_addr])
             self.completed_blocks += 1
@@ -233,7 +236,8 @@ def test_resident_server_uses_one_program_and_shot_frequency_handshake():
     assert ResidentProgram.loaded_pulses == 1
     assert ResidentProgram.configured_gens == 1
     assert soc.readout_frequencies == [10.0, 10.0, 20.0, 10.0, 20.0]
-    assert soc.tproc.releases == [101, 202, 101, 202]
+    assert soc.tproc.releases == [0, 0, 0, 0]
+    assert soc.tproc.frequency_writes == 1
     assert [event for event in soc.events if event[0] == "resident_start"] == [
         ("resident_start", 8)
     ]
@@ -242,6 +246,7 @@ def test_resident_server_uses_one_program_and_shot_frequency_handshake():
     np.testing.assert_array_equal(result["records"][0, 0, :, 0], [0.0, 0.2])
     assert result["controller_programs"] == 1
     assert result["readout_reconfigurations"] == 4
+    assert result["generator_update_mode"] == "controller_step"
 
 
 def test_resident_server_selects_output_once_and_updates_only_dds_in_loop():

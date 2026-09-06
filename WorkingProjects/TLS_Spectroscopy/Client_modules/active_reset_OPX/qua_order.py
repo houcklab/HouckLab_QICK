@@ -244,8 +244,12 @@ def _set_qubit_pulse(program, frequency_mhz, gain):
         )
 
 
-def _uniform_frequency_registers(program, frequencies):
+def _uniform_frequency_registers(
+    program, frequencies, gen_ch=None, ro_ch=None
+):
     cfg = program.cfg
+    if gen_ch is None:
+        gen_ch = cfg["qubit_ch"]
     frequencies = np.asarray(frequencies, dtype=float)
     frequency_steps = np.diff(frequencies)
     if frequency_steps.size and not np.allclose(
@@ -255,10 +259,16 @@ def _uniform_frequency_registers(program, frequencies):
         atol=1e-12,
     ):
         raise ValueError("qubit frequencies must be uniformly spaced")
-    registers = np.asarray([
-        program.freq2reg(float(value), gen_ch=cfg["qubit_ch"])
-        for value in frequencies
-    ], dtype=np.int64)
+    register_kwargs = {"gen_ch": gen_ch}
+    if ro_ch is not None:
+        register_kwargs["ro_ch"] = ro_ch
+    registers = np.asarray(
+        [
+            program.freq2reg(float(value), **register_kwargs)
+            for value in frequencies
+        ],
+        dtype=np.int64,
+    )
     if registers.size < 2:
         return registers, 0
     step = int(round((int(registers[-1]) - int(registers[0])) / (registers.size - 1)))
@@ -442,16 +452,13 @@ class QUAResidentReadoutGridProgram(QickProgram):
         self.command_addr = self.counter_addr + 1
         self.ready_addr = self.counter_addr + 2
         self.frequency_addr = self.counter_addr + 3
-        self.frequency_registers = np.asarray(
-            [
-                self.freq2reg(
-                    float(frequency),
-                    gen_ch=self.cfg["res_ch"],
-                    ro_ch=self.cfg["ro_chs"][0],
-                )
-                for frequency in self.frequencies
-            ],
-            dtype=np.int64,
+        self.frequency_registers, self.frequency_step = (
+            _uniform_frequency_registers(
+                self,
+                self.frequencies,
+                gen_ch=self.cfg["res_ch"],
+                ro_ch=self.cfg["ro_chs"][0],
+            )
         )
         self.make_program()
 
@@ -486,6 +493,11 @@ class QUAResidentReadoutGridProgram(QickProgram):
         self.regwi(0, controls["shot_loop"], self.shots - 1)
         _begin_park(self, park_segments)
         self.label("QUA_RESIDENT_READOUT_SHOT")
+        self.safe_regwi(
+            res_page,
+            res_frequency,
+            int(self.frequency_registers[0]),
+        )
         self.regwi(
             0,
             controls["frequency_loop"],
@@ -518,7 +530,6 @@ class QUAResidentReadoutGridProgram(QickProgram):
             "QUA_RESIDENT_READOUT_WAIT",
         )
         self.sync(0, controls["elapsed"])
-        self.memri(res_page, res_frequency, self.frequency_addr)
         self.regwi(0, controls["command"], 0)
         self.memwi(0, controls["command"], self.command_addr)
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
@@ -534,6 +545,13 @@ class QUAResidentReadoutGridProgram(QickProgram):
                 self._set_flux(park_gain)
         if self.kind == "flux_gain":
             self._set_flux(park_gain)
+        self.mathi(
+            res_page,
+            res_frequency,
+            res_frequency,
+            "+",
+            self.frequency_step,
+        )
         self.loopnz(
             0,
             controls["frequency_loop"],
@@ -1001,6 +1019,9 @@ def _resident_program_records(method, resident, readout_configs, shots):
         "frequency_update_mode": str(
             result.get("frequency_update_mode", "unknown")
         ),
+        "generator_update_mode": str(
+            result.get("generator_update_mode", "unknown")
+        ),
     }
 
 
@@ -1097,6 +1118,9 @@ def acquire_passive_readout_grid(
                     "ready_polls": resident_meta["ready_polls"],
                     "frequency_update_mode": resident_meta[
                         "frequency_update_mode"
+                    ],
+                    "generator_update_mode": resident_meta[
+                        "generator_update_mode"
                     ],
                     "records": int(
                         shots * frequencies.size * values.size
