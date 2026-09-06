@@ -271,7 +271,7 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_freq_start": float(start),
         "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
-    }, active=False)
+    })
     print(f"[qubit spec] two-tone: {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz, "
           f"spec gain {p['spec_gain']} DAC")
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
@@ -286,15 +286,27 @@ def run_qubit_spec_sweep(outer_folder, soc, soccfg):
     q0 = float(BaseConfig["qubit_pi_freq"])
     start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else q0 - 50.0
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else q0 + 50.0
-    gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
+    gain_points = int(p["gain_points"])
+    if _RESET_SESSION.runtime_mode == "opx_unbounded":
+        gain_start = int(round(p["gain_min"]))
+        gain_step = int(round(
+            (float(p["gain_max"]) - gain_start) / max(gain_points - 1, 1)
+        ))
+        gains = gain_start + gain_step * np.arange(gain_points, dtype=int)
+    else:
+        gains = np.linspace(
+            float(p["gain_min"]),
+            float(p["gain_max"]),
+            gain_points,
+        )
     cfg = _base_cfg(p, extra={
         "qubit_pulse_style": "const",
         "qubit_length": float(p["spec_length_us"]),
         "qubit_freq_start": float(start),
         "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
-    }, active=False)
-    print(f"[qubit spec sweep] {p['gain_points']} spec gains {p['gain_min']}..{p['gain_max']} DAC "
+    })
+    print(f"[qubit spec sweep] {p['gain_points']} spec gains {gains[0]}..{gains[-1]} DAC "
           f"x {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz")
     exp = QubitSpecGainSweep(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                              suffix="GateCal_Qubit_Spec_Gain", cfg=cfg, gains=gains,
@@ -401,7 +413,10 @@ def main():
 
     global _RESET_SESSION
     active_measurement = bool(
-        P_RABI_CHEVRON_IQ["run"] or P_RABI_CHEVRON_SS["run"]
+        P_QUBIT_SPEC["run"]
+        or P_QUBIT_SPEC_SWEEP["run"]
+        or P_RABI_CHEVRON_IQ["run"]
+        or P_RABI_CHEVRON_SS["run"]
     )
     if active_measurement and normalize_reset_mode(RESET_MODE) == "opx_unbounded":
         _RESET_SESSION = prepare_reset_session(

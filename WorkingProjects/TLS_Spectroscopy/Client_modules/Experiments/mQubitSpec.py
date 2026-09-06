@@ -5,12 +5,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpecVsFlux import QubitSpecProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
     acquire_passive_pulse_grid,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_grid_iq,
 )
 
 
@@ -43,15 +47,28 @@ class QubitSpec(ExperimentClass):
         fpts = _freq_axis(cfg)
         telemetry = None
         if bool(cfg.get("qua_shot_order", False)):
-            i_values, q_values, telemetry = acquire_passive_pulse_grid(
-                self.soc,
-                self.soccfg,
-                cfg,
-                frequencies_mhz=fpts,
-                gains=[cfg["qubit_gain"]],
-                pulses=1,
-                progress=progress,
-            )
+            if active_reset.uses_opx_unbounded(cfg):
+                i_values, q_values, telemetry = acquire_pulse_grid_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    frequencies_mhz=fpts,
+                    gains=[cfg["qubit_gain"]],
+                    pulses=1,
+                    shots=int(cfg["shots"]),
+                    pulse_placement="park",
+                    reset_scheme="opx_unbounded",
+                )
+            else:
+                i_values, q_values, telemetry = acquire_passive_pulse_grid(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    frequencies_mhz=fpts,
+                    gains=[cfg["qubit_gain"]],
+                    pulses=1,
+                    progress=progress,
+                )
             sig = np.mean(i_values[:, 0, :] + 1j * q_values[:, 0, :], axis=1)
         else:
             _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
@@ -126,15 +143,28 @@ class QubitSpecGainSweep(ExperimentClass):
         qubit_dip = np.full(n_g, np.nan)
 
         if bool(cfg.get("qua_shot_order", False)):
-            i_values, q_values, telemetry = acquire_passive_pulse_grid(
-                self.soc,
-                self.soccfg,
-                cfg,
-                frequencies_mhz=fpts,
-                gains=gains,
-                pulses=1,
-                progress=progress,
-            )
+            if active_reset.uses_opx_unbounded(cfg):
+                i_values, q_values, telemetry = acquire_pulse_grid_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    frequencies_mhz=fpts,
+                    gains=gains,
+                    pulses=1,
+                    shots=int(cfg["shots"]),
+                    pulse_placement="park",
+                    reset_scheme="opx_unbounded",
+                )
+            else:
+                i_values, q_values, telemetry = acquire_passive_pulse_grid(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    frequencies_mhz=fpts,
+                    gains=gains,
+                    pulses=1,
+                    progress=progress,
+                )
             signal_grid = np.mean(i_values + 1j * q_values, axis=2).T
             mag[:, :] = np.abs(signal_grid)
             phase[:, :] = np.unwrap(np.angle(signal_grid), axis=1)

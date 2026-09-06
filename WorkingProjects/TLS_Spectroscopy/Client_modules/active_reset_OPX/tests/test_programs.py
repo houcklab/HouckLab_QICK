@@ -1103,19 +1103,18 @@ def test_gain_payload_sweep_preserves_existing_fixed_frequency_behavior():
     }
 
 
-def test_grid_payload_uses_the_current_unrolled_frequency_and_dynamic_gain():
+def test_grid_payload_uses_the_current_unrolled_gain_and_dynamic_frequency():
     prog = RecordingProgram()
     prog.cfg = {"qubit_ch": 1}
     prog.reset_page = 1
     prog.reset_regs = {"payload_sweep": 7}
-    prog._payload_frequency_mhz = 4368.25
+    prog._payload_gain_dac = 12500
     prog._payload_sweep_plan = {
-        "kind": "gain",
-        "fixed_gain": None,
-        "fixed_frequency_mhz": 4367.25,
-        "target_register": "gain",
+        "kind": "frequency",
+        "fixed_gain": 11100,
+        "fixed_frequency_mhz": None,
+        "target_register": "freq",
     }
-    prog.freq2reg = lambda frequency, gen_ch: int(round(float(frequency) * 10))
     prog.set_pulse_registers = lambda **values: prog.asm.append(
         ("set_pulse_registers", values)
     )
@@ -1125,9 +1124,49 @@ def test_grid_payload_uses_the_current_unrolled_frequency_and_dynamic_gain():
     OPXResetPulseGridProgram._set_payload_pulse(prog)
 
     pulse = next(values for name, values in prog.asm if name == "set_pulse_registers")
-    assert pulse["freq"] == 43682
-    assert pulse["gain"] == 0
-    assert ("mathi", 22, 7, "+", 0) in prog.asm
+    assert pulse["freq"] == 0
+    assert pulse["gain"] == 12500
+    assert ("mathi", 21, 7, "+", 0) in prog.asm
+
+
+def test_grid_program_unrolls_gains_instead_of_frequencies(monkeypatch):
+    prog = RecordingProgram()
+    prog.cfg = {
+        "qubit_ch": 1,
+        "opx_payload_shots_per_expt": 2,
+        "opx_payload_frequencies_mhz": [4365.0, 4366.0, 4367.0, 4368.0],
+        "opx_payload_gains": [5000, 10000],
+    }
+    prog.record_base = 32
+    prog.done_addr = 0
+    prog._payload_sweep_plan = {
+        "start_register": 43650,
+        "step_register": 10,
+    }
+    prog.ch_page = lambda channel: channel
+    prog.end = lambda: prog.asm.append(("end",))
+    prog._declare_experiment = lambda: None
+    prog._begin_park_lifecycle = lambda: None
+    prog._end_park_lifecycle = lambda: None
+    emitted = []
+    prog._emit_body = lambda: emitted.append(prog._payload_gain_dac)
+    monkeypatch.setattr(programs, "_declare_common", lambda program: None)
+    monkeypatch.setattr(
+        programs,
+        "allocate_named_registers",
+        lambda program, page, names, reserved=(): {
+            name: index + 1 for index, name in enumerate(names)
+        },
+    )
+
+    OPXResetPulseGridProgram.make_program(prog)
+
+    assert emitted == [5000, 10000]
+    assert any(
+        instruction[-1] == "OPX_PAYLOAD_GRID_FREQUENCY_LOOP"
+        for instruction in prog.asm
+        if instruction[0] == "loopnz"
+    )
 
 
 def test_frequency_payload_pulse_copies_sweep_register_only_to_drive_frequency():
@@ -1153,4 +1192,69 @@ def test_frequency_payload_pulse_copies_sweep_register_only_to_drive_frequency()
     assert pulse["freq"] == 0
     assert pulse["gain"] == 11100
     assert ("mathi", 21, 7, "+", 0) in prog.asm
+
+
+def test_frequency_payload_supports_a_constant_spectroscopy_pulse():
+    prog = RecordingProgram()
+    prog.cfg = {
+        "qubit_ch": 1,
+        "qubit_pulse_style": "const",
+        "qubit_length": 1.25,
+    }
+    prog.reset_page = 1
+    prog.reset_regs = {"payload_sweep": 7}
+    prog._payload_sweep_plan = {
+        "kind": "frequency",
+        "fixed_gain": 15000,
+        "fixed_frequency_mhz": None,
+        "target_register": "freq",
+    }
+    prog.set_pulse_registers = lambda **values: prog.asm.append(
+        ("set_pulse_registers", values)
+    )
+    prog.sreg = lambda channel, name: {"freq": 21, "gain": 22}[name]
+    prog.deg2reg = lambda value, gen_ch: 0
+    prog.us2cycles = lambda value, gen_ch: int(round(float(value) * 100))
+
+    OPXResetPulseSweepProgram._set_payload_pulse(prog)
+
+    pulse = next(values for name, values in prog.asm if name == "set_pulse_registers")
+    assert pulse == {
+        "ch": 1,
+        "style": "const",
+        "freq": 0,
+        "phase": 0,
+        "gain": 15000,
+        "length": 125,
+    }
+    assert ("mathi", 21, 7, "+", 0) in prog.asm
+
+
+def test_pulse_sweep_declaration_accepts_constant_spectroscopy_payloads():
+    prog = RecordingProgram()
+    prog.cfg = {
+        "qubit_ch": 1,
+        "qubit_pulse_style": "const",
+        "read_pulse_freq": 6933.0,
+        "ro_chs": [0],
+        "res_ch": 0,
+        "opx_payload_shots_per_expt": 2,
+        "opx_payload_expts": 3,
+        "opx_payload_sweep_kind": "frequency",
+        "opx_payload_frequency_start_mhz": 4360.0,
+        "opx_payload_frequency_step_mhz": 1.0,
+        "opx_payload_fixed_gain": 15000,
+        "opx_payload_pulses": 1,
+        "sigma": 0.25,
+        "qubit_drag_beta": 0.0,
+    }
+    prog.reset_config = SimpleNamespace(hard_flux_steps=True)
+    prog.freq2reg = lambda value, **kwargs: int(round(float(value) * 10))
+    prog.us2cycles = lambda value, **kwargs: int(round(float(value) * 100))
+    prog.add_gauss = lambda **kwargs: prog.asm.append(("add_gauss", kwargs))
+
+    OPXResetPulseSweepProgram._declare_experiment(prog)
+
+    assert prog._payload_sweep_plan["kind"] == "frequency"
+    assert prog._payload_expts == 3
     assert not any(op[0] == "mathi" and op[1] == 22 for op in prog.asm)

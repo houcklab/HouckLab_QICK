@@ -1689,7 +1689,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         plan = self._payload_sweep_plan
         if plan["kind"] == "frequency":
             frequency_register = 0
-            gain = int(plan["fixed_gain"])
+            gain = int(getattr(self, "_payload_gain_dac", plan["fixed_gain"]))
         else:
             frequency_register = self.freq2reg(
                 float(getattr(
@@ -1700,16 +1700,28 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
                 gen_ch=cfg["qubit_ch"],
             )
             gain = 0
-        self.set_pulse_registers(
-            ch=cfg["qubit_ch"],
-            style="arb",
-            freq=frequency_register,
-            phase=self.deg2reg(
+        pulse = {
+            "ch": cfg["qubit_ch"],
+            "style": str(cfg.get("qubit_pulse_style", "arb")).lower(),
+            "freq": frequency_register,
+            "phase": self.deg2reg(
                 float(cfg.get("opx_payload_phase_deg", 0.0)),
                 gen_ch=cfg["qubit_ch"],
             ),
-            gain=gain,
-            waveform="qubit",
+            "gain": gain,
+        }
+        if pulse["style"] == "arb":
+            pulse["waveform"] = "qubit"
+        elif pulse["style"] == "const":
+            pulse["length"] = self.us2cycles(
+                float(cfg["qubit_length"]), gen_ch=cfg["qubit_ch"]
+            )
+        else:
+            raise ValueError(
+                "OPX pulse-sweep reset requires an arb or const qubit pulse"
+            )
+        self.set_pulse_registers(
+            **pulse,
         )
         self.mathi(
             self.reset_page,
@@ -1746,8 +1758,10 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian
 
         cfg = self.cfg
-        if str(cfg.get("qubit_pulse_style", "arb")).lower() != "arb":
-            raise ValueError("OPX pulse-sweep reset requires an arb qubit pulse")
+        if str(cfg.get("qubit_pulse_style", "arb")).lower() not in ("arb", "const"):
+            raise ValueError(
+                "OPX pulse-sweep reset requires an arb or const qubit pulse"
+            )
         reset_read_frequency = float(cfg.get(
             "reset_read_pulse_freq", cfg["read_pulse_freq"]))
         if not np.isclose(
@@ -2010,6 +2024,14 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
             raise ValueError("opx_payload_frequencies_mhz must be a nonempty vector")
         if not np.all(np.isfinite(frequencies)):
             raise ValueError("opx_payload_frequencies_mhz must be finite")
+        frequency_steps = np.diff(frequencies)
+        if frequency_steps.size and not np.allclose(
+            frequency_steps,
+            frequency_steps[0],
+            rtol=0.0,
+            atol=1e-9,
+        ):
+            raise ValueError("opx_payload_frequencies_mhz must be evenly spaced")
         gains = np.asarray(run_cfg.get("opx_payload_gains", ()), dtype=float)
         if gains.ndim != 1 or gains.size == 0:
             raise ValueError("opx_payload_gains must be a nonempty vector")
@@ -2025,11 +2047,13 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
         run_cfg.update({
             "opx_payload_frequencies_mhz": frequencies.tolist(),
             "opx_payload_gains": rounded.tolist(),
-            "opx_payload_expts": int(rounded.size),
-            "opx_payload_gain_start": int(rounded[0]),
-            "opx_payload_gain_step": int(steps[0]) if steps.size else 0,
-            "opx_payload_frequency_mhz": float(frequencies[0]),
-            "opx_payload_sweep_kind": "gain",
+            "opx_payload_expts": int(frequencies.size),
+            "opx_payload_frequency_start_mhz": float(frequencies[0]),
+            "opx_payload_frequency_step_mhz": (
+                float(frequency_steps[0]) if frequency_steps.size else 0.0
+            ),
+            "opx_payload_fixed_gain": int(rounded[0]),
+            "opx_payload_sweep_kind": "frequency",
             "reps": shots * int(frequencies.size) * int(rounded.size),
         })
         OPXResetBenchmarkProgram.__init__(
@@ -2063,11 +2087,10 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "gain_loop", "done"),
+            ("shot_loop", "frequency_loop", "done"),
             reserved=control_reserved,
         )
         gains = self.cfg["opx_payload_gains"]
-        gain_step = int(gains[1] - gains[0]) if len(gains) > 1 else 0
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
@@ -2078,33 +2101,38 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
         )
         self._begin_park_lifecycle()
         self.label("OPX_PAYLOAD_GRID_SHOT_LOOP")
-        for frequency_index, frequency_mhz in enumerate(
-            self.cfg["opx_payload_frequencies_mhz"]
-        ):
-            self._payload_frequency_mhz = float(frequency_mhz)
+        initialize_payload_sweep_register(
+            self,
+            page=self.reset_page,
+            register=self.reset_regs["payload_sweep"],
+            value=self._payload_sweep_plan["start_register"],
+        )
+        self.regwi(
+            0,
+            controls["frequency_loop"],
+            len(self.cfg["opx_payload_frequencies_mhz"]) - 1,
+        )
+        self.label("OPX_PAYLOAD_GRID_FREQUENCY_LOOP")
+        for gain_index, gain in enumerate(gains):
+            self._payload_gain_dac = int(gain)
             self._payload_label_prefix = (
-                f"OPX_PAYLOAD_GRID_F{int(frequency_index)}_RESET"
+                f"OPX_PAYLOAD_GRID_G{int(gain_index)}_RESET"
             )
-            initialize_payload_sweep_register(
-                self,
-                page=self.reset_page,
-                register=self.reset_regs["payload_sweep"],
-                value=int(gains[0]),
-            )
-            self.regwi(0, controls["gain_loop"], len(gains) - 1)
-            gain_label = f"OPX_PAYLOAD_GRID_F{int(frequency_index)}_GAIN_LOOP"
-            self.label(gain_label)
             self._emit_body()
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
-            self.mathi(
-                self.reset_page,
-                self.reset_regs["payload_sweep"],
-                self.reset_regs["payload_sweep"],
-                "+",
-                gain_step,
-            )
-            self.loopnz(0, controls["gain_loop"], gain_label)
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["payload_sweep"],
+            self.reset_regs["payload_sweep"],
+            "+",
+            int(self._payload_sweep_plan["step_register"]),
+        )
+        self.loopnz(
+            0,
+            controls["frequency_loop"],
+            "OPX_PAYLOAD_GRID_FREQUENCY_LOOP",
+        )
         self.loopnz(0, controls["shot_loop"], "OPX_PAYLOAD_GRID_SHOT_LOOP")
         self._end_park_lifecycle()
         self.end()
