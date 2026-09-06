@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
+    apply_local_overrides,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import Transmission
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import (
@@ -146,6 +149,26 @@ P_QUBIT_OPT = {
     "x90_validation_shots": 500,
     "x90_validation_rounds": 5,
 }
+
+LOCAL_OVERRIDE_KEYS = (
+    "QUBIT",
+    "CHIP_NAME_FOR_CONFIG",
+    "LIVE_PLOTS",
+    "FF_HOLD_GAIN",
+    "READOUT_AFTER_PARK",
+    "RESET_MODE",
+    "P_TRANSMISSION",
+    "P_TRANSMISSION_SWEEP",
+    "P_QUBIT_SPEC",
+    "P_QUBIT_SPEC_SWEEP",
+    "P_SS_CAL",
+    "P_RABI_CHEVRON_IQ",
+    "P_RABI_CHEVRON_SS",
+    "P_READOUT_OPT",
+    "P_QUBIT_OPT",
+)
+
+apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)
 
 
 def _base_cfg(p, extra=None, active=True):

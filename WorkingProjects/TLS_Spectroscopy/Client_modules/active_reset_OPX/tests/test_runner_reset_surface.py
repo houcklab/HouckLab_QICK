@@ -60,3 +60,10 @@ def test_experiment_parameter_blocks_do_not_expose_reset_internals():
             if not name.startswith("P_") and not name.startswith("P6_"):
                 continue
             assert forbidden.isdisjoint(values), (path.name, name, forbidden & values.keys())
+
+
+def test_each_runner_loads_an_ignored_local_override_surface():
+    for path in RUNNERS:
+        source = path.read_text()
+        assert "LOCAL_OVERRIDE_KEYS" in source, path.name
+        assert "apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)" in source, path.name

@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
+    apply_local_overrides,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
     SingleShot1Q, SingleShotFluxRamp)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import (
@@ -66,6 +69,21 @@ P_T1_FLUX_RAMP = {
     "t_max_us": 1000.0,
     "t_points": 71,
 }
+
+LOCAL_OVERRIDE_KEYS = (
+    "QUBIT",
+    "CHIP_NAME_FOR_CONFIG",
+    "LIVE_PLOTS",
+    "FF_HOLD_GAIN",
+    "READOUT_AFTER_PARK",
+    "RESET_MODE",
+    "P_SS_CAL",
+    "P_SS_FLUX_RAMP",
+    "P_T1",
+    "P_T1_FLUX_RAMP",
+)
+
+apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)
 
 
 def _base_cfg(p, extra=None, active=True):

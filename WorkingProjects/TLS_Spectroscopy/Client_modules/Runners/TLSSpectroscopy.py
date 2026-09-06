@@ -16,9 +16,9 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
+    apply_local_overrides,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
@@ -35,6 +35,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+    AUTOMATIC_RECALIBRATION_MIN,
+    PASSIVE_T1_RESET_US,
+    ProductionResetSession,
+    normalize_reset_mode,
+    prepare_reset_session,
+)
 
 
 LIVE_PLOTS = True
@@ -70,19 +77,9 @@ RESONATOR_LOOKUP_CSV = None
 
 RESONATOR_FIT_PARAMS = [6929532609.626256, 102183842.77558708, 12.457027141606355, 0.18504287441157935, 60361.19628170067, -25581.578015529918, 0.18012547035756307]
 
-INTERLEAVE_ROUNDS = 10
-RANDOMIZE_POINT_ORDER = True
-POINT_ORDER_SEED = None
+RESET_MODE = "active"
 
-PROBE_RESET = True
-CAL_RES_PHASE = False
-RESET_THRESHOLD_RAW = None
-RESET_OPER = "lower"
-RESET_GROUND_BELOW = False
-THERMALIZATION_US = 2.0
-T1_RESET_BACKSTOP_US = 400.0
-T1_FEEDBACK_RELAX_US = 25.0
-RESET_REPROBE_MIN = 30.0
+_RESET_SESSION = ProductionResetSession.passive()
 
 
 P1_RESONATOR = {
@@ -160,10 +157,6 @@ P5_SS_CAL = {
     "run": False,
     "ss_shots": 1000,
     "min_F": 0.60,
-    "reset_mode": "passive",
-    "reset_probe_shots": 2000,
-    "reset_max_iters": 3,
-    "reset_thermalization_us": 2.0,
 }
 
 
@@ -171,7 +164,6 @@ P6_3PT_T1 = {
     "run": False,
     "apply_flux_tail_compensation": False,
     "shots": 100,
-    "interleave_rounds": 1,
     "dc_min": 28500,
     "dc_max": 32500,
     "dc_step": 10,
@@ -180,11 +172,6 @@ P6_3PT_T1 = {
     "Ts_us": 70.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    "reset_mode": "passive",
-    "reset_threshold_raw": None,
-    "reset_oper": "lower",
-    "reset_ground_below": False,
-    "reset_max_iters": 3,
 }
 
 
@@ -202,15 +189,38 @@ P6_FULL_T1 = {
     "auto_tmax_factor": 3.0,
     "t_min_us_default": 1.0,
     "t_points_default": 41,
-    "reset_mode": "feedback",
-    "reset_threshold_raw": None,
-    "reset_oper": "lower",
-    "reset_ground_below": False,
-    "reset_max_iters": 3,
     "T1_probe_cfg": None,
 }
 
 STEP3B_GAIN_SWEEP = None
+
+LOCAL_OVERRIDE_KEYS = (
+    "LIVE_PLOTS",
+    "CHIP_NAME_FOR_CONFIG",
+    "QUBIT",
+    "SET_YOKO",
+    "YOKO_VISA",
+    "YOKO_VOLTAGE",
+    "FLUX_FIT_PARAMS",
+    "BASELINE_DC_OFFSET",
+    "TARGET_DC_OFFSET",
+    "FLUX_TAIL_COMPENSATION_GAIN",
+    "SAVE_RESONATOR_LOOKUP",
+    "USE_RESONATOR_LOOKUP",
+    "RESONATOR_LOOKUP_CSV",
+    "RESONATOR_FIT_PARAMS",
+    "RESET_MODE",
+    "P1_RESONATOR",
+    "P2_QUBIT_SPEC_FULL",
+    "P3_STEP_RESPONSE",
+    "P4_LONG_TIME",
+    "P5_SS_CAL",
+    "P6_3PT_T1",
+    "P6_FULL_T1",
+    "STEP3B_GAIN_SWEEP",
+)
+
+apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)
 
 
 def _set_yoko_if_requested():
@@ -232,7 +242,6 @@ def _set_yoko_if_requested():
 def _spec_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
-    cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     if RESONATOR_FIT_PARAMS is not None and not USE_RESONATOR_LOOKUP:
         cfg["resonator_fit_parameters"] = list(RESONATOR_FIT_PARAMS)
@@ -251,7 +260,7 @@ def _spec_cfg(p, extra=None):
         cfg["baseline_rearm_us"] = float(p["baseline_rearm_us"])
     if extra:
         cfg.update(extra)
-    return cfg
+    return ProductionResetSession.passive().apply(cfg)
 
 
 def _load_correction(correction_json, outer_folder):
@@ -351,9 +360,8 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     f_vec = _freq_vec_mhz(p)
     dc_vec = _dc_vec(p)
     print(f"[1] Resonator spectroscopy vs flux: {len(f_vec)} IF x {len(dc_vec)} DC points")
-    cfg = dict(BaseConfig)
+    cfg = ProductionResetSession.passive().apply(BaseConfig)
     cfg["reps"] = int(p["shots"])
-    cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
     cfg["relax_delay"] = 50
     cfg["trans_freq_start"] = p["freq_min"]
     cfg["trans_freq_stop"] = p["freq_max"]
@@ -673,31 +681,11 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
 
 
 def run_step5_single_shot_cal(outer_folder, soc, soccfg):
-    cfg = dict(BaseConfig)
+    cfg = ProductionResetSession.passive().apply(BaseConfig)
     print("[5] Single-shot readout calibration ...")
     cfg["shots"] = int(P5_SS_CAL["ss_shots"])
     cfg["qubit_pulse_style"] = "arb"
     cfg["qubit_gain"] = BaseConfig["qubit_pi_gain"]
-    cfg["reset_mode"] = str(P5_SS_CAL.get("reset_mode", "passive"))
-    if active_reset.uses_feedback(cfg["reset_mode"]) and PROBE_RESET:
-        rec = probe_reset_params(
-            soc, soccfg, cfg, path=QUBIT, outer_folder=outer_folder,
-            shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True,
-            reset_max_iters=int(P5_SS_CAL.get("reset_max_iters", 3)))
-        if not active_reset.rotated_probe_record(rec):
-            print("[5] active-reset validation failed -- using the configured passive "
-                  f"{cfg['relax_delay']} us fallback.")
-            cfg["reset_mode"] = "passive"
-        else:
-            cfg.update(active_reset.feedback_runtime_from_probe(
-                rec, max_iters=int(P5_SS_CAL.get("reset_max_iters", 3)),
-                thermalization_us=float(
-                    P5_SS_CAL.get("reset_thermalization_us", 25.0)),
-                post_measure_delay_us=0.05))
-    elif active_reset.uses_feedback(cfg["reset_mode"]):
-        cfg["reset_mode"] = "passive"
-        print("[5] PROBE_RESET=False provides no validated rotated reset profile -- "
-              "using passive reset.")
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="SS_Cal", cfg=cfg, save=True, plot=True, min_F=0.0)
     ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
@@ -799,103 +787,52 @@ def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
 
 
 
-def _make_reset_recalibrator(p, base, soc, soccfg, outer_folder):
-    if not (PROBE_RESET and active_reset.uses_feedback(p.get("reset_mode"))):
+def _make_reset_recalibrator(base, soc, soccfg, outer_folder):
+    if _RESET_SESSION.runtime_mode == "passive":
         return None
 
     def recalibrate():
-        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder,
-                                 shots=int(p.get("reset_probe_shots", 2000)),
-                                 reset_max_iters=int(p.get("reset_max_iters", 3)))
-        if not active_reset.rotated_probe_record(rec):
-            print("  [6] re-probe found no usable discrimination -- keeping the "
-                  "previous reset calibration for the next block.")
-            return
-        base.update(active_reset.feedback_runtime_from_probe(
-            rec, max_iters=int(p.get("reset_max_iters", 3)),
-            thermalization_us=THERMALIZATION_US))
-        print("  [6] re-probe: ROTATED reset revalidated; refreshed projection "
-              "and thresholds now apply to the following passes.")
+        global _RESET_SESSION
+        _RESET_SESSION = prepare_reset_session(
+            RESET_MODE,
+            outer_folder=outer_folder,
+            qubit=QUBIT,
+            base_cfg=BaseConfig,
+            soc=soc,
+            soccfg=soccfg,
+            purpose="TLSSpectroscopy",
+        )
+        refreshed = _RESET_SESSION.apply(base)
+        base.clear()
+        base.update(refreshed)
+        print("  [6] automatic active-reset calibration refreshed.")
 
     return recalibrate
+
+
+def _step6_needs_single_shot_calibration():
+    return bool(
+        (P6_3PT_T1["run"] or P6_FULL_T1["run"])
+        and _RESET_SESSION.runtime_mode == "passive"
+    )
 
 
 def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     base = dict(BaseConfig)
     base.update({
         "shots": int(p["shots"]),
-        "interleave_rounds": p.get("interleave_rounds", INTERLEAVE_ROUNDS),
-        "randomize_point_order": bool(RANDOMIZE_POINT_ORDER),
-        "point_order_seed": POINT_ORDER_SEED,
         "ff_gain_vec": dc_vec,
         "apply_flux_tail_compensation": bool(
             p.get("apply_flux_tail_compensation", True)),
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": (T1_FEEDBACK_RELAX_US
-                        if active_reset.uses_feedback(p.get("reset_mode"))
-                        else T1_RESET_BACKSTOP_US),
+        "relax_delay": PASSIVE_T1_RESET_US,
         "qubit_pulse_style": "arb",
     })
-    if active_reset.uses_feedback(p.get("reset_mode")):
-        if not p.get("rot_reset"):
-            raise RuntimeError("reset_mode='feedback' needs a validated rotated reset "
-                               "profile.")
-        if p.get("reset_threshold_raw") is None:
-            raise RuntimeError("reset_mode='feedback' needs a reset threshold, but the "
-                               "start-of-step-6 probe did not set one.")
-        base.update({
-            "reset_threshold_raw": int(p["reset_threshold_raw"]),
-            "reset_oper": p.get("reset_oper", "lower"),
-            "reset_ground_below": bool(p.get("reset_ground_below", True)),
-            "reset_max_iters": int(p.get("reset_max_iters", 3)),
-            "reset_thermalization_us": THERMALIZATION_US,
-            "rot_reset": dict(p["rot_reset"]),
-        })
+    base = _RESET_SESSION.apply(base)
+    if _RESET_SESSION.runtime_mode == "opx_unbounded":
+        base["three_point_matched_refs"] = False
     return base
-
-
-def _resolve_step6_reset(p, soc, soccfg, outer_folder):
-    if not active_reset.uses_feedback(p.get("reset_mode")):
-        return p
-    if PROBE_RESET:
-        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
-                                 outer_folder=outer_folder,
-                                 shots=int(p.get("reset_probe_shots", 2000)),
-                                 reset_max_iters=int(p.get("reset_max_iters", 3)))
-        if not active_reset.rotated_probe_record(rec):
-            extra_us = (T1_RESET_BACKSTOP_US - T1_FEEDBACK_RELAX_US) * 1e-6
-            n_pts = int(p.get("_projected_points", 0)) * int(p["shots"])
-            print("[6] no feedback discrimination this session -- using passive relax.")
-            if n_pts:
-                print(f"[6] WARNING: that downgrade costs {extra_us:g} s of extra relax "
-                      f"per shot.  Over {n_pts:,} shots that is "
-                      f"{n_pts * extra_us / 3600:.1f} h ADDED to this scan.  "
-                      f"Ctrl-C now if that is not acceptable.")
-            p["reset_mode"] = "passive"
-            p.pop("rot_reset", None)
-        else:
-            p.update(active_reset.feedback_runtime_from_probe(
-                rec, max_iters=int(p.get("reset_max_iters", 3)),
-                thermalization_us=THERMALIZATION_US))
-            if rec.get("degraded"):
-                print("[6] ROTATED reset selected BEST-EFFORT: functional but "
-                      "above the validated bar this probe; matched references "
-                      "tolerate the residual, and this beats passive ~20x in "
-                      "throughput.")
-            else:
-                print("[6] ROTATED reset selected (probe-validated).")
-        return p
-    if p.get("rot_reset") and p.get("reset_threshold_raw") is not None:
-        print("[6] PROBE_RESET=False -> using the configured rotated reset profile "
-              "without re-probing")
-        return p
-    p["reset_mode"] = "passive"
-    p.pop("rot_reset", None)
-    print("[6] PROBE_RESET=False and no rotated reset profile is configured -- "
-          "using passive reset.")
-    return p
 
 
 def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
@@ -907,7 +844,6 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
                            'at one FIXED decay delay (production uses 60.0).')
     dc_vec = _step6_dc_vec(p)
     p["_projected_points"] = len(dc_vec) * 3
-    p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
     flux_tail_compensation, correction_mode = _resolve_step6_correction(
         p, correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
@@ -915,6 +851,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
+    park_voltage = base.get("ff_park_gain", BASELINE_DC_OFFSET)
 
     def factory(repeat_metadata):
         return T13PointVsFlux(
@@ -922,23 +859,23 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             suffix=f"TLS_3pt_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
             dc_vec=dc_vec, Ts_ns=int(round(p["Ts_us"] * 1e3)),
             shots=int(p["shots"]), calib_params=calib_params,
-            park_voltage=BASELINE_DC_OFFSET,
+            park_voltage=park_voltage,
             min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
             max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
-            reset_mode=p.get("reset_mode", "passive"),
+            reset_mode=base["reset_mode"],
             flux_tail_compensation=flux_tail_compensation,
             repeat_metadata=repeat_metadata,
             write_outputs=False,
         )
 
-    recalibrate = _make_reset_recalibrator(p, base, soc, soccfg, outer_folder)
-    if recalibrate is not None and wall_clock_s is not None and RESET_REPROBE_MIN:
-        print(f"[6] reset re-probe scheduled every {RESET_REPROBE_MIN:g} min between "
+    recalibrate = _make_reset_recalibrator(base, soc, soccfg, outer_folder)
+    if recalibrate is not None and wall_clock_s is not None:
+        print(f"[6] reset re-probe scheduled every {AUTOMATIC_RECALIBRATION_MIN:g} min between "
               f"passes so a multi-hour series tracks readout drift instead of "
               f"holding an hour-zero calibration.")
     csv_path = _run_one_stop_t1(
         factory, wall_clock_s, recalibrate=recalibrate,
-        reprobe_s=(RESET_REPROBE_MIN * 60.0 if RESET_REPROBE_MIN else None))
+        reprobe_s=AUTOMATIC_RECALIBRATION_MIN * 60.0)
     print(f"[6] Done. One-stop 3-point CSV: {csv_path}")
 
 
@@ -948,7 +885,6 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
     p = dict(P6_FULL_T1)
     dc_vec = _step6_dc_vec(p)
     p["_projected_points"] = len(dc_vec) * int(p.get("t_points_default", 41))
-    p = _resolve_step6_reset(p, soc, soccfg, outer_folder)
     flux_tail_compensation, correction_mode = _resolve_step6_correction(
         p, correction_json, outer_folder)
     wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
@@ -956,6 +892,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
+    park_voltage = base.get("ff_park_gain", BASELINE_DC_OFFSET)
 
     q_factor = p.get("quality_factor", None)
     notebook_fit = fx.flux_fit_params_to_notebook(FLUX_FIT_PARAMS) if q_factor is not None else None
@@ -971,12 +908,12 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix=f"TLS_Full_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
                       dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
-                      park_voltage=BASELINE_DC_OFFSET,
+                      park_voltage=park_voltage,
                       auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
                       T1_probe_cfg=p.get("T1_probe_cfg", None),
                       t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,
                       t_points_default=int(p.get("t_points_default", 41)),
-                      reset_mode=p.get("reset_mode", "passive"),
+                      reset_mode=base["reset_mode"],
                       flux_tail_compensation=flux_tail_compensation,
                       repeat_metadata=repeat_metadata,
                       write_outputs=False)
@@ -987,18 +924,19 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         return T1FullCurveVsFlux(t_max_ns=(None if t_max_us is None else t_max_us * 1e3),
                                  **common)
 
-    recalibrate = _make_reset_recalibrator(p, base, soc, soccfg, outer_folder)
-    if recalibrate is not None and wall_clock_s is not None and RESET_REPROBE_MIN:
-        print(f"[6] reset re-probe scheduled every {RESET_REPROBE_MIN:g} min between "
+    recalibrate = _make_reset_recalibrator(base, soc, soccfg, outer_folder)
+    if recalibrate is not None and wall_clock_s is not None:
+        print(f"[6] reset re-probe scheduled every {AUTOMATIC_RECALIBRATION_MIN:g} min between "
               f"passes so a multi-hour series tracks readout drift instead of "
               f"holding an hour-zero calibration.")
     csv_path = _run_one_stop_t1(
         factory, wall_clock_s, recalibrate=recalibrate,
-        reprobe_s=(RESET_REPROBE_MIN * 60.0 if RESET_REPROBE_MIN else None))
+        reprobe_s=AUTOMATIC_RECALIBRATION_MIN * 60.0)
     print(f"[6] Done. One-stop CSV: {csv_path}")
 
 
 def main():
+    global _RESET_SESSION
     _set_yoko_if_requested()
     soc, soccfg = makeProxy()
     outer_folder = outerFolder
@@ -1021,12 +959,6 @@ def main():
         print(f"  {'[x]' if on else '[ ]'} {name}")
     print("=" * 70)
 
-    if CAL_RES_PHASE:
-        print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
-              "single-quadrature reset; the rotated reset (the default) measures "
-              "its own projection angle every probe and does not need it.")
-        calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
-
     correction_json = None
     calib_params = None
     latest_resonator_lookup_csv = None
@@ -1047,7 +979,20 @@ def main():
     if P5_SS_CAL["run"]:
         calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
     if P6_3PT_T1["run"] or P6_FULL_T1["run"]:
-        if calib_params is None:
+        if normalize_reset_mode(RESET_MODE) == "opx_unbounded":
+            _RESET_SESSION = prepare_reset_session(
+                RESET_MODE,
+                outer_folder=outer_folder,
+                qubit=QUBIT,
+                base_cfg=BaseConfig,
+                soc=soc,
+                soccfg=soccfg,
+                purpose="TLSSpectroscopy",
+            )
+            print(f"[reset] automatic calibration saved: {_RESET_SESSION.calibration_output}")
+        else:
+            _RESET_SESSION = ProductionResetSession.passive()
+        if calib_params is None and _step6_needs_single_shot_calibration():
             print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
             calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
         if P6_3PT_T1["run"]:

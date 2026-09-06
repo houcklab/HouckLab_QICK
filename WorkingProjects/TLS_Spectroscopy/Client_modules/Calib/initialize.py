@@ -1,4 +1,7 @@
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
+    apply_local_overrides,
+)
 
 
 FF_CH = 3
@@ -70,3 +73,15 @@ RESONATOR_FIT_PARAMS = None
 FF_STEP_TARGET_GAIN = 8000
 
 outerFolder = 'Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC'
+
+LOCAL_OVERRIDE_KEYS = (
+    "FF_CH",
+    "FF_Qubits",
+    "BaseConfig",
+    "FLUX_FIT_PARAMS",
+    "RESONATOR_FIT_PARAMS",
+    "FF_STEP_TARGET_GAIN",
+    "outerFolder",
+)
+
+apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)
