@@ -23,9 +23,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
     acquire_calibration,
+    per_shot_reference_config,
     save_calibration,
     save_raw_calibration,
     validate_confident_calibration,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
+    load_park_history_method_frequencies,
 )
 
 QUBIT = "q3"
@@ -42,6 +46,8 @@ OPX_RESET_CALIBRATION = None
 OPX_CALIBRATION_SHOTS = 2000
 OPX_MIN_CONFIDENT_STATE_FRACTION = 0.2
 OPX_HOST_WATCHDOG_S = 2.0
+OPX_PARK_HISTORY_RESULT_PATH = None
+OPX_METHOD_FREQUENCIES = None
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
@@ -111,6 +117,11 @@ def _base_cfg(p, extra=None):
         cfg.update(q3_benchmark_settings().opx_overrides())
         cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
         cfg["opx_inter_shot_delay_us"] = float(FEEDBACK_RELAX_US)
+        if OPX_METHOD_FREQUENCIES is None:
+            raise RuntimeError("opx_unbounded reset needs park-history frequencies")
+        cfg["qubit_pi_freq"] = float(OPX_METHOD_FREQUENCIES["opx_unbounded"])
+        cfg["reset_pi_freq"] = float(OPX_METHOD_FREQUENCIES["opx_unbounded"])
+        cfg["randomize_point_order"] = False
     elif active_reset.uses_feedback(cfg):
         if not ROT_RESET_PARAMS:
             raise RuntimeError("feedback reset needs a validated rotated reset profile")
@@ -135,12 +146,29 @@ def _log_t_vec(p):
                        np.log10(float(p["t_max_us"])), int(p["t_points"]))
 
 
+def _latest_park_history_result(outer_folder):
+    if OPX_PARK_HISTORY_RESULT_PATH is not None:
+        path = Path(OPX_PARK_HISTORY_RESULT_PATH)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+    paths = list(
+        (Path(outer_folder) / QUBIT).glob(
+            f"{QUBIT}_*/{QUBIT}_*_active_reset_OPX_park_history_spectroscopy/result.json"
+        )
+    )
+    if not paths:
+        raise FileNotFoundError("no completed park-history spectroscopy result found")
+    return max(paths, key=lambda path: path.stat().st_mtime)
+
+
 def _calibrate_opx_reset(outer_folder, soc, soccfg):
     cfg = dict(BaseConfig)
     cfg.update(q3_benchmark_settings().opx_overrides())
     cfg["relax_delay"] = float(PASSIVE_RESET_US)
     cfg["opx_inter_shot_delay_us"] = float(FEEDBACK_RELAX_US)
     cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
+    cfg = per_shot_reference_config(cfg)
     now = datetime.now()
     output = (
         Path(outer_folder)
@@ -251,10 +279,19 @@ def main():
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     global ROT_RESET_PARAMS, DRIFT_PI_PROFILE, OPX_RESET_CALIBRATION
+    global OPX_METHOD_FREQUENCIES
     opx_requested = active_reset.uses_opx_unbounded(RESET_MODE)
     feedback_requested = active_reset.uses_feedback(RESET_MODE) and not opx_requested
     DRIFT_PI_PROFILE = None
     if opx_requested:
+        history_result = _latest_park_history_result(outer_folder)
+        OPX_METHOD_FREQUENCIES = load_park_history_method_frequencies(
+            history_result
+        )
+        print(
+            f"[reset] park-history frequency "
+            f"{OPX_METHOD_FREQUENCIES['opx_unbounded']:.6f} MHz"
+        )
         if not PROBE_RESET and OPX_RESET_CALIBRATION is None:
             raise RuntimeError(
                 "RESET_MODE='opx_unbounded' needs PROBE_RESET=True or an explicit "

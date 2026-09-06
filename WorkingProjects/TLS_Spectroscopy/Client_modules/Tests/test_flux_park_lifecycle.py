@@ -13,6 +13,7 @@ if qick is None:
 
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
+    mCoherence as C,
     mRabiChevronIQ as R,
     mRabiChevronSS as RSS,
     mSingleShot1Q as SS,
@@ -343,3 +344,48 @@ def test_compact_dmem_sweep_forwards_passive_reset_control(monkeypatch):
     )
 
     assert captured[0]["opx_reset_scheme"] == "none"
+
+
+def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
+    experiment = object.__new__(C.T1)
+    experiment.cfg = {
+        "shots": 4,
+        "coherence_rounds": 2,
+        "read_length": 5.0,
+        "ro_chs": [0],
+        "reset_mode": "opx_unbounded",
+    }
+    experiment.reset_mode = "opx_unbounded"
+    experiment.ff_gain = -20000.0
+    experiment.t_vec_us = np.asarray([1.0, 35.0, 100.0])
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.calib_params = {}
+    experiment.opx_reset_telemetry = []
+    calls = []
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        calls.append(kwargs)
+        return (
+            np.asarray([[1.0, 1.0], [1.0, -1.0], [-1.0, -1.0]]),
+            np.zeros((3, 2)),
+            {"order": "shot_major", "shots_per_point": 2},
+        )
+
+    monkeypatch.setattr(C, "acquire_t1_sweep_iq", acquire, raising=False)
+    monkeypatch.setattr(
+        C,
+        "discriminate_shots",
+        lambda i_values, q_values, calib: np.asarray(i_values) > 0,
+    )
+
+    populations = experiment._sweep(progress=False)
+
+    assert len(calls) == 2
+    assert all(call["shots"] == 2 for call in calls)
+    assert all(
+        np.array_equal(call["delays_us"], experiment.t_vec_us)
+        for call in calls
+    )
+    assert populations.tolist() == [1.0, 0.5, 0.0]
+    assert experiment.point_visit_orders == [[0, 1, 2], [0, 1, 2]]

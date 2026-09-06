@@ -42,6 +42,16 @@ class CalibrationBundle:
         )
 
 
+def per_shot_reference_config(cfg):
+    values = dict(cfg)
+    values.update({
+        "opx_persistent_park": False,
+        "opx_hard_flux_steps": False,
+        "opx_reference_flux_cycle": False,
+    })
+    return values
+
+
 def save_calibration(path, bundle):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

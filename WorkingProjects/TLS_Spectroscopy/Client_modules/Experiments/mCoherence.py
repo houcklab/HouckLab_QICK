@@ -14,6 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_t1_iq,
+    acquire_t1_sweep_iq,
 )
 
 
@@ -141,6 +142,71 @@ class T1(_CoherenceBase):
     def __init__(self, *args, ff_gain=0.0, **kw):
         super().__init__(*args, **kw)
         self.ff_gain = float(ff_gain)
+
+    def _sweep_opx(self, progress=True):
+        cfg = self.cfg
+        shots = int(cfg["shots"])
+        rounds = resolve_rounds(cfg, shots, default=cfg.get("coherence_rounds"))
+        reps_per_round = split_reps(shots, rounds)
+        excited = np.zeros(len(self.t_vec_us), dtype=float)
+        attempted = np.zeros(len(self.t_vec_us), dtype=float)
+        orders = []
+        started = time.time()
+        saved_shots = cfg["shots"]
+        cfg["ff_gain"] = self.ff_gain
+        cfg["do_pi"] = True
+        cfg["do_ff"] = True
+        try:
+            for round_index, reps in enumerate(reps_per_round):
+                if reps <= 0:
+                    continue
+                with suppress_stdout():
+                    i_values, q_values, telemetry = acquire_t1_sweep_iq(
+                        self.soc,
+                        self.soccfg,
+                        cfg,
+                        delays_us=self.t_vec_us,
+                        shots=int(reps),
+                        reset_scheme="opx_unbounded",
+                    )
+                classified = np.asarray(
+                    discriminate_shots(i_values, q_values, self.calib_params),
+                    dtype=float,
+                )
+                if classified.shape != i_values.shape:
+                    raise RuntimeError(
+                        "shot-major T1 classifier returned an unexpected shape"
+                    )
+                excited += np.sum(classified, axis=1)
+                attempted += classified.shape[1]
+                order = list(range(len(self.t_vec_us)))
+                orders.append(order)
+                telemetry.update({
+                    "ff_gain": float(self.ff_gain),
+                    "round": int(round_index),
+                    "delays_us": self.t_vec_us.tolist(),
+                })
+                self.opx_reset_telemetry.append(telemetry)
+                if progress:
+                    progress_counter(
+                        round_index,
+                        len(reps_per_round),
+                        start_time=started,
+                        label=self.suffix,
+                    )
+        finally:
+            cfg["shots"] = saved_shots
+        self.point_visit_orders = orders
+        with np.errstate(invalid="ignore", divide="ignore"):
+            population = np.where(attempted > 0, excited / attempted, np.nan)
+        self.keep_fraction = np.where(attempted > 0, 1.0, np.nan)
+        self.pe_unselected = population.copy()
+        return population
+
+    def _sweep(self, progress=True):
+        if active_reset.uses_opx_unbounded(self.reset_mode):
+            return self._sweep_opx(progress=progress)
+        return super()._sweep(progress=progress)
 
     def _run_point_counts(self, wait_us, reps=None):
         cfg = self.cfg

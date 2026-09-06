@@ -28,6 +28,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
     CalibrationBundle,
     load_calibration,
+    per_shot_reference_config,
     save_calibration,
     threshold_policy_metadata,
     validate_confident_calibration,
@@ -67,6 +68,18 @@ def test_reference_axis_recovers_mixture_population_from_mean_iq():
 
     assert axis.population(i, q) == pytest.approx([0, 1, 1, 0])
     assert axis.mean_population(i, q) == pytest.approx(0.5)
+
+
+def test_production_reference_calibration_disables_persistent_hard_park():
+    cfg = per_shot_reference_config({
+        "opx_persistent_park": True,
+        "opx_hard_flux_steps": True,
+        "opx_reference_flux_cycle": True,
+    })
+
+    assert cfg["opx_persistent_park"] is False
+    assert cfg["opx_hard_flux_steps"] is False
+    assert cfg["opx_reference_flux_cycle"] is False
 
 
 def test_t1_fit_recovers_a_known_exponential_decay():
