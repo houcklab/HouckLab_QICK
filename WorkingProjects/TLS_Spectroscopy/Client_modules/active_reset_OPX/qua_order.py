@@ -563,6 +563,134 @@ class QUAResidentReadoutGridProgram(QickProgram):
         self.end()
 
 
+class QUAResidentReadoutOptimizerProgram(QickProgram):
+    def __init__(self, soccfg, cfg, *, frequencies_mhz, gains, drive_pulses,
+                 drive_gain):
+        QickProgram.__init__(self, soccfg)
+        self.cfg = dict(cfg)
+        self.frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
+        self.cfg["read_pulse_freq"] = float(self.frequencies[0])
+        self.gains = np.rint(_finite_axis(gains, "gains")).astype(np.int64)
+        self.drive_pulses = int(drive_pulses)
+        self.drive_gain = int(drive_gain)
+        if self.drive_pulses <= 0:
+            raise ValueError("drive_pulses must be positive")
+        self.shots = _positive_shots(self.cfg)
+        self.reps = int(
+            self.shots * self.frequencies.size * self.gains.size * 2
+        )
+        self.expts = None
+        self.rounds = 1
+        self.command_addr = self.counter_addr + 1
+        self.ready_addr = self.counter_addr + 2
+        self.frequency_addr = self.counter_addr + 3
+        self.command_mode = str(
+            self.cfg.get("qick_resident_command_mode", "split")
+        )
+        if self.command_mode not in ("split", "packed_frequency"):
+            raise ValueError("invalid resident command mode")
+        self.frequency_registers = np.asarray(
+            [
+                self.freq2reg(
+                    float(frequency),
+                    gen_ch=self.cfg["res_ch"],
+                    ro_ch=self.cfg["ro_chs"][0],
+                )
+                for frequency in self.frequencies
+            ],
+            dtype=np.int64,
+        )
+        self.make_program()
+
+    def make_program(self):
+        cfg = self.cfg
+        _declare_readout(self)
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        _set_qubit_pulse(
+            self,
+            float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
+            self.drive_gain,
+        )
+        park_segments = _declare_park(self)
+        controls = _allocate_stream_counter(
+            self,
+            (
+                "shot_loop",
+                "frequency_loop",
+                "command",
+                "ready",
+                "elapsed",
+            ),
+        )
+        res_page = self.ch_page(cfg["res_ch"])
+        res_frequency = self.sreg(cfg["res_ch"], "freq")
+        res_gain = self.sreg(cfg["res_ch"], "gain")
+        self.regwi(0, controls["command"], 0)
+        self.memwi(0, controls["command"], self.command_addr)
+        self.regwi(0, controls["ready"], 0)
+        self.memwi(0, controls["ready"], self.ready_addr)
+        self.regwi(0, controls["shot_loop"], self.shots - 1)
+        _begin_park(self, park_segments)
+        self.label("QUA_RESIDENT_OPTIMIZER_SHOT")
+        self.regwi(
+            0,
+            controls["frequency_loop"],
+            int(self.frequencies.size) - 1,
+        )
+        self.label("QUA_RESIDENT_OPTIMIZER_FREQUENCY")
+        self.regwi(0, controls["elapsed"], 200)
+        self.mathi(0, controls["ready"], controls["ready"], "+", 1)
+        self.memwi(0, controls["ready"], self.ready_addr)
+        self.label("QUA_RESIDENT_OPTIMIZER_WAIT")
+        self.mathi(0, controls["elapsed"], controls["elapsed"], "+", 14)
+        if self.command_mode == "packed_frequency":
+            self.memri(res_page, res_frequency, self.command_addr)
+            self.condj(
+                res_page,
+                res_frequency,
+                "==",
+                0,
+                "QUA_RESIDENT_OPTIMIZER_WAIT",
+            )
+        else:
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(
+                0,
+                controls["command"],
+                "==",
+                0,
+                "QUA_RESIDENT_OPTIMIZER_WAIT",
+            )
+        self.sync(0, controls["elapsed"])
+        if self.command_mode == "split":
+            self.memri(res_page, res_frequency, self.frequency_addr)
+        self.regwi(0, controls["command"], 0)
+        self.memwi(0, controls["command"], self.command_addr)
+        passive_reset = float(cfg.get("relax_delay", 1000.0))
+        for gain in self.gains:
+            self.safe_regwi(res_page, res_gain, int(gain))
+            if passive_reset > 0:
+                self.sync_all(self.us2cycles(passive_reset))
+            _measure_record(self, delay_us=0.0)
+            if passive_reset > 0:
+                self.sync_all(self.us2cycles(passive_reset))
+            for _ in range(self.drive_pulses):
+                self.pulse(ch=cfg["qubit_ch"])
+                self.sync_all(self.us2cycles(0.01))
+            _measure_record(self, delay_us=0.0)
+        self.loopnz(
+            0,
+            controls["frequency_loop"],
+            "QUA_RESIDENT_OPTIMIZER_FREQUENCY",
+        )
+        self.loopnz(
+            0,
+            controls["shot_loop"],
+            "QUA_RESIDENT_OPTIMIZER_SHOT",
+        )
+        self.end()
+
+
 class QUAPulseGridProgram(QickProgram):
     def __init__(self, soccfg, cfg, *, frequencies_mhz, gains, pulses):
         QickProgram.__init__(self, soccfg)
@@ -1387,6 +1515,8 @@ def acquire_passive_optimizer_grid(
     drive_pulses,
     drive_gain,
     progress=None,
+    access_mode="direct_mmio",
+    command_mode="split",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     gains = _finite_axis(gains, "gains")
@@ -1416,6 +1546,79 @@ def acquire_passive_optimizer_grid(
                 "order": "shot_frequency_gain_state",
             },
         )
+    access_mode = str(access_mode)
+    if access_mode not in ("driver", "direct_mmio"):
+        raise ValueError("invalid resident access mode")
+    command_mode = str(command_mode)
+    if command_mode not in ("split", "packed_frequency"):
+        raise ValueError("invalid resident command mode")
+    resident_method = _optional_soc_method(
+        soc, "acquire_qick_resident_readout"
+    )
+    total = shots * frequencies.size
+    if resident_method is not None:
+        resident_cfg = dict(cfg)
+        resident_cfg["qua_assert_park_at_start"] = True
+        resident_cfg["qick_resident_command_mode"] = command_mode
+        resident = QUAResidentReadoutOptimizerProgram(
+            soccfg,
+            resident_cfg,
+            frequencies_mhz=frequencies,
+            gains=gains,
+            drive_pulses=drive_pulses,
+            drive_gain=drive_gain,
+        )
+        if all("freq" in ro_cfg for ro_cfg in resident.ro_chs.values()):
+            readout_configs = [
+                {
+                    ch: {**ro_cfg, "freq": float(frequency)}
+                    for ch, ro_cfg in resident.ro_chs.items()
+                }
+                for frequency in frequencies
+            ]
+            records, resident_meta = _resident_program_records(
+                resident_method,
+                resident,
+                readout_configs,
+                shots,
+                access_mode=access_mode,
+                command_mode=command_mode,
+            )
+            shape = (shots, frequencies.size, gains.size, 2)
+            if progress is not None:
+                progress(total, total)
+            return (
+                records[..., 0].reshape(shape),
+                records[..., 1].reshape(shape),
+                {
+                    "shots_per_point": shots,
+                    "frequency_points": int(frequencies.size),
+                    "gain_points": int(gains.size),
+                    "states": 2,
+                    "host_programs": 1,
+                    "controller_programs": resident_meta[
+                        "controller_programs"
+                    ],
+                    "readout_reconfigurations": resident_meta[
+                        "readout_reconfigurations"
+                    ],
+                    "server_batches": 1,
+                    "resident_handshake": True,
+                    "server_timing_s": resident_meta["server_timing_s"],
+                    "ready_polls": resident_meta["ready_polls"],
+                    "frequency_update_mode": resident_meta[
+                        "frequency_update_mode"
+                    ],
+                    "tproc_access_mode": resident_meta[
+                        "tproc_access_mode"
+                    ],
+                    "command_mode": resident_meta["command_mode"],
+                    "records": int(
+                        shots * frequencies.size * gains.size * 2
+                    ),
+                    "order": "shot_frequency_gain_state",
+                },
+            )
     normal = []
     for frequency in frequencies:
         run_cfg = dict(cfg)
@@ -1441,7 +1644,6 @@ def acquire_passive_optimizer_grid(
         drive_gain=drive_gain,
     )
     batched = _batch_program_records(soc, first, normal, shots)
-    total = shots * frequencies.size
     if batched is not None:
         records, controller_programs = batched
         shape = (shots, frequencies.size, gains.size, 2)

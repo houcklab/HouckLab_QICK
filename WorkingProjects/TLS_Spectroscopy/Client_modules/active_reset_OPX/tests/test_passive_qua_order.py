@@ -112,6 +112,15 @@ class ResidentGridRecorder(PulseGridRecorder):
         self.instructions.append(("sync", page, register))
 
 
+class ResidentOptimizerRecorder(ResidentGridRecorder):
+    def __init__(self):
+        super().__init__()
+        self.cfg["qubit_freq"] = 4300.0
+        self.gains = np.array([100, 200])
+        self.drive_pulses = 1
+        self.drive_gain = 7
+
+
 def test_scalar_record_order_is_shot_then_declared_axes():
     assert scalar_record_order(2, (2, 3)) == [
         (shot, first, second)
@@ -520,6 +529,88 @@ def test_readout_optimizer_batches_programs_on_the_soc(monkeypatch):
     assert telemetry["order"] == "shot_frequency_gain_state"
 
 
+def test_readout_optimizer_uses_one_resident_program_when_supported(monkeypatch):
+    created = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, *, frequencies_mhz, gains,
+                     drive_pulses, drive_gain):
+            self.frequencies = np.asarray(frequencies_mhz, dtype=float)
+            self.gains = np.asarray(gains, dtype=float)
+            self.shots = int(cfg["shots"])
+            self.drive_pulses = int(drive_pulses)
+            self.drive_gain = int(drive_gain)
+            self.reps = int(
+                self.shots * self.frequencies.size * self.gains.size * 2
+            )
+            self.ro_chs = {
+                0: {
+                    "freq": float(self.frequencies[0]),
+                    "length": 5,
+                    "sel": "product",
+                    "gen_ch": 0,
+                }
+            }
+            self.frequency_registers = np.array([10, 20], dtype=np.int64)
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+            created.append(self)
+
+        def dump_prog(self):
+            return {"program": 1}
+
+    class Soc:
+        def __init__(self):
+            self.calls = []
+
+        def acquire_qick_resident_readout(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            records = np.empty((2, 2, 4, 2), dtype=float)
+            for shot in range(2):
+                for frequency in range(2):
+                    row = np.array([1, 101, 2, 102], dtype=float)
+                    row += 10 * (frequency + 1) + shot
+                    records[shot, frequency, :, 0] = row
+                    records[shot, frequency, :, 1] = -row
+            return {
+                "records": records,
+                "controller_programs": 1,
+                "readout_reconfigurations": 4,
+            }
+
+    monkeypatch.setattr(
+        qua_order,
+        "QUAResidentReadoutOptimizerProgram",
+        Program,
+        raising=False,
+    )
+    soc = Soc()
+    i_values, q_values, telemetry = acquire_passive_optimizer_grid(
+        soc,
+        object(),
+        {"shots": 2},
+        frequencies_mhz=[10.0, 20.0],
+        gains=[1, 2],
+        kind="readout",
+        drive_pulses=1,
+        drive_gain=7,
+    )
+    assert len(created) == 1
+    assert created[0].drive_pulses == 1
+    assert created[0].drive_gain == 7
+    assert len(soc.calls) == 1
+    np.testing.assert_array_equal(i_values[0, 0], [[11, 111], [12, 112]])
+    np.testing.assert_array_equal(q_values, -i_values)
+    assert telemetry["host_programs"] == 1
+    assert telemetry["controller_programs"] == 1
+    assert telemetry["readout_reconfigurations"] == 4
+    assert telemetry["server_batches"] == 1
+    assert telemetry["resident_handshake"] is True
+    assert telemetry["records"] == 16
+    assert telemetry["order"] == "shot_frequency_gain_state"
+
+
 def test_qubit_optimizer_uses_one_shot_major_streaming_program(monkeypatch):
     calls = []
 
@@ -698,6 +789,53 @@ def test_resident_readout_can_unpack_frequency_from_command_word(monkeypatch):
     ) in recorder.instructions
     assert ("memri", 0, 6, 2) not in recorder.instructions
     assert ("memri", 0, 1, 4) not in recorder.instructions
+
+
+def test_resident_readout_optimizer_keeps_state_pairs_inside_gain(monkeypatch):
+    recorder = ResidentOptimizerRecorder()
+    monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
+    monkeypatch.setattr(
+        qua_order, "_set_qubit_pulse", lambda program, frequency, gain: None
+    )
+    monkeypatch.setattr(qua_order, "_declare_park", lambda program: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_allocate_stream_counter",
+        lambda program, names: {
+            "shot_loop": 4,
+            "frequency_loop": 5,
+            "command": 6,
+            "ready": 7,
+            "elapsed": 8,
+        },
+    )
+    monkeypatch.setattr(qua_order, "_begin_park", lambda program, segments: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_measure_record",
+        lambda program, delay_us=None: program.instructions.append(
+            ("measure_record", delay_us)
+        ),
+    )
+    qua_order.QUAResidentReadoutOptimizerProgram.make_program(recorder)
+    body = recorder.instructions[
+        recorder.instructions.index(("safe_regwi", 0, 2, 100)):
+        recorder.instructions.index(("safe_regwi", 0, 2, 200))
+    ]
+    assert body == [
+        ("safe_regwi", 0, 2, 100),
+        ("sync_all", 100000),
+        ("measure_record", 0.0),
+        ("sync_all", 100000),
+        ("pulse", {"ch": 1}),
+        ("sync_all", 1),
+        ("measure_record", 0.0),
+    ]
+    assert recorder.instructions[-3:] == [
+        ("loopnz", 0, 5, "QUA_RESIDENT_OPTIMIZER_FREQUENCY"),
+        ("loopnz", 0, 4, "QUA_RESIDENT_OPTIMIZER_SHOT"),
+        ("end",),
+    ]
 
 
 def test_uniform_mhz_axis_tolerates_qick_register_rounding_jitter():
