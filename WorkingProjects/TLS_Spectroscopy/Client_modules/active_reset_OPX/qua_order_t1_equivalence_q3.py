@@ -270,13 +270,20 @@ def main():
         "active_thermalization_us": float(ACTIVE_THERMALIZATION_US),
         "order": "shot_major",
         "park_lifecycle": "persistent_hard_step",
+        "calibration_park_lifecycle": "per_shot_ramp",
         "config": cfg,
     }
     _write_json(output / "run_metadata.json", metadata)
+    calibration_cfg = dict(cfg)
+    calibration_cfg.update({
+        "opx_persistent_park": False,
+        "opx_hard_flux_steps": False,
+        "opx_reference_flux_cycle": False,
+    })
     bundle, raw = acquire_calibration(
         soc,
         soccfg,
-        cfg,
+        calibration_cfg,
         shots=CALIBRATION_SHOTS,
         **settings.calibration_options(),
         metadata=metadata,
