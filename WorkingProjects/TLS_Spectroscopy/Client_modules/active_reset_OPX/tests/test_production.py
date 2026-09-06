@@ -1,4 +1,7 @@
 from pathlib import Path
+import runpy
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -220,3 +223,60 @@ def test_qubit_spec_equivalence_runner_uses_identical_passive_and_active_grids()
     }]
     assert modes == ["passive", "active"]
     assert main_calls == 2
+
+
+def test_full_qubit_spec_runner_uses_gate_calibration_path(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        RESET_MODE="passive",
+        P_TRANSMISSION={"run": True},
+        P_TRANSMISSION_SWEEP={"run": True},
+        P_QUBIT_SPEC={"run": False},
+        P_QUBIT_SPEC_SWEEP={"run": True},
+        P_SS_CAL={"run": True},
+        P_RABI_CHEVRON_IQ={"run": True},
+        P_RABI_CHEVRON_SS={"run": True},
+        P_READOUT_OPT={"run": True},
+        P_QUBIT_OPT={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "reset_mode": runner.RESET_MODE,
+        "qubit_spec": dict(runner.P_QUBIT_SPEC),
+        "selected": [
+            runner.P_TRANSMISSION["run"],
+            runner.P_TRANSMISSION_SWEEP["run"],
+            runner.P_QUBIT_SPEC["run"],
+            runner.P_QUBIT_SPEC_SWEEP["run"],
+            runner.P_SS_CAL["run"],
+            runner.P_RABI_CHEVRON_IQ["run"],
+            runner.P_RABI_CHEVRON_SS["run"],
+            runner.P_READOUT_OPT["run"],
+            runner.P_QUBIT_OPT["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.GateCalibration"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "GateCalibration", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_qubit_spec_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "reset_mode": "active",
+        "qubit_spec": {
+            "run": True,
+            "shots": 1000,
+            "freq_start_mhz": 4364.5,
+            "freq_stop_mhz": 4367.5,
+            "freq_points": 201,
+            "spec_gain": 15000,
+            "spec_length_us": 1.0,
+            "relax_delay_us": 1000.0,
+        },
+        "selected": [False, False, True, False, False, False, False, False, False],
+    }]

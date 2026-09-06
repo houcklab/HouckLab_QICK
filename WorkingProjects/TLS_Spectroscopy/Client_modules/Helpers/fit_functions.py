@@ -57,24 +57,54 @@ def fit_spec_dip(freq, amp, kind='auto'):
     offset = float(np.median(a))
     dip_depth = offset - float(np.min(a))
     peak_height = float(np.max(a)) - offset
-    if kind == 'auto':
-        kind = 'dip' if dip_depth >= peak_height else 'peak'
-    if kind == 'dip':
-        f0_seed = f[np.argmin(a)]
-        amp_seed = -max(dip_depth, 1e-9)
-    else:
-        f0_seed = f[np.argmax(a)]
-        amp_seed = max(peak_height, 1e-9)
     span = float(f[-1] - f[0]) or 1.0
-    p0 = [f0_seed, abs(span) / 10.0, amp_seed, offset]
-    try:
-        popt, pcov = curve_fit(lorentzian, f, a, p0=p0, maxfev=20000)
-        perr = np.sqrt(np.diag(pcov))
-        return ({'f0': popt[0], 'fwhm': abs(popt[1]), 'amp': popt[2], 'offset': popt[3]},
-                {'f0': perr[0], 'fwhm': perr[1], 'amp': perr[2], 'offset': perr[3]})
-    except (RuntimeError, ValueError):
-        return {'f0': float(f0_seed), 'fwhm': abs(span) / 10.0,
-                'amp': amp_seed, 'offset': offset}, None
+
+    def fit_kind(selected_kind):
+        if selected_kind == 'dip':
+            f0_seed = f[np.argmin(a)]
+            amp_seed = -max(dip_depth, 1e-9)
+        else:
+            f0_seed = f[np.argmax(a)]
+            amp_seed = max(peak_height, 1e-9)
+        p0 = [f0_seed, abs(span) / 10.0, amp_seed, offset]
+        try:
+            popt, pcov = curve_fit(lorentzian, f, a, p0=p0, maxfev=20000)
+            perr = np.sqrt(np.diag(pcov))
+            params = {
+                'f0': popt[0],
+                'fwhm': abs(popt[1]),
+                'amp': popt[2],
+                'offset': popt[3],
+            }
+            errors = {
+                'f0': perr[0],
+                'fwhm': perr[1],
+                'amp': perr[2],
+                'offset': perr[3],
+            }
+        except (RuntimeError, ValueError):
+            params = {
+                'f0': float(f0_seed),
+                'fwhm': abs(span) / 10.0,
+                'amp': amp_seed,
+                'offset': offset,
+            }
+            errors = None
+        residual = float(np.mean((a - lorentzian(
+            f,
+            params['f0'],
+            params['fwhm'],
+            params['amp'],
+            params['offset'],
+        )) ** 2))
+        return params, errors, residual
+
+    if kind == 'auto':
+        candidates = [fit_kind('dip'), fit_kind('peak')]
+        params, errors, _ = min(candidates, key=lambda result: result[2])
+        return params, errors
+    params, errors, _ = fit_kind(kind)
+    return params, errors
 
 
 def fit_resonator_dip(freq, mag_db):

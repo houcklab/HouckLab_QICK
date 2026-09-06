@@ -45,6 +45,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records im
     ShotRecord,
     TerminalStatus,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.fit_functions import (
+    fit_spec_dip,
+)
 
 
 CAL = ClassifierCalibration(
@@ -108,6 +111,19 @@ def test_spectroscopy_fit_recovers_lorentzian_center_and_width():
     assert fit["fwhm_mhz"] == pytest.approx(width, abs=0.03)
     assert fit["contrast"] == pytest.approx(0.72, abs=0.01)
     assert fit["boundary_peak"] is False
+
+
+def test_auto_spectroscopy_fit_selects_best_model_instead_of_edge_excursion():
+    frequencies = np.linspace(4364.5, 4367.5, 31)
+    magnitude = 5.0 + 2.0 / (
+        1.0 + (2.0 * (frequencies - 4366.2) / 2.2) ** 2
+    )
+    magnitude[0] = 3.5
+
+    fit, _ = fit_spec_dip(frequencies, magnitude, kind="auto")
+
+    assert fit["f0"] == pytest.approx(4366.2, abs=0.05)
+    assert fit["amp"] > 0.0
 
 
 def test_flux_cycle_spectroscopy_identifies_correctable_periodic_detuning():
