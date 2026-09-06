@@ -155,3 +155,27 @@ def test_passive_session_skips_frequency_lookup_and_hardware_calibration(tmp_pat
     )
 
     assert session.runtime_mode == "passive"
+
+
+def test_transmission_sweep_smoke_selects_only_the_production_sweep():
+    import ast
+
+    path = Path(__file__).parents[1] / "production_transmission_sweep_q3.py"
+    tree = ast.parse(path.read_text())
+    assignments = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Subscript):
+            continue
+        owner = getattr(target.value, "attr", None)
+        key = ast.literal_eval(target.slice)
+        assignments[(owner, key)] = ast.literal_eval(node.value)
+
+    assert assignments[("P_TRANSMISSION", "run")] is False
+    assert assignments[("P_TRANSMISSION_SWEEP", "run")] is True
+    assert assignments[("P_TRANSMISSION_SWEEP", "shots")] == 100
+    assert assignments[("P_TRANSMISSION_SWEEP", "freq_points")] == 41
+    assert assignments[("P_TRANSMISSION_SWEEP", "gain_points")] == 3
+    assert assignments[("P_SS_CAL", "run")] is False
