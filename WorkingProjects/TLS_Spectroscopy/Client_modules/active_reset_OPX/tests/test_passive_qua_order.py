@@ -1,5 +1,6 @@
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import qua_order
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
     QUAPulseGridProgram,
     acquire_passive_optimizer_grid,
@@ -22,7 +23,7 @@ class PulseGridRecorder:
         }
         self.frequencies = np.array([10.0, 20.0])
         self.gains = np.array([100, 200])
-        self.pulses = 1
+        self.drive_pulses = 1
         self.shots = 2
         self.instructions = []
 
@@ -270,3 +271,20 @@ def test_uniform_mhz_axis_tolerates_qick_register_rounding_jitter():
     )
     np.testing.assert_array_equal(registers, [0, 10, 21, 31])
     assert step == 10
+
+
+def test_pulse_grid_preserves_qick_waveform_library(monkeypatch):
+    def initialize(program, soccfg):
+        program.pulses = ["qick-waveforms"]
+
+    monkeypatch.setattr(qua_order.QickProgram, "__init__", initialize)
+    monkeypatch.setattr(QUAPulseGridProgram, "make_program", lambda program: None)
+    program = QUAPulseGridProgram(
+        object(),
+        {"shots": 2},
+        frequencies_mhz=[10.0, 20.0],
+        gains=[100, 200],
+        pulses=3,
+    )
+    assert program.pulses == ["qick-waveforms"]
+    assert program.drive_pulses == 3

@@ -283,8 +283,8 @@ class QUAPulseGridProgram(QickProgram):
         self.frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
         rounded = np.rint(_finite_axis(gains, "gains")).astype(np.int64)
         self.gains = rounded
-        self.pulses = int(pulses)
-        if self.pulses < 0:
+        self.drive_pulses = int(pulses)
+        if self.drive_pulses < 0:
             raise ValueError("pulses must be non-negative")
         self.shots = _positive_shots(self.cfg)
         self.reps = int(self.shots * self.frequencies.size * self.gains.size)
@@ -321,7 +321,7 @@ class QUAPulseGridProgram(QickProgram):
             self.safe_regwi(qubit_page, gain_register, int(gain))
             if gain2_register is not None:
                 self.safe_regwi(qubit_page, gain2_register, int(gain // 2))
-            for _ in range(self.pulses):
+            for _ in range(self.drive_pulses):
                 self.pulse(ch=cfg["qubit_ch"])
                 self.sync_all(self.us2cycles(0.01))
             _measure_record(self)
