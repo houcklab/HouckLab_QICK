@@ -207,10 +207,14 @@ def validate_confident_calibration(bundle, min_confident_fraction=0.2):
     if not 0.0 < minimum <= 1.0:
         raise ValueError("min_confident_fraction must be in (0, 1]")
     failures = []
-    for context in ("payload", "loop"):
+    required = {
+        "payload": ("excited_fire",),
+        "loop": ("ground_accept", "excited_fire"),
+    }
+    for context, metrics_required in required.items():
         calibration = getattr(bundle, context)
         metrics = dict(calibration.holdout or {})
-        for metric in ("ground_accept", "excited_fire"):
+        for metric in metrics_required:
             value = float(metrics.get(metric, 0.0))
             if not np.isfinite(value) or value < minimum:
                 failures.append(f"{context}.{metric}={value:.4f}")

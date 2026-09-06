@@ -1000,6 +1000,31 @@ def test_calibration_rejects_a_loop_classifier_with_no_confident_states():
         validate_confident_calibration(bundle, min_confident_fraction=0.2)
 
 
+def test_calibration_accepts_payload_without_direct_ground_exit():
+    payload = replace(
+        CAL,
+        context="payload",
+        holdout={"ground_accept": 0.0, "excited_fire": 0.44},
+    )
+    loop = replace(
+        CAL,
+        context="loop",
+        holdout={"ground_accept": 0.58, "excited_fire": 0.64},
+    )
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=payload,
+        loop=loop,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+
+    assert validate_confident_calibration(
+        bundle,
+        min_confident_fraction=0.2,
+    ) is bundle
+
+
 def test_qua_calibration_metadata_does_not_claim_tail_error_limits():
     metadata = threshold_policy_metadata(
         false_ground_limit=0.01,
