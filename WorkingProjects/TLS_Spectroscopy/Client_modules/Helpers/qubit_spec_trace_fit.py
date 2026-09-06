@@ -24,6 +24,10 @@ TRANSMON_MAX_ITER = 8
 CONFIDENCE_Z_THR = 5.0
 CONFIDENCE_FLOOR_DB = 0.15
 DP_LAMBDA_SLOPE = 0.004
+PHASE_BASELINE_WINDOW_PTS = 51
+PHASE_SMOOTH_WINDOW_PTS = 7
+PHASE_EDGE_MARGIN_PTS = 3
+PHASE_CONFIDENCE_Z_THR = 2.0
 
 def detect_stripe_rows(magnitude_dbm):
     row_median = np.nanmedian(magnitude_dbm, axis=1)
@@ -220,7 +224,72 @@ def extract_confident_trace(tdc, tf, tmag):
     return trace, confident
 
 
-def fit_qubit_spec_map(dc_v, freq_ghz, mag_dbm,
+def _odd_window(size, preferred, polyorder):
+    window = min(int(preferred), int(size) if int(size) % 2 else int(size) - 1)
+    minimum = int(polyorder) + 2
+    if minimum % 2 == 0:
+        minimum += 1
+    return max(window, minimum)
+
+
+def extract_phase_trace(frequency_ghz, phase_rad, polarity):
+    frequency_ghz = np.asarray(frequency_ghz, dtype=float)
+    phase_rad = np.asarray(phase_rad, dtype=float)
+    n_freq, n_dc = phase_rad.shape
+    baseline_window = _odd_window(n_freq, PHASE_BASELINE_WINDOW_PTS, 2)
+    smooth_window = _odd_window(n_freq, PHASE_SMOOTH_WINDOW_PTS, 2)
+    edge = min(PHASE_EDGE_MARGIN_PTS, max((n_freq - 1) // 4, 0))
+    interior = np.arange(edge, n_freq - edge)
+    trace = np.full(n_dc, np.nan)
+    confidence_z = np.full(n_dc, np.nan)
+    for column in range(n_dc):
+        values = phase_rad[:, column]
+        finite = np.isfinite(values)
+        if np.count_nonzero(finite) < max(11, baseline_window):
+            continue
+        if not finite.all():
+            values = np.interp(
+                np.arange(n_freq), np.flatnonzero(finite), values[finite]
+            )
+        residual = values - savgol_filter(values, baseline_window, 2)
+        residual = savgol_filter(residual, smooth_window, 2)
+        center = float(np.nanmedian(residual))
+        scale = float(
+            1.4826 * np.nanmedian(np.abs(residual - center)) + 1e-12
+        )
+        if polarity == "dark":
+            index = int(interior[np.nanargmin(residual[interior])])
+            strength = center - float(residual[index])
+        else:
+            index = int(interior[np.nanargmax(residual[interior])])
+            strength = float(residual[index]) - center
+        confidence_z[column] = strength / scale
+        if confidence_z[column] >= PHASE_CONFIDENCE_Z_THR:
+            trace[column] = frequency_ghz[index]
+    return trace, confidence_z
+
+
+def _fit_result(dc_axis, trace, source, lo, hi):
+    fit = fit_transmon_iterative(dc_axis, trace)
+    popt = [float(x) for x in fit["popt"]]
+    return {
+        "params": popt,
+        "rms_mhz": float(fit["rms"] * 1e3),
+        "n_kept": int(fit["n_kept"]),
+        "n_dropped": int(fit["n_dropped"]),
+        "dc": dc_axis,
+        "trace": trace,
+        "confident_frac": float(np.isfinite(trace).mean()),
+        "extrema": [
+            [float(v), float(f), str(k)]
+            for v, f, k in extrema_within_range(fit["popt"], float(lo), float(hi))
+        ],
+        "fit_window_v": [float(lo), float(hi)],
+        "trace_source": str(source),
+    }
+
+
+def fit_qubit_spec_map(dc_v, freq_ghz, mag_dbm, phase_rad=None,
                        trim_low_dc_v=0.02, trim_high_dc_v=0.0,
                        fit_dc_min_v=None, fit_dc_max_v=None,
                        trace_freq_min_ghz=None, trace_freq_max_ghz=None):
@@ -245,21 +314,31 @@ def fit_qubit_spec_map(dc_v, freq_ghz, mag_dbm,
     finite_cols = np.isfinite(tmag).any(axis=0)
     if not finite_cols.all():
         tdc, tmag = tdc[finite_cols], tmag[:, finite_cols]
-    trace, confident = extract_confident_trace(tdc, tf, tmag)
-    fit = fit_transmon_iterative(tdc, trace)
-    popt = [float(x) for x in fit["popt"]]
-    extrema = extrema_within_range(fit["popt"], float(lo), float(hi))
-    return {
-        "params": popt,
-        "rms_mhz": float(fit["rms"] * 1e3),
-        "n_kept": int(fit["n_kept"]),
-        "n_dropped": int(fit["n_dropped"]),
-        "dc": tdc,
-        "trace": trace,
-        "confident_frac": float(np.isfinite(trace).mean()),
-        "extrema": [[float(v), float(f), str(k)] for v, f, k in extrema],
-        "fit_window_v": [float(lo), float(hi)],
-    }
+    candidates = []
+    failures = []
+    try:
+        trace, _ = extract_confident_trace(tdc, tf, tmag)
+        candidates.append(_fit_result(tdc, trace, "magnitude", lo, hi))
+    except RuntimeError as exc:
+        failures.append(str(exc))
+    if phase_rad is not None:
+        phase_rad = np.asarray(phase_rad, dtype=float)
+        if phase_rad.shape != mag_dbm.shape:
+            raise ValueError("phase_rad must have the same shape as mag_dbm")
+        tphase = phase_rad[np.ix_(fm, dcm)]
+        tphase = tphase[:, finite_cols]
+        for polarity in ("dark", "bright"):
+            try:
+                trace, _ = extract_phase_trace(tf, tphase, polarity)
+                candidates.append(
+                    _fit_result(tdc, trace, f"phase_{polarity}", lo, hi)
+                )
+            except RuntimeError as exc:
+                failures.append(str(exc))
+    if not candidates:
+        detail = "; ".join(failures) if failures else "no usable trace"
+        raise RuntimeError(detail)
+    return min(candidates, key=lambda result: result["rms_mhz"])
 
 
 def print_fit_report(result, label="Advanced qubit-spec fit"):

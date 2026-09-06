@@ -506,7 +506,7 @@ class QubitFluxStepResponse(ExperimentClass):
 
         return effective_dc
 
-    def _extract_trace_from_map(self, iq_magnitude_dbm):
+    def _extract_trace_from_map(self, iq_magnitude_dbm, iq_phase=None):
         baseline_frequency_ghz, target_frequency_ghz, frequency_margin_ghz = self._compute_expected_frequencies()
         expected_min_ghz = min(baseline_frequency_ghz, target_frequency_ghz) - frequency_margin_ghz
         expected_max_ghz = max(baseline_frequency_ghz, target_frequency_ghz) + frequency_margin_ghz
@@ -519,23 +519,42 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
         self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
 
-        trace_result = trx.extract_trace_from_map(
-            iq_magnitude_dbm,
-            frequency_axis_ghz,
-            self.t_vec,
-            baseline_frequency_ghz,
-            target_frequency_ghz,
-            frequency_margin_ghz,
-            trace_tracking_mode=self.trace_tracking_mode,
-            trace_polarity=self.trace_polarity,
-            trace_baseline_window_mhz=self.trace_baseline_window_mhz,
-            trace_max_jump_mhz=self.trace_max_jump_mhz,
-            trace_smoothness_penalty=self.trace_smoothness_penalty,
-            trace_local_fit_half_window_mhz=self.trace_local_fit_half_window_mhz,
-            trace_smoothing_window_points=self.trace_smoothing_window_points,
-            trace_smoothing_polyorder=self.trace_smoothing_polyorder,
-            trace_use_smoothed_frequency=self.trace_use_smoothed_frequency,
-        )
+        candidates = []
+        for signal_source, signal_map in (
+            ("magnitude", iq_magnitude_dbm),
+            ("phase", iq_phase),
+        ):
+            if signal_map is None:
+                continue
+            trace_result = trx.extract_trace_from_map(
+                signal_map,
+                frequency_axis_ghz,
+                self.t_vec,
+                baseline_frequency_ghz,
+                target_frequency_ghz,
+                frequency_margin_ghz,
+                trace_tracking_mode=self.trace_tracking_mode,
+                trace_polarity=self.trace_polarity,
+                trace_baseline_window_mhz=self.trace_baseline_window_mhz,
+                trace_max_jump_mhz=self.trace_max_jump_mhz,
+                trace_smoothness_penalty=self.trace_smoothness_penalty,
+                trace_local_fit_half_window_mhz=self.trace_local_fit_half_window_mhz,
+                trace_smoothing_window_points=self.trace_smoothing_window_points,
+                trace_smoothing_polyorder=self.trace_smoothing_polyorder,
+                trace_use_smoothed_frequency=self.trace_use_smoothed_frequency,
+            )
+            score = np.asarray(trace_result.get("score", []), dtype=float)
+            ridge = np.asarray(trace_result.get("ridge_frequency_ghz", []), dtype=float)
+            if score.shape == (frequency_axis_ghz.size, self.t_vec.size) and ridge.size == self.t_vec.size:
+                rows = np.asarray(
+                    [int(np.nanargmin(np.abs(frequency_axis_ghz - value))) for value in ridge],
+                    dtype=int,
+                )
+                path_score = float(np.nanmedian(score[rows, np.arange(self.t_vec.size)]))
+            else:
+                path_score = -np.inf
+            candidates.append((path_score, signal_source, trace_result))
+        _, trace_signal_source, trace_result = max(candidates, key=lambda item: item[0])
 
         extracted_qubit_frequency_ghz = np.asarray(trace_result["selected_frequency_ghz"], dtype=float)
         extracted_if_frequency_hz = np.asarray(trace_result["extracted_if_frequency_hz"], dtype=float)
@@ -578,6 +597,7 @@ class QubitFluxStepResponse(ExperimentClass):
             "trace_supported": extracted_supported.tolist(),
             "trace_extraction_method": extraction_method,
             "trace_selected_polarity": trace_result.get("polarity", None),
+            "trace_signal_source": trace_signal_source,
             "measured_step_response": measured_step_response,
             "measured_frequency_step_response": measured_step_response,
             "effective_dc_offset_V": effective_dc_offset,
@@ -909,7 +929,7 @@ class QubitFluxStepResponse(ExperimentClass):
         self._write_raw_sweep_csv()
         if live_fig is not None:
             live_fig.close()
-        self._extract_trace_from_map(iq_magnitude_dbm)
+        self._extract_trace_from_map(iq_magnitude_dbm, iq_phase)
         self._fit_predistortion_from_step_response()
         self._fit_rise_decay_bump_dc_correction_from_step_response()
         self.finalize_analysis()

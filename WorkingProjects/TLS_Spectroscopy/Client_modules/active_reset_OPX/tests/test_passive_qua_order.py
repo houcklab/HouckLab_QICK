@@ -1050,7 +1050,7 @@ def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
     experiment.meta_dict = {"cw_amp": 1000}
     experiment.data = {}
     experiment._write_raw_sweep_csv = lambda: None
-    experiment._extract_trace_from_map = lambda values: None
+    experiment._extract_trace_from_map = lambda *values: None
     experiment._fit_predistortion_from_step_response = lambda: None
     experiment._fit_rise_decay_bump_dc_correction_from_step_response = lambda: None
     experiment.finalize_analysis = lambda: None

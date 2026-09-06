@@ -307,7 +307,9 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         plt.close(fig)
         self.data['raw_map_png'] = raw_map_png
 
-        result = qst.fit_qubit_spec_map(dc_scaled, freq_ghz, mag_dbm_2d)
+        result = qst.fit_qubit_spec_map(
+            dc_scaled, freq_ghz, mag_dbm_2d, phase_rad=phase_2d
+        )
         S = DAC_TO_VOLT_SCALE
         result_dac = copy.deepcopy(result)
         p = result_dac["params"]
