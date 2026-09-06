@@ -42,6 +42,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integratio
 
 
 QUBIT = "q3"
+RUN_NAME = "TLS_memory_smoke"
 CALIBRATION_SHOTS = 1000
 SHOTS = 200
 WARMUP_SHOTS = 128
@@ -68,7 +69,7 @@ def _output_dir():
         Path(outerFolder)
         / QUBIT
         / f"{QUBIT}_{now:%Y_%m_%d}"
-        / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_TLS_memory_smoke"
+        / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_{RUN_NAME}"
     )
     output.mkdir(parents=True, exist_ok=False)
     return output
@@ -117,6 +118,7 @@ def main():
         "created": datetime.now().isoformat(),
         "qick_version": str(qick.__version__),
         "qubit": QUBIT,
+        "run_name": RUN_NAME,
         "park_history_result": str(park_history_path),
         "park_history_frequency_mhz": frequency,
         "target_gain": int(TARGET_GAIN),
