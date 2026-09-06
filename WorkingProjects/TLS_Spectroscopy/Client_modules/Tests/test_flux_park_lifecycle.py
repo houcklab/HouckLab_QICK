@@ -707,6 +707,13 @@ def test_production_t1_decay_fit_remains_available():
     assert fit["P1"] == pytest.approx(0.86, abs=1e-3)
 
 
+def test_t1_only_labels_a_gain_change_as_a_flux_excursion():
+    cfg = {"ff_park_gain": -25790}
+
+    assert C._is_flux_excursion(-25790, cfg) is False
+    assert C._is_flux_excursion(-20000, cfg) is True
+
+
 def test_gate_calibration_builds_opx_rabi_runtime_without_legacy_reset(
     monkeypatch,
 ):

@@ -48,6 +48,11 @@ def needs_standalone_ss_calibration(reset_mode):
     return not active_reset.uses_opx_unbounded(reset_mode)
 
 
+def _is_flux_excursion(ff_gain, cfg):
+    park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+    return not np.isclose(float(ff_gain), park_gain, rtol=0.0, atol=1e-9)
+
+
 class _CoherenceBase(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
@@ -258,7 +263,7 @@ class T1(_CoherenceBase):
         return float(np.sum(final)), int(final.size)
 
     def acquire(self, progress=False, plotDisp=False):
-        held = abs(self.ff_gain) > 0
+        held = _is_flux_excursion(self.ff_gain, self.cfg)
         print(f"[T1{' flux ramp' if held else ''}] {len(self.t_vec_us)} waits "
               f"{self.t_vec_us[0]:.2f}..{self.t_vec_us[-1]:.1f} us, {self.cfg['shots']} shots/pt"
               + (f", flux excursion ff_gain={self.ff_gain:.0f} DAC" if held else " at park"))
