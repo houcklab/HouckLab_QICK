@@ -62,7 +62,6 @@ def main():
         frequencies_mhz=frequencies,
         values=[cfg["read_pulse_gain"]],
         kind="readout_gain",
-        readout_update_mode="held_write_enable",
     )
     wall_s = perf_counter() - started
     if int(telemetry.get("server_batches", 0)) != 1:

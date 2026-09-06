@@ -955,14 +955,8 @@ def _optional_soc_method(soc, name):
     return method if callable(method) else None
 
 
-def _resident_program_records(
-    method,
-    resident,
-    readout_configs,
-    shots,
-    readout_update_mode="latched",
-):
-    args = (
+def _resident_program_records(method, resident, readout_configs, shots):
+    result = method(
         resident.dump_prog(),
         readout_configs,
         resident.frequency_registers.tolist(),
@@ -971,13 +965,6 @@ def _resident_program_records(
         resident.ready_addr,
         resident.frequency_addr,
     )
-    if readout_update_mode == "latched":
-        result = method(*args)
-    else:
-        result = method(
-            *args,
-            readout_update_mode=readout_update_mode,
-        )
     if not isinstance(result, dict) or "records" not in result:
         raise RuntimeError("RFSoC resident acquisition returned an invalid result")
     records = np.asarray(result["records"], dtype=float)
@@ -1053,14 +1040,10 @@ def acquire_passive_readout_grid(
     kind,
     excursion_gain=None,
     progress=None,
-    readout_update_mode="latched",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
     shots = _positive_shots(cfg)
-    readout_update_mode = str(readout_update_mode)
-    if readout_update_mode not in ("latched", "held_write_enable"):
-        raise ValueError("invalid resident readout update mode")
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"
     )
@@ -1091,7 +1074,6 @@ def acquire_passive_readout_grid(
                 resident,
                 readout_configs,
                 shots,
-                readout_update_mode=readout_update_mode,
             )
             if progress is not None:
                 progress(total, total)
