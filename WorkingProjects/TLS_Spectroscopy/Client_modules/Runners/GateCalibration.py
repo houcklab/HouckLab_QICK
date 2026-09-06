@@ -42,7 +42,7 @@ RESET_MODE = "active"
 _RESET_SESSION = ProductionResetSession.passive()
 
 P_TRANSMISSION = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "freq_start_mhz": 6929.0,
     "freq_stop_mhz": 6935.0,
@@ -64,12 +64,12 @@ P_TRANSMISSION_SWEEP = {
 }
 
 P_QUBIT_SPEC = {
-    "run": False,
-    "shots": 1000,
-    "freq_start_mhz": 4900,
-    "freq_stop_mhz": 5020,
-    "freq_points": 201,
-    "spec_gain": 25000,
+    "run": True,
+    "shots": 100,
+    "freq_start_mhz": 4300,
+    "freq_stop_mhz": 4400,
+    "freq_points": 101,
+    "spec_gain": 10000,
     "spec_length_us": 1.0,
     "relax_delay_us": 100.0,
 }
@@ -97,7 +97,7 @@ P_SS_CAL = {
 
 P_RABI_CHEVRON_IQ = {
     "run": False,
-    "shots": 500,
+    "shots": 50,
     "num_pi": 1,
     "pulse_type": "X180",
     "a_min": 1000,
@@ -114,7 +114,7 @@ P_RABI_CHEVRON_SS = {
     "shots": 1000,
     "num_pi": 1,
     "pulse_type": "X180",
-    "a_min": 5000,
+    "a_min": 10000,
     "a_max": 20000,
     "a_points": 21,
     "freq_span_mhz": 3.0,
