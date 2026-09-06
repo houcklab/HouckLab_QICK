@@ -622,6 +622,33 @@ def test_pulse_grid_reports_completed_outer_shots_after_each_block(monkeypatch):
     assert updates == [(1, 3), (2, 3), (3, 3)]
 
 
+def test_qubit_spec_lifecycle_methods_isolate_engine_delay_and_reset():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        qubit_spec_lifecycle_q3 as runner,
+    )
+
+    assert runner._method_config("passive_1000") == (
+        "passive",
+        "none",
+        1000.0,
+    )
+    assert runner._method_config("compact_1000") == (
+        "compact",
+        "none",
+        1000.0,
+    )
+    assert runner._method_config("compact_10") == (
+        "compact",
+        "none",
+        10.0,
+    )
+    assert runner._method_config("active_10") == (
+        "compact",
+        "opx_unbounded",
+        10.0,
+    )
+
+
 def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch):
     bundle = CalibrationBundle(
         schema_version=1,
