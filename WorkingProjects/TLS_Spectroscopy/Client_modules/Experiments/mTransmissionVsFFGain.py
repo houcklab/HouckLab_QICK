@@ -14,6 +14,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ff_pulse import swe
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
     interleaved_average, resolve_rounds, suppress_stdout)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_readout_grid,
+)
 
 
 class FFTransProgram(AveragerProgram):
@@ -98,6 +101,7 @@ class TransmissionVsFFGain(ExperimentClass):
         rounds = resolve_rounds(cfg, shots, default=cfg.get("trans_rounds"))
         n_f, n_dc = len(f_vec), len(dc_vec)
         points = [(i_dc, j_f) for i_dc in range(n_dc) for j_f in range(n_f)]
+        telemetry = None
 
         def run_point(idx, reps):
             i_dc, j_f = points[idx]
@@ -154,11 +158,31 @@ class TransmissionVsFFGain(ExperimentClass):
                 raise KeyboardInterrupt
 
         try:
-            S_mean = interleaved_average(run_point, len(points), shots,
-                                         rounds=rounds, live=live_cb, progress=prog_cb)
-            _fill_map(S_mean)
+            if bool(cfg.get("qua_shot_order", False)):
+                i_values, q_values, telemetry = acquire_passive_readout_grid(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    frequencies_mhz=f_vec,
+                    values=dc_vec,
+                    kind="flux_gain",
+                    progress=lambda done, total: prog_cb(done, total),
+                )
+                signal_map = np.mean(i_values + 1j * q_values, axis=2)
+                R[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)
+                phase_raw[:, :] = np.angle(signal_map)
+                self.data.update({"IQ_mag": R.copy(), "IQ_phase": phase_raw.copy()})
+            else:
+                S_mean = interleaved_average(
+                    run_point, len(points), shots,
+                    rounds=rounds, live=live_cb, progress=prog_cb
+                )
+                _fill_map(S_mean)
         except KeyboardInterrupt:
             pass
+        if telemetry is not None:
+            self.data["acquisition_order"] = telemetry["order"]
+            self.data["qua_order_telemetry"] = telemetry
         if live is not None:
             live.close()
         if interrupted:

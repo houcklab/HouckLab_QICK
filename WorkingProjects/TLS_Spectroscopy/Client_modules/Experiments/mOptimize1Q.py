@@ -11,6 +11,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRoundTripRamse
     RoundTripRamsey)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
+    find_blob_median,
+    find_threshold,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_optimizer_grid,
+)
 
 
 PULSE_TYPES = ("X180", "X90")
@@ -31,7 +38,19 @@ def optimizer_drive_pulses(pulse_type, num_pi_pulses):
     return num_pi_pulses * (2 if pulse_type == "X90" else 1)
 
 
+def point_fidelity(i_ground, q_ground, i_excited, q_excited):
+    ground = np.asarray(i_ground) + 1j * np.asarray(q_ground)
+    excited = np.asarray(i_excited) + 1j * np.asarray(q_excited)
+    theta = np.angle(find_blob_median(excited) - find_blob_median(ground))
+    ground_rotated = np.exp(-1j * theta) * ground
+    excited_rotated = np.exp(-1j * theta) * excited
+    _, fidelity = find_threshold(ground_rotated, excited_rotated)
+    return float(np.max(fidelity))
+
+
 class _GridOptimizer(ExperimentClass):
+
+    optimizer_kind = None
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='data', cfg=None, meta_dict=None, freqs_mhz=None, gains=None,
@@ -74,6 +93,35 @@ class _GridOptimizer(ExperimentClass):
         fid = np.full((ng, nf), np.nan)
         total = ng * nf
         start = time.time()
+        if bool(self.cfg.get("qua_shot_order", False)):
+            gain_key = "qubit_pi2_gain" if self.pulse_type == "X90" else "qubit_pi_gain"
+            drive_gain = int(self.cfg[gain_key])
+            callback = None
+            if progress:
+                callback = lambda done, count: progress_counter(
+                    done - 1, count, start_time=start, label=self.suffix
+                )
+            i_values, q_values, telemetry = acquire_passive_optimizer_grid(
+                self.soc,
+                self.soccfg,
+                {**self.cfg, "shots": self.shots, "reps": self.shots},
+                frequencies_mhz=self.freqs_mhz,
+                gains=self.gains,
+                kind=self.optimizer_kind,
+                drive_pulses=self.drive_pulses,
+                drive_gain=drive_gain,
+                progress=callback,
+            )
+            for jf in range(nf):
+                for ig in range(ng):
+                    fid[ig, jf] = point_fidelity(
+                        i_values[:, jf, ig, 0],
+                        q_values[:, jf, ig, 0],
+                        i_values[:, jf, ig, 1],
+                        q_values[:, jf, ig, 1],
+                    )
+            self._qua_order_telemetry = telemetry
+            return fid
         done = 0
         for ig, g in enumerate(self.gains):
             for jf, f in enumerate(self.freqs_mhz):
@@ -105,6 +153,8 @@ class _GridOptimizer(ExperimentClass):
 
 class ReadoutOptimize(_GridOptimizer):
 
+    optimizer_kind = "readout"
+
     def _point_cfg(self, freq, gain):
         cfg = dict(self.cfg)
         cfg["read_pulse_freq"] = float(freq)
@@ -131,6 +181,9 @@ class ReadoutOptimize(_GridOptimizer):
             'best_fidelity': best_F,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if hasattr(self, "_qua_order_telemetry"):
+            self.data["acquisition_order"] = self._qua_order_telemetry["order"]
+            self.data["qua_order_telemetry"] = self._qua_order_telemetry
         print(f"[readout opt] best F={best_F:.4f} at read_pulse_freq={best_freq:.3f} MHz, "
               f"read_pulse_gain={best_gain}")
         if self.save:
@@ -147,6 +200,8 @@ class ReadoutOptimize(_GridOptimizer):
 
 
 class QubitPulseOptimize(_GridOptimizer):
+
+    optimizer_kind = "qubit"
 
     def _point_cfg(self, freq, gain):
         cfg = dict(self.cfg)
@@ -239,6 +294,9 @@ class QubitPulseOptimize(_GridOptimizer):
             'best_qubit_pi_freq': best_freq, 'best_fidelity': best_F,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if hasattr(self, "_qua_order_telemetry"):
+            self.data["acquisition_order"] = self._qua_order_telemetry["order"]
+            self.data["qua_order_telemetry"] = self._qua_order_telemetry
         if self.pulse_type == "X90":
             self.data['best_qubit_pi2_gain'] = best_gain
             result = f"qubit_pi2_gain={best_gain}"

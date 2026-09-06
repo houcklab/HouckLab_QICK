@@ -9,6 +9,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_function
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpecVsFlux import QubitSpecProgram
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_pulse_grid,
+)
 
 
 def _freq_axis(cfg):
@@ -38,9 +41,22 @@ class QubitSpec(ExperimentClass):
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         fpts = _freq_axis(cfg)
-        _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
-            self.soc, load_pulses=True, progress=progress)
-        sig = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
+        telemetry = None
+        if bool(cfg.get("qua_shot_order", False)):
+            i_values, q_values, telemetry = acquire_passive_pulse_grid(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=fpts,
+                gains=[cfg["qubit_gain"]],
+                pulses=1,
+                progress=progress,
+            )
+            sig = np.mean(i_values[:, 0, :] + 1j * q_values[:, 0, :], axis=1)
+        else:
+            _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
+                self.soc, load_pulses=True, progress=progress)
+            sig = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
         mag = np.abs(sig)
         phase = np.unwrap(np.angle(sig))
         f0 = _feature_freq(fpts, mag)
@@ -49,6 +65,9 @@ class QubitSpec(ExperimentClass):
             'fpts': fpts, 'magnitude': mag, 'phase': phase, 'qubit_freq_mhz': f0,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if telemetry is not None:
+            self.data["acquisition_order"] = telemetry["order"]
+            self.data["qua_order_telemetry"] = telemetry
         print(f"[Qubit Spec] qubit feature at {f0:.3f} MHz ({f0 / 1e3:.5f} GHz), "
               f"spec gain {cfg['qubit_gain']} DAC")
         if self.save:
@@ -105,6 +124,34 @@ class QubitSpecGainSweep(ExperimentClass):
         mag = np.full((n_g, n_f), np.nan)
         phase = np.full((n_g, n_f), np.nan)
         qubit_dip = np.full(n_g, np.nan)
+
+        if bool(cfg.get("qua_shot_order", False)):
+            i_values, q_values, telemetry = acquire_passive_pulse_grid(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=fpts,
+                gains=gains,
+                pulses=1,
+                progress=progress,
+            )
+            signal_grid = np.mean(i_values + 1j * q_values, axis=2).T
+            mag[:, :] = np.abs(signal_grid)
+            phase[:, :] = np.unwrap(np.angle(signal_grid), axis=1)
+            for i in range(n_g):
+                qubit_dip[i] = _feature_freq(fpts, mag[i])
+            self.data = {
+                'config': dict(cfg), 'element': self.element,
+                'fpts': fpts, 'gain_vec': gains, 'magnitude': mag, 'phase': phase,
+                'qubit_dip_mhz': qubit_dip,
+                'acquisition_order': telemetry['order'],
+                'qua_order_telemetry': telemetry,
+                'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+            if self.save:
+                self._plot(fpts, gains, mag, phase, qubit_dip, plotDisp=plotDisp)
+                self.pickle_data()
+            return {'config': cfg, 'data': self.data}
 
         def measure_row(i):
             cfg["qubit_gain"] = int(gains[int(i)])

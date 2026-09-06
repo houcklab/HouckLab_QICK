@@ -10,6 +10,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_readout_grid,
+)
 
 
 class TransReadProgram(AveragerProgram):
@@ -65,15 +68,37 @@ class Transmission(ExperimentClass):
         n = len(self.f_vec)
         mag = np.empty(n, dtype=float)
         start_time = time.time()
-        for j, f in enumerate(self.f_vec):
-            c = dict(cfg)
-            c["read_pulse_freq"] = float(f)
-            with suppress_stdout():
-                I, Q = TransReadProgram(self.soccfg, c).acquire(self.soc, load_pulses=True,
-                                                                progress=False)
-            mag[j] = np.hypot(float(np.asarray(I).ravel()[0]), float(np.asarray(Q).ravel()[0]))
+        telemetry = None
+        if bool(cfg.get("qua_shot_order", False)):
+            callback = None
             if progress:
-                progress_counter(j, n, start_time=start_time, label="transmission")
+                callback = lambda done, total: progress_counter(
+                    done - 1, total, start_time=start_time, label="transmission"
+                )
+            i_values, q_values, telemetry = acquire_passive_readout_grid(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=self.f_vec,
+                values=[cfg["read_pulse_gain"]],
+                kind="readout_gain",
+                progress=callback,
+            )
+            signal = np.mean(i_values[:, 0, :] + 1j * q_values[:, 0, :], axis=1)
+            mag[:] = np.abs(signal)
+        else:
+            for j, f in enumerate(self.f_vec):
+                c = dict(cfg)
+                c["read_pulse_freq"] = float(f)
+                with suppress_stdout():
+                    I, Q = TransReadProgram(self.soccfg, c).acquire(
+                        self.soc, load_pulses=True, progress=False
+                    )
+                mag[j] = np.hypot(
+                    float(np.asarray(I).ravel()[0]), float(np.asarray(Q).ravel()[0])
+                )
+                if progress:
+                    progress_counter(j, n, start_time=start_time, label="transmission")
         mag_dbm = 20.0 * np.log10(mag + 1e-12)
         dip = float(self.f_vec[int(np.argmin(mag_dbm))])
         self.data = {
@@ -81,6 +106,9 @@ class Transmission(ExperimentClass):
             'resonator_dip_freq_mhz': dip,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if telemetry is not None:
+            self.data["acquisition_order"] = telemetry["order"]
+            self.data["qua_order_telemetry"] = telemetry
         print(f"[transmission] resonator dip at {dip:.4f} MHz "
               f"-> set BaseConfig['read_pulse_freq'].")
         if self.plot:

@@ -23,6 +23,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production
     normalize_reset_mode,
     prepare_reset_session,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_readout_grid,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import (
     needs_standalone_ss_calibration,
 )
@@ -202,16 +205,37 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     print(f"[transmission sweep] {len(gains)} readout gains x {len(freqs)} freqs at "
           f"ff_gain={FF_HOLD_GAIN} ({total} points -- slow)")
     start_time = time.time()
-    step = 0
-    for i, g in enumerate(gains):
-        cfg["read_pulse_gain"] = int(g)
-        for j, f in enumerate(freqs):
-            cfg["read_pulse_freq"] = float(f)
-            res = FFTransProgram(soccfg, cfg).acquire(soc, load_pulses=True, progress=False)
-            I, Q = np.array(res[0]).mean(), np.array(res[1]).mean()
-            mag[i, j] = 20.0 * np.log10(np.hypot(I, Q) + 1e-12)
-            progress_counter(step, total, start_time=start_time, label="transmission sweep")
-            step += 1
+    telemetry = None
+    if bool(cfg.get("qua_shot_order", False)):
+        i_values, q_values, telemetry = acquire_passive_readout_grid(
+            soc,
+            soccfg,
+            cfg,
+            frequencies_mhz=freqs,
+            values=gains,
+            kind="readout_gain",
+            excursion_gain=float(FF_HOLD_GAIN),
+            progress=lambda done, count: progress_counter(
+                done - 1, count, start_time=start_time, label="transmission sweep"
+            ),
+        )
+        signal = np.mean(i_values + 1j * q_values, axis=2)
+        mag[:, :] = (20.0 * np.log10(np.abs(signal) + 1e-12)).T
+    else:
+        step = 0
+        for i, g in enumerate(gains):
+            cfg["read_pulse_gain"] = int(g)
+            for j, f in enumerate(freqs):
+                cfg["read_pulse_freq"] = float(f)
+                res = FFTransProgram(soccfg, cfg).acquire(
+                    soc, load_pulses=True, progress=False
+                )
+                I, Q = np.array(res[0]).mean(), np.array(res[1]).mean()
+                mag[i, j] = 20.0 * np.log10(np.hypot(I, Q) + 1e-12)
+                progress_counter(
+                    step, total, start_time=start_time, label="transmission sweep"
+                )
+                step += 1
     fig = plt.figure(figsize=(7, 4.5))
     plt.pcolormesh(freqs, gains, mag, shading="nearest")
     plt.xlabel("Readout frequency [MHz]"); plt.ylabel("Readout gain [DAC]")
@@ -219,6 +243,16 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     plt.title(f"{QUBIT} transmission vs readout power (ff_gain={FF_HOLD_GAIN})")
     plt.savefig(exp.iname, bbox_inches="tight")
     print(f"[transmission sweep] saved {exp.iname}")
+    exp.data = {
+        "frequencies_mhz": freqs,
+        "readout_gains": gains,
+        "magnitude_db": mag,
+        "config": dict(cfg),
+    }
+    if telemetry is not None:
+        exp.data["acquisition_order"] = telemetry["order"]
+        exp.data["qua_order_telemetry"] = telemetry
+    exp.pickle_data()
     if LIVE_PLOTS:
         plt.show(block=False); plt.pause(0.1)
     plt.close(fig); gc.collect()
