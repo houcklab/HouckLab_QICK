@@ -297,6 +297,7 @@ def acquire_qick_resident_readout(
     ready_addr,
     frequency_addr,
     access_mode="driver",
+    command_mode="split",
     timeout_s=10.0,
     program_factory=None,
 ):
@@ -306,6 +307,7 @@ def acquire_qick_resident_readout(
     ready_addr = int(ready_addr)
     frequency_addr = int(frequency_addr)
     access_mode = str(access_mode)
+    command_mode = str(command_mode)
     if shots <= 0:
         raise ValueError("shots must be positive")
     if timeout_s <= 0:
@@ -316,6 +318,8 @@ def acquire_qick_resident_readout(
         raise ValueError("resident handshake addresses must be non-negative")
     if access_mode not in ("driver", "direct_mmio"):
         raise ValueError("invalid resident access mode")
+    if command_mode not in ("split", "packed_frequency"):
+        raise ValueError("invalid resident command mode")
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and max(
         command_addr, ready_addr, frequency_addr
@@ -418,18 +422,26 @@ def acquire_qick_resident_readout(
                 )
             frequency_update_s += time.perf_counter() - phase_started
             phase_started = time.perf_counter()
-            _write_tproc(
-                soc.tproc,
-                frequency_addr,
-                registers[frequency_index],
-                direct_memory=direct_memory,
-            )
-            _write_tproc(
-                soc.tproc,
-                command_addr,
-                1,
-                direct_memory=direct_memory,
-            )
+            if command_mode == "packed_frequency":
+                _write_tproc(
+                    soc.tproc,
+                    command_addr,
+                    registers[frequency_index],
+                    direct_memory=direct_memory,
+                )
+            else:
+                _write_tproc(
+                    soc.tproc,
+                    frequency_addr,
+                    registers[frequency_index],
+                    direct_memory=direct_memory,
+                )
+                _write_tproc(
+                    soc.tproc,
+                    command_addr,
+                    1,
+                    direct_memory=direct_memory,
+                )
             release_s += time.perf_counter() - phase_started
             if (block + 1) % 64 == 0:
                 phase_started = time.perf_counter()
@@ -492,6 +504,7 @@ def acquire_qick_resident_readout(
             )
         ),
         "tproc_access_mode": access_mode,
+        "command_mode": command_mode,
     }
 
 
@@ -520,6 +533,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
         ready_addr,
         frequency_addr,
         access_mode="driver",
+        command_mode="split",
     ):
         return acquire_qick_resident_readout(
             self,
@@ -531,6 +545,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
             ready_addr,
             frequency_addr,
             access_mode=access_mode,
+            command_mode=command_mode,
         )
 
     qicksoc_class.acquire_qick_program_batch = program_batch

@@ -442,6 +442,11 @@ class QUAResidentReadoutGridProgram(QickProgram):
         self.command_addr = self.counter_addr + 1
         self.ready_addr = self.counter_addr + 2
         self.frequency_addr = self.counter_addr + 3
+        self.command_mode = str(
+            self.cfg.get("qick_resident_command_mode", "split")
+        )
+        if self.command_mode not in ("split", "packed_frequency"):
+            raise ValueError("invalid resident command mode")
         self.frequency_registers = np.asarray(
             [
                 self.freq2reg(
@@ -509,16 +514,27 @@ class QUAResidentReadoutGridProgram(QickProgram):
             "+",
             14,
         )
-        self.memri(0, controls["command"], self.command_addr)
-        self.condj(
-            0,
-            controls["command"],
-            "==",
-            0,
-            "QUA_RESIDENT_READOUT_WAIT",
-        )
+        if self.command_mode == "packed_frequency":
+            self.memri(res_page, res_frequency, self.command_addr)
+            self.condj(
+                res_page,
+                res_frequency,
+                "==",
+                0,
+                "QUA_RESIDENT_READOUT_WAIT",
+            )
+        else:
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(
+                0,
+                controls["command"],
+                "==",
+                0,
+                "QUA_RESIDENT_READOUT_WAIT",
+            )
         self.sync(0, controls["elapsed"])
-        self.memri(res_page, res_frequency, self.frequency_addr)
+        if self.command_mode == "split":
+            self.memri(res_page, res_frequency, self.frequency_addr)
         self.regwi(0, controls["command"], 0)
         self.memwi(0, controls["command"], self.command_addr)
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
@@ -956,7 +972,12 @@ def _optional_soc_method(soc, name):
 
 
 def _resident_program_records(
-    method, resident, readout_configs, shots, access_mode="driver"
+    method,
+    resident,
+    readout_configs,
+    shots,
+    access_mode="driver",
+    command_mode="split",
 ):
     args = (
         resident.dump_prog(),
@@ -967,10 +988,15 @@ def _resident_program_records(
         resident.ready_addr,
         resident.frequency_addr,
     )
-    if access_mode == "driver":
+    kwargs = {}
+    if access_mode != "driver":
+        kwargs["access_mode"] = access_mode
+    if command_mode != "split":
+        kwargs["command_mode"] = command_mode
+    if not kwargs:
         result = method(*args)
     else:
-        result = method(*args, access_mode=access_mode)
+        result = method(*args, **kwargs)
     if not isinstance(result, dict) or "records" not in result:
         raise RuntimeError("RFSoC resident acquisition returned an invalid result")
     records = np.asarray(result["records"], dtype=float)
@@ -1010,6 +1036,7 @@ def _resident_program_records(
         "tproc_access_mode": str(
             result.get("tproc_access_mode", "driver")
         ),
+        "command_mode": str(result.get("command_mode", "split")),
     }
 
 
@@ -1049,7 +1076,8 @@ def acquire_passive_readout_grid(
     kind,
     excursion_gain=None,
     progress=None,
-    access_mode="driver",
+    access_mode="direct_mmio",
+    command_mode="split",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
@@ -1057,6 +1085,9 @@ def acquire_passive_readout_grid(
     access_mode = str(access_mode)
     if access_mode not in ("driver", "direct_mmio"):
         raise ValueError("invalid resident access mode")
+    command_mode = str(command_mode)
+    if command_mode not in ("split", "packed_frequency"):
+        raise ValueError("invalid resident command mode")
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"
     )
@@ -1065,6 +1096,7 @@ def acquire_passive_readout_grid(
     if resident_method is not None:
         resident_cfg = dict(cfg)
         resident_cfg["qua_assert_park_at_start"] = True
+        resident_cfg["qick_resident_command_mode"] = command_mode
         resident = QUAResidentReadoutGridProgram(
             soccfg,
             resident_cfg,
@@ -1088,6 +1120,7 @@ def acquire_passive_readout_grid(
                 readout_configs,
                 shots,
                 access_mode=access_mode,
+                command_mode=command_mode,
             )
             if progress is not None:
                 progress(total, total)
@@ -1115,6 +1148,7 @@ def acquire_passive_readout_grid(
                     "tproc_access_mode": resident_meta[
                         "tproc_access_mode"
                     ],
+                    "command_mode": resident_meta["command_mode"],
                     "records": int(
                         shots * frequencies.size * values.size
                     ),

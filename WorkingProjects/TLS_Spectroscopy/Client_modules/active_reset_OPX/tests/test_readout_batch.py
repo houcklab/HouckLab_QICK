@@ -466,6 +466,56 @@ def test_resident_server_direct_mmio_preserves_latch_and_handshake_sequence():
     assert result["tproc_access_mode"] == "direct_mmio"
 
 
+def test_resident_server_can_pack_frequency_into_release_command():
+    class PackedTProc(ResidentTProc):
+        def __init__(self):
+            super().__init__()
+            self.writes = []
+
+        def single_write(self, addr=0, data=0):
+            address = int(addr)
+            value = int(data)
+            self.writes.append((address, value))
+            self.memory[address] = value
+            if address == self.command_addr and value != 0:
+                self.releases.append(value)
+                self.completed_blocks += 1
+                if self.completed_blocks < self.total_blocks:
+                    self.memory[self.ready_addr] = self.completed_blocks + 1
+
+    class PackedSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.tproc = PackedTProc()
+
+    soc = PackedSoc()
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        [
+            {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        ],
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        command_mode="packed_frequency",
+        program_factory=ResidentProgram,
+    )
+    assert soc.tproc.releases == [101, 202, 101, 202]
+    assert [
+        value for address, value in soc.tproc.writes
+        if address == soc.tproc.frequency_addr and value != 0
+    ] == []
+    assert [
+        value for address, value in soc.tproc.writes
+        if address == soc.tproc.command_addr and value != 0
+    ] == [101, 202, 101, 202]
+    assert result["command_mode"] == "packed_frequency"
+
+
 def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     class BackpressureTProc(ResidentTProc):
         def __init__(self, owner):
