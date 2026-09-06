@@ -468,6 +468,53 @@ def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
     assert created[0].cfg["opx_reset_scheme"] == "opx_unbounded"
 
 
+def test_t1_sweep_reports_completed_outer_shots_after_each_block(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    def run(soc, program, **kwargs):
+        count = (
+            int(program.cfg["opx_t1_shots"])
+            * len(program.cfg["opx_t1_delays_us"])
+        )
+        return [PayloadRecord(index, -index) for index in range(count)]
+
+    monkeypatch.setattr(integration, "OPXResetT1SweepProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    updates = []
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 2,
+        "read_length": 1.0,
+        "ro_chs": [0],
+        "opx_max_payload_records_per_block": 3,
+    }
+
+    integration.acquire_t1_sweep_iq(
+        None,
+        {},
+        cfg,
+        delays_us=[1.0, 10.0, 100.0],
+        shots=2,
+        progress=lambda completed, total: updates.append((completed, total)),
+    )
+
+    assert updates == [(1, 2), (2, 2)]
+
+
 def test_pulse_grid_acquisition_preserves_qua_shot_frequency_gain_order(monkeypatch):
     bundle = CalibrationBundle(
         schema_version=1,
@@ -525,6 +572,56 @@ def test_pulse_grid_acquisition_preserves_qua_shot_frequency_gain_order(monkeypa
     assert created[0].cfg["opx_payload_gains"] == [1000, 1250]
 
 
+def test_pulse_grid_reports_completed_outer_shots_after_each_block(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    def run(soc, program, **kwargs):
+        count = (
+            int(program.cfg["opx_payload_shots_per_expt"])
+            * len(program.cfg["opx_payload_frequencies_mhz"])
+            * len(program.cfg["opx_payload_gains"])
+        )
+        return [PayloadRecord(index, -index) for index in range(count)]
+
+    monkeypatch.setattr(integration, "OPXResetPulseGridProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    updates = []
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 3,
+        "read_length": 1.0,
+        "ro_chs": [0],
+        "opx_max_payload_records_per_block": 4,
+    }
+
+    integration.acquire_pulse_grid_iq(
+        None,
+        {},
+        cfg,
+        frequencies_mhz=[4350.0, 4351.0],
+        gains=[1000, 1250],
+        pulses=1,
+        shots=3,
+        progress=lambda completed, total: updates.append((completed, total)),
+    )
+
+    assert updates == [(1, 3), (2, 3), (3, 3)]
+
+
 def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch):
     bundle = CalibrationBundle(
         schema_version=1,
@@ -559,6 +656,7 @@ def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch)
         "ro_chs": [0],
     }
 
+    updates = []
     i_values, q_values, telemetry = integration.acquire_t1_flux_sweep_iq(
         None,
         {},
@@ -566,6 +664,7 @@ def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch)
         dc_gains=[29000, 29500],
         delays_us=[1.0, 100.0],
         shots=2,
+        progress=lambda completed, total: updates.append((completed, total)),
     )
 
     assert i_values.tolist() == [
@@ -579,6 +678,7 @@ def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch)
     assert telemetry["order"] == "shot_dc_delay"
     assert created[0].cfg["opx_t1_dc_gains"] == [29000, 29500]
     assert created[0].cfg["opx_t1_delays_us"] == [1.0, 100.0]
+    assert updates == [(2, 2)]
 
 
 def test_timing_matched_calibration_chunks_dmem_without_changing_park_mode(monkeypatch):

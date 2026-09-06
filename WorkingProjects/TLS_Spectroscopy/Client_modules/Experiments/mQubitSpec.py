@@ -46,8 +46,17 @@ class QubitSpec(ExperimentClass):
         cfg = self.cfg
         fpts = _freq_axis(cfg)
         telemetry = None
+        started = time.time()
         if bool(cfg.get("qua_shot_order", False)):
             if active_reset.uses_opx_unbounded(cfg):
+                callback = None
+                if progress:
+                    callback = lambda done, total: progress_counter(
+                        done - 1,
+                        total,
+                        start_time=started,
+                        label="qubit spec",
+                    )
                 i_values, q_values, telemetry = acquire_pulse_grid_iq(
                     self.soc,
                     self.soccfg,
@@ -58,6 +67,7 @@ class QubitSpec(ExperimentClass):
                     shots=int(cfg["shots"]),
                     pulse_placement="park",
                     reset_scheme="opx_unbounded",
+                    progress=callback,
                 )
             else:
                 i_values, q_values, telemetry = acquire_passive_pulse_grid(
@@ -144,6 +154,15 @@ class QubitSpecGainSweep(ExperimentClass):
 
         if bool(cfg.get("qua_shot_order", False)):
             if active_reset.uses_opx_unbounded(cfg):
+                callback = None
+                started = time.time()
+                if progress:
+                    callback = lambda done, total: progress_counter(
+                        done - 1,
+                        total,
+                        start_time=started,
+                        label="qubit spec gain sweep",
+                    )
                 i_values, q_values, telemetry = acquire_pulse_grid_iq(
                     self.soc,
                     self.soccfg,
@@ -154,6 +173,7 @@ class QubitSpecGainSweep(ExperimentClass):
                     shots=int(cfg["shots"]),
                     pulse_placement="park",
                     reset_scheme="opx_unbounded",
+                    progress=callback,
                 )
             else:
                 i_values, q_values, telemetry = acquire_passive_pulse_grid(

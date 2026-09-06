@@ -180,6 +180,14 @@ class RabiChevronSS(ExperimentClass):
                 if active_reset.uses_opx_unbounded(cfg)
                 else "none"
             )
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=start_time,
+                    label="Rabi chevron SS",
+                )
             shots_i, shots_q, telemetry = acquire_pulse_grid_iq(
                 self.soc,
                 self.soccfg,
@@ -196,6 +204,7 @@ class RabiChevronSS(ExperimentClass):
                     cover_readout=not bool(cfg.get("readout_after_park", True)),
                 ),
                 reset_scheme=reset_scheme,
+                progress=callback,
             )
             if reset_scheme == "opx_unbounded":
                 states = classify_payload_iq(

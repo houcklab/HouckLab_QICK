@@ -244,6 +244,14 @@ class RabiChevronIQ(ExperimentClass):
         start_time = time.time()
         if bool(cfg.get("qua_shot_order", False)):
             do_excursion = bool(cfg.get("ff_hold_gain", 0))
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=start_time,
+                    label="Rabi chevron IQ",
+                )
             shots_i, shots_q, telemetry = acquire_pulse_grid_iq(
                 self.soc,
                 self.soccfg,
@@ -264,13 +272,12 @@ class RabiChevronIQ(ExperimentClass):
                     if active_reset.uses_opx_unbounded(cfg)
                     else "none"
                 ),
+                progress=callback,
             )
             I[:, :] = np.mean(shots_i, axis=2)
             Q[:, :] = np.mean(shots_q, axis=2)
             order = np.arange(n_f)
             self.qua_order_telemetry = telemetry
-            if progress:
-                progress_counter(0, 1, start_time=start_time, label="Rabi chevron IQ")
         else:
             for step, i in enumerate(order):
                 measure_row(int(i))

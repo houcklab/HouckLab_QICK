@@ -396,6 +396,7 @@ def acquire_t1_sweep_iq(
     delays_us,
     shots=None,
     reset_scheme="opx_unbounded",
+    progress=None,
 ):
     bundle = runtime_bundle(cfg)
     delays = np.asarray(delays_us, dtype=float).reshape(-1)
@@ -428,6 +429,7 @@ def acquire_t1_sweep_iq(
     i_blocks = []
     q_blocks = []
     last_program = None
+    completed_shots = 0
     for chunk in chunk_sizes(total_shots, shots_per_block):
         run_cfg = dict(cfg)
         run_cfg.update({
@@ -456,6 +458,9 @@ def acquire_t1_sweep_iq(
         q_blocks.append(np.asarray(
             [record.final_q for record in block], dtype=float
         ).reshape(chunk, delays.size).T)
+        completed_shots += int(chunk)
+        if progress is not None:
+            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
@@ -480,6 +485,7 @@ def acquire_t1_flux_sweep_iq(
     delays_us,
     shots=None,
     reset_scheme="opx_unbounded",
+    progress=None,
 ):
     bundle = runtime_bundle(cfg)
     gains = np.asarray(dc_gains, dtype=float).reshape(-1)
@@ -523,6 +529,7 @@ def acquire_t1_flux_sweep_iq(
     i_blocks = []
     q_blocks = []
     last_program = None
+    completed_shots = 0
     for chunk in chunk_sizes(total_shots, shots_per_block):
         run_cfg = dict(cfg)
         run_cfg.update({
@@ -552,6 +559,9 @@ def acquire_t1_flux_sweep_iq(
         q_blocks.append(np.asarray(
             [record.final_q for record in block], dtype=float
         ).reshape(chunk, rounded.size, delays.size).transpose(1, 2, 0))
+        completed_shots += int(chunk)
+        if progress is not None:
+            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
@@ -692,6 +702,7 @@ def acquire_pulse_grid_iq(
     park_recovery_us=0.0,
     herald=False,
     reset_scheme="opx_unbounded",
+    progress=None,
 ):
     bundle = runtime_bundle(cfg)
     frequencies = np.asarray(frequencies_mhz, dtype=float).reshape(-1)
@@ -732,6 +743,7 @@ def acquire_pulse_grid_iq(
     i_blocks = []
     q_blocks = []
     last_program = None
+    completed_shots = 0
     for chunk in chunk_sizes(total_shots, shots_per_block):
         run_cfg = dict(cfg)
         run_cfg.update({
@@ -769,6 +781,9 @@ def acquire_pulse_grid_iq(
         q_blocks.append(np.asarray(
             [record.final_q for record in block], dtype=float
         ).reshape(chunk, frequencies.size, rounded.size).transpose(1, 2, 0))
+        completed_shots += int(chunk)
+        if progress is not None:
+            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )

@@ -945,6 +945,7 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         dc_vec = self.dc_vec
         t_us = self.t_vec_ns / 1e3
+        started = time.time()
         ss = np.full((len(dc_vec), len(t_us)), np.nan)
         valid = np.zeros((len(dc_vec), len(t_us)), dtype=np.int8)
         for i in range(len(dc_vec)):
@@ -955,16 +956,24 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                 if active_reset.uses_opx_unbounded(self.reset_mode)
                 else "none"
             )
-            with suppress_stdout():
-                i_values, q_values, telemetry = acquire_t1_flux_sweep_iq(
-                    self.soc,
-                    self.soccfg,
-                    self.cfg,
-                    dc_gains=dc_vec,
-                    delays_us=t_us,
-                    shots=self.shots,
-                    reset_scheme=reset_scheme,
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=started,
+                    label="full T1 vs flux",
                 )
+            i_values, q_values, telemetry = acquire_t1_flux_sweep_iq(
+                self.soc,
+                self.soccfg,
+                self.cfg,
+                dc_gains=dc_vec,
+                delays_us=t_us,
+                shots=self.shots,
+                reset_scheme=reset_scheme,
+                progress=callback,
+            )
             if reset_scheme == "opx_unbounded":
                 states = classify_payload_iq(
                     self.cfg,

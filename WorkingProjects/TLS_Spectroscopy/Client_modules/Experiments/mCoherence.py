@@ -171,16 +171,24 @@ class T1(_CoherenceBase):
             if active_reset.uses_opx_unbounded(self.reset_mode)
             else "none"
         )
+        callback = None
+        if progress:
+            callback = lambda done, total: progress_counter(
+                done - 1,
+                total,
+                start_time=started,
+                label=self.suffix,
+            )
         try:
-            with suppress_stdout():
-                i_values, q_values, telemetry = acquire_t1_sweep_iq(
-                    self.soc,
-                    self.soccfg,
-                    cfg,
-                    delays_us=self.t_vec_us,
-                    shots=shots,
-                    reset_scheme=reset_scheme,
-                )
+            i_values, q_values, telemetry = acquire_t1_sweep_iq(
+                self.soc,
+                self.soccfg,
+                cfg,
+                delays_us=self.t_vec_us,
+                shots=shots,
+                reset_scheme=reset_scheme,
+                progress=callback,
+            )
             if reset_scheme == "opx_unbounded":
                 classified = np.asarray(classify_payload_iq(
                     cfg,
@@ -209,8 +217,6 @@ class T1(_CoherenceBase):
             self.acquisition_telemetry.append(dict(telemetry))
             if reset_scheme == "opx_unbounded":
                 self.opx_reset_telemetry.append(telemetry)
-            if progress:
-                progress_counter(0, 1, start_time=started, label=self.suffix)
         finally:
             cfg["shots"] = saved_shots
         self.point_visit_orders = orders
