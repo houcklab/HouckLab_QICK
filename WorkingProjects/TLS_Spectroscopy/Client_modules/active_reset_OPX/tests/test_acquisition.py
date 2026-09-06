@@ -379,7 +379,7 @@ def test_resident_stream_rejects_a_backwards_physical_record_counter():
 def test_resident_stream_timeout_reports_only_recovered_complete_shots():
     class StreamTProc(FakeTProc):
         def __init__(self):
-            super().__init__([], done_values=[2])
+            super().__init__([], done_values=[2, 2])
             self.memory = np.zeros(64, dtype=np.int64)
 
         def single_read(self, addr):
@@ -408,7 +408,7 @@ def test_resident_stream_timeout_reports_only_recovered_complete_shots():
                 "final_partial_units": 0,
             }
 
-    ticks = iter([0.0, 1.0])
+    ticks = iter([0.0, 0.1, 1.0])
     with pytest.raises(AcquisitionTimeout) as caught:
         run_dmem_stream(
             FakeSoc(StreamTProc()),
@@ -421,6 +421,64 @@ def test_resident_stream_timeout_reports_only_recovered_complete_shots():
 
     assert caught.value.completed_shots == 0
     assert caught.value.partial_records == []
+
+
+def test_resident_stream_watchdog_resets_on_controller_progress():
+    records = [PayloadRecord(index, -index) for index in range(6)]
+
+    class StreamTProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[2, 4, 6, 6])
+            self.ready_values = [0, 1, 2]
+            self.memory = np.zeros(64, dtype=np.int64)
+            first = np.asarray(
+                [word for record in records[:4] for word in record.to_words()],
+                dtype=np.int64,
+            )
+            second = np.asarray(
+                [word for record in records[4:] for word in record.to_words()],
+                dtype=np.int64,
+            )
+            self.memory[32:40] = first & 0xFFFFFFFF
+            self.memory[40:44] = second & 0xFFFFFFFF
+
+        def single_read(self, addr):
+            if int(addr) == 3 and self.ready_values:
+                return self.ready_values.pop(0)
+            return super().single_read(addr)
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=6)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 4,
+                "bank_records": 4,
+                "bank_words": 8,
+                "total_shots": 3,
+                "total_units": 6,
+                "records_per_unit": 1,
+                "records_per_shot": 2,
+                "final_partial_units": 2,
+            }
+
+    ticks = iter([0.0, 0.6, 1.2, 1.8])
+    observed = run_dmem_stream(
+        FakeSoc(StreamTProc()),
+        StreamProgram(),
+        timeout_s=1.0,
+        poll_interval_s=0.0,
+        clock=lambda: next(ticks),
+        sleeper=lambda _: None,
+    )
+
+    assert observed == records
 
 
 def test_resident_stream_timeout_stops_v1_tproc_without_reset_method():

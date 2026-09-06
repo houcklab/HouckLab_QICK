@@ -213,6 +213,7 @@ def run_dmem_stream(
     records = []
     reported_shots = 0
     observed_records = 0
+    observed_ready = 0
     received_units = 0
     acknowledged = 0
     started = False
@@ -224,8 +225,10 @@ def run_dmem_stream(
         _single_write(soc.tproc, int(plan["ready_addr"]), 0)
         soc.tproc.start()
         started = True
-        deadline = clock() + timeout_s
+        last_activity_at = clock()
         while received_units < total_units:
+            now = clock()
+            activity = False
             completed_records = _single_read(soc.tproc, program.done_addr)
             if completed_records < 0 or completed_records > expected_records:
                 raise RuntimeError(
@@ -237,6 +240,8 @@ def run_dmem_stream(
                     "resident stream completion counter moved backwards from "
                     f"{observed_records} to {completed_records}"
                 )
+            if completed_records > observed_records:
+                activity = True
             observed_records = completed_records
             completed_shots = min(
                 completed_records // records_per_shot,
@@ -251,6 +256,10 @@ def run_dmem_stream(
                 raise RuntimeError(
                     f"resident stream ready counter moved backwards from {acknowledged} to {ready}"
                 )
+            if ready > observed_ready:
+                activity = True
+            observed_ready = max(observed_ready, ready)
+            previous_acknowledged = acknowledged
             while acknowledged < ready and received_units < total_units:
                 bank_index = acknowledged % 2
                 unit_count = min(bank_units, total_units - received_units)
@@ -271,9 +280,13 @@ def run_dmem_stream(
                 received_units += unit_count
                 acknowledged += 1
                 _single_write(soc.tproc, int(plan["ack_addr"]), acknowledged)
+            if acknowledged > previous_acknowledged:
+                activity = True
+            if activity:
+                last_activity_at = now
             if received_units >= total_units:
                 break
-            if clock() >= deadline:
+            if now - last_activity_at >= timeout_s:
                 _safe_abort(soc)
                 started = False
                 recovered_shots = min(
@@ -283,7 +296,7 @@ def run_dmem_stream(
                 recovered_records = recovered_shots * records_per_shot
                 partial_records = records[:recovered_records]
                 raise AcquisitionTimeout(
-                    f"resident OPX reset stream timed out after {timeout_s:g} s "
+                    f"resident OPX reset stream made no progress for {timeout_s:g} s "
                     f"({recovered_shots}/{total_shots} recovered shots; "
                     f"controller reported {reported_shots})",
                     completed_shots=recovered_shots,
