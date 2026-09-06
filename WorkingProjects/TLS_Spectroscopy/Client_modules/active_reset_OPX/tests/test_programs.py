@@ -250,6 +250,64 @@ def test_t1_shot_uses_payload_as_the_unbounded_reset_decision():
     assert sum(op[0] == "memw" for op in prog.asm) == RECORD_WORDS
 
 
+def test_t1_shot_prepares_independent_reset_pulse_after_payload_measurement():
+    prog = RecordingProgram()
+    regs = {name: index + 1 for index, name in enumerate((
+        "i", "q", "z", "ground", "excited", "attempts", "pi_count",
+        "status", "initial_z", "address",
+    ))}
+    events = []
+
+    emit_t1_shot(
+        prog,
+        page=1,
+        regs=regs,
+        reset_scheme="opx_unbounded",
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        park_up=lambda: events.append("up"),
+        park_down=lambda: events.append("down"),
+        prepare_excited=lambda: events.append("payload_pi"),
+        wait_payload=lambda: events.append("wait"),
+        measure_project=lambda calibration, context: events.append(context),
+        prepare_reset=lambda: events.append("prepare_reset"),
+        play_pi=lambda: events.append("reset_pi"),
+        label_prefix="T1_SEPARATE_PULSES",
+    )
+
+    assert events.index("payload") < events.index("prepare_reset")
+    assert events.index("prepare_reset") < events.index("reset_pi")
+
+
+def test_t1_program_keeps_payload_and_reset_frequencies_independent():
+    prog = RecordingProgram()
+    prog.cfg = {
+        "qubit_ch": 1,
+        "qubit_freq": 4361.0,
+        "qubit_pi_freq": 4361.0,
+        "qubit_pi_gain": 11100,
+        "reset_pi_freq": 4367.25,
+        "reset_pi_gain": 10900,
+    }
+    prog.freq2reg = lambda value, gen_ch: int(round(float(value) * 100.0))
+    prog.deg2reg = lambda value, gen_ch: int(round(float(value)))
+    prog.set_pulse_registers = lambda **values: prog.asm.append(
+        ("set_pulse_registers", values)
+    )
+
+    OPXResetT1Program._set_payload_pulse(prog)
+    OPXResetT1Program._set_reset_pulse(prog)
+
+    payload = prog.asm[0][1]
+    reset = prog.asm[1][1]
+    assert payload["freq"] == 436100
+    assert payload["gain"] == 11100
+    assert payload["waveform"] == "qubit"
+    assert reset["freq"] == 436725
+    assert reset["gain"] == 10900
+    assert reset["waveform"] == "qubit_reset"
+
+
 def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((

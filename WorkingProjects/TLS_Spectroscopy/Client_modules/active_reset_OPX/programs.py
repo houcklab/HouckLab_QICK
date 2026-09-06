@@ -214,6 +214,7 @@ def emit_t1_shot(
     play_pi,
     label_prefix,
     do_prepare=True,
+    prepare_reset=None,
     wait_diagnostic_hold=None,
     diagnostic_cycles=2,
 ):
@@ -230,6 +231,8 @@ def emit_t1_shot(
     prog.mathi(page, regs["address"], regs["address"], "-", 6)
     scheme = str(reset_scheme).strip().lower()
     if scheme == "opx_unbounded":
+        if prepare_reset is not None:
+            prepare_reset()
         emit_unbounded_reset_state_machine(
             prog,
             page=page,
@@ -663,10 +666,55 @@ class OPXResetBenchmarkProgram(QickProgram):
 
 
 class OPXResetT1Program(OPXResetBenchmarkProgram):
+    def _set_payload_pulse(self):
+        cfg = self.cfg
+        frequency = cfg.get("qubit_pi_freq")
+        if frequency is None:
+            frequency = cfg["qubit_freq"]
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.freq2reg(float(frequency), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+            gain=int(cfg["qubit_pi_gain"]),
+            waveform="qubit",
+        )
+
+    def _set_reset_pulse(self):
+        cfg = self.cfg
+        frequency = cfg.get("reset_pi_freq")
+        if frequency is None:
+            frequency = cfg.get("qubit_pi_freq")
+        if frequency is None:
+            frequency = cfg["qubit_freq"]
+        gain = cfg.get("reset_pi_gain")
+        if gain is None:
+            gain = cfg["qubit_pi_gain"]
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.freq2reg(float(frequency), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+            gain=int(gain),
+            waveform="qubit_reset",
+        )
+
+    def _prepare_excited(self):
+        self._set_payload_pulse()
+        _pulse_pi_and_align(self)
+
     def _declare_experiment(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian
 
         cfg = self.cfg
+        add_qubit_gaussian(
+            self,
+            name="qubit_reset",
+            sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+            drag_beta=float(cfg.get(
+                "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))),
+        )
         self._t1_do_ff = bool(cfg.get("do_ff", True))
         self._t1_hold_us = float(cfg.get("ff_hold", cfg.get("t1_wait_us", 0.01)))
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
@@ -718,9 +766,10 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             loop_calibration=self.loop_calibration,
             park_up=park_up,
             park_down=park_down,
-            prepare_excited=lambda: _pulse_pi_and_align(self),
+            prepare_excited=self._prepare_excited,
             wait_payload=self._wait_t1_payload,
             measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix="OPX_T1_RESET",
             do_prepare=bool(self.cfg.get("do_pi", True)),
