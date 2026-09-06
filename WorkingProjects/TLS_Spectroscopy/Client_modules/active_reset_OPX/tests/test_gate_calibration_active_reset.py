@@ -213,6 +213,50 @@ def test_gate_runner_applies_active_session_to_rabi_iq(tmp_path, monkeypatch):
     assert observed["cfg"]["reset_mode"] == "opx_unbounded"
 
 
+def test_transmission_gain_sweep_keeps_the_flux_at_park(tmp_path, monkeypatch):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
+
+    observed = {}
+
+    class Experiment:
+        def __init__(self, **kwargs):
+            self.iname = tmp_path / "sweep.png"
+            self.data = None
+
+        def pickle_data(self):
+            return None
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        observed.update(kwargs)
+        shape = (
+            len(kwargs["frequencies_mhz"]),
+            len(kwargs["values"]),
+            int(cfg["shots"]),
+        )
+        values = np.ones(shape, dtype=float)
+        return values, values, {"order": "shot_frequency_gain"}
+
+    monkeypatch.setattr(GateCalibration, "ExperimentClass", Experiment)
+    monkeypatch.setattr(GateCalibration, "acquire_passive_readout_grid", acquire)
+    monkeypatch.setattr(GateCalibration, "LIVE_PLOTS", False)
+    monkeypatch.setattr(GateCalibration.plt, "figure", lambda *args, **kwargs: object())
+    for name in (
+        "pcolormesh",
+        "xlabel",
+        "ylabel",
+        "colorbar",
+        "title",
+        "savefig",
+        "close",
+    ):
+        monkeypatch.setattr(GateCalibration.plt, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(GateCalibration.gc, "collect", lambda: None)
+
+    GateCalibration.run_transmission_sweep(tmp_path, object(), {})
+
+    assert observed.get("excursion_gain") is None
+
+
 @pytest.mark.parametrize(
     "enabled_name",
     ["P_RABI_CHEVRON_IQ", "P_QUBIT_SPEC", "P_QUBIT_SPEC_SWEEP"],

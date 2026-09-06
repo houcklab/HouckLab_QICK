@@ -203,7 +203,7 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     mag = np.full((len(gains), len(freqs)), np.nan)
     total = len(gains) * len(freqs)
     print(f"[transmission sweep] {len(gains)} readout gains x {len(freqs)} freqs at "
-          f"ff_gain={FF_HOLD_GAIN} ({total} points -- slow)")
+          f"park ff_park_gain={cfg.get('ff_park_gain', 0)} ({total} points -- slow)")
     start_time = time.time()
     telemetry = None
     if bool(cfg.get("qua_shot_order", False)):
@@ -214,7 +214,6 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
             frequencies_mhz=freqs,
             values=gains,
             kind="readout_gain",
-            excursion_gain=float(FF_HOLD_GAIN),
             progress=lambda done, count: progress_counter(
                 done - 1, count, start_time=start_time, label="transmission sweep"
             ),
@@ -240,7 +239,10 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     plt.pcolormesh(freqs, gains, mag, shading="nearest")
     plt.xlabel("Readout frequency [MHz]"); plt.ylabel("Readout gain [DAC]")
     plt.colorbar(label="|S21| [dB]")
-    plt.title(f"{QUBIT} transmission vs readout power (ff_gain={FF_HOLD_GAIN})")
+    plt.title(
+        f"{QUBIT} transmission vs readout power "
+        f"(park {cfg.get('ff_park_gain', 0)} DAC)"
+    )
     plt.savefig(exp.iname, bbox_inches="tight")
     print(f"[transmission sweep] saved {exp.iname}")
     exp.data = {
