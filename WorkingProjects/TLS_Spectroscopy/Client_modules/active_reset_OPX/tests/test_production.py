@@ -184,6 +184,43 @@ def test_transmission_sweep_smoke_selects_only_the_production_sweep():
     assert assignments[("P_SS_CAL", "run")] is False
 
 
+def test_readout_opt_smoke_selects_only_the_production_optimizer():
+    import ast
+
+    path = Path(__file__).parents[1] / "production_readout_opt_smoke_q3.py"
+    tree = ast.parse(path.read_text())
+    updates = []
+    disabled = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "update" and isinstance(node.func.value, ast.Attribute):
+                if node.func.value.attr == "P_READOUT_OPT":
+                    updates.append(ast.literal_eval(node.args[0]))
+        if not isinstance(node, ast.Assign):
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Subscript):
+            continue
+        owner = getattr(target.value, "attr", None)
+        key = ast.literal_eval(target.slice)
+        if key == "run" and owner != "P_READOUT_OPT":
+            disabled.append((owner, ast.literal_eval(node.value)))
+
+    assert updates == [{
+        "run": True,
+        "shots": 20,
+        "num_pi": 1,
+        "pulse_type": "X180",
+        "freq_span_mhz": 1.0,
+        "freq_points": 3,
+        "gain_min": 1000,
+        "gain_max": 2500,
+        "gain_points": 5,
+    }]
+    assert disabled
+    assert all(value is False for _, value in disabled)
+
+
 def test_qubit_spec_equivalence_runner_uses_identical_passive_and_active_grids():
     import ast
 
