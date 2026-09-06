@@ -20,6 +20,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_t1_3pt_iq,
+    acquire_t1_flux_sweep_iq,
     acquire_t1_iq,
     classify_payload_iq,
 )
@@ -449,11 +450,12 @@ class FFT1Program(AveragerProgram):
                 ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
                 distortion_model=ff_pulse.make_distortion_model(self))
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_park_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_park_segs)
         if active_reset.uses_feedback(cfg):
             read_gain = cfg.get("reset_read_pulse_gain", None)
             pi_gain = cfg.get("reset_pi_gain", None)
@@ -500,7 +502,7 @@ class FFT1Program(AveragerProgram):
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_park_down(self, self.ff_park_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
@@ -738,11 +740,16 @@ class T13PointVsFlux(_T1VsFluxBase):
             print(f"[3pt] LEGACY references: P0/P1 measured at park with no flux pulse. "
                   f"Any reset residual")
             print(f"      that the flux excursion would have removed biases T1 low.")
-        if active_reset.uses_opx_unbounded(self.reset_mode):
+        if bool(self.cfg.get("qua_shot_order", False)):
             if matched:
                 raise ValueError(
-                    "QUA-order OPX three-point T1 requires park P0/P1 references"
+                    "QUA-order three-point T1 requires park P0/P1 references"
                 )
+            reset_scheme = (
+                "opx_unbounded"
+                if active_reset.uses_opx_unbounded(self.reset_mode)
+                else "none"
+            )
             with suppress_stdout():
                 i_values, q_values, telemetry = acquire_t1_3pt_iq(
                     self.soc,
@@ -751,16 +758,25 @@ class T13PointVsFlux(_T1VsFluxBase):
                     dc_gains=dc_vec,
                     wait_us=Ts_us,
                     shots=self.shots,
+                    reset_scheme=reset_scheme,
                 )
-            states = classify_payload_iq(
-                self.cfg,
-                i_values,
-                q_values,
-                telemetry["read_length_cycles"],
-            )
+            if reset_scheme == "opx_unbounded":
+                states = classify_payload_iq(
+                    self.cfg,
+                    i_values,
+                    q_values,
+                    telemetry["read_length_cycles"],
+                )
+            else:
+                states = discriminate_shots(
+                    i_values,
+                    q_values,
+                    self.calib_params,
+                )
             P0, P1, Ps = np.mean(states, axis=2)
-            self.opx_reset_telemetry.append(telemetry)
-            self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
+            if reset_scheme == "opx_unbounded":
+                self.opx_reset_telemetry.append(telemetry)
+                self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
             self.point_visit_orders = [list(range(len(dc_vec)))]
             self.keep_fraction = np.ones(len(dc_vec) * 3, dtype=float)
         else:
@@ -927,6 +943,49 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
         t_us = self.t_vec_ns / 1e3
         ss = np.full((len(dc_vec), len(t_us)), np.nan)
         valid = np.zeros((len(dc_vec), len(t_us)), dtype=np.int8)
+        for i in range(len(dc_vec)):
+            valid[i, self._wait_mask_for_dc(i)] = 1
+        if bool(self.cfg.get("qua_shot_order", False)):
+            reset_scheme = (
+                "opx_unbounded"
+                if active_reset.uses_opx_unbounded(self.reset_mode)
+                else "none"
+            )
+            with suppress_stdout():
+                i_values, q_values, telemetry = acquire_t1_flux_sweep_iq(
+                    self.soc,
+                    self.soccfg,
+                    self.cfg,
+                    dc_gains=dc_vec,
+                    delays_us=t_us,
+                    shots=self.shots,
+                    reset_scheme=reset_scheme,
+                )
+            if reset_scheme == "opx_unbounded":
+                states = classify_payload_iq(
+                    self.cfg,
+                    i_values,
+                    q_values,
+                    telemetry["read_length_cycles"],
+                )
+            else:
+                states = discriminate_shots(
+                    i_values,
+                    q_values,
+                    self.calib_params,
+                )
+            ss[:, :] = np.mean(states, axis=2)
+            if reset_scheme == "opx_unbounded":
+                self.opx_reset_telemetry.append(telemetry)
+                self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
+            self.point_visit_orders = [list(range(len(dc_vec)))]
+            self.keep_fraction = np.ones(len(dc_vec) * len(t_us), dtype=float)
+            self.data["interrupted"] = False
+            self._finish_acquire(ss, valid, t_us)
+            self.data["time"] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if self.write_outputs:
+                self.pickle_data()
+            return {"config": self.cfg, "data": self.data}
         start_time = time.time()
         specs = []
         index_map = []
@@ -937,7 +996,6 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                     continue
                 specs.append((float(dc), float(t), True, True))
                 index_map.append((i, k))
-                valid[i, k] = 1
         try:
             pe = self._interleaved_populations(
                 specs, start_time=start_time if progress else None)

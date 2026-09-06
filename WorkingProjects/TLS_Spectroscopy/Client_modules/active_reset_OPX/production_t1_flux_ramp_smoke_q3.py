@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 runner.LIVE_PLOTS = False
+runner.RESET_MODE = "active"
 runner.P_SS_CAL["run"] = False
 runner.P_SS_FLUX_RAMP["run"] = False
 runner.P_T1["run"] = False

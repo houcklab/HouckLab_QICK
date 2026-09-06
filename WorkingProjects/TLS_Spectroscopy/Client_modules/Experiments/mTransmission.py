@@ -29,6 +29,7 @@ class TransReadProgram(AveragerProgram):
         set_readout_pulse(self, read_freq)
         self.ff_segs = ff_pulse.build_park_hold(
             self, hold_us=ff_pulse.flux_settle_us(cfg))
+        ff_pulse.begin_park_lifecycle(self, self.ff_segs)
         self.synci(200)
 
     def body(self):
@@ -38,11 +39,11 @@ class TransReadProgram(AveragerProgram):
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
             return
-        ff_pulse.play_park_up(self, self.ff_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_segs)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_park_down(self, self.ff_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
 

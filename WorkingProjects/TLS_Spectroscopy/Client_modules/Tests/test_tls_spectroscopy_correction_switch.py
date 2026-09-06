@@ -87,71 +87,59 @@ def test_step6_records_that_compensation_was_disabled():
     assert cfg["flux_tail_compensation"] is None
 
 
-def test_step6_opx_reset_uses_same_session_calibration(monkeypatch, tmp_path):
+def test_step6_opx_reset_uses_same_session_calibration(monkeypatch):
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
-    monkeypatch.setattr(tls, "PROBE_RESET", True)
     monkeypatch.setattr(
         tls,
-        "_acquire_step6_opx_calibration",
-        lambda *args, **kwargs: calibration,
-        raising=False,
+        "_RESET_SESSION",
+        tls.ProductionResetSession.active(calibration, 4366.392029),
     )
-    monkeypatch.setattr(tls, "probe_reset_params", lambda *args, **kwargs: {})
 
-    resolved = tls._resolve_step6_reset(
-        {"reset_mode": "opx_unbounded", "shots": 100},
-        object(),
-        object(),
-        tmp_path,
+    resolved = tls._t1_base_cfg(
+        {"shots": 100, "apply_flux_tail_compensation": False},
+        None,
+        np.asarray([29000.0]),
     )
 
     assert resolved["reset_mode"] == "opx_unbounded"
-    assert resolved["opx_reset_calibration"] is calibration
+    assert resolved["opx_reset_calibration"] == calibration
 
 
 def test_step6_opx_base_config_injects_runtime_bundle_and_timing(monkeypatch):
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
     monkeypatch.setattr(
         tls,
-        "OPX_METHOD_FREQUENCIES",
-        {"opx_unbounded": 4366.392029},
-        raising=False,
+        "_RESET_SESSION",
+        tls.ProductionResetSession.active(calibration, 4366.392029),
     )
 
     cfg = tls._t1_base_cfg(
         {
             "shots": 10,
-            "reset_mode": "opx_unbounded",
-            "opx_reset_calibration": calibration,
-            "opx_inter_shot_delay_us": 33.0,
-            "opx_host_watchdog_s": 4.0,
             "apply_flux_tail_compensation": False,
         },
         None,
         np.array([10_000.0, 10_500.0]),
     )
 
-    assert cfg["opx_reset_calibration"] is calibration
+    assert cfg["opx_reset_calibration"] == calibration
     assert cfg["opx_feedback_syncdelay_us"] == pytest.approx(8.0)
-    assert cfg["opx_inter_shot_delay_us"] == pytest.approx(33.0)
-    assert cfg["opx_unbounded_watchdog_s"] == pytest.approx(4.0)
-    assert cfg["relax_delay"] == pytest.approx(33.0)
+    assert cfg["opx_inter_shot_delay_us"] == pytest.approx(10.0)
+    assert cfg["opx_unbounded_watchdog_s"] == pytest.approx(2.0)
+    assert cfg["relax_delay"] == pytest.approx(10.0)
 
 
 def test_step6_opx_base_config_uses_park_history_frequency(monkeypatch):
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
     monkeypatch.setattr(
         tls,
-        "OPX_METHOD_FREQUENCIES",
-        {"opx_unbounded": 4366.392029},
-        raising=False,
+        "_RESET_SESSION",
+        tls.ProductionResetSession.active(calibration, 4366.392029),
     )
 
     cfg = tls._t1_base_cfg(
         {
             "shots": 10,
-            "reset_mode": "opx_unbounded",
-            "opx_reset_calibration": calibration,
             "apply_flux_tail_compensation": False,
         },
         None,
@@ -166,38 +154,44 @@ def test_step6_opx_base_config_uses_park_history_frequency(monkeypatch):
 def test_step6_opx_only_run_does_not_need_legacy_single_shot(monkeypatch):
     monkeypatch.setattr(tls, "P6_3PT_T1", {
         "run": True,
-        "reset_mode": "opx_unbounded",
     })
     monkeypatch.setattr(tls, "P6_FULL_T1", {
         "run": False,
-        "reset_mode": "passive",
     })
+    monkeypatch.setattr(
+        tls,
+        "_RESET_SESSION",
+        tls.ProductionResetSession.active({}, 4366.392029),
+    )
 
-    assert tls._step6_needs_legacy_calibration() is False
+    assert tls._step6_needs_single_shot_calibration() is False
 
 
 def test_step6_opx_recalibrator_atomically_replaces_runtime_bundle(
         monkeypatch, tmp_path):
     original = {"schema_version": 1, "payload": {"version": 1}}
     refreshed = {"schema_version": 1, "payload": {"version": 2}}
-    base = {"opx_reset_calibration": original}
-    p = {"reset_mode": "opx_unbounded"}
-    monkeypatch.setattr(tls, "PROBE_RESET", True)
+    base = tls.ProductionResetSession.active(original, 4366.0).apply({})
     monkeypatch.setattr(
         tls,
-        "_acquire_step6_opx_calibration",
-        lambda *args, **kwargs: refreshed,
-        raising=False,
+        "_RESET_SESSION",
+        tls.ProductionResetSession.active(original, 4366.0),
     )
-    monkeypatch.setattr(tls, "probe_reset_params", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        tls,
+        "prepare_reset_session",
+        lambda *args, **kwargs: tls.ProductionResetSession.active(
+            refreshed, 4367.0
+        ),
+    )
 
     recalibrate = tls._make_reset_recalibrator(
-        p, base, object(), object(), tmp_path
+        base, object(), object(), tmp_path
     )
     recalibrate()
 
-    assert base["opx_reset_calibration"] is refreshed
-    assert p["opx_reset_calibration"] is refreshed
+    assert base["opx_reset_calibration"] == refreshed
+    assert base["qubit_pi_freq"] == pytest.approx(4367.0)
 
 
 @pytest.mark.parametrize("scan_kind", ["3pt", "full"])

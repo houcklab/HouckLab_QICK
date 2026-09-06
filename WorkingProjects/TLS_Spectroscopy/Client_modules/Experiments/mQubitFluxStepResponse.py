@@ -90,11 +90,12 @@ class FFStepResponseSpecProgram(RAveragerProgram):
             dt_def_us=cfg.get("dt_pulsedef", 0.002),
             compensation=ff_pulse.load_compensation(cfg),
             distortion_model=ff_pulse.make_distortion_model(self))
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(1))
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_park_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_park_segs)
         rearm = float(cfg.get("baseline_rearm_us", 0.0))
         if rearm > 0:
             self.sync_all(self.us2cycles(rearm))
@@ -113,7 +114,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self.ff_segs)
-        ff_pulse.play_park_down(self, self.ff_park_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):

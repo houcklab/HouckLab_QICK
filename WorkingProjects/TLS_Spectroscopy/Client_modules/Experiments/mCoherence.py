@@ -148,11 +148,9 @@ class T1(_CoherenceBase):
         super().__init__(*args, **kw)
         self.ff_gain = float(ff_gain)
 
-    def _sweep_opx(self, progress=True):
+    def _sweep_qua_order(self, progress=True):
         cfg = self.cfg
         shots = int(cfg["shots"])
-        rounds = resolve_rounds(cfg, shots, default=cfg.get("coherence_rounds"))
-        reps_per_round = split_reps(shots, rounds)
         excited = np.zeros(len(self.t_vec_us), dtype=float)
         attempted = np.zeros(len(self.t_vec_us), dtype=float)
         orders = []
@@ -161,46 +159,49 @@ class T1(_CoherenceBase):
         cfg["ff_gain"] = self.ff_gain
         cfg["do_pi"] = True
         cfg["do_ff"] = True
+        reset_scheme = (
+            "opx_unbounded"
+            if active_reset.uses_opx_unbounded(self.reset_mode)
+            else "none"
+        )
         try:
-            for round_index, reps in enumerate(reps_per_round):
-                if reps <= 0:
-                    continue
-                with suppress_stdout():
-                    i_values, q_values, telemetry = acquire_t1_sweep_iq(
-                        self.soc,
-                        self.soccfg,
-                        cfg,
-                        delays_us=self.t_vec_us,
-                        shots=int(reps),
-                        reset_scheme="opx_unbounded",
-                    )
+            with suppress_stdout():
+                i_values, q_values, telemetry = acquire_t1_sweep_iq(
+                    self.soc,
+                    self.soccfg,
+                    cfg,
+                    delays_us=self.t_vec_us,
+                    shots=shots,
+                    reset_scheme=reset_scheme,
+                )
+            if reset_scheme == "opx_unbounded":
                 classified = np.asarray(classify_payload_iq(
                     cfg,
                     i_values,
                     q_values,
                     telemetry["read_length_cycles"],
                 ), dtype=float)
-                if classified.shape != i_values.shape:
-                    raise RuntimeError(
-                        "shot-major T1 classifier returned an unexpected shape"
-                    )
-                excited += np.sum(classified, axis=1)
-                attempted += classified.shape[1]
-                order = list(range(len(self.t_vec_us)))
-                orders.append(order)
-                telemetry.update({
-                    "ff_gain": float(self.ff_gain),
-                    "round": int(round_index),
-                    "delays_us": self.t_vec_us.tolist(),
-                })
+            else:
+                classified = np.asarray(discriminate_shots(
+                    i_values,
+                    q_values,
+                    self.calib_params,
+                ), dtype=float)
+            if classified.shape != i_values.shape:
+                raise RuntimeError(
+                    "shot-major T1 classifier returned an unexpected shape"
+                )
+            excited += np.sum(classified, axis=1)
+            attempted += classified.shape[1]
+            orders.append(list(range(len(self.t_vec_us))))
+            telemetry.update({
+                "ff_gain": float(self.ff_gain),
+                "delays_us": self.t_vec_us.tolist(),
+            })
+            if reset_scheme == "opx_unbounded":
                 self.opx_reset_telemetry.append(telemetry)
-                if progress:
-                    progress_counter(
-                        round_index,
-                        len(reps_per_round),
-                        start_time=started,
-                        label=self.suffix,
-                    )
+            if progress:
+                progress_counter(0, 1, start_time=started, label=self.suffix)
         finally:
             cfg["shots"] = saved_shots
         self.point_visit_orders = orders
@@ -211,8 +212,10 @@ class T1(_CoherenceBase):
         return population
 
     def _sweep(self, progress=True):
-        if active_reset.uses_opx_unbounded(self.reset_mode):
-            return self._sweep_opx(progress=progress)
+        if active_reset.uses_opx_unbounded(self.reset_mode) or bool(
+            self.cfg.get("qua_shot_order", False)
+        ):
+            return self._sweep_qua_order(progress=progress)
         return super()._sweep(progress=progress)
 
     def _run_point_counts(self, wait_us, reps=None):

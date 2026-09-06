@@ -96,11 +96,12 @@ class SingleShotProgram(RAveragerProgram):
         set_readout_pulse(self, read_freq)
         self.ff_segs = ff_pulse.build_park_hold(
             self, hold_us=ff_pulse.flux_settle_us(cfg))
+        ff_pulse.begin_park_lifecycle(self, self.ff_segs)
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_segs)
         feedback = active_reset.uses_feedback(cfg)
         if feedback:
             # The raw reset threshold is calibrated with a fixed readout drive gain.
@@ -150,7 +151,7 @@ class SingleShotProgram(RAveragerProgram):
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_park_down(self, self.ff_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_segs)
         self.sync_all(self.us2cycles(
             cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
             if feedback else cfg["relax_delay"]))
@@ -255,11 +256,12 @@ class SingleShotFluxRampProgram(AveragerProgram):
             dt_def_us=cfg.get("dt_pulsedef", 0.002),
             compensation=ff_pulse.load_compensation(cfg),
             distortion_model=ff_pulse.make_distortion_model(self))
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_park_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_park_segs)
         if active_reset.uses_feedback(cfg):
             reset_read_gain = cfg.get("reset_read_pulse_gain")
             if reset_read_gain is not None:
@@ -301,7 +303,7 @@ class SingleShotFluxRampProgram(AveragerProgram):
             pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
             wait=True, syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_park_down(self, self.ff_park_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(
             cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
             if active_reset.uses_feedback(cfg) else cfg["relax_delay"]))

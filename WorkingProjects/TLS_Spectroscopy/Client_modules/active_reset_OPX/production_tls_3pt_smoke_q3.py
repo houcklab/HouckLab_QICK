@@ -3,6 +3,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectrosc
 
 def main():
     runner.LIVE_PLOTS = False
+    runner.RESET_MODE = "active"
     runner.P1_RESONATOR["run"] = False
     runner.P2_QUBIT_SPEC_FULL["run"] = False
     runner.P3_STEP_RESPONSE["run_fit"] = False
@@ -14,7 +15,6 @@ def main():
         "run": True,
         "apply_flux_tail_compensation": False,
         "shots": 100,
-        "interleave_rounds": 1,
         "dc_min": -20500,
         "dc_max": -19500,
         "dc_step": 500,
@@ -23,7 +23,6 @@ def main():
         "Ts_us": 70.0,
         "min_ref_contrast": 0.05,
         "max_plot_t1_multiple": 20.0,
-        "reset_mode": "opx_unbounded",
     })
     runner.main()
 

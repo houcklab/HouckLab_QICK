@@ -468,6 +468,119 @@ def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
     assert created[0].cfg["opx_reset_scheme"] == "opx_unbounded"
 
 
+def test_pulse_grid_acquisition_preserves_qua_shot_frequency_gain_order(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    created = []
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+            created.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    records = [
+        PayloadRecord(10, -10), PayloadRecord(20, -20),
+        PayloadRecord(30, -30), PayloadRecord(40, -40),
+        PayloadRecord(11, -11), PayloadRecord(21, -21),
+        PayloadRecord(31, -31), PayloadRecord(41, -41),
+    ]
+    monkeypatch.setattr(integration, "OPXResetPulseGridProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", lambda *args, **kwargs: records)
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 2,
+        "read_length": 1.0,
+        "ro_chs": [0],
+    }
+
+    i_values, q_values, telemetry = integration.acquire_pulse_grid_iq(
+        None,
+        {},
+        cfg,
+        frequencies_mhz=[4350.0, 4351.0],
+        gains=[1000, 1250],
+        pulses=1,
+        shots=2,
+    )
+
+    assert i_values.tolist() == [
+        [[1.0, 1.1], [2.0, 2.1]],
+        [[3.0, 3.1], [4.0, 4.1]],
+    ]
+    assert q_values.tolist() == [
+        [[-1.0, -1.1], [-2.0, -2.1]],
+        [[-3.0, -3.1], [-4.0, -4.1]],
+    ]
+    assert telemetry["order"] == "shot_frequency_gain"
+    assert created[0].cfg["opx_payload_frequencies_mhz"] == [4350.0, 4351.0]
+    assert created[0].cfg["opx_payload_gains"] == [1000, 1250]
+
+
+def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    created = []
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+            created.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    records = [
+        PayloadRecord(10, -10), PayloadRecord(20, -20),
+        PayloadRecord(30, -30), PayloadRecord(40, -40),
+        PayloadRecord(11, -11), PayloadRecord(21, -21),
+        PayloadRecord(31, -31), PayloadRecord(41, -41),
+    ]
+    monkeypatch.setattr(integration, "OPXResetT1FluxSweepProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", lambda *args, **kwargs: records)
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 2,
+        "read_length": 1.0,
+        "ro_chs": [0],
+    }
+
+    i_values, q_values, telemetry = integration.acquire_t1_flux_sweep_iq(
+        None,
+        {},
+        cfg,
+        dc_gains=[29000, 29500],
+        delays_us=[1.0, 100.0],
+        shots=2,
+    )
+
+    assert i_values.tolist() == [
+        [[1.0, 1.1], [2.0, 2.1]],
+        [[3.0, 3.1], [4.0, 4.1]],
+    ]
+    assert q_values.tolist() == [
+        [[-1.0, -1.1], [-2.0, -2.1]],
+        [[-3.0, -3.1], [-4.0, -4.1]],
+    ]
+    assert telemetry["order"] == "shot_dc_delay"
+    assert created[0].cfg["opx_t1_dc_gains"] == [29000, 29500]
+    assert created[0].cfg["opx_t1_delays_us"] == [1.0, 100.0]
+
+
 def test_timing_matched_calibration_chunks_dmem_without_changing_park_mode(monkeypatch):
     created = []
 

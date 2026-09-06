@@ -62,11 +62,12 @@ class QubitSpecProgram(RAveragerProgram):
         set_readout_pulse(self, f_res)
         self.ff_segs = ff_pulse.build_park_hold(
             self, hold_us=ff_pulse.flux_settle_us(cfg))
+        ff_pulse.begin_park_lifecycle(self, self.ff_segs)
         self.sync_all(self.us2cycles(1))
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_segs)
         self.sync_all(self.us2cycles(0.05))
         self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
@@ -75,7 +76,7 @@ class QubitSpecProgram(RAveragerProgram):
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(0.01))
-        ff_pulse.play_park_down(self, self.ff_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):

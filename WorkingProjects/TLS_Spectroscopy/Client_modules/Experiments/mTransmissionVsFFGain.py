@@ -39,18 +39,19 @@ class FFTransProgram(AveragerProgram):
             ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US), dt_def_us=cfg.get("dt_pulsedef", 0.002),
             compensation=ff_pulse.load_compensation(cfg),
             distortion_model=ff_pulse.make_distortion_model(self))
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.play_park_up(self, self.ff_park_segs)
+        ff_pulse.enter_park_for_shot(self, self.ff_park_segs)
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
         ff_pulse.play_ramp_down(self, self.ff_segs)
-        ff_pulse.play_park_down(self, self.ff_park_segs)
+        ff_pulse.leave_park_for_shot(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
 

@@ -10,10 +10,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
+    OPXResetPulseGridProgram,
     OPXResetTLSMemoryProgram,
     OPXResetPulseSweepProgram,
     OPXResetT13PointProgram,
     OPXResetT1Program,
+    OPXResetT1FluxSweepProgram,
     OPXResetT1SweepProgram,
     TimingMatchedReferenceDMemProgram,
     TimingMatchedReferenceProgram,
@@ -1043,6 +1045,8 @@ def test_qick_program_classes_are_exposed_even_on_analysis_computers():
     assert OPXResetBenchmarkProgram is not None
     assert OPXResetT1Program is not None
     assert OPXResetT1SweepProgram is not None
+    assert OPXResetT1FluxSweepProgram is not None
+    assert OPXResetPulseGridProgram is not None
 
 
 def test_frequency_payload_sweep_uses_frequency_register_and_fixed_gain():
@@ -1097,6 +1101,33 @@ def test_gain_payload_sweep_preserves_existing_fixed_frequency_behavior():
         "fixed_frequency_mhz": 4367.25,
         "target_register": "gain",
     }
+
+
+def test_grid_payload_uses_the_current_unrolled_frequency_and_dynamic_gain():
+    prog = RecordingProgram()
+    prog.cfg = {"qubit_ch": 1}
+    prog.reset_page = 1
+    prog.reset_regs = {"payload_sweep": 7}
+    prog._payload_frequency_mhz = 4368.25
+    prog._payload_sweep_plan = {
+        "kind": "gain",
+        "fixed_gain": None,
+        "fixed_frequency_mhz": 4367.25,
+        "target_register": "gain",
+    }
+    prog.freq2reg = lambda frequency, gen_ch: int(round(float(frequency) * 10))
+    prog.set_pulse_registers = lambda **values: prog.asm.append(
+        ("set_pulse_registers", values)
+    )
+    prog.sreg = lambda channel, name: {"freq": 21, "gain": 22}[name]
+    prog.deg2reg = lambda value, gen_ch: 0
+
+    OPXResetPulseGridProgram._set_payload_pulse(prog)
+
+    pulse = next(values for name, values in prog.asm if name == "set_pulse_registers")
+    assert pulse["freq"] == 43682
+    assert pulse["gain"] == 0
+    assert ("mathi", 22, 7, "+", 0) in prog.asm
 
 
 def test_frequency_payload_pulse_copies_sweep_register_only_to_drive_frequency():

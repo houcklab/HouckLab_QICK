@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
@@ -17,6 +17,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
     add_qubit_gaussian, set_readout_pulse,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_grid_iq,
     acquire_pulse_sweep_iq,
     classify_payload_iq,
 )
@@ -59,6 +60,7 @@ class RabiSSProgram(RAveragerProgram):
 
         set_readout_pulse(self, read_freq)
         flux_hold_build(self)
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.synci(200)
 
     def body(self):
@@ -170,18 +172,66 @@ class RabiChevronSS(ExperimentClass):
         print(f"[Rabi Chevron SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
               f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; {reset_note}")
 
-        def measure_row(i):
-            cfg["rabi_drive_freq"] = pi_freq + float(df_vec[int(i)])
-            pop[int(i), :] = sweep_gain_populations(self, cfg, gains, self.calib_params)
-
         start_time = time.time()
-        for i in range(n_f):
-            measure_row(i)
-            if progress:
-                progress_counter(i, n_f, start_time=start_time, label="Rabi chevron SS")
+        if bool(cfg.get("qua_shot_order", False)):
+            do_excursion = bool(cfg.get("ff_hold_gain", 0))
+            reset_scheme = (
+                "opx_unbounded"
+                if active_reset.uses_opx_unbounded(cfg)
+                else "none"
+            )
+            shots_i, shots_q, telemetry = acquire_pulse_grid_iq(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=pi_freq + df_vec,
+                gains=gains,
+                pulses=int(cfg["n_pulses"]),
+                shots=int(cfg["shots"]),
+                pulse_placement="excursion",
+                do_excursion=do_excursion,
+                excursion_gain=(cfg.get("ff_hold_gain") if do_excursion else None),
+                flux_hold_us=flux_hold_us(
+                    cfg,
+                    cover_readout=not bool(cfg.get("readout_after_park", True)),
+                ),
+                reset_scheme=reset_scheme,
+            )
+            if reset_scheme == "opx_unbounded":
+                states = classify_payload_iq(
+                    cfg,
+                    shots_i,
+                    shots_q,
+                    telemetry["read_length_cycles"],
+                )
+                self.opx_reset_telemetry = telemetry
+            else:
+                states = discriminate_shots(
+                    shots_i,
+                    shots_q,
+                    self.calib_params,
+                )
+            pop[:, :] = np.mean(states, axis=2)
+        else:
+            def measure_row(i):
+                cfg["rabi_drive_freq"] = pi_freq + float(df_vec[int(i)])
+                pop[int(i), :] = sweep_gain_populations(
+                    self, cfg, gains, self.calib_params
+                )
+
+            for i in range(n_f):
+                measure_row(i)
+                if progress:
+                    progress_counter(
+                        i,
+                        n_f,
+                        start_time=start_time,
+                        label="Rabi chevron SS",
+                    )
 
         nlow = max(1, min(int(cfg.get("baseline_ngains", 4)), max(1, n_a // 4)))
-        if bool(cfg.get("remeasure_outliers", True)):
+        if (not bool(cfg.get("qua_shot_order", False))
+                and bool(cfg.get("remeasure_outliers", True))):
             remeasure_glitched_rows(
                 lambda: np.median(pop[:, :nlow], axis=1), measure_row,
                 sigma=float(cfg.get("outlier_sigma", 6.0)),
@@ -196,8 +246,13 @@ class RabiChevronSS(ExperimentClass):
             'gain_vec': gains, 'detuning_vec_mhz': df_vec, 'drive_center_mhz': pi_freq,
             'ss_data': pop, 'best_gain': best_gain, 'best_detuning_mhz': best_df,
             'best_drive_freq_mhz': pi_freq + best_df,
+            'acquisition_order': ('shot_frequency_gain'
+                                  if bool(cfg.get("qua_shot_order", False))
+                                  else 'legacy_frequency_gain_shots'),
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if active_reset.uses_opx_unbounded(cfg):
+            self.data['opx_reset_telemetry'] = self.opx_reset_telemetry
         print(f"[Rabi Chevron SS] max excited population at gain = {best_gain:.0f} DAC, "
               f"detuning = {best_df:+.3f} MHz (drive {pi_freq + best_df:.3f} MHz)")
         if self.save:

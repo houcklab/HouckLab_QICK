@@ -60,6 +60,47 @@ def test_build_park_hold_uses_config_in_dynamic_programs(monkeypatch):
     assert segments["hold_us"] == 0.5
 
 
+def test_persistent_hard_park_is_asserted_once_outside_the_shot_body(monkeypatch):
+    program = FakeProgram({
+        "ff_ch": 3,
+        "ff_park_gain": 29000,
+        "opx_persistent_park": True,
+        "opx_hard_flux_steps": True,
+        "opx_park_preroll_us": 400.0,
+    })
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_hard_step",
+        lambda prog, gain: prog.events.append(("hard_step", int(gain))),
+    )
+
+    ff_pulse.begin_park_lifecycle(program, "park")
+    ff_pulse.enter_park_for_shot(program, "park")
+    ff_pulse.leave_park_for_shot(program, "park")
+
+    assert program.events == [("hard_step", 29000), ("sync", 40000)]
+
+
+def test_nonpersistent_park_still_brackets_each_shot(monkeypatch):
+    program = FakeProgram({"ff_ch": 3, "ff_park_gain": 29000})
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_park_up",
+        lambda prog, segs: prog.events.append(("park_up", segs)),
+    )
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_park_down",
+        lambda prog, segs: prog.events.append(("park_down", segs)),
+    )
+
+    ff_pulse.begin_park_lifecycle(program, "park")
+    ff_pulse.enter_park_for_shot(program, "park")
+    ff_pulse.leave_park_for_shot(program, "park")
+
+    assert program.events == [("park_up", "park"), ("park_down", "park")]
+
+
 def test_rabi_excursion_enters_park_before_payload_and_releases_after_readout(monkeypatch):
     cfg = {
         "reset_mode": "passive",
@@ -477,14 +518,18 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
     def acquire(soc, soccfg, cfg, **kwargs):
         calls.append(kwargs)
         return (
-            np.asarray([[1.0, 1.0], [1.0, -1.0], [-1.0, -1.0]]),
-            np.zeros((3, 2)),
+            np.asarray([
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, -1.0, -1.0],
+                [-1.0, -1.0, -1.0, -1.0],
+            ]),
+            np.zeros((3, 4)),
             {
                 "order": "shot_major",
-                "shots_per_point": 2,
+                "shots_per_point": 4,
                 "points": 3,
                 "blocks": 1,
-                "records": 6,
+                "records": 12,
                 "read_length_cycles": 10,
             },
         )
@@ -506,14 +551,14 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
 
     populations = experiment._sweep(progress=False)
 
-    assert len(calls) == 2
-    assert all(call["shots"] == 2 for call in calls)
+    assert len(calls) == 1
+    assert calls[0]["shots"] == 4
     assert all(
         np.array_equal(call["delays_us"], experiment.t_vec_us)
         for call in calls
     )
     assert populations.tolist() == [1.0, 0.5, 0.0]
-    assert experiment.point_visit_orders == [[0, 1, 2], [0, 1, 2]]
+    assert experiment.point_visit_orders == [[0, 1, 2]]
 
 
 def test_production_t1_opx_path_does_not_require_legacy_calibration(monkeypatch):
@@ -621,20 +666,16 @@ def test_gate_calibration_builds_opx_rabi_runtime_without_legacy_reset(
     )
 
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
-    monkeypatch.setattr(runner, "RESET_MODE", "opx_unbounded")
-    monkeypatch.setattr(runner, "OPX_RESET_CALIBRATION", calibration, raising=False)
     monkeypatch.setattr(
         runner,
-        "OPX_METHOD_FREQUENCIES",
-        {"opx_unbounded": 4366.392029},
-        raising=False,
+        "_RESET_SESSION",
+        runner.ProductionResetSession.active(calibration, 4366.392029),
     )
-    monkeypatch.setattr(runner, "ROT_RESET_PARAMS", None)
 
     cfg = runner._base_cfg({"shots": 20})
 
     assert cfg["reset_mode"] == "opx_unbounded"
-    assert cfg["opx_reset_calibration"] is calibration
+    assert cfg["opx_reset_calibration"] == calibration
     assert cfg["opx_inter_shot_delay_us"] == pytest.approx(10.0)
     assert cfg["opx_persistent_park"] is True
     assert cfg["opx_hard_flux_steps"] is True

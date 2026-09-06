@@ -14,6 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
     add_qubit_gaussian, readout_thermalization_us, set_readout_pulse,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_pulse_grid_iq,
     acquire_pulse_sweep_iq,
 )
 
@@ -93,7 +94,7 @@ def _rabi_feedback_reset(prog):
 
 def rabi_flux_body(prog):
     cfg = prog.cfg
-    ff_pulse.play_park_up(prog, prog.ff_park_segs)
+    ff_pulse.enter_park_for_shot(prog, prog.ff_park_segs)
     feedback = active_reset.uses_feedback(cfg)
     if feedback:
         _rabi_feedback_reset(prog)
@@ -115,7 +116,7 @@ def rabi_flux_body(prog):
                  syncdelay=prog.us2cycles(0.01))
     if hold and not read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
-    ff_pulse.play_park_down(prog, prog.ff_park_segs)
+    ff_pulse.leave_park_for_shot(prog, prog.ff_park_segs)
     prog.sync_all(prog.us2cycles(
         cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
         if feedback else cfg["relax_delay"]))
@@ -158,6 +159,7 @@ class RabiChevronIQProgram(RAveragerProgram):
 
         set_readout_pulse(self, read_freq)
         flux_hold_build(self)
+        ff_pulse.begin_park_lifecycle(self, self.ff_park_segs)
         self.synci(200)
 
     def body(self):
@@ -240,10 +242,41 @@ class RabiChevronIQ(ExperimentClass):
                 Q[int(i), :] = np.asarray(avgq[0][0])
 
         start_time = time.time()
-        for step, i in enumerate(order):
-            measure_row(int(i))
+        if bool(cfg.get("qua_shot_order", False)):
+            do_excursion = bool(cfg.get("ff_hold_gain", 0))
+            shots_i, shots_q, telemetry = acquire_pulse_grid_iq(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=pi_freq + df_vec,
+                gains=gains,
+                pulses=int(cfg["n_pulses"]),
+                shots=int(cfg["shots"]),
+                pulse_placement="excursion",
+                do_excursion=do_excursion,
+                excursion_gain=(cfg.get("ff_hold_gain") if do_excursion else None),
+                flux_hold_us=flux_hold_us(
+                    cfg,
+                    cover_readout=not bool(cfg.get("readout_after_park", True)),
+                ),
+                reset_scheme="none",
+            )
+            I[:, :] = np.mean(shots_i, axis=2)
+            Q[:, :] = np.mean(shots_q, axis=2)
+            order = np.arange(n_f)
+            self.qua_order_telemetry = telemetry
             if progress:
-                progress_counter(step, n_f, start_time=start_time, label="Rabi chevron IQ")
+                progress_counter(0, 1, start_time=start_time, label="Rabi chevron IQ")
+        else:
+            for step, i in enumerate(order):
+                measure_row(int(i))
+                if progress:
+                    progress_counter(
+                        step,
+                        n_f,
+                        start_time=start_time,
+                        label="Rabi chevron IQ",
+                    )
 
         if bool(cfg.get("remeasure_outliers", True)):
             remeasure_glitched_rows(
@@ -263,8 +296,13 @@ class RabiChevronIQ(ExperimentClass):
             'I': I, 'Q': Q, 'measurement_order': np.asarray(order),
             'best_gain': best_gain, 'best_detuning_mhz': best_df,
             'best_drive_freq_mhz': pi_freq + best_df,
+            'acquisition_order': ('shot_frequency_gain'
+                                  if bool(cfg.get("qua_shot_order", False))
+                                  else 'legacy_frequency_gain_shots'),
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if bool(cfg.get("qua_shot_order", False)):
+            self.data['qua_order_telemetry'] = self.qua_order_telemetry
         print(f"[Rabi Chevron IQ] max |IQ| at gain = {best_gain:.0f} DAC, "
               f"detuning = {best_df:+.3f} MHz (drive {pi_freq + best_df:.3f} MHz)")
         if self.save:

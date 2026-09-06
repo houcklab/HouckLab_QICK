@@ -11,10 +11,14 @@ from .acquisition import (
     run_dmem_block,
 )
 from .calibration import CalibrationBundle
+from .analysis import ReferenceAxis
+from .classifier import ClassifierCalibration
 from .programs import (
+    OPXResetPulseGridProgram,
     OPXResetPulseSweepProgram,
     OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
+    OPXResetT1FluxSweepProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
 )
@@ -32,6 +36,26 @@ def runtime_bundle(cfg):
         return value
     if isinstance(value, dict):
         return CalibrationBundle.from_dict(value)
+    if str(cfg.get("reset_mode", "")).strip().lower() in ("passive", "none"):
+        neutral = ClassifierCalibration(
+            schema_version=1,
+            context="passive",
+            theta_rad=0.0,
+            shift=0,
+            c_int=1,
+            s_int=0,
+            ground_threshold=-1,
+            excited_threshold=1,
+            max_abs_raw=1,
+            holdout={},
+        )
+        return CalibrationBundle(
+            schema_version=1,
+            payload=neutral,
+            loop=neutral,
+            reference_axis=ReferenceAxis.from_centers(0.0, 0.0, 1.0, 0.0),
+            metadata={"purpose": "passive shot-major acquisition"},
+        )
     raise ValueError(
         "reset_mode='opx_unbounded' requires cfg['opx_reset_calibration']"
     )
@@ -159,6 +183,7 @@ def acquire_t1_3pt_iq(
     dc_gains,
     wait_us,
     shots=None,
+    reset_scheme="opx_unbounded",
 ):
     bundle = runtime_bundle(cfg)
     gains = np.asarray(dc_gains, dtype=float).reshape(-1)
@@ -178,6 +203,9 @@ def acquire_t1_3pt_iq(
     )
     if total_shots <= 0:
         raise ValueError("three-point shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     capacity = max_records(
         dmem_words_from_soccfg(soccfg),
         int(cfg.get("opx_record_base", 32)),
@@ -201,7 +229,7 @@ def acquire_t1_3pt_iq(
         for chunk in chunk_sizes(total_shots, shots_per_block):
             run_cfg = dict(cfg)
             run_cfg.update({
-                "opx_reset_scheme": "opx_unbounded",
+                "opx_reset_scheme": reset_scheme,
                 "opx_t1_3pt_shots": int(chunk),
                 "opx_t1_3pt_dc_gains": dc_chunk.tolist(),
                 "opx_t1_3pt_wait_us": wait_us,
@@ -443,6 +471,103 @@ def acquire_t1_sweep_iq(
     }
 
 
+def acquire_t1_flux_sweep_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    dc_gains,
+    delays_us,
+    shots=None,
+    reset_scheme="opx_unbounded",
+):
+    bundle = runtime_bundle(cfg)
+    gains = np.asarray(dc_gains, dtype=float).reshape(-1)
+    if gains.size == 0 or not np.all(np.isfinite(gains)):
+        raise ValueError("at least one finite T1 DC gain is required")
+    rounded = np.rint(gains).astype(np.int64)
+    if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+        raise ValueError("T1 DC gains must be integer DAC values")
+    steps = np.diff(rounded)
+    if steps.size and not np.all(steps == steps[0]):
+        raise ValueError("T1 DC gains must be evenly spaced")
+    delays = np.asarray(delays_us, dtype=float).reshape(-1)
+    if delays.size == 0 or not np.all(np.isfinite(delays)):
+        raise ValueError("at least one finite T1 delay is required")
+    if np.any(delays < 0.01):
+        raise ValueError("T1 delays must be at least 0.01 us")
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("T1 shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    point_count = int(rounded.size) * int(delays.size)
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // point_count
+    if shots_per_block <= 0:
+        raise ValueError(
+            f"the complete {rounded.size} x {delays.size} T1 grid does not fit "
+            "in tProc data memory; increase the gain step or reduce t_points"
+        )
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": reset_scheme,
+            "opx_t1_shots": int(chunk),
+            "opx_t1_dc_gains": rounded.tolist(),
+            "opx_t1_delays_us": delays.tolist(),
+            "ff_hold": float(np.max(delays)),
+            "t1_wait_us": float(np.max(delays)),
+        })
+        program = OPXResetT1FluxSweepProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(run_cfg, int(chunk) * point_count),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_blocks.append(np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(chunk, rounded.size, delays.size).transpose(1, 2, 0))
+        q_blocks.append(np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(chunk, rounded.size, delays.size).transpose(1, 2, 0))
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=2) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=2) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "dc_points": int(rounded.size),
+        "delay_points": int(delays.size),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * point_count),
+        "order": "shot_dc_delay",
+        "read_length_cycles": int(read_cycles),
+    }
+
+
 def acquire_pulse_sweep_iq(
     soc,
     soccfg,
@@ -547,6 +672,115 @@ def acquire_pulse_sweep_iq(
         "points": int(gains.size),
         "blocks": int(len(i_blocks)),
         "records": int(total_shots * gains.size),
+        "read_length_cycles": int(read_cycles),
+    }
+
+
+def acquire_pulse_grid_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    frequencies_mhz,
+    gains,
+    pulses,
+    shots=None,
+    pulse_placement="excursion",
+    do_excursion=False,
+    excursion_gain=None,
+    flux_hold_us=0.05,
+    park_recovery_us=0.0,
+    herald=False,
+    reset_scheme="opx_unbounded",
+):
+    bundle = runtime_bundle(cfg)
+    frequencies = np.asarray(frequencies_mhz, dtype=float).reshape(-1)
+    if frequencies.size == 0 or not np.all(np.isfinite(frequencies)):
+        raise ValueError("at least one finite payload frequency is required")
+    gains = np.asarray(gains, dtype=float).reshape(-1)
+    if gains.size == 0 or not np.all(np.isfinite(gains)):
+        raise ValueError("at least one finite payload gain is required")
+    rounded = np.rint(gains).astype(np.int64)
+    if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+        raise ValueError("payload gains must be integer DAC values")
+    steps = np.diff(rounded)
+    if steps.size and not np.all(steps == steps[0]):
+        raise ValueError("payload gains must be uniformly spaced")
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("payload shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    point_count = int(frequencies.size) * int(rounded.size)
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // point_count
+    if shots_per_block <= 0:
+        raise ValueError(
+            f"{point_count} payload grid points do not fit in tProc data memory"
+        )
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": reset_scheme,
+            "opx_payload_shots_per_expt": int(chunk),
+            "opx_payload_frequencies_mhz": frequencies.tolist(),
+            "opx_payload_gains": rounded.tolist(),
+            "opx_payload_pulses": int(pulses),
+            "opx_payload_pulse_placement": str(pulse_placement),
+            "opx_payload_do_excursion": bool(do_excursion),
+            "opx_payload_flux_hold_us": float(flux_hold_us),
+            "opx_payload_park_recovery_us": float(park_recovery_us),
+            "opx_payload_herald": bool(herald),
+        })
+        if do_excursion:
+            if excursion_gain is None:
+                raise ValueError("excursion_gain is required when do_excursion=True")
+            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+        program = OPXResetPulseGridProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(run_cfg, int(chunk) * point_count),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_blocks.append(np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(chunk, frequencies.size, rounded.size).transpose(1, 2, 0))
+        q_blocks.append(np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(chunk, frequencies.size, rounded.size).transpose(1, 2, 0))
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=2) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=2) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "frequency_points": int(frequencies.size),
+        "gain_points": int(rounded.size),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * point_count),
+        "order": "shot_frequency_gain",
         "read_length_cycles": int(read_cycles),
     }
 

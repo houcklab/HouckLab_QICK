@@ -18,7 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 runner.LIVE_PLOTS = False
-runner.RESET_MODE = "opx_unbounded"
+runner.RESET_MODE = "active"
 runner.P_TRANSMISSION["run"] = False
 runner.P_TRANSMISSION_SWEEP["run"] = False
 runner.P_QUBIT_SPEC["run"] = False
@@ -27,14 +27,14 @@ runner.P_SS_CAL["run"] = False
 runner.P_RABI_CHEVRON_IQ["run"] = False
 runner.P_RABI_CHEVRON_SS.update({
     "run": True,
-    "shots": 200,
+    "shots": 100,
     "num_pi": 1,
     "pulse_type": "X180",
     "a_min": 0,
     "a_max": 22200,
-    "a_points": 9,
-    "freq_span_mhz": 0.0,
-    "freq_points": 1,
+    "a_points": 5,
+    "freq_span_mhz": 1.0,
+    "freq_points": 3,
 })
 runner.P_READOUT_OPT["run"] = False
 runner.P_QUBIT_OPT["run"] = False
