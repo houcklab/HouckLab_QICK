@@ -326,7 +326,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
         "qubit_pulse_style": "arb",
         "sigma": p["sigma_us"],
         "relax_delay": p.get("relax_delay_us", 1000.0),
-    }, active=False)
+    })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
                         num_pi_pulses=p["num_pi"], pulse_type=p["pulse_type"],
@@ -400,7 +400,9 @@ def main():
     outer_folder = outerFolder
 
     global _RESET_SESSION
-    active_measurement = bool(P_RABI_CHEVRON_SS["run"])
+    active_measurement = bool(
+        P_RABI_CHEVRON_IQ["run"] or P_RABI_CHEVRON_SS["run"]
+    )
     if active_measurement and normalize_reset_mode(RESET_MODE) == "opx_unbounded":
         _RESET_SESSION = prepare_reset_session(
             RESET_MODE,

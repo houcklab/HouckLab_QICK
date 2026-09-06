@@ -259,7 +259,11 @@ class RabiChevronIQ(ExperimentClass):
                     cfg,
                     cover_readout=not bool(cfg.get("readout_after_park", True)),
                 ),
-                reset_scheme="none",
+                reset_scheme=(
+                    "opx_unbounded"
+                    if active_reset.uses_opx_unbounded(cfg)
+                    else "none"
+                ),
             )
             I[:, :] = np.mean(shots_i, axis=2)
             Q[:, :] = np.mean(shots_q, axis=2)
