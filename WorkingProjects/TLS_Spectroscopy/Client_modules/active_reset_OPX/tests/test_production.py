@@ -424,3 +424,69 @@ def test_ss_flux_ramp_smoke_runner_selects_only_flux_ramp_calibration(monkeypatc
         },
         "selected": [False, True, False, False],
     }]
+
+
+def test_tls_step1_smoke_runner_selects_only_resonator_flux_sweep(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        SET_YOKO=True,
+        BASELINE_DC_OFFSET=0,
+        RESET_MODE="active",
+        P1_RESONATOR={"run": False},
+        P2_QUBIT_SPEC_FULL={"run": True},
+        P3_STEP_RESPONSE={"run_fit": True, "run_correct": True},
+        P4_LONG_TIME={"run": True},
+        P5_SS_CAL={"run": True},
+        P6_3PT_T1={"run": True},
+        P6_FULL_T1={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "live_plots": runner.LIVE_PLOTS,
+        "set_yoko": runner.SET_YOKO,
+        "baseline": runner.BASELINE_DC_OFFSET,
+        "reset_mode": runner.RESET_MODE,
+        "step1": dict(runner.P1_RESONATOR),
+        "selected": [
+            runner.P1_RESONATOR["run"],
+            runner.P2_QUBIT_SPEC_FULL["run"],
+            runner.P3_STEP_RESPONSE["run_fit"],
+            runner.P3_STEP_RESPONSE["run_correct"],
+            runner.P4_LONG_TIME["run"],
+            runner.P5_SS_CAL["run"],
+            runner.P6_3PT_T1["run"],
+            runner.P6_FULL_T1["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "TLSSpectroscopy", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_tls_step1_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "live_plots": False,
+        "set_yoko": False,
+        "baseline": -25790,
+        "reset_mode": "passive",
+        "step1": {
+            "run": True,
+            "shots": 20,
+            "freq_min": 6932.8,
+            "freq_max": 6933.5,
+            "freq_step": 0.07,
+            "dc_min": -26000,
+            "dc_max": -25500,
+            "dc_step": 250,
+            "lookup_smooth_points": None,
+            "live_plot": False,
+            "spec_amp": 1000,
+            "spec_len_us": 5.0,
+        },
+        "selected": [True, False, False, False, False, False, False, False],
+    }]
