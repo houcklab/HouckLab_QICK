@@ -199,6 +199,196 @@ def fit_t1_decay(times_us, populations, shots=None):
     }
 
 
+def fit_spectroscopy_peak(frequencies_mhz, populations):
+    from scipy.optimize import curve_fit
+
+    frequencies = np.asarray(frequencies_mhz, dtype=float).ravel()
+    values = np.asarray(populations, dtype=float).ravel()
+    if frequencies.size != values.size or frequencies.size < 7:
+        raise ValueError(
+            "spectroscopy fit needs at least seven matching frequency and population values"
+        )
+    finite = np.isfinite(frequencies) & np.isfinite(values)
+    frequencies = frequencies[finite]
+    values = values[finite]
+    if frequencies.size < 7 or np.unique(frequencies).size < 7:
+        raise ValueError("spectroscopy fit needs at least seven finite frequencies")
+    order = np.argsort(frequencies)
+    frequencies = frequencies[order]
+    values = values[order]
+    differences = np.diff(frequencies)
+    if np.any(differences <= 0):
+        raise ValueError("spectroscopy frequencies must be distinct")
+    span = float(frequencies[-1] - frequencies[0])
+    resolution = float(np.median(differences))
+    edge_count = max(2, frequencies.size // 10)
+    baseline_seed = float(np.median(np.concatenate((
+        values[:edge_count], values[-edge_count:],
+    ))))
+    center_seed = float(frequencies[int(np.argmax(values))])
+    contrast_seed = float(np.max(values) - baseline_seed)
+    if contrast_seed <= 1e-6:
+        raise ValueError("spectroscopy contrast is too small to fit")
+    slope_seed = float((np.mean(values[-edge_count:]) - np.mean(
+        values[:edge_count])) / span)
+    width_seed = max(2.0 * resolution, span / 12.0)
+    value_span = max(float(np.ptp(values)), 1e-3)
+    midpoint = float(np.mean(frequencies[[0, -1]]))
+
+    def model(frequency, baseline, contrast, center, width, slope):
+        return (
+            baseline
+            + slope * (frequency - midpoint)
+            + contrast / (1.0 + 4.0 * ((frequency - center) / width) ** 2)
+        )
+
+    fitted, covariance = curve_fit(
+        model,
+        frequencies,
+        values,
+        p0=[baseline_seed, contrast_seed, center_seed, width_seed, slope_seed],
+        bounds=(
+            [
+                float(np.min(values) - 2.0 * value_span),
+                0.0,
+                float(frequencies[0]),
+                resolution / 10.0,
+                -4.0 * value_span / span,
+            ],
+            [
+                float(np.max(values) + 2.0 * value_span),
+                4.0 * value_span,
+                float(frequencies[-1]),
+                2.0 * span,
+                4.0 * value_span / span,
+            ],
+        ),
+        maxfev=50000,
+    )
+    errors = np.sqrt(np.diag(covariance))
+    predicted = model(frequencies, *fitted)
+    boundary_peak = bool(
+        int(np.argmax(values)) in (0, values.size - 1)
+        or fitted[2] - frequencies[0] <= resolution
+        or frequencies[-1] - fitted[2] <= resolution
+    )
+    return {
+        "baseline": float(fitted[0]),
+        "contrast": float(fitted[1]),
+        "center_mhz": float(fitted[2]),
+        "fwhm_mhz": float(fitted[3]),
+        "slope_per_mhz": float(fitted[4]),
+        "center_err_mhz": float(errors[2]),
+        "fwhm_err_mhz": float(errors[3]),
+        "rmse": float(np.sqrt(np.mean((values - predicted) ** 2))),
+        "boundary_peak": boundary_peak,
+    }
+
+
+def evaluate_flux_cycle_spectroscopy(
+    fits,
+    *,
+    max_center_shift_mhz=1.0,
+    max_width_ratio=2.0,
+    min_contrast_ratio=0.5,
+):
+    fits = {str(key): dict(value) for key, value in dict(fits).items()}
+    required = ("passive_1000", "no_reset_25", "active_25", "active_100")
+    missing = [method for method in required if method not in fits]
+    if missing:
+        return {
+            "status": "fail",
+            "diagnosis": "fit_failed",
+            "missing_fits": missing,
+            "recommended_payload_frequency_mhz": None,
+        }
+    tolerances = np.asarray(
+        [max_center_shift_mhz, max_width_ratio, min_contrast_ratio], dtype=float
+    )
+    if not np.all(np.isfinite(tolerances)):
+        raise ValueError("spectroscopy comparison tolerances must be finite")
+    if tolerances[0] < 0 or tolerances[1] < 1 or not 0 < tolerances[2] <= 1:
+        raise ValueError("spectroscopy comparison tolerances are invalid")
+    metrics = {}
+    for method in required:
+        values = np.asarray([
+            fits[method]["center_mhz"],
+            fits[method]["fwhm_mhz"],
+            fits[method]["contrast"],
+        ], dtype=float)
+        if not np.all(np.isfinite(values)) or values[1] <= 0 or values[2] <= 0:
+            raise ValueError(f"{method} spectroscopy fit is invalid")
+        metrics[method] = values
+    baseline = metrics["passive_1000"]
+    comparisons = {}
+    for method in required[1:]:
+        values = metrics[method]
+        comparisons[method] = {
+            "center_shift_mhz": float(values[0] - baseline[0]),
+            "width_ratio": float(values[1] / baseline[1]),
+            "contrast_ratio": float(values[2] / baseline[2]),
+        }
+    active_control = comparisons["active_100"]
+    active_control_passed = bool(
+        abs(active_control["center_shift_mhz"]) <= max_center_shift_mhz
+        and active_control["width_ratio"] <= max_width_ratio
+        and active_control["contrast_ratio"] >= min_contrast_ratio
+    )
+    short_shape_healthy = all(
+        comparisons[method]["width_ratio"] <= max_width_ratio
+        and comparisons[method]["contrast_ratio"] >= min_contrast_ratio
+        for method in ("no_reset_25", "active_25")
+    )
+    no_reset_detuned = bool(
+        abs(comparisons["no_reset_25"]["center_shift_mhz"])
+        > max_center_shift_mhz
+    )
+    active_detuned = bool(
+        abs(comparisons["active_25"]["center_shift_mhz"])
+        > max_center_shift_mhz
+    )
+    short_centers_match = bool(
+        abs(metrics["active_25"][0] - metrics["no_reset_25"][0])
+        <= max_center_shift_mhz
+    )
+    boundary_methods = [
+        method for method in required if bool(fits[method].get("boundary_peak", False))
+    ]
+    recommended = None
+    if boundary_methods:
+        diagnosis = "sweep_boundary"
+    elif not active_control_passed:
+        diagnosis = "active_100_control_failed"
+    elif not short_shape_healthy:
+        diagnosis = "short_cycle_broadening_or_heating"
+    elif no_reset_detuned and active_detuned and short_centers_match:
+        diagnosis = "correctable_flux_cycle_detuning"
+        recommended = float(metrics["active_25"][0])
+    elif active_detuned and not no_reset_detuned:
+        diagnosis = "active_reset_induced_detuning"
+        recommended = float(metrics["active_25"][0])
+    elif no_reset_detuned:
+        diagnosis = "short_cycle_without_reset_detuning"
+    else:
+        diagnosis = "equivalent"
+    return {
+        "status": "pass" if diagnosis == "equivalent" else "diagnostic",
+        "diagnosis": diagnosis,
+        "missing_fits": [],
+        "recommended_payload_frequency_mhz": recommended,
+        "active_25_center_shift_mhz": comparisons["active_25"]["center_shift_mhz"],
+        "active_100_control_passed": active_control_passed,
+        "short_shape_healthy": short_shape_healthy,
+        "boundary_methods": boundary_methods,
+        "comparisons": comparisons,
+        "tolerances": {
+            "max_center_shift_mhz": float(max_center_shift_mhz),
+            "max_width_ratio": float(max_width_ratio),
+            "min_contrast_ratio": float(min_contrast_ratio),
+        },
+    }
+
+
 def fit_t1_rounds(round_rows, *, methods):
     fits = {}
     errors = {}

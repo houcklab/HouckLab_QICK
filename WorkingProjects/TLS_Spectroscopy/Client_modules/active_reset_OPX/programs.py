@@ -43,6 +43,43 @@ REGISTER_NAMES = (
 )
 
 
+def payload_sweep_plan(cfg, *, freq2reg):
+    kind = str(cfg.get("opx_payload_sweep_kind", "gain")).strip().lower()
+    if kind == "gain":
+        gain_start = cfg.get("opx_payload_gain_start")
+        if gain_start is None:
+            gain_start = cfg["qubit_pi_gain"]
+        fixed_frequency = cfg.get("opx_payload_frequency_mhz")
+        if fixed_frequency is None:
+            fixed_frequency = cfg.get("qubit_pi_freq", cfg.get("qubit_freq"))
+        if fixed_frequency is None:
+            raise ValueError("gain payload sweep requires a payload frequency")
+        return {
+            "kind": kind,
+            "start_register": int(gain_start),
+            "step_register": int(cfg.get("opx_payload_gain_step", 0)),
+            "fixed_gain": None,
+            "fixed_frequency_mhz": float(fixed_frequency),
+            "target_register": "gain",
+        }
+    if kind == "frequency":
+        start_mhz = float(cfg["opx_payload_frequency_start_mhz"])
+        step_mhz = float(cfg.get("opx_payload_frequency_step_mhz", 0.0))
+        start_register = int(freq2reg(start_mhz))
+        fixed_gain = cfg.get("opx_payload_fixed_gain")
+        if fixed_gain is None:
+            fixed_gain = cfg["qubit_pi_gain"]
+        return {
+            "kind": kind,
+            "start_register": start_register,
+            "step_register": int(freq2reg(start_mhz + step_mhz)) - start_register,
+            "fixed_gain": int(fixed_gain),
+            "fixed_frequency_mhz": None,
+            "target_register": "freq",
+        }
+    raise ValueError("opx_payload_sweep_kind must be 'gain' or 'frequency'")
+
+
 def _reserved_registers(prog, page):
     reserved = {0}
     if int(page) == 0:
@@ -710,25 +747,31 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
 
     def _set_payload_pulse(self):
         cfg = self.cfg
+        plan = self._payload_sweep_plan
+        if plan["kind"] == "frequency":
+            frequency_register = 0
+            gain = int(plan["fixed_gain"])
+        else:
+            frequency_register = self.freq2reg(
+                float(plan["fixed_frequency_mhz"]),
+                gen_ch=cfg["qubit_ch"],
+            )
+            gain = 0
         self.set_pulse_registers(
             ch=cfg["qubit_ch"],
             style="arb",
-            freq=self.freq2reg(
-                float(cfg.get("opx_payload_frequency_mhz", cfg.get(
-                    "qubit_pi_freq", cfg["qubit_freq"]))),
-                gen_ch=cfg["qubit_ch"],
-            ),
+            freq=frequency_register,
             phase=self.deg2reg(
                 float(cfg.get("opx_payload_phase_deg", 0.0)),
                 gen_ch=cfg["qubit_ch"],
             ),
-            gain=0,
+            gain=gain,
             waveform="qubit",
         )
         self.mathi(
             self.reset_page,
-            self.sreg(cfg["qubit_ch"], "gain"),
-            self.reset_regs["payload_gain"],
+            self.sreg(cfg["qubit_ch"], plan["target_register"]),
+            self.reset_regs["payload_sweep"],
             "+",
             0,
         )
@@ -773,6 +816,11 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             raise ValueError("payload and reset readout frequencies must match")
         self._payload_shots = int(cfg["opx_payload_shots_per_expt"])
         self._payload_expts = int(cfg.get("opx_payload_expts", 1))
+        self._payload_sweep_plan = payload_sweep_plan(
+            cfg,
+            freq2reg=lambda frequency: self.freq2reg(
+                frequency, gen_ch=cfg["qubit_ch"]),
+        )
         self._payload_pulses = int(cfg.get("opx_payload_pulses", 1))
         if self._payload_pulses < 0:
             raise ValueError("opx_payload_pulses must be non-negative")
@@ -878,7 +926,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             "pi_count",
             "status",
             "address",
-            "payload_gain",
+            "payload_sweep",
         )
         self.reset_regs = allocate_named_registers(self, self.reset_page, names)
         control_reserved = _reserved_registers(self, 0)
@@ -898,9 +946,9 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         )
         self.regwi(
             self.reset_page,
-            self.reset_regs["payload_gain"],
-            int(self.cfg.get("opx_payload_gain_start", self.cfg["qubit_pi_gain"])),
-            "OPX payload gain",
+            self.reset_regs["payload_sweep"],
+            int(self._payload_sweep_plan["start_register"]),
+            "OPX payload sweep",
         )
         self.regwi(0, controls["done"], 0, "completed OPX payload shots")
         self.memwi(0, controls["done"], self.done_addr)
@@ -921,10 +969,10 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         self.loopnz(0, controls["shot_loop"], "OPX_PAYLOAD_SHOT_LOOP")
         self.mathi(
             self.reset_page,
-            self.reset_regs["payload_gain"],
-            self.reset_regs["payload_gain"],
+            self.reset_regs["payload_sweep"],
+            self.reset_regs["payload_sweep"],
             "+",
-            int(self.cfg.get("opx_payload_gain_step", 0)),
+            int(self._payload_sweep_plan["step_register"]),
         )
         self.loopnz(0, controls["expt_loop"], "OPX_PAYLOAD_EXPT_LOOP")
         self._end_park_lifecycle()

@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import analysis
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import analysis, integration
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     ReferenceAxis,
     append_records_csv,
@@ -35,6 +35,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integratio
     runtime_bundle,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
+    PayloadRecord,
     ShotRecord,
     TerminalStatus,
 )
@@ -73,6 +74,136 @@ def test_t1_fit_recovers_a_known_exponential_decay():
     assert fit["tau_us"] == pytest.approx(150.0, rel=1e-3)
     assert fit["P0"] == pytest.approx(0.035, abs=1e-4)
     assert fit["P1"] == pytest.approx(0.845, abs=1e-4)
+
+
+def test_spectroscopy_fit_recovers_lorentzian_center_and_width():
+    frequencies = np.linspace(4347.0, 4387.0, 161)
+    center = 4362.75
+    width = 2.4
+    populations = 0.08 + 0.72 / (1.0 + 4.0 * ((frequencies - center) / width) ** 2)
+
+    fit = analysis.fit_spectroscopy_peak(frequencies, populations)
+
+    assert fit["center_mhz"] == pytest.approx(center, abs=0.02)
+    assert fit["fwhm_mhz"] == pytest.approx(width, abs=0.03)
+    assert fit["contrast"] == pytest.approx(0.72, abs=0.01)
+    assert fit["boundary_peak"] is False
+
+
+def test_flux_cycle_spectroscopy_identifies_correctable_periodic_detuning():
+    fits = {
+        "passive_1000": {"center_mhz": 4367.2, "fwhm_mhz": 2.0, "contrast": 0.70},
+        "no_reset_25": {"center_mhz": 4361.1, "fwhm_mhz": 2.3, "contrast": 0.62},
+        "active_25": {"center_mhz": 4361.0, "fwhm_mhz": 2.4, "contrast": 0.60},
+        "active_100": {"center_mhz": 4367.0, "fwhm_mhz": 2.1, "contrast": 0.68},
+    }
+
+    result = analysis.evaluate_flux_cycle_spectroscopy(fits)
+
+    assert result["diagnosis"] == "correctable_flux_cycle_detuning"
+    assert result["recommended_payload_frequency_mhz"] == pytest.approx(4361.0)
+    assert result["active_25_center_shift_mhz"] == pytest.approx(-6.2)
+
+
+def test_flux_cycle_spectroscopy_identifies_short_cycle_broadening():
+    fits = {
+        "passive_1000": {"center_mhz": 4367.2, "fwhm_mhz": 2.0, "contrast": 0.70},
+        "no_reset_25": {"center_mhz": 4365.0, "fwhm_mhz": 6.0, "contrast": 0.20},
+        "active_25": {"center_mhz": 4364.8, "fwhm_mhz": 6.5, "contrast": 0.18},
+        "active_100": {"center_mhz": 4367.0, "fwhm_mhz": 2.1, "contrast": 0.68},
+    }
+
+    result = analysis.evaluate_flux_cycle_spectroscopy(fits)
+
+    assert result["diagnosis"] == "short_cycle_broadening_or_heating"
+    assert result["recommended_payload_frequency_mhz"] is None
+
+
+def test_flux_cycle_spectroscopy_rejects_a_peak_at_the_sweep_boundary():
+    fits = {
+        "passive_1000": {"center_mhz": 4367.2, "fwhm_mhz": 2.0, "contrast": 0.70},
+        "no_reset_25": {"center_mhz": 4347.2, "fwhm_mhz": 2.3, "contrast": 0.62},
+        "active_25": {
+            "center_mhz": 4347.2,
+            "fwhm_mhz": 2.4,
+            "contrast": 0.60,
+            "boundary_peak": True,
+        },
+        "active_100": {"center_mhz": 4367.0, "fwhm_mhz": 2.1, "contrast": 0.68},
+    }
+
+    result = analysis.evaluate_flux_cycle_spectroscopy(fits)
+
+    assert result["diagnosis"] == "sweep_boundary"
+    assert result["recommended_payload_frequency_mhz"] is None
+
+
+def test_flux_cycle_runner_maps_reset_and_recovery_conditions():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        flux_cycle_spectroscopy_q3 as runner,
+    )
+
+    assert runner._method_config("passive_1000") == ("none", 1000.0)
+    assert runner._method_config("no_reset_25") == ("none", 25.0)
+    assert runner._method_config("active_25") == ("opx_unbounded", 25.0)
+    assert runner._method_config("active_100") == ("opx_unbounded", 100.0)
+    frequencies = np.asarray([1.0, 2.0, 3.0])
+    assert runner._ordered_frequency_axis(frequencies, 0).tolist() == [1.0, 2.0, 3.0]
+    assert runner._ordered_frequency_axis(frequencies, 1).tolist() == [3.0, 2.0, 1.0]
+
+
+def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    created = []
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+            created.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    records = [
+        PayloadRecord(10, -10), PayloadRecord(11, -11),
+        PayloadRecord(20, -20), PayloadRecord(21, -21),
+        PayloadRecord(30, -30), PayloadRecord(31, -31),
+    ]
+    monkeypatch.setattr(integration, "OPXResetPulseSweepProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", lambda *args, **kwargs: records)
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 2,
+        "read_length": 1.0,
+        "ro_chs": [0],
+        "qubit_pi_freq": 4367.25,
+    }
+
+    i_values, q_values, telemetry = integration.acquire_frequency_sweep_iq(
+        None,
+        {},
+        cfg,
+        frequencies_mhz=[4350.0, 4350.5, 4351.0],
+        gain=11100,
+        pulses=1,
+        shots=2,
+    )
+
+    assert i_values.tolist() == [[1.0, 1.1], [2.0, 2.1], [3.0, 3.1]]
+    assert q_values.tolist() == [[-1.0, -1.1], [-2.0, -2.1], [-3.0, -3.1]]
+    assert telemetry["points"] == 3
+    assert created[0].cfg["opx_payload_sweep_kind"] == "frequency"
+    assert created[0].cfg["opx_payload_frequency_start_mhz"] == pytest.approx(4350.0)
+    assert created[0].cfg["opx_payload_frequency_step_mhz"] == pytest.approx(0.5)
+    assert created[0].cfg["opx_payload_fixed_gain"] == 11100
+    assert created[0].cfg["qubit_pi_freq"] == pytest.approx(4367.25)
 
 
 def test_t1_equivalence_requires_matching_decay_and_population_endpoints():

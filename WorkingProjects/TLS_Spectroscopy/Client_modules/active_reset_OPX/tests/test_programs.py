@@ -1,11 +1,13 @@
 import numpy as np
 import pytest
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
     ClassifierCalibration,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
+    OPXResetPulseSweepProgram,
     OPXResetT1Program,
     TimingMatchedReferenceProgram,
     allocate_named_registers,
@@ -652,3 +654,70 @@ def test_qick_program_classes_are_exposed_even_on_analysis_computers():
     assert TimingMatchedReferenceProgram is not None
     assert OPXResetBenchmarkProgram is not None
     assert OPXResetT1Program is not None
+
+
+def test_frequency_payload_sweep_uses_frequency_register_and_fixed_gain():
+    plan = programs.payload_sweep_plan(
+        {
+            "opx_payload_sweep_kind": "frequency",
+            "opx_payload_frequency_start_mhz": 4350.0,
+            "opx_payload_frequency_step_mhz": 0.5,
+            "opx_payload_fixed_gain": 11100,
+        },
+        freq2reg=lambda frequency: int(round(float(frequency) * 10.0)),
+    )
+
+    assert plan == {
+        "kind": "frequency",
+        "start_register": 43500,
+        "step_register": 5,
+        "fixed_gain": 11100,
+        "fixed_frequency_mhz": None,
+        "target_register": "freq",
+    }
+
+
+def test_gain_payload_sweep_preserves_existing_fixed_frequency_behavior():
+    plan = programs.payload_sweep_plan(
+        {
+            "opx_payload_gain_start": 1000,
+            "opx_payload_gain_step": 250,
+            "opx_payload_frequency_mhz": 4367.25,
+        },
+        freq2reg=lambda frequency: int(round(float(frequency) * 10.0)),
+    )
+
+    assert plan == {
+        "kind": "gain",
+        "start_register": 1000,
+        "step_register": 250,
+        "fixed_gain": None,
+        "fixed_frequency_mhz": 4367.25,
+        "target_register": "gain",
+    }
+
+
+def test_frequency_payload_pulse_copies_sweep_register_only_to_drive_frequency():
+    prog = RecordingProgram()
+    prog.cfg = {"qubit_ch": 1}
+    prog.reset_page = 1
+    prog.reset_regs = {"payload_sweep": 7}
+    prog._payload_sweep_plan = {
+        "kind": "frequency",
+        "fixed_gain": 11100,
+        "fixed_frequency_mhz": None,
+        "target_register": "freq",
+    }
+    prog.set_pulse_registers = lambda **values: prog.asm.append(
+        ("set_pulse_registers", values)
+    )
+    prog.sreg = lambda channel, name: {"freq": 21, "gain": 22}[name]
+    prog.deg2reg = lambda value, gen_ch: 0
+
+    OPXResetPulseSweepProgram._set_payload_pulse(prog)
+
+    pulse = next(values for name, values in prog.asm if name == "set_pulse_registers")
+    assert pulse["freq"] == 0
+    assert pulse["gain"] == 11100
+    assert ("mathi", 21, 7, "+", 0) in prog.asm
+    assert not any(op[0] == "mathi" and op[1] == 22 for op in prog.asm)

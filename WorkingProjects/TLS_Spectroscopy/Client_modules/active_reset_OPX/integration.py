@@ -231,6 +231,112 @@ def acquire_pulse_sweep_iq(
     }
 
 
+def acquire_frequency_sweep_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    frequencies_mhz,
+    gain,
+    pulses,
+    shots=None,
+    pulse_placement="park",
+    do_excursion=False,
+    excursion_gain=None,
+    flux_hold_us=0.05,
+    herald=False,
+    reset_scheme="opx_unbounded",
+):
+    bundle = runtime_bundle(cfg)
+    frequencies = np.asarray(frequencies_mhz, dtype=float).reshape(-1)
+    if frequencies.size == 0 or not np.all(np.isfinite(frequencies)):
+        raise ValueError("at least one finite payload frequency is required")
+    if frequencies.size > 1:
+        steps = np.diff(frequencies)
+        if not np.allclose(steps, steps[0], rtol=0.0, atol=1e-9):
+            raise ValueError("payload frequencies must be uniformly spaced")
+        frequency_step = float(steps[0])
+    else:
+        frequency_step = 0.0
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("payload shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // frequencies.size
+    if shots_per_block <= 0:
+        raise ValueError(
+            f"{frequencies.size} payload points do not fit in tProc data memory"
+        )
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": reset_scheme,
+            "opx_payload_shots_per_expt": int(chunk),
+            "opx_payload_expts": int(frequencies.size),
+            "opx_payload_sweep_kind": "frequency",
+            "opx_payload_frequency_start_mhz": float(frequencies[0]),
+            "opx_payload_frequency_step_mhz": frequency_step,
+            "opx_payload_fixed_gain": int(gain),
+            "opx_payload_pulses": int(pulses),
+            "opx_payload_pulse_placement": str(pulse_placement),
+            "opx_payload_do_excursion": bool(do_excursion),
+            "opx_payload_flux_hold_us": float(flux_hold_us),
+            "opx_payload_herald": bool(herald),
+        })
+        if do_excursion:
+            if excursion_gain is None:
+                raise ValueError("excursion_gain is required when do_excursion=True")
+            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+        program = OPXResetPulseSweepProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(run_cfg, chunk * frequencies.size),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_block = np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(frequencies.size, chunk)
+        q_block = np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(frequencies.size, chunk)
+        i_blocks.append(i_block)
+        q_blocks.append(q_block)
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "points": int(frequencies.size),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * frequencies.size),
+    }
+
+
 def acquire_pulse_iq(
     soc,
     soccfg,
