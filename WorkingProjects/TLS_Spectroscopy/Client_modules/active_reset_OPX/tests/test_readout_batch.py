@@ -2,6 +2,8 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.pynq.readout_batch import (
     acquire_qick_program_batch,
+    acquire_qick_resident_readout,
+    install_qicksoc_batch_methods,
 )
 
 
@@ -65,7 +67,7 @@ class FakeSoc:
             )
         )
 
-    def poll_data(self):
+    def poll_data(self, *args, **kwargs):
         values = np.empty((1, self.expected, 2), dtype=np.int32)
         values[0, :, 0] = self.identifier * 10 + np.arange(self.expected)
         values[0, :, 1] = -(self.identifier * 10 + np.arange(self.expected))
@@ -128,3 +130,299 @@ def test_server_batch_rejects_rounds_and_inconsistent_record_counts():
         assert "record" in str(exc)
     else:
         raise AssertionError("record-count validation did not run")
+
+
+class ResidentTProc:
+    def __init__(self):
+        self.memory = {}
+        self.command_addr = 2
+        self.ready_addr = 3
+        self.frequency_addr = 4
+        self.total_blocks = 0
+        self.completed_blocks = 0
+        self.releases = []
+        self.reset_count = 0
+
+    def single_read(self, addr):
+        return self.memory.get(int(addr), 0)
+
+    def single_write(self, addr=0, data=0):
+        addr = int(addr)
+        data = int(data)
+        self.memory[addr] = data
+        if addr == self.command_addr and data == 1:
+            self.releases.append(self.memory[self.frequency_addr])
+            self.completed_blocks += 1
+            if self.completed_blocks < self.total_blocks:
+                self.memory[self.ready_addr] = self.completed_blocks + 1
+
+    def reset(self):
+        self.reset_count += 1
+
+
+class ResidentProgram(FakeProgram):
+    def load_prog(self, values):
+        super().load_prog(values)
+        self.ro_chs = {
+            0: {
+                "freq": 10.0,
+                "length": int(values["read_length"]),
+                "sel": "product",
+                "gen_ch": 0,
+            }
+        }
+
+    def config_readouts(self, soc):
+        raise AssertionError("readouts must be initialized only once")
+
+
+class ResidentSoc(FakeSoc):
+    def __init__(self):
+        super().__init__()
+        self.tproc = ResidentTProc()
+        self.readout_frequencies = []
+        self.polls = 0
+
+    def init_readouts(self):
+        self.events.append(("init_readouts",))
+
+    def configure_readout(self, ch, output, frequency, gen_ch=0):
+        self.readout_frequencies.append(float(frequency))
+        self.events.append(("configure_readout", int(ch), float(frequency)))
+
+    def start_readout(
+        self, total_reps, counter_addr=1, ch_list=None, reads_per_rep=1
+    ):
+        self.expected = int(total_reps) * int(reads_per_rep)
+        self.tproc.total_blocks = 4
+        self.tproc.memory[self.tproc.ready_addr] = 1
+        self.events.append(("resident_start", int(total_reps)))
+
+    def poll_data(self, *args, **kwargs):
+        self.polls += 1
+        values = np.empty((1, self.expected, 2), dtype=np.int32)
+        values[0, :, 0] = np.arange(self.expected)
+        values[0, :, 1] = -np.arange(self.expected)
+        return [(values, {})]
+
+
+def test_resident_server_uses_one_program_and_shot_frequency_handshake():
+    FakeProgram.compiled = []
+    ResidentProgram.loaded_pulses = 0
+    ResidentProgram.configured_gens = 0
+    soc = ResidentSoc()
+    resident = program(7)
+    resident["reps"] = 8
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        resident,
+        configs,
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        program_factory=ResidentProgram,
+    )
+    assert FakeProgram.compiled == [7]
+    assert ResidentProgram.loaded_pulses == 1
+    assert ResidentProgram.configured_gens == 1
+    assert soc.readout_frequencies == [10.0, 10.0, 20.0, 10.0, 20.0]
+    assert soc.tproc.releases == [101, 202, 101, 202]
+    assert [event for event in soc.events if event[0] == "resident_start"] == [
+        ("resident_start", 8)
+    ]
+    assert len([event for event in soc.events if event[0] == "load"]) == 1
+    assert result["records"].shape == (2, 2, 2, 2)
+    np.testing.assert_array_equal(result["records"][0, 0, :, 0], [0.0, 0.2])
+    assert result["controller_programs"] == 1
+    assert result["readout_reconfigurations"] == 4
+
+
+def test_resident_server_selects_output_once_and_updates_only_dds_in_loop():
+    class Buffer:
+        def __init__(self):
+            self.frequencies = []
+
+        def set_freq(self, frequency, gen_ch=0):
+            self.frequencies.append((float(frequency), int(gen_ch)))
+
+    class DirectFrequencySoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.avg_bufs = [Buffer()]
+
+    soc = DirectFrequencySoc()
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        configs,
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        program_factory=ResidentProgram,
+    )
+    assert soc.readout_frequencies == [10.0]
+    assert soc.avg_bufs[0].frequencies == [
+        (10.0, 0),
+        (20.0, 0),
+        (10.0, 0),
+        (20.0, 0),
+    ]
+
+
+def test_installer_adds_both_batch_methods_to_qicksoc_class():
+    class Soc:
+        pass
+
+    result = install_qicksoc_batch_methods(Soc)
+    assert result is Soc
+    assert callable(Soc.acquire_qick_program_batch)
+    assert callable(Soc.acquire_qick_resident_readout)
+
+
+def test_resident_server_rejects_handshake_outside_tproc_memory():
+    class SmallMemorySoc(ResidentSoc):
+        def get_cfg(self):
+            return {"tprocs": [{"dmem_size": 4}]}
+
+    try:
+        acquire_qick_resident_readout(
+            SmallMemorySoc(),
+            {**program(7), "reps": 8},
+            [
+                {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+                {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            ],
+            [101, 202],
+            shots=2,
+            command_addr=2,
+            ready_addr=3,
+            frequency_addr=4,
+            program_factory=ResidentProgram,
+        )
+    except ValueError as exc:
+        assert "data memory" in str(exc)
+    else:
+        raise AssertionError("resident handshake memory validation did not run")
+
+
+def test_resident_timeout_stops_tproc_and_streamer():
+    class DoneFlag:
+        def __init__(self):
+            self.waits = []
+
+        def wait(self, timeout=None):
+            self.waits.append(timeout)
+            return True
+
+    class Streamer:
+        def __init__(self):
+            self.stopped = 0
+            self.done_flag = DoneFlag()
+
+        def readout_running(self):
+            return True
+
+        def stop_readout(self):
+            self.stopped += 1
+
+    class StalledSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.streamer = Streamer()
+
+        def start_readout(
+            self, total_reps, counter_addr=1, ch_list=None, reads_per_rep=1
+        ):
+            self.expected = int(total_reps) * int(reads_per_rep)
+            self.events.append(("resident_start", int(total_reps)))
+
+    soc = StalledSoc()
+    try:
+        acquire_qick_resident_readout(
+            soc,
+            {**program(7), "reps": 8},
+            [
+                {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+                {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            ],
+            [101, 202],
+            shots=2,
+            command_addr=2,
+            ready_addr=3,
+            frequency_addr=4,
+            timeout_s=0.001,
+            program_factory=ResidentProgram,
+        )
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("resident timeout did not run")
+    assert soc.tproc.reset_count == 1
+    assert soc.streamer.stopped == 1
+    assert soc.streamer.done_flag.waits == [1.0]
+
+
+def test_resident_stream_timeout_stops_tproc_and_streamer():
+    class DoneFlag:
+        def __init__(self):
+            self.waits = []
+
+        def wait(self, timeout=None):
+            self.waits.append(timeout)
+            return True
+
+    class Streamer:
+        def __init__(self):
+            self.stopped = 0
+            self.done_flag = DoneFlag()
+
+        def readout_running(self):
+            return True
+
+        def stop_readout(self):
+            self.stopped += 1
+
+    class EmptyStreamSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.streamer = Streamer()
+
+        def poll_data(self, *args, **kwargs):
+            return []
+
+    soc = EmptyStreamSoc()
+    try:
+        acquire_qick_resident_readout(
+            soc,
+            {**program(7), "reps": 8},
+            [
+                {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+                {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            ],
+            [101, 202],
+            shots=2,
+            command_addr=2,
+            ready_addr=3,
+            frequency_addr=4,
+            timeout_s=0.001,
+            program_factory=ResidentProgram,
+        )
+    except TimeoutError as exc:
+        assert "streamed readout" in str(exc)
+    else:
+        raise AssertionError("resident stream timeout did not run")
+    assert soc.tproc.reset_count == 1
+    assert soc.streamer.stopped == 1
+    assert soc.streamer.done_flag.waits == [1.0]

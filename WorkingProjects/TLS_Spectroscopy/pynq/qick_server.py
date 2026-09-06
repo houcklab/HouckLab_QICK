@@ -22,12 +22,39 @@ import Pyro4
 from qick import QickSoc
 
 try:
-    from .readout_batch import acquire_qick_program_batch
+    from .readout_batch import (
+        acquire_qick_program_batch,
+        acquire_qick_resident_readout,
+    )
 except ImportError:
-    from readout_batch import acquire_qick_program_batch
+    from readout_batch import (
+        acquire_qick_program_batch,
+        acquire_qick_resident_readout,
+    )
 
 
 class QickSocCal(QickSoc):
+    def acquire_qick_resident_readout(
+        self,
+        program,
+        readout_configs,
+        frequency_registers,
+        shots,
+        command_addr,
+        ready_addr,
+        frequency_addr,
+    ):
+        return acquire_qick_resident_readout(
+            self,
+            program,
+            readout_configs,
+            frequency_registers,
+            shots,
+            command_addr,
+            ready_addr,
+            frequency_addr,
+        )
+
     def acquire_qick_program_batch(
         self, first_program, programs, shots, reads_per_rep=1
     ):

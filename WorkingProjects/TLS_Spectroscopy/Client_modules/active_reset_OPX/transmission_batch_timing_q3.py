@@ -62,6 +62,8 @@ def main():
     wall_s = perf_counter() - started
     if int(telemetry.get("server_batches", 0)) != 1:
         raise RuntimeError("RFSoC batch acquisition was not used")
+    if not bool(telemetry.get("resident_handshake", False)):
+        raise RuntimeError("RFSoC resident acquisition was not used")
     signal = np.mean(i_values[:, 0, :] + 1j * q_values[:, 0, :], axis=1)
     dip = float(frequencies[int(np.argmin(np.abs(signal)))])
     records = int(telemetry["records"])
@@ -91,7 +93,12 @@ def main():
         "records": records,
         "host_programs": int(telemetry["host_programs"]),
         "controller_programs": int(telemetry["controller_programs"]),
+        "readout_reconfigurations": int(
+            telemetry.get("readout_reconfigurations", 0)
+        ),
         "server_batches": int(telemetry["server_batches"]),
+        "resident_handshake": bool(telemetry.get("resident_handshake", False)),
+        "server_timing_s": telemetry.get("server_timing_s", {}),
         "order": telemetry["order"],
         "readout_integration_us": float(cfg["read_length"]),
         "readout_drive_us": readout_drive_length_us(cfg),

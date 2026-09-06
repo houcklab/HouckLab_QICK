@@ -84,6 +84,31 @@ class PulseGridRecorder:
         self.instructions.append(("end",))
 
 
+class ResidentGridRecorder(PulseGridRecorder):
+    def __init__(self):
+        super().__init__()
+        self.values = np.array([100.0])
+        self.kind = "readout_gain"
+        self.excursion_gain = None
+        self.command_addr = 2
+        self.ready_addr = 3
+        self.frequency_addr = 4
+
+    def memwi(self, page, register, address):
+        self.instructions.append(("memwi", page, register, address))
+
+    def memri(self, page, register, address):
+        self.instructions.append(("memri", page, register, address))
+
+    def condj(self, page, first, operator, second, label):
+        self.instructions.append(
+            ("condj", page, first, operator, second, label)
+        )
+
+    def sync(self, page, register):
+        self.instructions.append(("sync", page, register))
+
+
 def test_scalar_record_order_is_shot_then_declared_axes():
     assert scalar_record_order(2, (2, 3)) == [
         (shot, first, second)
@@ -227,6 +252,96 @@ def test_readout_grid_batches_programs_on_the_soc_when_supported(monkeypatch):
     assert telemetry["host_programs"] == 1
     assert telemetry["controller_programs"] == 4
     assert telemetry["server_batches"] == 1
+    assert telemetry["order"] == "shot_frequency_gain"
+
+
+def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
+    class FrequencyProgram:
+        def __init__(self, soccfg, cfg, *, read_frequency_mhz, values, kind):
+            raise AssertionError(
+                "resident acquisition must not build per-frequency programs"
+            )
+
+    class ResidentProgram:
+        def __init__(self, soccfg, cfg, *, frequencies_mhz, values, kind,
+                     excursion_gain=None):
+            self.reps = int(cfg["shots"] * len(frequencies_mhz) * len(values))
+            self.frequency_registers = np.asarray([101, 202], dtype=np.int64)
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+            self.ro_chs = {
+                0: {
+                    "freq": float(frequencies_mhz[0]),
+                    "length": 5,
+                    "sel": "product",
+                    "gen_ch": 0,
+                }
+            }
+
+        def dump_prog(self):
+            return {"resident": True, "reps": self.reps}
+
+    class Soc:
+        def __init__(self):
+            self.resident_calls = []
+
+        def acquire_qick_resident_readout(
+            self,
+            program,
+            readout_configs,
+            frequency_registers,
+            shots,
+            command_addr,
+            ready_addr,
+            frequency_addr,
+        ):
+            self.resident_calls.append(
+                (
+                    program,
+                    readout_configs,
+                    frequency_registers,
+                    shots,
+                    command_addr,
+                    ready_addr,
+                    frequency_addr,
+                )
+            )
+            records = np.arange(2 * 2 * 2 * 2, dtype=float).reshape(2, 2, 2, 2)
+            return {
+                "records": records,
+                "controller_programs": 1,
+                "readout_reconfigurations": 4,
+            }
+
+        def acquire_qick_program_batch(self, *args, **kwargs):
+            raise AssertionError("resident acquisition must be preferred")
+
+    monkeypatch.setattr(qua_order, "QUAReadoutFrequencyProgram", FrequencyProgram)
+    monkeypatch.setattr(
+        qua_order, "QUAResidentReadoutGridProgram", ResidentProgram, raising=False
+    )
+    soc = Soc()
+    i_values, q_values, telemetry = acquire_passive_readout_grid(
+        soc,
+        object(),
+        {"shots": 2},
+        frequencies_mhz=[10.0, 20.0],
+        values=[1, 2],
+        kind="readout_gain",
+    )
+    assert len(soc.resident_calls) == 1
+    call = soc.resident_calls[0]
+    assert call[2] == [101, 202]
+    assert call[3:] == (2, 2, 3, 4)
+    assert [cfg[0]["freq"] for cfg in call[1]] == [10.0, 20.0]
+    assert i_values.shape == (2, 2, 2)
+    assert q_values.shape == (2, 2, 2)
+    np.testing.assert_array_equal(i_values, np.arange(16).reshape(2, 2, 2, 2)[..., 0].transpose(1, 2, 0))
+    assert telemetry["host_programs"] == 1
+    assert telemetry["controller_programs"] == 1
+    assert telemetry["readout_reconfigurations"] == 4
+    assert telemetry["resident_handshake"] is True
     assert telemetry["order"] == "shot_frequency_gain"
 
 
@@ -404,6 +519,60 @@ def test_pulse_grid_emits_valid_frequency_register_increment(monkeypatch):
     )
     QUAPulseGridProgram.make_program(recorder)
     assert ("mathi", 1, 1, 1, "+", 10) in recorder.instructions
+
+
+def test_resident_readout_waits_then_loads_generator_frequency(monkeypatch):
+    recorder = ResidentGridRecorder()
+    monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
+    monkeypatch.setattr(
+        qua_order, "_declare_park", lambda program, require_flux=False: None
+    )
+    monkeypatch.setattr(
+        qua_order,
+        "_allocate_stream_counter",
+        lambda program, names: {
+            "shot_loop": 4,
+            "frequency_loop": 5,
+            "command": 6,
+            "ready": 7,
+            "elapsed": 8,
+        },
+    )
+    monkeypatch.setattr(qua_order, "_begin_park", lambda program, segments: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_measure_record",
+        lambda program: program.instructions.append(("measure_record",)),
+    )
+    qua_order.QUAResidentReadoutGridProgram.make_program(recorder)
+    wait_index = recorder.instructions.index(
+        ("label", "QUA_RESIDENT_READOUT_WAIT")
+    )
+    assert recorder.instructions[wait_index + 1] == (
+        "mathi",
+        0,
+        8,
+        8,
+        "+",
+        14,
+    )
+    assert recorder.instructions[wait_index + 2] == ("memri", 0, 6, 2)
+    assert recorder.instructions[wait_index + 3] == (
+        "condj",
+        0,
+        6,
+        "==",
+        0,
+        "QUA_RESIDENT_READOUT_WAIT",
+    )
+    assert recorder.instructions[wait_index + 4] == ("sync", 0, 8)
+    assert recorder.instructions[wait_index + 5] == ("memri", 0, 1, 4)
+    assert recorder.instructions.index(("measure_record",)) > wait_index
+    assert recorder.instructions[-3:] == [
+        ("loopnz", 0, 5, "QUA_RESIDENT_READOUT_FREQUENCY"),
+        ("loopnz", 0, 4, "QUA_RESIDENT_READOUT_SHOT"),
+        ("end",),
+    ]
 
 
 def test_uniform_mhz_axis_tolerates_qick_register_rounding_jitter():

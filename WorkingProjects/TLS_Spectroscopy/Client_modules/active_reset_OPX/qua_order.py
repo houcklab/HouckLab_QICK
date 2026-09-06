@@ -419,6 +419,134 @@ class QUAReadoutFrequencyProgram(QickProgram):
         )
 
 
+class QUAResidentReadoutGridProgram(QickProgram):
+    def __init__(self, soccfg, cfg, *, frequencies_mhz, values, kind,
+                 excursion_gain=None):
+        QickProgram.__init__(self, soccfg)
+        self.cfg = dict(cfg)
+        self.frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
+        self.cfg["read_pulse_freq"] = float(self.frequencies[0])
+        self.values = _finite_axis(values, "values")
+        self.kind = str(kind)
+        if self.kind not in ("readout_gain", "flux_gain"):
+            raise ValueError("kind must be 'readout_gain' or 'flux_gain'")
+        self.excursion_gain = (
+            None if excursion_gain is None else float(excursion_gain)
+        )
+        self.shots = _positive_shots(self.cfg)
+        self.reps = int(
+            self.shots * self.frequencies.size * self.values.size
+        )
+        self.expts = None
+        self.rounds = 1
+        self.command_addr = self.counter_addr + 1
+        self.ready_addr = self.counter_addr + 2
+        self.frequency_addr = self.counter_addr + 3
+        self.frequency_registers = np.asarray(
+            [
+                self.freq2reg(
+                    float(frequency),
+                    gen_ch=self.cfg["res_ch"],
+                    ro_ch=self.cfg["ro_chs"][0],
+                )
+                for frequency in self.frequencies
+            ],
+            dtype=np.int64,
+        )
+        self.make_program()
+
+    def _set_flux(self, gain):
+        ff_pulse.play_hard_step(self, float(gain))
+        settle = ff_pulse.flux_settle_us(self.cfg)
+        if settle > 0:
+            self.sync_all(self.us2cycles(settle))
+
+    def make_program(self):
+        cfg = self.cfg
+        _declare_readout(self)
+        requires_flux = self.kind == "flux_gain" or self.excursion_gain is not None
+        park_segments = _declare_park(self, require_flux=requires_flux)
+        controls = _allocate_stream_counter(
+            self,
+            (
+                "shot_loop",
+                "frequency_loop",
+                "command",
+                "ready",
+                "elapsed",
+            ),
+        )
+        res_page = self.ch_page(cfg["res_ch"])
+        res_frequency = self.sreg(cfg["res_ch"], "freq")
+        res_gain = self.sreg(cfg["res_ch"], "gain")
+        self.regwi(0, controls["command"], 0)
+        self.memwi(0, controls["command"], self.command_addr)
+        self.regwi(0, controls["ready"], 0)
+        self.memwi(0, controls["ready"], self.ready_addr)
+        self.regwi(0, controls["shot_loop"], self.shots - 1)
+        _begin_park(self, park_segments)
+        self.label("QUA_RESIDENT_READOUT_SHOT")
+        self.regwi(
+            0,
+            controls["frequency_loop"],
+            int(self.frequencies.size) - 1,
+        )
+        self.label("QUA_RESIDENT_READOUT_FREQUENCY")
+        self.regwi(0, controls["elapsed"], 200)
+        self.mathi(
+            0,
+            controls["ready"],
+            controls["ready"],
+            "+",
+            1,
+        )
+        self.memwi(0, controls["ready"], self.ready_addr)
+        self.label("QUA_RESIDENT_READOUT_WAIT")
+        self.mathi(
+            0,
+            controls["elapsed"],
+            controls["elapsed"],
+            "+",
+            14,
+        )
+        self.memri(0, controls["command"], self.command_addr)
+        self.condj(
+            0,
+            controls["command"],
+            "==",
+            0,
+            "QUA_RESIDENT_READOUT_WAIT",
+        )
+        self.sync(0, controls["elapsed"])
+        self.memri(res_page, res_frequency, self.frequency_addr)
+        self.regwi(0, controls["command"], 0)
+        self.memwi(0, controls["command"], self.command_addr)
+        park_gain = float(cfg.get("ff_park_gain", 0) or 0)
+        for value in self.values:
+            if self.kind == "readout_gain":
+                self.safe_regwi(res_page, res_gain, int(round(float(value))))
+                if self.excursion_gain is not None:
+                    self._set_flux(self.excursion_gain)
+            else:
+                self._set_flux(float(value))
+            _measure_record(self)
+            if self.kind == "readout_gain" and self.excursion_gain is not None:
+                self._set_flux(park_gain)
+        if self.kind == "flux_gain":
+            self._set_flux(park_gain)
+        self.loopnz(
+            0,
+            controls["frequency_loop"],
+            "QUA_RESIDENT_READOUT_FREQUENCY",
+        )
+        self.loopnz(
+            0,
+            controls["shot_loop"],
+            "QUA_RESIDENT_READOUT_SHOT",
+        )
+        self.end()
+
+
 class QUAPulseGridProgram(QickProgram):
     def __init__(self, soccfg, cfg, *, frequencies_mhz, gains, pulses):
         QickProgram.__init__(self, soccfg)
@@ -819,12 +947,54 @@ def _finite_axis(values, label):
     return axis
 
 
-def _batch_program_records(soc, first, normal, shots):
+def _optional_soc_method(soc, name):
     try:
-        method = getattr(soc, "acquire_qick_program_batch")
+        method = getattr(soc, name)
     except Exception:
         return None
-    if not callable(method):
+    return method if callable(method) else None
+
+
+def _resident_program_records(method, resident, readout_configs, shots):
+    result = method(
+        resident.dump_prog(),
+        readout_configs,
+        resident.frequency_registers.tolist(),
+        int(shots),
+        resident.command_addr,
+        resident.ready_addr,
+        resident.frequency_addr,
+    )
+    if not isinstance(result, dict) or "records" not in result:
+        raise RuntimeError("RFSoC resident acquisition returned an invalid result")
+    records = np.asarray(result["records"], dtype=float)
+    records_per_block = int(
+        resident.reps // (int(shots) * len(readout_configs))
+    )
+    expected = (int(shots), len(readout_configs), records_per_block, 2)
+    if records.shape != expected:
+        raise RuntimeError(
+            f"RFSoC resident readout shape {records.shape} does not match {expected}"
+        )
+    timing = {
+        key: float(result[key])
+        for key in ("setup_s", "handshake_s", "acquisition_s")
+        if key in result
+    }
+    return records, {
+        "controller_programs": int(result.get("controller_programs", 1)),
+        "readout_reconfigurations": int(
+            result.get(
+                "readout_reconfigurations", shots * len(readout_configs)
+            )
+        ),
+        "server_timing_s": timing,
+    }
+
+
+def _batch_program_records(soc, first, normal, shots):
+    method = _optional_soc_method(soc, "acquire_qick_program_batch")
+    if method is None:
         return None
     result = method(
         first.dump_prog(),
@@ -862,6 +1032,62 @@ def acquire_passive_readout_grid(
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
     shots = _positive_shots(cfg)
+    resident_method = _optional_soc_method(
+        soc, "acquire_qick_resident_readout"
+    )
+    axis_name = "gain" if kind == "readout_gain" else "dc"
+    total = shots * frequencies.size
+    if resident_method is not None:
+        resident_cfg = dict(cfg)
+        resident_cfg["qua_assert_park_at_start"] = True
+        resident = QUAResidentReadoutGridProgram(
+            soccfg,
+            resident_cfg,
+            frequencies_mhz=frequencies,
+            values=values,
+            kind=kind,
+            excursion_gain=excursion_gain,
+        )
+        if all("freq" in ro_cfg for ro_cfg in resident.ro_chs.values()):
+            readout_configs = []
+            for frequency in frequencies:
+                readout_configs.append(
+                    {
+                        ch: {**ro_cfg, "freq": float(frequency)}
+                        for ch, ro_cfg in resident.ro_chs.items()
+                    }
+                )
+            records, resident_meta = _resident_program_records(
+                resident_method,
+                resident,
+                readout_configs,
+                shots,
+            )
+            if progress is not None:
+                progress(total, total)
+            return (
+                records[..., 0].transpose(1, 2, 0),
+                records[..., 1].transpose(1, 2, 0),
+                {
+                    "shots_per_point": shots,
+                    "frequency_points": int(frequencies.size),
+                    f"{axis_name}_points": int(values.size),
+                    "host_programs": 1,
+                    "controller_programs": resident_meta[
+                        "controller_programs"
+                    ],
+                    "readout_reconfigurations": resident_meta[
+                        "readout_reconfigurations"
+                    ],
+                    "server_batches": 1,
+                    "resident_handshake": True,
+                    "server_timing_s": resident_meta["server_timing_s"],
+                    "records": int(
+                        shots * frequencies.size * values.size
+                    ),
+                    "order": f"shot_frequency_{axis_name}",
+                },
+            )
     normal = []
     for frequency in frequencies:
         run_cfg = dict(cfg)
@@ -885,8 +1111,6 @@ def acquire_passive_readout_grid(
         first_kwargs["excursion_gain"] = float(excursion_gain)
     first = QUAReadoutFrequencyProgram(soccfg, first_cfg, **first_kwargs)
     batched = _batch_program_records(soc, first, normal, shots)
-    axis_name = "gain" if kind == "readout_gain" else "dc"
-    total = shots * frequencies.size
     if batched is not None:
         records, controller_programs = batched
         if progress is not None:
@@ -901,6 +1125,7 @@ def acquire_passive_readout_grid(
                 "host_programs": 1,
                 "controller_programs": controller_programs,
                 "server_batches": 1,
+                "resident_handshake": False,
                 "records": int(shots * frequencies.size * values.size),
                 "order": f"shot_frequency_{axis_name}",
             },
