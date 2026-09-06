@@ -536,11 +536,30 @@ def calculate_iir_predistortion_filter(
     }
 
 
-def default_dc_tail_segment_edges(max_time_ns):
+DC_TAIL_DENSE_UNTIL_NS = 60_000.0
+DC_TAIL_DENSE_STEP_NS = 2_000.0
+
+
+def default_dc_tail_segment_edges(max_time_ns, dense_until_ns=None, dense_step_ns=None):
+    """Segment edges for the piecewise set_dc_offset tail correction.
+
+    The spacing stays at ``dense_step_ns`` until ``dense_until_ns`` before
+    falling back to 10 us.  The previous schedule widened to 4 us at 16 us and
+    8 us at 32 us, which cannot follow a flux transient that dips within the
+    first few tens of microseconds: closed-loop simulation against a measured
+    q5 step response left 0.75 MHz of residual peak-to-peak with that schedule
+    versus 0.135 MHz here, with the residual concentrated below 60 us.  Each
+    segment costs one unrolled conditional in the QUA program, so the dense
+    region is deliberately bounded rather than applied over the whole hold.
+    """
     max_time_ns = float(max_time_ns)
     if not np.isfinite(max_time_ns):
         raise ValueError("max_time_ns must be finite.")
     max_time_ns = max(max_time_ns, 0.0)
+    dense_until_ns = float(DC_TAIL_DENSE_UNTIL_NS if dense_until_ns is None else dense_until_ns)
+    dense_step_ns = float(DC_TAIL_DENSE_STEP_NS if dense_step_ns is None else dense_step_ns)
+    if dense_step_ns <= 0.0:
+        raise ValueError("dense_step_ns must be positive.")
 
     edges = [0.0]
     edge_ns = 0.0
@@ -549,12 +568,8 @@ def default_dc_tail_segment_edges(max_time_ns):
             step_ns = 500.0
         elif edge_ns < 4_000.0:
             step_ns = 1_000.0
-        elif edge_ns < 8_000.0:
-            step_ns = 2_000.0
-        elif edge_ns < 16_000.0:
-            step_ns = 4_000.0
-        elif edge_ns < 32_000.0:
-            step_ns = 8_000.0
+        elif edge_ns < dense_until_ns:
+            step_ns = dense_step_ns
         else:
             step_ns = 10_000.0
 
