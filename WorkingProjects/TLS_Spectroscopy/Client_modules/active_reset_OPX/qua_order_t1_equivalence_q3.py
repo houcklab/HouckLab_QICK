@@ -251,6 +251,8 @@ def main():
         "do_ff": True,
         "do_pi": True,
         "opx_max_payload_records_per_block": 480,
+        "opx_reference_flux_cycle": True,
+        "opx_reference_flux_hold_us": float(np.min(T1_DELAYS_US)),
     })
     metadata = {
         "created": datetime.now().isoformat(),
@@ -278,10 +280,10 @@ def main():
         **settings.calibration_options(),
         metadata=metadata,
     )
-    validate_confident_calibration(bundle, min_confident_fraction=0.2)
     save_calibration(output / "calibration.json", bundle)
     save_raw_calibration(output / "calibration_raw.npz", raw)
     _plot_calibration(raw, bundle, output / "calibration.png")
+    validate_confident_calibration(bundle, min_confident_fraction=0.2)
     cfg["opx_reset_calibration"] = bundle.to_dict()
     rng = np.random.default_rng(RANDOM_SEED)
     runs = []

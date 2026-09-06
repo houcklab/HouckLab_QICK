@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -169,6 +171,78 @@ def test_hard_flux_step_latches_the_requested_dac_value():
             "length": 3,
         }),
         ("pulse", 3),
+    ]
+
+
+def test_reference_flux_cycle_reestablishes_park_before_state_preparation():
+    assert hasattr(programs, "emit_reference_flux_cycle")
+    events = []
+
+    programs.emit_reference_flux_cycle(
+        enabled=True,
+        play_excursion=lambda: events.append("excursion"),
+        wait_hold=lambda: events.append("hold"),
+        play_park=lambda: events.append("park"),
+        wait_settle=lambda: events.append("settle"),
+    )
+    events.append("prepare")
+
+    assert events == ["excursion", "hold", "park", "settle", "prepare"]
+
+
+def test_reference_flux_cycle_is_inert_when_not_requested():
+    assert hasattr(programs, "emit_reference_flux_cycle")
+    events = []
+
+    programs.emit_reference_flux_cycle(
+        enabled=False,
+        play_excursion=lambda: events.append("excursion"),
+        wait_hold=lambda: events.append("hold"),
+        play_park=lambda: events.append("park"),
+        wait_settle=lambda: events.append("settle"),
+    )
+
+    assert events == []
+
+
+def test_dmem_reference_runs_requested_flux_cycle_before_measurement():
+    events = []
+    prog = object.__new__(TimingMatchedReferenceDMemProgram)
+    prog.cfg = {
+        "ff_ch": 3,
+        "ff_gain": -20000,
+        "ff_park_gain": -25790,
+        "flux_settle_time_us": 0.5,
+        "opx_reference_context": "payload",
+        "opx_reference_flux_cycle": True,
+        "opx_reference_flux_hold_us": 1.0,
+        "prep_excited": False,
+    }
+    prog.reset_config = SimpleNamespace(
+        persistent_park=True,
+        hard_flux_steps=True,
+        inter_shot_delay_us=10.0,
+    )
+    prog.reset_page = 1
+    prog.reset_regs = {"i": 2, "q": 3, "address": 4}
+    prog.set_pulse_registers = lambda **values: events.append(("set", values["gain"]))
+    prog.pulse = lambda ch: events.append(("pulse", ch))
+    prog.sync_all = lambda cycles: events.append(("wait", cycles))
+    prog.us2cycles = lambda microseconds: float(microseconds)
+    prog._measure_raw = lambda: events.append(("measure",))
+    prog.memw = lambda *args: None
+    prog.mathi = lambda *args: None
+
+    prog._emit_reference()
+
+    assert events[:7] == [
+        ("set", -20000),
+        ("pulse", 3),
+        ("wait", 1.0),
+        ("set", -25790),
+        ("pulse", 3),
+        ("wait", 0.5),
+        ("measure",),
     ]
 
 

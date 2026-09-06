@@ -362,6 +362,22 @@ def emit_shot_major_payload_loops(
     prog.loopnz(page, shot_register, shot_label)
 
 
+def emit_reference_flux_cycle(
+    *,
+    enabled,
+    play_excursion,
+    wait_hold,
+    play_park,
+    wait_settle,
+):
+    if not bool(enabled):
+        return
+    play_excursion()
+    wait_hold()
+    play_park()
+    wait_settle()
+
+
 def _declare_common(prog):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
@@ -594,10 +610,34 @@ class TimingMatchedReferenceDMemProgram(QickProgram):
         ff_pulse.play_park_down(self, self._opx_park_segments)
 
     def _emit_reference(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
         context = str(self.cfg.get("opx_reference_context", "payload")).lower()
         prep_excited = bool(self.cfg.get("prep_excited", False))
         if not self.reset_config.persistent_park:
             self._park_up()
+        use_flux_cycle = bool(self.cfg.get("opx_reference_flux_cycle", False))
+        if use_flux_cycle and not (
+            self.reset_config.persistent_park and self.reset_config.hard_flux_steps
+        ):
+            raise ValueError(
+                "opx_reference_flux_cycle requires persistent park and hard flux steps"
+            )
+        emit_reference_flux_cycle(
+            enabled=use_flux_cycle,
+            play_excursion=lambda: ff_pulse.play_hard_step(
+                self, self.cfg["ff_gain"]
+            ),
+            wait_hold=lambda: self.sync_all(self.us2cycles(float(
+                self.cfg.get("opx_reference_flux_hold_us", 1.0)
+            ))),
+            play_park=lambda: ff_pulse.play_hard_step(
+                self, self.cfg.get("ff_park_gain", 0)
+            ),
+            wait_settle=lambda: self.sync_all(self.us2cycles(float(
+                self.cfg.get("flux_settle_time_us", 0.0)
+            ))),
+        )
         if context == "loop":
             self._measure_raw()
             self.sync_all(self.us2cycles(float(
