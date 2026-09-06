@@ -1,5 +1,6 @@
 import csv
 from dataclasses import replace
+import json
 import math
 
 import numpy as np
@@ -150,6 +151,97 @@ def test_flux_cycle_runner_maps_reset_and_recovery_conditions():
     frequencies = np.asarray([1.0, 2.0, 3.0])
     assert runner._ordered_frequency_axis(frequencies, 0).tolist() == [1.0, 2.0, 3.0]
     assert runner._ordered_frequency_axis(frequencies, 1).tolist() == [3.0, 2.0, 1.0]
+
+
+def test_t1_frequency_retune_selects_payload_only_when_it_restores_equivalence():
+    fits = {
+        "passive_1000": {"P0": 0.05, "P1": 0.80, "tau_us": 100.0, "decaying": True},
+        "active_100": {"P0": 0.06, "P1": 0.78, "tau_us": 103.0, "decaying": True},
+        "active_25_default": {"P0": 0.05, "P1": 0.30, "tau_us": 105.0, "decaying": True},
+        "active_25_payload": {"P0": 0.06, "P1": 0.76, "tau_us": 107.0, "decaying": True},
+        "active_25_both": {"P0": 0.06, "P1": 0.48, "tau_us": 106.0, "decaying": True},
+    }
+
+    result = analysis.evaluate_t1_frequency_retune(fits)
+
+    assert result["status"] == "pass"
+    assert result["diagnosis"] == "payload_retune_restores_25us"
+    assert result["selected_method"] == "active_25_payload"
+
+
+def test_t1_frequency_retune_runner_keeps_payload_and_reset_options_separate():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_frequency_retune_q3 as runner,
+    )
+
+    runner.BASELINE_FREQUENCY_MHZ = 4367.2
+    runner.ACTIVE25_FREQUENCY_MHZ = 4361.0
+
+    assert runner._method_config("passive_1000") == ("none", 1000.0)
+    assert runner._method_config("active_25_payload") == ("opx_unbounded", 25.0)
+    assert runner._method_overrides("active_25_payload") == {
+        "qubit_pi_freq": 4361.0,
+        "reset_pi_freq": 4367.2,
+    }
+    assert runner._method_overrides("active_25_both") == {
+        "qubit_pi_freq": 4361.0,
+        "reset_pi_freq": 4361.0,
+    }
+
+
+def test_t1_frequency_retune_loader_uses_measured_method_centers(tmp_path):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_frequency_retune_q3 as runner,
+    )
+
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps({
+        "fits": {
+            "passive_1000": {
+                "center_mhz": 4367.2,
+                "boundary_peak": False,
+            },
+            "active_25": {
+                "center_mhz": 4366.55,
+                "boundary_peak": False,
+            },
+        },
+        "evaluation": {
+            "active_100_control_passed": True,
+            "short_shape_healthy": True,
+        },
+    }))
+
+    assert runner._load_frequencies(path) == pytest.approx((4367.2, 4366.55))
+
+
+def test_t1_frequency_retune_finds_latest_completed_diagnostic(tmp_path, monkeypatch):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        t1_flux_ramp_frequency_retune_q3 as runner,
+    )
+
+    monkeypatch.setattr(runner, "DIAGNOSTIC_RESULT_PATH", None)
+    older = (
+        tmp_path / "q3" / "q3_2026_09_05"
+        / "q3_10_00_00_active_reset_OPX_flux_cycle_spectroscopy" / "result.json"
+    )
+    newer = (
+        tmp_path / "q3" / "q3_2026_09_05"
+        / "q3_11_00_00_active_reset_OPX_flux_cycle_spectroscopy" / "result.json"
+    )
+    older.parent.mkdir(parents=True)
+    newer.parent.mkdir(parents=True)
+    older.write_text("{}")
+    newer.write_text("{}")
+    older.touch()
+    newer.touch()
+    older.chmod(0o600)
+    newer.chmod(0o600)
+    import os
+    os.utime(older, (1.0, 1.0))
+    os.utime(newer, (2.0, 2.0))
+
+    assert runner._latest_result(tmp_path) == newer
 
 
 def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(monkeypatch):

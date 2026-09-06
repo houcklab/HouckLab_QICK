@@ -389,6 +389,68 @@ def evaluate_flux_cycle_spectroscopy(
     }
 
 
+def evaluate_t1_frequency_retune(
+    fits,
+    *,
+    max_relative_tau_difference=0.15,
+    max_abs_p0_difference=0.12,
+    max_abs_p1_difference=0.12,
+):
+    fits = {str(key): dict(value) for key, value in dict(fits).items()}
+    baseline_method = "passive_1000"
+    control_method = "active_100"
+    candidates = ("active_25_payload", "active_25_both")
+    required = (
+        baseline_method,
+        control_method,
+        "active_25_default",
+        *candidates,
+    )
+    missing = [method for method in required if method not in fits]
+    if missing:
+        return {
+            "status": "fail",
+            "diagnosis": "fit_failed",
+            "selected_method": None,
+            "missing_fits": missing,
+            "comparisons": {},
+        }
+    comparisons = {
+        method: evaluate_t1_equivalence(
+            fits[baseline_method],
+            fits[method],
+            max_relative_tau_difference=max_relative_tau_difference,
+            max_abs_p0_difference=max_abs_p0_difference,
+            max_abs_p1_difference=max_abs_p1_difference,
+        )
+        for method in required[1:]
+    }
+    control_passed = comparisons[control_method]["status"] == "pass"
+    selected = next(
+        (
+            method for method in candidates
+            if comparisons[method]["status"] == "pass"
+        ),
+        None,
+    )
+    if not control_passed:
+        diagnosis = "active_100_control_failed"
+    elif selected == "active_25_payload":
+        diagnosis = "payload_retune_restores_25us"
+    elif selected == "active_25_both":
+        diagnosis = "payload_and_reset_retune_restore_25us"
+    else:
+        diagnosis = "frequency_retune_did_not_restore_25us"
+    return {
+        "status": "pass" if control_passed and selected is not None else "fail",
+        "diagnosis": diagnosis,
+        "selected_method": selected,
+        "missing_fits": [],
+        "control_passed": control_passed,
+        "comparisons": comparisons,
+    }
+
+
 def fit_t1_rounds(round_rows, *, methods):
     fits = {}
     errors = {}
