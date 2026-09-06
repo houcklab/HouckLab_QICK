@@ -955,8 +955,10 @@ def _optional_soc_method(soc, name):
     return method if callable(method) else None
 
 
-def _resident_program_records(method, resident, readout_configs, shots):
-    result = method(
+def _resident_program_records(
+    method, resident, readout_configs, shots, access_mode="driver"
+):
+    args = (
         resident.dump_prog(),
         readout_configs,
         resident.frequency_registers.tolist(),
@@ -965,6 +967,10 @@ def _resident_program_records(method, resident, readout_configs, shots):
         resident.ready_addr,
         resident.frequency_addr,
     )
+    if access_mode == "driver":
+        result = method(*args)
+    else:
+        result = method(*args, access_mode=access_mode)
     if not isinstance(result, dict) or "records" not in result:
         raise RuntimeError("RFSoC resident acquisition returned an invalid result")
     records = np.asarray(result["records"], dtype=float)
@@ -1000,6 +1006,9 @@ def _resident_program_records(method, resident, readout_configs, shots):
         "ready_polls": int(result.get("ready_polls", 0)),
         "frequency_update_mode": str(
             result.get("frequency_update_mode", "unknown")
+        ),
+        "tproc_access_mode": str(
+            result.get("tproc_access_mode", "driver")
         ),
     }
 
@@ -1040,10 +1049,14 @@ def acquire_passive_readout_grid(
     kind,
     excursion_gain=None,
     progress=None,
+    access_mode="driver",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
     shots = _positive_shots(cfg)
+    access_mode = str(access_mode)
+    if access_mode not in ("driver", "direct_mmio"):
+        raise ValueError("invalid resident access mode")
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"
     )
@@ -1074,6 +1087,7 @@ def acquire_passive_readout_grid(
                 resident,
                 readout_configs,
                 shots,
+                access_mode=access_mode,
             )
             if progress is not None:
                 progress(total, total)
@@ -1097,6 +1111,9 @@ def acquire_passive_readout_grid(
                     "ready_polls": resident_meta["ready_polls"],
                     "frequency_update_mode": resident_meta[
                         "frequency_update_mode"
+                    ],
+                    "tproc_access_mode": resident_meta[
+                        "tproc_access_mode"
                     ],
                     "records": int(
                         shots * frequencies.size * values.size

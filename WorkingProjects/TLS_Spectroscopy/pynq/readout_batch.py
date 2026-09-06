@@ -158,12 +158,78 @@ def _apply_readout_frequency_update(update):
         setter(frequency_register)
 
 
-def _wait_for_ready(tproc, ready_addr, expected, timeout_s):
+def _prepare_direct_readout_frequency_updates(soc, readout_configs):
+    updates = []
+    for config in readout_configs:
+        prepared = []
+        for ch, cfg in config.items():
+            try:
+                buffer = soc.avg_bufs[int(ch)]
+                if hasattr(buffer, "readoutport"):
+                    return None
+                readout = buffer.readout
+                registers = readout.REGISTERS
+                memory = readout.mmio.array
+                frequency_index = int(registers["freq_reg"])
+                write_enable_index = int(registers["we_reg"])
+                buffer.set_freq(float(cfg["freq"]), gen_ch=cfg["gen_ch"])
+                frequency_register = int(readout.freq_reg)
+            except (AttributeError, IndexError, KeyError, TypeError):
+                return None
+            prepared.append(
+                (
+                    memory,
+                    frequency_index,
+                    write_enable_index,
+                    frequency_register,
+                )
+            )
+        updates.append(tuple(prepared))
+    return tuple(updates)
+
+
+def _apply_direct_readout_frequency_update(update):
+    for (
+        memory,
+        frequency_index,
+        write_enable_index,
+        frequency_register,
+    ) in update:
+        memory[frequency_index] = np.uint32(frequency_register)
+        memory[write_enable_index] = np.uint32(1)
+        memory[write_enable_index] = np.uint32(0)
+
+
+def _direct_tproc_memory(tproc):
+    try:
+        return tproc.mmio.array, int(tproc.NREG)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _read_tproc(tproc, address, direct_memory=None):
+    if direct_memory is None:
+        return int(tproc.single_read(addr=address))
+    memory, offset = direct_memory
+    return int(memory[offset + int(address)])
+
+
+def _write_tproc(tproc, address, value, direct_memory=None):
+    if direct_memory is None:
+        tproc.single_write(addr=address, data=value)
+        return
+    memory, offset = direct_memory
+    memory[offset + int(address)] = np.uint32(value)
+
+
+def _wait_for_ready(
+    tproc, ready_addr, expected, timeout_s, direct_memory=None
+):
     deadline = time.monotonic() + float(timeout_s)
     polls = 0
     while True:
         polls += 1
-        ready = int(tproc.single_read(addr=ready_addr))
+        ready = _read_tproc(tproc, ready_addr, direct_memory=direct_memory)
         if ready == expected:
             return polls
         if ready > expected:
@@ -230,6 +296,7 @@ def acquire_qick_resident_readout(
     command_addr,
     ready_addr,
     frequency_addr,
+    access_mode="driver",
     timeout_s=10.0,
     program_factory=None,
 ):
@@ -238,6 +305,7 @@ def acquire_qick_resident_readout(
     command_addr = int(command_addr)
     ready_addr = int(ready_addr)
     frequency_addr = int(frequency_addr)
+    access_mode = str(access_mode)
     if shots <= 0:
         raise ValueError("shots must be positive")
     if timeout_s <= 0:
@@ -246,6 +314,8 @@ def acquire_qick_resident_readout(
         raise ValueError("resident handshake addresses must be distinct")
     if min(command_addr, ready_addr, frequency_addr) < 0:
         raise ValueError("resident handshake addresses must be non-negative")
+    if access_mode not in ("driver", "direct_mmio"):
+        raise ValueError("invalid resident access mode")
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and max(
         command_addr, ready_addr, frequency_addr
@@ -285,9 +355,18 @@ def acquire_qick_resident_readout(
     compiled = program.compile()
     soc.init_readouts()
     _configure_readouts(soc, configurations[0])
-    frequency_updates = _prepare_readout_frequency_updates(
-        soc, configurations
-    )
+    direct_memory = None
+    if access_mode == "direct_mmio":
+        frequency_updates = _prepare_direct_readout_frequency_updates(
+            soc, configurations
+        )
+        direct_memory = _direct_tproc_memory(soc.tproc)
+        if frequency_updates is None or direct_memory is None:
+            raise RuntimeError("direct resident MMIO access is unavailable")
+    else:
+        frequency_updates = _prepare_readout_frequency_updates(
+            soc, configurations
+        )
     soc.load_bin_program(compiled, reset=False)
     soc.start_src("internal")
     program.config_bufs(soc, enable_avg=True, enable_buf=False)
@@ -320,11 +399,16 @@ def acquire_qick_resident_readout(
                 ready_addr,
                 block + 1,
                 timeout_s,
+                direct_memory=direct_memory,
             )
             ready_wait_s += time.perf_counter() - phase_started
             frequency_index = block % len(configurations)
             phase_started = time.perf_counter()
-            if frequency_updates is None:
+            if access_mode == "direct_mmio":
+                _apply_direct_readout_frequency_update(
+                    frequency_updates[frequency_index]
+                )
+            elif frequency_updates is None:
                 _set_readout_frequencies(
                     soc, configurations[frequency_index]
                 )
@@ -334,11 +418,18 @@ def acquire_qick_resident_readout(
                 )
             frequency_update_s += time.perf_counter() - phase_started
             phase_started = time.perf_counter()
-            soc.tproc.single_write(
-                addr=frequency_addr,
-                data=registers[frequency_index],
+            _write_tproc(
+                soc.tproc,
+                frequency_addr,
+                registers[frequency_index],
+                direct_memory=direct_memory,
             )
-            soc.tproc.single_write(addr=command_addr, data=1)
+            _write_tproc(
+                soc.tproc,
+                command_addr,
+                1,
+                direct_memory=direct_memory,
+            )
             release_s += time.perf_counter() - phase_started
             if (block + 1) % 64 == 0:
                 phase_started = time.perf_counter()
@@ -392,10 +483,15 @@ def acquire_qick_resident_readout(
         "stream_drain_s": float(stream_drain_s),
         "ready_polls": int(ready_polls),
         "frequency_update_mode": (
-            "dynamic"
-            if frequency_updates is None
-            else "precomputed_register"
+            "direct_mmio_latched"
+            if access_mode == "direct_mmio"
+            else (
+                "dynamic"
+                if frequency_updates is None
+                else "precomputed_register"
+            )
         ),
+        "tproc_access_mode": access_mode,
     }
 
 
@@ -423,6 +519,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
         command_addr,
         ready_addr,
         frequency_addr,
+        access_mode="driver",
     ):
         return acquire_qick_resident_readout(
             self,
@@ -433,6 +530,7 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
             command_addr,
             ready_addr,
             frequency_addr,
+            access_mode=access_mode,
         )
 
     qicksoc_class.acquire_qick_program_batch = program_batch

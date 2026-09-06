@@ -348,6 +348,124 @@ def test_resident_server_precomputes_readout_dds_registers_once():
     assert result["ready_polls"] == 4
 
 
+def test_resident_server_direct_mmio_preserves_latch_and_handshake_sequence():
+    class ReadoutArray:
+        def __init__(self):
+            self.values = [0] * 6
+            self.writes = []
+
+        def __getitem__(self, index):
+            return self.values[int(index)]
+
+        def __setitem__(self, index, value):
+            self.values[int(index)] = int(value)
+            self.writes.append((int(index), int(value)))
+
+    class Readout:
+        REGISTERS = {"freq_reg": 0, "we_reg": 5}
+
+        def __init__(self):
+            self.mmio = type("MMIO", (), {"array": ReadoutArray()})()
+
+        @property
+        def freq_reg(self):
+            return self.mmio.array.values[0]
+
+        def set_freq_int(self, value):
+            raise AssertionError("direct MMIO mode must not call set_freq_int")
+
+    class Buffer:
+        def __init__(self):
+            self.readout = Readout()
+
+        def set_freq(self, frequency, gen_ch=0):
+            self.readout.mmio.array.values[0] = int(round(float(frequency) * 10))
+
+    class TProcArray:
+        def __init__(self, owner):
+            self.owner = owner
+            self.reads = []
+            self.writes = []
+
+        def __getitem__(self, index):
+            address = int(index) - self.owner.NREG
+            self.reads.append(address)
+            return self.owner.memory.get(address, 0)
+
+        def __setitem__(self, index, value):
+            address = int(index) - self.owner.NREG
+            value = int(value)
+            self.writes.append((address, value))
+            self.owner.memory[address] = value
+            if address == self.owner.command_addr and value == 1:
+                self.owner.releases.append(
+                    self.owner.memory[self.owner.frequency_addr]
+                )
+                self.owner.completed_blocks += 1
+                if self.owner.completed_blocks < self.owner.total_blocks:
+                    self.owner.memory[self.owner.ready_addr] = (
+                        self.owner.completed_blocks + 1
+                    )
+
+    class DirectTProc(ResidentTProc):
+        NREG = 16
+
+        def __init__(self):
+            super().__init__()
+            self.mmio = type("MMIO", (), {"array": TProcArray(self)})()
+
+    class DirectMMIOSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.tproc = DirectTProc()
+            self.avg_bufs = [Buffer()]
+
+    soc = DirectMMIOSoc()
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        configs,
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        access_mode="direct_mmio",
+        program_factory=ResidentProgram,
+    )
+    assert soc.avg_bufs[0].readout.mmio.array.writes == [
+        (0, 100),
+        (5, 1),
+        (5, 0),
+        (0, 200),
+        (5, 1),
+        (5, 0),
+        (0, 100),
+        (5, 1),
+        (5, 0),
+        (0, 200),
+        (5, 1),
+        (5, 0),
+    ]
+    assert soc.tproc.mmio.array.writes == [
+        (4, 101),
+        (2, 1),
+        (4, 202),
+        (2, 1),
+        (4, 101),
+        (2, 1),
+        (4, 202),
+        (2, 1),
+    ]
+    assert soc.tproc.releases == [101, 202, 101, 202]
+    assert result["frequency_update_mode"] == "direct_mmio_latched"
+    assert result["tproc_access_mode"] == "direct_mmio"
+
+
 def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     class BackpressureTProc(ResidentTProc):
         def __init__(self, owner):

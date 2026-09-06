@@ -62,6 +62,7 @@ def main():
         frequencies_mhz=frequencies,
         values=[cfg["read_pulse_gain"]],
         kind="readout_gain",
+        access_mode="direct_mmio",
     )
     wall_s = perf_counter() - started
     if int(telemetry.get("server_batches", 0)) != 1:
@@ -109,6 +110,7 @@ def main():
         "frequency_update_mode": telemetry.get(
             "frequency_update_mode", "unknown"
         ),
+        "tproc_access_mode": telemetry.get("tproc_access_mode", "unknown"),
         "order": telemetry["order"],
         "readout_integration_us": float(cfg["read_length"]),
         "readout_drive_us": readout_drive_length_us(cfg),

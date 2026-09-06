@@ -365,6 +365,54 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert telemetry["order"] == "shot_frequency_gain"
 
 
+def test_readout_grid_requests_direct_mmio_only_when_selected(monkeypatch):
+    calls = []
+
+    class Soc:
+        def acquire_qick_resident_readout(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return {
+                "records": np.zeros((2, 2, 1, 2)),
+                "controller_programs": 1,
+                "readout_reconfigurations": 4,
+                "frequency_update_mode": "direct_mmio_latched",
+                "tproc_access_mode": "direct_mmio",
+            }
+
+    class Resident:
+        def __init__(self, *_args, **_kwargs):
+            self.ro_chs = {
+                0: {
+                    "freq": 10.0,
+                    "length": 5,
+                    "sel": "product",
+                    "gen_ch": 0,
+                }
+            }
+            self.frequency_registers = np.array([10, 20])
+            self.reps = 4
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+
+        def dump_prog(self):
+            return {"program": 1}
+
+    monkeypatch.setattr(qua_order, "QUAResidentReadoutGridProgram", Resident)
+    _, _, telemetry = qua_order.acquire_passive_readout_grid(
+        Soc(),
+        {},
+        {"shots": 2},
+        frequencies_mhz=[10.0, 20.0],
+        values=[1.0],
+        kind="readout_gain",
+        access_mode="direct_mmio",
+    )
+    assert calls[0][1] == {"access_mode": "direct_mmio"}
+    assert telemetry["frequency_update_mode"] == "direct_mmio_latched"
+    assert telemetry["tproc_access_mode"] == "direct_mmio"
+
+
 def test_optimizer_grid_keeps_ground_excited_pairs_inside_each_point(monkeypatch):
     calls = []
 
