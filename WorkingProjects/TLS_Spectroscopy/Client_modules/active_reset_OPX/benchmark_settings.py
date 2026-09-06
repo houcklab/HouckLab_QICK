@@ -37,7 +37,7 @@ def q3_benchmark_settings():
     return Q3BenchmarkSettings(
         feedback_syncdelay_us=8.0,
         loop_recovery_us=READOUT_THERMALIZATION_US,
-        inter_shot_delay_us=400.0,
+        inter_shot_delay_us=READOUT_THERMALIZATION_US,
         persistent_park=True,
         hard_flux_steps=True,
         park_preroll_us=400.0,

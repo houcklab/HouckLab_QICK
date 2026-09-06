@@ -2,6 +2,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 
 qick = sys.modules.get("qick")
@@ -369,14 +370,29 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
         return (
             np.asarray([[1.0, 1.0], [1.0, -1.0], [-1.0, -1.0]]),
             np.zeros((3, 2)),
-            {"order": "shot_major", "shots_per_point": 2},
+            {
+                "order": "shot_major",
+                "shots_per_point": 2,
+                "points": 3,
+                "blocks": 1,
+                "records": 6,
+                "read_length_cycles": 10,
+            },
         )
 
     monkeypatch.setattr(C, "acquire_t1_sweep_iq", acquire, raising=False)
     monkeypatch.setattr(
         C,
+        "classify_payload_iq",
+        lambda cfg, i_values, q_values, read_length_cycles: np.asarray(i_values) > 0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        C,
         "discriminate_shots",
-        lambda i_values, q_values, calib: np.asarray(i_values) > 0,
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError(
+            "OPX T1 must use the timing-matched payload classifier"
+        )),
     )
 
     populations = experiment._sweep(progress=False)
@@ -389,3 +405,35 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
     )
     assert populations.tolist() == [1.0, 0.5, 0.0]
     assert experiment.point_visit_orders == [[0, 1, 2], [0, 1, 2]]
+
+
+def test_production_t1_opx_path_does_not_require_legacy_calibration(monkeypatch):
+    def initialize(experiment, **kwargs):
+        experiment.cfg = kwargs["cfg"]
+
+    monkeypatch.setattr(C.ExperimentClass, "__init__", initialize)
+
+    experiment = C.T1(
+        soc=object(),
+        soccfg=object(),
+        path="q3",
+        outerFolder="unused",
+        cfg={"reset_mode": "opx_unbounded"},
+        calib_params=None,
+        t_vec_us=[1.0, 10.0],
+        reset_mode="opx_unbounded",
+        ff_gain=-20000,
+    )
+
+    assert experiment.calib_params is None
+
+
+def test_production_t1_decay_fit_remains_available():
+    delays = np.asarray([1.0, 10.0, 50.0, 150.0, 500.0])
+    populations = 0.04 + 0.82 * np.exp(-delays / 100.0)
+
+    fit = C._fit_exp_decay(delays, populations)
+
+    assert fit["tau_us"] == pytest.approx(100.0, rel=1e-3)
+    assert fit["P0"] == pytest.approx(0.04, abs=1e-3)
+    assert fit["P1"] == pytest.approx(0.86, abs=1e-3)

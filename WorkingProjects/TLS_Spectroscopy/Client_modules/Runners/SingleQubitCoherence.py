@@ -11,7 +11,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import mak
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
     SingleShot1Q, SingleShotFluxRamp)
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import T1
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import (
+    T1,
+    needs_standalone_ss_calibration,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
@@ -383,12 +386,12 @@ def main():
     if P_SS_FLUX_RAMP["run"]:
         run_ss_flux_ramp(outer_folder, soc, soccfg)
     if P_T1["run"]:
-        if calib_params is None:
+        if calib_params is None and needs_standalone_ss_calibration(RESET_MODE):
             print("[SS] T1 needs a single-shot calibration; running SS_Cal first.")
             calib_params = run_ss_cal(outer_folder, soc, soccfg)
         run_t1(outer_folder, soc, soccfg, calib_params)
     if P_T1_FLUX_RAMP["run"]:
-        if calib_params is None:
+        if calib_params is None and needs_standalone_ss_calibration(RESET_MODE):
             print("[SS] T1_Flux_Ramp needs a park single-shot calibration; "
                   "running SS_Cal first.")
             calib_params = run_ss_cal(outer_folder, soc, soccfg)

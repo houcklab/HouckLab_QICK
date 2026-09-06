@@ -100,7 +100,7 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
 
     assert reset.feedback_syncdelay_us == 8.0
     assert reset.loop_recovery_us == 10.0
-    assert reset.inter_shot_delay_us == 400.0
+    assert reset.inter_shot_delay_us == 10.0
     assert reset.persistent_park is True
     assert reset.hard_flux_steps is True
     assert reset.park_preroll_us == pytest.approx(400.0)

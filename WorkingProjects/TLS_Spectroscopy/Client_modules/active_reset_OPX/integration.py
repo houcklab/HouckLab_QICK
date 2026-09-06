@@ -45,6 +45,17 @@ def payload_iq(records, read_length_cycles):
     return i_values, q_values
 
 
+def classify_payload_iq(cfg, i_values, q_values, read_length_cycles):
+    cycles = int(read_length_cycles)
+    if cycles <= 0:
+        raise ValueError("read_length_cycles must be positive")
+    calibration = runtime_bundle(cfg).payload
+    raw_i = np.rint(np.asarray(i_values, dtype=float) * cycles).astype(np.int64)
+    raw_q = np.rint(np.asarray(q_values, dtype=float) * cycles).astype(np.int64)
+    projected = calibration.project(raw_i, raw_q)
+    return (projected > int(calibration.excited_threshold)).astype(int)
+
+
 def reset_telemetry(records):
     records = list(records)
     if not records:

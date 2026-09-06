@@ -15,6 +15,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_t1_iq,
     acquire_t1_sweep_iq,
+    classify_payload_iq,
 )
 
 
@@ -43,6 +44,10 @@ def _fit_exp_decay(t_us, pe):
         return None
 
 
+def needs_standalone_ss_calibration(reset_mode):
+    return not active_reset.uses_opx_unbounded(reset_mode)
+
+
 class _CoherenceBase(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
@@ -52,7 +57,7 @@ class _CoherenceBase(ExperimentClass):
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
         if calib_params is None:
             calib_params = cfg.get("calib_params") if cfg else None
-        if calib_params is None:
+        if calib_params is None and needs_standalone_ss_calibration(reset_mode):
             raise ValueError("calib_params is required (run SingleShot1Q first).")
         self.element = str(path)
         self.calib_params = calib_params
@@ -169,10 +174,12 @@ class T1(_CoherenceBase):
                         shots=int(reps),
                         reset_scheme="opx_unbounded",
                     )
-                classified = np.asarray(
-                    discriminate_shots(i_values, q_values, self.calib_params),
-                    dtype=float,
-                )
+                classified = np.asarray(classify_payload_iq(
+                    cfg,
+                    i_values,
+                    q_values,
+                    telemetry["read_length_cycles"],
+                ), dtype=float)
                 if classified.shape != i_values.shape:
                     raise RuntimeError(
                         "shot-major T1 classifier returned an unexpected shape"

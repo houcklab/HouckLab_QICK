@@ -696,6 +696,35 @@ def test_payload_iq_returns_normalized_main_readout_from_t1_records():
     assert q_values == pytest.approx([-3.0, 4.0])
 
 
+def test_payload_classifier_uses_timing_matched_raw_threshold():
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    cfg = {"opx_reset_calibration": bundle.to_dict()}
+
+    classified = integration.classify_payload_iq(
+        cfg,
+        i_values=np.asarray([[-0.5, 0.5, 0.55]]),
+        q_values=np.zeros((1, 3)),
+        read_length_cycles=20,
+    )
+
+    assert classified.tolist() == [[0, 0, 1]]
+
+
+def test_production_opx_mode_skips_legacy_single_shot_calibration():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
+        mCoherence,
+    )
+
+    assert mCoherence.needs_standalone_ss_calibration("passive") is True
+    assert mCoherence.needs_standalone_ss_calibration("opx_unbounded") is False
+
+
 def test_loading_missing_calibration_fails_closed(tmp_path):
     with pytest.raises(FileNotFoundError, match="calibration"):
         load_calibration(tmp_path / "missing.json")
