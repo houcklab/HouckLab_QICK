@@ -378,6 +378,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         suffix="Resonator_Spec_vs_Flux", cfg=cfg,
         save_resonator_lookup=SAVE_RESONATOR_LOOKUP,
         resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
+        park_gain=BASELINE_DC_OFFSET,
     )
     data = exp.acquire(progress=True, plotDisp=bool(p.get("live_plot", True)) and LIVE_PLOTS)
     lookup_csv = data['data'].get('resonator_lookup_csv')

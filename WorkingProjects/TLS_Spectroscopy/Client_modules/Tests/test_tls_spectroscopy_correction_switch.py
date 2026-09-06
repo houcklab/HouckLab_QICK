@@ -67,6 +67,44 @@ def test_step6_can_run_without_flux_tail_compensation(tmp_path, capsys):
     assert "disabled" in capsys.readouterr().out.lower()
 
 
+def test_step1_returns_to_the_declared_tls_baseline_between_flux_points(monkeypatch):
+    created = []
+
+    class FakeTransmission:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        def acquire(self, **kwargs):
+            return {"data": {}}
+
+    monkeypatch.setattr(tls, "TransmissionVsFFGain", FakeTransmission)
+    monkeypatch.setattr(tls, "BaseConfig", {
+        "ff_park_gain": -25790,
+        "read_pulse_freq": 6933.2,
+    })
+    monkeypatch.setattr(tls, "BASELINE_DC_OFFSET", -25790)
+    monkeypatch.setattr(tls, "SAVE_RESONATOR_LOOKUP", False)
+    monkeypatch.setattr(tls, "LIVE_PLOTS", False)
+    monkeypatch.setattr(tls, "P1_RESONATOR", {
+        "shots": 20,
+        "freq_min": 6932.8,
+        "freq_max": 6933.5,
+        "freq_step": 0.07,
+        "dc_min": -26290,
+        "dc_max": -25290,
+        "dc_step": 250,
+        "lookup_smooth_points": None,
+        "live_plot": False,
+        "spec_amp": 1000,
+        "spec_len_us": 5.0,
+    })
+
+    tls.run_step1_resonator_spec("out", object(), object())
+
+    assert created[0]["park_gain"] == -25790
+    assert created[0]["cfg"]["ff_park_gain"] == -25790
+
+
 def test_step6_still_requires_a_correction_by_default(tmp_path):
     with pytest.raises(ValueError, match="No flux-tail compensation JSON"):
         tls._resolve_step6_correction({}, None, tmp_path)
