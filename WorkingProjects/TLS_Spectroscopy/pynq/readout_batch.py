@@ -318,7 +318,7 @@ def acquire_qick_resident_readout(
         raise ValueError("resident handshake addresses must be non-negative")
     if access_mode not in ("driver", "direct_mmio"):
         raise ValueError("invalid resident access mode")
-    if command_mode not in ("split", "packed_frequency"):
+    if command_mode not in ("split", "packed_frequency", "sequenced"):
         raise ValueError("invalid resident command mode")
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and max(
@@ -439,7 +439,7 @@ def acquire_qick_resident_readout(
                 _write_tproc(
                     soc.tproc,
                     command_addr,
-                    1,
+                    block + 1 if command_mode == "sequenced" else 1,
                     direct_memory=direct_memory,
                 )
             release_s += time.perf_counter() - phase_started

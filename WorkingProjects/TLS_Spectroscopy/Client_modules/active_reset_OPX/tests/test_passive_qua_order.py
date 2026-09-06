@@ -308,6 +308,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 ready_addr,
                 frequency_addr,
                 access_mode="driver",
+                command_mode="split",
             ):
             self.resident_calls.append(
                 (
@@ -319,6 +320,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                         ready_addr,
                         frequency_addr,
                         access_mode,
+                        command_mode,
                 )
             )
             records = np.arange(2 * 2 * 2 * 2, dtype=float).reshape(2, 2, 2, 2)
@@ -336,7 +338,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 "ready_polls": 8,
                     "frequency_update_mode": "precomputed_register",
                     "tproc_access_mode": access_mode,
-                    "command_mode": "split",
+                    "command_mode": command_mode,
             }
 
         def acquire_qick_program_batch(self, *args, **kwargs):
@@ -358,7 +360,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert len(soc.resident_calls) == 1
     call = soc.resident_calls[0]
     assert call[2] == [101, 202]
-    assert call[3:] == (2, 2, 3, 4, "direct_mmio")
+    assert call[3:] == (2, 2, 3, 4, "direct_mmio", "sequenced")
     assert [cfg[0]["freq"] for cfg in call[1]] == [10.0, 20.0]
     assert i_values.shape == (2, 2, 2)
     assert q_values.shape == (2, 2, 2)
@@ -379,7 +381,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert telemetry["ready_polls"] == 8
     assert telemetry["frequency_update_mode"] == "precomputed_register"
     assert telemetry["tproc_access_mode"] == "direct_mmio"
-    assert telemetry["command_mode"] == "split"
+    assert telemetry["command_mode"] == "sequenced"
     assert telemetry["order"] == "shot_frequency_gain"
 
 
@@ -789,6 +791,38 @@ def test_resident_readout_can_unpack_frequency_from_command_word(monkeypatch):
     ) in recorder.instructions
     assert ("memri", 0, 6, 2) not in recorder.instructions
     assert ("memri", 0, 1, 4) not in recorder.instructions
+
+
+def test_resident_readout_can_require_a_matching_block_token(monkeypatch):
+    recorder = ResidentGridRecorder()
+    recorder.command_mode = "sequenced"
+    monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
+    monkeypatch.setattr(
+        qua_order, "_declare_park", lambda program, require_flux=False: None
+    )
+    monkeypatch.setattr(
+        qua_order,
+        "_allocate_stream_counter",
+        lambda program, names: {
+            "shot_loop": 4,
+            "frequency_loop": 5,
+            "command": 6,
+            "ready": 7,
+            "elapsed": 8,
+        },
+    )
+    monkeypatch.setattr(qua_order, "_begin_park", lambda program, segments: None)
+    monkeypatch.setattr(qua_order, "_measure_record", lambda program: None)
+    qua_order.QUAResidentReadoutGridProgram.make_program(recorder)
+    assert (
+        "condj",
+        0,
+        6,
+        "!=",
+        7,
+        "QUA_RESIDENT_READOUT_WAIT",
+    ) in recorder.instructions
+    assert ("memri", 0, 1, 4) in recorder.instructions
 
 
 def test_resident_readout_optimizer_keeps_state_pairs_inside_gain(monkeypatch):

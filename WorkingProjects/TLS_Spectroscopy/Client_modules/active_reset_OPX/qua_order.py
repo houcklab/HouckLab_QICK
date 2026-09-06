@@ -443,9 +443,11 @@ class QUAResidentReadoutGridProgram(QickProgram):
         self.ready_addr = self.counter_addr + 2
         self.frequency_addr = self.counter_addr + 3
         self.command_mode = str(
-            self.cfg.get("qick_resident_command_mode", "split")
+            self.cfg.get("qick_resident_command_mode", "sequenced")
         )
-        if self.command_mode not in ("split", "packed_frequency"):
+        if self.command_mode not in (
+            "split", "packed_frequency", "sequenced"
+        ):
             raise ValueError("invalid resident command mode")
         self.frequency_registers = np.asarray(
             [
@@ -523,6 +525,15 @@ class QUAResidentReadoutGridProgram(QickProgram):
                 0,
                 "QUA_RESIDENT_READOUT_WAIT",
             )
+        elif self.command_mode == "sequenced":
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(
+                0,
+                controls["command"],
+                "!=",
+                controls["ready"],
+                "QUA_RESIDENT_READOUT_WAIT",
+            )
         else:
             self.memri(0, controls["command"], self.command_addr)
             self.condj(
@@ -533,10 +544,11 @@ class QUAResidentReadoutGridProgram(QickProgram):
                 "QUA_RESIDENT_READOUT_WAIT",
             )
         self.sync(0, controls["elapsed"])
-        if self.command_mode == "split":
+        if self.command_mode != "packed_frequency":
             self.memri(res_page, res_frequency, self.frequency_addr)
-        self.regwi(0, controls["command"], 0)
-        self.memwi(0, controls["command"], self.command_addr)
+        if self.command_mode != "sequenced":
+            self.regwi(0, controls["command"], 0)
+            self.memwi(0, controls["command"], self.command_addr)
         park_gain = float(cfg.get("ff_park_gain", 0) or 0)
         for value in self.values:
             if self.kind == "readout_gain":
@@ -585,9 +597,11 @@ class QUAResidentReadoutOptimizerProgram(QickProgram):
         self.ready_addr = self.counter_addr + 2
         self.frequency_addr = self.counter_addr + 3
         self.command_mode = str(
-            self.cfg.get("qick_resident_command_mode", "split")
+            self.cfg.get("qick_resident_command_mode", "sequenced")
         )
-        if self.command_mode not in ("split", "packed_frequency"):
+        if self.command_mode not in (
+            "split", "packed_frequency", "sequenced"
+        ):
             raise ValueError("invalid resident command mode")
         self.frequency_registers = np.asarray(
             [
@@ -652,6 +666,15 @@ class QUAResidentReadoutOptimizerProgram(QickProgram):
                 0,
                 "QUA_RESIDENT_OPTIMIZER_WAIT",
             )
+        elif self.command_mode == "sequenced":
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(
+                0,
+                controls["command"],
+                "!=",
+                controls["ready"],
+                "QUA_RESIDENT_OPTIMIZER_WAIT",
+            )
         else:
             self.memri(0, controls["command"], self.command_addr)
             self.condj(
@@ -662,10 +685,11 @@ class QUAResidentReadoutOptimizerProgram(QickProgram):
                 "QUA_RESIDENT_OPTIMIZER_WAIT",
             )
         self.sync(0, controls["elapsed"])
-        if self.command_mode == "split":
+        if self.command_mode != "packed_frequency":
             self.memri(res_page, res_frequency, self.frequency_addr)
-        self.regwi(0, controls["command"], 0)
-        self.memwi(0, controls["command"], self.command_addr)
+        if self.command_mode != "sequenced":
+            self.regwi(0, controls["command"], 0)
+            self.memwi(0, controls["command"], self.command_addr)
         passive_reset = float(cfg.get("relax_delay", 1000.0))
         for gain in self.gains:
             self.safe_regwi(res_page, res_gain, int(gain))
@@ -1114,7 +1138,7 @@ def _resident_program_records(
     readout_configs,
     shots,
     access_mode="driver",
-    command_mode="split",
+    command_mode="sequenced",
 ):
     args = (
         resident.dump_prog(),
@@ -1214,7 +1238,7 @@ def acquire_passive_readout_grid(
     excursion_gain=None,
     progress=None,
     access_mode="direct_mmio",
-    command_mode="split",
+    command_mode="sequenced",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     values = _finite_axis(values, "values")
@@ -1223,7 +1247,7 @@ def acquire_passive_readout_grid(
     if access_mode not in ("driver", "direct_mmio"):
         raise ValueError("invalid resident access mode")
     command_mode = str(command_mode)
-    if command_mode not in ("split", "packed_frequency"):
+    if command_mode not in ("split", "packed_frequency", "sequenced"):
         raise ValueError("invalid resident command mode")
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"
@@ -1516,7 +1540,7 @@ def acquire_passive_optimizer_grid(
     drive_gain,
     progress=None,
     access_mode="direct_mmio",
-    command_mode="split",
+    command_mode="sequenced",
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     gains = _finite_axis(gains, "gains")
@@ -1550,7 +1574,7 @@ def acquire_passive_optimizer_grid(
     if access_mode not in ("driver", "direct_mmio"):
         raise ValueError("invalid resident access mode")
     command_mode = str(command_mode)
-    if command_mode not in ("split", "packed_frequency"):
+    if command_mode not in ("split", "packed_frequency", "sequenced"):
         raise ValueError("invalid resident command mode")
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"

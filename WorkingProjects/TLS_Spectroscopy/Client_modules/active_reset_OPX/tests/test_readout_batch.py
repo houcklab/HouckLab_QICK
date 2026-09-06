@@ -516,6 +516,52 @@ def test_resident_server_can_pack_frequency_into_release_command():
     assert result["command_mode"] == "packed_frequency"
 
 
+def test_resident_server_releases_each_block_with_its_sequence_number():
+    class SequencedTProc(ResidentTProc):
+        def __init__(self):
+            super().__init__()
+            self.writes = []
+
+        def single_write(self, addr=0, data=0):
+            address = int(addr)
+            value = int(data)
+            self.writes.append((address, value))
+            self.memory[address] = value
+            if address == self.command_addr and value == self.completed_blocks + 1:
+                self.releases.append(value)
+                self.completed_blocks += 1
+                if self.completed_blocks < self.total_blocks:
+                    self.memory[self.ready_addr] = self.completed_blocks + 1
+
+    class SequencedSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.tproc = SequencedTProc()
+
+    soc = SequencedSoc()
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        [
+            {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+            {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        ],
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        command_mode="sequenced",
+        program_factory=ResidentProgram,
+    )
+    assert soc.tproc.releases == [1, 2, 3, 4]
+    assert [
+        value for address, value in soc.tproc.writes
+        if address == soc.tproc.command_addr and value != 0
+    ] == [1, 2, 3, 4]
+    assert result["command_mode"] == "sequenced"
+
+
 def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     class BackpressureTProc(ResidentTProc):
         def __init__(self, owner):
