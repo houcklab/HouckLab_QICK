@@ -490,3 +490,76 @@ def test_tls_step1_smoke_runner_selects_only_resonator_flux_sweep(monkeypatch):
         },
         "selected": [True, False, False, False, False, False, False, False],
     }]
+
+
+def test_tls_step2_smoke_runner_selects_only_qubit_flux_sweep(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        SET_YOKO=True,
+        BASELINE_DC_OFFSET=0,
+        USE_RESONATOR_LOOKUP=True,
+        RESONATOR_FIT_PARAMS=[1],
+        RESET_MODE="active",
+        P1_RESONATOR={"run": True},
+        P2_QUBIT_SPEC_FULL={"run": False},
+        P3_STEP_RESPONSE={"run_fit": True, "run_correct": True},
+        P4_LONG_TIME={"run": True},
+        P5_SS_CAL={"run": True},
+        P6_3PT_T1={"run": True},
+        P6_FULL_T1={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "live_plots": runner.LIVE_PLOTS,
+        "set_yoko": runner.SET_YOKO,
+        "baseline": runner.BASELINE_DC_OFFSET,
+        "lookup": runner.USE_RESONATOR_LOOKUP,
+        "fit": runner.RESONATOR_FIT_PARAMS,
+        "reset_mode": runner.RESET_MODE,
+        "step2": dict(runner.P2_QUBIT_SPEC_FULL),
+        "selected": [
+            runner.P1_RESONATOR["run"],
+            runner.P2_QUBIT_SPEC_FULL["run"],
+            runner.P3_STEP_RESPONSE["run_fit"],
+            runner.P3_STEP_RESPONSE["run_correct"],
+            runner.P4_LONG_TIME["run"],
+            runner.P5_SS_CAL["run"],
+            runner.P6_3PT_T1["run"],
+            runner.P6_FULL_T1["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "TLSSpectroscopy", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_tls_step2_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "live_plots": False,
+        "set_yoko": False,
+        "baseline": -25790,
+        "lookup": False,
+        "fit": None,
+        "reset_mode": "passive",
+        "step2": {
+            "run": True,
+            "advanced_fit": False,
+            "shots": 20,
+            "relax_delay_us": 100.0,
+            "spec_amp": 10000,
+            "spec_len_us": 0.5,
+            "freq_min": 4364.0,
+            "freq_max": 4368.0,
+            "freq_step": 0.5,
+            "dc_min": -26000,
+            "dc_max": -25250,
+            "dc_step": 250,
+            "live_plot": False,
+        },
+        "selected": [False, True, False, False, False, False, False, False],
+    }]
