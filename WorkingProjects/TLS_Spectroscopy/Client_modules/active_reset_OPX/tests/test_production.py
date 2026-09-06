@@ -377,3 +377,50 @@ def test_qubit_opt_smoke_runner_selects_only_qubit_optimization(monkeypatch):
         },
         "selected": [False, False, False, False, False, False, False, False, True],
     }]
+
+
+def test_ss_flux_ramp_smoke_runner_selects_only_flux_ramp_calibration(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        RESET_MODE="active",
+        P_SS_CAL={"run": True},
+        P_SS_FLUX_RAMP={"run": False},
+        P_T1={"run": True},
+        P_T1_FLUX_RAMP={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "reset_mode": runner.RESET_MODE,
+        "ss_flux_ramp": dict(runner.P_SS_FLUX_RAMP),
+        "selected": [
+            runner.P_SS_CAL["run"],
+            runner.P_SS_FLUX_RAMP["run"],
+            runner.P_T1["run"],
+            runner.P_T1_FLUX_RAMP["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.SingleQubitCoherence"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "SingleQubitCoherence", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_ss_flux_ramp_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "reset_mode": "passive",
+        "ss_flux_ramp": {
+            "run": True,
+            "shots": 500,
+            "number_pi_pulses": 1,
+            "ground_threshold": 0.7,
+            "excursion_gain": -20000,
+            "qubit_pi_gain": None,
+            "flux_hold_us": 1.0,
+            "flux_tail_compensation": None,
+        },
+        "selected": [False, True, False, False],
+    }]
