@@ -778,6 +778,79 @@ def test_three_point_acquisition_preserves_qua_shot_dc_reference_order(monkeypat
     assert telemetry["dc_points"] == 2
 
 
+def test_tls_memory_acquisition_preserves_shot_sequence_order(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    created = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+            self.reps = (
+                int(cfg["opx_memory_shots"])
+                * len(cfg["opx_memory_sequences"])
+            )
+            created.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    def run(soc, program, **kwargs):
+        sequences = program.cfg["opx_memory_sequences"]
+        return [
+            PayloadRecord(100 * sequence_index + shot, -shot)
+            for shot in range(program.cfg["opx_memory_shots"])
+            for sequence_index in range(len(sequences))
+        ]
+
+    monkeypatch.setattr(integration, "OPXResetTLSMemoryProgram", Program)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 3,
+        "read_length": 5.0,
+        "ro_chs": [0],
+        "opx_record_base": 32,
+    }
+
+    i_values, q_values, telemetry = integration.acquire_tls_memory_iq(
+        object(),
+        {},
+        cfg,
+        sequences=("single", "double", "ground_double"),
+        interaction_us=4.0,
+        storage_us=12.0,
+        ff_gain=-20000,
+        shots=3,
+    )
+
+    assert len(created) == 1
+    assert i_values.shape == (3, 3)
+    assert i_values.tolist() == [
+        [0.0, 0.1, 0.2],
+        [10.0, 10.1, 10.2],
+        [20.0, 20.1, 20.2],
+    ]
+    assert q_values.tolist() == [
+        [0.0, -0.1, -0.2],
+        [0.0, -0.1, -0.2],
+        [0.0, -0.1, -0.2],
+    ]
+    assert telemetry == {
+        "shots_per_sequence": 3,
+        "sequences": ["single", "double", "ground_double"],
+        "blocks": 1,
+        "records": 9,
+        "order": "shot_sequence",
+        "read_length_cycles": 10,
+    }
+
 def test_production_opx_mode_skips_legacy_single_shot_calibration():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
         mCoherence,

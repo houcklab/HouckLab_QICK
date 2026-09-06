@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
     mRabiChevronIQ as R,
     mRabiChevronSS as RSS,
     mSingleShot1Q as SS,
+    mTLSMemory as TM,
     mT1VsFlux as T1F,
     mTransmissionVsFlux as TVF,
 )
@@ -270,6 +271,71 @@ def test_rabi_ss_opx_path_does_not_require_legacy_calibration(monkeypatch):
     )
 
     assert experiment.calib_params is None
+
+
+def test_tls_memory_opx_path_uses_timing_matched_classifier(monkeypatch):
+    def initialize(experiment, **kwargs):
+        experiment.cfg = kwargs["cfg"]
+
+    monkeypatch.setattr(TM.ExperimentClass, "__init__", initialize)
+    monkeypatch.setattr(
+        TM,
+        "runtime_bundle",
+        lambda cfg: types.SimpleNamespace(
+            payload=types.SimpleNamespace(
+                holdout={"false_pi": 0.05, "excited_fire": 0.85}
+            )
+        ),
+        raising=False,
+    )
+    experiment = TM.TLSMemory(
+        soc=object(),
+        soccfg=object(),
+        path="q3",
+        outerFolder="unused",
+        cfg={"reset_mode": "opx_unbounded"},
+        ff_gain=-20000,
+        interaction_us=4.0,
+        storage_us=12.0,
+        sequence="double",
+        shots=4,
+        calib_params=None,
+        assignment_reference=None,
+    )
+    experiment.soc = object()
+    experiment.soccfg = object()
+    monkeypatch.setattr(
+        TM,
+        "acquire_tls_memory_iq",
+        lambda *args, **kwargs: (
+            np.asarray([[-1.0, 1.0, 2.0, -2.0]]),
+            np.zeros((1, 4)),
+            {"read_length_cycles": 10, "order": "shot_sequence"},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        TM,
+        "classify_payload_iq",
+        lambda cfg, i_values, q_values, read_length_cycles: (
+            np.asarray(i_values) > 0
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        TM,
+        "discriminate_shots",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError(
+            "OPX TLS memory must use the timing-matched payload classifier"
+        )),
+    )
+
+    data = experiment.acquire()
+
+    assert experiment.calib_params is None
+    assert experiment.assignment_reference == {"P_g": 0.05, "P_e": 0.85}
+    assert data["metrics"]["P_excited"] == pytest.approx(0.5)
+    assert data["opx_reset_telemetry"]["order"] == "shot_sequence"
 
 
 def test_rabi_ss_passive_sweep_derives_program_gain_registers(monkeypatch):

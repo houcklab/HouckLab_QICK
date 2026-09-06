@@ -42,6 +42,8 @@ REGISTER_NAMES = (
     "address",
 )
 
+TLS_MEMORY_SEQUENCES = ("single", "double", "ground_double")
+
 
 def payload_sweep_plan(cfg, *, freq2reg):
     kind = str(cfg.get("opx_payload_sweep_kind", "gain")).strip().lower()
@@ -325,6 +327,29 @@ def emit_payload_reset_shot(
     elif scheme != "none":
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     park_down()
+
+
+def emit_tls_memory_sequence(
+    *,
+    sequence,
+    prepare_excited,
+    play_excursion,
+    wait_storage,
+    idle_excursion,
+):
+    sequence = str(sequence).strip().lower()
+    if sequence not in TLS_MEMORY_SEQUENCES:
+        raise ValueError(
+            f"memory sequence must be one of {TLS_MEMORY_SEQUENCES}"
+        )
+    if sequence != "ground_double":
+        prepare_excited()
+    play_excursion()
+    wait_storage()
+    if sequence in ("double", "ground_double"):
+        play_excursion()
+    else:
+        idle_excursion()
 
 
 def emit_shot_major_payload_loops(
@@ -1314,6 +1339,131 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             "OPX_T1_3PT_DC_LOOP",
         )
         self.loopnz(0, controls["shot_loop"], "OPX_T1_3PT_SHOT_LOOP")
+        self._end_park_lifecycle()
+        self.end()
+
+
+class OPXResetTLSMemoryProgram(OPXResetT1Program):
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        sequences = tuple(
+            str(value).strip().lower()
+            for value in run_cfg.get("opx_memory_sequences", ())
+        )
+        if not sequences:
+            raise ValueError("opx_memory_sequences must be nonempty")
+        invalid = [
+            value for value in sequences if value not in TLS_MEMORY_SEQUENCES
+        ]
+        if invalid:
+            raise ValueError(
+                f"memory sequence must be one of {TLS_MEMORY_SEQUENCES}"
+            )
+        shots = int(run_cfg.get("opx_memory_shots", 0))
+        interaction_us = float(run_cfg.get("opx_memory_interaction_us", 0.0))
+        storage_us = float(run_cfg.get("opx_memory_storage_us", 0.0))
+        if shots <= 0:
+            raise ValueError("opx_memory_shots must be positive")
+        if not np.isfinite(interaction_us) or interaction_us < 0.01:
+            raise ValueError("opx_memory_interaction_us must be at least 0.01 us")
+        if not np.isfinite(storage_us) or storage_us < 0.0:
+            raise ValueError("opx_memory_storage_us must be non-negative")
+        run_cfg.update({
+            "opx_memory_sequences": list(sequences),
+            "ff_hold": interaction_us,
+            "t1_wait_us": interaction_us,
+            "do_ff": True,
+            "reps": shots * len(sequences),
+        })
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _idle_memory_excursion(self):
+        duration_us = (
+            2.0 * float(self._t1_ff_settle_us)
+            + max(float(self.cfg["opx_memory_interaction_us"]), 0.01)
+        )
+        self.sync_all(self.us2cycles(duration_us))
+
+    def _emit_memory_point(self, sequence):
+        park_up, park_down = self._shot_park_callbacks()
+
+        def emit_payload():
+            emit_tls_memory_sequence(
+                sequence=sequence,
+                prepare_excited=self._prepare_excited,
+                play_excursion=lambda: self._wait_t1_payload(
+                    float(self.cfg["opx_memory_interaction_us"])
+                ),
+                wait_storage=lambda: self.sync_all(self.us2cycles(
+                    float(self.cfg["opx_memory_storage_us"])
+                )),
+                idle_excursion=self._idle_memory_excursion,
+            )
+
+        emit_payload_reset_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            reset_scheme="opx_unbounded",
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=park_up,
+            park_down=park_down,
+            emit_payload=emit_payload,
+            measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix=f"OPX_TLS_MEMORY_{sequence.upper()}",
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def make_program(self):
+        if not getattr(self.reset_config, "hard_flux_steps", False):
+            raise ValueError("QUA-order TLS memory requires hard flux steps")
+        _declare_common(self)
+        self._declare_experiment()
+        self.reset_page = self.ch_page(self.cfg["qubit_ch"])
+        names = (
+            "i",
+            "q",
+            "z",
+            "ground",
+            "excited",
+            "attempts",
+            "pi_count",
+            "status",
+            "address",
+        )
+        self.reset_regs = allocate_named_registers(
+            self, self.reset_page, names
+        )
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            ("shot_loop", "done"),
+            reserved=control_reserved,
+        )
+        self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
+        self.regwi(0, controls["done"], 0)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(
+            0,
+            controls["shot_loop"],
+            int(self.cfg["opx_memory_shots"]) - 1,
+        )
+        self._begin_park_lifecycle()
+        self.label("OPX_TLS_MEMORY_SHOT_LOOP")
+        for sequence in self.cfg["opx_memory_sequences"]:
+            self._emit_memory_point(sequence)
+            self.mathi(0, controls["done"], controls["done"], "+", 1)
+            self.memwi(0, controls["done"], self.done_addr)
+        self.loopnz(0, controls["shot_loop"], "OPX_TLS_MEMORY_SHOT_LOOP")
         self._end_park_lifecycle()
         self.end()
 

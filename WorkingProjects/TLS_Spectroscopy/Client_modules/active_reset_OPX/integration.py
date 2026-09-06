@@ -13,6 +13,7 @@ from .acquisition import (
 from .calibration import CalibrationBundle
 from .programs import (
     OPXResetPulseSweepProgram,
+    OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
@@ -244,6 +245,106 @@ def acquire_t1_3pt_iq(
         "records": int(record_count),
         "blocks": int(block_count),
         "order": "shot_dc_P0_P1_Ps",
+        "read_length_cycles": int(read_cycles),
+    }
+
+
+def acquire_tls_memory_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    sequences,
+    interaction_us,
+    storage_us,
+    ff_gain,
+    shots=None,
+):
+    bundle = runtime_bundle(cfg)
+    sequence_values = tuple(str(value).strip().lower() for value in sequences)
+    allowed = ("single", "double", "ground_double")
+    if not sequence_values:
+        raise ValueError("at least one TLS memory sequence is required")
+    if any(value not in allowed for value in sequence_values):
+        raise ValueError(f"TLS memory sequences must be one of {allowed}")
+    interaction_us = float(interaction_us)
+    storage_us = float(storage_us)
+    ff_gain = float(ff_gain)
+    if not np.isfinite(interaction_us) or interaction_us < 0.01:
+        raise ValueError("TLS memory interaction must be at least 0.01 us")
+    if not np.isfinite(storage_us) or storage_us < 0.0:
+        raise ValueError("TLS memory storage must be non-negative")
+    if not np.isfinite(ff_gain):
+        raise ValueError("TLS memory flux gain must be finite")
+    rounded_gain = int(round(ff_gain))
+    if not np.isclose(ff_gain, rounded_gain, rtol=0.0, atol=1e-9):
+        raise ValueError("TLS memory flux gain must be an integer DAC value")
+    if not -32768 <= rounded_gain <= 32767:
+        raise ValueError("TLS memory flux gain exceeds the signed DAC range")
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("TLS memory shots must be positive")
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // len(sequence_values)
+    if shots_per_block <= 0:
+        raise ValueError("TLS memory sequences do not fit in tProc data memory")
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": "opx_unbounded",
+            "opx_memory_shots": int(chunk),
+            "opx_memory_sequences": list(sequence_values),
+            "opx_memory_interaction_us": interaction_us,
+            "opx_memory_storage_us": storage_us,
+            "ff_gain": rounded_gain,
+            "ff_hold": 2.0 * interaction_us + storage_us,
+            "do_ff": True,
+        })
+        program = OPXResetTLSMemoryProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(
+                run_cfg, int(chunk) * len(sequence_values)
+            ),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_blocks.append(np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(chunk, len(sequence_values)).T)
+        q_blocks.append(np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(chunk, len(sequence_values)).T)
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_sequence": int(total_shots),
+        "sequences": list(sequence_values),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * len(sequence_values)),
+        "order": "shot_sequence",
         "read_length_cycles": int(read_cycles),
     }
 

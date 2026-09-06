@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
+    OPXResetTLSMemoryProgram,
     OPXResetPulseSweepProgram,
     OPXResetT13PointProgram,
     OPXResetT1Program,
@@ -21,6 +22,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     emit_benchmark_shot,
     emit_payload_reset_shot,
     emit_record,
+    emit_tls_memory_sequence,
     emit_t1_shot,
     emit_timing_matched_reference_shot,
     emit_shot_major_payload_loops,
@@ -507,6 +509,44 @@ def test_three_point_flux_cycle_returns_to_park_after_requested_wait(monkeypatch
         ("park", -25790),
         ("sync", 50),
     ]
+
+
+@pytest.mark.parametrize(
+    ("sequence", "expected"),
+    (
+        ("single", ["prepare", "excursion", "storage", "idle"]),
+        ("double", ["prepare", "excursion", "storage", "excursion"]),
+        ("ground_double", ["excursion", "storage", "excursion"]),
+    ),
+)
+def test_tls_memory_sequence_preserves_signed_probe_timing(sequence, expected):
+    events = []
+
+    emit_tls_memory_sequence(
+        sequence=sequence,
+        prepare_excited=lambda: events.append("prepare"),
+        play_excursion=lambda: events.append("excursion"),
+        wait_storage=lambda: events.append("storage"),
+        idle_excursion=lambda: events.append("idle"),
+    )
+
+    assert events == expected
+
+
+def test_tls_memory_program_requires_hard_flux_steps():
+    prog = RecordingProgram()
+    prog.cfg = {
+        "qubit_ch": 1,
+        "ff_ch": 3,
+        "opx_memory_shots": 1,
+        "opx_memory_sequences": ["single"],
+    }
+    prog.reset_config = SimpleNamespace(hard_flux_steps=False)
+    prog._declare_experiment = lambda: None
+    prog.ch_page = lambda channel: 1
+
+    with pytest.raises(ValueError, match="hard flux steps"):
+        OPXResetTLSMemoryProgram.make_program(prog)
 
 
 def test_pulse_sweep_hard_flux_cycle_matches_t1_step_order():

@@ -8,6 +8,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import acquire_with_retry, suppress_stdout
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian, readout_thermalization_us, set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_tls_memory_iq,
+    classify_payload_iq,
+    runtime_bundle,
+)
 
 
 MEMORY_SEQUENCES = ("single", "double", "ground_double")
@@ -171,12 +176,19 @@ class TLSMemory(ExperimentClass):
             ff_gain = cfg.get("ff_gain")
         if ff_gain is None:
             raise ValueError("ff_gain is required")
-        if calib_params is None:
+        opx_unbounded = active_reset.uses_opx_unbounded(cfg)
+        if calib_params is None and not opx_unbounded:
             calib_params = cfg.get("calib_params")
-        if calib_params is None:
+        if calib_params is None and not opx_unbounded:
             raise ValueError("calib_params is required")
         if assignment_reference is None:
             assignment_reference = cfg.get("assignment_reference")
+        if assignment_reference is None and opx_unbounded:
+            holdout = dict(runtime_bundle(cfg).payload.holdout or {})
+            assignment_reference = {
+                "P_g": float(holdout.get("false_pi", np.nan)),
+                "P_e": float(holdout.get("excited_fire", np.nan)),
+            }
         if assignment_reference is None:
             raise ValueError("assignment_reference is required")
         sequence = str(sequence).lower()
@@ -197,22 +209,48 @@ class TLSMemory(ExperimentClass):
         self.storage_us = float(storage_us)
         self.sequence = sequence
         self.shots = int(shots)
-        self.calib_params = dict(calib_params)
+        self.calib_params = None if calib_params is None else dict(calib_params)
         self.assignment_reference = {
             "P_g": float(assignment_reference["P_g"]),
             "P_e": float(assignment_reference["P_e"]),
         }
 
     def acquire(self, progress=False, plotDisp=False):
-        with suppress_stdout():
-            prog = TLSMemoryProgram(self.soccfg, dict(self.cfg))
-            hi, hq, i, q = acquire_with_retry(
-                prog, self.soc, load_pulses=True, progress=False)
-        final = discriminate_shots(i, q, self.calib_params)
-        if active_reset.heralds(self.cfg):
-            keep = active_reset.herald_keep(hi, hq, self.calib_params)
-        else:
+        if active_reset.uses_opx_unbounded(self.cfg):
+            with suppress_stdout():
+                i_values, q_values, telemetry = acquire_tls_memory_iq(
+                    self.soc,
+                    self.soccfg,
+                    self.cfg,
+                    sequences=(self.sequence,),
+                    interaction_us=self.interaction_us,
+                    storage_us=self.storage_us,
+                    ff_gain=self.ff_gain,
+                    shots=self.shots,
+                )
+            i = i_values[0]
+            q = q_values[0]
+            final = classify_payload_iq(
+                self.cfg,
+                i,
+                q,
+                telemetry["read_length_cycles"],
+            )
+            hi = np.full(i.shape, np.nan)
+            hq = np.full(q.shape, np.nan)
             keep = np.ones(final.size, dtype=bool)
+            self.opx_reset_telemetry = dict(telemetry)
+        else:
+            with suppress_stdout():
+                prog = TLSMemoryProgram(self.soccfg, dict(self.cfg))
+                hi, hq, i, q = acquire_with_retry(
+                    prog, self.soc, load_pulses=True, progress=False)
+            final = discriminate_shots(i, q, self.calib_params)
+            if active_reset.heralds(self.cfg):
+                keep = active_reset.herald_keep(hi, hq, self.calib_params)
+            else:
+                keep = np.ones(final.size, dtype=bool)
+            self.opx_reset_telemetry = None
         probability = float(np.mean(final[keep])) if np.any(keep) else np.nan
         contrast = self.assignment_reference["P_e"] - self.assignment_reference["P_g"]
         corrected = ((probability - self.assignment_reference["P_g"]) / contrast
@@ -230,10 +268,13 @@ class TLSMemory(ExperimentClass):
             "storage_us": self.storage_us,
             "sequence": self.sequence,
             "shots": self.shots,
-            "calib_params": dict(self.calib_params),
+            "calib_params": (
+                None if self.calib_params is None else dict(self.calib_params)
+            ),
             "assignment_reference": dict(self.assignment_reference),
             "metrics": dict(self.metrics),
             "raw": dict(self.raw),
+            "opx_reset_telemetry": self.opx_reset_telemetry,
             "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         return self.data
