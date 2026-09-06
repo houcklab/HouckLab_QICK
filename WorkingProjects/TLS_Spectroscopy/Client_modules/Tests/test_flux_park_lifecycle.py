@@ -455,7 +455,7 @@ def test_rabi_ss_passive_sweep_derives_program_gain_registers(monkeypatch):
     assert populations.tolist() == [0.0, 1.0, 1.0]
 
 
-def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
+def test_compact_dmem_sweep_uses_one_resident_program_and_restores_gain_shape(monkeypatch):
     bundle = types.SimpleNamespace(payload=object(), loop=object())
     monkeypatch.setattr(integration, "runtime_bundle", lambda cfg: bundle)
     programs = []
@@ -494,14 +494,16 @@ def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
         frequency_mhz=4367.25,
     )
 
-    assert [program.cfg["opx_payload_shots_per_expt"] for program in programs] == [5, 2]
+    assert [program.cfg["opx_payload_shots_per_expt"] for program in programs] == [7]
+    assert programs[0].cfg["opx_resident_dmem_stream"] is True
     assert i_values.shape == (3, 7)
     assert q_values.shape == (3, 7)
-    assert i_values[2].tolist() == [20.0, 20.1, 20.2, 20.3, 20.4, 20.0, 20.1]
+    assert i_values[2].tolist() == [20.0, 20.1, 20.2, 20.3, 20.4, 20.5, 20.6]
     assert telemetry == {
         "shots_per_point": 7,
         "points": 3,
-        "blocks": 2,
+        "blocks": 1,
+        "resident_stream": True,
         "records": 21,
         "read_length_cycles": 10,
     }

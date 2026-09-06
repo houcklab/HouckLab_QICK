@@ -181,7 +181,7 @@ def test_rabi_ss_qua_grid_reports_outer_shot_progress(tmp_path, monkeypatch):
     assert updates == [(2, 3, "Rabi chevron SS")]
 
 
-def test_gate_runner_applies_active_session_to_rabi_iq(tmp_path, monkeypatch):
+def test_gate_runner_keeps_rabi_iq_passive_when_session_is_active(tmp_path, monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
         ProductionResetSession,
@@ -210,7 +210,13 @@ def test_gate_runner_applies_active_session_to_rabi_iq(tmp_path, monkeypatch):
 
     GateCalibration.run_rabi_chevron_iq(tmp_path, object(), {})
 
-    assert observed["cfg"]["reset_mode"] == "opx_unbounded"
+    assert observed["cfg"]["reset_mode"] == "passive"
+    assert observed["cfg"]["relax_delay"] == pytest.approx(
+        GateCalibration.P_RABI_CHEVRON_IQ["relax_delay_us"]
+    )
+    assert observed["cfg"]["qua_passive_pre_point_delay_us"] == pytest.approx(
+        GateCalibration.P_RABI_CHEVRON_IQ["relax_delay_us"]
+    )
 
 
 def test_transmission_gain_sweep_keeps_the_flux_at_park(tmp_path, monkeypatch):
@@ -257,11 +263,7 @@ def test_transmission_gain_sweep_keeps_the_flux_at_park(tmp_path, monkeypatch):
     assert observed.get("excursion_gain") is None
 
 
-@pytest.mark.parametrize(
-    "enabled_name",
-    ["P_RABI_CHEVRON_IQ", "P_QUBIT_SPEC", "P_QUBIT_SPEC_SWEEP"],
-)
-def test_gate_runner_prepares_active_session_for_qubit_drive(monkeypatch, enabled_name):
+def test_gate_runner_prepares_active_session_only_for_rabi_ss(monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
         ProductionResetSession,
@@ -284,8 +286,72 @@ def test_gate_runner_prepares_active_session_for_qubit_drive(monkeypatch, enable
         lambda *args, **kwargs: prepared.append(kwargs["purpose"]) or active,
     )
     monkeypatch.setattr(GateCalibration, "run_rabi_chevron_iq", lambda *args: None)
+    monkeypatch.setattr(GateCalibration, "run_rabi_chevron_ss", lambda *args: None)
     monkeypatch.setattr(GateCalibration, "run_qubit_spec", lambda *args: None)
     monkeypatch.setattr(GateCalibration, "run_qubit_spec_sweep", lambda *args: None)
+    for params in (
+        GateCalibration.P_TRANSMISSION,
+        GateCalibration.P_TRANSMISSION_SWEEP,
+        GateCalibration.P_QUBIT_SPEC,
+        GateCalibration.P_QUBIT_SPEC_SWEEP,
+        GateCalibration.P_SS_CAL,
+        GateCalibration.P_RABI_CHEVRON_IQ,
+        GateCalibration.P_RABI_CHEVRON_SS,
+        GateCalibration.P_READOUT_OPT,
+        GateCalibration.P_QUBIT_OPT,
+    ):
+        monkeypatch.setitem(params, "run", False)
+    monkeypatch.setitem(GateCalibration.P_RABI_CHEVRON_SS, "run", True)
+
+    GateCalibration.main()
+
+    assert prepared == ["GateCalibration"]
+
+
+@pytest.mark.parametrize(
+    "enabled_name",
+    [
+        "P_TRANSMISSION",
+        "P_TRANSMISSION_SWEEP",
+        "P_QUBIT_SPEC",
+        "P_QUBIT_SPEC_SWEEP",
+        "P_SS_CAL",
+        "P_RABI_CHEVRON_IQ",
+        "P_READOUT_OPT",
+        "P_QUBIT_OPT",
+    ],
+)
+def test_gate_runner_does_not_calibrate_reset_for_passive_qua_experiments(
+    monkeypatch, enabled_name
+):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+        ProductionResetSession,
+    )
+
+    prepared = []
+    monkeypatch.setattr(GateCalibration, "makeProxy", lambda: (object(), {}))
+    monkeypatch.setattr(
+        GateCalibration,
+        "_RESET_SESSION",
+        ProductionResetSession.passive(),
+    )
+    monkeypatch.setattr(
+        GateCalibration,
+        "prepare_reset_session",
+        lambda *args, **kwargs: prepared.append(kwargs["purpose"]),
+    )
+    for name in (
+        "run_transmission",
+        "run_transmission_sweep",
+        "run_qubit_spec",
+        "run_qubit_spec_sweep",
+        "run_ss_cal",
+        "run_rabi_chevron_iq",
+        "run_readout_opt",
+        "run_qubit_opt",
+    ):
+        monkeypatch.setattr(GateCalibration, name, lambda *args: None)
     for params in (
         GateCalibration.P_TRANSMISSION,
         GateCalibration.P_TRANSMISSION_SWEEP,
@@ -302,7 +368,7 @@ def test_gate_runner_prepares_active_session_for_qubit_drive(monkeypatch, enable
 
     GateCalibration.main()
 
-    assert prepared == ["GateCalibration"]
+    assert prepared == []
 
 
 def test_qubit_spec_uses_active_pulse_grid_for_an_active_session(tmp_path, monkeypatch):
@@ -446,7 +512,7 @@ def test_t1_qua_sweep_reports_outer_shot_progress(monkeypatch):
     assert updates == [(1, 3, "T1")]
 
 
-def test_gate_runner_applies_active_session_to_qubit_spec(tmp_path, monkeypatch):
+def test_gate_runner_keeps_qubit_spec_passive_when_session_is_active(tmp_path, monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
         ProductionResetSession,
@@ -475,10 +541,11 @@ def test_gate_runner_applies_active_session_to_qubit_spec(tmp_path, monkeypatch)
 
     GateCalibration.run_qubit_spec(tmp_path, object(), {})
 
-    assert observed["cfg"]["reset_mode"] == "opx_unbounded"
+    assert observed["cfg"]["reset_mode"] == "passive"
+    assert observed["cfg"]["qua_passive_pre_point_delay_us"] == 0.0
 
 
-def test_gate_qubit_spec_gain_sweep_uses_a_uniform_integer_dac_axis(tmp_path, monkeypatch):
+def test_gate_qubit_spec_gain_sweep_ignores_active_session(tmp_path, monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
         ProductionResetSession,
@@ -511,8 +578,10 @@ def test_gate_qubit_spec_gain_sweep_uses_a_uniform_integer_dac_axis(tmp_path, mo
     GateCalibration.run_qubit_spec_sweep(tmp_path, object(), {})
 
     gains = np.asarray(observed["gains"])
-    assert np.issubdtype(gains.dtype, np.integer)
-    assert np.unique(np.diff(gains)).size == 1
+    assert observed["cfg"]["reset_mode"] == "passive"
+    assert gains.dtype == np.dtype(float)
+    assert gains[0] == 200.0
+    assert gains[-1] == 10000.0
 
 
 def test_gate_qubit_spec_gain_sweep_preserves_passive_axis(tmp_path, monkeypatch):

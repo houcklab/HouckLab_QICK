@@ -83,6 +83,11 @@ def _safe_abort(soc):
         reset = getattr(soc.tproc, "reset", None)
         if callable(reset):
             reset()
+        else:
+            stop = getattr(soc.tproc, "stop", None)
+            if not callable(stop):
+                raise RuntimeError("the connected tProc exposes no reset or stop API")
+            stop()
     finally:
         reset_gens = getattr(soc, "reset_gens", None)
         if callable(reset_gens):
@@ -168,6 +173,134 @@ def run_dmem_block(
 
         words = _read_words(soc, program.record_base, reps * program.record_words)
         return _decode_program_records(program, words, expected_records=reps)
+    except Exception:
+        if started:
+            _safe_abort(soc)
+        raise
+
+
+def run_dmem_stream(
+    soc,
+    program,
+    timeout_s,
+    *,
+    poll_interval_s=0.002,
+    progress=None,
+    clock=time.monotonic,
+    sleeper=time.sleep,
+):
+    plan = dict(program.stream_plan)
+    if int(plan["done_addr"]) != int(program.done_addr):
+        raise ValueError("program completion address does not match its resident stream plan")
+    total_shots = int(plan["total_shots"])
+    total_units = int(plan["total_units"])
+    records_per_unit = int(plan["records_per_unit"])
+    records_per_shot = int(plan["records_per_shot"])
+    bank_units = int(plan["bank_units"])
+    bank_words = int(plan["bank_words"])
+    expected_records = total_shots * records_per_shot
+    if min(total_shots, total_units, records_per_unit, records_per_shot, bank_units) <= 0:
+        raise ValueError("resident stream dimensions must be positive")
+    if int(program.reps) != expected_records:
+        raise ValueError("program record count does not match its resident stream plan")
+    timeout_s = float(timeout_s)
+    if not np.isfinite(timeout_s) or timeout_s <= 0:
+        raise ValueError("timeout_s must be positive and finite")
+    poll_interval_s = float(poll_interval_s)
+    if not np.isfinite(poll_interval_s) or poll_interval_s < 0:
+        raise ValueError("poll_interval_s must be finite and non-negative")
+
+    records = []
+    reported_shots = 0
+    observed_records = 0
+    received_units = 0
+    acknowledged = 0
+    started = False
+    try:
+        program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
+        program.config_bufs(soc, enable_avg=True, enable_buf=False)
+        _single_write(soc.tproc, program.done_addr, 0)
+        _single_write(soc.tproc, int(plan["ack_addr"]), 0)
+        _single_write(soc.tproc, int(plan["ready_addr"]), 0)
+        soc.tproc.start()
+        started = True
+        deadline = clock() + timeout_s
+        while received_units < total_units:
+            completed_records = _single_read(soc.tproc, program.done_addr)
+            if completed_records < 0 or completed_records > expected_records:
+                raise RuntimeError(
+                    f"invalid tProc completion counter {completed_records}; "
+                    f"expected 0..{expected_records}"
+                )
+            if completed_records < observed_records:
+                raise RuntimeError(
+                    "resident stream completion counter moved backwards from "
+                    f"{observed_records} to {completed_records}"
+                )
+            observed_records = completed_records
+            completed_shots = min(
+                completed_records // records_per_shot,
+                total_shots,
+            )
+            if progress is not None:
+                for completed in range(reported_shots + 1, completed_shots + 1):
+                    progress(completed, total_shots)
+            reported_shots = completed_shots
+            ready = _single_read(soc.tproc, int(plan["ready_addr"]))
+            if ready < acknowledged:
+                raise RuntimeError(
+                    f"resident stream ready counter moved backwards from {acknowledged} to {ready}"
+                )
+            while acknowledged < ready and received_units < total_units:
+                bank_index = acknowledged % 2
+                unit_count = min(bank_units, total_units - received_units)
+                record_count = unit_count * records_per_unit
+                address = int(program.record_base) + bank_index * bank_words
+                words = _read_words(
+                    soc,
+                    address,
+                    record_count * int(program.record_words),
+                )
+                records.extend(
+                    _decode_program_records(
+                        program,
+                        words,
+                        expected_records=record_count,
+                    )
+                )
+                received_units += unit_count
+                acknowledged += 1
+                _single_write(soc.tproc, int(plan["ack_addr"]), acknowledged)
+            if received_units >= total_units:
+                break
+            if clock() >= deadline:
+                _safe_abort(soc)
+                started = False
+                recovered_shots = min(
+                    len(records) // records_per_shot,
+                    total_shots,
+                )
+                recovered_records = recovered_shots * records_per_shot
+                partial_records = records[:recovered_records]
+                raise AcquisitionTimeout(
+                    f"resident OPX reset stream timed out after {timeout_s:g} s "
+                    f"({recovered_shots}/{total_shots} recovered shots; "
+                    f"controller reported {reported_shots})",
+                    completed_shots=recovered_shots,
+                    partial_records=partial_records,
+                )
+            sleeper(poll_interval_s)
+
+        completed_records = _single_read(soc.tproc, program.done_addr)
+        if completed_records != expected_records:
+            raise RuntimeError(
+                f"resident stream completed {completed_records} records; "
+                f"expected {expected_records}"
+            )
+        if progress is not None:
+            for completed in range(reported_shots + 1, total_shots + 1):
+                progress(completed, total_shots)
+        return records
     except Exception:
         if started:
             _safe_abort(soc)

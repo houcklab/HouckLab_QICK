@@ -5,6 +5,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisitio
     AcquisitionTimeout,
     chunk_sizes,
     run_dmem_block,
+    run_dmem_stream,
     timeout_for_reset_scheme,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
@@ -196,3 +197,280 @@ def test_block_uses_program_specific_compact_record_decoder():
     )
 
     assert observed == records
+
+
+def test_resident_stream_runs_one_program_and_reports_each_completed_shot():
+    records = [PayloadRecord(index, -index) for index in range(8)]
+
+    class StreamTProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[8, 8, 8, 8])
+            self.ready_values = [0, 1, 2]
+            self.memory = np.zeros(64, dtype=np.int64)
+            first = np.asarray(
+                [word for record in records[:4] for word in record.to_words()],
+                dtype=np.int64,
+            )
+            second = np.asarray(
+                [word for record in records[4:] for word in record.to_words()],
+                dtype=np.int64,
+            )
+            self.memory[32:40] = first & 0xFFFFFFFF
+            self.memory[40:48] = second & 0xFFFFFFFF
+
+        def single_read(self, addr):
+            if int(addr) == 3 and self.ready_values:
+                return self.ready_values.pop(0)
+            if int(addr) == self.done_addr and self.done_values:
+                return self.done_values.pop(0)
+            return int(self.memory[int(addr)])
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=8)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 2,
+                "bank_records": 4,
+                "bank_words": 8,
+                "total_shots": 4,
+                "total_units": 4,
+                "records_per_unit": 2,
+                "records_per_shot": 2,
+                "final_partial_units": 0,
+            }
+
+    tproc = StreamTProc()
+    updates = []
+    observed = run_dmem_stream(
+        FakeSoc(tproc),
+        StreamProgram(),
+        timeout_s=1.0,
+        poll_interval_s=0.0,
+        progress=lambda completed, total: updates.append((completed, total)),
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert observed == records
+    assert updates == [(1, 4), (2, 4), (3, 4), (4, 4)]
+    assert int(tproc.memory[2]) == 2
+    assert tproc.started
+    assert not tproc.reset_called
+
+
+def test_resident_stream_reports_physical_shots_before_a_bank_is_full():
+    records = [PayloadRecord(index, -index) for index in range(4)]
+    events = []
+
+    class StreamTProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[2, 4, 4, 4])
+            self.ready_values = [0, 0, 1]
+            self.memory = np.zeros(64, dtype=np.int64)
+            words = np.asarray(
+                [word for record in records for word in record.to_words()],
+                dtype=np.int64,
+            )
+            self.memory[32:40] = words & 0xFFFFFFFF
+
+        def single_read(self, addr):
+            if int(addr) == 3 and self.ready_values:
+                return self.ready_values.pop(0)
+            if int(addr) == self.done_addr and self.done_values:
+                return self.done_values.pop(0)
+            return int(self.memory[int(addr)])
+
+        def read_dmem(self, addr, length):
+            events.append("read_dmem")
+            return super().read_dmem(addr, length)
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=4)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 4,
+                "bank_records": 4,
+                "bank_words": 8,
+                "total_shots": 2,
+                "total_units": 4,
+                "records_per_unit": 1,
+                "records_per_shot": 2,
+                "final_partial_units": 0,
+            }
+
+    observed = run_dmem_stream(
+        FakeSoc(StreamTProc()),
+        StreamProgram(),
+        timeout_s=1.0,
+        poll_interval_s=0.0,
+        progress=lambda completed, total: events.append(
+            ("progress", completed, total)
+        ),
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert observed == records
+    assert events.index(("progress", 1, 2)) < events.index("read_dmem")
+    assert events.index(("progress", 2, 2)) < events.index("read_dmem")
+
+
+def test_resident_stream_rejects_a_backwards_physical_record_counter():
+    class StreamTProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[2, 1])
+            self.ready_values = [0, 0]
+            self.memory = np.zeros(64, dtype=np.int64)
+
+        def single_read(self, addr):
+            if int(addr) == 3 and self.ready_values:
+                return self.ready_values.pop(0)
+            if int(addr) == self.done_addr and self.done_values:
+                return self.done_values.pop(0)
+            return int(self.memory[int(addr)])
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=4)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 4,
+                "bank_records": 4,
+                "bank_words": 8,
+                "total_shots": 2,
+                "total_units": 4,
+                "records_per_unit": 1,
+                "records_per_shot": 2,
+                "final_partial_units": 0,
+            }
+
+    ticks = iter([0.0, 0.0, 0.1, 2.0])
+    with pytest.raises(RuntimeError, match="completion counter moved backwards"):
+        run_dmem_stream(
+            FakeSoc(StreamTProc()),
+            StreamProgram(),
+            timeout_s=1.0,
+            poll_interval_s=0.0,
+            clock=lambda: next(ticks),
+            sleeper=lambda _: None,
+        )
+
+
+def test_resident_stream_timeout_reports_only_recovered_complete_shots():
+    class StreamTProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[2])
+            self.memory = np.zeros(64, dtype=np.int64)
+
+        def single_read(self, addr):
+            if int(addr) == 3:
+                return 0
+            return super().single_read(addr)
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=4)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 4,
+                "bank_records": 4,
+                "bank_words": 8,
+                "total_shots": 2,
+                "total_units": 4,
+                "records_per_unit": 1,
+                "records_per_shot": 2,
+                "final_partial_units": 0,
+            }
+
+    ticks = iter([0.0, 1.0])
+    with pytest.raises(AcquisitionTimeout) as caught:
+        run_dmem_stream(
+            FakeSoc(StreamTProc()),
+            StreamProgram(),
+            timeout_s=0.5,
+            poll_interval_s=0.0,
+            clock=lambda: next(ticks),
+            sleeper=lambda _: None,
+        )
+
+    assert caught.value.completed_shots == 0
+    assert caught.value.partial_records == []
+
+
+def test_resident_stream_timeout_stops_v1_tproc_without_reset_method():
+    class V1TProc(FakeTProc):
+        def __init__(self):
+            super().__init__([], done_values=[0])
+            self.reset = None
+            self.stop_called = False
+
+        def single_read(self, addr):
+            if int(addr) == 3:
+                return 0
+            return super().single_read(addr)
+
+        def stop(self):
+            self.stop_called = True
+
+    class StreamProgram(FakeProgram):
+        record_words = PAYLOAD_RECORD_WORDS
+        decode_dmem_records = staticmethod(decode_payload_records)
+
+        def __init__(self):
+            super().__init__(reps=2)
+            self.soccfg = {"tprocs": [{"dmem_size": 64}]}
+            self.stream_plan = {
+                "done_addr": 1,
+                "ack_addr": 2,
+                "ready_addr": 3,
+                "bank_units": 2,
+                "bank_records": 2,
+                "bank_words": 4,
+                "total_shots": 1,
+                "total_units": 2,
+                "records_per_unit": 1,
+                "records_per_shot": 2,
+                "final_partial_units": 0,
+            }
+
+    tproc = V1TProc()
+    soc = FakeSoc(tproc)
+    ticks = iter([0.0, 1.0])
+    with pytest.raises(AcquisitionTimeout):
+        run_dmem_stream(
+            soc,
+            StreamProgram(),
+            timeout_s=0.5,
+            poll_interval_s=0.0,
+            clock=lambda: next(ticks),
+            sleeper=lambda _: None,
+        )
+
+    assert tproc.stop_called
+    assert soc.reset_gens_called

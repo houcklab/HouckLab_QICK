@@ -39,6 +39,7 @@ class PulseGridRecorder:
             "qubit_ch": 1,
             "qubit_nqz": 2,
             "relax_delay": 1000.0,
+            "qua_passive_pre_point_delay_us": 1000.0,
         }
         self.frequencies = np.array([10.0, 20.0])
         self.gains = np.array([100, 200])
@@ -573,7 +574,7 @@ def test_pulse_grid_uses_one_shot_major_streaming_program(monkeypatch):
 
 def test_pulse_grid_emits_valid_frequency_register_increment(monkeypatch):
     recorder = PulseGridRecorder()
-    delays = []
+    measures = []
     monkeypatch.setattr(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order._declare_readout",
         lambda program: None,
@@ -600,11 +601,15 @@ def test_pulse_grid_emits_valid_frequency_register_increment(monkeypatch):
     )
     monkeypatch.setattr(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order._measure_record",
-        lambda program, delay_us=None: delays.append(delay_us),
+        lambda program, delay_us=None: measures.append(delay_us),
     )
     QUAPulseGridProgram.make_program(recorder)
     assert ("mathi", 1, 1, 1, "+", 10) in recorder.instructions
-    assert delays == [1000.0, 1000.0]
+    assert measures == [None, None]
+    assert recorder.instructions.count(("sync_all", 100000)) == 2
+    for index, instruction in enumerate(recorder.instructions):
+        if instruction == ("pulse", {"ch": 1}):
+            assert recorder.instructions[index - 1] == ("sync_all", 100000)
 
 
 def test_resident_readout_waits_then_loads_generator_frequency(monkeypatch):

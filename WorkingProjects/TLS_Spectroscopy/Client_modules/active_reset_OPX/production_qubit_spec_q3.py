@@ -18,7 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 runner.LIVE_PLOTS = False
-runner.RESET_MODE = "active"
+runner.RESET_MODE = "passive"
 runner.P_TRANSMISSION["run"] = False
 runner.P_TRANSMISSION_SWEEP["run"] = False
 runner.P_QUBIT_SPEC.update({

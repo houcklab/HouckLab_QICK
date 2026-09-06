@@ -6,9 +6,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 from .acquisition import (
     AcquisitionTimeout,
-    chunk_sizes,
     dmem_words_from_soccfg,
     run_dmem_block,
+    run_dmem_stream,
 )
 from .calibration import CalibrationBundle
 from .analysis import ReferenceAxis
@@ -116,48 +116,53 @@ def _block_timeout_s(cfg, shots):
     return watchdog + fixed_us * int(shots) * 1e-6 * margin
 
 
+def _run_program(soc, program, timeout_s, cfg, *, total_shots, progress=None):
+    poll_interval_s = float(cfg.get("opx_poll_interval_s", 0.002))
+    if getattr(program, "stream_plan", None) is not None:
+        return run_dmem_stream(
+            soc,
+            program,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+            progress=progress,
+        )
+    records = run_dmem_block(
+        soc,
+        program,
+        timeout_s=timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
+    if progress is not None:
+        for completed in range(1, int(total_shots) + 1):
+            progress(completed, int(total_shots))
+    return records
+
+
 def acquire_t1_iq(soc, soccfg, cfg, shots=None):
     bundle = runtime_bundle(cfg)
     total = int(cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots)
     if total <= 0:
         raise ValueError("T1 shots must be positive")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "shots": total,
+        "reps": total,
+        "opx_reset_scheme": "opx_unbounded",
+        "opx_resident_dmem_stream": True,
+    })
+    last_program = OPXResetT1Program(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(capacity, int(cfg.get("opx_max_shots_per_block", 400)))
-    records = []
-    last_program = None
-    for chunk in chunk_sizes(total, capacity):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "shots": int(chunk),
-            "reps": int(chunk),
-            "opx_reset_scheme": "opx_unbounded",
-        })
-        program = OPXResetT1Program(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        try:
-            block = run_dmem_block(
-                soc,
-                program,
-                timeout_s=_block_timeout_s(run_cfg, chunk),
-                poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-            )
-        except AcquisitionTimeout as exc:
-            partial = records + list(exc.partial_records)
-            raise AcquisitionTimeout(
-                str(exc),
-                completed_shots=len(partial),
-                partial_records=partial,
-            ) from exc
-        records.extend(block)
+    records = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total),
+        run_cfg,
+        total_shots=total,
+    )
     invalid = [
         record for record in records
         if record.terminal_status is not TerminalStatus.CONFIRMED_GROUND
@@ -206,72 +211,45 @@ def acquire_t1_3pt_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    records_per_shot = int(rounded.size) * 3
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_t1_3pt_shots": total_shots,
+        "opx_t1_3pt_dc_gains": rounded.tolist(),
+        "opx_t1_3pt_wait_us": wait_us,
+        "ff_hold": wait_us,
+        "t1_wait_us": wait_us,
+        "opx_resident_dmem_stream": True,
+    })
+    last_program = OPXResetT13PointProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    max_dc = capacity // 3
-    if max_dc <= 0:
-        raise ValueError("tProc data memory cannot hold one three-point DC record")
-    max_dc = min(max_dc, int(cfg.get("opx_max_3pt_dc_per_program", max_dc)))
-    i_values = np.empty((3, rounded.size, total_shots), dtype=float)
-    q_values = np.empty_like(i_values)
-    block_count = 0
-    record_count = 0
-    last_program = None
-    for dc_start in range(0, rounded.size, max_dc):
-        dc_stop = min(dc_start + max_dc, rounded.size)
-        dc_chunk = rounded[dc_start:dc_stop]
-        records_per_shot = int(dc_chunk.size) * 3
-        shots_per_block = capacity // records_per_shot
-        shot_start = 0
-        for chunk in chunk_sizes(total_shots, shots_per_block):
-            run_cfg = dict(cfg)
-            run_cfg.update({
-                "opx_reset_scheme": reset_scheme,
-                "opx_t1_3pt_shots": int(chunk),
-                "opx_t1_3pt_dc_gains": dc_chunk.tolist(),
-                "opx_t1_3pt_wait_us": wait_us,
-                "ff_hold": wait_us,
-                "t1_wait_us": wait_us,
-            })
-            program = OPXResetT13PointProgram(
-                soccfg,
-                run_cfg,
-                bundle.payload,
-                bundle.loop,
-            )
-            last_program = program
-            block = run_dmem_block(
-                soc,
-                program,
-                timeout_s=_block_timeout_s(
-                    run_cfg,
-                    int(chunk) * records_per_shot,
-                ),
-                poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-            )
-            raw_i = np.asarray(
-                [record.final_i for record in block], dtype=float
-            ).reshape(chunk, dc_chunk.size, 3).transpose(2, 1, 0)
-            raw_q = np.asarray(
-                [record.final_q for record in block], dtype=float
-            ).reshape(chunk, dc_chunk.size, 3).transpose(2, 1, 0)
-            shot_stop = shot_start + int(chunk)
-            i_values[:, dc_start:dc_stop, shot_start:shot_stop] = raw_i
-            q_values[:, dc_start:dc_stop, shot_start:shot_stop] = raw_q
-            shot_start = shot_stop
-            block_count += 1
-            record_count += len(block)
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * records_per_shot),
+        run_cfg,
+        total_shots=total_shots,
+    )
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, 3).transpose(2, 1, 0)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, 3).transpose(2, 1, 0)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
     return i_values / int(read_cycles), q_values / int(read_cycles), {
         "shots_per_dc": int(total_shots),
         "dc_points": int(rounded.size),
-        "records": int(record_count),
-        "blocks": int(block_count),
+        "records": int(len(block)),
+        "blocks": 1,
+        "resident_stream": True,
         "order": "shot_dc_P0_P1_Ps",
         "read_length_cycles": int(read_cycles),
     }
@@ -321,66 +299,49 @@ def acquire_tls_memory_iq(
     )
     if total_warmup_shots < 0:
         raise ValueError("TLS memory warmup shots must be non-negative")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": "opx_unbounded",
+        "opx_memory_shots": total_shots,
+        "opx_memory_warmup_shots": total_warmup_shots,
+        "opx_memory_sequences": list(sequence_values),
+        "opx_memory_interaction_us": interaction_us,
+        "opx_memory_storage_us": storage_us,
+        "ff_gain": rounded_gain,
+        "ff_hold": 2.0 * interaction_us + storage_us,
+        "do_ff": True,
+        "opx_resident_dmem_stream": True,
+    })
+    last_program = OPXResetTLSMemoryProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
-    )
-    shots_per_block = capacity // len(sequence_values)
-    if shots_per_block <= 0:
-        raise ValueError("TLS memory sequences do not fit in tProc data memory")
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": "opx_unbounded",
-            "opx_memory_shots": int(chunk),
-            "opx_memory_warmup_shots": int(total_warmup_shots),
-            "opx_memory_sequences": list(sequence_values),
-            "opx_memory_interaction_us": interaction_us,
-            "opx_memory_storage_us": storage_us,
-            "ff_gain": rounded_gain,
-            "ff_hold": 2.0 * interaction_us + storage_us,
-            "do_ff": True,
-        })
-        program = OPXResetTLSMemoryProgram(
-            soccfg,
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(
             run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(
-                run_cfg,
-                (int(chunk) + int(total_warmup_shots))
-                * len(sequence_values),
-            ),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_blocks.append(np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, len(sequence_values)).T)
-        q_blocks.append(np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, len(sequence_values)).T)
+            (total_shots + total_warmup_shots) * len(sequence_values),
+        ),
+        run_cfg,
+        total_shots=total_shots,
+    )
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, len(sequence_values)).T / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, len(sequence_values)).T / int(read_cycles)
     return i_values, q_values, {
         "shots_per_sequence": int(total_shots),
         "sequences": list(sequence_values),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * len(sequence_values)),
         "order": "shot_sequence",
         "warmup_shots": int(total_warmup_shots),
@@ -412,64 +373,43 @@ def acquire_t1_sweep_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_t1_shots": total_shots,
+        "opx_t1_delays_us": delays.tolist(),
+        "ff_hold": float(np.max(delays)),
+        "t1_wait_us": float(np.max(delays)),
+        "opx_resident_dmem_stream": True,
+    })
+    last_program = OPXResetT1SweepProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * delays.size),
+        run_cfg,
+        total_shots=total_shots,
+        progress=progress,
     )
-    shots_per_block = capacity // delays.size
-    if shots_per_block <= 0:
-        raise ValueError(
-            f"{delays.size} T1 points do not fit in tProc data memory"
-        )
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    completed_shots = 0
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": reset_scheme,
-            "opx_t1_shots": int(chunk),
-            "opx_t1_delays_us": delays.tolist(),
-            "ff_hold": float(np.max(delays)),
-            "t1_wait_us": float(np.max(delays)),
-        })
-        program = OPXResetT1SweepProgram(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(run_cfg, int(chunk) * delays.size),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_blocks.append(np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, delays.size).T)
-        q_blocks.append(np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, delays.size).T)
-        completed_shots += int(chunk)
-        if progress is not None:
-            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, delays.size).T / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, delays.size).T / int(read_cycles)
     return i_values, q_values, {
         "shots_per_point": int(total_shots),
         "points": int(delays.size),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * delays.size),
         "order": "shot_delay",
         "read_length_cycles": int(read_cycles),
@@ -511,67 +451,45 @@ def acquire_t1_flux_sweep_iq(
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     point_count = int(rounded.size) * int(delays.size)
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_t1_shots": total_shots,
+        "opx_t1_dc_gains": rounded.tolist(),
+        "opx_t1_delays_us": delays.tolist(),
+        "ff_hold": float(np.max(delays)),
+        "t1_wait_us": float(np.max(delays)),
+        "opx_resident_dmem_stream": True,
+    })
+    last_program = OPXResetT1FluxSweepProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * point_count),
+        run_cfg,
+        total_shots=total_shots,
+        progress=progress,
     )
-    shots_per_block = capacity // point_count
-    if shots_per_block <= 0:
-        raise ValueError(
-            f"the complete {rounded.size} x {delays.size} T1 grid does not fit "
-            "in tProc data memory; increase the gain step or reduce t_points"
-        )
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    completed_shots = 0
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": reset_scheme,
-            "opx_t1_shots": int(chunk),
-            "opx_t1_dc_gains": rounded.tolist(),
-            "opx_t1_delays_us": delays.tolist(),
-            "ff_hold": float(np.max(delays)),
-            "t1_wait_us": float(np.max(delays)),
-        })
-        program = OPXResetT1FluxSweepProgram(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(run_cfg, int(chunk) * point_count),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_blocks.append(np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, rounded.size, delays.size).transpose(1, 2, 0))
-        q_blocks.append(np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, rounded.size, delays.size).transpose(1, 2, 0))
-        completed_shots += int(chunk)
-        if progress is not None:
-            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=2) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=2) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, delays.size).transpose(1, 2, 0) / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, delays.size).transpose(1, 2, 0) / int(read_cycles)
     return i_values, q_values, {
         "shots_per_point": int(total_shots),
         "dc_points": int(rounded.size),
         "delay_points": int(delays.size),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * point_count),
         "order": "shot_dc_delay",
         "read_length_cycles": int(read_cycles),
@@ -614,73 +532,53 @@ def acquire_pulse_sweep_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_payload_shots_per_expt": total_shots,
+        "opx_payload_expts": int(gains.size),
+        "opx_payload_gain_start": int(gains[0]),
+        "opx_payload_gain_step": int(gain_step),
+        "opx_payload_pulses": int(pulses),
+        "opx_payload_frequency_mhz": float(frequency_mhz),
+        "opx_payload_pulse_placement": str(pulse_placement),
+        "opx_payload_do_excursion": bool(do_excursion),
+        "opx_payload_flux_hold_us": float(flux_hold_us),
+        "opx_payload_park_recovery_us": float(park_recovery_us),
+        "opx_payload_herald": bool(herald),
+        "opx_resident_dmem_stream": True,
+    })
+    if do_excursion:
+        if excursion_gain is None:
+            raise ValueError("excursion_gain is required when do_excursion=True")
+        run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+    last_program = OPXResetPulseSweepProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * gains.size),
+        run_cfg,
+        total_shots=total_shots,
     )
-    shots_per_block = capacity // gains.size
-    if shots_per_block <= 0:
-        raise ValueError(
-            f"{gains.size} payload points do not fit in tProc data memory"
-        )
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": reset_scheme,
-            "opx_payload_shots_per_expt": int(chunk),
-            "opx_payload_expts": int(gains.size),
-            "opx_payload_gain_start": int(gains[0]),
-            "opx_payload_gain_step": int(gain_step),
-            "opx_payload_pulses": int(pulses),
-            "opx_payload_frequency_mhz": float(frequency_mhz),
-            "opx_payload_pulse_placement": str(pulse_placement),
-            "opx_payload_do_excursion": bool(do_excursion),
-            "opx_payload_flux_hold_us": float(flux_hold_us),
-            "opx_payload_park_recovery_us": float(park_recovery_us),
-            "opx_payload_herald": bool(herald),
-        })
-        if do_excursion:
-            if excursion_gain is None:
-                raise ValueError("excursion_gain is required when do_excursion=True")
-            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
-        program = OPXResetPulseSweepProgram(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(run_cfg, chunk * gains.size),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_block = np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, gains.size).T
-        q_block = np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, gains.size).T
-        i_blocks.append(i_block)
-        q_blocks.append(q_block)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, gains.size).T / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, gains.size).T / int(read_cycles)
     return i_values, q_values, {
         "shots_per_point": int(total_shots),
         "points": int(gains.size),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * gains.size),
         "read_length_cycles": int(read_cycles),
     }
@@ -726,74 +624,53 @@ def acquire_pulse_grid_iq(
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     point_count = int(frequencies.size) * int(rounded.size)
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_payload_shots_per_expt": total_shots,
+        "opx_payload_frequencies_mhz": frequencies.tolist(),
+        "opx_payload_gains": rounded.tolist(),
+        "opx_payload_pulses": int(pulses),
+        "opx_payload_pulse_placement": str(pulse_placement),
+        "opx_payload_do_excursion": bool(do_excursion),
+        "opx_payload_flux_hold_us": float(flux_hold_us),
+        "opx_payload_park_recovery_us": float(park_recovery_us),
+        "opx_payload_herald": bool(herald),
+        "opx_resident_dmem_stream": True,
+    })
+    if do_excursion:
+        if excursion_gain is None:
+            raise ValueError("excursion_gain is required when do_excursion=True")
+        run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+    last_program = OPXResetPulseGridProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * point_count),
+        run_cfg,
+        total_shots=total_shots,
+        progress=progress,
     )
-    shots_per_block = capacity // point_count
-    if shots_per_block <= 0:
-        raise ValueError(
-            f"{point_count} payload grid points do not fit in tProc data memory"
-        )
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    completed_shots = 0
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": reset_scheme,
-            "opx_payload_shots_per_expt": int(chunk),
-            "opx_payload_frequencies_mhz": frequencies.tolist(),
-            "opx_payload_gains": rounded.tolist(),
-            "opx_payload_pulses": int(pulses),
-            "opx_payload_pulse_placement": str(pulse_placement),
-            "opx_payload_do_excursion": bool(do_excursion),
-            "opx_payload_flux_hold_us": float(flux_hold_us),
-            "opx_payload_park_recovery_us": float(park_recovery_us),
-            "opx_payload_herald": bool(herald),
-        })
-        if do_excursion:
-            if excursion_gain is None:
-                raise ValueError("excursion_gain is required when do_excursion=True")
-            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
-        program = OPXResetPulseGridProgram(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(run_cfg, int(chunk) * point_count),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_blocks.append(np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, frequencies.size, rounded.size).transpose(1, 2, 0))
-        q_blocks.append(np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, frequencies.size, rounded.size).transpose(1, 2, 0))
-        completed_shots += int(chunk)
-        if progress is not None:
-            progress(completed_shots, total_shots)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=2) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=2) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, frequencies.size, rounded.size).transpose(1, 2, 0) / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, frequencies.size, rounded.size).transpose(1, 2, 0) / int(read_cycles)
     return i_values, q_values, {
         "shots_per_point": int(total_shots),
         "frequency_points": int(frequencies.size),
         "gain_points": int(rounded.size),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * point_count),
         "order": "shot_frequency_gain",
         "read_length_cycles": int(read_cycles),
@@ -836,74 +713,54 @@ def acquire_frequency_sweep_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    capacity = max_records(
-        dmem_words_from_soccfg(soccfg),
-        int(cfg.get("opx_record_base", 32)),
-        PAYLOAD_RECORD_WORDS,
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_payload_shots_per_expt": total_shots,
+        "opx_payload_expts": int(frequencies.size),
+        "opx_payload_sweep_kind": "frequency",
+        "opx_payload_frequency_start_mhz": float(frequencies[0]),
+        "opx_payload_frequency_step_mhz": frequency_step,
+        "opx_payload_fixed_gain": int(gain),
+        "opx_payload_pulses": int(pulses),
+        "opx_payload_pulse_placement": str(pulse_placement),
+        "opx_payload_do_excursion": bool(do_excursion),
+        "opx_payload_flux_hold_us": float(flux_hold_us),
+        "opx_payload_park_recovery_us": float(park_recovery_us),
+        "opx_payload_herald": bool(herald),
+        "opx_resident_dmem_stream": True,
+    })
+    if do_excursion:
+        if excursion_gain is None:
+            raise ValueError("excursion_gain is required when do_excursion=True")
+        run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
+    last_program = OPXResetPulseSweepProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
     )
-    capacity = min(
-        capacity,
-        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    block = _run_program(
+        soc,
+        last_program,
+        _block_timeout_s(run_cfg, total_shots * frequencies.size),
+        run_cfg,
+        total_shots=total_shots,
     )
-    shots_per_block = capacity // frequencies.size
-    if shots_per_block <= 0:
-        raise ValueError(
-            f"{frequencies.size} payload points do not fit in tProc data memory"
-        )
-    i_blocks = []
-    q_blocks = []
-    last_program = None
-    for chunk in chunk_sizes(total_shots, shots_per_block):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "opx_reset_scheme": reset_scheme,
-            "opx_payload_shots_per_expt": int(chunk),
-            "opx_payload_expts": int(frequencies.size),
-            "opx_payload_sweep_kind": "frequency",
-            "opx_payload_frequency_start_mhz": float(frequencies[0]),
-            "opx_payload_frequency_step_mhz": frequency_step,
-            "opx_payload_fixed_gain": int(gain),
-            "opx_payload_pulses": int(pulses),
-            "opx_payload_pulse_placement": str(pulse_placement),
-            "opx_payload_do_excursion": bool(do_excursion),
-            "opx_payload_flux_hold_us": float(flux_hold_us),
-            "opx_payload_park_recovery_us": float(park_recovery_us),
-            "opx_payload_herald": bool(herald),
-        })
-        if do_excursion:
-            if excursion_gain is None:
-                raise ValueError("excursion_gain is required when do_excursion=True")
-            run_cfg["opx_payload_excursion_gain"] = float(excursion_gain)
-        program = OPXResetPulseSweepProgram(
-            soccfg,
-            run_cfg,
-            bundle.payload,
-            bundle.loop,
-        )
-        last_program = program
-        block = run_dmem_block(
-            soc,
-            program,
-            timeout_s=_block_timeout_s(run_cfg, chunk * frequencies.size),
-            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
-        )
-        i_block = np.asarray(
-            [record.final_i for record in block], dtype=float
-        ).reshape(chunk, frequencies.size).T
-        q_block = np.asarray(
-            [record.final_q for record in block], dtype=float
-        ).reshape(chunk, frequencies.size).T
-        i_blocks.append(i_block)
-        q_blocks.append(q_block)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
-    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    i_values = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, frequencies.size).T / int(read_cycles)
+    q_values = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, frequencies.size).T / int(read_cycles)
     return i_values, q_values, {
         "shots_per_point": int(total_shots),
         "points": int(frequencies.size),
-        "blocks": int(len(i_blocks)),
+        "blocks": 1,
+        "resident_stream": True,
         "records": int(total_shots * frequencies.size),
     }
 

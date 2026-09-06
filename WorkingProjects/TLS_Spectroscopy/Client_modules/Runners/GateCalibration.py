@@ -273,7 +273,8 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_freq_start": float(start),
         "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
-    })
+        "qua_passive_pre_point_delay_us": 0.0,
+    }, active=False)
     print(f"[qubit spec] two-tone: {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz, "
           f"spec gain {p['spec_gain']} DAC")
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
@@ -289,25 +290,19 @@ def run_qubit_spec_sweep(outer_folder, soc, soccfg):
     start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else q0 - 50.0
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else q0 + 50.0
     gain_points = int(p["gain_points"])
-    if _RESET_SESSION.runtime_mode == "opx_unbounded":
-        gain_start = int(round(p["gain_min"]))
-        gain_step = int(round(
-            (float(p["gain_max"]) - gain_start) / max(gain_points - 1, 1)
-        ))
-        gains = gain_start + gain_step * np.arange(gain_points, dtype=int)
-    else:
-        gains = np.linspace(
-            float(p["gain_min"]),
-            float(p["gain_max"]),
-            gain_points,
-        )
+    gains = np.linspace(
+        float(p["gain_min"]),
+        float(p["gain_max"]),
+        gain_points,
+    )
     cfg = _base_cfg(p, extra={
         "qubit_pulse_style": "const",
         "qubit_length": float(p["spec_length_us"]),
         "qubit_freq_start": float(start),
         "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
-    })
+        "qua_passive_pre_point_delay_us": 0.0,
+    }, active=False)
     print(f"[qubit spec sweep] {p['gain_points']} spec gains {gains[0]}..{gains[-1]} DAC "
           f"x {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz")
     exp = QubitSpecGainSweep(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
@@ -340,7 +335,8 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
         "qubit_pulse_style": "arb",
         "sigma": p["sigma_us"],
         "relax_delay": p.get("relax_delay_us", 1000.0),
-    })
+        "qua_passive_pre_point_delay_us": p.get("relax_delay_us", 1000.0),
+    }, active=False)
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
                         num_pi_pulses=p["num_pi"], pulse_type=p["pulse_type"],
@@ -414,12 +410,7 @@ def main():
     outer_folder = outerFolder
 
     global _RESET_SESSION
-    active_measurement = bool(
-        P_QUBIT_SPEC["run"]
-        or P_QUBIT_SPEC_SWEEP["run"]
-        or P_RABI_CHEVRON_IQ["run"]
-        or P_RABI_CHEVRON_SS["run"]
-    )
+    active_measurement = bool(P_RABI_CHEVRON_SS["run"])
     if active_measurement and normalize_reset_mode(RESET_MODE) == "opx_unbounded":
         _RESET_SESSION = prepare_reset_session(
             RESET_MODE,

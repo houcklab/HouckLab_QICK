@@ -27,14 +27,14 @@ runner.P_SS_CAL["run"] = False
 runner.P_RABI_CHEVRON_IQ["run"] = False
 runner.P_RABI_CHEVRON_SS.update({
     "run": True,
-    "shots": 100,
+    "shots": 20,
     "num_pi": 1,
     "pulse_type": "X180",
     "a_min": 0,
     "a_max": 22200,
-    "a_points": 5,
-    "freq_span_mhz": 1.0,
-    "freq_points": 3,
+    "a_points": 21,
+    "freq_span_mhz": 2.0,
+    "freq_points": 21,
 })
 runner.P_READOUT_OPT["run"] = False
 runner.P_QUBIT_OPT["run"] = False

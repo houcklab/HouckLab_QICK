@@ -479,6 +479,7 @@ def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
         "records": 6,
         "order": "shot_delay",
         "read_length_cycles": 10,
+        "resident_stream": True,
     }
     assert created[0].cfg["opx_t1_delays_us"] == [1.0, 10.0, 100.0]
     assert created[0].cfg["opx_reset_scheme"] == "opx_unbounded"
@@ -721,7 +722,7 @@ def test_t1_flux_grid_acquisition_preserves_qua_shot_dc_delay_order(monkeypatch)
     assert telemetry["order"] == "shot_dc_delay"
     assert created[0].cfg["opx_t1_dc_gains"] == [29000, 29500]
     assert created[0].cfg["opx_t1_delays_us"] == [1.0, 100.0]
-    assert updates == [(2, 2)]
+    assert updates == [(1, 2), (2, 2)]
 
 
 def test_timing_matched_calibration_chunks_dmem_without_changing_park_mode(monkeypatch):
@@ -1024,8 +1025,9 @@ def test_three_point_acquisition_preserves_qua_shot_dc_reference_order(monkeypat
         wait_us=70.0,
     )
 
-    assert len(captured) == 2
-    assert [cfg["opx_t1_3pt_shots"] for cfg in captured] == [2, 1]
+    assert len(captured) == 1
+    assert captured[0]["opx_t1_3pt_shots"] == 3
+    assert captured[0]["opx_resident_dmem_stream"] is True
     assert i_values.shape == (3, 2, 3)
     assert q_values.shape == (3, 2, 3)
     assert i_values[:, :, 0].tolist() == [[0.0, 0.3], [0.1, 0.4], [0.2, 0.5]]
@@ -1107,6 +1109,7 @@ def test_tls_memory_acquisition_preserves_shot_sequence_order(monkeypatch):
         "order": "shot_sequence",
         "warmup_shots": 128,
         "read_length_cycles": 10,
+        "resident_stream": True,
     }
     assert created[0].cfg["opx_memory_warmup_shots"] == 128
 

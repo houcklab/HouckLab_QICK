@@ -267,7 +267,7 @@ def test_full_qubit_spec_runner_uses_gate_calibration_path(monkeypatch):
     runpy.run_path(str(path), run_name="__main__")
 
     assert calls == [{
-        "reset_mode": "active",
+        "reset_mode": "passive",
         "qubit_spec": {
             "run": True,
             "shots": 1000,

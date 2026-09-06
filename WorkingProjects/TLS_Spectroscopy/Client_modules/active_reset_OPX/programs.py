@@ -127,6 +127,161 @@ def allocate_registers(prog, page, reserved=None):
     )
 
 
+def resident_stream_plan(
+    soccfg,
+    *,
+    done_addr,
+    record_base,
+    record_words,
+    records_per_unit,
+    total_units,
+    records_per_shot,
+    total_shots,
+    ack_addr=2,
+    ready_addr=3,
+):
+    record_base = int(record_base)
+    record_words = int(record_words)
+    records_per_unit = int(records_per_unit)
+    total_units = int(total_units)
+    records_per_shot = int(records_per_shot)
+    total_shots = int(total_shots)
+    done_addr = int(done_addr)
+    ack_addr = int(ack_addr)
+    ready_addr = int(ready_addr)
+    try:
+        dmem_words = int(soccfg["tprocs"][0]["dmem_size"])
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise ValueError("the board configuration does not report tProc data memory") from exc
+    if min(record_words, records_per_unit, total_units, records_per_shot, total_shots) <= 0:
+        raise ValueError("resident stream dimensions must be positive")
+    if records_per_unit * total_units != records_per_shot * total_shots:
+        raise ValueError("resident stream units do not cover the requested shot records")
+    control_addresses = {done_addr, ack_addr, ready_addr}
+    if len(control_addresses) != 3 or min(control_addresses) < 0:
+        raise ValueError("resident stream control addresses must be distinct and non-negative")
+    if max(control_addresses) >= record_base:
+        raise ValueError("resident stream control addresses must precede record memory")
+    words_per_unit = record_words * records_per_unit
+    bank_units = (dmem_words - record_base) // (2 * words_per_unit)
+    if bank_units <= 0:
+        raise ValueError("two complete resident stream units do not fit in tProc data memory")
+    bank_records = bank_units * records_per_unit
+    return {
+        "done_addr": done_addr,
+        "ack_addr": ack_addr,
+        "ready_addr": ready_addr,
+        "bank_units": bank_units,
+        "bank_records": bank_records,
+        "bank_words": bank_records * record_words,
+        "total_shots": total_shots,
+        "total_units": total_units,
+        "records_per_unit": records_per_unit,
+        "records_per_shot": records_per_shot,
+        "final_partial_units": total_units % bank_units,
+    }
+
+
+def initialize_resident_stream(
+    prog,
+    *,
+    controls,
+    address_page,
+    address_register,
+    plan,
+    label_prefix,
+):
+    prog._resident_stream = {
+        "controls": dict(controls),
+        "address_page": int(address_page),
+        "address_register": int(address_register),
+        "plan": dict(plan),
+        "label_prefix": str(label_prefix),
+        "emission_index": 0,
+    }
+    prog.stream_plan = dict(plan)
+    prog.regwi(0, controls["stream_remaining"], int(plan["bank_units"]) - 1)
+    prog.regwi(0, controls["stream_ready"], 0)
+    prog.memwi(0, controls["stream_ready"], int(plan["ready_addr"]))
+    prog.regwi(0, controls["stream_ack_addr"], int(plan["ack_addr"]))
+    prog.regwi(0, controls["stream_bank"], 0)
+
+
+def emit_resident_stream_shot_boundary(prog):
+    stream = prog._resident_stream
+    controls = stream["controls"]
+    plan = stream["plan"]
+    prefix = f'{stream["label_prefix"]}_{stream["emission_index"]}'
+    stream["emission_index"] += 1
+    continuation = f"{prefix}_CONTINUE"
+    if int(plan["bank_units"]) > 1:
+        prog.loopnz(0, controls["stream_remaining"], continuation)
+    wait_label = f"{prefix}_WAIT_ACK"
+    first_bank = f"{prefix}_FIRST_BANK"
+    switched = f"{prefix}_SWITCHED"
+    prog.label(wait_label)
+    prog.memr(0, controls["stream_ack"], controls["stream_ack_addr"])
+    prog.condj(
+        0,
+        controls["stream_ack"],
+        "<",
+        controls["stream_ready"],
+        wait_label,
+    )
+    prog.mathi(
+        0,
+        controls["stream_ready"],
+        controls["stream_ready"],
+        "+",
+        1,
+    )
+    prog.memwi(0, controls["stream_ready"], int(plan["ready_addr"]))
+    prog.condj(0, controls["stream_bank"], "==", 0, first_bank)
+    prog.mathi(
+        stream["address_page"],
+        stream["address_register"],
+        stream["address_register"],
+        "-",
+        2 * int(plan["bank_words"]),
+    )
+    prog.regwi(0, controls["stream_bank"], 0)
+    prog.condj(0, controls["stream_bank"], "==", controls["stream_bank"], switched)
+    prog.label(first_bank)
+    prog.regwi(0, controls["stream_bank"], 1)
+    prog.label(switched)
+    prog.regwi(0, controls["stream_remaining"], int(plan["bank_units"]) - 1)
+    prog.label(continuation)
+
+
+def emit_resident_stream_finish(prog):
+    stream = prog._resident_stream
+    plan = stream["plan"]
+    if int(plan["final_partial_units"]) == 0:
+        return
+    controls = stream["controls"]
+    prog.mathi(
+        0,
+        controls["stream_ready"],
+        controls["stream_ready"],
+        "+",
+        1,
+    )
+    prog.memwi(0, controls["stream_ready"], int(plan["ready_addr"]))
+
+
+def resident_control_names(cfg, names):
+    names = tuple(names)
+    if not bool(cfg.get("opx_resident_dmem_stream", False)):
+        return names
+    return names + (
+        "stream_remaining",
+        "stream_ready",
+        "stream_ack",
+        "stream_ack_addr",
+        "stream_bank",
+    )
+
+
 def emit_record(prog, *, page, regs, preparation):
     prog.regwi(page, regs["ground"], int(preparation), "preparation label")
     fields = (
@@ -368,6 +523,8 @@ def emit_shot_major_payload_loops(
     advance_point,
     shot_label,
     point_label,
+    finish_point=None,
+    finish_shot=None,
 ):
     shots = int(shots)
     points = int(points)
@@ -383,8 +540,12 @@ def emit_shot_major_payload_loops(
     emit_point()
     prog.mathi(page, done_register, done_register, "+", 1)
     prog.memwi(page, done_register, done_address)
+    if finish_point is not None:
+        finish_point()
     advance_point()
     prog.loopnz(page, point_register, point_label)
+    if finish_shot is not None:
+        finish_shot()
     prog.loopnz(page, shot_register, shot_label)
 
 
@@ -800,6 +961,48 @@ class OPXResetBenchmarkProgram(QickProgram):
         self.rounds = 1
         self.make_program()
 
+    def _initialize_stream(
+        self,
+        controls,
+        *,
+        total_shots,
+        records_per_shot,
+        total_units,
+        records_per_unit,
+        prefix,
+    ):
+        if not bool(self.cfg.get("opx_resident_dmem_stream", False)):
+            self.stream_plan = None
+            return
+        plan = resident_stream_plan(
+            self.soccfg,
+            done_addr=self.done_addr,
+            record_base=self.record_base,
+            record_words=self.record_words,
+            records_per_unit=records_per_unit,
+            total_units=total_units,
+            records_per_shot=records_per_shot,
+            total_shots=total_shots,
+            ack_addr=int(self.cfg.get("opx_stream_ack_addr", 2)),
+            ready_addr=int(self.cfg.get("opx_stream_ready_addr", 3)),
+        )
+        initialize_resident_stream(
+            self,
+            controls=controls,
+            address_page=self.reset_page,
+            address_register=self.reset_regs["address"],
+            plan=plan,
+            label_prefix=prefix,
+        )
+
+    def _stream_after_shot(self):
+        if self.stream_plan is not None:
+            emit_resident_stream_shot_boundary(self)
+
+    def _finish_stream(self):
+        if self.stream_plan is not None:
+            emit_resident_stream_finish(self)
+
     def _measure_raw(self):
         cfg = self.cfg
         ro_ch = int(cfg["ro_chs"][0])
@@ -935,22 +1138,40 @@ class OPXResetBenchmarkProgram(QickProgram):
         self._declare_experiment()
         self.reset_page = self.ch_page(self.cfg["qubit_ch"])
         self.reset_regs = allocate_registers(self, self.reset_page)
-        outer_page, loop_reg, done_reg = 0, 14, 15
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            resident_control_names(self.cfg, ("shot_loop", "done")),
+            reserved=control_reserved,
+        )
         self.regwi(
             self.reset_page,
             self.reset_regs["address"],
             self.record_base,
             "OPX DMem record address",
         )
-        self.regwi(outer_page, done_reg, 0, "completed OPX shots")
-        self.memwi(outer_page, done_reg, self.done_addr)
-        self.regwi(outer_page, loop_reg, self.reps - 1, "OPX shot loop")
+        self.regwi(0, controls["done"], 0, "completed OPX shots")
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(0, controls["shot_loop"], self.reps - 1, "OPX shot loop")
+        self._initialize_stream(
+            controls,
+            total_shots=self.reps,
+            records_per_shot=1,
+            total_units=self.reps,
+            records_per_unit=1,
+            prefix="OPX_STREAM",
+        )
         self._begin_park_lifecycle()
         self.label("OPX_SHOT_LOOP")
         self._emit_body()
-        self.mathi(outer_page, done_reg, done_reg, "+", 1)
-        self.memwi(outer_page, done_reg, self.done_addr)
-        self.loopnz(outer_page, loop_reg, "OPX_SHOT_LOOP")
+        self.mathi(0, controls["done"], controls["done"], "+", 1)
+        self.memwi(0, controls["done"], self.done_addr)
+        self._stream_after_shot()
+        self.loopnz(0, controls["shot_loop"], "OPX_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -1149,7 +1370,7 @@ class OPXResetT1SweepProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "done"),
+            resident_control_names(self.cfg, ("shot_loop", "done")),
             reserved=control_reserved,
         )
         self.regwi(
@@ -1161,13 +1382,26 @@ class OPXResetT1SweepProgram(OPXResetT1Program):
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
         self.regwi(0, controls["shot_loop"], int(self.cfg["opx_t1_shots"]) - 1)
+        self._initialize_stream(
+            controls,
+            total_shots=int(self.cfg["opx_t1_shots"]),
+            records_per_shot=len(self.cfg["opx_t1_delays_us"]),
+            total_units=(
+                int(self.cfg["opx_t1_shots"])
+                * len(self.cfg["opx_t1_delays_us"])
+            ),
+            records_per_unit=1,
+            prefix="OPX_T1_SWEEP_STREAM",
+        )
         self._begin_park_lifecycle()
         self.label("OPX_T1_SWEEP_SHOT_LOOP")
         for point_index, delay_us in enumerate(self.cfg["opx_t1_delays_us"]):
             self._emit_t1_point(point_index, float(delay_us))
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
+            self._stream_after_shot()
         self.loopnz(0, controls["shot_loop"], "OPX_T1_SWEEP_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -1290,7 +1524,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "done"),
+            resident_control_names(self.cfg, ("shot_loop", "done")),
             reserved=control_reserved,
         )
         gains = self.cfg["opx_t1_dc_gains"]
@@ -1299,6 +1533,18 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
         self.regwi(0, controls["shot_loop"], int(self.cfg["opx_t1_shots"]) - 1)
+        self._initialize_stream(
+            controls,
+            total_shots=int(self.cfg["opx_t1_shots"]),
+            records_per_shot=len(gains) * len(self.cfg["opx_t1_delays_us"]),
+            total_units=(
+                int(self.cfg["opx_t1_shots"])
+                * len(gains)
+                * len(self.cfg["opx_t1_delays_us"])
+            ),
+            records_per_unit=1,
+            prefix="OPX_T1_FLUX_STREAM",
+        )
         self._begin_park_lifecycle()
         self.label("OPX_T1_FLUX_SHOT_LOOP")
         self.safe_regwi(
@@ -1316,6 +1562,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             self._emit_t1_flux_point(point_index, float(delay_us))
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
+            self._stream_after_shot()
         self.mathi(
             self._t1_flux_ff_page,
             self._t1_flux_regs["dc_gain"],
@@ -1329,6 +1576,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             "OPX_T1_FLUX_DC_LOOP",
         )
         self.loopnz(0, controls["shot_loop"], "OPX_T1_FLUX_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -1457,7 +1705,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "done"),
+            resident_control_names(self.cfg, ("shot_loop", "done")),
             reserved=control_reserved,
         )
         gains = self.cfg["opx_t1_3pt_dc_gains"]
@@ -1469,6 +1717,14 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             0,
             controls["shot_loop"],
             int(self.cfg["opx_t1_3pt_shots"]) - 1,
+        )
+        self._initialize_stream(
+            controls,
+            total_shots=int(self.cfg["opx_t1_3pt_shots"]),
+            records_per_shot=len(gains) * 3,
+            total_units=int(self.cfg["opx_t1_3pt_shots"]) * len(gains),
+            records_per_unit=3,
+            prefix="OPX_T1_3PT_STREAM",
         )
         self._begin_park_lifecycle()
         self.label("OPX_T1_3PT_SHOT_LOOP")
@@ -1493,6 +1749,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         )
         self.mathi(0, controls["done"], controls["done"], "+", 3)
         self.memwi(0, controls["done"], self.done_addr)
+        self._stream_after_shot()
         self.mathi(
             self._t1_3pt_ff_page,
             self._t1_3pt_regs["dc_gain"],
@@ -1506,6 +1763,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             "OPX_T1_3PT_DC_LOOP",
         )
         self.loopnz(0, controls["shot_loop"], "OPX_T1_3PT_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -1620,7 +1878,10 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "warmup_loop", "done"),
+            resident_control_names(
+                self.cfg,
+                ("shot_loop", "warmup_loop", "done"),
+            ),
             reserved=control_reserved,
         )
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
@@ -1630,6 +1891,17 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
             0,
             controls["shot_loop"],
             int(self.cfg["opx_memory_shots"]) - 1,
+        )
+        self._initialize_stream(
+            controls,
+            total_shots=int(self.cfg["opx_memory_shots"]),
+            records_per_shot=len(self.cfg["opx_memory_sequences"]),
+            total_units=(
+                int(self.cfg["opx_memory_shots"])
+                * len(self.cfg["opx_memory_sequences"])
+            ),
+            records_per_unit=1,
+            prefix="OPX_TLS_MEMORY_STREAM",
         )
         self._begin_park_lifecycle()
         warmup_shots = int(self.cfg["opx_memory_warmup_shots"])
@@ -1666,7 +1938,9 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
             )
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
+            self._stream_after_shot()
         self.loopnz(0, controls["shot_loop"], "OPX_TLS_MEMORY_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -1929,12 +2203,21 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
 
     def _emit_body(self):
+        reset_scheme = str(
+            self.cfg.get("opx_reset_scheme", "opx_unbounded")
+        ).strip().lower()
+        if reset_scheme == "none":
+            passive_delay_us = float(
+                self.cfg.get("qua_passive_pre_point_delay_us", 0.0)
+            )
+            if passive_delay_us > 0:
+                self.sync_all(self.us2cycles(passive_delay_us))
         park_up, park_down = self._shot_park_callbacks()
         emit_payload_reset_shot(
             self,
             page=self.reset_page,
             regs=self.reset_regs,
-            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
+            reset_scheme=reset_scheme,
             payload_calibration=self.payload_calibration,
             loop_calibration=self.loop_calibration,
             park_up=park_up,
@@ -1949,7 +2232,10 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
                 "OPX_PAYLOAD_RESET",
             ),
         )
-        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+        if reset_scheme != "none":
+            self.sync_all(
+                self.us2cycles(float(self.reset_config.inter_shot_delay_us))
+            )
 
     def make_program(self):
         _declare_common(self)
@@ -1974,7 +2260,10 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "expt_loop", "done"),
+            resident_control_names(
+                self.cfg,
+                ("shot_loop", "expt_loop", "done"),
+            ),
             reserved=control_reserved,
         )
         self.regwi(
@@ -1982,6 +2271,14 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self.reset_regs["address"],
             self.record_base,
             "OPX payload record address",
+        )
+        self._initialize_stream(
+            controls,
+            total_shots=self._payload_shots,
+            records_per_shot=self._payload_expts,
+            total_units=self._payload_shots * self._payload_expts,
+            records_per_unit=1,
+            prefix="OPX_PAYLOAD_STREAM",
         )
         self._begin_park_lifecycle()
         emit_shot_major_payload_loops(
@@ -2009,7 +2306,9 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             ),
             shot_label="OPX_PAYLOAD_SHOT_LOOP",
             point_label="OPX_PAYLOAD_EXPT_LOOP",
+            finish_point=self._stream_after_shot,
         )
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()
 
@@ -2087,7 +2386,10 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "frequency_loop", "done"),
+            resident_control_names(
+                self.cfg,
+                ("shot_loop", "frequency_loop", "done"),
+            ),
             reserved=control_reserved,
         )
         gains = self.cfg["opx_payload_gains"]
@@ -2098,6 +2400,21 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
             0,
             controls["shot_loop"],
             int(self.cfg["opx_payload_shots_per_expt"]) - 1,
+        )
+        self._initialize_stream(
+            controls,
+            total_shots=int(self.cfg["opx_payload_shots_per_expt"]),
+            records_per_shot=(
+                len(self.cfg["opx_payload_frequencies_mhz"])
+                * len(gains)
+            ),
+            total_units=(
+                int(self.cfg["opx_payload_shots_per_expt"])
+                * len(self.cfg["opx_payload_frequencies_mhz"])
+                * len(gains)
+            ),
+            records_per_unit=1,
+            prefix="OPX_PAYLOAD_GRID_STREAM",
         )
         self._begin_park_lifecycle()
         self.label("OPX_PAYLOAD_GRID_SHOT_LOOP")
@@ -2121,6 +2438,7 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
             self._emit_body()
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
+            self._stream_after_shot()
         self.mathi(
             self.reset_page,
             self.reset_regs["payload_sweep"],
@@ -2134,5 +2452,6 @@ class OPXResetPulseGridProgram(OPXResetPulseSweepProgram):
             "OPX_PAYLOAD_GRID_FREQUENCY_LOOP",
         )
         self.loopnz(0, controls["shot_loop"], "OPX_PAYLOAD_GRID_SHOT_LOOP")
+        self._finish_stream()
         self._end_park_lifecycle()
         self.end()

@@ -28,6 +28,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     emit_t1_shot,
     emit_timing_matched_reference_shot,
     emit_shot_major_payload_loops,
+    emit_resident_stream_finish,
+    emit_resident_stream_shot_boundary,
+    initialize_resident_stream,
+    resident_stream_plan,
     reshape_interleaved_readouts,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
@@ -77,6 +81,9 @@ class RecordingProgram:
 
     def memwi(self, page, value_reg, address):
         self.asm.append(("memwi", value_reg, address))
+
+    def memr(self, page, value_reg, address_reg):
+        self.asm.append(("memr", value_reg, address_reg))
 
     def loopnz(self, page, register, label):
         self.asm.append(("loopnz", register, label))
@@ -155,6 +162,100 @@ def test_payload_hardware_loop_visits_all_points_inside_each_shot():
     assert labels == [("label", "SHOT"), ("label", "POINT")]
     assert loops == [("loopnz", 11, "POINT"), ("loopnz", 10, "SHOT")]
     assert prog.asm.index(("initialize_point",)) < prog.asm.index(("label", "POINT"))
+
+
+def test_resident_stream_uses_two_whole_shot_banks():
+    plan = resident_stream_plan(
+        {"tprocs": [{"dmem_size": 4096}]},
+        done_addr=1,
+        record_base=32,
+        record_words=2,
+        records_per_unit=1,
+        total_units=201000,
+        records_per_shot=201,
+        total_shots=1000,
+    )
+
+    assert plan == {
+        "done_addr": 1,
+        "ack_addr": 2,
+        "ready_addr": 3,
+        "bank_units": 1016,
+        "bank_records": 1016,
+        "bank_words": 2032,
+        "total_shots": 1000,
+        "total_units": 201000,
+        "records_per_unit": 1,
+        "records_per_shot": 201,
+        "final_partial_units": 848,
+    }
+
+
+def test_resident_stream_boundary_waits_only_before_reusing_a_bank():
+    prog = RecordingProgram()
+    regs = {
+        "stream_remaining": 20,
+        "stream_ready": 21,
+        "stream_ack": 22,
+        "stream_ack_addr": 23,
+        "stream_bank": 24,
+    }
+    plan = resident_stream_plan(
+        {"tprocs": [{"dmem_size": 64}]},
+        done_addr=1,
+        record_base=32,
+        record_words=2,
+        records_per_unit=2,
+        total_units=5,
+        records_per_shot=2,
+        total_shots=5,
+    )
+
+    initialize_resident_stream(
+        prog,
+        controls=regs,
+        address_page=1,
+        address_register=9,
+        plan=plan,
+        label_prefix="STREAM",
+    )
+    emit_resident_stream_shot_boundary(prog)
+    emit_resident_stream_finish(prog)
+
+    assert ("memr", 22, 23) in prog.asm
+    assert ("condj", 22, "<", 21, "STREAM_0_WAIT_ACK") in prog.asm
+    assert ("mathi", 9, 9, "-", 32) in prog.asm
+    assert ("memwi", 21, 3) in prog.asm
+
+
+def test_resident_stream_rejects_control_address_aliases():
+    with pytest.raises(ValueError, match="distinct"):
+        resident_stream_plan(
+            {"tprocs": [{"dmem_size": 64}]},
+            done_addr=2,
+            record_base=32,
+            record_words=2,
+            records_per_unit=1,
+            total_units=4,
+            records_per_shot=2,
+            total_shots=2,
+            ack_addr=2,
+            ready_addr=3,
+        )
+
+
+def test_resident_stream_requires_controls_before_record_memory():
+    with pytest.raises(ValueError, match="precede record memory"):
+        resident_stream_plan(
+            {"tprocs": [{"dmem_size": 64}]},
+            done_addr=32,
+            record_base=32,
+            record_words=2,
+            records_per_unit=1,
+            total_units=4,
+            records_per_shot=2,
+            total_shots=2,
+        )
 
 
 def test_hard_flux_step_latches_the_requested_dac_value():
@@ -919,6 +1020,34 @@ def test_compact_payload_shot_can_use_passive_delay_without_reset():
     assert len(writes) == 2
 
 
+def test_passive_payload_grid_waits_before_each_payload_without_active_tail(monkeypatch):
+    prog = object.__new__(OPXResetPulseSweepProgram)
+    prog.cfg = {
+        "opx_reset_scheme": "none",
+        "qua_passive_pre_point_delay_us": 1000.0,
+        "qubit_ch": 1,
+    }
+    prog.reset_config = SimpleNamespace(inter_shot_delay_us=10.0)
+    prog.reset_page = 1
+    prog.reset_regs = {}
+    prog.payload_calibration = CAL
+    prog.loop_calibration = CAL
+    prog._payload_label_prefix = "PASSIVE"
+    prog._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    prog._emit_payload_pulses = lambda: None
+    prog._measure_project = lambda *args: None
+    prog._set_reset_pulse = lambda: None
+    prog.pulse = lambda ch: None
+    prog.us2cycles = lambda value: float(value)
+    waits = []
+    prog.sync_all = lambda cycles: waits.append(cycles)
+    monkeypatch.setattr(programs, "emit_payload_reset_shot", lambda *args, **kwargs: None)
+
+    OPXResetPulseSweepProgram._emit_body(prog)
+
+    assert waits == [1000.0]
+
+
 def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
     prog = RecordingProgram()
     prog.cfg = {}
@@ -1148,6 +1277,9 @@ def test_grid_program_unrolls_gains_instead_of_frequencies(monkeypatch):
     prog._declare_experiment = lambda: None
     prog._begin_park_lifecycle = lambda: None
     prog._end_park_lifecycle = lambda: None
+    prog._initialize_stream = lambda *args, **kwargs: setattr(prog, "stream_plan", None)
+    prog._stream_after_shot = lambda: None
+    prog._finish_stream = lambda: None
     emitted = []
     prog._emit_body = lambda: emitted.append(prog._payload_gain_dac)
     monkeypatch.setattr(programs, "_declare_common", lambda program: None)
