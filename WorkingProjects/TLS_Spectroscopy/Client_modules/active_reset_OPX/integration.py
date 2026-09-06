@@ -232,6 +232,7 @@ def acquire_pulse_sweep_iq(
     do_excursion=False,
     excursion_gain=None,
     flux_hold_us=0.05,
+    park_recovery_us=0.0,
     herald=False,
     reset_scheme="opx_unbounded",
 ):
@@ -284,6 +285,7 @@ def acquire_pulse_sweep_iq(
             "opx_payload_pulse_placement": str(pulse_placement),
             "opx_payload_do_excursion": bool(do_excursion),
             "opx_payload_flux_hold_us": float(flux_hold_us),
+            "opx_payload_park_recovery_us": float(park_recovery_us),
             "opx_payload_herald": bool(herald),
         })
         if do_excursion:
@@ -337,6 +339,7 @@ def acquire_frequency_sweep_iq(
     do_excursion=False,
     excursion_gain=None,
     flux_hold_us=0.05,
+    park_recovery_us=0.0,
     herald=False,
     reset_scheme="opx_unbounded",
 ):
@@ -390,6 +393,7 @@ def acquire_frequency_sweep_iq(
             "opx_payload_pulse_placement": str(pulse_placement),
             "opx_payload_do_excursion": bool(do_excursion),
             "opx_payload_flux_hold_us": float(flux_hold_us),
+            "opx_payload_park_recovery_us": float(park_recovery_us),
             "opx_payload_herald": bool(herald),
         })
         if do_excursion:

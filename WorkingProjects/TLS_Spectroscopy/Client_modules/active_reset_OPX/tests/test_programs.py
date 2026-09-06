@@ -468,6 +468,52 @@ def test_t1_hard_flux_cycle_has_no_four_microsecond_ramp():
     assert 400 not in waits
 
 
+def test_pulse_sweep_hard_flux_cycle_matches_t1_step_order():
+    assert hasattr(programs, "emit_hard_flux_excursion")
+    events = []
+
+    programs.emit_hard_flux_excursion(
+        play_target=lambda: events.append("target"),
+        wait_target_settle=lambda: events.append("target_settle"),
+        emit_at_target=lambda: events.append("payload"),
+        wait_hold=lambda: events.append("hold"),
+        play_park=lambda: events.append("park"),
+        wait_park_settle=lambda: events.append("park_settle"),
+    )
+
+    assert events == [
+        "target",
+        "target_settle",
+        "payload",
+        "hold",
+        "park",
+        "park_settle",
+    ]
+
+
+def test_park_history_probe_precedes_the_payload_pulse():
+    assert hasattr(programs, "emit_park_history_probe")
+    events = []
+
+    programs.emit_park_history_probe(
+        play_target=lambda: events.append("target"),
+        wait_target_settle=lambda: events.append("target_settle"),
+        wait_hold=lambda: events.append("hold"),
+        play_park=lambda: events.append("park"),
+        wait_recovery=lambda: events.append("recovery"),
+        emit_payload=lambda: events.append("payload"),
+    )
+
+    assert events == [
+        "target",
+        "target_settle",
+        "hold",
+        "park",
+        "recovery",
+        "payload",
+    ]
+
+
 def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((

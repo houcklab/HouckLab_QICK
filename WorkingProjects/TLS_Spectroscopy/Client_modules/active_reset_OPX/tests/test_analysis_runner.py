@@ -337,6 +337,11 @@ def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(m
         gain=11100,
         pulses=1,
         shots=2,
+        pulse_placement="park_after_excursion",
+        do_excursion=True,
+        excursion_gain=-20000,
+        flux_hold_us=750.0,
+        park_recovery_us=1000.0,
     )
 
     assert i_values.tolist() == [[1.0, 1.1], [2.0, 2.1], [3.0, 3.1]]
@@ -347,6 +352,10 @@ def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(m
     assert created[0].cfg["opx_payload_frequency_step_mhz"] == pytest.approx(0.5)
     assert created[0].cfg["opx_payload_fixed_gain"] == 11100
     assert created[0].cfg["qubit_pi_freq"] == pytest.approx(4367.25)
+    assert created[0].cfg["opx_payload_pulse_placement"] == "park_after_excursion"
+    assert created[0].cfg["opx_payload_excursion_gain"] == pytest.approx(-20000)
+    assert created[0].cfg["opx_payload_flux_hold_us"] == pytest.approx(750.0)
+    assert created[0].cfg["opx_payload_park_recovery_us"] == pytest.approx(1000.0)
 
 
 def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):

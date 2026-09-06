@@ -378,6 +378,40 @@ def emit_reference_flux_cycle(
     wait_settle()
 
 
+def emit_hard_flux_excursion(
+    *,
+    play_target,
+    wait_target_settle,
+    emit_at_target,
+    wait_hold,
+    play_park,
+    wait_park_settle,
+):
+    play_target()
+    wait_target_settle()
+    emit_at_target()
+    wait_hold()
+    play_park()
+    wait_park_settle()
+
+
+def emit_park_history_probe(
+    *,
+    play_target,
+    wait_target_settle,
+    wait_hold,
+    play_park,
+    wait_recovery,
+    emit_payload,
+):
+    play_target()
+    wait_target_settle()
+    wait_hold()
+    play_park()
+    wait_recovery()
+    emit_payload()
+
+
 def _declare_common(prog):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
@@ -1205,8 +1239,11 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         if self._payload_pulses < 0:
             raise ValueError("opx_payload_pulses must be non-negative")
         placement = str(cfg.get("opx_payload_pulse_placement", "excursion")).lower()
-        if placement not in ("park", "excursion"):
-            raise ValueError("opx_payload_pulse_placement must be 'park' or 'excursion'")
+        if placement not in ("park", "excursion", "park_after_excursion"):
+            raise ValueError(
+                "opx_payload_pulse_placement must be 'park', 'excursion', "
+                "or 'park_after_excursion'"
+            )
         self._payload_pulse_placement = placement
         add_qubit_gaussian(
             self,
@@ -1222,6 +1259,22 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
         )
         self._payload_do_excursion = bool(cfg.get("opx_payload_do_excursion", False))
         self._payload_excursion_segments = None
+        self._payload_hard_flux_steps = bool(
+            self._payload_do_excursion
+            and getattr(self.reset_config, "hard_flux_steps", False)
+        )
+        self._payload_flux_hold_us = float(
+            cfg.get("opx_payload_flux_hold_us", 0.05)
+        )
+        self._payload_flux_settle_us = ff_pulse.flux_settle_us(cfg)
+        self._payload_park_recovery_us = float(
+            cfg.get("opx_payload_park_recovery_us", 0.0)
+        )
+        if (
+            not np.isfinite(self._payload_park_recovery_us)
+            or self._payload_park_recovery_us < 0
+        ):
+            raise ValueError("opx_payload_park_recovery_us must be non-negative")
         if self._payload_do_excursion:
             if not getattr(self, "do_park_hold", False):
                 ff_pulse.declare_ff(self)
@@ -1229,16 +1282,26 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
                 raise ValueError(
                     "OPX pulse-sweep reset requires readout_after_park=True"
                 )
-            self._payload_excursion_segments = ff_pulse.build_ramp_hold_ramp(
-                self,
-                hold_us=float(cfg.get("opx_payload_flux_hold_us", 0.05)),
-                ff_gain=float(cfg["opx_payload_excursion_gain"]),
-                dt_play_us=cfg.get("dt_pulseplay", 5.0),
-                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
-                dt_def_us=cfg.get("dt_pulsedef", 0.002),
-                compensation=ff_pulse.load_compensation(cfg),
-                distortion_model=ff_pulse.make_distortion_model(self),
-            )
+            if not self._payload_hard_flux_steps:
+                self._payload_excursion_segments = ff_pulse.build_ramp_hold_ramp(
+                    self,
+                    hold_us=self._payload_flux_hold_us,
+                    ff_gain=float(cfg["opx_payload_excursion_gain"]),
+                    dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                    ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+                    dt_def_us=cfg.get("dt_pulsedef", 0.002),
+                    compensation=ff_pulse.load_compensation(cfg),
+                    distortion_model=ff_pulse.make_distortion_model(self),
+                )
+        if placement == "park_after_excursion":
+            if not self._payload_do_excursion:
+                raise ValueError(
+                    "park_after_excursion requires opx_payload_do_excursion=True"
+                )
+            if not self._payload_hard_flux_steps:
+                raise ValueError(
+                    "park_after_excursion requires opx_hard_flux_steps=True"
+                )
 
     def _emit_payload_pulses(self):
         cfg = self.cfg
@@ -1254,10 +1317,61 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self._measure_raw()
             self.sync_all(self.us2cycles(float(cfg.get("herald_delay", 8.0))))
         self._set_payload_pulse()
-        if self._payload_pulse_placement == "park":
+
+        def emit_pulses():
             for _ in range(self._payload_pulses):
                 self.pulse(ch=cfg["qubit_ch"])
                 self.sync_all(self.us2cycles(0.01))
+
+        if self._payload_pulse_placement == "park_after_excursion":
+            emit_park_history_probe(
+                play_target=lambda: ff_pulse.play_hard_step(
+                    self, cfg["opx_payload_excursion_gain"]
+                ),
+                wait_target_settle=lambda: self.sync_all(
+                    self.us2cycles(self._payload_flux_settle_us)
+                ),
+                wait_hold=lambda: self.sync_all(
+                    self.us2cycles(max(self._payload_flux_hold_us, 0.01))
+                ),
+                play_park=lambda: ff_pulse.play_hard_step(
+                    self, cfg.get("ff_park_gain", 0)
+                ),
+                wait_recovery=lambda: self.sync_all(
+                    self.us2cycles(max(
+                        self._payload_park_recovery_us,
+                        self._payload_flux_settle_us,
+                    ))
+                ),
+                emit_payload=emit_pulses,
+            )
+            return
+        if self._payload_pulse_placement == "park":
+            emit_pulses()
+        if self._payload_hard_flux_steps:
+            emit_hard_flux_excursion(
+                play_target=lambda: ff_pulse.play_hard_step(
+                    self, cfg["opx_payload_excursion_gain"]
+                ),
+                wait_target_settle=lambda: self.sync_all(
+                    self.us2cycles(self._payload_flux_settle_us)
+                ),
+                emit_at_target=(
+                    emit_pulses
+                    if self._payload_pulse_placement == "excursion"
+                    else lambda: None
+                ),
+                wait_hold=lambda: self.sync_all(
+                    self.us2cycles(max(self._payload_flux_hold_us, 0.01))
+                ),
+                play_park=lambda: ff_pulse.play_hard_step(
+                    self, cfg.get("ff_park_gain", 0)
+                ),
+                wait_park_settle=lambda: self.sync_all(
+                    self.us2cycles(self._payload_flux_settle_us)
+                ),
+            )
+            return
         if self._payload_do_excursion:
             ff_pulse.play_ramp_up_hold(
                 self,
@@ -1266,9 +1380,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             )
             self.sync_all(self.us2cycles(0.01))
         if self._payload_pulse_placement == "excursion":
-            for _ in range(self._payload_pulses):
-                self.pulse(ch=cfg["qubit_ch"])
-                self.sync_all(self.us2cycles(0.01))
+            emit_pulses()
         if self._payload_do_excursion:
             ff_pulse.play_ramp_down(self, self._payload_excursion_segments)
             self.sync_all(self.us2cycles(ff_pulse.flux_settle_us(cfg)))
