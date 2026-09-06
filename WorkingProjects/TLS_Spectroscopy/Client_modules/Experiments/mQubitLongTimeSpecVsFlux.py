@@ -17,6 +17,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import (
     FFStepResponseSpecProgram,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_flux_spectroscopy_grid,
+)
 
 DAC_TO_VOLT_SCALE = 1.0 / 30000.0
 
@@ -140,6 +143,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         shots = int(cfg.get("reps", 100))
         rounds = resolve_rounds(cfg, shots, default=cfg.get("spec_rounds"))
         points = [(i_dc, k_tau) for i_dc in range(n_dc) for k_tau in range(n_tau)]
+        telemetry = None
 
         def run_point(idx, reps):
             i_dc, k_tau = points[idx]
@@ -182,12 +186,46 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 interrupted = True
                 raise KeyboardInterrupt
 
-        try:
-            S_mean = interleaved_average(run_point, len(points), shots,
-                                         rounds=rounds, live=live_cb, progress=prog_cb)
-            _fill(S_mean)
-        except KeyboardInterrupt:
-            pass
+        if bool(cfg.get("qua_shot_order", False)):
+            order = (
+                "shot_frequency_dc_time"
+                if self.step_tag == "2"
+                else "shot_dc_frequency_time"
+            )
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1, total, start_time=start_time
+                )
+            i_values, q_values, telemetry = acquire_passive_flux_spectroscopy_grid(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=fpts_mhz,
+                dc_gains=dc_vec,
+                hold_times_us=t_probe_ns / 1e3,
+                read_frequencies_mhz=readout_if_hz / 1e6,
+                order=order,
+                baseline_rearm_us=self.inter_target_wait_ns / 1e3,
+                post_readout_reset_us=float(self.post_readout_reset_ns) / 1e3,
+                readout_after_park=self.readout_after_park,
+                progress=callback,
+            )
+            signal_cube = np.mean(i_values + 1j * q_values, axis=3)
+            mag_dbm[:, :, :] = 20 * np.log10(np.abs(signal_cube) + 1e-12)
+            phase_rad[:, :, :] = np.angle(signal_cube)
+            telemetry = dict(telemetry)
+            if self.step_tag == "2" and n_tau == 1:
+                telemetry["order"] = "shot_frequency_dc"
+            if live is not None:
+                live_cb(1, signal_cube.transpose(1, 2, 0).reshape(-1, n_f))
+        else:
+            try:
+                S_mean = interleaved_average(run_point, len(points), shots,
+                                             rounds=rounds, live=live_cb, progress=prog_cb)
+                _fill(S_mean)
+            except KeyboardInterrupt:
+                pass
         cfg["reps"] = shots
         if live is not None:
             live.close()
@@ -206,6 +244,9 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             'park_readout_settle_ns': self.park_readout_settle_ns,
             'post_readout_reset_ns': self.post_readout_reset_ns,
         }
+        if telemetry is not None:
+            self.data['acquisition_order'] = telemetry['order']
+            self.data['qua_order_telemetry'] = telemetry
         if interrupted:
             self.pickle_data()
             return {'config': cfg, 'data': self.data}

@@ -70,6 +70,38 @@ def optimizer_record_order(shots, frequencies, gains):
     ]
 
 
+def flux_spectroscopy_record_order(
+    shots, *, frequencies, dc_points, times, order
+):
+    shots = int(shots)
+    frequencies = int(frequencies)
+    dc_points = int(dc_points)
+    times = int(times)
+    if min(shots, frequencies, dc_points, times) <= 0:
+        raise ValueError("shots and axis lengths must be positive")
+    order = str(order)
+    if order == "shot_frequency_dc_time":
+        return [
+            (shot, frequency, dc, delay)
+            for shot in range(shots)
+            for frequency in range(frequencies)
+            for dc in range(dc_points)
+            for delay in range(times)
+        ]
+    if order == "shot_dc_frequency_time":
+        return [
+            (shot, dc, frequency, delay)
+            for shot in range(shots)
+            for dc in range(dc_points)
+            for frequency in range(frequencies)
+            for delay in range(times)
+        ]
+    raise ValueError(
+        "order must be 'shot_frequency_dc_time' or "
+        "'shot_dc_frequency_time'"
+    )
+
+
 def reshape_optimizer_records(values, *, shots, frequencies, gains):
     shots = int(shots)
     frequencies = int(frequencies)
@@ -233,6 +265,106 @@ def _uniform_frequency_registers(program, frequencies):
     return registers, step
 
 
+def _compensated_hold_segments(
+    *, park_gain, target_gain, hold_us, compensation, max_gain
+):
+    park_gain = float(park_gain)
+    target_gain = float(target_gain)
+    hold_us = float(hold_us)
+    max_gain = abs(float(max_gain))
+    if not np.isfinite(hold_us) or hold_us <= 0:
+        raise ValueError("hold time must be positive and finite")
+    delta = target_gain - park_gain
+    if not compensation:
+        gain = int(np.clip(round(target_gain), -max_gain, max_gain))
+        return [(gain, hold_us)]
+    edges = np.asarray(
+        compensation.get("segment_edges_ns", []), dtype=float
+    ).reshape(-1) / 1e3
+    multipliers = np.asarray(
+        compensation.get("multipliers", []), dtype=float
+    ).reshape(-1)
+    if edges.size == 0 or multipliers.size == 0:
+        gain = int(np.clip(round(target_gain), -max_gain, max_gain))
+        return [(gain, hold_us)]
+    if not np.all(np.isfinite(edges)) or not np.all(np.isfinite(multipliers)):
+        raise ValueError("flux compensation contains non-finite values")
+    starts = sorted(set(
+        [0.0] + [float(edge) for edge in edges if 0.0 < edge < hold_us]
+    ))
+    segments = []
+    for index, start in enumerate(starts):
+        stop = starts[index + 1] if index + 1 < len(starts) else hold_us
+        multiplier_index = int(
+            np.clip(np.searchsorted(edges, start + 1e-12, side="right") - 1,
+                    0, multipliers.size - 1)
+        )
+        gain = int(np.clip(
+            round(park_gain + multipliers[multiplier_index] * delta),
+            -max_gain,
+            max_gain,
+        ))
+        segments.append((gain, stop - start))
+    return segments
+
+
+def _ff_max_gain(program):
+    try:
+        return int(ff_pulse.PulseFunctions.ff_maxv(program, scaled=True))
+    except Exception:
+        return 32767
+
+
+def _build_flux_point(program, target_gain, hold_us, name_prefix):
+    cfg = program.cfg
+    if bool(cfg.get("opx_hard_flux_steps", False)):
+        return {
+            "hard": True,
+            "park": int(round(float(cfg.get("ff_park_gain", 0) or 0))),
+            "hold_segs": _compensated_hold_segments(
+                park_gain=float(cfg.get("ff_park_gain", 0) or 0),
+                target_gain=float(target_gain),
+                hold_us=float(hold_us),
+                compensation=ff_pulse.load_compensation(cfg),
+                max_gain=_ff_max_gain(program),
+            ),
+        }
+    return ff_pulse.build_ramp_hold_ramp(
+        program,
+        hold_us=float(hold_us),
+        ff_gain=float(target_gain),
+        dt_play_us=cfg.get("dt_pulseplay", 5.0),
+        ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+        dt_def_us=cfg.get("dt_pulsedef", 0.002),
+        compensation=ff_pulse.load_compensation(cfg),
+        distortion_model=ff_pulse.make_distortion_model(program),
+        name_prefix=str(name_prefix),
+    )
+
+
+def _play_flux_point(program, segments):
+    if segments.get("hard", False):
+        for gain, duration_us in segments["hold_segs"]:
+            ff_pulse.play_hard_step(program, gain)
+            if duration_us > 0:
+                program.sync_all(program.us2cycles(float(duration_us)))
+        return
+    ff_pulse.play_ramp_up_hold(
+        program,
+        segments,
+        dt_play_us=program.cfg.get("dt_pulseplay", 5.0),
+    )
+
+
+def _restore_flux_park(program, segments, settle_us=0.0):
+    if segments.get("hard", False):
+        ff_pulse.play_hard_step(program, segments.get("park", 0))
+    else:
+        ff_pulse.play_ramp_down(program, segments)
+    if float(settle_us) > 0:
+        program.sync_all(program.us2cycles(float(settle_us)))
+
+
 class QUAReadoutFrequencyProgram(QickProgram):
     def __init__(self, soccfg, cfg, *, read_frequency_mhz, values, kind,
                  excursion_gain=None):
@@ -345,6 +477,178 @@ class QUAPulseGridProgram(QickProgram):
         )
         self.loopnz(0, controls["frequency_loop"], "QUA_PASSIVE_PULSE_FREQUENCY")
         self.loopnz(0, controls["shot_loop"], "QUA_PASSIVE_PULSE_SHOT")
+        self.end()
+
+    def acquire_records(self, soc, progress=False, load_pulses=True):
+        return _acquire_stream_records(
+            self, soc, progress=progress, load_pulses=load_pulses
+        )
+
+
+class QUAFluxSpectroscopyProgram(QickProgram):
+    def __init__(
+        self,
+        soccfg,
+        cfg,
+        *,
+        frequencies_mhz,
+        dc_gains,
+        hold_times_us,
+        read_frequencies_mhz,
+        order,
+        shots,
+        baseline_rearm_us,
+        post_readout_reset_us,
+        readout_after_park,
+    ):
+        QickProgram.__init__(self, soccfg)
+        self.cfg = dict(cfg)
+        self.frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
+        self.dc_gains = _finite_axis(dc_gains, "dc_gains")
+        self.hold_times = _finite_axis(hold_times_us, "hold_times_us")
+        self.read_frequencies = _finite_axis(
+            read_frequencies_mhz, "read_frequencies_mhz"
+        )
+        if self.read_frequencies.size != self.dc_gains.size:
+            raise ValueError("read frequencies must have one value per DC point")
+        if np.any(self.hold_times <= 0):
+            raise ValueError("hold times must be positive")
+        self.order = str(order)
+        if self.order not in (
+            "shot_frequency_dc_time",
+            "shot_dc_frequency_time",
+        ):
+            raise ValueError("unsupported flux spectroscopy order")
+        self.shots = int(shots)
+        if self.shots <= 0:
+            raise ValueError("shots must be positive")
+        self.baseline_rearm_us = max(float(baseline_rearm_us), 0.0)
+        self.post_readout_reset_us = max(float(post_readout_reset_us), 0.0)
+        self.readout_after_park = bool(readout_after_park)
+        self.reps = int(
+            self.shots * self.frequencies.size * self.dc_gains.size
+            * self.hold_times.size
+        )
+        self.expts = None
+        self.rounds = 1
+        self.make_program()
+
+    def _set_readout_frequency(self, dc_index):
+        cfg = self.cfg
+        register = self.freq2reg(
+            float(self.read_frequencies[int(dc_index)]),
+            gen_ch=cfg["res_ch"],
+            ro_ch=cfg["ro_chs"][0],
+        )
+        self.safe_regwi(self.res_page, self.res_frequency_register, int(register))
+
+    def _rearm_park(self, delay_us):
+        if bool(self.cfg.get("opx_hard_flux_steps", False)):
+            ff_pulse.play_hard_step(
+                self, float(self.cfg.get("ff_park_gain", 0) or 0)
+            )
+        delay_us = max(float(delay_us), readout_thermalization_us(self.cfg))
+        if delay_us > 0:
+            self.sync_all(self.us2cycles(delay_us))
+
+    def _measure_flux_point(self, dc_index, time_index):
+        cfg = self.cfg
+        segments = self.flux_points[int(dc_index)][int(time_index)]
+        _play_flux_point(self, segments)
+        self.sync_all(self.us2cycles(0.01))
+        self.pulse(ch=cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(0.01))
+        if self.readout_after_park:
+            _restore_flux_park(
+                self, segments, settle_us=ff_pulse.flux_settle_us(cfg)
+            )
+        _measure_record(self, delay_us=0.0)
+        if not self.readout_after_park:
+            _restore_flux_park(self, segments)
+        cooldown = 0.0
+        if self.order == "shot_dc_frequency_time":
+            cooldown = max(
+                self.post_readout_reset_us,
+                readout_thermalization_us(cfg),
+            )
+        if cooldown > 0:
+            self.sync_all(self.us2cycles(cooldown))
+
+    def _frequency_loop(self, dc_indices, label_suffix):
+        self.safe_regwi(
+            self.qubit_page,
+            self.qubit_frequency_register,
+            int(self.frequency_registers[0]),
+        )
+        self.regwi(0, self.controls["frequency_loop"], self.frequencies.size - 1)
+        label = f"QUA_FLUX_FREQUENCY_{label_suffix}"
+        self.label(label)
+        for dc_index in dc_indices:
+            self._set_readout_frequency(dc_index)
+            for time_index in range(self.hold_times.size):
+                if self.order == "shot_frequency_dc_time":
+                    self._rearm_park(max(
+                        self.baseline_rearm_us,
+                        self.post_readout_reset_us,
+                    ))
+                self._measure_flux_point(dc_index, time_index)
+        self.mathi(
+            self.qubit_page,
+            self.qubit_frequency_register,
+            self.qubit_frequency_register,
+            "+",
+            self.frequency_step,
+        )
+        self.loopnz(0, self.controls["frequency_loop"], label)
+
+    def make_program(self):
+        cfg = self.cfg
+        cfg["read_pulse_freq"] = float(self.read_frequencies[0])
+        _declare_readout(self)
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        _set_qubit_pulse(
+            self,
+            self.frequencies[0],
+            int(cfg.get("qubit_gain", cfg.get("qubit_pi_gain", 0))),
+        )
+        park_segments = _declare_park(self, require_flux=True)
+        self.controls = _allocate_stream_counter(
+            self, ("shot_loop", "frequency_loop")
+        )
+        self.qubit_page = self.ch_page(cfg["qubit_ch"])
+        self.qubit_frequency_register = self.sreg(cfg["qubit_ch"], "freq")
+        self.res_page = self.ch_page(cfg["res_ch"])
+        self.res_frequency_register = self.sreg(cfg["res_ch"], "freq")
+        self.frequency_registers, self.frequency_step = _uniform_frequency_registers(
+            self, self.frequencies
+        )
+        self.flux_points = [
+            [
+                _build_flux_point(
+                    self,
+                    target_gain=dc_gain,
+                    hold_us=hold_time,
+                    name_prefix=f"qua_flux_{dc_index}_{time_index}",
+                )
+                for time_index, hold_time in enumerate(self.hold_times)
+            ]
+            for dc_index, dc_gain in enumerate(self.dc_gains)
+        ]
+        self.regwi(0, self.controls["shot_loop"], self.shots - 1)
+        _begin_park(self, park_segments)
+        self.label("QUA_FLUX_SHOT")
+        if self.order == "shot_frequency_dc_time":
+            self._frequency_loop(range(self.dc_gains.size), "ALL_DC")
+        else:
+            for dc_index in range(self.dc_gains.size):
+                self._rearm_park(self.baseline_rearm_us)
+                self._set_readout_frequency(dc_index)
+                self._frequency_loop((dc_index,), str(dc_index))
+        self.loopnz(0, self.controls["shot_loop"], "QUA_FLUX_SHOT")
+        if bool(cfg.get("opx_hard_flux_steps", False)):
+            ff_pulse.play_hard_step(
+                self, float(cfg.get("ff_park_gain", 0) or 0)
+            )
         self.end()
 
     def acquire_records(self, soc, progress=False, load_pulses=True):
@@ -614,6 +918,110 @@ def acquire_passive_pulse_grid(
         "blocks": 1,
         "records": int(shots * frequencies.size * gains.size),
         "order": "shot_frequency_gain",
+    }
+
+
+def acquire_passive_flux_spectroscopy_grid(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    frequencies_mhz,
+    dc_gains,
+    hold_times_us,
+    read_frequencies_mhz,
+    order,
+    baseline_rearm_us,
+    post_readout_reset_us,
+    readout_after_park,
+    progress=None,
+):
+    frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
+    dc_values = _finite_axis(dc_gains, "dc_gains")
+    hold_times = _finite_axis(hold_times_us, "hold_times_us")
+    read_frequencies = _finite_axis(
+        read_frequencies_mhz, "read_frequencies_mhz"
+    )
+    if read_frequencies.size != dc_values.size:
+        raise ValueError("read frequencies must have one value per DC point")
+    total_shots = _positive_shots(cfg)
+    points_per_shot = int(
+        frequencies.size * dc_values.size * hold_times.size
+    )
+    record_limit = int(cfg.get("qua_order_max_records_per_block", 262144))
+    if record_limit <= 0:
+        raise ValueError("qua_order_max_records_per_block must be positive")
+    shots_per_block = max(record_limit // points_per_shot, 1)
+    chunks = []
+    remaining = total_shots
+    while remaining:
+        chunk = min(remaining, shots_per_block)
+        chunks.append(chunk)
+        remaining -= chunk
+    i_blocks = []
+    q_blocks = []
+    completed = 0
+    for block_index, chunk in enumerate(chunks):
+        run_cfg = dict(cfg)
+        run_cfg["qua_assert_park_at_start"] = block_index == 0
+        program = QUAFluxSpectroscopyProgram(
+            soccfg,
+            run_cfg,
+            frequencies_mhz=frequencies,
+            dc_gains=dc_values,
+            hold_times_us=hold_times,
+            read_frequencies_mhz=read_frequencies,
+            order=order,
+            shots=chunk,
+            baseline_rearm_us=baseline_rearm_us,
+            post_readout_reset_us=post_readout_reset_us,
+            readout_after_park=readout_after_park,
+        )
+        raw_i, raw_q = program.acquire_records(
+            soc,
+            progress=False,
+            load_pulses=block_index == 0,
+        )
+        if order == "shot_frequency_dc_time":
+            block_shape = (
+                chunk,
+                frequencies.size,
+                dc_values.size,
+                hold_times.size,
+            )
+            axes = (1, 2, 3, 0)
+        elif order == "shot_dc_frequency_time":
+            block_shape = (
+                chunk,
+                dc_values.size,
+                frequencies.size,
+                hold_times.size,
+            )
+            axes = (2, 1, 3, 0)
+        else:
+            raise ValueError(
+                "order must be 'shot_frequency_dc_time' or "
+                "'shot_dc_frequency_time'"
+            )
+        i_blocks.append(
+            np.asarray(raw_i, dtype=float).reshape(block_shape).transpose(axes)
+        )
+        q_blocks.append(
+            np.asarray(raw_q, dtype=float).reshape(block_shape).transpose(axes)
+        )
+        completed += int(chunk)
+        if progress is not None:
+            progress(completed, total_shots)
+    i_values = np.concatenate(i_blocks, axis=3)
+    q_values = np.concatenate(q_blocks, axis=3)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "frequency_points": int(frequencies.size),
+        "dc_points": int(dc_values.size),
+        "time_points": int(hold_times.size),
+        "blocks": int(len(chunks)),
+        "records": int(total_shots * points_per_shot),
+        "order": str(order),
     }
 
 

@@ -1,16 +1,33 @@
+import sys
+import types
+
 import numpy as np
 
+qick = sys.modules.get("qick")
+if qick is None:
+    qick = types.ModuleType("qick")
+    qick.AveragerProgram = type("AveragerProgram", (), {})
+    qick.RAveragerProgram = type("RAveragerProgram", (), {})
+    sys.modules["qick"] = qick
+
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
+    mQubitFluxStepResponse,
+    mQubitLongTimeSpecVsFlux,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import qua_order
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
     QUAPulseGridProgram,
+    acquire_passive_flux_spectroscopy_grid,
     acquire_passive_optimizer_grid,
     acquire_passive_pulse_grid,
     acquire_passive_readout_grid,
+    flux_spectroscopy_record_order,
     optimizer_record_order,
     reshape_optimizer_records,
     reshape_scalar_records,
     single_shot_record_order,
     scalar_record_order,
+    _compensated_hold_segments,
     _uniform_frequency_registers,
 )
 
@@ -298,3 +315,232 @@ def test_pulse_grid_preserves_qick_waveform_library(monkeypatch):
     )
     assert program.pulses == ["qick-waveforms"]
     assert program.drive_pulses == 3
+
+
+def test_tls_flux_spectroscopy_orders_match_marty_qua_nesting():
+    assert flux_spectroscopy_record_order(
+        1, frequencies=2, dc_points=2, times=2,
+        order="shot_frequency_dc_time",
+    ) == [
+        (0, frequency, dc, delay)
+        for frequency in range(2)
+        for dc in range(2)
+        for delay in range(2)
+    ]
+
+
+def test_hard_flux_hold_preserves_piecewise_compensation_and_total_time():
+    segments = _compensated_hold_segments(
+        park_gain=1000,
+        target_gain=2000,
+        hold_us=2.0,
+        compensation={
+            "segment_edges_ns": [0.0, 100.0, 1000.0],
+            "multipliers": [1.2, 1.1, 1.0],
+        },
+        max_gain=32767,
+    )
+    assert segments == [(2200, 0.1), (2100, 0.9), (2000, 1.0)]
+    assert sum(duration for _, duration in segments) == 2.0
+    assert flux_spectroscopy_record_order(
+        1, frequencies=2, dc_points=2, times=2,
+        order="shot_dc_frequency_time",
+    ) == [
+        (0, dc, frequency, delay)
+        for dc in range(2)
+        for frequency in range(2)
+        for delay in range(2)
+    ]
+
+
+def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_errors(
+    monkeypatch,
+):
+    created = []
+
+    class Program:
+        def __init__(
+            self, soccfg, cfg, *, frequencies_mhz, dc_gains, hold_times_us,
+            read_frequencies_mhz, order, shots, baseline_rearm_us,
+            post_readout_reset_us, readout_after_park,
+        ):
+            self.order = order
+            self.shots = int(shots)
+            self.frequencies = np.asarray(frequencies_mhz)
+            self.dc_gains = np.asarray(dc_gains)
+            self.hold_times = np.asarray(hold_times_us)
+            self.assert_park = bool(cfg["qua_assert_park_at_start"])
+            self.reps = (
+                self.shots * self.frequencies.size * self.dc_gains.size
+                * self.hold_times.size
+            )
+            created.append(self)
+
+        def acquire_records(self, soc, progress=False, load_pulses=True):
+            values = np.arange(self.reps, dtype=float)
+            return values, -values
+
+    monkeypatch.setattr(
+        qua_order,
+        "QUAFluxSpectroscopyProgram",
+        Program,
+    )
+    common = dict(
+        soc=object(),
+        soccfg=object(),
+        cfg={"shots": 2, "qua_order_max_records_per_block": 100},
+        frequencies_mhz=[10.0, 20.0],
+        dc_gains=[100, 200, 300],
+        hold_times_us=[1.0, 2.0],
+        read_frequencies_mhz=[7000.0, 7001.0, 7002.0],
+        baseline_rearm_us=10.0,
+        post_readout_reset_us=20.0,
+        readout_after_park=False,
+    )
+    i_frequency, q_frequency, frequency_meta = acquire_passive_flux_spectroscopy_grid(
+        **common,
+        order="shot_frequency_dc_time",
+    )
+    assert len(created) == 1
+    assert created[0].assert_park is True
+    assert i_frequency.shape == (2, 3, 2, 2)
+    assert q_frequency.shape == (2, 3, 2, 2)
+    assert i_frequency[1, 2, 1, 1] == 23
+    assert frequency_meta["order"] == "shot_frequency_dc_time"
+
+    created.clear()
+    i_dc, q_dc, dc_meta = acquire_passive_flux_spectroscopy_grid(
+        **common,
+        order="shot_dc_frequency_time",
+    )
+    assert len(created) == 1
+    assert i_dc.shape == (2, 3, 2, 2)
+    assert q_dc.shape == (2, 3, 2, 2)
+    assert i_dc[1, 2, 1, 1] == 23
+    assert dc_meta["order"] == "shot_dc_frequency_time"
+
+
+def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
+    observed = {}
+
+    def acquire(*args, **kwargs):
+        observed.update(kwargs)
+        values = np.ones((2, 1, 3, 2), dtype=float)
+        return values, np.zeros_like(values), {
+            "order": "shot_frequency_dc_time",
+            "records": 12,
+        }
+
+    monkeypatch.setattr(
+        mQubitFluxStepResponse,
+        "acquire_passive_flux_spectroscopy_grid",
+        acquire,
+        raising=False,
+    )
+    experiment = mQubitFluxStepResponse.QubitFluxStepResponse.__new__(
+        mQubitFluxStepResponse.QubitFluxStepResponse
+    )
+    experiment.cfg = {
+        "qua_shot_order": True,
+        "read_pulse_freq": 7000.0,
+        "qubit_freq": 4300.0,
+        "qubit_gain": 1000,
+        "qubit_length": 0.5,
+        "readout_after_park": False,
+        "relax_delay": 100.0,
+    }
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.f_vec = np.array([4300.0, 4301.0]) * 1e6
+    experiment.t_vec = np.array([1000.0, 2000.0, 3000.0])
+    experiment.dc_offset = 4000.0
+    experiment.baseline_dc_offset = 0.0
+    experiment.baseline_rearm_time_ns = 100000
+    experiment.shots = 2
+    experiment.resonator_if = 7_000_000_000
+    experiment.flux_tail_compensation = None
+    experiment.live_plot_enabled = False
+    experiment.meta_dict = {"cw_amp": 1000}
+    experiment.data = {}
+    experiment._write_raw_sweep_csv = lambda: None
+    experiment._extract_trace_from_map = lambda values: None
+    experiment._fit_predistortion_from_step_response = lambda: None
+    experiment._fit_rise_decay_bump_dc_correction_from_step_response = lambda: None
+    experiment.finalize_analysis = lambda: None
+    experiment.pickle_data = lambda: None
+
+    result = experiment.acquire(progress=False, plotDisp=False)
+
+    assert observed["order"] == "shot_frequency_dc_time"
+    np.testing.assert_array_equal(observed["hold_times_us"], [1.0, 2.0, 3.0])
+    assert result["data"]["acquisition_order"] == "shot_frequency_time"
+    assert result["data"]["IQ_mag"].shape == (2, 3)
+
+
+def test_long_time_routes_step2_and_step4_to_their_distinct_qua_orders(
+    monkeypatch,
+):
+    orders = []
+
+    def acquire(*args, **kwargs):
+        orders.append(kwargs["order"])
+        values = np.ones((2, 2, 1, 2), dtype=float)
+        return values, np.zeros_like(values), {
+            "order": kwargs["order"],
+            "records": 8,
+        }
+
+    monkeypatch.setattr(
+        mQubitLongTimeSpecVsFlux,
+        "acquire_passive_flux_spectroscopy_grid",
+        acquire,
+        raising=False,
+    )
+    monkeypatch.setattr(mQubitLongTimeSpecVsFlux.np, "savetxt", lambda *a, **k: None)
+
+    for tag in ("2", "4"):
+        experiment = mQubitLongTimeSpecVsFlux.QubitLongTimeSpecVsFlux.__new__(
+            mQubitLongTimeSpecVsFlux.QubitLongTimeSpecVsFlux
+        )
+        experiment.cfg = {
+            "qua_shot_order": True,
+            "qubit_freq_start": 4300.0,
+            "qubit_freq_expts": 2,
+            "qubit_freq_step": 1.0,
+            "reps": 2,
+        }
+        experiment.soc = object()
+        experiment.soccfg = object()
+        experiment.dc_vec = np.array([1000.0, 2000.0])
+        experiment._probe_time_window_ns = lambda: np.array([2000.0])
+        experiment._build_resonator_curve = lambda: (
+            np.array([7.0e9, 7.001e9]),
+            np.array([7.0e9, 7.001e9]),
+            "test",
+        )
+        experiment.readout_after_park = False
+        experiment.park_voltage = 0.0
+        experiment.inter_target_wait_ns = 100000.0
+        experiment.post_readout_reset_ns = 100000.0
+        experiment.long_time_ns = 2000
+        experiment.average_window_ns = 0.0
+        experiment.average_step_ns = 16.0
+        experiment.park_readout_settle_ns = 500.0
+        experiment.advanced_fit = False
+        experiment.live_plot = False
+        experiment.element = "q3"
+        experiment.step_tag = tag
+        experiment.iname = "/tmp/qua-order-test.png"
+        experiment.pickle_data = lambda: None
+
+        result = experiment.acquire(progress=False, plotDisp=False)
+
+        expected = (
+            "shot_frequency_dc"
+            if tag == "2"
+            else "shot_dc_frequency_time"
+        )
+        assert result["data"]["acquisition_order"] == expected
+        assert result["data"]["magnitude"].shape == (2, 2, 1)
+
+    assert orders == ["shot_frequency_dc_time", "shot_dc_frequency_time"]

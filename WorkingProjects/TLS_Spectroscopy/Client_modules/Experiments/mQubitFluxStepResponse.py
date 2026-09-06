@@ -19,6 +19,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
     interleaved_average, resolve_rounds, suppress_stdout)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
+    acquire_passive_flux_spectroscopy_grid,
+)
 
 
 def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
@@ -828,6 +831,7 @@ class QubitFluxStepResponse(ExperimentClass):
 
         shots = int(self.shots)
         rounds = resolve_rounds(cfg, shots, default=cfg.get("step_rounds"))
+        telemetry = None
 
         def run_point(idx, reps):
             cfg["ff_hold"] = float(self.t_vec[idx]) / 1e3
@@ -855,18 +859,53 @@ class QubitFluxStepResponse(ExperimentClass):
                 if not live_fig.is_open:
                     raise KeyboardInterrupt
 
-        try:
-            S_mean = interleaved_average(run_point, n_t, shots, rounds=rounds,
-                                         live=live_cb, progress=prog_cb)
-            _fill(S_mean)
-        except KeyboardInterrupt:
-            pass
+        if bool(cfg.get("qua_shot_order", False)):
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    progress_bar=True,
+                    percent=True,
+                    start_time=start_time,
+                )
+            i_values, q_values, telemetry = acquire_passive_flux_spectroscopy_grid(
+                self.soc,
+                self.soccfg,
+                cfg,
+                frequencies_mhz=self.f_vec / 1e6,
+                dc_gains=[self.dc_offset],
+                hold_times_us=self.t_vec / 1e3,
+                read_frequencies_mhz=[self.resonator_if / 1e6],
+                order="shot_frequency_dc_time",
+                baseline_rearm_us=self.baseline_rearm_time_ns / 1e3,
+                post_readout_reset_us=0.0,
+                readout_after_park=cfg["readout_after_park"],
+                progress=callback,
+            )
+            signal_map = np.mean(i_values + 1j * q_values, axis=3)[:, 0, :]
+            iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)
+            iq_phase[:, :] = np.angle(signal_map)
+            telemetry = dict(telemetry)
+            telemetry["order"] = "shot_frequency_time"
+            if live_fig is not None:
+                self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
+        else:
+            try:
+                S_mean = interleaved_average(run_point, n_t, shots, rounds=rounds,
+                                             live=live_cb, progress=prog_cb)
+                _fill(S_mean)
+            except KeyboardInterrupt:
+                pass
         cfg["reps"] = shots
 
         self.data.update({
             "IQ_mag": iq_magnitude_dbm,
             "IQ_phase": iq_phase,
         })
+        if telemetry is not None:
+            self.data["acquisition_order"] = telemetry["order"]
+            self.data["qua_order_telemetry"] = telemetry
         self._write_raw_sweep_csv()
         if live_fig is not None:
             live_fig.close()
