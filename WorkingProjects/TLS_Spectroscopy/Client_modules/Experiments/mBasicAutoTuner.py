@@ -35,7 +35,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, explicit_flat_top_fields, readout_drive_length_us,
-    pulse_fingerprint, set_readout_pulse,
+    pulse_fingerprint, readout_thermalization_us, set_readout_pulse,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
     find_blob_median, find_threshold,
@@ -83,8 +83,8 @@ BASIC_DEFAULTS = {
             "sweep_shots": 800, "check_shots": 3000,
             "relax_delay_us": 500.0,
         },
-        "thermalization_us": 25.0,
-        "post_measure_delay_us": 0.05,
+        "thermalization_us": readout_thermalization_us(),
+        "post_measure_delay_us": readout_thermalization_us(),
         "profile_shots": 650,
         "profile_min_raw_fidelity": 0.72,
         "profile_validate": True,
@@ -1427,7 +1427,7 @@ class BasicSequenceProgram(AveragerProgram):
                      wait=True, syncdelay=self.us2cycles(0.01))
         _release_static_flux(self)
         self.sync_all(self.us2cycles(
-            cfg.get("active_reset_post_measure_delay_us", 0.05)
+            cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
             if feedback else cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
@@ -2095,9 +2095,10 @@ class BasicAutoTuner(ExperimentClass):
         profile_key = self._reset_profile_signature(self.working)
         self._reset_runtime = active_reset.feedback_runtime_from_probe(
             rec, max_iters=int(settings.get("max_iters", 3)),
-            thermalization_us=float(settings.get("thermalization_us", 25.0)),
+            thermalization_us=float(settings.get(
+                "thermalization_us", readout_thermalization_us(cfg))),
             post_measure_delay_us=float(
-                settings.get("post_measure_delay_us", 0.05)))
+                settings.get("post_measure_delay_us", readout_thermalization_us(cfg))))
         self._reset_runtime.update({
             "reset_profile_key": profile_key,
             "reset_read_pulse_freq": float(self.working["read_pulse_freq"]),
@@ -2127,7 +2128,8 @@ class BasicAutoTuner(ExperimentClass):
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
             "rot_reset": copy.deepcopy(rec["rot_reset"]),
-            "thermalization_us": float(settings.get("thermalization_us", 25.0)),
+            "thermalization_us": float(settings.get(
+                "thermalization_us", readout_thermalization_us(self.cfg))),
         }
         self.data["reset"]["events"].append(event)
         self.data["reset"].update({
@@ -2140,7 +2142,8 @@ class BasicAutoTuner(ExperimentClass):
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
             "rot_reset": copy.deepcopy(rec["rot_reset"]),
-            "thermalization_us": float(settings.get("thermalization_us", 25.0)),
+            "thermalization_us": float(settings.get(
+                "thermalization_us", readout_thermalization_us(self.cfg))),
         })
         self._log(
             "reset", "OK",
@@ -2205,9 +2208,10 @@ class BasicAutoTuner(ExperimentClass):
             return False
         runtime = active_reset.feedback_runtime_from_probe(
             rec, max_iters=int(settings.get("max_iters", 3)),
-            thermalization_us=float(settings.get("thermalization_us", 25.0)),
+            thermalization_us=float(settings.get(
+                "thermalization_us", readout_thermalization_us(cfg))),
             post_measure_delay_us=float(
-                settings.get("post_measure_delay_us", 0.05)))
+                settings.get("post_measure_delay_us", readout_thermalization_us(cfg))))
         runtime.update({
             "reset_profile_key": key,
             "reset_read_pulse_freq": float(candidate["read_pulse_freq"]),

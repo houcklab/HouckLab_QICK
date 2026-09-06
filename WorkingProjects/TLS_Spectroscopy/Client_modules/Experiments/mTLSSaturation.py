@@ -7,7 +7,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import acquire_with_retry, suppress_stdout
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian, set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import add_qubit_gaussian, readout_thermalization_us, set_readout_pulse
 
 
 SATURATION_ARMS = ("no_pump", "pump")
@@ -132,7 +132,10 @@ class TLSSaturationProbeProgram(AveragerProgram):
             oper=cfg.get("reset_oper", "lower"),
             ground_below=cfg.get("reset_ground_below", True),
             max_iters=int(cfg.get("reset_max_iters", 3)),
-            thermalization_us=float(cfg.get("saturation_reset_thermalization_us", 0.0)))
+            thermalization_us=float(cfg.get(
+                "saturation_reset_thermalization_us",
+                readout_thermalization_us(cfg),
+            )))
         self._set_park_pi()
         if reset_read_gain is not None:
             set_readout_pulse(self, self._read_freq_reg)
@@ -160,7 +163,10 @@ class TLSSaturationProbeProgram(AveragerProgram):
             wait=True, syncdelay=self.us2cycles(0.01))
         ff_pulse.play_park_down(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(
-            cfg.get("active_reset_post_measure_delay_us", 0.05)))
+            cfg.get(
+                "active_reset_post_measure_delay_us",
+                readout_thermalization_us(cfg),
+            )))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
         n_reset = active_reset.active_reset_readouts(self.cfg)

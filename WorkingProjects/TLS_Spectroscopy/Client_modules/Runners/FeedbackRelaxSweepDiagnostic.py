@@ -35,6 +35,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import (
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
 
 
 QUBIT = "q3"
@@ -48,7 +51,7 @@ DRIFT_CAL_SHOTS = 500
 RESET_PROBE_SHOTS = 1000
 PASSIVE_REFERENCE_RELAX_US = 1500.0
 RESET_MAX_ITERS = 3
-RESET_THERMALIZATION_US = 2.0
+RESET_THERMALIZATION_US = readout_thermalization_us(BaseConfig)
 
 # Diagnostic labels only; no hardware action depends on these thresholds.
 MIN_CONTRAST_FRACTION_OF_PASSIVE = 0.80

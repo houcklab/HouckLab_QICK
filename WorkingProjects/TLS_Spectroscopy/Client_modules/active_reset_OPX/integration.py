@@ -1,5 +1,9 @@
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
+
 from .acquisition import (
     AcquisitionTimeout,
     chunk_sizes,
@@ -7,7 +11,11 @@ from .acquisition import (
     run_dmem_block,
 )
 from .calibration import CalibrationBundle
-from .programs import OPXResetPulseSweepProgram, OPXResetT1Program
+from .programs import (
+    OPXResetPulseSweepProgram,
+    OPXResetT1Program,
+    OPXResetT1SweepProgram,
+)
 from .records import (
     PAYLOAD_RECORD_WORDS,
     RECORD_WORDS,
@@ -62,7 +70,9 @@ def reset_telemetry(records):
 
 def _block_timeout_s(cfg, shots):
     hold_us = max(float(cfg.get("ff_hold", cfg.get("t1_wait_us", 0.0))), 0.0)
-    inter_shot_us = max(float(cfg.get("opx_inter_shot_delay_us", 25.0)), 0.0)
+    inter_shot_us = max(float(cfg.get(
+        "opx_inter_shot_delay_us", readout_thermalization_us(cfg)
+    )), 0.0)
     fixed_us = hold_us + inter_shot_us + 2.0 * float(cfg.get("ff_ramp_length", 0.0)) + 100.0
     margin = max(float(cfg.get("opx_timeout_margin", 3.0)), 1.0)
     watchdog = max(float(cfg.get("opx_unbounded_watchdog_s", 2.0)), 0.1)
@@ -124,6 +134,89 @@ def acquire_t1_iq(soc, soccfg, cfg, shots=None):
     )
     i_values, q_values = payload_iq(records, read_cycles)
     return i_values, q_values, reset_telemetry(records)
+
+
+def acquire_t1_sweep_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    delays_us,
+    shots=None,
+    reset_scheme="opx_unbounded",
+):
+    bundle = runtime_bundle(cfg)
+    delays = np.asarray(delays_us, dtype=float).reshape(-1)
+    if delays.size == 0 or not np.all(np.isfinite(delays)):
+        raise ValueError("at least one finite T1 delay is required")
+    if np.any(delays < 0.01):
+        raise ValueError("T1 delays must be at least 0.01 us")
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("T1 shots must be positive")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    capacity = min(
+        capacity,
+        int(cfg.get("opx_max_payload_records_per_block", capacity)),
+    )
+    shots_per_block = capacity // delays.size
+    if shots_per_block <= 0:
+        raise ValueError(
+            f"{delays.size} T1 points do not fit in tProc data memory"
+        )
+    i_blocks = []
+    q_blocks = []
+    last_program = None
+    for chunk in chunk_sizes(total_shots, shots_per_block):
+        run_cfg = dict(cfg)
+        run_cfg.update({
+            "opx_reset_scheme": reset_scheme,
+            "opx_t1_shots": int(chunk),
+            "opx_t1_delays_us": delays.tolist(),
+            "ff_hold": float(np.max(delays)),
+            "t1_wait_us": float(np.max(delays)),
+        })
+        program = OPXResetT1SweepProgram(
+            soccfg,
+            run_cfg,
+            bundle.payload,
+            bundle.loop,
+        )
+        last_program = program
+        block = run_dmem_block(
+            soc,
+            program,
+            timeout_s=_block_timeout_s(run_cfg, int(chunk) * delays.size),
+            poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+        )
+        i_blocks.append(np.asarray(
+            [record.final_i for record in block], dtype=float
+        ).reshape(chunk, delays.size).T)
+        q_blocks.append(np.asarray(
+            [record.final_q for record in block], dtype=float
+        ).reshape(chunk, delays.size).T)
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.concatenate(i_blocks, axis=1) / int(read_cycles)
+    q_values = np.concatenate(q_blocks, axis=1) / int(read_cycles)
+    return i_values, q_values, {
+        "shots_per_point": int(total_shots),
+        "points": int(delays.size),
+        "blocks": int(len(i_blocks)),
+        "records": int(total_shots * delays.size),
+        "order": "shot_major",
+        "read_length_cycles": int(read_cycles),
+    }
 
 
 def acquire_pulse_sweep_iq(
@@ -212,10 +305,10 @@ def acquire_pulse_sweep_iq(
         )
         i_block = np.asarray(
             [record.final_i for record in block], dtype=float
-        ).reshape(gains.size, chunk)
+        ).reshape(chunk, gains.size).T
         q_block = np.asarray(
             [record.final_q for record in block], dtype=float
-        ).reshape(gains.size, chunk)
+        ).reshape(chunk, gains.size).T
         i_blocks.append(i_block)
         q_blocks.append(q_block)
     read_cycles = last_program.us2cycles(
@@ -318,10 +411,10 @@ def acquire_frequency_sweep_iq(
         )
         i_block = np.asarray(
             [record.final_i for record in block], dtype=float
-        ).reshape(frequencies.size, chunk)
+        ).reshape(chunk, frequencies.size).T
         q_block = np.asarray(
             [record.final_q for record in block], dtype=float
-        ).reshape(frequencies.size, chunk)
+        ).reshape(chunk, frequencies.size).T
         i_blocks.append(i_block)
         q_blocks.append(q_block)
     read_cycles = last_program.us2cycles(

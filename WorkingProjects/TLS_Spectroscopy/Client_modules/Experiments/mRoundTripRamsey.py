@@ -10,7 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
     acquire_with_retry, split_reps, suppress_stdout,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
-    add_qubit_gaussian, set_readout_pulse,
+    add_qubit_gaussian, readout_thermalization_us, set_readout_pulse,
 )
 
 
@@ -175,7 +175,7 @@ class RoundTripRamseyProgram(AveragerProgram):
             wait=True, syncdelay=self.us2cycles(0.01))
         ff_pulse.play_park_down(self, self.ff_park_segs)
         self.sync_all(self.us2cycles(
-            cfg.get("active_reset_post_measure_delay_us", 0.05)
+            cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
             if active_reset.uses_feedback(cfg) else cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):

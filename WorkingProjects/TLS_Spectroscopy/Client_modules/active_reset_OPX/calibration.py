@@ -88,22 +88,41 @@ def threshold_policy_metadata(
 
 
 def _capture_context(soc, soccfg, cfg, *, context, shots):
-    from .programs import TimingMatchedReferenceProgram
+    from .acquisition import chunk_sizes, dmem_words_from_soccfg, run_dmem_block
+    from .programs import TimingMatchedReferenceDMemProgram
+    from .records import PAYLOAD_RECORD_WORDS, max_records
 
     output = {}
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
     for preparation, label in ((False, "ground"), (True, "excited")):
-        run_cfg = dict(cfg)
-        run_cfg.update({
-            "shots": int(shots),
-            "reps": int(shots),
-            "prep_excited": bool(preparation),
-            "opx_reference_context": str(context),
-        })
-        program = TimingMatchedReferenceProgram(soccfg, run_cfg)
-        i_values, q_values = program.acquire(soc, load_pulses=True, progress=False)
+        records = []
+        for chunk in chunk_sizes(shots, capacity):
+            run_cfg = dict(cfg)
+            run_cfg.update({
+                "shots": int(chunk),
+                "reps": int(chunk),
+                "prep_excited": bool(preparation),
+                "opx_reference_context": str(context),
+            })
+            program = TimingMatchedReferenceDMemProgram(soccfg, run_cfg)
+            timeout_s = max(
+                5.0,
+                float(chunk)
+                * (
+                    float(run_cfg.get("opx_inter_shot_delay_us", 400.0))
+                    + 2.0 * float(run_cfg.get("read_length", 10.0))
+                    + 50.0
+                )
+                * 5e-6,
+            )
+            records.extend(run_dmem_block(soc, program, timeout_s=timeout_s))
         output[label] = {
-            "i": np.asarray(i_values, dtype=np.int64),
-            "q": np.asarray(q_values, dtype=np.int64),
+            "i": np.asarray([record.final_i for record in records], dtype=np.int64),
+            "q": np.asarray([record.final_q for record in records], dtype=np.int64),
         }
     return output
 

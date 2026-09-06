@@ -276,8 +276,8 @@ def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
         expts = program.cfg["opx_payload_expts"]
         return [
             PayloadRecord(100 * expt + shot, -(100 * expt + shot))
-            for expt in range(expts)
             for shot in range(shots)
+            for expt in range(expts)
         ]
 
     monkeypatch.setattr(integration, "OPXResetPulseSweepProgram", Program)

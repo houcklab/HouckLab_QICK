@@ -21,6 +21,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mBasicAutoTuner
     configure_readout_length_mode,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updater
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    READOUT_THERMALIZATION_US,
+)
 
 
 QUBIT = "q4"
@@ -1329,7 +1332,11 @@ def _print_best(result):
             print("   reset      feedback (%s, threshold %s, %.1f us cavity clear, "
                   "end-to-end validated)"
                   % (reset.get("oper", "?"), reset.get("threshold_raw", "?"),
-                     _number(reset, ("thermalization_us",), 25.0)))
+                     _number(
+                         reset,
+                         ("thermalization_us",),
+                         READOUT_THERMALIZATION_US,
+                     )))
         else:
             print("   reset      passive fallback (%s us)" % _fmt_float(
                 _number(reset, ("fallback_relax_delay_us",)), 1))

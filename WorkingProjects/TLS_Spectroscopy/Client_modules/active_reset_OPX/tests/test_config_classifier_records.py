@@ -99,12 +99,32 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
     )
 
     assert reset.feedback_syncdelay_us == 8.0
-    assert reset.loop_recovery_us == 25.0
+    assert reset.loop_recovery_us == 2.8
     assert reset.inter_shot_delay_us == 400.0
+    assert reset.persistent_park is True
+    assert reset.hard_flux_steps is True
+    assert reset.park_preroll_us == pytest.approx(400.0)
     assert calibration.holdout["ground_accept"] == pytest.approx(0.5)
     assert calibration.holdout["excited_fire"] == pytest.approx(1.0)
     assert calibration.holdout["ground_confidence_fidelity"] == pytest.approx(0.7)
     assert calibration.holdout["threshold_steps"] == 100
+
+
+def test_measured_readout_thermalization_is_the_shared_reset_default():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+        readout_thermalization_us,
+    )
+
+    assert readout_thermalization_us({}) == pytest.approx(2.8)
+    assert readout_thermalization_us({"readout_thermalization_us": 3.4}) == pytest.approx(3.4)
+    assert OPXResetConfig.from_mapping({}).loop_recovery_us == pytest.approx(2.8)
+    assert OPXResetConfig.from_mapping({
+        "readout_thermalization_us": 3.4,
+    }).loop_recovery_us == pytest.approx(3.4)
+    assert OPXResetConfig.from_mapping({
+        "readout_thermalization_us": 3.4,
+        "opx_loop_recovery_us": 4.1,
+    }).loop_recovery_us == pytest.approx(4.1)
 
 
 def test_t1_point_config_applies_flux_excursion_without_changing_park():

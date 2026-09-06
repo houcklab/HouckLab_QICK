@@ -11,7 +11,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
-    add_qubit_gaussian, set_readout_pulse,
+    add_qubit_gaussian, readout_thermalization_us, set_readout_pulse,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_pulse_sweep_iq,
@@ -117,7 +117,7 @@ def rabi_flux_body(prog):
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
     ff_pulse.play_park_down(prog, prog.ff_park_segs)
     prog.sync_all(prog.us2cycles(
-        cfg.get("active_reset_post_measure_delay_us", 0.05)
+        cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
         if feedback else cfg["relax_delay"]))
 
 

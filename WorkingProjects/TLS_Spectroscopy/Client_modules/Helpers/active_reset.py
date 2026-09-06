@@ -3,6 +3,10 @@ import os
 
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
+
 
 RESET_MODES = ("passive", "active", "feedback", "feedback_herald", "opx_unbounded")
 FEEDBACK_MODES = ("feedback", "feedback_herald", "opx_unbounded")
@@ -38,17 +42,22 @@ def rotated_probe_record(rec):
         key in params for key in ("c_int", "s_int", "excite_threshold"))
 
 
-def feedback_runtime_from_probe(rec, max_iters=3, thermalization_us=25.0,
+def feedback_runtime_from_probe(rec, max_iters=3, thermalization_us=None,
                                 post_measure_delay_us=None):
     if not rotated_probe_record(rec):
         raise ValueError("a validated rotated reset probe record is required")
+    clear_us = (
+        readout_thermalization_us()
+        if thermalization_us is None
+        else float(thermalization_us)
+    )
     runtime = {
         "reset_mode": "feedback",
         "reset_threshold_raw": int(rec["threshold_raw"]),
         "reset_oper": str(rec.get("oper", "lower")),
         "reset_ground_below": bool(rec.get("ground_below", True)),
         "reset_max_iters": int(max_iters),
-        "reset_thermalization_us": float(thermalization_us),
+        "reset_thermalization_us": clear_us,
         "rot_reset": dict(rec["rot_reset"]),
     }
     runtime["rot_reset"]["max_iters"] = int(max_iters)
@@ -351,7 +360,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     _assert_scratch_free(prog, page, named)
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
-    clear_us = (cfg.get("reset_thermalization_us", 25.0)
+    clear_us = (cfg.get("reset_thermalization_us", readout_thermalization_us(cfg))
                 if thermalization_us is None else thermalization_us)
     clear_us = float(clear_us)
     if clear_us < 0:
@@ -721,7 +730,9 @@ def calibrate_drift_pi(soc, soccfg, base_cfg, rec, shots=2000,
                        passive_relax_us=1500.0, feedback_relax_us=25.0,
                        delay_us=1.0,
                        span_mhz=DRIFT_PI_SPAN_MHZ, step_mhz=DRIFT_PI_STEP_MHZ,
-                       max_iters=None, thermalization_us=0.0, verbose=True):
+                       max_iters=None, thermalization_us=None, verbose=True):
+    if thermalization_us is None:
+        thermalization_us = readout_thermalization_us(base_cfg)
     park = float(base_cfg.get("ff_park_gain", 0) or 0)
     if park == 0:
         return None

@@ -21,6 +21,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
 
 QUBIT = "q3"
 CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
@@ -37,7 +40,7 @@ RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
-THERMALIZATION_US = 2.0
+THERMALIZATION_US = readout_thermalization_us(BaseConfig)
 PASSIVE_RESET_US = 1000.0
 
 P_TRANSMISSION = {

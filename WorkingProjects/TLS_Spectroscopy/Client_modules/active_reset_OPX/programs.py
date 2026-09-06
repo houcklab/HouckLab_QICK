@@ -327,6 +327,41 @@ def emit_payload_reset_shot(
     park_down()
 
 
+def emit_shot_major_payload_loops(
+    prog,
+    *,
+    page,
+    shot_register,
+    point_register,
+    done_register,
+    done_address,
+    shots,
+    points,
+    initialize_point,
+    emit_point,
+    advance_point,
+    shot_label,
+    point_label,
+):
+    shots = int(shots)
+    points = int(points)
+    if shots <= 0 or points <= 0:
+        raise ValueError("shot-major payload loops need positive shots and points")
+    prog.regwi(page, done_register, 0)
+    prog.memwi(page, done_register, done_address)
+    prog.regwi(page, shot_register, shots - 1)
+    prog.label(shot_label)
+    initialize_point()
+    prog.regwi(page, point_register, points - 1)
+    prog.label(point_label)
+    emit_point()
+    prog.mathi(page, done_register, done_register, "+", 1)
+    prog.memwi(page, done_register, done_address)
+    advance_point()
+    prog.loopnz(page, point_register, point_label)
+    prog.loopnz(page, shot_register, shot_label)
+
+
 def _declare_common(prog):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
@@ -500,6 +535,140 @@ class TimingMatchedReferenceProgram(AveragerProgram):
         return i_reads[:, -1], q_reads[:, -1]
 
 
+class TimingMatchedReferenceDMemProgram(QickProgram):
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg):
+        super().__init__(soccfg)
+        self.cfg = dict(cfg)
+        self.reset_config = OPXResetConfig.from_mapping(self.cfg)
+        self.reps = int(self.cfg.get("reps", self.cfg.get("shots", 1)))
+        if self.reps <= 0:
+            raise ValueError("reference reps must be positive")
+        self.record_base = int(self.reset_config.record_base)
+        self.done_addr = int(self.reset_config.done_addr)
+        self.expts = None
+        self.rounds = 1
+        self.make_program()
+
+    def _measure_raw(self):
+        cfg = self.cfg
+        ro_ch = int(cfg["ro_chs"][0])
+        self.measure(
+            pulse_ch=cfg["res_ch"],
+            adcs=cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+            wait=True,
+            syncdelay=None,
+        )
+        adc_end = int(max(self._adc_ts))
+        self.waiti(
+            0,
+            adc_end + max(
+                int(self.us2cycles(float(self.reset_config.read_delay_us))), 0
+            ),
+        )
+        tproc_ch = int(self.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
+        if tproc_ch < 0:
+            raise RuntimeError(
+                f"readout {ro_ch} has no tProc feedback path (tproc_ch={tproc_ch})"
+            )
+        self.read(tproc_ch, self.reset_page, "lower", self.reset_regs["i"])
+        self.read(tproc_ch, self.reset_page, "upper", self.reset_regs["q"])
+
+    def _park_up(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        if self.reset_config.hard_flux_steps:
+            ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+            return
+        ff_pulse.play_park_up(self, self._opx_park_segments)
+
+    def _park_down(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        if self.reset_config.hard_flux_steps:
+            ff_pulse.play_hard_step(self, 0)
+            return
+        ff_pulse.play_park_down(self, self._opx_park_segments)
+
+    def _emit_reference(self):
+        context = str(self.cfg.get("opx_reference_context", "payload")).lower()
+        prep_excited = bool(self.cfg.get("prep_excited", False))
+        if not self.reset_config.persistent_park:
+            self._park_up()
+        if context == "loop":
+            self._measure_raw()
+            self.sync_all(self.us2cycles(float(
+                self.reset_config.feedback_syncdelay_us
+            )))
+            if prep_excited:
+                self.pulse(ch=self.cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(float(self.reset_config.reset_settle_us)))
+            self._measure_raw()
+        elif context == "payload":
+            if prep_excited:
+                _pulse_pi_and_align(self)
+            self._measure_raw()
+        else:
+            raise ValueError("opx_reference_context must be 'payload' or 'loop'")
+        self.memw(self.reset_page, self.reset_regs["i"], self.reset_regs["address"])
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.reset_regs["address"],
+            "+",
+            1,
+        )
+        self.memw(self.reset_page, self.reset_regs["q"], self.reset_regs["address"])
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.reset_regs["address"],
+            "+",
+            1,
+        )
+        if not self.reset_config.persistent_park:
+            self._park_down()
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def make_program(self):
+        _declare_common(self)
+        self.reset_page = self.ch_page(self.cfg["qubit_ch"])
+        self.reset_regs = allocate_named_registers(
+            self,
+            self.reset_page,
+            ("i", "q", "address"),
+        )
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            ("shot_loop", "done"),
+            reserved=control_reserved,
+        )
+        self.regwi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.record_base,
+        )
+        self.regwi(0, controls["done"], 0)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(0, controls["shot_loop"], self.reps - 1)
+        if self.reset_config.persistent_park:
+            self._park_up()
+            self.sync_all(self.us2cycles(float(self.reset_config.park_preroll_us)))
+        self.label("OPX_REFERENCE_SHOT_LOOP")
+        self._emit_reference()
+        self.mathi(0, controls["done"], controls["done"], "+", 1)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.loopnz(0, controls["shot_loop"], "OPX_REFERENCE_SHOT_LOOP")
+        self.end()
+
+
 class OPXResetBenchmarkProgram(QickProgram):
     """Variable-runtime tProc program with fixed-size per-shot DMem telemetry."""
 
@@ -593,11 +762,18 @@ class OPXResetBenchmarkProgram(QickProgram):
     def _park_up(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
+        if getattr(self.reset_config, "hard_flux_steps", False):
+            ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+            self.sync_all(self.us2cycles(float(self.cfg.get("ff_park_settle_us", 0.0))))
+            return
         ff_pulse.play_park_up(self, self._opx_park_segments)
 
     def _park_down(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
+        if getattr(self.reset_config, "hard_flux_steps", False):
+            ff_pulse.play_hard_step(self, 0)
+            return
         ff_pulse.play_park_down(self, self._opx_park_segments)
 
     def _refresh_park(self):
@@ -613,11 +789,18 @@ class OPXResetBenchmarkProgram(QickProgram):
 
     def _begin_park_lifecycle(self):
         if self.reset_config.persistent_park:
+            if getattr(self.reset_config, "hard_flux_steps", False):
+                from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+                ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+                self.sync_all(self.us2cycles(float(
+                    getattr(self.reset_config, "park_preroll_us", 0.0)
+                )))
+                return
             self._park_up()
 
     def _end_park_lifecycle(self):
-        if self.reset_config.persistent_park:
-            self._park_down()
+        return None
 
     def _emit_body(self):
         preparation = int(bool(self.cfg.get("prep_excited", False)))
@@ -731,21 +914,30 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             if not getattr(self, "do_park_hold", False):
                 ff_pulse.declare_ff(self)
             self._t1_ff_settle_us = ff_pulse.flux_settle_us(cfg)
-            self._t1_ff_segments = ff_pulse.build_ramp_hold_ramp(
-                self,
-                hold_us=self._t1_hold_us + self._t1_ff_settle_us,
-                ff_gain=cfg["ff_gain"],
-                dt_play_us=cfg.get("dt_pulseplay", 5.0),
-                ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
-                dt_def_us=cfg.get("dt_pulsedef", 0.002),
-                compensation=ff_pulse.load_compensation(cfg),
-                distortion_model=ff_pulse.make_distortion_model(self),
-            )
+            if not getattr(self.reset_config, "hard_flux_steps", False):
+                self._t1_ff_segments = ff_pulse.build_ramp_hold_ramp(
+                    self,
+                    hold_us=self._t1_hold_us + self._t1_ff_settle_us,
+                    ff_gain=cfg["ff_gain"],
+                    dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                    ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
+                    dt_def_us=cfg.get("dt_pulsedef", 0.002),
+                    compensation=ff_pulse.load_compensation(cfg),
+                    distortion_model=ff_pulse.make_distortion_model(self),
+                )
 
-    def _wait_t1_payload(self):
+    def _wait_t1_payload(self, hold_us=None):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
+        hold_us = self._t1_hold_us if hold_us is None else float(hold_us)
         if self._t1_stepping:
+            if getattr(self.reset_config, "hard_flux_steps", False):
+                ff_pulse.play_hard_step(self, self.cfg["ff_gain"])
+                self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+                self.sync_all(self.us2cycles(max(hold_us, 0.01)))
+                ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+                self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+                return
             ff_pulse.play_ramp_up_hold(
                 self,
                 self._t1_ff_segments,
@@ -756,7 +948,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             self.sync_all(self.us2cycles(self._t1_ff_settle_us))
         else:
             self.sync_all(
-                self.us2cycles(max(self._t1_hold_us, 0.01))
+                self.us2cycles(max(hold_us, 0.01))
             )
 
     def _emit_body(self):
@@ -783,6 +975,98 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             diagnostic_cycles=int(self.cfg.get("opx_diagnostic_cycles", 2)),
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+
+class OPXResetT1SweepProgram(OPXResetT1Program):
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        delays = np.asarray(run_cfg.get("opx_t1_delays_us", ()), dtype=float)
+        if delays.ndim != 1 or delays.size == 0:
+            raise ValueError("opx_t1_delays_us must be a nonempty vector")
+        if not np.all(np.isfinite(delays)) or np.any(delays < 0.01):
+            raise ValueError("opx_t1_delays_us must be finite and at least 0.01 us")
+        shots = int(run_cfg.get("opx_t1_shots", 0))
+        if shots <= 0:
+            raise ValueError("opx_t1_shots must be positive")
+        run_cfg["opx_t1_delays_us"] = delays.tolist()
+        run_cfg["reps"] = shots * int(delays.size)
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _emit_t1_point(self, point_index, delay_us):
+        park_up, park_down = self._shot_park_callbacks()
+
+        def emit_payload():
+            if bool(self.cfg.get("do_pi", True)):
+                self._prepare_excited()
+            self._wait_t1_payload(delay_us)
+
+        emit_payload_reset_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=park_up,
+            park_down=park_down,
+            emit_payload=emit_payload,
+            measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix=f"OPX_T1_SWEEP_{int(point_index)}",
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def make_program(self):
+        _declare_common(self)
+        self._declare_experiment()
+        if self._t1_stepping and not getattr(
+            self.reset_config, "hard_flux_steps", False
+        ):
+            raise ValueError("shot-major T1 flux sweeps require hard flux steps")
+        self.reset_page = self.ch_page(self.cfg["qubit_ch"])
+        names = (
+            "i",
+            "q",
+            "z",
+            "ground",
+            "excited",
+            "attempts",
+            "pi_count",
+            "status",
+            "address",
+        )
+        self.reset_regs = allocate_named_registers(self, self.reset_page, names)
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            ("shot_loop", "done"),
+            reserved=control_reserved,
+        )
+        self.regwi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.record_base,
+            "OPX T1 sweep record address",
+        )
+        self.regwi(0, controls["done"], 0)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(0, controls["shot_loop"], int(self.cfg["opx_t1_shots"]) - 1)
+        self._begin_park_lifecycle()
+        self.label("OPX_T1_SWEEP_SHOT_LOOP")
+        for point_index, delay_us in enumerate(self.cfg["opx_t1_delays_us"]):
+            self._emit_t1_point(point_index, float(delay_us))
+            self.mathi(0, controls["done"], controls["done"], "+", 1)
+            self.memwi(0, controls["done"], self.done_addr)
+        self.loopnz(0, controls["shot_loop"], "OPX_T1_SWEEP_SHOT_LOOP")
+        self._end_park_lifecycle()
+        self.end()
 
 
 class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
@@ -997,36 +1281,32 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self.record_base,
             "OPX payload record address",
         )
-        initialize_payload_sweep_register(
-            self,
-            page=self.reset_page,
-            register=self.reset_regs["payload_sweep"],
-            value=self._payload_sweep_plan["start_register"],
-        )
-        self.regwi(0, controls["done"], 0, "completed OPX payload shots")
-        self.memwi(0, controls["done"], self.done_addr)
-        self.regwi(
-            0, controls["expt_loop"], self._payload_expts - 1,
-            "OPX payload experiment loop",
-        )
         self._begin_park_lifecycle()
-        self.label("OPX_PAYLOAD_EXPT_LOOP")
-        self.regwi(
-            0, controls["shot_loop"], self._payload_shots - 1,
-            "OPX payload shot loop",
+        emit_shot_major_payload_loops(
+            self,
+            page=0,
+            shot_register=controls["shot_loop"],
+            point_register=controls["expt_loop"],
+            done_register=controls["done"],
+            done_address=self.done_addr,
+            shots=self._payload_shots,
+            points=self._payload_expts,
+            initialize_point=lambda: initialize_payload_sweep_register(
+                self,
+                page=self.reset_page,
+                register=self.reset_regs["payload_sweep"],
+                value=self._payload_sweep_plan["start_register"],
+            ),
+            emit_point=self._emit_body,
+            advance_point=lambda: self.mathi(
+                self.reset_page,
+                self.reset_regs["payload_sweep"],
+                self.reset_regs["payload_sweep"],
+                "+",
+                int(self._payload_sweep_plan["step_register"]),
+            ),
+            shot_label="OPX_PAYLOAD_SHOT_LOOP",
+            point_label="OPX_PAYLOAD_EXPT_LOOP",
         )
-        self.label("OPX_PAYLOAD_SHOT_LOOP")
-        self._emit_body()
-        self.mathi(0, controls["done"], controls["done"], "+", 1)
-        self.memwi(0, controls["done"], self.done_addr)
-        self.loopnz(0, controls["shot_loop"], "OPX_PAYLOAD_SHOT_LOOP")
-        self.mathi(
-            self.reset_page,
-            self.reset_regs["payload_sweep"],
-            self.reset_regs["payload_sweep"],
-            "+",
-            int(self._payload_sweep_plan["step_register"]),
-        )
-        self.loopnz(0, controls["expt_loop"], "OPX_PAYLOAD_EXPT_LOOP")
         self._end_park_lifecycle()
         self.end()

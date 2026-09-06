@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import (
     ClassifierCalibration,
@@ -9,6 +10,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     OPXResetBenchmarkProgram,
     OPXResetPulseSweepProgram,
     OPXResetT1Program,
+    OPXResetT1SweepProgram,
+    TimingMatchedReferenceDMemProgram,
     TimingMatchedReferenceProgram,
     allocate_named_registers,
     allocate_registers,
@@ -17,6 +20,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
     emit_record,
     emit_t1_shot,
     emit_timing_matched_reference_shot,
+    emit_shot_major_payload_loops,
     reshape_interleaved_readouts,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
@@ -63,6 +67,12 @@ class RecordingProgram:
 
     def memw(self, page, value_reg, address_reg):
         self.asm.append(("memw", value_reg, address_reg))
+
+    def memwi(self, page, value_reg, address):
+        self.asm.append(("memwi", value_reg, address))
+
+    def loopnz(self, page, register, label):
+        self.asm.append(("loopnz", register, label))
 
 
 def test_register_allocator_returns_ten_distinct_nonreserved_registers():
@@ -113,6 +123,53 @@ def test_emit_record_writes_exactly_eight_words_and_advances_address():
     assert sum(op[0] == "memw" for op in prog.asm) == RECORD_WORDS
     assert sum(op[:4] == ("mathi", 9, 9, "+") for op in prog.asm) == RECORD_WORDS
     assert ("regwi", 1, 1) in prog.asm
+
+
+def test_payload_hardware_loop_visits_all_points_inside_each_shot():
+    prog = RecordingProgram()
+    emit_shot_major_payload_loops(
+        prog,
+        page=0,
+        shot_register=10,
+        point_register=11,
+        done_register=12,
+        done_address=1,
+        shots=3,
+        points=4,
+        initialize_point=lambda: prog.asm.append(("initialize_point",)),
+        emit_point=lambda: prog.asm.append(("emit_point",)),
+        advance_point=lambda: prog.asm.append(("advance_point",)),
+        shot_label="SHOT",
+        point_label="POINT",
+    )
+
+    labels = [entry for entry in prog.asm if entry[0] == "label"]
+    loops = [entry for entry in prog.asm if entry[0] == "loopnz"]
+    assert labels == [("label", "SHOT"), ("label", "POINT")]
+    assert loops == [("loopnz", 11, "POINT"), ("loopnz", 10, "SHOT")]
+    assert prog.asm.index(("initialize_point",)) < prog.asm.index(("label", "POINT"))
+
+
+def test_hard_flux_step_latches_the_requested_dac_value():
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3}
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+
+    ff_pulse.play_hard_step(prog, -25790)
+
+    assert prog.asm == [
+        ("set", {
+            "ch": 3,
+            "freq": 0,
+            "style": "const",
+            "phase": 0,
+            "stdysel": "last",
+            "gain": -25790,
+            "length": 3,
+        }),
+        ("pulse", 3),
+    ]
 
 
 def test_benchmark_shot_emits_payload_before_reset_and_verification_after_it():
@@ -311,6 +368,31 @@ def test_t1_program_keeps_payload_and_reset_frequencies_independent():
     assert reset["waveform"] == "qubit_reset"
 
 
+def test_t1_hard_flux_cycle_has_no_four_microsecond_ramp():
+    prog = RecordingProgram()
+    prog.cfg = {
+        "ff_ch": 3,
+        "ff_gain": -20000,
+        "ff_park_gain": -25790,
+    }
+    prog.reset_config = type("ResetConfig", (), {"hard_flux_steps": True})()
+    prog._t1_stepping = True
+    prog._t1_ff_settle_us = 0.5
+    prog._t1_hold_us = 70.0
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value: int(round(float(value) * 100))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync", cycles))
+
+    OPXResetT1Program._wait_t1_payload(prog, 12.5)
+
+    gains = [entry[1]["gain"] for entry in prog.asm if entry[0] == "set"]
+    waits = [entry[1] for entry in prog.asm if entry[0] == "sync"]
+    assert gains == [-20000, -25790]
+    assert waits == [50, 1250, 50]
+    assert 400 not in waits
+
+
 def test_t1_shot_passive_path_has_no_feedback_measurement_or_reset_pi():
     prog = RecordingProgram()
     regs = {name: index + 1 for index, name in enumerate((
@@ -482,7 +564,35 @@ def test_persistent_park_lifecycle_hoists_park_outside_the_shot_body():
         park_down()
     OPXResetBenchmarkProgram._end_park_lifecycle(prog)
 
-    assert events == ["up", "shot_1", "shot_2", "down"]
+    assert events == ["up", "shot_1", "shot_2"]
+
+
+def test_hard_persistent_park_steps_once_and_prerolls_before_all_shots():
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog.reset_config = type(
+        "ResetConfig",
+        (),
+        {
+            "persistent_park": True,
+            "hard_flux_steps": True,
+            "park_preroll_us": 400.0,
+        },
+    )()
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value: int(round(float(value) * 100))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync", cycles))
+
+    OPXResetBenchmarkProgram._begin_park_lifecycle(prog)
+    park_up, park_down = OPXResetBenchmarkProgram._shot_park_callbacks(prog)
+    park_up()
+    park_down()
+    OPXResetBenchmarkProgram._end_park_lifecycle(prog)
+
+    gains = [entry[1]["gain"] for entry in prog.asm if entry[0] == "set"]
+    assert gains == [-25790]
+    assert ("sync", 40000) in prog.asm
 
 
 def test_per_shot_park_lifecycle_preserves_existing_behavior():
@@ -527,7 +637,6 @@ def test_persistent_park_refresh_cycles_immediately_before_each_shot():
         "up",
         "down", "up", "shot_1",
         "down", "up", "shot_2",
-        "down",
     ]
 
 
@@ -607,7 +716,7 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
         {
             "reset_settle_us": 0.05,
             "feedback_syncdelay_us": 8.0,
-            "loop_recovery_us": 25.0,
+            "loop_recovery_us": 2.8,
         },
     )()
     prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
@@ -639,7 +748,7 @@ def test_loop_measurement_waits_for_qua_resonator_recovery():
         {
             "reset_settle_us": 0.05,
             "feedback_syncdelay_us": 8.0,
-            "loop_recovery_us": 25.0,
+            "loop_recovery_us": 2.8,
         },
     )()
     prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
@@ -652,7 +761,7 @@ def test_loop_measurement_waits_for_qua_resonator_recovery():
     OPXResetBenchmarkProgram._measure_project(prog, CAL, "loop")
 
     syncs = [operation for operation in prog.asm if operation[0] == "sync_all"]
-    assert syncs == [("sync_all", 5), ("sync_all", 2500)]
+    assert syncs == [("sync_all", 5), ("sync_all", 800)]
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():
@@ -713,8 +822,10 @@ def test_readout_pair_extraction_preserves_per_shot_trigger_order():
 
 def test_qick_program_classes_are_exposed_even_on_analysis_computers():
     assert TimingMatchedReferenceProgram is not None
+    assert TimingMatchedReferenceDMemProgram is not None
     assert OPXResetBenchmarkProgram is not None
     assert OPXResetT1Program is not None
+    assert OPXResetT1SweepProgram is not None
 
 
 def test_frequency_payload_sweep_uses_frequency_register_and_fixed_gain():

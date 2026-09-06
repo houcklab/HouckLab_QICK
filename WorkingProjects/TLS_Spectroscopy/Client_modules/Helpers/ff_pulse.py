@@ -241,6 +241,20 @@ def declare_park_hold(prog):
         declare_ff(prog)
 
 
+def play_hard_step(prog, gain):
+    cfg = prog.cfg
+    prog.set_pulse_registers(
+        ch=cfg["ff_ch"],
+        freq=0,
+        style="const",
+        phase=0,
+        stdysel="last",
+        gain=int(round(float(gain))),
+        length=3,
+    )
+    prog.pulse(ch=cfg["ff_ch"])
+
+
 def build_park_hold(prog, hold_us):
     if not park_hold_configured(prog.cfg):
         return None

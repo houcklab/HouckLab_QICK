@@ -15,6 +15,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence impo
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
     q3_benchmark_settings,
 )
@@ -46,7 +49,7 @@ RESET_GROUND_BELOW = False
 RESET_MAX_ITERS = 3
 RANDOMIZE_POINT_ORDER = True
 POINT_ORDER_SEED = None
-THERMALIZATION_US = 2.0
+THERMALIZATION_US = readout_thermalization_us(BaseConfig)
 FEEDBACK_RELAX_US = q3_benchmark_settings().inter_shot_delay_us
 PASSIVE_RESET_US = 1000.0
 CALIBRATE_DRIFT_PI = True

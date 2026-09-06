@@ -6,7 +6,11 @@ import math
 import numpy as np
 import pytest
 
-from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import analysis, integration
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+    analysis,
+    calibration,
+    integration,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
     ReferenceAxis,
     append_records_csv,
@@ -311,9 +315,8 @@ def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(m
             return 10
 
     records = [
-        PayloadRecord(10, -10), PayloadRecord(11, -11),
-        PayloadRecord(20, -20), PayloadRecord(21, -21),
-        PayloadRecord(30, -30), PayloadRecord(31, -31),
+        PayloadRecord(10, -10), PayloadRecord(20, -20), PayloadRecord(30, -30),
+        PayloadRecord(11, -11), PayloadRecord(21, -21), PayloadRecord(31, -31),
     ]
     monkeypatch.setattr(integration, "OPXResetPulseSweepProgram", FakeProgram)
     monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
@@ -344,6 +347,105 @@ def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(m
     assert created[0].cfg["opx_payload_frequency_step_mhz"] == pytest.approx(0.5)
     assert created[0].cfg["opx_payload_fixed_gain"] == 11100
     assert created[0].cfg["qubit_pi_freq"] == pytest.approx(4367.25)
+
+
+def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
+    bundle = CalibrationBundle(
+        schema_version=1,
+        payload=CAL,
+        loop=CAL,
+        reference_axis=ReferenceAxis.from_centers(0, 0, 100, 0),
+        metadata={},
+    )
+    created = []
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            self.cfg = dict(cfg)
+            self.reps = int(cfg["opx_t1_shots"]) * len(cfg["opx_t1_delays_us"])
+            created.append(self)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    records = [
+        PayloadRecord(10, -10), PayloadRecord(20, -20), PayloadRecord(30, -30),
+        PayloadRecord(11, -11), PayloadRecord(21, -21), PayloadRecord(31, -31),
+    ]
+    monkeypatch.setattr(integration, "OPXResetT1SweepProgram", FakeProgram)
+    monkeypatch.setattr(integration, "dmem_words_from_soccfg", lambda soccfg: 4096)
+    monkeypatch.setattr(integration, "run_dmem_block", lambda *args, **kwargs: records)
+    cfg = {
+        "opx_reset_calibration": bundle.to_dict(),
+        "shots": 2,
+        "read_length": 1.0,
+        "ro_chs": [0],
+    }
+
+    i_values, q_values, telemetry = integration.acquire_t1_sweep_iq(
+        None,
+        {},
+        cfg,
+        delays_us=[1.0, 10.0, 100.0],
+        shots=2,
+        reset_scheme="opx_unbounded",
+    )
+
+    assert i_values.tolist() == [[1.0, 1.1], [2.0, 2.1], [3.0, 3.1]]
+    assert q_values.tolist() == [[-1.0, -1.1], [-2.0, -2.1], [-3.0, -3.1]]
+    assert telemetry == {
+        "shots_per_point": 2,
+        "points": 3,
+        "blocks": 1,
+        "records": 6,
+        "order": "shot_major",
+        "read_length_cycles": 10,
+    }
+    assert created[0].cfg["opx_t1_delays_us"] == [1.0, 10.0, 100.0]
+    assert created[0].cfg["opx_reset_scheme"] == "opx_unbounded"
+
+
+def test_timing_matched_calibration_chunks_dmem_without_changing_park_mode(monkeypatch):
+    created = []
+
+    class FakeProgram:
+        def __init__(self, soccfg, cfg):
+            self.cfg = dict(cfg)
+            self.reps = int(cfg["reps"])
+            created.append(self)
+
+    monkeypatch.setattr(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs."
+        "TimingMatchedReferenceDMemProgram",
+        FakeProgram,
+    )
+    monkeypatch.setattr(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition."
+        "run_dmem_block",
+        lambda soc, program, timeout_s: [
+            PayloadRecord(index, -index) for index in range(program.reps)
+        ],
+    )
+
+    result = calibration._capture_context(
+        None,
+        {"tprocs": [{"dmem_size": 42}]},
+        {
+            "opx_record_base": 32,
+            "opx_persistent_park": True,
+            "opx_hard_flux_steps": True,
+            "opx_inter_shot_delay_us": 2.8,
+            "read_length": 5.0,
+        },
+        context="payload",
+        shots=7,
+    )
+
+    assert [program.reps for program in created] == [5, 2, 5, 2]
+    assert all(program.cfg["opx_persistent_park"] for program in created)
+    assert all(program.cfg["opx_hard_flux_steps"] for program in created)
+    assert result["ground"]["i"].tolist() == [0, 1, 2, 3, 4, 0, 1]
+    assert result["excited"]["q"].tolist() == [0, -1, -2, -3, -4, 0, -1]
 
 
 def test_t1_equivalence_requires_matching_decay_and_population_endpoints():

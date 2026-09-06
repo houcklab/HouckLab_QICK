@@ -20,6 +20,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import Bas
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
@@ -89,7 +92,7 @@ CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = None
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = False
-THERMALIZATION_US = 2.0
+THERMALIZATION_US = readout_thermalization_us(BaseConfig)
 T1_RESET_BACKSTOP_US = 400.0
 T1_FEEDBACK_RELAX_US = q3_benchmark_settings().inter_shot_delay_us
 RESET_REPROBE_MIN = 30.0
@@ -178,7 +181,7 @@ P5_SS_CAL = {
     "reset_mode": "passive",
     "reset_probe_shots": 2000,
     "reset_max_iters": 3,
-    "reset_thermalization_us": 2.0,
+    "reset_thermalization_us": THERMALIZATION_US,
 }
 
 
@@ -707,8 +710,8 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
             cfg.update(active_reset.feedback_runtime_from_probe(
                 rec, max_iters=int(P5_SS_CAL.get("reset_max_iters", 3)),
                 thermalization_us=float(
-                    P5_SS_CAL.get("reset_thermalization_us", 25.0)),
-                post_measure_delay_us=0.05))
+                    P5_SS_CAL.get("reset_thermalization_us", THERMALIZATION_US)),
+                post_measure_delay_us=THERMALIZATION_US))
     elif active_reset.uses_feedback(cfg["reset_mode"]):
         cfg["reset_mode"] = "passive"
         print("[5] PROBE_RESET=False provides no validated rotated reset profile -- "

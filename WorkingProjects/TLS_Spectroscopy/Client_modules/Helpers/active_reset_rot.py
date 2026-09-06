@@ -1,6 +1,9 @@
 import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    readout_thermalization_us,
+)
 
 
 # MEASURED 2026-07-29, q4, 4 interleaved repeats (Runners/ResetRotationDev.py):
@@ -277,7 +280,7 @@ def active_reset_rot_block(prog, ro_ch=0, res_ch=None, qubit_ch=None,
 
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
-    clear_us = float(cfg.get("reset_thermalization_us", 25.0)
+    clear_us = float(cfg.get("reset_thermalization_us", readout_thermalization_us(cfg))
                      if thermalization_us is None else thermalization_us)
     if clear_us < 0:
         raise ValueError("reset_thermalization_us must be non-negative")

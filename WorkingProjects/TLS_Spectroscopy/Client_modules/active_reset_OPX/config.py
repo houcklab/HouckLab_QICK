@@ -1,6 +1,10 @@
 from dataclasses import asdict, dataclass
 import math
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    READOUT_THERMALIZATION_US,
+)
+
 
 MAX_RESET_ATTEMPTS = 32
 
@@ -12,12 +16,14 @@ class OPXResetConfig:
     max_reset_attempts: int = 8
     read_delay_us: float = 2.0
     feedback_syncdelay_us: float = 2.0
-    loop_recovery_us: float = 0.0
+    loop_recovery_us: float = READOUT_THERMALIZATION_US
     reset_settle_us: float = 0.05
     verification_delay_us: float = 0.25
     inter_shot_delay_us: float = 400.0
     persistent_park: bool = False
     refresh_park_before_shot: bool = False
+    hard_flux_steps: bool = False
+    park_preroll_us: float = 0.0
     record_base: int = 32
     done_addr: int = 1
     poll_interval_s: float = 0.002
@@ -36,6 +42,8 @@ class OPXResetConfig:
             "inter_shot_delay_us": "opx_inter_shot_delay_us",
             "persistent_park": "opx_persistent_park",
             "refresh_park_before_shot": "opx_refresh_park_before_shot",
+            "hard_flux_steps": "opx_hard_flux_steps",
+            "park_preroll_us": "opx_park_preroll_us",
             "record_base": "opx_record_base",
             "done_addr": "opx_done_addr",
             "poll_interval_s": "opx_poll_interval_s",
@@ -46,6 +54,11 @@ class OPXResetConfig:
             for field, prefixed in aliases.items()
             if prefixed in values
         }
+        if (
+            "opx_loop_recovery_us" not in values
+            and "readout_thermalization_us" in values
+        ):
+            kwargs["loop_recovery_us"] = values["readout_thermalization_us"]
         cfg = cls(**kwargs)
         cfg.validate()
         return cfg
@@ -62,6 +75,7 @@ class OPXResetConfig:
             "reset_settle_us",
             "verification_delay_us",
             "inter_shot_delay_us",
+            "park_preroll_us",
         ):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value < 0:
@@ -72,6 +86,8 @@ class OPXResetConfig:
             raise ValueError("opx_persistent_park must be a boolean")
         if not isinstance(self.refresh_park_before_shot, bool):
             raise ValueError("opx_refresh_park_before_shot must be a boolean")
+        if not isinstance(self.hard_flux_steps, bool):
+            raise ValueError("opx_hard_flux_steps must be a boolean")
         if self.refresh_park_before_shot and not self.persistent_park:
             raise ValueError(
                 "opx_refresh_park_before_shot requires opx_persistent_park"

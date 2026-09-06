@@ -2,6 +2,21 @@
 import numpy as np
 
 
+READOUT_THERMALIZATION_US = 2.8
+
+
+def readout_thermalization_us(cfg=None):
+    value = (
+        cfg.get("readout_thermalization_us", READOUT_THERMALIZATION_US)
+        if hasattr(cfg, "get")
+        else READOUT_THERMALIZATION_US
+    )
+    value = float(value)
+    if not np.isfinite(value) or value < 0:
+        raise ValueError("readout_thermalization_us must be finite and non-negative")
+    return value
+
+
 def readout_drive_length_us(cfg):
     integration = float(cfg["read_length"])
     offset = max(float(cfg.get("adc_trig_offset", 0.0)), 0.0)
