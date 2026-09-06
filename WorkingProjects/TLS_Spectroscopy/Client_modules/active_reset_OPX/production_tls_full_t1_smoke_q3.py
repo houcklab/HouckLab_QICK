@@ -13,7 +13,7 @@ def configure_runner(target):
         "apply_flux_tail_compensation": False,
         "shots": 50,
         "dc_min": -20500,
-        "dc_max": -20000,
+        "dc_max": -19500,
         "dc_step": 500,
         "freq_step_mhz": None,
         "wall_clock_duration_min": None,

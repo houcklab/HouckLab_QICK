@@ -33,7 +33,7 @@ def test_full_t1_smoke_selects_one_active_uncorrected_qua_order_grid():
         "apply_flux_tail_compensation": False,
         "shots": 50,
         "dc_min": -20500,
-        "dc_max": -20000,
+        "dc_max": -19500,
         "dc_step": 500,
         "freq_step_mhz": None,
         "wall_clock_duration_min": None,
