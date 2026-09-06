@@ -344,8 +344,12 @@ class SingleShot1Q(ExperimentClass):
 
     def _acquire_shots(self, progress=False):
         if active_reset.uses_opx_unbounded(self.cfg):
+            order = str(self.cfg.get("single_shot_state_order", "ge")).lower()
+            if order not in ("ge", "eg"):
+                raise ValueError("single_shot_state_order must be 'ge' or 'eg'")
+            states = (False, True) if order == "ge" else (True, False)
             acquired = {}
-            for prep_excited in (False, True):
+            for prep_excited in states:
                 gain = int(self.cfg["qubit_gain"]) if prep_excited else 0
                 i_values, q_values, _ = acquire_pulse_iq(
                     self.soc,
@@ -375,7 +379,16 @@ class SingleShot1Q(ExperimentClass):
         self.I_0, self.Q_0 = shots_i[0], shots_q[0]
         self.I_1, self.Q_1 = shots_i[1], shots_q[1]
 
-        self.data = {'meta_dict': dict(cfg), 'shots': self.shots, 'repeats': self.repeats}
+        state_order = str(cfg.get("single_shot_state_order", "ge")).lower()
+        labels = (["ground", "excited"] if state_order == "ge"
+                  else ["excited", "ground"])
+        self.data = {
+            'meta_dict': dict(cfg),
+            'shots': self.shots,
+            'repeats': self.repeats,
+            'acquisition_order': 'state_shot',
+            'state_order': labels,
+        }
         self.max_F = self.analyze(plotDisp=plotDisp)
         self.data.update({'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
         if self.save:

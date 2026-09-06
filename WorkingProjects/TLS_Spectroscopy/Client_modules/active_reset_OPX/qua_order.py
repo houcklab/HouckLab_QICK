@@ -34,6 +34,17 @@ def scalar_record_order(shots, axis_lengths):
     ]
 
 
+def single_shot_record_order(shots, state_order="ge"):
+    shots = int(shots)
+    order = str(state_order).strip().lower()
+    if shots <= 0:
+        raise ValueError("shots must be positive")
+    if order not in ("ge", "eg"):
+        raise ValueError("state_order must be 'ge' or 'eg'")
+    states = (0, 1) if order == "ge" else (1, 0)
+    return [(state, shot) for state in states for shot in range(shots)]
+
+
 def reshape_scalar_records(values, *, shots, axis_lengths):
     shots = int(shots)
     lengths = tuple(int(length) for length in axis_lengths)

@@ -87,6 +87,7 @@ class ProductionResetSession:
             "remeasure_outliers": False,
             "qua_shot_order": True,
             "three_point_matched_refs": False,
+            "single_shot_state_order": "ge",
         })
         if self.runtime_mode == "passive":
             values["opx_inter_shot_delay_us"] = float(

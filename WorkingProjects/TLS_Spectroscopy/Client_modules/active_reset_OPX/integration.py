@@ -466,7 +466,7 @@ def acquire_t1_sweep_iq(
         "points": int(delays.size),
         "blocks": int(len(i_blocks)),
         "records": int(total_shots * delays.size),
-        "order": "shot_major",
+        "order": "shot_delay",
         "read_length_cycles": int(read_cycles),
     }
 

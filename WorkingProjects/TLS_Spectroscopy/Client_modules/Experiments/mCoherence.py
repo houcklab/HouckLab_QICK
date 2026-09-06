@@ -67,6 +67,8 @@ class _CoherenceBase(ExperimentClass):
         self.live_plot = bool(live_plot)
         self.save = bool(save)
         self.opx_reset_telemetry = []
+        self.acquisition_telemetry = []
+        self.acquisition_order = None
 
     def _run_point_counts(self, wait_us, reps=None):
         raise NotImplementedError
@@ -198,6 +200,8 @@ class T1(_CoherenceBase):
                 "ff_gain": float(self.ff_gain),
                 "delays_us": self.t_vec_us.tolist(),
             })
+            self.acquisition_order = str(telemetry["order"])
+            self.acquisition_telemetry.append(dict(telemetry))
             if reset_scheme == "opx_unbounded":
                 self.opx_reset_telemetry.append(telemetry)
             if progress:
@@ -291,6 +295,8 @@ class T1(_CoherenceBase):
             'point_visit_orders': getattr(self, "point_visit_orders", None),
             'randomize_point_order': bool(self.cfg.get("randomize_point_order", False)),
             'point_order_seed': self.cfg.get("point_order_seed", None),
+            'acquisition_order': self.acquisition_order,
+            'acquisition_telemetry': self.acquisition_telemetry,
             'opx_reset_telemetry': self.opx_reset_telemetry,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }

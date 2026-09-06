@@ -461,7 +461,7 @@ def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
         "points": 3,
         "blocks": 1,
         "records": 6,
-        "order": "shot_major",
+        "order": "shot_delay",
         "read_length_cycles": 10,
     }
     assert created[0].cfg["opx_t1_delays_us"] == [1.0, 10.0, 100.0]

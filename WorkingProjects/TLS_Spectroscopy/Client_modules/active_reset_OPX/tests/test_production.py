@@ -28,6 +28,7 @@ def test_user_passive_mode_never_requires_an_active_calibration():
     assert cfg["opx_persistent_park"] is True
     assert cfg["opx_hard_flux_steps"] is True
     assert cfg["qua_shot_order"] is True
+    assert cfg["single_shot_state_order"] == "ge"
 
 
 def test_active_session_owns_timing_frequency_calibration_and_loop_order():

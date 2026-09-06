@@ -9,6 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order 
     optimizer_record_order,
     reshape_optimizer_records,
     reshape_scalar_records,
+    single_shot_record_order,
     scalar_record_order,
     _uniform_frequency_registers,
 )
@@ -72,6 +73,15 @@ def test_scalar_record_order_is_shot_then_declared_axes():
         for shot in range(2)
         for first in range(2)
         for second in range(3)
+    ]
+
+
+def test_single_shot_order_matches_qua_state_blocks():
+    assert single_shot_record_order(2) == [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
     ]
 
 

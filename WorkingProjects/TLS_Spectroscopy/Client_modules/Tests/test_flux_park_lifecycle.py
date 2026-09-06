@@ -201,6 +201,53 @@ def test_single_shot_dispatches_unbounded_reset_through_dmem(monkeypatch):
     assert shots_q.tolist() == [[0.0, 0.0, 0.0], [-11000.0, -11000.0, -11000.0]]
 
 
+def test_single_shot_unbounded_path_honors_physical_state_order(monkeypatch):
+    experiment = object.__new__(SS.SingleShot1Q)
+    experiment.cfg = {
+        "reset_mode": "opx_unbounded",
+        "single_shot_state_order": "eg",
+        "shots": 2,
+        "qubit_gain": 11000,
+        "qubit_pi_freq": 4367.25,
+        "qubit_freq": 4367.25,
+    }
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.repeats = 1
+    calls = []
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        calls.append(kwargs["gain"])
+        value = float(kwargs["gain"])
+        return np.full(2, value), np.full(2, -value), {}
+
+    monkeypatch.setattr(SS, "acquire_pulse_iq", acquire)
+
+    shots_i, shots_q = experiment._acquire_shots()
+
+    assert calls == [11000, 0]
+    assert shots_i.tolist() == [[0.0, 0.0], [11000.0, 11000.0]]
+    assert shots_q.tolist() == [[0.0, 0.0], [-11000.0, -11000.0]]
+
+
+def test_single_shot_saves_qua_state_block_order():
+    experiment = object.__new__(SS.SingleShot1Q)
+    experiment.cfg = {"shots": 2, "single_shot_state_order": "ge"}
+    experiment.repeats = 1
+    experiment.save = False
+    experiment.min_F = 0.0
+    experiment._acquire_shots = lambda progress=False: (
+        np.asarray([[1.0, 2.0], [3.0, 4.0]]),
+        np.asarray([[5.0, 6.0], [7.0, 8.0]]),
+    )
+    experiment.analyze = lambda plotDisp=False: 0.9
+
+    result = experiment.acquire()
+
+    assert result["data"]["acquisition_order"] == "state_shot"
+    assert result["data"]["state_order"] == ["ground", "excited"]
+
+
 def test_rabi_ss_dispatches_unbounded_gain_sweep(monkeypatch):
     gains = np.asarray([1000, 2000, 3000])
     cfg = {
@@ -513,6 +560,7 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
     experiment.soccfg = object()
     experiment.calib_params = {}
     experiment.opx_reset_telemetry = []
+    experiment.acquisition_telemetry = []
     calls = []
 
     def acquire(soc, soccfg, cfg, **kwargs):
@@ -525,7 +573,7 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
             ]),
             np.zeros((3, 4)),
             {
-                "order": "shot_major",
+                "order": "shot_delay",
                 "shots_per_point": 4,
                 "points": 3,
                 "blocks": 1,
@@ -559,6 +607,8 @@ def test_production_t1_opx_path_sweeps_all_delays_inside_each_shot(monkeypatch):
     )
     assert populations.tolist() == [1.0, 0.5, 0.0]
     assert experiment.point_visit_orders == [[0, 1, 2]]
+    assert experiment.acquisition_order == "shot_delay"
+    assert experiment.acquisition_telemetry[0]["records"] == 12
 
 
 def test_production_t1_opx_path_does_not_require_legacy_calibration(monkeypatch):

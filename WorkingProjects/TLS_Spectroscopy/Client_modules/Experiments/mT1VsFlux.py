@@ -567,6 +567,7 @@ class _T1VsFluxBase(ExperimentClass):
         self.repeat_metadata = dict(repeat_metadata or {})
         self.write_outputs = bool(write_outputs)
         self.opx_reset_telemetry = []
+        self.acquisition_telemetry = []
         if flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = flux_tail_compensation
         cfg["shots"] = self.shots
@@ -774,6 +775,9 @@ class T13PointVsFlux(_T1VsFluxBase):
                     self.calib_params,
                 )
             P0, P1, Ps = np.mean(states, axis=2)
+            self.acquisition_telemetry.append(dict(telemetry))
+            self.data["acquisition_order"] = str(telemetry["order"])
+            self.data["acquisition_telemetry"] = self.acquisition_telemetry
             if reset_scheme == "opx_unbounded":
                 self.opx_reset_telemetry.append(telemetry)
                 self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
@@ -975,6 +979,9 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
                     self.calib_params,
                 )
             ss[:, :] = np.mean(states, axis=2)
+            self.acquisition_telemetry.append(dict(telemetry))
+            self.data["acquisition_order"] = str(telemetry["order"])
+            self.data["acquisition_telemetry"] = self.acquisition_telemetry
             if reset_scheme == "opx_unbounded":
                 self.opx_reset_telemetry.append(telemetry)
                 self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
