@@ -21,8 +21,24 @@ if remainder:
 import Pyro4
 from qick import QickSoc
 
+try:
+    from .readout_batch import acquire_qick_program_batch
+except ImportError:
+    from readout_batch import acquire_qick_program_batch
+
 
 class QickSocCal(QickSoc):
+    def acquire_qick_program_batch(
+        self, first_program, programs, shots, reads_per_rep=1
+    ):
+        return acquire_qick_program_batch(
+            self,
+            first_program,
+            programs,
+            shots,
+            reads_per_rep=reads_per_rep,
+        )
+
     def _adc_tile_block(self, ro_ch=0):
         adc = str(self.readouts[ro_ch].adc)
         return int(adc[0]), int(adc[1])

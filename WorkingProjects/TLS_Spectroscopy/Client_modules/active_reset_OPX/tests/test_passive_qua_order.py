@@ -138,6 +138,7 @@ def test_readout_grid_runs_host_frequency_programs_in_shot_major_order(monkeypat
         def __init__(self, soccfg, cfg, *, read_frequency_mhz, values, kind):
             self.frequency = float(read_frequency_mhz)
             self.values = np.asarray(values)
+            self.reps = int(self.values.size)
             self.assert_park = bool(cfg["qua_assert_park_at_start"])
 
         def acquire_records(self, soc, progress=False, load_pulses=True):
@@ -161,6 +162,71 @@ def test_readout_grid_runs_host_frequency_programs_in_shot_major_order(monkeypat
     ]
     assert i_values.shape == (2, 2, 2)
     assert q_values.shape == (2, 2, 2)
+    assert telemetry["order"] == "shot_frequency_gain"
+
+
+def test_readout_grid_batches_programs_on_the_soc_when_supported(monkeypatch):
+    constructed = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, *, read_frequency_mhz, values, kind):
+            self.frequency = float(read_frequency_mhz)
+            self.values = np.asarray(values)
+            self.reps = int(self.values.size)
+            self.assert_park = bool(cfg["qua_assert_park_at_start"])
+            constructed.append((self.frequency, self.assert_park))
+
+        def dump_prog(self):
+            return {
+                "frequency": self.frequency,
+                "assert_park": self.assert_park,
+                "values": self.values,
+            }
+
+        def acquire_records(self, *args, **kwargs):
+            raise AssertionError("client-side acquisition should not run")
+
+    class Soc:
+        def __init__(self):
+            self.calls = []
+
+        def acquire_qick_program_batch(
+            self, first_program, programs, shots, reads_per_rep=1
+        ):
+            self.calls.append((first_program, programs, shots, reads_per_rep))
+            records = np.empty((shots, len(programs), 2, 2), dtype=float)
+            for shot in range(shots):
+                for frequency_index, program in enumerate(programs):
+                    records[shot, frequency_index, :, 0] = (
+                        program["frequency"] + program["values"] + shot
+                    )
+                    records[shot, frequency_index, :, 1] = -records[
+                        shot, frequency_index, :, 0
+                    ]
+            return {"records": records, "controller_programs": shots * len(programs)}
+
+    monkeypatch.setattr(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order.QUAReadoutFrequencyProgram",
+        Program,
+    )
+    soc = Soc()
+    i_values, q_values, telemetry = acquire_passive_readout_grid(
+        soc, object(), {"shots": 2},
+        frequencies_mhz=[10.0, 20.0], values=[1, 2], kind="readout_gain",
+    )
+    assert constructed == [(10.0, False), (20.0, False), (10.0, True)]
+    assert len(soc.calls) == 1
+    first_program, programs, shots, reads_per_rep = soc.calls[0]
+    assert first_program["assert_park"] is True
+    assert [program["assert_park"] for program in programs] == [False, False]
+    assert shots == 2
+    assert reads_per_rep == 1
+    np.testing.assert_array_equal(i_values[0, :, 0], [11.0, 12.0])
+    np.testing.assert_array_equal(i_values[1, :, 1], [22.0, 23.0])
+    np.testing.assert_array_equal(q_values, -i_values)
+    assert telemetry["host_programs"] == 1
+    assert telemetry["controller_programs"] == 4
+    assert telemetry["server_batches"] == 1
     assert telemetry["order"] == "shot_frequency_gain"
 
 
@@ -196,6 +262,61 @@ def test_optimizer_grid_keeps_ground_excited_pairs_inside_each_point(monkeypatch
     assert i_values.shape == (2, 2, 2, 2)
     assert q_values.shape == (2, 2, 2, 2)
     np.testing.assert_array_equal(i_values[0, 0], [[1, 101], [2, 102]])
+    assert telemetry["order"] == "shot_frequency_gain_state"
+
+
+def test_readout_optimizer_batches_programs_on_the_soc(monkeypatch):
+    class Program:
+        def __init__(self, soccfg, cfg, *, frequency_mhz, gains, kind,
+                     drive_pulses, drive_gain):
+            self.frequency = float(frequency_mhz)
+            self.gains = np.asarray(gains)
+            self.reps = int(self.gains.size * 2)
+            self.assert_park = bool(cfg["qua_assert_park_at_start"])
+
+        def dump_prog(self):
+            return {
+                "frequency": self.frequency,
+                "assert_park": self.assert_park,
+                "gains": self.gains,
+            }
+
+        def acquire_records(self, *args, **kwargs):
+            raise AssertionError("client-side acquisition should not run")
+
+    class Soc:
+        def __init__(self):
+            self.calls = 0
+
+        def acquire_qick_program_batch(
+            self, first_program, programs, shots, reads_per_rep=1
+        ):
+            self.calls += 1
+            records = np.empty((shots, len(programs), 4, 2), dtype=float)
+            for shot in range(shots):
+                for frequency_index, program in enumerate(programs):
+                    row = np.array([1, 101, 2, 102], dtype=float)
+                    row += program["frequency"] + shot
+                    records[shot, frequency_index, :, 0] = row
+                    records[shot, frequency_index, :, 1] = -row
+            return {"records": records, "controller_programs": 4}
+
+    monkeypatch.setattr(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order.QUAOptimizerFrequencyProgram",
+        Program,
+    )
+    soc = Soc()
+    i_values, q_values, telemetry = acquire_passive_optimizer_grid(
+        soc, object(), {"shots": 2}, frequencies_mhz=[10.0, 20.0],
+        gains=[1, 2], kind="readout", drive_pulses=1, drive_gain=7,
+    )
+    assert soc.calls == 1
+    assert i_values.shape == (2, 2, 2, 2)
+    np.testing.assert_array_equal(i_values[0, 0], [[11, 111], [12, 112]])
+    np.testing.assert_array_equal(q_values, -i_values)
+    assert telemetry["host_programs"] == 1
+    assert telemetry["controller_programs"] == 4
+    assert telemetry["server_batches"] == 1
     assert telemetry["order"] == "shot_frequency_gain_state"
 
 

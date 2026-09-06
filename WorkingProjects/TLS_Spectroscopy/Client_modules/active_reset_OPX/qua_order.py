@@ -819,6 +819,35 @@ def _finite_axis(values, label):
     return axis
 
 
+def _batch_program_records(soc, first, normal, shots):
+    try:
+        method = getattr(soc, "acquire_qick_program_batch")
+    except Exception:
+        return None
+    if not callable(method):
+        return None
+    result = method(
+        first.dump_prog(),
+        [program.dump_prog() for program in normal],
+        int(shots),
+        reads_per_rep=1,
+    )
+    if not isinstance(result, dict) or "records" not in result:
+        raise RuntimeError("RFSoC batch acquisition returned an invalid result")
+    records = np.asarray(result["records"], dtype=float)
+    expected = (
+        int(shots),
+        len(normal),
+        int(first.reps),
+        2,
+    )
+    if records.shape != expected:
+        raise RuntimeError(
+            f"RFSoC batch readout shape {records.shape} does not match {expected}"
+        )
+    return records, int(result.get("controller_programs", shots * len(normal)))
+
+
 def acquire_passive_readout_grid(
     soc,
     soccfg,
@@ -855,9 +884,29 @@ def acquire_passive_readout_grid(
     if excursion_gain is not None:
         first_kwargs["excursion_gain"] = float(excursion_gain)
     first = QUAReadoutFrequencyProgram(soccfg, first_cfg, **first_kwargs)
+    batched = _batch_program_records(soc, first, normal, shots)
+    axis_name = "gain" if kind == "readout_gain" else "dc"
+    total = shots * frequencies.size
+    if batched is not None:
+        records, controller_programs = batched
+        if progress is not None:
+            progress(total, total)
+        return (
+            records[..., 0].transpose(1, 2, 0),
+            records[..., 1].transpose(1, 2, 0),
+            {
+                "shots_per_point": shots,
+                "frequency_points": int(frequencies.size),
+                f"{axis_name}_points": int(values.size),
+                "host_programs": 1,
+                "controller_programs": controller_programs,
+                "server_batches": 1,
+                "records": int(shots * frequencies.size * values.size),
+                "order": f"shot_frequency_{axis_name}",
+            },
+        )
     i_values = np.empty((shots, frequencies.size, values.size), dtype=float)
     q_values = np.empty_like(i_values)
-    total = shots * frequencies.size
     done = 0
     for shot in range(shots):
         for frequency_index in range(frequencies.size):
@@ -870,7 +919,6 @@ def acquire_passive_readout_grid(
             done += 1
             if progress is not None:
                 progress(done, total)
-    axis_name = "gain" if kind == "readout_gain" else "dc"
     return (
         i_values.transpose(1, 2, 0),
         q_values.transpose(1, 2, 0),
@@ -879,6 +927,8 @@ def acquire_passive_readout_grid(
             "frequency_points": int(frequencies.size),
             f"{axis_name}_points": int(values.size),
             "host_programs": int(total),
+            "controller_programs": int(total),
+            "server_batches": 0,
             "records": int(shots * frequencies.size * values.size),
             "order": f"shot_frequency_{axis_name}",
         },
@@ -1089,9 +1139,30 @@ def acquire_passive_optimizer_grid(
         drive_pulses=drive_pulses,
         drive_gain=drive_gain,
     )
+    batched = _batch_program_records(soc, first, normal, shots)
+    total = shots * frequencies.size
+    if batched is not None:
+        records, controller_programs = batched
+        shape = (shots, frequencies.size, gains.size, 2)
+        if progress is not None:
+            progress(total, total)
+        return (
+            records[..., 0].reshape(shape),
+            records[..., 1].reshape(shape),
+            {
+                "shots_per_point": shots,
+                "frequency_points": int(frequencies.size),
+                "gain_points": int(gains.size),
+                "states": 2,
+                "host_programs": 1,
+                "controller_programs": controller_programs,
+                "server_batches": 1,
+                "records": int(shots * frequencies.size * gains.size * 2),
+                "order": "shot_frequency_gain_state",
+            },
+        )
     i_values = np.empty((shots, frequencies.size, gains.size, 2), dtype=float)
     q_values = np.empty_like(i_values)
-    total = shots * frequencies.size
     done = 0
     for shot in range(shots):
         for frequency_index in range(frequencies.size):
@@ -1114,6 +1185,8 @@ def acquire_passive_optimizer_grid(
         "gain_points": int(gains.size),
         "states": 2,
         "host_programs": int(total),
+        "controller_programs": int(total),
+        "server_batches": 0,
         "records": int(shots * frequencies.size * gains.size * 2),
         "order": "shot_frequency_gain_state",
     }
