@@ -828,6 +828,7 @@ def test_tls_memory_acquisition_preserves_shot_sequence_order(monkeypatch):
         storage_us=12.0,
         ff_gain=-20000,
         shots=3,
+        warmup_shots=128,
     )
 
     assert len(created) == 1
@@ -848,8 +849,10 @@ def test_tls_memory_acquisition_preserves_shot_sequence_order(monkeypatch):
         "blocks": 1,
         "records": 9,
         "order": "shot_sequence",
+        "warmup_shots": 128,
         "read_length_cycles": 10,
     }
+    assert created[0].cfg["opx_memory_warmup_shots"] == 128
 
 def test_production_opx_mode_skips_legacy_single_shot_calibration():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (

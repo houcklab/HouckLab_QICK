@@ -259,6 +259,7 @@ def acquire_tls_memory_iq(
     storage_us,
     ff_gain,
     shots=None,
+    warmup_shots=None,
 ):
     bundle = runtime_bundle(cfg)
     sequence_values = tuple(str(value).strip().lower() for value in sequences)
@@ -286,6 +287,12 @@ def acquire_tls_memory_iq(
     )
     if total_shots <= 0:
         raise ValueError("TLS memory shots must be positive")
+    total_warmup_shots = int(
+        cfg.get("opx_memory_warmup_shots", 0)
+        if warmup_shots is None else warmup_shots
+    )
+    if total_warmup_shots < 0:
+        raise ValueError("TLS memory warmup shots must be non-negative")
     capacity = max_records(
         dmem_words_from_soccfg(soccfg),
         int(cfg.get("opx_record_base", 32)),
@@ -306,6 +313,7 @@ def acquire_tls_memory_iq(
         run_cfg.update({
             "opx_reset_scheme": "opx_unbounded",
             "opx_memory_shots": int(chunk),
+            "opx_memory_warmup_shots": int(total_warmup_shots),
             "opx_memory_sequences": list(sequence_values),
             "opx_memory_interaction_us": interaction_us,
             "opx_memory_storage_us": storage_us,
@@ -324,7 +332,9 @@ def acquire_tls_memory_iq(
             soc,
             program,
             timeout_s=_block_timeout_s(
-                run_cfg, int(chunk) * len(sequence_values)
+                run_cfg,
+                (int(chunk) + int(total_warmup_shots))
+                * len(sequence_values),
             ),
             poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
         )
@@ -345,6 +355,7 @@ def acquire_tls_memory_iq(
         "blocks": int(len(i_blocks)),
         "records": int(total_shots * len(sequence_values)),
         "order": "shot_sequence",
+        "warmup_shots": int(total_warmup_shots),
         "read_length_cycles": int(read_cycles),
     }
 

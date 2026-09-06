@@ -227,6 +227,9 @@ class TLSMemory(ExperimentClass):
                     storage_us=self.storage_us,
                     ff_gain=self.ff_gain,
                     shots=self.shots,
+                    warmup_shots=int(
+                        self.cfg.get("opx_memory_warmup_shots", 0)
+                    ),
                 )
             i = i_values[0]
             q = q_values[0]

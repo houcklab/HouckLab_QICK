@@ -533,6 +533,21 @@ def test_tls_memory_sequence_preserves_signed_probe_timing(sequence, expected):
     assert events == expected
 
 
+def test_tls_memory_warmup_preserves_flux_timing_without_exciting_qubit():
+    events = []
+
+    emit_tls_memory_sequence(
+        sequence="single",
+        prepare_excited=lambda: events.append("prepare"),
+        play_excursion=lambda: events.append("excursion"),
+        wait_storage=lambda: events.append("storage"),
+        idle_excursion=lambda: events.append("idle"),
+        do_prepare=False,
+    )
+
+    assert events == ["excursion", "storage", "idle"]
+
+
 def test_tls_memory_program_requires_hard_flux_steps():
     prog = RecordingProgram()
     prog.cfg = {

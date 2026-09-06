@@ -44,6 +44,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integratio
 QUBIT = "q3"
 CALIBRATION_SHOTS = 1000
 SHOTS = 200
+WARMUP_SHOTS = 128
 TARGET_GAIN = -20000
 INTERACTION_US = 4.0
 STORAGE_US = 12.0
@@ -110,6 +111,7 @@ def main():
         "opx_record_base": 32,
         "opx_done_addr": 1,
         "opx_unbounded_watchdog_s": 2.0,
+        "opx_memory_warmup_shots": int(WARMUP_SHOTS),
     })
     metadata = {
         "created": datetime.now().isoformat(),
@@ -122,6 +124,7 @@ def main():
         "storage_us": float(STORAGE_US),
         "sequences": list(SEQUENCES),
         "shots_per_sequence": int(SHOTS),
+        "warmup_shots": int(WARMUP_SHOTS),
         "park_lifecycle": "persistent_hard_step",
         "payload_order": "shot_sequence",
         "reset_scheme": "opx_unbounded",
@@ -151,6 +154,7 @@ def main():
             storage_us=STORAGE_US,
             ff_gain=TARGET_GAIN,
             shots=SHOTS,
+            warmup_shots=WARMUP_SHOTS,
         )
     finally:
         reset_gens = getattr(soc, "reset_gens", None)

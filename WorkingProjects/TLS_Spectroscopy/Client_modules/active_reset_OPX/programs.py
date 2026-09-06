@@ -336,13 +336,14 @@ def emit_tls_memory_sequence(
     play_excursion,
     wait_storage,
     idle_excursion,
+    do_prepare=True,
 ):
     sequence = str(sequence).strip().lower()
     if sequence not in TLS_MEMORY_SEQUENCES:
         raise ValueError(
             f"memory sequence must be one of {TLS_MEMORY_SEQUENCES}"
         )
-    if sequence != "ground_double":
+    if bool(do_prepare) and sequence != "ground_double":
         prepare_excited()
     play_excursion()
     wait_storage()
@@ -1363,16 +1364,20 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
                 f"memory sequence must be one of {TLS_MEMORY_SEQUENCES}"
             )
         shots = int(run_cfg.get("opx_memory_shots", 0))
+        warmup_shots = int(run_cfg.get("opx_memory_warmup_shots", 0))
         interaction_us = float(run_cfg.get("opx_memory_interaction_us", 0.0))
         storage_us = float(run_cfg.get("opx_memory_storage_us", 0.0))
         if shots <= 0:
             raise ValueError("opx_memory_shots must be positive")
+        if warmup_shots < 0:
+            raise ValueError("opx_memory_warmup_shots must be non-negative")
         if not np.isfinite(interaction_us) or interaction_us < 0.01:
             raise ValueError("opx_memory_interaction_us must be at least 0.01 us")
         if not np.isfinite(storage_us) or storage_us < 0.0:
             raise ValueError("opx_memory_storage_us must be non-negative")
         run_cfg.update({
             "opx_memory_sequences": list(sequences),
+            "opx_memory_warmup_shots": warmup_shots,
             "ff_hold": interaction_us,
             "t1_wait_us": interaction_us,
             "do_ff": True,
@@ -1387,7 +1392,7 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
         )
         self.sync_all(self.us2cycles(duration_us))
 
-    def _emit_memory_point(self, sequence):
+    def _emit_memory_point(self, sequence, *, label_context, do_prepare):
         park_up, park_down = self._shot_park_callbacks()
 
         def emit_payload():
@@ -1401,6 +1406,7 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
                     float(self.cfg["opx_memory_storage_us"])
                 )),
                 idle_excursion=self._idle_memory_excursion,
+                do_prepare=do_prepare,
             )
 
         emit_payload_reset_shot(
@@ -1416,7 +1422,9 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
             measure_project=self._measure_project,
             prepare_reset=self._set_reset_pulse,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
-            label_prefix=f"OPX_TLS_MEMORY_{sequence.upper()}",
+            label_prefix=(
+                f"OPX_TLS_MEMORY_{label_context}_{sequence.upper()}"
+            ),
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1446,7 +1454,7 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            ("shot_loop", "done"),
+            ("shot_loop", "warmup_loop", "done"),
             reserved=control_reserved,
         )
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
@@ -1458,9 +1466,38 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
             int(self.cfg["opx_memory_shots"]) - 1,
         )
         self._begin_park_lifecycle()
+        warmup_shots = int(self.cfg["opx_memory_warmup_shots"])
+        if warmup_shots > 0:
+            self.regwi(0, controls["warmup_loop"], warmup_shots - 1)
+            self.label("OPX_TLS_MEMORY_WARMUP_LOOP")
+            for sequence in self.cfg["opx_memory_sequences"]:
+                self.regwi(
+                    self.reset_page,
+                    self.reset_regs["address"],
+                    self.record_base,
+                )
+                self._emit_memory_point(
+                    sequence,
+                    label_context="WARMUP",
+                    do_prepare=False,
+                )
+            self.loopnz(
+                0,
+                controls["warmup_loop"],
+                "OPX_TLS_MEMORY_WARMUP_LOOP",
+            )
+            self.regwi(
+                self.reset_page,
+                self.reset_regs["address"],
+                self.record_base,
+            )
         self.label("OPX_TLS_MEMORY_SHOT_LOOP")
         for sequence in self.cfg["opx_memory_sequences"]:
-            self._emit_memory_point(sequence)
+            self._emit_memory_point(
+                sequence,
+                label_context="RECORDED",
+                do_prepare=True,
+            )
             self.mathi(0, controls["done"], controls["done"], "+", 1)
             self.memwi(0, controls["done"], self.done_addr)
         self.loopnz(0, controls["shot_loop"], "OPX_TLS_MEMORY_SHOT_LOOP")
