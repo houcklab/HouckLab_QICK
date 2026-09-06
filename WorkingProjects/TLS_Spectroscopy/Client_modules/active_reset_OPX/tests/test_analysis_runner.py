@@ -153,6 +153,54 @@ def test_flux_cycle_runner_maps_reset_and_recovery_conditions():
     assert runner._ordered_frequency_axis(frequencies, 1).tolist() == [3.0, 2.0, 1.0]
 
 
+def test_flux_cycle_rabi_selects_restored_active_25_gain():
+    result = analysis.evaluate_flux_cycle_rabi(
+        [0, 5000, 10000, 15000, 20000],
+        {
+            "passive_1000": [0.02, 0.35, 0.78, 0.42, 0.04],
+            "no_reset_25": [0.03, 0.31, 0.74, 0.50, 0.06],
+            "active_25": [0.02, 0.22, 0.58, 0.73, 0.30],
+            "active_100": [0.03, 0.34, 0.75, 0.45, 0.05],
+        },
+    )
+
+    assert result["status"] == "pass"
+    assert result["diagnosis"] == "gain_retune_restores_25us"
+    assert result["recommended_active_25_gain"] == 15000
+    assert result["metrics"]["active_25"]["peak_population"] == pytest.approx(0.73)
+
+
+def test_flux_cycle_rabi_identifies_active_reset_suppression():
+    result = analysis.evaluate_flux_cycle_rabi(
+        [0, 5000, 10000, 15000, 20000],
+        {
+            "passive_1000": [0.02, 0.35, 0.78, 0.42, 0.04],
+            "no_reset_25": [0.03, 0.31, 0.74, 0.50, 0.06],
+            "active_25": [0.03, 0.18, 0.49, 0.51, 0.28],
+            "active_100": [0.03, 0.34, 0.75, 0.45, 0.05],
+        },
+    )
+
+    assert result["status"] == "diagnostic"
+    assert result["diagnosis"] == "active_reset_suppression"
+    assert result["recommended_active_25_gain"] is None
+
+
+def test_flux_cycle_rabi_runner_maps_exact_lifecycle_conditions():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        flux_cycle_rabi_q3 as runner,
+    )
+
+    assert runner._method_config("passive_1000") == ("none", 1000.0, "passive")
+    assert runner._method_config("no_reset_25") == ("none", 25.0, "active")
+    assert runner._method_config("active_25") == (
+        "opx_unbounded", 25.0, "active"
+    )
+    assert runner._method_config("active_100") == (
+        "opx_unbounded", 100.0, "active_100"
+    )
+
+
 def test_t1_frequency_retune_selects_payload_only_when_it_restores_equivalence():
     fits = {
         "passive_1000": {"P0": 0.05, "P1": 0.80, "tau_us": 100.0, "decaying": True},

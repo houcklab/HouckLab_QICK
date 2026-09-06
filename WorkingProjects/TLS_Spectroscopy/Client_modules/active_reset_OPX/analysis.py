@@ -389,6 +389,76 @@ def evaluate_flux_cycle_spectroscopy(
     }
 
 
+def evaluate_flux_cycle_rabi(
+    gains,
+    populations,
+    *,
+    max_abs_peak_population_difference=0.12,
+):
+    gains = np.asarray(gains, dtype=int).reshape(-1)
+    required = ("passive_1000", "no_reset_25", "active_25", "active_100")
+    values = {str(key): np.asarray(value, dtype=float).reshape(-1)
+              for key, value in dict(populations).items()}
+    missing = [method for method in required if method not in values]
+    if missing:
+        return {
+            "status": "fail",
+            "diagnosis": "missing_curves",
+            "missing_curves": missing,
+            "recommended_active_25_gain": None,
+            "metrics": {},
+        }
+    tolerance = float(max_abs_peak_population_difference)
+    if not np.isfinite(tolerance) or tolerance < 0:
+        raise ValueError("Rabi peak tolerance must be finite and nonnegative")
+    if gains.size < 3 or np.any(np.diff(gains) <= 0):
+        raise ValueError("Rabi gains must contain at least three increasing values")
+    metrics = {}
+    for method in required:
+        curve = values[method]
+        if curve.size != gains.size or not np.all(np.isfinite(curve)):
+            raise ValueError(f"{method} Rabi curve is invalid")
+        index = int(np.argmax(curve))
+        metrics[method] = {
+            "peak_gain": int(gains[index]),
+            "peak_population": float(curve[index]),
+            "boundary_peak": bool(index in (0, gains.size - 1)),
+        }
+    baseline = metrics["passive_1000"]["peak_population"]
+    for method in required[1:]:
+        metrics[method]["peak_population_difference"] = float(
+            metrics[method]["peak_population"] - baseline
+        )
+        metrics[method]["population_passed"] = bool(
+            abs(metrics[method]["peak_population_difference"]) <= tolerance
+        )
+    boundary_methods = [
+        method for method in required if metrics[method]["boundary_peak"]
+    ]
+    if boundary_methods:
+        diagnosis = "sweep_boundary"
+    elif not metrics["active_100"]["population_passed"]:
+        diagnosis = "active_100_control_failed"
+    elif not metrics["no_reset_25"]["population_passed"]:
+        diagnosis = "short_cycle_suppression"
+    elif not metrics["active_25"]["population_passed"]:
+        diagnosis = "active_reset_suppression"
+    else:
+        diagnosis = "gain_retune_restores_25us"
+    passed = diagnosis == "gain_retune_restores_25us"
+    return {
+        "status": "pass" if passed else "diagnostic",
+        "diagnosis": diagnosis,
+        "missing_curves": [],
+        "recommended_active_25_gain": (
+            metrics["active_25"]["peak_gain"] if passed else None
+        ),
+        "metrics": metrics,
+        "boundary_methods": boundary_methods,
+        "max_abs_peak_population_difference": tolerance,
+    }
+
+
 def evaluate_t1_frequency_retune(
     fits,
     *,
