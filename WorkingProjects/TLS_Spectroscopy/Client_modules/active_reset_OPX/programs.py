@@ -80,6 +80,10 @@ def payload_sweep_plan(cfg, *, freq2reg):
     raise ValueError("opx_payload_sweep_kind must be 'gain' or 'frequency'")
 
 
+def initialize_payload_sweep_register(prog, *, page, register, value):
+    prog.safe_regwi(page, register, int(value))
+
+
 def _reserved_registers(prog, page):
     reserved = {0}
     if int(page) == 0:
@@ -993,11 +997,11 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             self.record_base,
             "OPX payload record address",
         )
-        self.regwi(
-            self.reset_page,
-            self.reset_regs["payload_sweep"],
-            int(self._payload_sweep_plan["start_register"]),
-            "OPX payload sweep",
+        initialize_payload_sweep_register(
+            self,
+            page=self.reset_page,
+            register=self.reset_regs["payload_sweep"],
+            value=self._payload_sweep_plan["start_register"],
         )
         self.regwi(0, controls["done"], 0, "completed OPX payload shots")
         self.memwi(0, controls["done"], self.done_addr)

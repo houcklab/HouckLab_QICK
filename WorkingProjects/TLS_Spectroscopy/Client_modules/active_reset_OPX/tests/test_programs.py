@@ -49,6 +49,9 @@ class RecordingProgram:
     def regwi(self, page, reg, value, comment=""):
         self.asm.append(("regwi", reg, int(value)))
 
+    def safe_regwi(self, page, reg, value):
+        self.asm.append(("safe_regwi", reg, int(value)))
+
     def mathi(self, page, dst, src, op, value):
         self.asm.append(("mathi", dst, src, op, int(value)))
 
@@ -733,6 +736,19 @@ def test_frequency_payload_sweep_uses_frequency_register_and_fixed_gain():
         "fixed_frequency_mhz": None,
         "target_register": "freq",
     }
+
+
+def test_payload_sweep_start_accepts_unsigned_frequency_register_value():
+    prog = RecordingProgram()
+
+    programs.initialize_payload_sweep_register(
+        prog,
+        page=1,
+        register=7,
+        value=2713346438,
+    )
+
+    assert prog.asm == [("safe_regwi", 7, 2713346438)]
 
 
 def test_gain_payload_sweep_preserves_existing_fixed_frequency_behavior():
