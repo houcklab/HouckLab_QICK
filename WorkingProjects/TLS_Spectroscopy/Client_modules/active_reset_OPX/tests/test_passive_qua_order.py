@@ -312,6 +312,15 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 "records": records,
                 "controller_programs": 1,
                 "readout_reconfigurations": 4,
+                "setup_s": 0.1,
+                "handshake_s": 0.2,
+                "acquisition_s": 0.3,
+                "ready_wait_s": 0.04,
+                "frequency_update_s": 0.05,
+                "release_s": 0.06,
+                "stream_drain_s": 0.07,
+                "ready_polls": 8,
+                "frequency_update_mode": "precomputed_register",
             }
 
         def acquire_qick_program_batch(self, *args, **kwargs):
@@ -342,6 +351,17 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert telemetry["controller_programs"] == 1
     assert telemetry["readout_reconfigurations"] == 4
     assert telemetry["resident_handshake"] is True
+    assert telemetry["server_timing_s"] == {
+        "setup_s": 0.1,
+        "handshake_s": 0.2,
+        "acquisition_s": 0.3,
+        "ready_wait_s": 0.04,
+        "frequency_update_s": 0.05,
+        "release_s": 0.06,
+        "stream_drain_s": 0.07,
+    }
+    assert telemetry["ready_polls"] == 8
+    assert telemetry["frequency_update_mode"] == "precomputed_register"
     assert telemetry["order"] == "shot_frequency_gain"
 
 

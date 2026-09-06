@@ -133,12 +133,39 @@ def _set_readout_frequencies(soc, readout_config):
             )
 
 
+def _prepare_readout_frequency_updates(soc, readout_configs):
+    updates = []
+    for config in readout_configs:
+        prepared = []
+        for ch, cfg in config.items():
+            try:
+                buffer = soc.avg_bufs[int(ch)]
+                if hasattr(buffer, "readoutport"):
+                    return None
+                readout = buffer.readout
+                setter = readout.set_freq_int
+                buffer.set_freq(float(cfg["freq"]), gen_ch=cfg["gen_ch"])
+                frequency_register = int(readout.freq_reg)
+            except (AttributeError, IndexError, KeyError, TypeError):
+                return None
+            prepared.append((setter, frequency_register))
+        updates.append(tuple(prepared))
+    return tuple(updates)
+
+
+def _apply_readout_frequency_update(update):
+    for setter, frequency_register in update:
+        setter(frequency_register)
+
+
 def _wait_for_ready(tproc, ready_addr, expected, timeout_s):
     deadline = time.monotonic() + float(timeout_s)
+    polls = 0
     while True:
+        polls += 1
         ready = int(tproc.single_read(addr=ready_addr))
         if ready == expected:
-            return
+            return polls
         if ready > expected:
             raise RuntimeError(
                 f"resident tProcessor advanced to block {ready} before {expected}"
@@ -147,7 +174,6 @@ def _wait_for_ready(tproc, ready_addr, expected, timeout_s):
             raise TimeoutError(
                 f"resident tProcessor did not request block {expected}"
             )
-        time.sleep(0)
 
 
 def _tproc_dmem_size(soc):
@@ -259,6 +285,9 @@ def acquire_qick_resident_readout(
     compiled = program.compile()
     soc.init_readouts()
     _configure_readouts(soc, configurations[0])
+    frequency_updates = _prepare_readout_frequency_updates(
+        soc, configurations
+    )
     soc.load_bin_program(compiled, reset=False)
     soc.start_src("internal")
     program.config_bufs(soc, enable_avg=True, enable_buf=False)
@@ -279,30 +308,51 @@ def acquire_qick_resident_readout(
         )
         count = 0
         handshake_started = time.perf_counter()
+        ready_wait_s = 0.0
+        frequency_update_s = 0.0
+        release_s = 0.0
+        stream_drain_s = 0.0
+        ready_polls = 0
         for block in range(total_blocks):
-            _wait_for_ready(
+            phase_started = time.perf_counter()
+            ready_polls += _wait_for_ready(
                 soc.tproc,
                 ready_addr,
                 block + 1,
                 timeout_s,
             )
+            ready_wait_s += time.perf_counter() - phase_started
             frequency_index = block % len(configurations)
-            _set_readout_frequencies(soc, configurations[frequency_index])
+            phase_started = time.perf_counter()
+            if frequency_updates is None:
+                _set_readout_frequencies(
+                    soc, configurations[frequency_index]
+                )
+            else:
+                _apply_readout_frequency_update(
+                    frequency_updates[frequency_index]
+                )
+            frequency_update_s += time.perf_counter() - phase_started
+            phase_started = time.perf_counter()
             soc.tproc.single_write(
                 addr=frequency_addr,
                 data=registers[frequency_index],
             )
             soc.tproc.single_write(addr=command_addr, data=1)
+            release_s += time.perf_counter() - phase_started
             if (block + 1) % 64 == 0:
+                phase_started = time.perf_counter()
                 count = _store_stream_chunks(
                     soc.poll_data(timeout=0),
                     d_buf,
                     count,
                     total_records,
                 )
+                stream_drain_s += time.perf_counter() - phase_started
         handshake_s = time.perf_counter() - handshake_started
         last_progress = time.monotonic()
         while count < total_records:
+            phase_started = time.perf_counter()
             chunks = soc.poll_data(timeout=min(timeout_s, 0.1))
             previous_count = count
             count = _store_stream_chunks(
@@ -311,6 +361,7 @@ def acquire_qick_resident_readout(
                 count,
                 total_records,
             )
+            stream_drain_s += time.perf_counter() - phase_started
             if count > previous_count:
                 last_progress = time.monotonic()
             elif time.monotonic() - last_progress >= timeout_s:
@@ -335,6 +386,16 @@ def acquire_qick_resident_readout(
         "setup_s": float(setup_s),
         "handshake_s": float(handshake_s),
         "acquisition_s": float(acquisition_s),
+        "ready_wait_s": float(ready_wait_s),
+        "frequency_update_s": float(frequency_update_s),
+        "release_s": float(release_s),
+        "stream_drain_s": float(stream_drain_s),
+        "ready_polls": int(ready_polls),
+        "frequency_update_mode": (
+            "dynamic"
+            if frequency_updates is None
+            else "precomputed_register"
+        ),
     }
 
 

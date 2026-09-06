@@ -978,7 +978,15 @@ def _resident_program_records(method, resident, readout_configs, shots):
         )
     timing = {
         key: float(result[key])
-        for key in ("setup_s", "handshake_s", "acquisition_s")
+        for key in (
+            "setup_s",
+            "handshake_s",
+            "acquisition_s",
+            "ready_wait_s",
+            "frequency_update_s",
+            "release_s",
+            "stream_drain_s",
+        )
         if key in result
     }
     return records, {
@@ -989,6 +997,10 @@ def _resident_program_records(method, resident, readout_configs, shots):
             )
         ),
         "server_timing_s": timing,
+        "ready_polls": int(result.get("ready_polls", 0)),
+        "frequency_update_mode": str(
+            result.get("frequency_update_mode", "unknown")
+        ),
     }
 
 
@@ -1082,6 +1094,10 @@ def acquire_passive_readout_grid(
                     "server_batches": 1,
                     "resident_handshake": True,
                     "server_timing_s": resident_meta["server_timing_s"],
+                    "ready_polls": resident_meta["ready_polls"],
+                    "frequency_update_mode": resident_meta[
+                        "frequency_update_mode"
+                    ],
                     "records": int(
                         shots * frequencies.size * values.size
                     ),

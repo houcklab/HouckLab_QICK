@@ -1,5 +1,6 @@
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.pynq import readout_batch
 from WorkingProjects.TLS_Spectroscopy.pynq.readout_batch import (
     acquire_qick_program_batch,
     acquire_qick_resident_readout,
@@ -279,6 +280,72 @@ def test_resident_server_selects_output_once_and_updates_only_dds_in_loop():
         (10.0, 0),
         (20.0, 0),
     ]
+
+
+def test_ready_poll_does_not_yield_to_the_linux_scheduler(monkeypatch):
+    class DelayedReady:
+        def __init__(self):
+            self.reads = 0
+
+        def single_read(self, addr):
+            self.reads += 1
+            return 0 if self.reads == 1 else 7
+
+    sleeps = []
+    monkeypatch.setattr(readout_batch.time, "sleep", sleeps.append)
+    tproc = DelayedReady()
+    readout_batch._wait_for_ready(tproc, 3, 7, 1.0)
+    assert tproc.reads == 2
+    assert sleeps == []
+
+
+def test_resident_server_precomputes_readout_dds_registers_once():
+    class Readout:
+        def __init__(self):
+            self.freq_reg = 0
+            self.integer_updates = []
+
+        def set_freq_int(self, value):
+            self.freq_reg = int(value)
+            self.integer_updates.append(int(value))
+
+    class Buffer:
+        def __init__(self):
+            self.readout = Readout()
+            self.frequency_conversions = []
+
+        def set_freq(self, frequency, gen_ch=0):
+            self.frequency_conversions.append((float(frequency), int(gen_ch)))
+            self.readout.freq_reg = int(round(float(frequency) * 10))
+
+    class PrecomputedFrequencySoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.avg_bufs = [Buffer()]
+
+    soc = PrecomputedFrequencySoc()
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 8},
+        configs,
+        [101, 202],
+        shots=2,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        program_factory=ResidentProgram,
+    )
+    assert soc.avg_bufs[0].frequency_conversions == [(10.0, 0), (20.0, 0)]
+    assert soc.avg_bufs[0].readout.integer_updates == [100, 200, 100, 200]
+    assert result["frequency_update_mode"] == "precomputed_register"
+    assert result["ready_wait_s"] >= 0.0
+    assert result["frequency_update_s"] >= 0.0
+    assert result["release_s"] >= 0.0
+    assert result["ready_polls"] == 4
 
 
 def test_resident_server_drains_stream_before_readout_backpressure_overflows():

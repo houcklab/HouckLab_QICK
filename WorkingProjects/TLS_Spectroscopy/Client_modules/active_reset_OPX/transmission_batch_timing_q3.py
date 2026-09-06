@@ -23,11 +23,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order 
 
 
 QUBIT = "q3"
-SHOTS = 20
-FREQUENCY_POINTS = 41
-FREQUENCY_SPAN_MHZ = 4.0
+SHOTS = 200
+FREQUENCY_POINTS = 201
+FREQUENCY_SPAN_MHZ = 6.0
 READOUT_INTEGRATION_US = 5.0
 READOUT_THERMALIZATION_US = 10.0
+QICK_MEASURE_SYNC_US = 0.01
 
 
 def main():
@@ -68,7 +69,9 @@ def main():
     dip = float(frequencies[int(np.argmin(np.abs(signal)))])
     records = int(telemetry["records"])
     controller_sequence_s = records * (
-        readout_drive_length_us(cfg) + readout_thermalization_us(cfg)
+        readout_drive_length_us(cfg)
+        + readout_thermalization_us(cfg)
+        + QICK_MEASURE_SYNC_US
     ) * 1e-6
     now = datetime.now()
     output = (
@@ -99,6 +102,10 @@ def main():
         "server_batches": int(telemetry["server_batches"]),
         "resident_handshake": bool(telemetry.get("resident_handshake", False)),
         "server_timing_s": telemetry.get("server_timing_s", {}),
+        "ready_polls": int(telemetry.get("ready_polls", 0)),
+        "frequency_update_mode": telemetry.get(
+            "frequency_update_mode", "unknown"
+        ),
         "order": telemetry["order"],
         "readout_integration_us": float(cfg["read_length"]),
         "readout_drive_us": readout_drive_length_us(cfg),
