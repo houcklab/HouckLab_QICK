@@ -42,7 +42,7 @@ RESET_MODE = "active"
 _RESET_SESSION = ProductionResetSession.passive()
 
 P_TRANSMISSION = {
-    "run": False,
+    "run": True,
     "shots": 1000,
     "freq_start_mhz": 6929.0,
     "freq_stop_mhz": 6935.0,
