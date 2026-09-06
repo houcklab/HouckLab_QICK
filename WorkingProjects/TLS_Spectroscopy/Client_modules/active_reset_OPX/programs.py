@@ -635,7 +635,10 @@ class TimingMatchedReferenceDMemProgram(QickProgram):
                 self, self.cfg.get("ff_park_gain", 0)
             ),
             wait_settle=lambda: self.sync_all(self.us2cycles(float(
-                self.cfg.get("flux_settle_time_us", 0.0)
+                self.cfg.get(
+                    "opx_reference_park_recovery_us",
+                    self.cfg.get("flux_settle_time_us", 0.0),
+                )
             ))),
         )
         if context == "loop":

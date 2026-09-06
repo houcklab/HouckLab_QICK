@@ -216,6 +216,7 @@ def test_dmem_reference_runs_requested_flux_cycle_before_measurement():
         "opx_reference_context": "payload",
         "opx_reference_flux_cycle": True,
         "opx_reference_flux_hold_us": 1.0,
+        "opx_reference_park_recovery_us": 10.0,
         "prep_excited": False,
     }
     prog.reset_config = SimpleNamespace(
@@ -241,7 +242,7 @@ def test_dmem_reference_runs_requested_flux_cycle_before_measurement():
         ("wait", 1.0),
         ("set", -25790),
         ("pulse", 3),
-        ("wait", 0.5),
+        ("wait", 10.0),
         ("measure",),
     ]
 

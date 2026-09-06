@@ -253,6 +253,7 @@ def main():
         "opx_max_payload_records_per_block": 480,
         "opx_reference_flux_cycle": True,
         "opx_reference_flux_hold_us": float(np.min(T1_DELAYS_US)),
+        "opx_reference_park_recovery_us": float(ACTIVE_THERMALIZATION_US),
     })
     metadata = {
         "created": datetime.now().isoformat(),
