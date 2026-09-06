@@ -281,6 +281,71 @@ def test_resident_server_selects_output_once_and_updates_only_dds_in_loop():
     ]
 
 
+def test_resident_server_drains_stream_before_readout_backpressure_overflows():
+    class BackpressureTProc(ResidentTProc):
+        def __init__(self, owner):
+            super().__init__()
+            self.owner = owner
+
+        def single_write(self, addr=0, data=0):
+            previous = self.completed_blocks
+            super().single_write(addr=addr, data=data)
+            if self.completed_blocks > previous:
+                self.owner.pending += 1
+                if self.owner.pending > self.owner.capacity:
+                    raise RuntimeError("exception in readout loop")
+
+    class BackpressureSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.capacity = 64
+            self.pending = 0
+            self.delivered = 0
+            self.tproc = BackpressureTProc(self)
+
+        def start_readout(
+            self, total_reps, counter_addr=1, ch_list=None, reads_per_rep=1
+        ):
+            self.expected = int(total_reps) * int(reads_per_rep)
+            self.tproc.total_blocks = self.expected
+            self.tproc.memory[self.tproc.ready_addr] = 1
+            self.events.append(("resident_start", int(total_reps)))
+
+        def poll_data(self, *args, **kwargs):
+            self.polls += 1
+            if self.pending == 0:
+                return []
+            values = np.empty((1, self.pending, 2), dtype=np.int32)
+            sequence = np.arange(self.delivered, self.delivered + self.pending)
+            values[0, :, 0] = sequence
+            values[0, :, 1] = -sequence
+            self.delivered += self.pending
+            self.pending = 0
+            return [(values, {})]
+
+    soc = BackpressureSoc()
+    configs = [
+        {0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}},
+        {0: {"freq": 20.0, "length": 5, "sel": "product", "gen_ch": 0}},
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 130},
+        configs,
+        [101, 202],
+        shots=65,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        program_factory=ResidentProgram,
+    )
+    assert result["records"].shape == (65, 2, 1, 2)
+    np.testing.assert_array_equal(
+        result["records"][:, :, 0, 0].reshape(-1),
+        np.arange(130) / 5,
+    )
+
+
 def test_installer_adds_both_batch_methods_to_qicksoc_class():
     class Soc:
         pass

@@ -182,6 +182,19 @@ def _abort_resident_readout(soc):
         pass
 
 
+def _store_stream_chunks(chunks, d_buf, count, total_records):
+    for data, _ in chunks:
+        block = np.asarray(data)
+        if block.ndim != 3 or block.shape[0] != d_buf.shape[0]:
+            raise RuntimeError(f"invalid streamed readout shape {block.shape}")
+        new_points = int(block.shape[1])
+        if count + new_points > total_records:
+            raise RuntimeError("streamed readout exceeded the expected record count")
+        d_buf[:, count:count + new_points] = block
+        count += new_points
+    return count
+
+
 def acquire_qick_resident_readout(
     soc,
     program_values,
@@ -261,6 +274,10 @@ def acquire_qick_resident_readout(
             ch_list=list(ro_channels),
             reads_per_rep=1,
         )
+        d_buf = np.zeros(
+            (len(ro_channels), total_records, 2), dtype=np.int32
+        )
+        count = 0
         handshake_started = time.perf_counter()
         for block in range(total_blocks):
             _wait_for_ready(
@@ -276,28 +293,24 @@ def acquire_qick_resident_readout(
                 data=registers[frequency_index],
             )
             soc.tproc.single_write(addr=command_addr, data=1)
+            if (block + 1) % 64 == 0:
+                count = _store_stream_chunks(
+                    soc.poll_data(timeout=0),
+                    d_buf,
+                    count,
+                    total_records,
+                )
         handshake_s = time.perf_counter() - handshake_started
-        d_buf = np.zeros(
-            (len(ro_channels), total_records, 2), dtype=np.int32
-        )
-        count = 0
         last_progress = time.monotonic()
         while count < total_records:
             chunks = soc.poll_data(timeout=min(timeout_s, 0.1))
             previous_count = count
-            for data, _ in chunks:
-                block = np.asarray(data)
-                if block.ndim != 3 or block.shape[0] != len(ro_channels):
-                    raise RuntimeError(
-                        f"invalid streamed readout shape {block.shape}"
-                    )
-                new_points = int(block.shape[1])
-                if count + new_points > total_records:
-                    raise RuntimeError(
-                        "streamed readout exceeded the expected record count"
-                    )
-                d_buf[:, count:count + new_points] = block
-                count += new_points
+            count = _store_stream_chunks(
+                chunks,
+                d_buf,
+                count,
+                total_records,
+            )
             if count > previous_count:
                 last_progress = time.monotonic()
             elif time.monotonic() - last_progress >= timeout_s:
