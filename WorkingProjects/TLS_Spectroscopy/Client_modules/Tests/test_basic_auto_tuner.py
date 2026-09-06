@@ -4077,7 +4077,7 @@ def test_active_reset_primitive_always_clears_measurement_photons():
     default_program.cfg.pop("reset_thermalization_us")
     active_reset.active_reset_block(
         default_program, threshold_raw=123, max_iters=1, allow_legacy=True)
-    assert np.isclose(default_program.syncs[-1], 2.8)
+    assert np.isclose(default_program.syncs[-1], 10.0)
 
 
 def test_concise_console_hides_diagnostics_but_keeps_the_saved_report():

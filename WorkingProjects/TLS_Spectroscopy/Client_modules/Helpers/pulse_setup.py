@@ -2,7 +2,7 @@
 import numpy as np
 
 
-READOUT_THERMALIZATION_US = 2.8
+READOUT_THERMALIZATION_US = 10.0
 
 
 def readout_thermalization_us(cfg=None):

@@ -29,7 +29,7 @@ BaseConfig = {
     "read_pulse_style": "const",
     "read_length": 5.0,
     "readout_guard_us": 1.0,
-    "readout_thermalization_us": 2.8,
+    "readout_thermalization_us": 10.0,
     "read_pulse_gain": 1740,
     "read_pulse_freq": 6933.026,
 
@@ -46,7 +46,7 @@ BaseConfig = {
     "flat_top_length": None,
 
     "reset_read_delay_us": 2.0,
-    "reset_meas_syncdelay_us": 2.8,
+    "reset_meas_syncdelay_us": 10.0,
     "reset_max_iters": 3,
 
     "ff_park_gain": -25790,

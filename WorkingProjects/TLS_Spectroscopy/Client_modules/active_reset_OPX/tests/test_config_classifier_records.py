@@ -99,7 +99,7 @@ def test_q3_benchmark_settings_drive_measured_timing_and_qua_thresholds():
     )
 
     assert reset.feedback_syncdelay_us == 8.0
-    assert reset.loop_recovery_us == 2.8
+    assert reset.loop_recovery_us == 10.0
     assert reset.inter_shot_delay_us == 400.0
     assert reset.persistent_park is True
     assert reset.hard_flux_steps is True
@@ -115,9 +115,9 @@ def test_measured_readout_thermalization_is_the_shared_reset_default():
         readout_thermalization_us,
     )
 
-    assert readout_thermalization_us({}) == pytest.approx(2.8)
+    assert readout_thermalization_us({}) == pytest.approx(10.0)
     assert readout_thermalization_us({"readout_thermalization_us": 3.4}) == pytest.approx(3.4)
-    assert OPXResetConfig.from_mapping({}).loop_recovery_us == pytest.approx(2.8)
+    assert OPXResetConfig.from_mapping({}).loop_recovery_us == pytest.approx(10.0)
     assert OPXResetConfig.from_mapping({
         "readout_thermalization_us": 3.4,
     }).loop_recovery_us == pytest.approx(3.4)

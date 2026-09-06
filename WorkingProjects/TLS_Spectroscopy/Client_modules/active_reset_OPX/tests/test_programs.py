@@ -716,7 +716,7 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
         {
             "reset_settle_us": 0.05,
             "feedback_syncdelay_us": 8.0,
-            "loop_recovery_us": 2.8,
+            "loop_recovery_us": 10.0,
         },
     )()
     prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
@@ -748,7 +748,7 @@ def test_loop_measurement_waits_for_qua_resonator_recovery():
         {
             "reset_settle_us": 0.05,
             "feedback_syncdelay_us": 8.0,
-            "loop_recovery_us": 2.8,
+            "loop_recovery_us": 10.0,
         },
     )()
     prog._measure_raw = lambda: prog.asm.append(("measure_raw",))
@@ -761,7 +761,7 @@ def test_loop_measurement_waits_for_qua_resonator_recovery():
     OPXResetBenchmarkProgram._measure_project(prog, CAL, "loop")
 
     syncs = [operation for operation in prog.asm if operation[0] == "sync_all"]
-    assert syncs == [("sync_all", 5), ("sync_all", 800)]
+    assert syncs == [("sync_all", 5), ("sync_all", 1000)]
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():
