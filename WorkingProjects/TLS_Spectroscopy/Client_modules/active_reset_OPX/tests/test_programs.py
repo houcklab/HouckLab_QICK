@@ -11,6 +11,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
     OPXResetBenchmarkProgram,
     OPXResetPulseSweepProgram,
+    OPXResetT13PointProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
     TimingMatchedReferenceDMemProgram,
@@ -466,6 +467,46 @@ def test_t1_hard_flux_cycle_has_no_four_microsecond_ramp():
     assert gains == [-20000, -25790]
     assert waits == [50, 1250, 50]
     assert 400 not in waits
+
+
+def test_three_point_dynamic_flux_target_comes_from_dc_loop_register():
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3}
+    prog._t1_3pt_ff_page = 1
+    prog._t1_3pt_regs = {"dc_gain": 9}
+    prog.sreg = lambda channel, name: 11
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+
+    OPXResetT13PointProgram._play_dynamic_target(prog)
+
+    assert prog.asm == [
+        ("mathi", 11, 9, "+", 0),
+        ("pulse", 3),
+    ]
+
+
+def test_three_point_flux_cycle_returns_to_park_after_requested_wait(monkeypatch):
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog._t1_ff_settle_us = 0.5
+    prog.us2cycles = lambda value: int(round(float(value) * 100))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync", cycles))
+    prog._play_dynamic_target = lambda: prog.asm.append(("target",))
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_hard_step",
+        lambda program, gain: program.asm.append(("park", int(gain))),
+    )
+
+    OPXResetT13PointProgram._wait_three_point_payload(prog, 70.0, True)
+
+    assert prog.asm == [
+        ("target",),
+        ("sync", 50),
+        ("sync", 7000),
+        ("park", -25790),
+        ("sync", 50),
+    ]
 
 
 def test_pulse_sweep_hard_flux_cycle_matches_t1_step_order():

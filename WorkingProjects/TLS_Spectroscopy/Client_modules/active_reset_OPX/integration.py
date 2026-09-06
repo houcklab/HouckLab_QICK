@@ -13,6 +13,7 @@ from .acquisition import (
 from .calibration import CalibrationBundle
 from .programs import (
     OPXResetPulseSweepProgram,
+    OPXResetT13PointProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
 )
@@ -144,7 +145,107 @@ def acquire_t1_iq(soc, soccfg, cfg, shots=None):
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
     i_values, q_values = payload_iq(records, read_cycles)
-    return i_values, q_values, reset_telemetry(records)
+    telemetry = reset_telemetry(records)
+    telemetry["read_length_cycles"] = int(read_cycles)
+    return i_values, q_values, telemetry
+
+
+def acquire_t1_3pt_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    dc_gains,
+    wait_us,
+    shots=None,
+):
+    bundle = runtime_bundle(cfg)
+    gains = np.asarray(dc_gains, dtype=float).reshape(-1)
+    if gains.size == 0 or not np.all(np.isfinite(gains)):
+        raise ValueError("at least one finite three-point DC gain is required")
+    rounded = np.rint(gains).astype(np.int64)
+    if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+        raise ValueError("three-point DC gains must be integer DAC values")
+    steps = np.diff(rounded)
+    if steps.size and not np.all(steps == steps[0]):
+        raise ValueError("three-point DC gains must be evenly spaced")
+    wait_us = float(wait_us)
+    if not np.isfinite(wait_us) or wait_us < 0.01:
+        raise ValueError("three-point wait must be at least 0.01 us")
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("three-point shots must be positive")
+    capacity = max_records(
+        dmem_words_from_soccfg(soccfg),
+        int(cfg.get("opx_record_base", 32)),
+        PAYLOAD_RECORD_WORDS,
+    )
+    max_dc = capacity // 3
+    if max_dc <= 0:
+        raise ValueError("tProc data memory cannot hold one three-point DC record")
+    max_dc = min(max_dc, int(cfg.get("opx_max_3pt_dc_per_program", max_dc)))
+    i_values = np.empty((3, rounded.size, total_shots), dtype=float)
+    q_values = np.empty_like(i_values)
+    block_count = 0
+    record_count = 0
+    last_program = None
+    for dc_start in range(0, rounded.size, max_dc):
+        dc_stop = min(dc_start + max_dc, rounded.size)
+        dc_chunk = rounded[dc_start:dc_stop]
+        records_per_shot = int(dc_chunk.size) * 3
+        shots_per_block = capacity // records_per_shot
+        shot_start = 0
+        for chunk in chunk_sizes(total_shots, shots_per_block):
+            run_cfg = dict(cfg)
+            run_cfg.update({
+                "opx_reset_scheme": "opx_unbounded",
+                "opx_t1_3pt_shots": int(chunk),
+                "opx_t1_3pt_dc_gains": dc_chunk.tolist(),
+                "opx_t1_3pt_wait_us": wait_us,
+                "ff_hold": wait_us,
+                "t1_wait_us": wait_us,
+            })
+            program = OPXResetT13PointProgram(
+                soccfg,
+                run_cfg,
+                bundle.payload,
+                bundle.loop,
+            )
+            last_program = program
+            block = run_dmem_block(
+                soc,
+                program,
+                timeout_s=_block_timeout_s(
+                    run_cfg,
+                    int(chunk) * records_per_shot,
+                ),
+                poll_interval_s=float(run_cfg.get("opx_poll_interval_s", 0.002)),
+            )
+            raw_i = np.asarray(
+                [record.final_i for record in block], dtype=float
+            ).reshape(chunk, dc_chunk.size, 3).transpose(2, 1, 0)
+            raw_q = np.asarray(
+                [record.final_q for record in block], dtype=float
+            ).reshape(chunk, dc_chunk.size, 3).transpose(2, 1, 0)
+            shot_stop = shot_start + int(chunk)
+            i_values[:, dc_start:dc_stop, shot_start:shot_stop] = raw_i
+            q_values[:, dc_start:dc_stop, shot_start:shot_stop] = raw_q
+            shot_start = shot_stop
+            block_count += 1
+            record_count += len(block)
+    read_cycles = last_program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    return i_values / int(read_cycles), q_values / int(read_cycles), {
+        "shots_per_dc": int(total_shots),
+        "dc_points": int(rounded.size),
+        "records": int(record_count),
+        "blocks": int(block_count),
+        "order": "shot_dc_P0_P1_Ps",
+        "read_length_cycles": int(read_cycles),
+    }
 
 
 def acquire_t1_sweep_iq(

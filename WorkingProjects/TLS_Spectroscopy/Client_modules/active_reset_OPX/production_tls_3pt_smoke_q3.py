@@ -1,0 +1,32 @@
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as runner
+
+
+def main():
+    runner.LIVE_PLOTS = False
+    runner.P1_RESONATOR["run"] = False
+    runner.P2_QUBIT_SPEC_FULL["run"] = False
+    runner.P3_STEP_RESPONSE["run_fit"] = False
+    runner.P3_STEP_RESPONSE["run_correct"] = False
+    runner.P4_LONG_TIME["run"] = False
+    runner.P5_SS_CAL["run"] = False
+    runner.P6_FULL_T1["run"] = False
+    runner.P6_3PT_T1.update({
+        "run": True,
+        "apply_flux_tail_compensation": False,
+        "shots": 100,
+        "interleave_rounds": 1,
+        "dc_min": -20500,
+        "dc_max": -19500,
+        "dc_step": 500,
+        "freq_step_mhz": None,
+        "wall_clock_duration_min": None,
+        "Ts_us": 70.0,
+        "min_ref_contrast": 0.05,
+        "max_plot_t1_multiple": 20.0,
+        "reset_mode": "opx_unbounded",
+    })
+    runner.main()
+
+
+if __name__ == "__main__":
+    main()

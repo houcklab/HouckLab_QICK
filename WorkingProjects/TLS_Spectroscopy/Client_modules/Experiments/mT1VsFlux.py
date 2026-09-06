@@ -19,7 +19,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
     visit_order)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_t1_3pt_iq,
     acquire_t1_iq,
+    classify_payload_iq,
 )
 
 
@@ -536,7 +538,7 @@ class _T1VsFluxBase(ExperimentClass):
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
         if calib_params is None:
             calib_params = cfg.get("calib_params") if cfg else None
-        if calib_params is None:
+        if calib_params is None and not active_reset.uses_opx_unbounded(reset_mode):
             raise ValueError("calib_params is required (run SingleShot1Q first).")
         if reset_mode not in active_reset.RESET_MODES:
             raise ValueError(f"reset_mode must be one of {active_reset.RESET_MODES}, "
@@ -608,7 +610,15 @@ class _T1VsFluxBase(ExperimentClass):
                 i0, q0, i1, q1 = acquire_with_retry(
                     prog, self.soc, load_pulses=True
                 )
-        final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
+        if active_reset.uses_opx_unbounded(self.reset_mode):
+            final = np.asarray(classify_payload_iq(
+                cfg,
+                i1,
+                q1,
+                telemetry["read_length_cycles"],
+            ))
+        else:
+            final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)
             return float(np.sum(final[keep])), int(np.sum(keep))
@@ -728,21 +738,50 @@ class T13PointVsFlux(_T1VsFluxBase):
             print(f"[3pt] LEGACY references: P0/P1 measured at park with no flux pulse. "
                   f"Any reset residual")
             print(f"      that the flux excursion would have removed biases T1 low.")
-        start_time = time.time()
-        specs = []
-        for dc in dc_vec:
+        if active_reset.uses_opx_unbounded(self.reset_mode):
             if matched:
-                specs.append((float(dc), t_ref_us, False, True))
-                specs.append((float(dc), t_ref_us, True, True))
-            else:
-                specs.append((self.park_voltage, 0.0, False, False))
-                specs.append((self.park_voltage, 0.0, True, False))
-            specs.append((float(dc), Ts_us, True, True))
-        pe = self._interleaved_populations(specs, group_size=3,
-                                           start_time=start_time if progress else None)
-        P0 = pe[0::3]
-        P1 = pe[1::3]
-        Ps = pe[2::3]
+                raise ValueError(
+                    "QUA-order OPX three-point T1 requires park P0/P1 references"
+                )
+            with suppress_stdout():
+                i_values, q_values, telemetry = acquire_t1_3pt_iq(
+                    self.soc,
+                    self.soccfg,
+                    self.cfg,
+                    dc_gains=dc_vec,
+                    wait_us=Ts_us,
+                    shots=self.shots,
+                )
+            states = classify_payload_iq(
+                self.cfg,
+                i_values,
+                q_values,
+                telemetry["read_length_cycles"],
+            )
+            P0, P1, Ps = np.mean(states, axis=2)
+            self.opx_reset_telemetry.append(telemetry)
+            self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
+            self.point_visit_orders = [list(range(len(dc_vec)))]
+            self.keep_fraction = np.ones(len(dc_vec) * 3, dtype=float)
+        else:
+            start_time = time.time()
+            specs = []
+            for dc in dc_vec:
+                if matched:
+                    specs.append((float(dc), t_ref_us, False, True))
+                    specs.append((float(dc), t_ref_us, True, True))
+                else:
+                    specs.append((self.park_voltage, 0.0, False, False))
+                    specs.append((self.park_voltage, 0.0, True, False))
+                specs.append((float(dc), Ts_us, True, True))
+            pe = self._interleaved_populations(
+                specs,
+                group_size=3,
+                start_time=start_time if progress else None,
+            )
+            P0 = pe[0::3]
+            P1 = pe[1::3]
+            Ps = pe[2::3]
         self.data["three_point_matched_refs"] = matched
         self.data["three_point_ref_hold_us"] = t_ref_us if matched else 0.0
         self.data["Ts_effective_ns"] = float(Ts_eff_ns)

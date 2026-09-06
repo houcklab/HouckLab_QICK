@@ -718,6 +718,66 @@ def test_payload_classifier_uses_timing_matched_raw_threshold():
     assert classified.tolist() == [[0, 0, 1]]
 
 
+def test_three_point_acquisition_preserves_qua_shot_dc_reference_order(monkeypatch):
+    captured = []
+
+    class Program:
+        record_words = 2
+
+        def __init__(self, soccfg, cfg, payload, loop):
+            self.soccfg = soccfg
+            self.cfg = dict(cfg)
+            self.record_base = 32
+            self.done_addr = 1
+            self.reps = (
+                int(cfg["opx_t1_3pt_shots"])
+                * len(cfg["opx_t1_3pt_dc_gains"])
+                * 3
+            )
+            captured.append(self.cfg)
+
+        def us2cycles(self, value, ro_ch=None):
+            return 10
+
+    next_value = iter(range(10_000))
+
+    def run(soc, program, **kwargs):
+        return [
+            PayloadRecord(next(next_value), 0)
+            for _ in range(program.reps)
+        ]
+
+    monkeypatch.setattr(integration, "OPXResetT13PointProgram", Program)
+    monkeypatch.setattr(integration, "run_dmem_block", run)
+    monkeypatch.setattr(
+        integration,
+        "runtime_bundle",
+        lambda cfg: type("Bundle", (), {"payload": CAL, "loop": CAL})(),
+    )
+
+    i_values, q_values, telemetry = integration.acquire_t1_3pt_iq(
+        object(),
+        {"tprocs": [{"dmem_size": 64}]},
+        {
+            "shots": 3,
+            "read_length": 5.0,
+            "ro_chs": [0],
+            "opx_record_base": 32,
+        },
+        dc_gains=[1000, 1100],
+        wait_us=70.0,
+    )
+
+    assert len(captured) == 2
+    assert [cfg["opx_t1_3pt_shots"] for cfg in captured] == [2, 1]
+    assert i_values.shape == (3, 2, 3)
+    assert q_values.shape == (3, 2, 3)
+    assert i_values[:, :, 0].tolist() == [[0.0, 0.3], [0.1, 0.4], [0.2, 0.5]]
+    assert telemetry["order"] == "shot_dc_P0_P1_Ps"
+    assert telemetry["shots_per_dc"] == 3
+    assert telemetry["dc_points"] == 2
+
+
 def test_production_opx_mode_skips_legacy_single_shot_calibration():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
         mCoherence,

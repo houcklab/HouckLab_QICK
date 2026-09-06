@@ -44,9 +44,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
     acquire_calibration,
+    per_shot_reference_config,
     save_calibration,
     save_raw_calibration,
     validate_confident_calibration,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
+    load_park_history_method_frequencies,
 )
 
 
@@ -101,6 +105,8 @@ OPX_CALIBRATION_SHOTS = 2000
 OPX_CALIBRATION_RELAX_US = 1000.0
 OPX_MIN_CONFIDENT_STATE_FRACTION = 0.2
 OPX_HOST_WATCHDOG_S = 2.0
+OPX_PARK_HISTORY_RESULT_PATH = None
+OPX_METHOD_FREQUENCIES = None
 
 
 P1_RESONATOR = {
@@ -850,6 +856,42 @@ def _make_reset_recalibrator(p, base, soc, soccfg, outer_folder):
     return recalibrate
 
 
+def _latest_park_history_result(outer_folder):
+    if OPX_PARK_HISTORY_RESULT_PATH is not None:
+        path = Path(OPX_PARK_HISTORY_RESULT_PATH)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+    paths = list(
+        (Path(outer_folder) / QUBIT).glob(
+            f"{QUBIT}_*/{QUBIT}_*_active_reset_OPX_park_history_spectroscopy/result.json"
+        )
+    )
+    if not paths:
+        raise FileNotFoundError("no completed park-history spectroscopy result found")
+    return max(paths, key=lambda path: path.stat().st_mtime)
+
+
+def _apply_step6_opx_frequency(cfg):
+    if OPX_METHOD_FREQUENCIES is None:
+        raise RuntimeError("Step 6 opx_unbounded reset needs park-history frequencies")
+    frequency = float(OPX_METHOD_FREQUENCIES["opx_unbounded"])
+    cfg["qubit_pi_freq"] = frequency
+    cfg["reset_pi_freq"] = frequency
+    return cfg
+
+
+def _step6_needs_legacy_calibration():
+    enabled = [
+        p for p in (P6_3PT_T1, P6_FULL_T1)
+        if bool(p.get("run", False))
+    ]
+    return any(
+        not active_reset.uses_opx_unbounded(p.get("reset_mode"))
+        for p in enabled
+    )
+
+
 def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     opx_unbounded = active_reset.uses_opx_unbounded(p.get("reset_mode"))
     feedback = active_reset.uses_feedback(p.get("reset_mode"))
@@ -888,6 +930,9 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
             p.get("opx_host_watchdog_s", OPX_HOST_WATCHDOG_S)
         )
         base["opx_inter_shot_delay_us"] = relax_delay
+        base["three_point_matched_refs"] = False
+        base["randomize_point_order"] = False
+        _apply_step6_opx_frequency(base)
     elif feedback:
         if not p.get("rot_reset"):
             raise RuntimeError("reset_mode='feedback' needs a validated rotated reset "
@@ -918,6 +963,8 @@ def _acquire_step6_opx_calibration(p, soc, soccfg, outer_folder):
     cfg["opx_unbounded_watchdog_s"] = float(
         p.get("opx_host_watchdog_s", OPX_HOST_WATCHDOG_S)
     )
+    _apply_step6_opx_frequency(cfg)
+    cfg = per_shot_reference_config(cfg)
     now = datetime.now()
     output = (
         Path(outer_folder)
@@ -1027,6 +1074,11 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
+    park_voltage = (
+        base.get("ff_park_gain", BASELINE_DC_OFFSET)
+        if active_reset.uses_opx_unbounded(p.get("reset_mode"))
+        else BASELINE_DC_OFFSET
+    )
 
     def factory(repeat_metadata):
         return T13PointVsFlux(
@@ -1034,7 +1086,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             suffix=f"TLS_3pt_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
             dc_vec=dc_vec, Ts_ns=int(round(p["Ts_us"] * 1e3)),
             shots=int(p["shots"]), calib_params=calib_params,
-            park_voltage=BASELINE_DC_OFFSET,
+            park_voltage=park_voltage,
             min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
             max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
             reset_mode=p.get("reset_mode", "passive"),
@@ -1068,6 +1120,11 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
+    park_voltage = (
+        base.get("ff_park_gain", BASELINE_DC_OFFSET)
+        if active_reset.uses_opx_unbounded(p.get("reset_mode"))
+        else BASELINE_DC_OFFSET
+    )
 
     q_factor = p.get("quality_factor", None)
     notebook_fit = fx.flux_fit_params_to_notebook(FLUX_FIT_PARAMS) if q_factor is not None else None
@@ -1083,7 +1140,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix=f"TLS_Full_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
                       dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
-                      park_voltage=BASELINE_DC_OFFSET,
+                      park_voltage=park_voltage,
                       auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
                       T1_probe_cfg=p.get("T1_probe_cfg", None),
                       t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,
@@ -1111,6 +1168,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
 
 
 def main():
+    global OPX_METHOD_FREQUENCIES
     _set_yoko_if_requested()
     soc, soccfg = makeProxy()
     outer_folder = outerFolder
@@ -1159,7 +1217,21 @@ def main():
     if P5_SS_CAL["run"]:
         calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
     if P6_3PT_T1["run"] or P6_FULL_T1["run"]:
-        if calib_params is None:
+        step6_opx = any(
+            bool(p.get("run", False))
+            and active_reset.uses_opx_unbounded(p.get("reset_mode"))
+            for p in (P6_3PT_T1, P6_FULL_T1)
+        )
+        if step6_opx:
+            history_result = _latest_park_history_result(outer_folder)
+            OPX_METHOD_FREQUENCIES = load_park_history_method_frequencies(
+                history_result
+            )
+            print(
+                f"[reset] park-history frequency "
+                f"{OPX_METHOD_FREQUENCIES['opx_unbounded']:.6f} MHz"
+            )
+        if calib_params is None and _step6_needs_legacy_calibration():
             print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
             calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
         if P6_3PT_T1["run"]:

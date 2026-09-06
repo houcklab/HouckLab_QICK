@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
     mRabiChevronIQ as R,
     mRabiChevronSS as RSS,
     mSingleShot1Q as SS,
+    mT1VsFlux as T1F,
     mTransmissionVsFlux as TVF,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
@@ -468,6 +469,70 @@ def test_production_t1_opx_path_does_not_require_legacy_calibration(monkeypatch)
     )
 
     assert experiment.calib_params is None
+
+
+def test_t1_vs_flux_opx_path_does_not_require_legacy_calibration(monkeypatch):
+    def initialize(experiment, **kwargs):
+        experiment.cfg = kwargs["cfg"]
+        experiment.soc = kwargs["soc"]
+        experiment.soccfg = kwargs["soccfg"]
+
+    monkeypatch.setattr(T1F.ExperimentClass, "__init__", initialize)
+
+    experiment = T1F._T1VsFluxBase(
+        soc=None,
+        soccfg=None,
+        path="q3",
+        outerFolder="unused",
+        cfg={"reset_mode": "opx_unbounded", "ro_chs": [0]},
+        calib_params=None,
+        dc_vec=[-20000],
+        shots=10,
+        reset_mode="opx_unbounded",
+    )
+
+    assert experiment.calib_params is None
+
+
+def test_t1_vs_flux_opx_point_uses_timing_matched_classifier(monkeypatch):
+    experiment = object.__new__(T1F._T1VsFluxBase)
+    experiment.cfg = {
+        "shots": 2,
+        "read_length": 5.0,
+        "ro_chs": [0],
+    }
+    experiment.reset_mode = "opx_unbounded"
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.calib_params = None
+    experiment.opx_reset_telemetry = []
+    experiment.data = {}
+    monkeypatch.setattr(
+        T1F,
+        "acquire_t1_iq",
+        lambda *args, **kwargs: (
+            np.asarray([-1.0, 1.0]),
+            np.zeros(2),
+            {"read_length_cycles": 10},
+        ),
+    )
+    monkeypatch.setattr(
+        T1F,
+        "classify_payload_iq",
+        lambda cfg, i, q, cycles: np.asarray([0, 1]),
+    )
+    monkeypatch.setattr(
+        T1F,
+        "discriminate_shots",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError(
+            "OPX Step 6 must not use the legacy classifier"
+        )),
+    )
+
+    excited, kept = experiment._run_point_counts(-20000, 70.0)
+
+    assert excited == 1.0
+    assert kept == 2
 
 
 def test_production_t1_decay_fit_remains_available():

@@ -109,8 +109,14 @@ def test_step6_opx_reset_uses_same_session_calibration(monkeypatch, tmp_path):
     assert resolved["opx_reset_calibration"] is calibration
 
 
-def test_step6_opx_base_config_injects_runtime_bundle_and_timing():
+def test_step6_opx_base_config_injects_runtime_bundle_and_timing(monkeypatch):
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
+    monkeypatch.setattr(
+        tls,
+        "OPX_METHOD_FREQUENCIES",
+        {"opx_unbounded": 4366.392029},
+        raising=False,
+    )
 
     cfg = tls._t1_base_cfg(
         {
@@ -130,6 +136,44 @@ def test_step6_opx_base_config_injects_runtime_bundle_and_timing():
     assert cfg["opx_inter_shot_delay_us"] == pytest.approx(33.0)
     assert cfg["opx_unbounded_watchdog_s"] == pytest.approx(4.0)
     assert cfg["relax_delay"] == pytest.approx(33.0)
+
+
+def test_step6_opx_base_config_uses_park_history_frequency(monkeypatch):
+    calibration = {"schema_version": 1, "payload": {}, "loop": {}}
+    monkeypatch.setattr(
+        tls,
+        "OPX_METHOD_FREQUENCIES",
+        {"opx_unbounded": 4366.392029},
+        raising=False,
+    )
+
+    cfg = tls._t1_base_cfg(
+        {
+            "shots": 10,
+            "reset_mode": "opx_unbounded",
+            "opx_reset_calibration": calibration,
+            "apply_flux_tail_compensation": False,
+        },
+        None,
+        np.array([-20_000.0]),
+    )
+
+    assert cfg["qubit_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["reset_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["three_point_matched_refs"] is False
+
+
+def test_step6_opx_only_run_does_not_need_legacy_single_shot(monkeypatch):
+    monkeypatch.setattr(tls, "P6_3PT_T1", {
+        "run": True,
+        "reset_mode": "opx_unbounded",
+    })
+    monkeypatch.setattr(tls, "P6_FULL_T1", {
+        "run": False,
+        "reset_mode": "passive",
+    })
+
+    assert tls._step6_needs_legacy_calibration() is False
 
 
 def test_step6_opx_recalibrator_atomically_replaces_runtime_bundle(

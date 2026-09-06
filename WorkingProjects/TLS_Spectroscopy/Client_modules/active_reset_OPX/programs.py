@@ -1146,6 +1146,178 @@ class OPXResetT1SweepProgram(OPXResetT1Program):
         self.end()
 
 
+class OPXResetT13PointProgram(OPXResetT1Program):
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        gains = np.asarray(run_cfg.get("opx_t1_3pt_dc_gains", ()), dtype=float)
+        if gains.ndim != 1 or gains.size == 0:
+            raise ValueError("opx_t1_3pt_dc_gains must be a nonempty vector")
+        if not np.all(np.isfinite(gains)):
+            raise ValueError("opx_t1_3pt_dc_gains must be finite")
+        rounded = np.rint(gains).astype(np.int64)
+        if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+            raise ValueError("opx_t1_3pt_dc_gains must contain integer DAC values")
+        if np.any(rounded < -32768) or np.any(rounded > 32767):
+            raise ValueError("opx_t1_3pt_dc_gains exceed the signed DAC range")
+        steps = np.diff(rounded)
+        if steps.size and not np.all(steps == steps[0]):
+            raise ValueError("opx_t1_3pt_dc_gains must be evenly spaced")
+        shots = int(run_cfg.get("opx_t1_3pt_shots", 0))
+        wait_us = float(run_cfg.get("opx_t1_3pt_wait_us", 0.0))
+        if shots <= 0:
+            raise ValueError("opx_t1_3pt_shots must be positive")
+        if not np.isfinite(wait_us) or wait_us < 0.01:
+            raise ValueError("opx_t1_3pt_wait_us must be at least 0.01 us")
+        run_cfg.update({
+            "opx_t1_3pt_dc_gains": rounded.tolist(),
+            "ff_gain": int(rounded[0]),
+            "ff_hold": wait_us,
+            "t1_wait_us": wait_us,
+            "do_ff": True,
+            "reps": shots * int(rounded.size) * 3,
+        })
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _play_dynamic_target(self):
+        self.mathi(
+            self._t1_3pt_ff_page,
+            self.sreg(self.cfg["ff_ch"], "gain"),
+            self._t1_3pt_regs["dc_gain"],
+            "+",
+            0,
+        )
+        self.pulse(ch=self.cfg["ff_ch"])
+
+    def _wait_three_point_payload(self, hold_us, do_ff):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        if not bool(do_ff):
+            if float(hold_us) > 0:
+                self.sync_all(self.us2cycles(float(hold_us)))
+            return
+        self._play_dynamic_target()
+        self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+        self.sync_all(self.us2cycles(max(float(hold_us), 0.01)))
+        ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+        self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+
+    def _emit_three_point_payload(self, label, do_pi, do_ff, hold_us):
+        park_up, park_down = self._shot_park_callbacks()
+
+        def emit_payload():
+            if bool(do_pi):
+                self._prepare_excited()
+            self._wait_three_point_payload(hold_us, do_ff)
+
+        emit_payload_reset_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=park_up,
+            park_down=park_down,
+            emit_payload=emit_payload,
+            measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix=label,
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def make_program(self):
+        _declare_common(self)
+        self._declare_experiment()
+        if not getattr(self.reset_config, "hard_flux_steps", False):
+            raise ValueError("QUA-order three-point T1 requires hard flux steps")
+        self.reset_page = self.ch_page(self.cfg["qubit_ch"])
+        names = (
+            "i",
+            "q",
+            "z",
+            "ground",
+            "excited",
+            "attempts",
+            "pi_count",
+            "status",
+            "address",
+        )
+        self.reset_regs = allocate_named_registers(self, self.reset_page, names)
+        self._t1_3pt_ff_page = self.ch_page(self.cfg["ff_ch"])
+        ff_reserved = _reserved_registers(self, self._t1_3pt_ff_page)
+        if self._t1_3pt_ff_page == self.reset_page:
+            ff_reserved.update(self.reset_regs.values())
+        self._t1_3pt_regs = allocate_named_registers(
+            self,
+            self._t1_3pt_ff_page,
+            ("dc_gain", "dc_loop"),
+            reserved=ff_reserved,
+        )
+        control_reserved = _reserved_registers(self, 0)
+        if self.reset_page == 0:
+            control_reserved.update(self.reset_regs.values())
+        if self._t1_3pt_ff_page == 0:
+            control_reserved.update(self._t1_3pt_regs.values())
+        controls = allocate_named_registers(
+            self,
+            0,
+            ("shot_loop", "done"),
+            reserved=control_reserved,
+        )
+        gains = self.cfg["opx_t1_3pt_dc_gains"]
+        gain_step = int(gains[1] - gains[0]) if len(gains) > 1 else 0
+        self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
+        self.regwi(0, controls["done"], 0)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(
+            0,
+            controls["shot_loop"],
+            int(self.cfg["opx_t1_3pt_shots"]) - 1,
+        )
+        self._begin_park_lifecycle()
+        self.label("OPX_T1_3PT_SHOT_LOOP")
+        self.safe_regwi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_gain"],
+            int(gains[0]),
+        )
+        self.regwi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_loop"],
+            len(gains) - 1,
+        )
+        self.label("OPX_T1_3PT_DC_LOOP")
+        self._emit_three_point_payload("OPX_T1_3PT_P0", False, False, 0.0)
+        self._emit_three_point_payload("OPX_T1_3PT_P1", True, False, 0.0)
+        self._emit_three_point_payload(
+            "OPX_T1_3PT_PS",
+            True,
+            True,
+            float(self.cfg["opx_t1_3pt_wait_us"]),
+        )
+        self.mathi(0, controls["done"], controls["done"], "+", 3)
+        self.memwi(0, controls["done"], self.done_addr)
+        self.mathi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_gain"],
+            self._t1_3pt_regs["dc_gain"],
+            "+",
+            gain_step,
+        )
+        self.loopnz(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_loop"],
+            "OPX_T1_3PT_DC_LOOP",
+        )
+        self.loopnz(0, controls["shot_loop"], "OPX_T1_3PT_SHOT_LOOP")
+        self._end_park_lifecycle()
+        self.end()
+
+
 class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
     record_words = PAYLOAD_RECORD_WORDS
     decode_dmem_records = staticmethod(decode_payload_records)
