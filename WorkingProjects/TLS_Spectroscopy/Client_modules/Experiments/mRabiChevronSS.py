@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_pulse_sweep_iq,
+    classify_payload_iq,
 )
 
 
@@ -96,7 +97,7 @@ def sweep_gain_populations(
     cfg["amp_expts"] = int(gains.size)
     if active_reset.uses_opx_unbounded(cfg):
         do_excursion = bool(cfg.get("ff_hold_gain", 0))
-        shots_i, shots_q, _ = acquire_pulse_sweep_iq(
+        shots_i, shots_q, telemetry = acquire_pulse_sweep_iq(
             experiment.soc,
             experiment.soccfg,
             cfg,
@@ -115,9 +116,19 @@ def sweep_gain_populations(
     else:
         shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(
             experiment.soc, load_pulses=True, progress=progress)
-    pops = np.empty(len(gains), dtype=float)
-    for j in range(len(gains)):
-        pops[j] = discriminate_shots(shots_i[j], shots_q[j], calib_params).mean()
+    if active_reset.uses_opx_unbounded(cfg):
+        pops = np.mean(classify_payload_iq(
+            cfg,
+            shots_i,
+            shots_q,
+            telemetry["read_length_cycles"],
+        ), axis=1)
+    else:
+        pops = np.empty(len(gains), dtype=float)
+        for j in range(len(gains)):
+            pops[j] = discriminate_shots(
+                shots_i[j], shots_q[j], calib_params
+            ).mean()
     if return_iq:
         return pops, shots_i, shots_q
     return pops
@@ -130,7 +141,7 @@ class RabiChevronSS(ExperimentClass):
                  num_pi_pulses=5, pulse_type="X180", live_plot=False, save=True, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
-        if calib_params is None:
+        if calib_params is None and not active_reset.uses_opx_unbounded(cfg):
             raise ValueError("RabiChevronSS needs calib_params from the single-shot calibration (step 5).")
         self.calib_params = calib_params
         self.element = str(path)

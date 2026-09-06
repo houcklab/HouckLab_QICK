@@ -1,5 +1,7 @@
 import gc
 import time
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import matplotlib
@@ -24,6 +26,22 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import pro
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     readout_thermalization_us,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import (
+    load_park_history_method_frequencies,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_settings import (
+    q3_benchmark_settings,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.calibration import (
+    acquire_calibration,
+    per_shot_reference_config,
+    save_calibration,
+    save_raw_calibration,
+    validate_confident_calibration,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import (
+    needs_standalone_ss_calibration,
+)
 
 QUBIT = "q3"
 CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
@@ -42,6 +60,12 @@ RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
 THERMALIZATION_US = readout_thermalization_us(BaseConfig)
 PASSIVE_RESET_US = 1000.0
+OPX_RESET_CALIBRATION = None
+OPX_CALIBRATION_SHOTS = 2000
+OPX_MIN_CONFIDENT_STATE_FRACTION = 0.2
+OPX_HOST_WATCHDOG_S = 2.0
+OPX_PARK_HISTORY_RESULT_PATH = None
+OPX_METHOD_FREQUENCIES = None
 
 P_TRANSMISSION = {
     "run": False,
@@ -162,7 +186,18 @@ def _base_cfg(p, extra=None):
     cfg["reset_mode"] = RESET_MODE
     if extra:
         cfg.update(extra)
-    if active_reset.uses_feedback(cfg):
+    if active_reset.uses_opx_unbounded(cfg):
+        if OPX_RESET_CALIBRATION is None:
+            raise RuntimeError("opx_unbounded reset needs a same-session calibration")
+        if OPX_METHOD_FREQUENCIES is None:
+            raise RuntimeError("opx_unbounded reset needs park-history frequencies")
+        cfg["opx_reset_calibration"] = OPX_RESET_CALIBRATION
+        cfg.update(q3_benchmark_settings().opx_overrides())
+        cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
+        cfg["qubit_pi_freq"] = float(OPX_METHOD_FREQUENCIES["opx_unbounded"])
+        cfg["reset_pi_freq"] = float(OPX_METHOD_FREQUENCIES["opx_unbounded"])
+        cfg["relax_delay"] = float(q3_benchmark_settings().inter_shot_delay_us)
+    elif active_reset.uses_feedback(cfg):
         if not ROT_RESET_PARAMS:
             raise RuntimeError("feedback reset needs a validated rotated reset profile")
         if RESET_THRESHOLD_RAW is None:
@@ -175,6 +210,58 @@ def _base_cfg(p, extra=None):
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
         cfg["reset_thermalization_us"] = THERMALIZATION_US
     return cfg
+
+
+def _latest_park_history_result(outer_folder):
+    if OPX_PARK_HISTORY_RESULT_PATH is not None:
+        path = Path(OPX_PARK_HISTORY_RESULT_PATH)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+    paths = list(
+        (Path(outer_folder) / QUBIT).glob(
+            f"{QUBIT}_*/{QUBIT}_*_active_reset_OPX_park_history_spectroscopy/result.json"
+        )
+    )
+    if not paths:
+        raise FileNotFoundError("no completed park-history spectroscopy result found")
+    return max(paths, key=lambda path: path.stat().st_mtime)
+
+
+def _calibrate_opx_reset(outer_folder, soc, soccfg):
+    cfg = dict(BaseConfig)
+    cfg.update(q3_benchmark_settings().opx_overrides())
+    cfg["relax_delay"] = float(PASSIVE_RESET_US)
+    cfg["opx_unbounded_watchdog_s"] = float(OPX_HOST_WATCHDOG_S)
+    cfg = per_shot_reference_config(cfg)
+    now = datetime.now()
+    output = (
+        Path(outer_folder)
+        / QUBIT
+        / f"{QUBIT}_{now:%Y_%m_%d}"
+        / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_gate_calibration"
+    )
+    output.mkdir(parents=True, exist_ok=False)
+    bundle, raw = acquire_calibration(
+        soc,
+        soccfg,
+        cfg,
+        shots=int(OPX_CALIBRATION_SHOTS),
+        **q3_benchmark_settings().calibration_options(),
+        metadata={
+            "qubit": QUBIT,
+            "created": now.isoformat(),
+            "purpose": "GateCalibration opx_unbounded",
+        },
+    )
+    save_calibration(output / "calibration.json", bundle)
+    save_raw_calibration(output / "calibration_raw.npz", raw)
+    validate_confident_calibration(
+        bundle,
+        min_confident_fraction=OPX_MIN_CONFIDENT_STATE_FRACTION,
+    )
+    print(f"[reset] OPX calibration saved: {output}")
+    return bundle.to_dict()
 
 
 def _apply_spec_probe(cfg, p):
@@ -387,8 +474,27 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
-    global ROT_RESET_PARAMS
-    feedback_requested = active_reset.uses_feedback(RESET_MODE)
+    global ROT_RESET_PARAMS, OPX_RESET_CALIBRATION, OPX_METHOD_FREQUENCIES
+    opx_requested = active_reset.uses_opx_unbounded(RESET_MODE)
+    feedback_requested = active_reset.uses_feedback(RESET_MODE) and not opx_requested
+    if opx_requested:
+        history_result = _latest_park_history_result(outer_folder)
+        OPX_METHOD_FREQUENCIES = load_park_history_method_frequencies(
+            history_result
+        )
+        print(
+            f"[reset] park-history frequency "
+            f"{OPX_METHOD_FREQUENCIES['opx_unbounded']:.6f} MHz"
+        )
+        if not PROBE_RESET and OPX_RESET_CALIBRATION is None:
+            raise RuntimeError(
+                "RESET_MODE='opx_unbounded' needs PROBE_RESET=True or an explicit "
+                "OPX_RESET_CALIBRATION"
+            )
+        if PROBE_RESET:
+            OPX_RESET_CALIBRATION = _calibrate_opx_reset(
+                outer_folder, soc, soccfg
+            )
     if CAL_RES_PHASE:
         print("[reset] NOTE: res_phase calibration only matters for the LEGACY "
               "single-quadrature reset; the rotated reset (the default) measures "
@@ -462,7 +568,7 @@ def main():
     if P_RABI_CHEVRON_IQ["run"]:
         run_rabi_chevron_iq(outer_folder, soc, soccfg)
     if P_RABI_CHEVRON_SS["run"]:
-        if calib_params is None:
+        if calib_params is None and needs_standalone_ss_calibration(RESET_MODE):
             print("[SS] Chevron_SS needs a single-shot calibration; running SS_Cal first.")
             calib_params = run_ss_cal(outer_folder, soc, soccfg)
         run_rabi_chevron_ss(outer_folder, soc, soccfg, calib_params)

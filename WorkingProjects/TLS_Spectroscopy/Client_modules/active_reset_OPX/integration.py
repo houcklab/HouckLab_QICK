@@ -334,6 +334,7 @@ def acquire_pulse_sweep_iq(
         "points": int(gains.size),
         "blocks": int(len(i_blocks)),
         "records": int(total_shots * gains.size),
+        "read_length_cycles": int(read_cycles),
     }
 
 

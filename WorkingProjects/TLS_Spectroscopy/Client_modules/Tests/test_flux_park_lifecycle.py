@@ -181,9 +181,22 @@ def test_rabi_ss_dispatches_unbounded_gain_sweep(monkeypatch):
             np.full(4, 1.0),
             np.full(4, 2.0),
         ])
-        return i_values, np.zeros_like(i_values), {}
+        return i_values, np.zeros_like(i_values), {"read_length_cycles": 10}
 
     monkeypatch.setattr(RSS, "acquire_pulse_sweep_iq", acquire)
+    monkeypatch.setattr(
+        RSS,
+        "classify_payload_iq",
+        lambda cfg, i_values, q_values, read_length_cycles: np.asarray(i_values) > 0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        RSS,
+        "discriminate_shots",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError(
+            "OPX Rabi must use the timing-matched payload classifier"
+        )),
+    )
     populations = RSS.sweep_gain_populations(
         experiment,
         cfg,
@@ -215,7 +228,17 @@ def test_rabi_ss_can_return_the_shots_used_for_population(monkeypatch):
     monkeypatch.setattr(
         RSS,
         "acquire_pulse_sweep_iq",
-        lambda *args, **kwargs: (shots_i, shots_q, {}),
+        lambda *args, **kwargs: (
+            shots_i,
+            shots_q,
+            {"read_length_cycles": 10},
+        ),
+    )
+    monkeypatch.setattr(
+        RSS,
+        "classify_payload_iq",
+        lambda cfg, i_values, q_values, read_length_cycles: np.asarray(i_values) > 0,
+        raising=False,
     )
     populations, returned_i, returned_q = RSS.sweep_gain_populations(
         types.SimpleNamespace(soc=object(), soccfg=object()),
@@ -228,6 +251,24 @@ def test_rabi_ss_can_return_the_shots_used_for_population(monkeypatch):
     assert populations.tolist() == [0.5, 1.0]
     assert np.array_equal(returned_i, shots_i)
     assert np.array_equal(returned_q, shots_q)
+
+
+def test_rabi_ss_opx_path_does_not_require_legacy_calibration(monkeypatch):
+    def initialize(experiment, **kwargs):
+        experiment.cfg = kwargs["cfg"]
+
+    monkeypatch.setattr(RSS.ExperimentClass, "__init__", initialize)
+
+    experiment = RSS.RabiChevronSS(
+        soc=object(),
+        soccfg=object(),
+        path="q3",
+        outerFolder="unused",
+        cfg={"reset_mode": "opx_unbounded"},
+        calib_params=None,
+    )
+
+    assert experiment.calib_params is None
 
 
 def test_rabi_ss_passive_sweep_derives_program_gain_registers(monkeypatch):
@@ -307,6 +348,7 @@ def test_compact_dmem_sweep_chunks_and_restores_gain_shape(monkeypatch):
         "points": 3,
         "blocks": 2,
         "records": 21,
+        "read_length_cycles": 10,
     }
 
 
@@ -437,3 +479,34 @@ def test_production_t1_decay_fit_remains_available():
     assert fit["tau_us"] == pytest.approx(100.0, rel=1e-3)
     assert fit["P0"] == pytest.approx(0.04, abs=1e-3)
     assert fit["P1"] == pytest.approx(0.86, abs=1e-3)
+
+
+def test_gate_calibration_builds_opx_rabi_runtime_without_legacy_reset(
+    monkeypatch,
+):
+    qick.QickConfig = type("QickConfig", (), {})
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        GateCalibration as runner,
+    )
+
+    calibration = {"schema_version": 1, "payload": {}, "loop": {}}
+    monkeypatch.setattr(runner, "RESET_MODE", "opx_unbounded")
+    monkeypatch.setattr(runner, "OPX_RESET_CALIBRATION", calibration, raising=False)
+    monkeypatch.setattr(
+        runner,
+        "OPX_METHOD_FREQUENCIES",
+        {"opx_unbounded": 4366.392029},
+        raising=False,
+    )
+    monkeypatch.setattr(runner, "ROT_RESET_PARAMS", None)
+
+    cfg = runner._base_cfg({"shots": 20})
+
+    assert cfg["reset_mode"] == "opx_unbounded"
+    assert cfg["opx_reset_calibration"] is calibration
+    assert cfg["opx_inter_shot_delay_us"] == pytest.approx(10.0)
+    assert cfg["opx_persistent_park"] is True
+    assert cfg["opx_hard_flux_steps"] is True
+    assert cfg["qubit_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["reset_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["relax_delay"] == pytest.approx(10.0)
