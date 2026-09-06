@@ -598,6 +598,10 @@ class QUAPulseGridProgram(QickProgram):
         frequency_values, frequency_step = _uniform_frequency_registers(
             self, self.frequencies
         )
+        passive_reset_us = max(
+            float(cfg.get("relax_delay", readout_thermalization_us(cfg))),
+            readout_thermalization_us(cfg),
+        )
         self.regwi(0, controls["shot_loop"], self.shots - 1)
         _begin_park(self, park_segments)
         self.label("QUA_PASSIVE_PULSE_SHOT")
@@ -611,7 +615,7 @@ class QUAPulseGridProgram(QickProgram):
             for _ in range(self.drive_pulses):
                 self.pulse(ch=cfg["qubit_ch"])
                 self.sync_all(self.us2cycles(0.01))
-            _measure_record(self)
+            _measure_record(self, delay_us=passive_reset_us)
         self.mathi(
             qubit_page,
             frequency_register,
