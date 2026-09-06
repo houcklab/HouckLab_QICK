@@ -9,6 +9,9 @@ from .analysis import ReferenceAxis, json_safe
 from .classifier import ClassifierCalibration, fit_classifier
 
 
+REFERENCE_CALIBRATION_INTER_SHOT_US = 400.0
+
+
 @dataclass(frozen=True)
 class CalibrationBundle:
     schema_version: int
@@ -48,6 +51,7 @@ def per_shot_reference_config(cfg):
         "opx_persistent_park": False,
         "opx_hard_flux_steps": False,
         "opx_reference_flux_cycle": False,
+        "opx_inter_shot_delay_us": REFERENCE_CALIBRATION_INTER_SHOT_US,
     })
     return values
 
