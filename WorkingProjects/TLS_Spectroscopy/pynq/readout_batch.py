@@ -227,15 +227,26 @@ def _wait_for_ready(
 ):
     deadline = time.monotonic() + float(timeout_s)
     polls = 0
+    ahead_value = None
+    ahead_reads = 0
     while True:
         polls += 1
         ready = _read_tproc(tproc, ready_addr, direct_memory=direct_memory)
         if ready == expected:
             return polls
         if ready > expected:
-            raise RuntimeError(
-                f"resident tProcessor advanced to block {ready} before {expected}"
-            )
+            if ready == ahead_value:
+                ahead_reads += 1
+            else:
+                ahead_value = ready
+                ahead_reads = 1
+            if ahead_reads >= 3:
+                raise RuntimeError(
+                    f"resident tProcessor advanced to block {ready} before {expected}"
+                )
+        else:
+            ahead_value = None
+            ahead_reads = 0
         if time.monotonic() >= deadline:
             raise TimeoutError(
                 f"resident tProcessor did not request block {expected}"

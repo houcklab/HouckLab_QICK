@@ -177,6 +177,43 @@ class ResidentProgram(FakeProgram):
         raise AssertionError("readouts must be initialized only once")
 
 
+def test_ready_wait_ignores_one_transient_overshoot():
+    class Array:
+        def __init__(self):
+            self.values = iter((63775, 63760))
+
+        def __getitem__(self, index):
+            return next(self.values)
+
+    polls = readout_batch._wait_for_ready(
+        object(),
+        ready_addr=3,
+        expected=63760,
+        timeout_s=1.0,
+        direct_memory=(Array(), 0),
+    )
+    assert polls == 2
+
+
+def test_ready_wait_rejects_a_stable_overshoot():
+    class Array:
+        def __getitem__(self, index):
+            return 12
+
+    try:
+        readout_batch._wait_for_ready(
+            object(),
+            ready_addr=3,
+            expected=10,
+            timeout_s=1.0,
+            direct_memory=(Array(), 0),
+        )
+    except RuntimeError as exc:
+        assert "advanced to block 12 before 10" in str(exc)
+    else:
+        raise AssertionError("stable ready overshoot was not rejected")
+
+
 class ResidentSoc(FakeSoc):
     def __init__(self):
         super().__init__()
