@@ -1,5 +1,6 @@
 import csv
 from dataclasses import asdict, dataclass
+import json
 import math
 from pathlib import Path
 
@@ -95,6 +96,40 @@ class ReferenceAxis:
     @classmethod
     def from_dict(cls, values):
         return cls(**dict(values))
+
+
+def load_park_history_method_frequencies(path):
+    values = json.loads(Path(path).read_text())
+    fits = dict(values.get("fits", {}))
+    groups = {
+        "opx_unbounded": (
+            "history_1_recovery_10",
+            "history_750_recovery_10",
+        ),
+        "passive": (
+            "history_1_recovery_1000",
+            "history_750_recovery_1000",
+        ),
+    }
+    output = {}
+    for method, names in groups.items():
+        centers = []
+        for name in names:
+            if name not in fits:
+                raise ValueError(f"park-history spectroscopy is missing {name}")
+            fit = dict(fits[name])
+            center = float(fit.get("center_mhz", float("nan")))
+            error = float(fit.get("center_err_mhz", float("nan")))
+            contrast = float(fit.get("contrast", float("nan")))
+            if bool(fit.get("boundary_peak", True)):
+                raise ValueError(f"park-history peak {name} lies at a sweep boundary")
+            if not np.isfinite(center) or not np.isfinite(error) or error > 0.25:
+                raise ValueError(f"park-history peak {name} has an unreliable center")
+            if not np.isfinite(contrast) or contrast < 0.25:
+                raise ValueError(f"park-history peak {name} has insufficient contrast")
+            centers.append(center)
+        output[method] = float(np.mean(centers))
+    return output
 
 
 def wilson_interval(successes, trials, z=1.959963984540054):

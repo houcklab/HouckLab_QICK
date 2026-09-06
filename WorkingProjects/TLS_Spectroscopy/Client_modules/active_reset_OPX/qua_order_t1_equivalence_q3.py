@@ -30,6 +30,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis i
     evaluate_t1_equivalence,
     fit_t1_decay,
     json_safe,
+    load_park_history_method_frequencies,
     wilson_interval,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.benchmark_q3 import (
@@ -63,14 +64,31 @@ METHODS = ("passive", "opx_unbounded")
 RANDOM_SEED = 20260905
 T1_MATCH_RELATIVE_TOLERANCE = 0.20
 ENDPOINT_TOLERANCE = 0.12
+PARK_HISTORY_RESULT_PATH = None
 
 
 def _output_dir():
     now = datetime.now()
     day = Path(outerFolder) / QUBIT / f"{QUBIT}_{now:%Y_%m_%d}"
-    output = day / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_QUA_order_T1"
+    output = day / f"{QUBIT}_{now:%H_%M_%S}_active_reset_OPX_QUA_order_T1_frequency_retuned"
     output.mkdir(parents=True, exist_ok=False)
     return output
+
+
+def _latest_park_history_result():
+    if PARK_HISTORY_RESULT_PATH is not None:
+        path = Path(PARK_HISTORY_RESULT_PATH)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+    paths = list(
+        (Path(outerFolder) / QUBIT).glob(
+            f"{QUBIT}_*/{QUBIT}_*_active_reset_OPX_park_history_spectroscopy/result.json"
+        )
+    )
+    if not paths:
+        raise FileNotFoundError("no completed park-history spectroscopy result found")
+    return max(paths, key=lambda path: path.stat().st_mtime)
 
 
 def _write_json(path, values):
@@ -241,6 +259,8 @@ def main():
     print(f"output={output}")
     soc, soccfg = makeProxy()
     settings = q3_benchmark_settings()
+    park_history_result = _latest_park_history_result()
+    method_frequencies = load_park_history_method_frequencies(park_history_result)
     cfg = dict(BaseConfig)
     cfg.update(OPX_OVERRIDES)
     cfg.update(settings.opx_overrides())
@@ -271,6 +291,8 @@ def main():
         "order": "shot_major",
         "park_lifecycle": "persistent_hard_step",
         "calibration_park_lifecycle": "per_shot_ramp",
+        "park_history_result": str(park_history_result),
+        "method_frequencies_mhz": method_frequencies,
         "config": cfg,
     }
     _write_json(output / "run_metadata.json", metadata)
@@ -300,6 +322,10 @@ def main():
             method = METHODS[int(method_index)]
             run_cfg = dict(cfg)
             run_cfg["opx_inter_shot_delay_us"] = float(_method_delay(method))
+            run_cfg["qubit_pi_freq"] = float(method_frequencies[method])
+            run_cfg["reset_pi_freq"] = float(
+                method_frequencies["opx_unbounded"]
+            )
             started = time.perf_counter()
             i_values, q_values, telemetry = acquire_t1_sweep_iq(
                 soc,

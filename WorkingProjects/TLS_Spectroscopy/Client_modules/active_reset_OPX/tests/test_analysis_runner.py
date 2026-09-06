@@ -358,6 +358,45 @@ def test_frequency_sweep_acquisition_preserves_point_order_and_reset_frequency(m
     assert created[0].cfg["opx_payload_park_recovery_us"] == pytest.approx(1000.0)
 
 
+def test_qua_order_t1_uses_recovery_matched_park_frequencies(tmp_path):
+    result = tmp_path / "result.json"
+    result.write_text(json.dumps({
+        "fits": {
+            "history_1_recovery_10": {
+                "center_mhz": 4366.36,
+                "center_err_mhz": 0.04,
+                "contrast": 1.2,
+                "boundary_peak": False,
+            },
+            "history_750_recovery_10": {
+                "center_mhz": 4366.42,
+                "center_err_mhz": 0.04,
+                "contrast": 1.3,
+                "boundary_peak": False,
+            },
+            "history_1_recovery_1000": {
+                "center_mhz": 4366.12,
+                "center_err_mhz": 0.04,
+                "contrast": 1.1,
+                "boundary_peak": False,
+            },
+            "history_750_recovery_1000": {
+                "center_mhz": 4365.92,
+                "center_err_mhz": 0.05,
+                "contrast": 0.8,
+                "boundary_peak": False,
+            },
+        }
+    }))
+
+    frequencies = analysis.load_park_history_method_frequencies(result)
+
+    assert frequencies == pytest.approx({
+        "opx_unbounded": 4366.39,
+        "passive": 4366.02,
+    })
+
+
 def test_t1_sweep_acquisition_preserves_qua_shot_major_order(monkeypatch):
     bundle = CalibrationBundle(
         schema_version=1,
