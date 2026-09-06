@@ -109,9 +109,6 @@ def main():
         "frequency_update_mode": telemetry.get(
             "frequency_update_mode", "unknown"
         ),
-        "generator_update_mode": telemetry.get(
-            "generator_update_mode", "unknown"
-        ),
         "order": telemetry["order"],
         "readout_integration_us": float(cfg["read_length"]),
         "readout_drive_us": readout_drive_length_us(cfg),

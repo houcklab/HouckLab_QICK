@@ -93,8 +93,6 @@ class ResidentGridRecorder(PulseGridRecorder):
         self.command_addr = 2
         self.ready_addr = 3
         self.frequency_addr = 4
-        self.frequency_registers = np.array([10, 20])
-        self.frequency_step = 10
 
     def memwi(self, page, register, address):
         self.instructions.append(("memwi", page, register, address))
@@ -323,7 +321,6 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 "stream_drain_s": 0.07,
                 "ready_polls": 8,
                 "frequency_update_mode": "precomputed_register",
-                "generator_update_mode": "controller_step",
             }
 
         def acquire_qick_program_batch(self, *args, **kwargs):
@@ -365,7 +362,6 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     }
     assert telemetry["ready_polls"] == 8
     assert telemetry["frequency_update_mode"] == "precomputed_register"
-    assert telemetry["generator_update_mode"] == "controller_step"
     assert telemetry["order"] == "shot_frequency_gain"
 
 
@@ -545,7 +541,7 @@ def test_pulse_grid_emits_valid_frequency_register_increment(monkeypatch):
     assert ("mathi", 1, 1, 1, "+", 10) in recorder.instructions
 
 
-def test_resident_readout_steps_generator_frequency_on_tproc(monkeypatch):
+def test_resident_readout_waits_then_loads_generator_frequency(monkeypatch):
     recorder = ResidentGridRecorder()
     monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
     monkeypatch.setattr(
@@ -590,9 +586,7 @@ def test_resident_readout_steps_generator_frequency_on_tproc(monkeypatch):
         "QUA_RESIDENT_READOUT_WAIT",
     )
     assert recorder.instructions[wait_index + 4] == ("sync", 0, 8)
-    assert ("memri", 0, 1, 4) not in recorder.instructions
-    assert ("safe_regwi", 0, 1, 10) in recorder.instructions
-    assert ("mathi", 0, 1, 1, "+", 10) in recorder.instructions
+    assert recorder.instructions[wait_index + 5] == ("memri", 0, 1, 4)
     assert recorder.instructions.index(("measure_record",)) > wait_index
     assert recorder.instructions[-3:] == [
         ("loopnz", 0, 5, "QUA_RESIDENT_READOUT_FREQUENCY"),

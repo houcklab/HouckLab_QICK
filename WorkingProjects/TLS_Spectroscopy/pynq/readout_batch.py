@@ -334,6 +334,10 @@ def acquire_qick_resident_readout(
                 )
             frequency_update_s += time.perf_counter() - phase_started
             phase_started = time.perf_counter()
+            soc.tproc.single_write(
+                addr=frequency_addr,
+                data=registers[frequency_index],
+            )
             soc.tproc.single_write(addr=command_addr, data=1)
             release_s += time.perf_counter() - phase_started
             if (block + 1) % 64 == 0:
@@ -392,7 +396,6 @@ def acquire_qick_resident_readout(
             if frequency_updates is None
             else "precomputed_register"
         ),
-        "generator_update_mode": "controller_step",
     }
 
 
