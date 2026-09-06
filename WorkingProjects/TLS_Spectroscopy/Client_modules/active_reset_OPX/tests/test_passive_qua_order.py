@@ -297,7 +297,6 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 ready_addr,
                 frequency_addr,
                 access_mode="driver",
-                command_mode="split",
             ):
             self.resident_calls.append(
                 (
@@ -309,7 +308,6 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                         ready_addr,
                         frequency_addr,
                         access_mode,
-                        command_mode,
                 )
             )
             records = np.arange(2 * 2 * 2 * 2, dtype=float).reshape(2, 2, 2, 2)
@@ -327,7 +325,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
                 "ready_polls": 8,
                     "frequency_update_mode": "precomputed_register",
                     "tproc_access_mode": access_mode,
-                    "command_mode": command_mode,
+                    "command_mode": "split",
             }
 
         def acquire_qick_program_batch(self, *args, **kwargs):
@@ -349,14 +347,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert len(soc.resident_calls) == 1
     call = soc.resident_calls[0]
     assert call[2] == [101, 202]
-    assert call[3:] == (
-        2,
-        2,
-        3,
-        4,
-        "direct_mmio",
-        "packed_frequency",
-    )
+    assert call[3:] == (2, 2, 3, 4, "direct_mmio")
     assert [cfg[0]["freq"] for cfg in call[1]] == [10.0, 20.0]
     assert i_values.shape == (2, 2, 2)
     assert q_values.shape == (2, 2, 2)
@@ -377,7 +368,7 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert telemetry["ready_polls"] == 8
     assert telemetry["frequency_update_mode"] == "precomputed_register"
     assert telemetry["tproc_access_mode"] == "direct_mmio"
-    assert telemetry["command_mode"] == "packed_frequency"
+    assert telemetry["command_mode"] == "split"
     assert telemetry["order"] == "shot_frequency_gain"
 
 
