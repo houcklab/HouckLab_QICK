@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from pathlib import Path
 
 from .analysis import load_park_history_method_frequencies
@@ -124,9 +125,27 @@ def prepare_reset_session(
     mode = normalize_reset_mode(reset_mode)
     if mode == "passive":
         return ProductionResetSession.passive()
-    history_result = latest_park_history_result(outer_folder, qubit)
-    frequencies = load_park_history_method_frequencies(history_result)
-    frequency = float(frequencies["opx_unbounded"])
+    try:
+        history_result = latest_park_history_result(outer_folder, qubit)
+    except FileNotFoundError:
+        history_result = None
+    frequency = None
+    frequency_source = None
+    for key in ("reset_pi_freq", "qubit_pi_freq", "qubit_freq"):
+        value = base_cfg.get(key)
+        if value is None:
+            continue
+        candidate = float(value)
+        if math.isfinite(candidate) and candidate > 0.0:
+            frequency = candidate
+            frequency_source = key
+            break
+    if frequency is None:
+        if history_result is None:
+            raise ValueError("active reset needs a configured qubit frequency")
+        frequencies = load_park_history_method_frequencies(history_result)
+        frequency = float(frequencies["opx_unbounded"])
+        frequency_source = "park_history"
     cfg = build_calibration_config(base_cfg, frequency)
     created = datetime.now() if now is None else datetime.strptime(
         str(now), "%Y_%m_%d_%H_%M_%S"
@@ -151,8 +170,9 @@ def prepare_reset_session(
                 "qubit": str(qubit),
                 "created": created.isoformat(),
                 "purpose": str(purpose),
-                "park_history_result": str(history_result),
+                "park_history_result": None if history_result is None else str(history_result),
                 "method_frequency_mhz": frequency,
+                "method_frequency_source": str(frequency_source),
                 "attempt": int(attempt),
             },
         )
