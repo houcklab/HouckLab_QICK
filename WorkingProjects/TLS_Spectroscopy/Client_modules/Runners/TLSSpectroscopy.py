@@ -311,7 +311,7 @@ def _resolve_resonator_lookup(latest_lookup_csv):
 
 
 def _dc_vec(p):
-    return np.arange(p["dc_min"], p["dc_max"], p["dc_step"])
+    return fpd.build_inclusive_sweep(p["dc_min"], p["dc_max"], p["dc_step"])
 
 
 def _step6_dc_vec(p):

@@ -291,3 +291,15 @@ def test_step6_runner_honors_disabled_correction(scan_kind, tmp_path, monkeypatc
     assert kwargs["cfg"]["apply_flux_tail_compensation"] is False
     assert kwargs["suffix"].endswith("_uncorrected")
     assert "(uncorrected)" in capsys.readouterr().out
+
+
+def test_dc_vec_includes_exact_upper_endpoint():
+    values = tls._dc_vec({"dc_min": -20_500, "dc_max": -19_500, "dc_step": 500})
+
+    np.testing.assert_array_equal(values, [-20_500, -20_000, -19_500])
+
+
+def test_dc_vec_does_not_overshoot_non_aligned_upper_bound():
+    values = tls._dc_vec({"dc_min": 0, "dc_max": 1_000, "dc_step": 600})
+
+    np.testing.assert_array_equal(values, [0, 600])

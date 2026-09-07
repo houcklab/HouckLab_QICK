@@ -1164,7 +1164,17 @@ def build_predistorted_ff_samples(compensation, hold_ns, dt_ns, target_amp, star
 
 
 def build_inclusive_sweep(vmin, vmax, step):
+    vmin = float(vmin)
+    vmax = float(vmax)
     step = float(step)
     if step <= 0:
         raise ValueError("step must be > 0")
-    return np.arange(float(vmin), float(vmax) + 0.5 * step, step)
+    if vmax < vmin:
+        raise ValueError("vmax must be >= vmin")
+    intervals = (vmax - vmin) / step
+    tolerance = 1e-12 * max(1.0, abs(intervals))
+    count = int(np.floor(intervals + tolerance)) + 1
+    values = vmin + step * np.arange(count, dtype=float)
+    if values.size and np.isclose(values[-1], vmax, rtol=1e-12, atol=1e-12):
+        values[-1] = vmax
+    return values
