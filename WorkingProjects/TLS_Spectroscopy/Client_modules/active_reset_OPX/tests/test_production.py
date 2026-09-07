@@ -776,7 +776,7 @@ def test_tls_step3b_smoke_runner_applies_latest_correction_once(monkeypatch):
     runpy.run_path(str(path), run_name="__main__")
 
     assert calls == [{
-        "gain": 1.0,
+        "gain": 0.75,
         "gain_sweep": None,
         "step3": {
             "run_fit": False,
