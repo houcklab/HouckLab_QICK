@@ -7,6 +7,8 @@ import subprocess
 
 
 _UNCHANGED = object()
+_DELETE = object()
+_SOURCE_BASELINE = "_SOURCE_BASELINE"
 
 
 def local_override_path(source_file):
@@ -44,9 +46,11 @@ def _merge(current, override):
 def _changed_patch(committed, current):
     if not isinstance(committed, dict) or not isinstance(current, dict):
         return _UNCHANGED if committed == current else deepcopy(current)
-    if any(key not in current for key in committed):
-        return deepcopy(current)
-    changed = {}
+    changed = {
+        key: _DELETE
+        for key in committed
+        if key not in current
+    }
     for key, value in current.items():
         if key not in committed:
             changed[key] = deepcopy(value)
@@ -57,13 +61,33 @@ def _changed_patch(committed, current):
     return changed if changed else _UNCHANGED
 
 
-def _write_assignments(path, values, names=None):
+def _apply_patch(current, patch):
+    if patch is _DELETE:
+        return _DELETE
+    if not isinstance(patch, dict):
+        return deepcopy(patch)
+    merged = deepcopy(current) if isinstance(current, dict) else {}
+    for key, value in patch.items():
+        updated = _apply_patch(merged.get(key), value)
+        if updated is _DELETE:
+            merged.pop(key, None)
+        else:
+            merged[key] = updated
+    return merged
+
+
+def _write_assignments(path, values, names=None, source_baseline=_UNCHANGED):
     order = tuple(values) if names is None else tuple(names)
     blocks = [
         f"{name} = {pformat(values[name], sort_dicts=False)}"
         for name in order
         if name in values
     ]
+    if source_baseline is not _UNCHANGED:
+        blocks.append(
+            f"{_SOURCE_BASELINE} = "
+            f"{pformat(source_baseline, sort_dicts=False)}"
+        )
     path.write_text("\n\n".join(blocks) + "\n")
 
 
@@ -95,12 +119,15 @@ def _head_source_text(source_file):
     return show_result.stdout if show_result.returncode == 0 else None
 
 
-def _direct_source_changes(source_file, allowed_names):
-    head_text = _head_source_text(source_file)
-    if head_text is None:
-        return {}
+def _direct_source_changes(source_file, allowed_names, source_baseline=None):
+    if source_baseline is None:
+        head_text = _head_source_text(source_file)
+        if head_text is None:
+            return None, {}
+        _, committed = _source_local_values(head_text, str(source_file))
+    else:
+        committed = source_baseline
     _, current = source_local_values(source_file)
-    _, committed = _source_local_values(head_text, str(source_file))
     changed = {}
     for name in allowed_names:
         if name not in current or name not in committed:
@@ -108,7 +135,7 @@ def _direct_source_changes(source_file, allowed_names):
         patch = _changed_patch(committed[name], current[name])
         if patch is not _UNCHANGED:
             changed[name] = patch
-    return changed
+    return current, changed
 
 
 def apply_local_overrides(namespace, source_file, allowed_names):
@@ -117,23 +144,48 @@ def apply_local_overrides(namespace, source_file, allowed_names):
         return None
     allowed = tuple(allowed_names)
     values = _read_assignments(path)
+    source_baseline = values.pop(_SOURCE_BASELINE, None)
+    removed_names = set()
+    if isinstance(source_baseline, dict):
+        removed_names = (
+            set(values) - set(allowed)
+        ) & set(source_baseline)
+        for name in removed_names:
+            values.pop(name)
     unknown = sorted(set(values) - set(allowed))
     if unknown:
         raise ValueError(f"unknown local setting names in {path}: {', '.join(unknown)}")
-    direct_changes = _direct_source_changes(source_file, allowed)
+    current, direct_changes = _direct_source_changes(
+        source_file,
+        allowed,
+        source_baseline if isinstance(source_baseline, dict) else None,
+    )
     if direct_changes:
-        values = _merge(values, direct_changes)
-        _write_assignments(path, values, allowed)
+        values = _apply_patch(values, direct_changes)
+    if current is not None and (
+        source_baseline != current or direct_changes or removed_names
+    ):
+        _write_assignments(path, values, allowed, current)
     for name, value in values.items():
         namespace[name] = _merge(namespace[name], value)
     return path
 
 
-def snapshot_local_overrides(namespace, source_file, allowed_names):
+def snapshot_local_overrides(
+    namespace,
+    source_file,
+    allowed_names,
+    source_baseline=_UNCHANGED,
+):
     path = local_override_path(source_file)
     if path.exists():
         return path
-    _write_assignments(path, namespace, allowed_names)
+    _write_assignments(
+        path,
+        namespace,
+        allowed_names,
+        source_baseline,
+    )
     return path
 
 
@@ -206,7 +258,12 @@ def source_local_values(source_file):
 
 def snapshot_source_local_overrides(source_file):
     allowed, values = source_local_values(source_file)
-    return snapshot_local_overrides(values, source_file, allowed)
+    return snapshot_local_overrides(
+        values,
+        source_file,
+        allowed,
+        values,
+    )
 
 
 def copy_local_scratch(source_file, target_file=None):

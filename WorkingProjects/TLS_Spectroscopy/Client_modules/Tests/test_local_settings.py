@@ -141,8 +141,127 @@ def test_direct_runner_setting_edit_updates_local_override(tmp_path):
         ("P_SCAN",),
     )
     assert loaded_after_source_is_clean == {
-        "P_SCAN": {"run": True, "shots": 500}
+        "P_SCAN": {"run": False, "shots": 500}
     }
+
+
+def test_committed_runner_setting_edit_updates_existing_local_override(tmp_path):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    source.write_text(
+        "P_SCAN = {'run': False, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "add", "Runner.py"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    local = tmp_path / "Runner.local.py"
+    module.snapshot_source_local_overrides(source)
+    local.write_text(
+        local.read_text().replace("'shots': 100", "'shots': 500", 1)
+    )
+    source.write_text(
+        "P_SCAN = {'run': True, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    subprocess.run(["git", "add", "Runner.py"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "enable scan"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    loaded = {"P_SCAN": {"run": True, "shots": 100}}
+    module.apply_local_overrides(loaded, source, ("P_SCAN",))
+
+    assert loaded == {"P_SCAN": {"run": True, "shots": 500}}
+
+
+def test_reverted_runner_setting_does_not_resurface_from_local_override(tmp_path):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    source.write_text(
+        "P_SCAN = {'run': False, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    module.snapshot_source_local_overrides(source)
+    source.write_text(
+        "P_SCAN = {'run': True, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    enabled = {"P_SCAN": {"run": True, "shots": 100}}
+    module.apply_local_overrides(enabled, source, ("P_SCAN",))
+    assert enabled == {"P_SCAN": {"run": True, "shots": 100}}
+    source.write_text(
+        "P_SCAN = {'run': False, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+
+    reverted = {"P_SCAN": {"run": False, "shots": 100}}
+    module.apply_local_overrides(reverted, source, ("P_SCAN",))
+
+    assert reverted == {"P_SCAN": {"run": False, "shots": 100}}
+
+
+def test_removed_runner_setting_is_removed_from_local_override(tmp_path):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    source.write_text(
+        "P_SCAN = {'run': False, 'legacy': 1}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    module.snapshot_source_local_overrides(source)
+    source.write_text(
+        "P_SCAN = {'run': False}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+
+    loaded = {"P_SCAN": {"run": False}}
+    module.apply_local_overrides(loaded, source, ("P_SCAN",))
+
+    assert loaded == {"P_SCAN": {"run": False}}
+    assert "legacy" not in module._read_assignments(
+        tmp_path / "Runner.local.py"
+    )["P_SCAN"]
+
+
+def test_removed_top_level_setting_is_pruned_from_local_override(tmp_path):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    source.write_text(
+        "P_SCAN = {'run': False}\n"
+        "P_OLD = {'run': True}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN', 'P_OLD')\n"
+    )
+    module.snapshot_source_local_overrides(source)
+    source.write_text(
+        "P_SCAN = {'run': False}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+
+    loaded = {"P_SCAN": {"run": False}}
+    module.apply_local_overrides(loaded, source, ("P_SCAN",))
+
+    assignments = module._read_assignments(tmp_path / "Runner.local.py")
+    assert loaded == {"P_SCAN": {"run": False}}
+    assert "P_OLD" not in assignments
+    assert "P_OLD" not in assignments["_SOURCE_BASELINE"]
 
 
 def test_local_override_still_loads_when_git_is_unavailable(tmp_path, monkeypatch):
