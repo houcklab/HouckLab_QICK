@@ -14,6 +14,7 @@ from .calibration import (
 
 
 CALIBRATION_SHOTS = 2000
+CALIBRATION_ATTEMPTS = 3
 CALIBRATION_RELAX_US = 1000.0
 MIN_CONFIDENT_STATE_FRACTION = 0.2
 HOST_WATCHDOG_S = 2.0
@@ -130,31 +131,45 @@ def prepare_reset_session(
     created = datetime.now() if now is None else datetime.strptime(
         str(now), "%Y_%m_%d_%H_%M_%S"
     )
-    output = (
+    parent = (
         Path(outer_folder)
         / str(qubit)
         / f"{qubit}_{created:%Y_%m_%d}"
-        / f"{qubit}_{created:%H_%M_%S}_active_reset_OPX_production_calibration"
     )
-    output.mkdir(parents=True, exist_ok=False)
-    bundle, raw = acquire_calibration(
-        soc,
-        soccfg,
-        cfg,
-        shots=int(CALIBRATION_SHOTS),
-        **q3_benchmark_settings().calibration_options(),
-        metadata={
-            "qubit": str(qubit),
-            "created": created.isoformat(),
-            "purpose": str(purpose),
-            "park_history_result": str(history_result),
-            "method_frequency_mhz": frequency,
-        },
-    )
-    save_calibration(output / "calibration.json", bundle)
-    save_raw_calibration(output / "calibration_raw.npz", raw)
-    validate_confident_calibration(
-        bundle,
-        min_confident_fraction=float(MIN_CONFIDENT_STATE_FRACTION),
-    )
-    return ProductionResetSession.active(bundle.to_dict(), frequency, output)
+    stem = f"{qubit}_{created:%H_%M_%S}_active_reset_OPX_production_calibration"
+    for attempt in range(1, int(CALIBRATION_ATTEMPTS) + 1):
+        suffix = "" if attempt == 1 else f"_attempt_{attempt}"
+        output = parent / f"{stem}{suffix}"
+        output.mkdir(parents=True, exist_ok=False)
+        bundle, raw = acquire_calibration(
+            soc,
+            soccfg,
+            cfg,
+            shots=int(CALIBRATION_SHOTS),
+            **q3_benchmark_settings().calibration_options(),
+            metadata={
+                "qubit": str(qubit),
+                "created": created.isoformat(),
+                "purpose": str(purpose),
+                "park_history_result": str(history_result),
+                "method_frequency_mhz": frequency,
+                "attempt": int(attempt),
+            },
+        )
+        save_calibration(output / "calibration.json", bundle)
+        save_raw_calibration(output / "calibration_raw.npz", raw)
+        try:
+            validate_confident_calibration(
+                bundle,
+                min_confident_fraction=float(MIN_CONFIDENT_STATE_FRACTION),
+            )
+        except ValueError as exc:
+            if attempt >= int(CALIBRATION_ATTEMPTS):
+                raise
+            print(
+                f"[reset] automatic calibration attempt {attempt} rejected "
+                f"({exc}); retrying"
+            )
+            continue
+        return ProductionResetSession.active(bundle.to_dict(), frequency, output)
+    raise RuntimeError("automatic active-reset calibration did not produce a result")

@@ -177,7 +177,13 @@ def _run_series(factory, wall_clock_s, synchronizer, recalibrate):
         )
         print(f"one-stop CSV updated: {csv_path}")
         if (datetime.now() - last_cal).total_seconds() >= AUTOMATIC_RECALIBRATION_MIN * 60.0:
-            recalibrate()
+            try:
+                recalibrate()
+            except ValueError as exc:
+                print(
+                    "automatic reset recalibration rejected; retaining the last valid "
+                    f"calibration ({exc})"
+                )
             last_cal = datetime.now()
         synchronizer.wait_for_end(run_index)
         run_index += 1
