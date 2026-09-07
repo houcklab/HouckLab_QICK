@@ -968,3 +968,64 @@ def test_tls_3pt_smoke_combines_active_reset_with_validated_flux_compensation(mo
         },
         "selected": [False, False, False, False, False, False, True, False],
     }]
+
+
+def test_p2_fixed_park_gain_sweep_selects_only_passive_qubit_gain_sweep(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=False,
+        RESET_MODE="active",
+        P_TRANSMISSION={"run": True},
+        P_TRANSMISSION_SWEEP={"run": True},
+        P_QUBIT_SPEC={"run": True},
+        P_QUBIT_SPEC_SWEEP={"run": False},
+        P_SS_CAL={"run": True},
+        P_RABI_CHEVRON_IQ={"run": True},
+        P_RABI_CHEVRON_SS={"run": True},
+        P_READOUT_OPT={"run": True},
+        P_QUBIT_OPT={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "live_plots": runner.LIVE_PLOTS,
+        "reset_mode": runner.RESET_MODE,
+        "qubit_spec_sweep": dict(runner.P_QUBIT_SPEC_SWEEP),
+        "selected": [
+            runner.P_TRANSMISSION["run"],
+            runner.P_TRANSMISSION_SWEEP["run"],
+            runner.P_QUBIT_SPEC["run"],
+            runner.P_QUBIT_SPEC_SWEEP["run"],
+            runner.P_SS_CAL["run"],
+            runner.P_RABI_CHEVRON_IQ["run"],
+            runner.P_RABI_CHEVRON_SS["run"],
+            runner.P_READOUT_OPT["run"],
+            runner.P_QUBIT_OPT["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.GateCalibration"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "GateCalibration", runner, raising=False)
+    path = Path(__file__).parents[1] / "p2_fixed_park_gain_sweep_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "live_plots": True,
+        "reset_mode": "passive",
+        "qubit_spec_sweep": {
+            "run": True,
+            "shots": 100,
+            "freq_start_mhz": 4300.0,
+            "freq_stop_mhz": 4400.0,
+            "freq_points": 201,
+            "gain_min": 0,
+            "gain_max": 30000,
+            "gain_points": 7,
+            "spec_length_us": 1.0,
+            "relax_delay_us": 100.0,
+        },
+        "selected": [False, False, False, True, False, False, False, False, False],
+    }]
