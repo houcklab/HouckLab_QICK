@@ -3,6 +3,7 @@ import pytest
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.rabi_chevron_ss_diagnostic_q3 import (
     _axis_subset,
+    _resolved_rabi_settings,
     classify_diagnostic,
     matrix_comparison,
     matrix_metrics,
@@ -13,6 +14,19 @@ def test_axis_subset_preserves_uniform_steps_for_even_length_axes():
     subset = _axis_subset(np.arange(20), 11)
     assert subset.size <= 11
     assert np.all(np.diff(subset) == np.diff(subset)[0])
+
+
+def test_resolved_rabi_settings_inherits_sigma_from_base_config():
+    values = _resolved_rabi_settings({"shots": 1000}, {"sigma": 0.2})
+    assert values["sigma_us"] == pytest.approx(0.2)
+
+
+def test_resolved_rabi_settings_preserves_explicit_sigma():
+    values = _resolved_rabi_settings(
+        {"shots": 1000, "sigma_us": 0.3},
+        {"sigma": 0.2},
+    )
+    assert values["sigma_us"] == pytest.approx(0.3)
 
 
 def test_matrix_metrics_reports_contrast_and_peak_coordinates():

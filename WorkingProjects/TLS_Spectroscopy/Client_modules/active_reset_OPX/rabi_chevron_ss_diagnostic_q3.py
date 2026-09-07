@@ -147,6 +147,14 @@ def _axis_subset(values, maximum):
     return values[indices]
 
 
+def _resolved_rabi_settings(values, base_config):
+    resolved = dict(values)
+    resolved["sigma_us"] = float(
+        resolved.get("sigma_us", base_config["sigma"])
+    )
+    return resolved
+
+
 def _write_json(path, values):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import json_safe
 
@@ -370,7 +378,7 @@ def main():
         ).strip()
     except Exception:
         source_commit = "unknown"
-    p = dict(P_RABI_CHEVRON_SS)
+    p = _resolved_rabi_settings(P_RABI_CHEVRON_SS, BaseConfig)
     original_gain_count = int(p["a_points"])
     original_gain_step = int(round(
         (float(p["a_max"]) - float(p["a_min"]))
