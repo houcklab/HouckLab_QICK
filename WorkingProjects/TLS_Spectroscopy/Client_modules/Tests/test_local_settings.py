@@ -1,5 +1,6 @@
 import importlib
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -92,6 +93,73 @@ def test_snapshot_creates_local_file_without_overwriting_it(tmp_path):
         ("RESET_MODE", "P_SCAN"),
     )
     assert loaded == namespace | {"RESET_MODE": "active"}
+
+
+def test_direct_runner_setting_edit_updates_local_override(tmp_path):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    committed = (
+        "P_SCAN = {'run': False, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+    source.write_text(committed)
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "add", "Runner.py"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    (tmp_path / "Runner.local.py").write_text(
+        "P_SCAN = {'run': False, 'shots': 500}\n"
+    )
+    source.write_text(
+        "P_SCAN = {'run': True, 'shots': 100}\n"
+        "LOCAL_OVERRIDE_KEYS = ('P_SCAN',)\n"
+    )
+
+    loaded = {"P_SCAN": {"run": True, "shots": 100}}
+    module.apply_local_overrides(loaded, source, ("P_SCAN",))
+
+    assert loaded == {"P_SCAN": {"run": True, "shots": 500}}
+    source.write_text(committed)
+    loaded_after_source_is_clean = {"P_SCAN": {"run": False, "shots": 100}}
+    module.apply_local_overrides(
+        loaded_after_source_is_clean,
+        source,
+        ("P_SCAN",),
+    )
+    assert loaded_after_source_is_clean == {
+        "P_SCAN": {"run": True, "shots": 500}
+    }
+
+
+def test_local_override_still_loads_when_git_is_unavailable(tmp_path, monkeypatch):
+    module = local_settings_module()
+    source = tmp_path / "Runner.py"
+    source.write_text("")
+    (tmp_path / "Runner.local.py").write_text("P_SCAN = {'run': True}\n")
+    loaded = {"P_SCAN": {"run": False, "shots": 100}}
+
+    def unavailable(*args, **kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(module.subprocess, "run", unavailable)
+
+    module.apply_local_overrides(loaded, source, ("P_SCAN",))
+
+    assert loaded == {"P_SCAN": {"run": True, "shots": 100}}
 
 
 def test_copy_local_scratch_preserves_existing_local_file(tmp_path):

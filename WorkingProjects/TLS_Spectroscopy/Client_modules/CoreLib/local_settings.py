@@ -3,6 +3,10 @@ from copy import deepcopy
 from pathlib import Path
 from pprint import pformat
 from shutil import copyfile
+import subprocess
+
+
+_UNCHANGED = object()
 
 
 def local_override_path(source_file):
@@ -37,6 +41,76 @@ def _merge(current, override):
     return merged
 
 
+def _changed_patch(committed, current):
+    if not isinstance(committed, dict) or not isinstance(current, dict):
+        return _UNCHANGED if committed == current else deepcopy(current)
+    if any(key not in current for key in committed):
+        return deepcopy(current)
+    changed = {}
+    for key, value in current.items():
+        if key not in committed:
+            changed[key] = deepcopy(value)
+            continue
+        patch = _changed_patch(committed[key], value)
+        if patch is not _UNCHANGED:
+            changed[key] = patch
+    return changed if changed else _UNCHANGED
+
+
+def _write_assignments(path, values, names=None):
+    order = tuple(values) if names is None else tuple(names)
+    blocks = [
+        f"{name} = {pformat(values[name], sort_dicts=False)}"
+        for name in order
+        if name in values
+    ]
+    path.write_text("\n\n".join(blocks) + "\n")
+
+
+def _head_source_text(source_file):
+    source = Path(source_file).resolve()
+    try:
+        root_result = subprocess.run(
+            ["git", "-C", str(source.parent), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if root_result.returncode != 0:
+        return None
+    root = Path(root_result.stdout.strip()).resolve()
+    try:
+        relative = source.relative_to(root).as_posix()
+    except ValueError:
+        return None
+    try:
+        show_result = subprocess.run(
+            ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    return show_result.stdout if show_result.returncode == 0 else None
+
+
+def _direct_source_changes(source_file, allowed_names):
+    head_text = _head_source_text(source_file)
+    if head_text is None:
+        return {}
+    _, current = source_local_values(source_file)
+    _, committed = _source_local_values(head_text, str(source_file))
+    changed = {}
+    for name in allowed_names:
+        if name not in current or name not in committed:
+            continue
+        patch = _changed_patch(committed[name], current[name])
+        if patch is not _UNCHANGED:
+            changed[name] = patch
+    return changed
+
+
 def apply_local_overrides(namespace, source_file, allowed_names):
     path = local_override_path(source_file)
     if not path.exists():
@@ -46,6 +120,10 @@ def apply_local_overrides(namespace, source_file, allowed_names):
     unknown = sorted(set(values) - set(allowed))
     if unknown:
         raise ValueError(f"unknown local setting names in {path}: {', '.join(unknown)}")
+    direct_changes = _direct_source_changes(source_file, allowed)
+    if direct_changes:
+        values = _merge(values, direct_changes)
+        _write_assignments(path, values, allowed)
     for name, value in values.items():
         namespace[name] = _merge(namespace[name], value)
     return path
@@ -55,10 +133,7 @@ def snapshot_local_overrides(namespace, source_file, allowed_names):
     path = local_override_path(source_file)
     if path.exists():
         return path
-    blocks = []
-    for name in allowed_names:
-        blocks.append(f"{name} = {pformat(namespace[name], sort_dicts=False)}")
-    path.write_text("\n\n".join(blocks) + "\n")
+    _write_assignments(path, namespace, allowed_names)
     return path
 
 
@@ -94,9 +169,8 @@ def _source_value(node, values):
     raise ValueError("setting is not a supported literal expression")
 
 
-def source_local_values(source_file):
-    path = Path(source_file)
-    tree = ast.parse(path.read_text(), filename=str(path))
+def _source_local_values(source, filename):
+    tree = ast.parse(source, filename=filename)
     allowed = None
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
@@ -106,7 +180,7 @@ def source_local_values(source_file):
             allowed = tuple(ast.literal_eval(node.value))
             break
     if allowed is None:
-        raise ValueError(f"{path} has no LOCAL_OVERRIDE_KEYS")
+        raise ValueError(f"{filename} has no LOCAL_OVERRIDE_KEYS")
     values = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
@@ -121,8 +195,13 @@ def source_local_values(source_file):
                 raise
     missing = [name for name in allowed if name not in values]
     if missing:
-        raise ValueError(f"missing local settings in {path}: {', '.join(missing)}")
+        raise ValueError(f"missing local settings in {filename}: {', '.join(missing)}")
     return allowed, {name: values[name] for name in allowed}
+
+
+def source_local_values(source_file):
+    path = Path(source_file)
+    return _source_local_values(path.read_text(), str(path))
 
 
 def snapshot_source_local_overrides(source_file):
