@@ -2,7 +2,6 @@ import ast
 from copy import deepcopy
 from pathlib import Path
 from pprint import pformat
-from shutil import copyfile
 import subprocess
 
 
@@ -264,15 +263,3 @@ def snapshot_source_local_overrides(source_file):
         allowed,
         values,
     )
-
-
-def copy_local_scratch(source_file, target_file=None):
-    source = Path(source_file)
-    target = (
-        local_override_path(source)
-        if target_file is None
-        else Path(target_file)
-    )
-    if not target.exists():
-        copyfile(source, target)
-    return target
