@@ -19,6 +19,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import Bas
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
     apply_local_overrides,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.global_slot_sync import (
+    GlobalSlotSynchronizer,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
@@ -160,15 +163,24 @@ P5_SS_CAL = {
 }
 
 P6_3PT_T1 = {
-    "run": False,
+    "run": True,
     "apply_flux_tail_compensation": False,
     "shots": 100,
-    "dc_min": 28500,
-    "dc_max": 32500,
-    "dc_step": 10,
+    "dc_min": -20511,
+    "dc_max": -6749,
+    "dc_step": 7,
     "freq_step_mhz": None,
     "wall_clock_duration_min": 10080,
-    "Ts_us": 70.0,
+    "Ts_us": 100.0,
+    "flux_settle_us": 0.5,
+    "sync_enabled": True,
+    "sync_role": "follower",
+    "sync_session": "q3_q5_3pt_7day_20260907_v1",
+    "sync_directory": "Z:/FluxTeam/Data",
+    "sync_slot_s": 120.0,
+    "sync_lead_s": 60.0,
+    "sync_timeout_s": 3600.0,
+    "sync_ntp_refresh_s": 1800.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
 }
@@ -703,29 +715,31 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
 MAX_CONSECUTIVE_RUN_FAILURES = 3
 
 
-def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
-    series_start = datetime.now()
+def _run_one_stop_t1(
+    factory,
+    wall_clock_s,
+    recalibrate=None,
+    reprobe_s=None,
+    synchronizer=None,
+):
+    synchronizer = synchronizer or GlobalSlotSynchronizer(enabled=False)
+    series_start = None
     base_path = None
     csv_path = None
     run_index = 0
     consecutive_failures = 0
     completed = 0
-    last_cal = series_start
+    last_cal = datetime.now()
     while True:
-        if (recalibrate is not None and reprobe_s and run_index > 0
-                and (datetime.now() - last_cal).total_seconds() >= float(reprobe_s)):
-            print(f"  [6] {(datetime.now() - last_cal).total_seconds() / 60:.0f} min "
-                  f"since the last reset calibration -- re-probing between passes "
-                  f"(~1 min; the pass grid and Ts are unchanged, only the reset "
-                  f"parameters refresh).")
-            try:
-                recalibrate()
-            except Exception as exc:
-                print(f"  [6] re-probe failed ({type(exc).__name__}: {str(exc)[:120]}) "
-                      f"-- keeping the previous reset calibration.")
-            last_cal = datetime.now()
+        sync_metadata = synchronizer.wait_for_start(run_index, wall_clock_s)
+        if sync_metadata is None:
+            break
         run_start = datetime.now()
+        if series_start is None:
+            series_start = run_start
+            last_cal = run_start
         repeat_metadata = build_wall_clock_repeat_metadata(run_start, series_start, run_index)
+        repeat_metadata.update(sync_metadata)
         if wall_clock_s is not None:
             print(f"  [6] wall-clock run {run_index + 1} "
                   f"(elapsed {repeat_metadata['wall_clock_elapsed_minutes_from_first_run']:.1f} min)")
@@ -750,10 +764,18 @@ def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
             print(f"  [6] transient failure {consecutive_failures}/"
                   f"{MAX_CONSECUTIVE_RUN_FAILURES}; continuing with the next pass so a "
                   f"single hiccup does not end a multi-day series.")
+            synchronizer.wait_for_end(run_index)
             run_index += 1
             if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
                 break
             continue
+        if synchronizer.enabled:
+            scan_finish = synchronizer.corrected_clock()
+            repeat_metadata["sync_scan_finish_epoch_s"] = float(scan_finish)
+            repeat_metadata["sync_scan_duration_s"] = float(
+                scan_finish - repeat_metadata["sync_actual_start_epoch_s"]
+            )
+            exp.data.update(repeat_metadata)
         consecutive_failures = 0
         completed += 1
         if base_path is None:
@@ -788,6 +810,17 @@ def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
         if exp.data.get("interrupted"):
             print("  [6] that pass was interrupted; stopping the series.")
             break
+        if (recalibrate is not None and reprobe_s
+                and (datetime.now() - last_cal).total_seconds() >= float(reprobe_s)):
+            print(f"  [6] {(datetime.now() - last_cal).total_seconds() / 60:.0f} min "
+                  f"since the last reset calibration -- re-probing during slot idle time.")
+            try:
+                recalibrate()
+            except Exception as exc:
+                print(f"  [6] re-probe failed ({type(exc).__name__}: {str(exc)[:120]}) "
+                      f"-- keeping the previous reset calibration.")
+            last_cal = datetime.now()
+        synchronizer.wait_for_end(run_index)
         run_index += 1
         if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
             break
@@ -836,6 +869,7 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "flux_fit_params": FLUX_FIT_PARAMS,
         "relax_delay": PASSIVE_T1_RESET_US,
         "qubit_pulse_style": "arb",
+        "flux_settle_time_us": float(p.get("flux_settle_us", 0.5)),
     })
     base = _RESET_SESSION.apply(base)
     if _RESET_SESSION.runtime_mode == "opx_unbounded":
@@ -877,13 +911,16 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
         )
 
     recalibrate = _make_reset_recalibrator(base, soc, soccfg, outer_folder)
+    synchronizer = GlobalSlotSynchronizer.from_config(p)
+    synchronizer.prepare()
     if recalibrate is not None and wall_clock_s is not None:
         print(f"[6] reset re-probe scheduled every {AUTOMATIC_RECALIBRATION_MIN:g} min between "
               f"passes so a multi-hour series tracks readout drift instead of "
               f"holding an hour-zero calibration.")
     csv_path = _run_one_stop_t1(
         factory, wall_clock_s, recalibrate=recalibrate,
-        reprobe_s=AUTOMATIC_RECALIBRATION_MIN * 60.0)
+        reprobe_s=AUTOMATIC_RECALIBRATION_MIN * 60.0,
+        synchronizer=synchronizer)
     print(f"[6] Done. One-stop 3-point CSV: {csv_path}")
 
 
