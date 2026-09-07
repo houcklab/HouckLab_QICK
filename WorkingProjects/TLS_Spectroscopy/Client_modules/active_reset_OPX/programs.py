@@ -268,7 +268,15 @@ def emit_resident_stream_shot_boundary(prog):
     wait_label = f"{prefix}_WAIT_ACK"
     first_bank = f"{prefix}_FIRST_BANK"
     switched = f"{prefix}_SWITCHED"
+    prog.regwi(0, controls["stream_remaining"], 200)
     prog.label(wait_label)
+    prog.mathi(
+        0,
+        controls["stream_remaining"],
+        controls["stream_remaining"],
+        "+",
+        14,
+    )
     prog.memr(0, controls["stream_ack"], controls["stream_ack_addr"])
     prog.condj(
         0,
@@ -277,6 +285,7 @@ def emit_resident_stream_shot_boundary(prog):
         controls["stream_ready"],
         wait_label,
     )
+    prog.sync(0, controls["stream_remaining"])
     prog.mathi(
         0,
         controls["stream_ready"],

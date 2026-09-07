@@ -94,6 +94,9 @@ class RecordingProgram:
     def loopnz(self, page, register, label):
         self.asm.append(("loopnz", register, label))
 
+    def sync(self, page, register):
+        self.asm.append(("sync", page, register))
+
 
 def test_register_allocator_returns_ten_distinct_nonreserved_registers():
     prog = RecordingProgram(reserved={0, 1, 2, 3, 13, 14, 15, 31})
@@ -255,6 +258,52 @@ def test_resident_stream_boundary_waits_only_before_reusing_a_bank():
     assert ("condj", 22, "<", 21, "STREAM_0_WAIT_ACK") in prog.asm
     assert ("mathi", 9, 9, "-", 32) in prog.asm
     assert ("memwi", 21, 3) in prog.asm
+
+
+def test_resident_stream_boundary_rebases_timeline_by_ack_wait_cycles():
+    prog = RecordingProgram()
+    regs = {
+        "stream_remaining": 20,
+        "stream_ready": 21,
+        "stream_ack": 22,
+        "stream_ack_addr": 23,
+        "stream_bank": 24,
+    }
+    plan = resident_stream_plan(
+        {"tprocs": [{"dmem_size": 64}]},
+        done_addr=1,
+        record_base=32,
+        record_words=2,
+        records_per_unit=2,
+        total_units=5,
+        records_per_shot=2,
+        total_shots=5,
+    )
+
+    initialize_resident_stream(
+        prog,
+        controls=regs,
+        address_page=1,
+        address_register=9,
+        plan=plan,
+        label_prefix="STREAM",
+    )
+    emit_resident_stream_shot_boundary(prog)
+
+    elapsed_start = prog.asm.index(("regwi", 20, 200))
+    wait_label = prog.asm.index(("label", "STREAM_0_WAIT_ACK"))
+    elapsed_step = prog.asm.index(("mathi", 20, 20, "+", 14))
+    ack_read = prog.asm.index(("memr", 22, 23))
+    timeline_sync = prog.asm.index(("sync", 0, 20))
+    ready_increment = prog.asm.index(("mathi", 21, 21, "+", 1))
+    assert (
+        elapsed_start
+        < wait_label
+        < elapsed_step
+        < ack_read
+        < timeline_sync
+        < ready_increment
+    )
 
 
 def test_resident_stream_rejects_control_address_aliases():
