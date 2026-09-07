@@ -67,7 +67,7 @@ P_TRANSMISSION_SWEEP = {
 }
 
 P_QUBIT_SPEC = {
-    "run": True,
+    "run": False,
     "shots": 100,
     "freq_start_mhz": 4300,
     "freq_stop_mhz": 4400,

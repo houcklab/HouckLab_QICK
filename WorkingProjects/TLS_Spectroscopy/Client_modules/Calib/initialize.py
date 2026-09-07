@@ -30,20 +30,20 @@ BaseConfig = {
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 5.0,
+    "read_length": 10.0,
     "readout_guard_us": 1.0,
     "readout_thermalization_us": 10.0,
     "read_pulse_gain": 1740,
     "read_pulse_freq": 6933.026,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 4366.092,
-    "qubit_pi_freq": 4366.092,
+    "qubit_freq": 4367.292,
+    "qubit_pi_freq": 4367.292,
     "qubit_pi_gain": 13500,
     "qubit_pi2_gain": 6750,
     "qubit_drag_beta": 0.0,
     "qubit_anharmonicity_mhz": -180.0,
-    "qubit_gain": 13500,
+    "qubit_gain": 14000,
     "qubit_length": 0.25,
     "sigma": 0.2,
     "flat_top_length": None,
@@ -52,7 +52,7 @@ BaseConfig = {
     "reset_meas_syncdelay_us": 10.0,
     "reset_max_iters": 3,
 
-    "ff_park_gain": -25790,
+    "ff_park_gain": -25146,
     "ff_park_settle_us": 1.0,
     "FF_Qubits": FF_Qubits,
 
@@ -66,9 +66,16 @@ BaseConfig = {
 }
 
 
-FLUX_FIT_PARAMS = None
+FLUX_FIT_PARAMS = [
+    8.08494399834,
+    0.277728945221,
+    41333.4537186,
+    -22233.4667642,
+    0.716006148725,
+    -1.71802166161e-05,
+]
 
-RESONATOR_FIT_PARAMS = None
+RESONATOR_FIT_PARAMS = [6929532609.626256, 102183842.77558708, 12.457027141606355, 0.18504287441157935, 60361.19628170067, -25581.578015529918, 0.18012547035756307]
 
 FF_STEP_TARGET_GAIN = 8000
 
