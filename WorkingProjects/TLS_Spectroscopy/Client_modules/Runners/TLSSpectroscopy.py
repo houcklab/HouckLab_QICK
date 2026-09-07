@@ -167,7 +167,7 @@ P6_3PT_T1 = {
     "dc_max": 32500,
     "dc_step": 10,
     "freq_step_mhz": None,
-    "wall_clock_duration_min": 1440,
+    "wall_clock_duration_min": 10080,
     "Ts_us": 70.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
