@@ -471,14 +471,32 @@ class QubitFluxStepResponse(ExperimentClass):
             return v[ok], f[ok]
 
         branch_voltage, branch_frequency = _sample_branch(0.25)
-        _bf_diff = np.diff(branch_frequency)
-        if branch_frequency.size < 3 or not (
-            np.all(_bf_diff >= -1e-9) or np.all(_bf_diff <= 1e-9)
-        ):
-            branch_voltage, branch_frequency = _sample_branch(0.0)
         if branch_voltage.size < 3:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
+        frequency_diff = np.diff(branch_frequency)
+        target_index = int(np.nanargmin(np.abs(branch_voltage - self.dc_offset)))
+        step_direction = 1 if self.dc_offset >= self.baseline_dc_offset else -1
+        preferred_interval = target_index if step_direction > 0 else target_index - 1
+        preferred_interval = int(np.clip(preferred_interval, 0, frequency_diff.size - 1))
+        nonzero_intervals = np.flatnonzero(np.abs(frequency_diff) > 1e-12)
+        if nonzero_intervals.size == 0:
+            return np.full_like(frequency_ghz, np.nan, dtype=float)
+        local_interval = int(
+            nonzero_intervals[
+                np.argmin(np.abs(nonzero_intervals - preferred_interval))
+            ]
+        )
+        local_sign = float(np.sign(frequency_diff[local_interval]))
+        compatible = local_sign * frequency_diff >= -1e-12
+        branch_start = target_index
+        while branch_start > 0 and compatible[branch_start - 1]:
+            branch_start -= 1
+        branch_stop = target_index
+        while branch_stop < branch_voltage.size - 1 and compatible[branch_stop]:
+            branch_stop += 1
+        branch_voltage = branch_voltage[branch_start:branch_stop + 1]
+        branch_frequency = branch_frequency[branch_start:branch_stop + 1]
         frequency_diff = np.diff(branch_frequency)
         monotonic_increasing = np.all(frequency_diff >= -1e-9)
         monotonic_decreasing = np.all(frequency_diff <= 1e-9)
@@ -492,13 +510,34 @@ class QubitFluxStepResponse(ExperimentClass):
             else:
                 interp_frequency = branch_frequency
                 interp_voltage = branch_voltage
-            effective_dc[finite_frequency] = np.interp(
-                frequency_ghz[finite_frequency],
-                interp_frequency,
-                interp_voltage,
-                left=float(interp_voltage[0]),
-                right=float(interp_voltage[-1]),
+            interp_frequency, unique_indices = np.unique(
+                interp_frequency, return_index=True
             )
+            interp_voltage = interp_voltage[unique_indices]
+            query_frequency = frequency_ghz[finite_frequency]
+            recovered_voltage = np.interp(
+                query_frequency, interp_frequency, interp_voltage
+            )
+            if interp_frequency.size >= 2:
+                below = query_frequency < interp_frequency[0]
+                above = query_frequency > interp_frequency[-1]
+                low_slope = (
+                    (interp_voltage[1] - interp_voltage[0])
+                    / (interp_frequency[1] - interp_frequency[0])
+                )
+                high_slope = (
+                    (interp_voltage[-1] - interp_voltage[-2])
+                    / (interp_frequency[-1] - interp_frequency[-2])
+                )
+                recovered_voltage[below] = (
+                    interp_voltage[0]
+                    + low_slope * (query_frequency[below] - interp_frequency[0])
+                )
+                recovered_voltage[above] = (
+                    interp_voltage[-1]
+                    + high_slope * (query_frequency[above] - interp_frequency[-1])
+                )
+            effective_dc[finite_frequency] = recovered_voltage
         else:
             for flat_index in np.flatnonzero(finite_frequency):
                 nearest_index = int(np.nanargmin(np.abs(branch_frequency - frequency_ghz[flat_index])))

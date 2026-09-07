@@ -2,6 +2,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import qubit_spec_trace_fit as qst
 
@@ -78,3 +79,23 @@ def test_flux_step_trace_automatically_uses_clear_phase_ridge():
     measured = np.asarray(experiment.data["extracted_qubit_frequency_ghz"])
     assert experiment.data["trace_signal_source"] == "phase"
     assert np.sqrt(np.mean((measured - expected) ** 2)) * 1e3 < 2.0
+
+
+def test_flux_step_inverse_uses_target_side_through_intermediate_turning_point():
+    experiment = QubitFluxStepResponse.__new__(QubitFluxStepResponse)
+    experiment.baseline_dc_offset = -25790.0
+    experiment.dc_offset = -20000.0
+    experiment.flux_fit_params = {
+        "EJmax": 8.203384791028979,
+        "Ec": 0.2902930003646722,
+        "period_volts": 8774.00218131707,
+        "phase_offset_volts": -23058.31389817458,
+        "d": 0.9831224825856887,
+        "tilt_slope": -1.2183803188472806e-05,
+    }
+    expected_dc = np.asarray([-20000.0, -19750.0, -19500.0])
+    measured_frequency = experiment._evaluate_flux_model_frequency(expected_dc)
+
+    recovered_dc = experiment._frequency_to_local_flux_branch(measured_frequency)
+
+    assert recovered_dc == pytest.approx(expected_dc, abs=1.0)
