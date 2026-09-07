@@ -168,9 +168,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         def prog_cb(done, total):
             progress_counter(done - 1, total, start_time=start_time)
 
-        def live_cb(rnd, running):
+        def draw_live():
             nonlocal interrupted
-            _fill(running)
             if live is None:
                 return
             plt.figure(live.fig.number)
@@ -181,10 +180,27 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 plt.pcolor(dc_vec, fpts_mhz, np.nanmean(mag_dbm, axis=2))
             plt.xlabel("Flux DC target")
             plt.ylabel("Probe freq [MHz]")
-            live.refresh(pause=0.5)
+            live.refresh(pause=0.05)
             if not live.is_open:
                 interrupted = True
                 raise KeyboardInterrupt
+
+        def live_cb(rnd, running):
+            _fill(running)
+            draw_live()
+
+        qua_sum = np.zeros((n_f, n_dc, n_tau), dtype=np.complex128)
+        qua_shots = 0
+
+        def qua_live_cb(i_block, q_block, done, total):
+            nonlocal qua_shots
+            block = np.asarray(i_block) + 1j * np.asarray(q_block)
+            qua_sum[:, :, :] += np.sum(block, axis=3)
+            qua_shots += int(block.shape[3])
+            signal_cube = qua_sum / max(qua_shots, 1)
+            mag_dbm[:, :, :] = 20 * np.log10(np.abs(signal_cube) + 1e-12)
+            phase_rad[:, :, :] = np.angle(signal_cube)
+            draw_live()
 
         if bool(cfg.get("qua_shot_order", False)):
             order = (
@@ -210,6 +226,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 post_readout_reset_us=float(self.post_readout_reset_ns) / 1e3,
                 readout_after_park=self.readout_after_park,
                 progress=callback,
+                live=qua_live_cb if live is not None else None,
             )
             signal_cube = np.mean(i_values + 1j * q_values, axis=3)
             mag_dbm[:, :, :] = 20 * np.log10(np.abs(signal_cube) + 1e-12)
@@ -217,8 +234,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             telemetry = dict(telemetry)
             if self.step_tag == "2" and n_tau == 1:
                 telemetry["order"] = "shot_frequency_dc"
-            if live is not None:
-                live_cb(1, signal_cube.transpose(1, 2, 0).reshape(-1, n_f))
+            if live is not None and qua_shots == 0:
+                draw_live()
         else:
             try:
                 S_mean = interleaved_average(run_point, len(points), shots,

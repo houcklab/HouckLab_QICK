@@ -846,7 +846,7 @@ class QubitFluxStepResponse(ExperimentClass):
             f"Flux step response spectroscopy, dc offset = {self.dc_offset} DAC, "
             f"spec_amp={self.meta_dict['cw_amp']} DAC, spec_len={self.meta_dict['cw_len']} ns"
         )
-        plt.pause(0.5)
+        plt.pause(0.05)
         plt.tight_layout()
 
     def acquire(self, progress=False, plotDisp=None, figNum=1):
@@ -918,6 +918,22 @@ class QubitFluxStepResponse(ExperimentClass):
                 if not live_fig.is_open:
                     raise KeyboardInterrupt
 
+        qua_sum = np.zeros((n_f, 1, n_t), dtype=np.complex128)
+        qua_shots = 0
+
+        def qua_live_cb(i_block, q_block, done, total):
+            nonlocal qua_shots
+            block = np.asarray(i_block) + 1j * np.asarray(q_block)
+            qua_sum[:, :, :] += np.sum(block, axis=3)
+            qua_shots += int(block.shape[3])
+            signal_map = qua_sum[:, 0, :] / max(qua_shots, 1)
+            iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)
+            iq_phase[:, :] = np.angle(signal_map)
+            if live_fig is not None:
+                self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
+                if not live_fig.is_open:
+                    raise KeyboardInterrupt
+
         if bool(cfg.get("qua_shot_order", False)):
             callback = None
             if progress:
@@ -941,13 +957,14 @@ class QubitFluxStepResponse(ExperimentClass):
                 post_readout_reset_us=0.0,
                 readout_after_park=cfg["readout_after_park"],
                 progress=callback,
+                live=qua_live_cb if live_fig is not None else None,
             )
             signal_map = np.mean(i_values + 1j * q_values, axis=3)[:, 0, :]
             iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)
             iq_phase[:, :] = np.angle(signal_map)
             telemetry = dict(telemetry)
             telemetry["order"] = "shot_frequency_time"
-            if live_fig is not None:
+            if live_fig is not None and qua_shots == 0:
                 self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
         else:
             try:

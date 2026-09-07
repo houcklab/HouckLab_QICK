@@ -1294,6 +1294,20 @@ def _finite_axis(values, label):
     return axis
 
 
+def _record_limited_shot_chunks(cfg, shots, points_per_shot):
+    record_limit = int(cfg.get("qua_order_max_records_per_block", 262144))
+    if record_limit <= 0:
+        raise ValueError("qua_order_max_records_per_block must be positive")
+    shots_per_block = max(record_limit // int(points_per_shot), 1)
+    chunks = []
+    remaining = int(shots)
+    while remaining:
+        chunk = min(remaining, shots_per_block)
+        chunks.append(chunk)
+        remaining -= chunk
+    return chunks
+
+
 def _optional_soc_method(soc, name):
     try:
         method = getattr(soc, name)
@@ -1497,6 +1511,7 @@ def acquire_passive_readout_grid(
     kind,
     excursion_gain=None,
     progress=None,
+    live=None,
     access_mode="direct_mmio",
     command_mode="sequenced",
 ):
@@ -1516,36 +1531,78 @@ def acquire_passive_readout_grid(
     total = shots
     program_count = shots * frequencies.size
     if resident_method is not None:
-        resident_cfg = dict(cfg)
-        resident_cfg["qua_assert_park_at_start"] = True
-        resident_cfg["qick_resident_command_mode"] = command_mode
-        resident = QUAResidentReadoutGridProgram(
-            soccfg,
-            resident_cfg,
-            frequencies_mhz=frequencies,
-            values=values,
-            kind=kind,
-            excursion_gain=excursion_gain,
+        chunks = _record_limited_shot_chunks(
+            cfg,
+            shots,
+            frequencies.size * values.size,
         )
-        if all("freq" in ro_cfg for ro_cfg in resident.ro_chs.values()):
-            readout_configs = []
-            for frequency in frequencies:
-                readout_configs.append(
-                    {
-                        ch: {**ro_cfg, "freq": float(frequency)}
-                        for ch, ro_cfg in resident.ro_chs.items()
-                    }
+        records = np.empty(
+            (shots, frequencies.size, values.size, 2),
+            dtype=float,
+        )
+        resident_metas = []
+        completed = 0
+        for block_index, chunk in enumerate(chunks):
+            resident_cfg = dict(cfg)
+            resident_cfg["shots"] = int(chunk)
+            resident_cfg["reps"] = int(chunk)
+            resident_cfg["qua_assert_park_at_start"] = block_index == 0
+            resident_cfg["qick_resident_command_mode"] = command_mode
+            resident = QUAResidentReadoutGridProgram(
+                soccfg,
+                resident_cfg,
+                frequencies_mhz=frequencies,
+                values=values,
+                kind=kind,
+                excursion_gain=excursion_gain,
+            )
+            if not all("freq" in ro_cfg for ro_cfg in resident.ro_chs.values()):
+                records = None
+                break
+            readout_configs = [
+                {
+                    ch: {**ro_cfg, "freq": float(frequency)}
+                    for ch, ro_cfg in resident.ro_chs.items()
+                }
+                for frequency in frequencies
+            ]
+            callback = None
+            if progress is not None:
+                callback = lambda done, count, offset=completed: progress(
+                    offset + done, total
                 )
-            records, resident_meta = _resident_program_records(
+            block_records, resident_meta = _resident_program_records(
                 resident_method,
                 resident,
                 readout_configs,
-                shots,
+                chunk,
                 access_mode=access_mode,
                 command_mode=command_mode,
                 soc=soc,
-                progress=progress,
+                progress=callback,
             )
+            records[completed:completed + chunk] = block_records
+            resident_metas.append(resident_meta)
+            completed += int(chunk)
+            if live is not None:
+                live(
+                    block_records[..., 0].transpose(1, 2, 0),
+                    block_records[..., 1].transpose(1, 2, 0),
+                    completed,
+                    total,
+                )
+        if records is not None:
+            timing_keys = set().union(
+                *(meta["server_timing_s"] for meta in resident_metas)
+            )
+            timing = {
+                key: float(sum(
+                    meta["server_timing_s"].get(key, 0.0)
+                    for meta in resident_metas
+                ))
+                for key in timing_keys
+            }
+            first_meta = resident_metas[0]
             return (
                 records[..., 0].transpose(1, 2, 0),
                 records[..., 1].transpose(1, 2, 0),
@@ -1553,24 +1610,28 @@ def acquire_passive_readout_grid(
                     "shots_per_point": shots,
                     "frequency_points": int(frequencies.size),
                     f"{axis_name}_points": int(values.size),
-                    "host_programs": 1,
-                    "controller_programs": resident_meta[
-                        "controller_programs"
-                    ],
-                    "readout_reconfigurations": resident_meta[
-                        "readout_reconfigurations"
-                    ],
-                    "server_batches": 1,
+                    "host_programs": int(len(chunks)),
+                    "controller_programs": int(sum(
+                        meta["controller_programs"]
+                        for meta in resident_metas
+                    )),
+                    "readout_reconfigurations": int(sum(
+                        meta["readout_reconfigurations"]
+                        for meta in resident_metas
+                    )),
+                    "server_batches": int(len(chunks)),
                     "resident_handshake": True,
-                    "server_timing_s": resident_meta["server_timing_s"],
-                    "ready_polls": resident_meta["ready_polls"],
-                    "frequency_update_mode": resident_meta[
+                    "server_timing_s": timing,
+                    "ready_polls": int(sum(
+                        meta["ready_polls"] for meta in resident_metas
+                    )),
+                    "frequency_update_mode": first_meta[
                         "frequency_update_mode"
                     ],
-                    "tproc_access_mode": resident_meta[
+                    "tproc_access_mode": first_meta[
                         "tproc_access_mode"
                     ],
-                    "command_mode": resident_meta["command_mode"],
+                    "command_mode": first_meta["command_mode"],
                     "records": int(
                         shots * frequencies.size * values.size
                     ),
@@ -1699,6 +1760,7 @@ def acquire_passive_flux_spectroscopy_grid(
     post_readout_reset_us,
     readout_after_park,
     progress=None,
+    live=None,
 ):
     frequencies = _finite_axis(frequencies_mhz, "frequencies_mhz")
     dc_values = _finite_axis(dc_gains, "dc_gains")
@@ -1712,16 +1774,7 @@ def acquire_passive_flux_spectroscopy_grid(
     points_per_shot = int(
         frequencies.size * dc_values.size * hold_times.size
     )
-    record_limit = int(cfg.get("qua_order_max_records_per_block", 262144))
-    if record_limit <= 0:
-        raise ValueError("qua_order_max_records_per_block must be positive")
-    shots_per_block = max(record_limit // points_per_shot, 1)
-    chunks = []
-    remaining = total_shots
-    while remaining:
-        chunk = min(remaining, shots_per_block)
-        chunks.append(chunk)
-        remaining -= chunk
+    chunks = _record_limited_shot_chunks(cfg, total_shots, points_per_shot)
     i_blocks = []
     q_blocks = []
     completed = 0
@@ -1772,13 +1825,13 @@ def acquire_passive_flux_spectroscopy_grid(
                 "order must be 'shot_frequency_dc_time' or "
                 "'shot_dc_frequency_time'"
             )
-        i_blocks.append(
-            np.asarray(raw_i, dtype=float).reshape(block_shape).transpose(axes)
-        )
-        q_blocks.append(
-            np.asarray(raw_q, dtype=float).reshape(block_shape).transpose(axes)
-        )
+        i_block = np.asarray(raw_i, dtype=float).reshape(block_shape).transpose(axes)
+        q_block = np.asarray(raw_q, dtype=float).reshape(block_shape).transpose(axes)
+        i_blocks.append(i_block)
+        q_blocks.append(q_block)
         completed += int(chunk)
+        if live is not None:
+            live(i_block, q_block, completed, total_shots)
     i_values = np.concatenate(i_blocks, axis=3)
     q_values = np.concatenate(q_blocks, axis=3)
     return i_values, q_values, {

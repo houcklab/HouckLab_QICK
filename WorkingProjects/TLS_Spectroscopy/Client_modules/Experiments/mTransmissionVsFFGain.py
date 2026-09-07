@@ -126,9 +126,8 @@ class TransmissionVsFFGain(ExperimentClass):
         def prog_cb(done, total):
             progress_counter(done - 1, total, start_time=start_time)
 
-        def live_cb(rnd, running):
+        def draw_live():
             nonlocal interrupted
-            _fill_map(running)
             if live is None:
                 return
             plt.figure(live.fig.number)
@@ -151,11 +150,29 @@ class TransmissionVsFFGain(ExperimentClass):
                 plt.pcolor(dc_vec, f_vec, signal.detrend(np.unwrap(phase_raw, axis=-1), axis=-1))
                 plt.xlabel("Flux bias [ff_gain DAC]")
                 plt.ylabel("Readout freq [MHz]")
-            live.refresh(pause=0.5)
+            live.refresh(pause=0.05)
             plt.tight_layout()
             if not live.is_open:
                 interrupted = True
                 raise KeyboardInterrupt
+
+        def live_cb(rnd, running):
+            _fill_map(running)
+            draw_live()
+
+        qua_sum = np.zeros((n_f, n_dc), dtype=np.complex128)
+        qua_shots = 0
+
+        def qua_live_cb(i_block, q_block, done, total):
+            nonlocal qua_shots
+            block = np.asarray(i_block) + 1j * np.asarray(q_block)
+            qua_sum[:, :] += np.sum(block, axis=2)
+            qua_shots += int(block.shape[2])
+            signal_map = qua_sum / max(qua_shots, 1)
+            R[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)
+            phase_raw[:, :] = np.angle(signal_map)
+            self.data.update({"IQ_mag": R.copy(), "IQ_phase": phase_raw.copy()})
+            draw_live()
 
         try:
             if bool(cfg.get("qua_shot_order", False)):
@@ -167,6 +184,7 @@ class TransmissionVsFFGain(ExperimentClass):
                     values=dc_vec,
                     kind="flux_gain",
                     progress=lambda done, total: prog_cb(done, total),
+                    live=qua_live_cb if live is not None else None,
                 )
                 signal_map = np.mean(i_values + 1j * q_values, axis=2)
                 R[:, :] = 20 * np.log10(np.abs(signal_map) + 1e-12)

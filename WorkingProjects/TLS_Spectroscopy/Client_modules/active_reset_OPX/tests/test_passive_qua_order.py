@@ -15,6 +15,7 @@ if qick is None:
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (
     mQubitFluxStepResponse,
     mQubitLongTimeSpecVsFlux,
+    mTransmissionVsFFGain,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import qua_order
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
@@ -547,6 +548,144 @@ def test_readout_grid_prefers_resident_tproc_handshake(monkeypatch):
     assert telemetry["tproc_access_mode"] == "direct_mmio"
     assert telemetry["command_mode"] == "sequenced"
     assert telemetry["order"] == "shot_frequency_gain"
+
+
+def test_readout_grid_streams_record_limited_batches_to_live_callback(monkeypatch):
+    constructed = []
+
+    class ResidentProgram:
+        def __init__(self, soccfg, cfg, *, frequencies_mhz, values, kind,
+                     excursion_gain=None):
+            self.shots = int(cfg["shots"])
+            self.frequencies = np.asarray(frequencies_mhz)
+            self.values = np.asarray(values)
+            self.reps = int(
+                self.shots * self.frequencies.size * self.values.size
+            )
+            self.frequency_registers = np.arange(self.frequencies.size)
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+            self.ro_chs = {
+                0: {
+                    "freq": float(self.frequencies[0]),
+                    "length": 5,
+                    "sel": "product",
+                    "gen_ch": 0,
+                }
+            }
+            constructed.append(self.shots)
+
+        def dump_prog(self):
+            return {"reps": self.reps}
+
+    class Soc:
+        def __init__(self):
+            self.calls = 0
+
+        def acquire_qick_resident_readout(
+            self, program, readout_configs, frequency_registers, shots,
+            command_addr, ready_addr, frequency_addr, access_mode="driver",
+            command_mode="split",
+        ):
+            self.calls += 1
+            records = np.full(
+                (shots, len(readout_configs), 2, 2),
+                float(self.calls),
+            )
+            return {
+                "records": records,
+                "controller_programs": 1,
+                "readout_reconfigurations": shots * len(readout_configs),
+            }
+
+    monkeypatch.setattr(
+        qua_order,
+        "QUAResidentReadoutGridProgram",
+        ResidentProgram,
+    )
+    live_updates = []
+    i_values, q_values, telemetry = acquire_passive_readout_grid(
+        Soc(),
+        object(),
+        {"shots": 5, "qua_order_max_records_per_block": 8},
+        frequencies_mhz=[10.0, 20.0],
+        values=[1.0, 2.0],
+        kind="flux_gain",
+        live=lambda i, q, done, total: live_updates.append(
+            (i.copy(), q.copy(), done, total)
+        ),
+    )
+    assert constructed == [2, 2, 1]
+    assert [update[2:] for update in live_updates] == [
+        (2, 5),
+        (4, 5),
+        (5, 5),
+    ]
+    assert [update[0].shape for update in live_updates] == [
+        (2, 2, 2),
+        (2, 2, 2),
+        (2, 2, 1),
+    ]
+    np.testing.assert_array_equal(i_values[0, 0], [1.0, 1.0, 2.0, 2.0, 3.0])
+    np.testing.assert_array_equal(q_values, i_values)
+    assert telemetry["host_programs"] == 3
+    assert telemetry["controller_programs"] == 3
+    assert telemetry["server_batches"] == 3
+    assert telemetry["order"] == "shot_frequency_dc"
+
+
+def test_resonator_flux_experiment_draws_partial_resident_data(monkeypatch):
+    live_instances = []
+
+    class Live:
+        def __init__(self, *args, **kwargs):
+            self.fig = mTransmissionVsFFGain.plt.figure()
+            self.is_open = False
+            live_instances.append(self)
+
+        def refresh(self, pause=0.05):
+            pass
+
+        def close(self):
+            mTransmissionVsFFGain.plt.close(self.fig)
+
+    def acquire(*args, **kwargs):
+        assert callable(kwargs["live"])
+        kwargs["live"](
+            np.ones((2, 2, 1)),
+            np.zeros((2, 2, 1)),
+            1,
+            2,
+        )
+        raise AssertionError("closed live figure should interrupt acquisition")
+
+    monkeypatch.setattr(mTransmissionVsFFGain, "LiveFigure", Live)
+    monkeypatch.setattr(
+        mTransmissionVsFFGain,
+        "acquire_passive_readout_grid",
+        acquire,
+    )
+    experiment = mTransmissionVsFFGain.TransmissionVsFFGain.__new__(
+        mTransmissionVsFFGain.TransmissionVsFFGain
+    )
+    experiment.cfg = {
+        "qua_shot_order": True,
+        "reps": 2,
+        "trans_freq_vec": np.array([10.0, 20.0]),
+        "ff_gain_vec": np.array([100.0, 200.0]),
+    }
+    experiment.park_gain = 0.0
+    experiment.path = "q3"
+    experiment.soc = object()
+    experiment.soccfg = object()
+    experiment.pickle_data = lambda: None
+
+    result = experiment.acquire(progress=False, plotDisp=True)
+
+    assert len(live_instances) == 1
+    assert np.all(np.isfinite(result["data"]["IQ_mag"]))
+    assert np.all(np.isfinite(result["data"]["IQ_phase"]))
 
 
 def test_readout_grid_requests_direct_mmio_and_packed_command_when_selected(
@@ -1256,12 +1395,79 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
     assert updates == [(1, 2), (2, 2), (1, 2), (2, 2)]
 
 
+def test_tls_flux_spectroscopy_sends_each_completed_block_to_live_callback(
+    monkeypatch,
+):
+    class Program:
+        calls = 0
+
+        def __init__(
+            self, soccfg, cfg, *, frequencies_mhz, dc_gains, hold_times_us,
+            read_frequencies_mhz, order, shots, baseline_rearm_us,
+            post_readout_reset_us, readout_after_park,
+        ):
+            self.order = order
+            self.shots = int(shots)
+            self.frequencies = np.asarray(frequencies_mhz)
+            self.dc_gains = np.asarray(dc_gains)
+            self.hold_times = np.asarray(hold_times_us)
+            self.reps = int(
+                self.shots * self.frequencies.size * self.dc_gains.size
+                * self.hold_times.size
+            )
+
+        def acquire_records(self, soc, progress=False, load_pulses=True):
+            type(self).calls += 1
+            values = np.full(self.reps, float(type(self).calls))
+            return values, -values
+
+    monkeypatch.setattr(qua_order, "QUAFluxSpectroscopyProgram", Program)
+    live_updates = []
+    i_values, q_values, telemetry = acquire_passive_flux_spectroscopy_grid(
+        object(),
+        object(),
+        {"shots": 5, "qua_order_max_records_per_block": 8},
+        frequencies_mhz=[10.0, 20.0],
+        dc_gains=[100.0, 200.0],
+        hold_times_us=[1.0, 2.0],
+        read_frequencies_mhz=[7000.0, 7001.0],
+        order="shot_frequency_dc_time",
+        baseline_rearm_us=10.0,
+        post_readout_reset_us=20.0,
+        readout_after_park=False,
+        live=lambda i, q, done, total: live_updates.append(
+            (i.copy(), q.copy(), done, total)
+        ),
+    )
+    assert [update[2:] for update in live_updates] == [
+        (1, 5),
+        (2, 5),
+        (3, 5),
+        (4, 5),
+        (5, 5),
+    ]
+    assert all(update[0].shape == (2, 2, 2, 1) for update in live_updates)
+    np.testing.assert_array_equal(i_values[0, 0, 0], [1, 2, 3, 4, 5])
+    np.testing.assert_array_equal(q_values, -i_values)
+    assert telemetry["blocks"] == 5
+    assert telemetry["order"] == "shot_frequency_dc_time"
+
+
 def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
     observed = {}
+    draws = []
+
+    class Live:
+        fig = object()
+        is_open = True
+
+        def close(self):
+            pass
 
     def acquire(*args, **kwargs):
         observed.update(kwargs)
         values = np.ones((2, 1, 3, 2), dtype=float)
+        kwargs["live"](values, np.zeros_like(values), 2, 2)
         return values, np.zeros_like(values), {
             "order": "shot_frequency_dc_time",
             "records": 12,
@@ -1273,6 +1479,7 @@ def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
         acquire,
         raising=False,
     )
+    monkeypatch.setattr(mQubitFluxStepResponse, "LiveFigure", Live)
     experiment = mQubitFluxStepResponse.QubitFluxStepResponse.__new__(
         mQubitFluxStepResponse.QubitFluxStepResponse
     )
@@ -1295,7 +1502,7 @@ def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
     experiment.shots = 2
     experiment.resonator_if = 7_000_000_000
     experiment.flux_tail_compensation = None
-    experiment.live_plot_enabled = False
+    experiment.live_plot_enabled = True
     experiment.meta_dict = {"cw_amp": 1000}
     experiment.data = {}
     experiment._write_raw_sweep_csv = lambda: None
@@ -1304,10 +1511,13 @@ def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):
     experiment._fit_rise_decay_bump_dc_correction_from_step_response = lambda: None
     experiment.finalize_analysis = lambda: None
     experiment.pickle_data = lambda: None
+    experiment._draw_live_plot = lambda *args: draws.append(args)
 
-    result = experiment.acquire(progress=False, plotDisp=False)
+    result = experiment.acquire(progress=False, plotDisp=True)
 
     assert observed["order"] == "shot_frequency_dc_time"
+    assert callable(observed["live"])
+    assert len(draws) == 1
     np.testing.assert_array_equal(observed["hold_times_us"], [1.0, 2.0, 3.0])
     assert result["data"]["acquisition_order"] == "shot_frequency_time"
     assert result["data"]["IQ_mag"].shape == (2, 3)
@@ -1317,10 +1527,24 @@ def test_long_time_routes_step2_and_step4_to_their_distinct_qua_orders(
     monkeypatch,
 ):
     orders = []
+    live_callbacks = []
+
+    class Live:
+        def __init__(self, *args, **kwargs):
+            self.fig = mQubitLongTimeSpecVsFlux.plt.figure()
+            self.is_open = True
+
+        def refresh(self, pause=0.05):
+            pass
+
+        def close(self):
+            mQubitLongTimeSpecVsFlux.plt.close(self.fig)
 
     def acquire(*args, **kwargs):
         orders.append(kwargs["order"])
+        live_callbacks.append(kwargs["live"])
         values = np.ones((2, 2, 1, 2), dtype=float)
+        kwargs["live"](values, np.zeros_like(values), 2, 2)
         return values, np.zeros_like(values), {
             "order": kwargs["order"],
             "records": 8,
@@ -1332,6 +1556,7 @@ def test_long_time_routes_step2_and_step4_to_their_distinct_qua_orders(
         acquire,
         raising=False,
     )
+    monkeypatch.setattr(mQubitLongTimeSpecVsFlux, "LiveFigure", Live)
     monkeypatch.setattr(mQubitLongTimeSpecVsFlux.np, "savetxt", lambda *a, **k: None)
 
     for tag in ("2", "4"):
@@ -1363,13 +1588,13 @@ def test_long_time_routes_step2_and_step4_to_their_distinct_qua_orders(
         experiment.average_step_ns = 16.0
         experiment.park_readout_settle_ns = 500.0
         experiment.advanced_fit = False
-        experiment.live_plot = False
+        experiment.live_plot = True
         experiment.element = "q3"
         experiment.step_tag = tag
         experiment.iname = "/tmp/qua-order-test.png"
         experiment.pickle_data = lambda: None
 
-        result = experiment.acquire(progress=False, plotDisp=False)
+        result = experiment.acquire(progress=False, plotDisp=True)
 
         expected = (
             "shot_frequency_dc"
@@ -1380,3 +1605,4 @@ def test_long_time_routes_step2_and_step4_to_their_distinct_qua_orders(
         assert result["data"]["magnitude"].shape == (2, 2, 1)
 
     assert orders == ["shot_frequency_dc_time", "shot_dc_frequency_time"]
+    assert all(callable(callback) for callback in live_callbacks)
