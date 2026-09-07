@@ -50,6 +50,7 @@ def _rmse(left, right):
 def infer_failure_source(
     *,
     dynamic_corrected,
+    isolated_dynamic_corrected,
     static_corrected,
     uncorrected_before,
     uncorrected_after,
@@ -61,19 +62,27 @@ def infer_failure_source(
     uncorrected_after = np.asarray(uncorrected_after, dtype=float)
     uncorrected_mean = 0.5 * (uncorrected_before + uncorrected_after)
     dynamic_static = _rmse(dynamic_corrected, static_corrected)
+    isolated_static = _rmse(isolated_dynamic_corrected, static_corrected)
+    dynamic_isolated = _rmse(dynamic_corrected, isolated_dynamic_corrected)
     uncorrected_stability = _rmse(uncorrected_before, uncorrected_after)
     static_uncorrected = _rmse(static_corrected, uncorrected_mean)
     dynamic_uncorrected = _rmse(dynamic_corrected, uncorrected_mean)
     if uncorrected_stability > float(drift_rmse):
         diagnosis = "measurement_drift"
     elif (
+        dynamic_isolated >= float(effect_rmse)
+        and isolated_static <= float(agreement_rmse)
+    ):
+        diagnosis = "cross_delay_flux_history"
+    elif (
         dynamic_static <= float(agreement_rmse)
+        and isolated_static <= float(agreement_rmse)
         and static_uncorrected >= float(effect_rmse)
         and dynamic_uncorrected >= float(effect_rmse)
     ):
         diagnosis = "correction_waveform"
     elif (
-        dynamic_static >= float(effect_rmse)
+        isolated_static >= float(effect_rmse)
         and static_uncorrected <= float(agreement_rmse)
     ):
         diagnosis = "dynamic_assembly"
@@ -82,6 +91,8 @@ def infer_failure_source(
     return {
         "diagnosis": diagnosis,
         "corrected_dynamic_vs_static_rmse": dynamic_static,
+        "isolated_dynamic_vs_static_rmse": isolated_static,
+        "dynamic_vs_isolated_dynamic_rmse": dynamic_isolated,
         "uncorrected_before_vs_after_rmse": uncorrected_stability,
         "static_corrected_vs_uncorrected_rmse": static_uncorrected,
         "corrected_vs_uncorrected_rmse": dynamic_uncorrected,
@@ -196,6 +207,41 @@ def _static_trace(soc, soccfg, cfg, compensation):
     }
 
 
+def _isolated_dynamic_trace(soc, soccfg, cfg, compensation):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+        acquire_t1_flux_sweep_iq,
+    )
+
+    run_cfg = dict(cfg)
+    run_cfg["apply_flux_tail_compensation"] = True
+    run_cfg["flux_tail_compensation"] = compensation
+    i_rows = []
+    q_rows = []
+    telemetry = []
+    for delay_us in DELAYS_US:
+        i_values, q_values, point_telemetry = acquire_t1_flux_sweep_iq(
+            soc,
+            soccfg,
+            run_cfg,
+            dc_gains=[TARGET_GAIN],
+            delays_us=[float(delay_us)],
+            shots=SHOTS,
+            reset_scheme="opx_unbounded",
+        )
+        i_rows.append(np.asarray(i_values[0, 0], dtype=float))
+        q_rows.append(np.asarray(q_values[0, 0], dtype=float))
+        telemetry.append(point_telemetry)
+    i_values = np.asarray(i_rows, dtype=float)
+    q_values = np.asarray(q_rows, dtype=float)
+    read_cycles = int(telemetry[0]["read_length_cycles"])
+    return {
+        "i": i_values,
+        "q": q_values,
+        "population": _population(run_cfg, i_values, q_values, read_cycles),
+        "telemetry": telemetry,
+    }
+
+
 def _write_outputs(output, traces, diagnosis, metadata):
     fields = [
         "method",
@@ -290,6 +336,10 @@ def main():
     traces["dynamic_corrected"] = _dynamic_trace(
         soc, soccfg, cfg, compensation
     )
+    print("stage=isolated_dynamic_corrected")
+    traces["isolated_dynamic_corrected"] = _isolated_dynamic_trace(
+        soc, soccfg, cfg, compensation
+    )
     print("stage=static_corrected")
     traces["static_corrected"] = _static_trace(
         soc, soccfg, cfg, compensation
@@ -298,6 +348,7 @@ def main():
     traces["uncorrected_after"] = _dynamic_trace(soc, soccfg, cfg, None)
     diagnosis = infer_failure_source(
         dynamic_corrected=traces["dynamic_corrected"]["population"],
+        isolated_dynamic_corrected=traces["isolated_dynamic_corrected"]["population"],
         static_corrected=traces["static_corrected"]["population"],
         uncorrected_before=traces["uncorrected_before"]["population"],
         uncorrected_after=traces["uncorrected_after"]["population"],
