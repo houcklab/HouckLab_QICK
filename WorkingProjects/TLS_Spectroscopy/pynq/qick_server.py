@@ -26,18 +26,23 @@ try:
         acquire_qick_program_batch,
         acquire_qick_resident_readout,
         read_qick_dmem,
+        write_qick_dmem,
     )
 except ImportError:
     from readout_batch import (
         acquire_qick_program_batch,
         acquire_qick_resident_readout,
         read_qick_dmem,
+        write_qick_dmem,
     )
 
 
 class QickSocCal(QickSoc):
     def read_qick_dmem(self, address, length):
         return read_qick_dmem(self, address, length)
+
+    def write_qick_dmem(self, address, values):
+        return write_qick_dmem(self, address, values)
 
     def acquire_qick_resident_readout(
         self,

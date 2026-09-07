@@ -86,6 +86,24 @@ def _read_words(soc, address, length):
     return np.asarray([_single_read(tproc, address + offset) for offset in range(length)])
 
 
+def _write_words(soc, address, values):
+    address = int(address)
+    words = np.asarray(values, dtype=np.int64).reshape(-1)
+    writer = getattr(soc, "write_qick_dmem", None)
+    if callable(writer):
+        written = int(writer(address, words.tolist()))
+        if written != int(words.size):
+            raise RuntimeError(f"DMem writer wrote {written} words; expected {words.size}")
+        return
+    for offset, value in enumerate(words):
+        _single_write(soc.tproc, address + offset, int(value) & 0xFFFFFFFF)
+
+
+def _initialize_program_dmem(soc, program):
+    for address, values in getattr(program, "dmem_loads", ()):
+        _write_words(soc, address, values)
+
+
 def _safe_abort(soc):
     try:
         reset = getattr(soc.tproc, "reset", None)
@@ -147,6 +165,7 @@ def run_dmem_block(
     try:
         program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
         program.config_bufs(soc, enable_avg=True, enable_buf=False)
+        _initialize_program_dmem(soc, program)
         _single_write(soc.tproc, program.done_addr, 0)
         soc.tproc.start()
         started = True
@@ -228,6 +247,7 @@ def run_dmem_stream(
     try:
         program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
         program.config_bufs(soc, enable_avg=True, enable_buf=False)
+        _initialize_program_dmem(soc, program)
         _single_write(soc.tproc, program.done_addr, 0)
         _single_write(soc.tproc, int(plan["ack_addr"]), 0)
         _single_write(soc.tproc, int(plan["ready_addr"]), 0)

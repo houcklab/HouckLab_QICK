@@ -441,10 +441,14 @@ def save_wall_clock_repeat_full_outputs(
 ):
     if not per_run_full_data:
         return None
-    meta_keys = ["wall_clock_run_index", "wall_clock_run_started_at_iso",
-                 "wall_clock_series_started_at_iso",
-                 "wall_clock_elapsed_minutes_from_first_run"]
     first = per_run_full_data[0]
+    base_meta_keys = ["wall_clock_run_index", "wall_clock_run_started_at_iso",
+                      "wall_clock_series_started_at_iso",
+                      "wall_clock_elapsed_minutes_from_first_run"]
+    first_metadata = dict(first["run_metadata"])
+    meta_keys = base_meta_keys + [
+        key for key in first_metadata if key not in base_meta_keys
+    ]
     metric_name = first["metric_column_name"]
     extra_keys = list(dict(first.get("extra_metric_matrices", {})).keys())
     axes = dict(first.get("axes", {}))
@@ -478,7 +482,7 @@ def save_wall_clock_repeat_full_outputs(
                   for k, v in dict(run.get("array_columns", {})).items()}
         axis_vals = np.asarray(run_axes[axis_key], dtype=float) if axis_key else None
         for i, dc in enumerate(dc_vec):
-            base = {k: md[k] for k in meta_keys}
+            base = {k: md.get(k, "") for k in meta_keys}
             base.update({"scan_index": i, "dc_target_V": float(dc),
                          metric_name: metric[i] if i < metric.size else np.nan})
             for k in extra_keys:

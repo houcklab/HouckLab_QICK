@@ -290,6 +290,28 @@ def read_qick_dmem(soc, address, length):
     return words[:length].astype(np.uint32).astype(np.uint64).tolist()
 
 
+def write_qick_dmem(soc, address, values):
+    address = int(address)
+    words = np.asarray(values, dtype=np.int64).reshape(-1).astype(np.uint32)
+    length = int(words.size)
+    if address < 0 or length <= 0:
+        raise ValueError("DMem address must be non-negative and values must be nonempty")
+    dmem_size = _tproc_dmem_size(soc)
+    if dmem_size is not None and address + length > dmem_size:
+        raise ValueError("DMem write exceeds tProcessor data memory")
+    direct_memory = _direct_tproc_memory(soc.tproc)
+    if direct_memory is not None:
+        memory, offset = direct_memory
+        memory[offset + address:offset + address + length] = words
+        return length
+    for offset, value in enumerate(words):
+        soc.tproc.single_write(
+            addr=address + offset,
+            data=int(value),
+        )
+    return length
+
+
 def _abort_resident_readout(soc):
     try:
         soc.tproc.reset()
@@ -621,7 +643,11 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
     def dmem_read(self, address, length):
         return read_qick_dmem(self, address, length)
 
+    def dmem_write(self, address, values):
+        return write_qick_dmem(self, address, values)
+
     qicksoc_class.acquire_qick_program_batch = program_batch
     qicksoc_class.acquire_qick_resident_readout = resident_readout
     qicksoc_class.read_qick_dmem = dmem_read
+    qicksoc_class.write_qick_dmem = dmem_write
     return qicksoc_class

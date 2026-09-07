@@ -167,9 +167,11 @@ P6_3PT_T1 = {
     "apply_flux_tail_compensation": False,
     "shots": 100,
     "dc_min": -20511,
-    "dc_max": -6749,
-    "dc_step": 7,
-    "freq_step_mhz": None,
+    "dc_max": -6744,
+    "dc_step": None,
+    "freq_min_ghz": 3.3,
+    "freq_max_ghz": 4.3,
+    "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
     "Ts_us": 100.0,
     "flux_settle_us": 0.5,
@@ -330,6 +332,8 @@ def _dc_vec(p):
 
 
 def _step6_dc_vec(p):
+    if p.get("freq_min_ghz") is not None and p.get("freq_max_ghz") is not None:
+        return _build_exact_frequency_integer_dc_vec(p)
     if p.get("freq_step_mhz", None) is None:
         return _dc_vec(p)
     if FLUX_FIT_PARAMS is None:
@@ -367,6 +371,46 @@ def _build_freq_uniform_dc_vec(p):
           f"{p['freq_step_mhz']:g} MHz steps "
           f"(DC {dc_vec.min():+.0f}..{dc_vec.max():+.0f} DAC, "
           f"f {min(f_edges):.3f}..{max(f_edges):.3f} GHz)")
+    return dc_vec
+
+
+def _target_frequency_grid_ghz(p):
+    if p.get("freq_min_ghz") is None or p.get("freq_max_ghz") is None:
+        return None
+    low = float(p["freq_min_ghz"])
+    high = float(p["freq_max_ghz"])
+    step = float(p["freq_step_mhz"]) / 1e3
+    if high <= low or step <= 0.0:
+        raise ValueError("the exact frequency grid requires freq_max_ghz > freq_min_ghz and a positive step")
+    count = int(round((high - low) / step)) + 1
+    target = high - step * np.arange(count, dtype=float)
+    if abs(float(target[-1]) - low) > 1e-9:
+        raise ValueError("the requested frequency range is not divisible by freq_step_mhz")
+    target[-1] = low
+    return target
+
+
+def _build_exact_frequency_integer_dc_vec(p):
+    target = _target_frequency_grid_ghz(p)
+    dc_candidates = np.arange(int(p["dc_min"]), int(p["dc_max"]) + 1, dtype=np.int64)
+    fitted = fx.estimate_fit_frequency_ghz_array(FLUX_FIT_PARAMS, dc_candidates)
+    delta = np.diff(fitted)
+    if np.all(delta > 0):
+        mapped = np.interp(target, fitted, dc_candidates)
+    elif np.all(delta < 0):
+        mapped = np.interp(target, fitted[::-1], dc_candidates[::-1])
+    else:
+        raise RuntimeError("the QICK inversion interval is not monotonic")
+    dc_vec = np.rint(mapped).astype(np.int64)
+    if np.unique(dc_vec).size != dc_vec.size:
+        raise RuntimeError("the QICK DAC resolution cannot realize every requested frequency point")
+    realized = fx.estimate_fit_frequency_ghz_array(FLUX_FIT_PARAMS, dc_vec)
+    error_mhz = 1e3 * (realized - target)
+    if float(np.max(np.abs(error_mhz))) > 0.1:
+        raise RuntimeError("the nearest-DAC frequency error exceeds 0.1 MHz")
+    print(f"[6] exact common frequency grid: {len(target)} points, "
+          f"{target[0]:.4f}..{target[-1]:.4f} GHz at {p['freq_step_mhz']:g} MHz; "
+          f"QICK nearest-DAC max error {np.max(np.abs(error_mhz)):.4f} MHz")
     return dc_vec
 
 
@@ -787,6 +831,10 @@ def _run_one_stop_t1(
                       f"CSV is still the primary record.")
         spec = get_wall_clock_repeat_spec(exp)
         full_spec = get_wall_clock_repeat_full_spec(exp) or {}
+        scalar_columns = dict(full_spec.get("scalar_columns", {}))
+        for key in ("target_frequency_ghz", "fit_frequency_ghz"):
+            if key in exp.data:
+                scalar_columns[key] = exp.data[key]
         run_full_data = {
             "run_metadata": repeat_metadata,
             "dc_vec": np.asarray(exp.dc_vec, dtype=float),
@@ -797,7 +845,7 @@ def _run_one_stop_t1(
                 for key, values in dict(spec.get("extra_metric_matrices", {})).items()
             },
             "axes": full_spec.get("axes", {}),
-            "scalar_columns": full_spec.get("scalar_columns", {}),
+            "scalar_columns": scalar_columns,
             "array_columns": full_spec.get("array_columns", {}),
         }
         csv_path = save_wall_clock_repeat_full_outputs(
@@ -885,6 +933,8 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
         raise RuntimeError('P6_3PT_T1["Ts_us"] must be set: the 3-point method runs '
                            'at one FIXED decay delay (production uses 60.0).')
     dc_vec = _step6_dc_vec(p)
+    target_frequency_ghz = _target_frequency_grid_ghz(p)
+    fit_frequency_ghz = fx.estimate_fit_frequency_ghz_array(FLUX_FIT_PARAMS, dc_vec)
     p["_projected_points"] = len(dc_vec) * 3
     flux_tail_compensation, correction_mode = _resolve_step6_correction(
         p, correction_json, outer_folder)
@@ -896,7 +946,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     park_voltage = base.get("ff_park_gain", _baseline_dc_offset())
 
     def factory(repeat_metadata):
-        return T13PointVsFlux(
+        exp = T13PointVsFlux(
             soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
             suffix=f"TLS_3pt_T1_vs_Flux_{correction_suffix}", cfg=dict(base),
             dc_vec=dc_vec, Ts_ns=int(round(p["Ts_us"] * 1e3)),
@@ -909,6 +959,10 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             repeat_metadata=repeat_metadata,
             write_outputs=False,
         )
+        if target_frequency_ghz is not None:
+            exp.data["target_frequency_ghz"] = target_frequency_ghz
+            exp.data["fit_frequency_ghz"] = fit_frequency_ghz
+        return exp
 
     recalibrate = _make_reset_recalibrator(base, soc, soccfg, outer_folder)
     synchronizer = GlobalSlotSynchronizer.from_config(p)
