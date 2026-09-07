@@ -320,6 +320,35 @@ def _store_stream_chunks(chunks, d_buf, count, total_records):
     return count
 
 
+def _resident_stream_schedule(soc, ro_channels, records_per_block):
+    capacities = []
+    for channel in ro_channels:
+        try:
+            capacities.append(int(soc.get_avg_max_length(int(channel))))
+        except Exception:
+            pass
+    capacity = min(capacities) if capacities else 16384
+    if capacity <= 0:
+        capacity = 16384
+    stride = max(1, min(2048, capacity // 8))
+    drain_blocks = max(1, min(64, stride // int(records_per_block)))
+    return capacity, stride, drain_blocks
+
+
+def _start_resident_stream(soc, total_records, counter_addr, ro_channels, stride):
+    values = {
+        "counter_addr": counter_addr,
+        "ch_list": list(ro_channels),
+        "reads_per_rep": 1,
+    }
+    try:
+        soc.start_readout(total_records, stride=stride, **values)
+    except TypeError as exc:
+        if "stride" not in str(exc):
+            raise
+        soc.start_readout(total_records, **values)
+
+
 def acquire_qick_resident_readout(
     soc,
     program_values,
@@ -386,6 +415,9 @@ def acquire_qick_resident_readout(
     }
     if len(read_lengths) != 1 or next(iter(read_lengths)) <= 0:
         raise ValueError("resident readout lengths must match and be positive")
+    stream_capacity, stream_stride, stream_drain_blocks = (
+        _resident_stream_schedule(soc, ro_channels, records_per_block)
+    )
     setup_started = time.perf_counter()
     program.load_pulses(soc)
     program.config_gens(soc)
@@ -413,11 +445,12 @@ def acquire_qick_resident_readout(
     setup_s = time.perf_counter() - setup_started
     acquisition_started = time.perf_counter()
     try:
-        soc.start_readout(
+        _start_resident_stream(
+            soc,
             total_records,
-            counter_addr=program.counter_addr,
-            ch_list=list(ro_channels),
-            reads_per_rep=1,
+            program.counter_addr,
+            ro_channels,
+            stream_stride,
         )
         d_buf = np.zeros(
             (len(ro_channels), total_records, 2), dtype=np.int32
@@ -476,7 +509,7 @@ def acquire_qick_resident_readout(
                     direct_memory=direct_memory,
                 )
             release_s += time.perf_counter() - phase_started
-            if (block + 1) % 64 == 0:
+            if (block + 1) % stream_drain_blocks == 0:
                 phase_started = time.perf_counter()
                 count = _store_stream_chunks(
                     soc.poll_data(timeout=0),
@@ -484,6 +517,7 @@ def acquire_qick_resident_readout(
                     count,
                     total_records,
                 )
+                time.sleep(0)
                 stream_drain_s += time.perf_counter() - phase_started
         handshake_s = time.perf_counter() - handshake_started
         last_progress = time.monotonic()
@@ -526,6 +560,9 @@ def acquire_qick_resident_readout(
         "frequency_update_s": float(frequency_update_s),
         "release_s": float(release_s),
         "stream_drain_s": float(stream_drain_s),
+        "stream_capacity_records": int(stream_capacity),
+        "stream_stride_records": int(stream_stride),
+        "stream_drain_blocks": int(stream_drain_blocks),
         "ready_polls": int(ready_polls),
         "frequency_update_mode": (
             "direct_mmio_latched"

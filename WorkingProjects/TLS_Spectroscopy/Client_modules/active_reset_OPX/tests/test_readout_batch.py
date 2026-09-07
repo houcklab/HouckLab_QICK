@@ -665,6 +665,97 @@ def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     )
 
 
+def test_resident_server_drains_wide_blocks_before_accumulated_buffer_overflows():
+    class WideBlockTProc(ResidentTProc):
+        def __init__(self, owner):
+            super().__init__()
+            self.owner = owner
+
+        def single_write(self, addr=0, data=0):
+            previous = self.completed_blocks
+            super().single_write(addr=addr, data=data)
+            if self.completed_blocks > previous:
+                self.owner.pending += self.owner.records_per_block
+                self.owner.maximum_pending = max(
+                    self.owner.maximum_pending,
+                    self.owner.pending,
+                )
+                if self.owner.pending > self.owner.capacity:
+                    raise ValueError(
+                        "could not broadcast input array from shape (20498,) "
+                        "into shape (16384,)"
+                    )
+
+    class WideBlockSoc(ResidentSoc):
+        def __init__(self):
+            super().__init__()
+            self.capacity = 16384
+            self.records_per_block = 601
+            self.pending = 0
+            self.maximum_pending = 0
+            self.delivered = 0
+            self.stream_stride = None
+            self.tproc = WideBlockTProc(self)
+
+        def get_avg_max_length(self, channel):
+            assert int(channel) == 0
+            return self.capacity
+
+        def start_readout(
+            self,
+            total_reps,
+            counter_addr=1,
+            ch_list=None,
+            reads_per_rep=1,
+            stride=None,
+        ):
+            self.expected = int(total_reps) * int(reads_per_rep)
+            self.stream_stride = stride
+            self.tproc.total_blocks = 60
+            self.tproc.memory[self.tproc.ready_addr] = 1
+            self.events.append(("resident_start", int(total_reps)))
+
+        def poll_data(self, *args, **kwargs):
+            self.polls += 1
+            if self.pending == 0:
+                return []
+            values = np.empty((1, self.pending, 2), dtype=np.int32)
+            sequence = np.arange(self.delivered, self.delivered + self.pending)
+            values[0, :, 0] = sequence
+            values[0, :, 1] = -sequence
+            self.delivered += self.pending
+            self.pending = 0
+            return [(values, {})]
+
+    soc = WideBlockSoc()
+    configs = [
+        {
+            0: {
+                "freq": 10.0 + index,
+                "length": 5,
+                "sel": "product",
+                "gen_ch": 0,
+            }
+        }
+        for index in range(60)
+    ]
+    result = acquire_qick_resident_readout(
+        soc,
+        {**program(7), "reps": 60 * 601},
+        configs,
+        list(range(60)),
+        shots=1,
+        command_addr=2,
+        ready_addr=3,
+        frequency_addr=4,
+        program_factory=ResidentProgram,
+    )
+    assert result["records"].shape == (1, 60, 601, 2)
+    assert soc.maximum_pending <= soc.capacity
+    assert soc.stream_stride is not None
+    assert soc.stream_stride <= soc.capacity // 8
+
+
 def test_server_bulk_dmem_reader_returns_plain_unsigned_words():
     class TProc:
         def read_dmem(self, address, length):
