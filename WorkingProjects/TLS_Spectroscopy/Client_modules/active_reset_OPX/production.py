@@ -103,7 +103,6 @@ class ProductionResetSession:
             "opx_inter_shot_delay_us": float(
                 q3_benchmark_settings().inter_shot_delay_us
             ),
-            "qubit_pi_freq": float(self.method_frequency_mhz),
             "reset_pi_freq": float(self.method_frequency_mhz),
             "relax_delay": float(q3_benchmark_settings().inter_shot_delay_us),
         })

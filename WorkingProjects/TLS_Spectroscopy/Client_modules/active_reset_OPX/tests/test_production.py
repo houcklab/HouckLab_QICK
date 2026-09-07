@@ -34,7 +34,7 @@ def test_user_passive_mode_never_requires_an_active_calibration():
     assert cfg["single_shot_state_order"] == "ge"
 
 
-def test_active_session_owns_timing_frequency_calibration_and_loop_order():
+def test_active_session_owns_reset_timing_and_loop_order_without_replacing_payload_frequency():
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
     session = ProductionResetSession.active(
         calibration=calibration,
@@ -44,6 +44,7 @@ def test_active_session_owns_timing_frequency_calibration_and_loop_order():
     cfg = session.apply({
         "relax_delay": 1000.0,
         "ff_park_gain": 29000,
+        "qubit_pi_freq": 4358.125,
         "randomize_point_order": True,
         "shuffle_detuning": True,
         "remeasure_outliers": True,
@@ -51,7 +52,7 @@ def test_active_session_owns_timing_frequency_calibration_and_loop_order():
 
     assert cfg["reset_mode"] == "opx_unbounded"
     assert cfg["opx_reset_calibration"] == calibration
-    assert cfg["qubit_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["qubit_pi_freq"] == pytest.approx(4358.125)
     assert cfg["reset_pi_freq"] == pytest.approx(4366.392029)
     assert cfg["relax_delay"] == pytest.approx(10.0)
     assert cfg["opx_inter_shot_delay_us"] == pytest.approx(10.0)
