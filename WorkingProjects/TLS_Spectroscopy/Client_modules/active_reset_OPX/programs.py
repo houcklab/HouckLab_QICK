@@ -1789,6 +1789,11 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             raise ValueError("opx_t1_3pt_dc_gains must contain integer DAC values")
         if np.any(rounded < -32768) or np.any(rounded > 32767):
             raise ValueError("opx_t1_3pt_dc_gains exceed the signed DAC range")
+        steps = np.diff(rounded)
+        evenly_spaced = not steps.size or bool(np.all(steps == steps[0]))
+        use_gain_lookup = bool(run_cfg.get("opx_t1_3pt_gain_lookup", False))
+        if not evenly_spaced and not use_gain_lookup:
+            raise ValueError("opx_t1_3pt_dc_gains must be evenly spaced")
         shots = int(run_cfg.get("opx_t1_3pt_shots", 0))
         wait_us = float(run_cfg.get("opx_t1_3pt_wait_us", 0.0))
         if shots < 2:
@@ -1800,29 +1805,34 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             (int(gain) for gain in rounded if int(gain) != park_gain),
             park_gain - 1 if park_gain == 32767 else park_gain + 1,
         )
-        lut_base = int(run_cfg.get("opx_t1_3pt_gain_lut_base", 4))
-        lut_end = lut_base + int(rounded.size)
-        control_addresses = {
-            int(run_cfg.get("opx_done_addr", 1)),
-            int(run_cfg.get("opx_stream_ack_addr", 2)),
-            int(run_cfg.get("opx_stream_ready_addr", 3)),
-        }
-        if lut_base < 0 or any(lut_base <= address < lut_end for address in control_addresses):
-            raise ValueError("three-point gain lookup memory overlaps resident controls")
-        try:
-            dmem_words = int(soccfg["tprocs"][0]["dmem_size"])
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ValueError("the board configuration does not report tProc data memory") from exc
-        record_base = max(
-            int(run_cfg.get("opx_record_base", 32)),
-            ((lut_end + 15) // 16) * 16,
-        )
-        if lut_end > dmem_words or record_base >= dmem_words:
-            raise ValueError("three-point gain lookup does not fit in tProc data memory")
+        lut_base = None
+        if use_gain_lookup:
+            lut_base = int(run_cfg.get("opx_t1_3pt_gain_lut_base", 4))
+            lut_end = lut_base + int(rounded.size)
+            control_addresses = {
+                int(run_cfg.get("opx_done_addr", 1)),
+                int(run_cfg.get("opx_stream_ack_addr", 2)),
+                int(run_cfg.get("opx_stream_ready_addr", 3)),
+            }
+            if lut_base < 0 or any(
+                lut_base <= address < lut_end for address in control_addresses
+            ):
+                raise ValueError("three-point gain lookup memory overlaps resident controls")
+            try:
+                dmem_words = int(soccfg["tprocs"][0]["dmem_size"])
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise ValueError("the board configuration does not report tProc data memory") from exc
+            record_base = max(
+                int(run_cfg.get("opx_record_base", 32)),
+                ((lut_end + 15) // 16) * 16,
+            )
+            if lut_end > dmem_words or record_base >= dmem_words:
+                raise ValueError("three-point gain lookup does not fit in tProc data memory")
+            run_cfg["opx_t1_3pt_gain_lut_base"] = lut_base
+            run_cfg["opx_record_base"] = record_base
         run_cfg.update({
             "opx_t1_3pt_dc_gains": rounded.tolist(),
-            "opx_t1_3pt_gain_lut_base": lut_base,
-            "opx_record_base": record_base,
+            "opx_t1_3pt_gain_lookup": use_gain_lookup,
             "opx_t1_3pt_dc_scan_order": "alternating_bidirectional",
             "opx_t1_3pt_p0_reference_shot_indices": list(
                 distributed_p0_reference_indices(shots)
@@ -1834,7 +1844,9 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             "reps": shots * int(rounded.size) * 3,
         })
         super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
-        self.dmem_loads = ((lut_base, rounded.tolist()),)
+        self.dmem_loads = (
+            ((lut_base, rounded.tolist()),) if use_gain_lookup else ()
+        )
 
     def _play_dynamic_target(self):
         write_dynamic_const_gain(
@@ -1991,27 +2003,38 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self,
         controls,
         *,
+        start_gain,
+        gain_step,
         start_address,
         address_step,
         label_prefix,
     ):
         gains = self.cfg["opx_t1_3pt_dc_gains"]
-        self.safe_regwi(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_lut_addr"],
-            int(start_address),
-        )
+        use_gain_lookup = bool(self.cfg.get("opx_t1_3pt_gain_lookup", False))
+        if use_gain_lookup:
+            self.safe_regwi(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_lut_addr"],
+                int(start_address),
+            )
+        else:
+            self.safe_regwi(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_gain"],
+                int(start_gain),
+            )
         self.regwi(
             self._t1_3pt_ff_page,
             self._t1_3pt_regs["dc_loop"],
             len(gains) - 1,
         )
         self.label(f"{label_prefix}_DC_LOOP")
-        self.memr(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_gain"],
-            self._t1_3pt_regs["dc_lut_addr"],
-        )
+        if use_gain_lookup:
+            self.memr(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_gain"],
+                self._t1_3pt_regs["dc_lut_addr"],
+            )
         self._set_three_point_dc_delta()
         self._emit_p0_slot(controls, f"{label_prefix}_P0")
         self._emit_three_point_payload(
@@ -2029,12 +2052,14 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self.mathi(0, controls["done"], controls["done"], "+", 3)
         self.memwi(0, controls["done"], self.done_addr)
         self._stream_after_shot()
+        register = "dc_lut_addr" if use_gain_lookup else "dc_gain"
+        step = address_step if use_gain_lookup else gain_step
         self.mathi(
             self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_lut_addr"],
-            self._t1_3pt_regs["dc_lut_addr"],
+            self._t1_3pt_regs[register],
+            self._t1_3pt_regs[register],
             "+",
-            int(address_step),
+            int(step),
         )
         self.loopnz(
             self._t1_3pt_ff_page,
@@ -2064,10 +2089,14 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         ff_reserved = _reserved_registers(self, self._t1_3pt_ff_page)
         if self._t1_3pt_ff_page == self.reset_page:
             ff_reserved.update(self.reset_regs.values())
+        register_names = ["dc_gain", "dc_loop", "dc_delta"]
+        if bool(self.cfg.get("opx_t1_3pt_gain_lookup", False)):
+            register_names.append("dc_lut_addr")
+        register_names.extend(("park_gain", "command"))
         self._t1_3pt_regs = allocate_named_registers(
             self,
             self._t1_3pt_ff_page,
-            ("dc_gain", "dc_loop", "dc_delta", "dc_lut_addr", "park_gain", "command"),
+            register_names,
             reserved=ff_reserved,
         )
         self._t1_flux_ff_page = self._t1_3pt_ff_page
@@ -2098,7 +2127,8 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             reserved=control_reserved,
         )
         gains = self.cfg["opx_t1_3pt_dc_gains"]
-        lut_base = int(self.cfg["opx_t1_3pt_gain_lut_base"])
+        gain_step = int(gains[1] - gains[0]) if len(gains) > 1 else 0
+        lut_base = int(self.cfg.get("opx_t1_3pt_gain_lut_base", 0))
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
@@ -2151,6 +2181,8 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._set_p0_reference_flag(controls, "OPX_T1_3PT_DOWN_P0_REF")
         self._emit_three_point_dc_sweep(
             controls,
+            start_gain=gains[-1],
+            gain_step=-gain_step,
             start_address=lut_base + len(gains) - 1,
             address_step=-1,
             label_prefix="OPX_T1_3PT_DOWN",
@@ -2166,6 +2198,8 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._set_p0_reference_flag(controls, "OPX_T1_3PT_UP_P0_REF")
         self._emit_three_point_dc_sweep(
             controls,
+            start_gain=gains[0],
+            gain_step=gain_step,
             start_address=lut_base,
             address_step=1,
             label_prefix="OPX_T1_3PT_UP",

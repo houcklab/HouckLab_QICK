@@ -201,6 +201,10 @@ def acquire_t1_3pt_iq(
     rounded = np.rint(gains).astype(np.int64)
     if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
         raise ValueError("three-point DC gains must be integer DAC values")
+    steps = np.diff(rounded)
+    if (steps.size and not np.all(steps == steps[0])
+            and not bool(cfg.get("opx_t1_3pt_gain_lookup", False))):
+        raise ValueError("three-point DC gains must be evenly spaced")
     wait_us = float(wait_us)
     if not np.isfinite(wait_us) or wait_us < 0.01:
         raise ValueError("three-point wait must be at least 0.01 us")
