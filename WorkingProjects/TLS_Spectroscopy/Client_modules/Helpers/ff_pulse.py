@@ -34,6 +34,65 @@ def flux_settle_us(cfg):
     return float(cfg.get("flux_settle_time_us", DEFAULT_FLUX_SETTLE_US))
 
 
+def compensation_hold_segments(compensation, hold_us):
+    hold_us = max(float(hold_us), 0.0)
+    if hold_us <= 0:
+        return []
+    if compensation is None:
+        return [(1.0, hold_us)]
+    edges_us = np.asarray(compensation["segment_edges_ns"], dtype=float) / 1e3
+    multipliers = np.asarray(compensation["multipliers"], dtype=float)
+    bounds = sorted(set(
+        [0.0]
+        + [float(edge) for edge in edges_us if 0.0 < edge < hold_us - 1e-9]
+    ))
+    segments = []
+    for index, start in enumerate(bounds):
+        stop = bounds[index + 1] if index + 1 < len(bounds) else hold_us
+        duration = stop - start
+        if duration <= 0:
+            continue
+        multiplier_index = min(
+            max(int(np.searchsorted(edges_us, start + 1e-12, side="right") - 1), 0),
+            multipliers.size - 1,
+        ) if multipliers.size else 0
+        multiplier = float(multipliers[multiplier_index]) if multipliers.size else 1.0
+        segments.append((multiplier, duration))
+    return segments or [(1.0, hold_us)]
+
+
+def play_compensated_hard_step(
+    prog, start_gain, target_gain, hold_us, compensation, restore_target_at_end=True
+):
+    cfg = prog.cfg
+    maxv = PulseFunctions.ff_maxv(prog, scaled=True)
+    start_gain = float(start_gain)
+    target_gain = float(target_gain)
+    for multiplier, duration_us in compensation_hold_segments(compensation, hold_us):
+        gain = int(np.clip(
+            round(start_gain + multiplier * (target_gain - start_gain)),
+            -maxv,
+            maxv,
+        ))
+        total = max(int(prog.us2cycles(duration_us, gen_ch=cfg["ff_ch"])), 3)
+        chunk_count = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
+        base, extra = divmod(total, chunk_count)
+        for chunk in range(chunk_count):
+            length = max(base + (1 if chunk < extra else 0), 3)
+            prog.set_pulse_registers(
+                ch=cfg["ff_ch"],
+                freq=0,
+                style="const",
+                phase=0,
+                stdysel="last",
+                gain=gain,
+                length=length,
+            )
+            prog.pulse(ch=cfg["ff_ch"])
+    if restore_target_at_end:
+        play_hard_step(prog, target_gain)
+
+
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          dt_def_us=0.002, compensation=None, distortion_model=None,
                          maxv=None, park_gain=None, name_prefix="ff"):
@@ -51,20 +110,10 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
         return int(np.clip(park_gain + float(mult) * delta, -maxv, maxv))
 
     if compensation is not None and distortion_model is None:
-        edges_us = np.asarray(compensation['segment_edges_ns'], dtype=float) / 1e3
-        mult = np.asarray(compensation['multipliers'], dtype=float)
-        bounds = sorted(set([0.0] + [float(e) for e in edges_us if 0.0 < e < hold_us - 1e-9]))
-        hold_segs = []
-        for k, b0 in enumerate(bounds):
-            b1 = bounds[k + 1] if k + 1 < len(bounds) else hold_us
-            dur = b1 - b0
-            if dur <= 0:
-                continue
-            seg_i = (min(max(int(np.searchsorted(edges_us, b0 + 1e-12, side='right') - 1), 0),
-                         mult.size - 1) if mult.size else 0)
-            hold_segs.append((_lvl(mult[seg_i] if mult.size else 1.0), dur))
-        if not hold_segs:
-            hold_segs = [(int(ff_gain), hold_us)]
+        hold_segs = [
+            (_lvl(multiplier), duration)
+            for multiplier, duration in compensation_hold_segments(compensation, hold_us)
+        ]
     elif distortion_model is not None:
         total = 2 * ramp_us + hold_us + 4 * dt_play_us
         pb = PulseFunctions.PulseBuilder(dt_def_us, total)

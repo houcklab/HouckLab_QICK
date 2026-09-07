@@ -1244,11 +1244,13 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             float(cfg.get("ff_gain", park_gain)) - park_gain
         ) > 0
         self._t1_ff_segments = None
+        self._t1_ff_compensation = None
         self._t1_ff_settle_us = 0.0
         if self._t1_stepping:
             if not getattr(self, "do_park_hold", False):
                 ff_pulse.declare_ff(self)
             self._t1_ff_settle_us = ff_pulse.flux_settle_us(cfg)
+            self._t1_ff_compensation = ff_pulse.load_compensation(cfg)
             if not getattr(self.reset_config, "hard_flux_steps", False):
                 self._t1_ff_segments = ff_pulse.build_ramp_hold_ramp(
                     self,
@@ -1257,7 +1259,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                     dt_play_us=cfg.get("dt_pulseplay", 5.0),
                     ramp_us=cfg.get("ff_ramp_length", ff_pulse.STATE_SAFE_RAMP_US),
                     dt_def_us=cfg.get("dt_pulsedef", 0.002),
-                    compensation=ff_pulse.load_compensation(cfg),
+                    compensation=self._t1_ff_compensation,
                     distortion_model=ff_pulse.make_distortion_model(self),
                 )
 
@@ -1267,6 +1269,25 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
         hold_us = self._t1_hold_us if hold_us is None else float(hold_us)
         if self._t1_stepping:
             if getattr(self.reset_config, "hard_flux_steps", False):
+                if getattr(self, "_t1_ff_compensation", None) is not None:
+                    park_gain = self.cfg.get("ff_park_gain", 0)
+                    target_gain = self.cfg["ff_gain"]
+                    ff_pulse.play_compensated_hard_step(
+                        self,
+                        park_gain,
+                        target_gain,
+                        max(hold_us, 0.01) + self._t1_ff_settle_us,
+                        self._t1_ff_compensation,
+                        restore_target_at_end=False,
+                    )
+                    ff_pulse.play_compensated_hard_step(
+                        self,
+                        target_gain,
+                        park_gain,
+                        self._t1_ff_settle_us,
+                        self._t1_ff_compensation,
+                    )
+                    return
                 ff_pulse.play_hard_step(self, self.cfg["ff_gain"])
                 self.sync_all(self.us2cycles(self._t1_ff_settle_us))
                 self.sync_all(self.us2cycles(max(hold_us, 0.01)))
@@ -1470,6 +1491,68 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         )
         self.pulse(ch=self.cfg["ff_ch"])
 
+    def _play_dynamic_compensation_segment(self, multiplier, duration_us, returning=False):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        page = self._t1_flux_ff_page
+        regs = self._t1_flux_regs
+        factor = float(multiplier) - 1.0
+        factor_fixed = int(round(abs(factor) * (1 << 16)))
+        base_register = regs["park_gain"] if returning else regs["dc_gain"]
+        if factor_fixed:
+            self.mathi(page, regs["command"], regs["dc_delta"], "*", factor_fixed)
+            self.bitwi(page, regs["command"], regs["command"], ">>", 16)
+            correction_sign = self._t1_flux_direction * (1 if factor > 0 else -1)
+            if returning:
+                correction_sign *= -1
+            self.math(
+                page,
+                regs["command"],
+                base_register,
+                "+" if correction_sign > 0 else "-",
+                regs["command"],
+            )
+        else:
+            self.mathi(page, regs["command"], base_register, "+", 0)
+        total = max(int(self.us2cycles(duration_us, gen_ch=self.cfg["ff_ch"])), 3)
+        chunk_count = max(1, (total + ff_pulse._MAX_CONST_LEN - 1) // ff_pulse._MAX_CONST_LEN)
+        base, extra = divmod(total, chunk_count)
+        for chunk in range(chunk_count):
+            length = max(base + (1 if chunk < extra else 0), 3)
+            self.set_pulse_registers(
+                ch=self.cfg["ff_ch"],
+                freq=0,
+                style="const",
+                phase=0,
+                stdysel="last",
+                gain=0,
+                length=length,
+            )
+            self.mathi(
+                page,
+                self.sreg(self.cfg["ff_ch"], "gain"),
+                regs["command"],
+                "+",
+                0,
+            )
+            self.pulse(ch=self.cfg["ff_ch"])
+
+    def _play_dynamic_compensated_hold(self, delay_us):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        target_hold = max(float(delay_us), 0.01) + self._t1_ff_settle_us
+        for multiplier, duration in ff_pulse.compensation_hold_segments(
+            self._t1_ff_compensation, target_hold
+        ):
+            self._play_dynamic_compensation_segment(multiplier, duration)
+        for multiplier, duration in ff_pulse.compensation_hold_segments(
+            self._t1_ff_compensation, self._t1_ff_settle_us
+        ):
+            self._play_dynamic_compensation_segment(
+                multiplier, duration, returning=True
+            )
+        ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+
     def _emit_t1_flux_point(self, point_index, delay_us):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
@@ -1478,6 +1561,9 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         def emit_payload():
             if bool(self.cfg.get("do_pi", True)):
                 self._prepare_excited()
+            if self._t1_ff_compensation is not None:
+                self._play_dynamic_compensated_hold(delay_us)
+                return
             self._play_dynamic_target()
             self.sync_all(self.us2cycles(self._t1_ff_settle_us))
             self.sync_all(self.us2cycles(max(float(delay_us), 0.01)))
@@ -1527,7 +1613,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         self._t1_flux_regs = allocate_named_registers(
             self,
             self._t1_flux_ff_page,
-            ("dc_gain", "dc_loop"),
+            ("dc_gain", "dc_loop", "dc_delta", "park_gain", "command"),
             reserved=ff_reserved,
         )
         control_reserved = _reserved_registers(self, 0)
@@ -1566,12 +1652,44 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             self._t1_flux_regs["dc_gain"],
             int(gains[0]),
         )
+        park_gain = int(round(float(self.cfg.get("ff_park_gain", 0) or 0)))
+        self.safe_regwi(
+            self._t1_flux_ff_page,
+            self._t1_flux_regs["park_gain"],
+            park_gain,
+        )
+        directions = {
+            int(np.sign(int(gain) - park_gain))
+            for gain in gains
+            if int(gain) != park_gain
+        }
+        if len(directions) > 1 and self._t1_ff_compensation is not None:
+            raise ValueError(
+                "compensated T1 flux sweeps cannot cross ff_park_gain in one program"
+            )
+        self._t1_flux_direction = next(iter(directions), 1)
         self.regwi(
             self._t1_flux_ff_page,
             self._t1_flux_regs["dc_loop"],
             len(gains) - 1,
         )
         self.label("OPX_T1_FLUX_DC_LOOP")
+        if self._t1_flux_direction > 0:
+            self.math(
+                self._t1_flux_ff_page,
+                self._t1_flux_regs["dc_delta"],
+                self._t1_flux_regs["dc_gain"],
+                "-",
+                self._t1_flux_regs["park_gain"],
+            )
+        else:
+            self.math(
+                self._t1_flux_ff_page,
+                self._t1_flux_regs["dc_delta"],
+                self._t1_flux_regs["park_gain"],
+                "-",
+                self._t1_flux_regs["dc_gain"],
+            )
         for point_index, delay_us in enumerate(self.cfg["opx_t1_delays_us"]):
             self._emit_t1_flux_point(point_index, float(delay_us))
             self.mathi(0, controls["done"], controls["done"], "+", 1)
@@ -1652,6 +1770,11 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             if float(hold_us) > 0:
                 self.sync_all(self.us2cycles(float(hold_us)))
             return
+        if getattr(self, "_t1_ff_compensation", None) is not None:
+            OPXResetT1FluxSweepProgram._play_dynamic_compensated_hold(
+                self, hold_us
+            )
+            return
         self._play_dynamic_target()
         self.sync_all(self.us2cycles(self._t1_ff_settle_us))
         self.sync_all(self.us2cycles(max(float(hold_us), 0.01)))
@@ -1709,8 +1832,15 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._t1_3pt_regs = allocate_named_registers(
             self,
             self._t1_3pt_ff_page,
-            ("dc_gain", "dc_loop"),
+            ("dc_gain", "dc_loop", "dc_delta", "park_gain", "command"),
             reserved=ff_reserved,
+        )
+        self._t1_flux_ff_page = self._t1_3pt_ff_page
+        self._t1_flux_regs = self._t1_3pt_regs
+        self._play_dynamic_compensation_segment = (
+            OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment.__get__(
+                self, type(self)
+            )
         )
         control_reserved = _reserved_registers(self, 0)
         if self.reset_page == 0:
@@ -1748,12 +1878,44 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             self._t1_3pt_regs["dc_gain"],
             int(gains[0]),
         )
+        park_gain = int(round(float(self.cfg.get("ff_park_gain", 0) or 0)))
+        self.safe_regwi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["park_gain"],
+            park_gain,
+        )
+        directions = {
+            int(np.sign(int(gain) - park_gain))
+            for gain in gains
+            if int(gain) != park_gain
+        }
+        if len(directions) > 1 and self._t1_ff_compensation is not None:
+            raise ValueError(
+                "compensated three-point T1 sweeps cannot cross ff_park_gain in one program"
+            )
+        self._t1_flux_direction = next(iter(directions), 1)
         self.regwi(
             self._t1_3pt_ff_page,
             self._t1_3pt_regs["dc_loop"],
             len(gains) - 1,
         )
         self.label("OPX_T1_3PT_DC_LOOP")
+        if self._t1_flux_direction > 0:
+            self.math(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_delta"],
+                self._t1_3pt_regs["dc_gain"],
+                "-",
+                self._t1_3pt_regs["park_gain"],
+            )
+        else:
+            self.math(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_delta"],
+                self._t1_3pt_regs["park_gain"],
+                "-",
+                self._t1_3pt_regs["dc_gain"],
+            )
         self._emit_three_point_payload("OPX_T1_3PT_P0", False, False, 0.0)
         self._emit_three_point_payload("OPX_T1_3PT_P1", True, False, 0.0)
         self._emit_three_point_payload(

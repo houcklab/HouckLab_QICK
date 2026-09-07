@@ -70,6 +70,12 @@ class RecordingProgram:
     def mathi(self, page, dst, src, op, value):
         self.asm.append(("mathi", dst, src, op, int(value)))
 
+    def math(self, page, dst, left, op, right):
+        self.asm.append(("math", dst, left, op, right))
+
+    def bitwi(self, page, dst, src, op, value):
+        self.asm.append(("bitwi", dst, src, op, int(value)))
+
     def condj(self, page, left, op, right, label):
         self.asm.append(("condj", left, op, right, label))
 
@@ -572,6 +578,63 @@ def test_t1_hard_flux_cycle_has_no_four_microsecond_ramp():
     assert gains == [-20000, -25790]
     assert waits == [50, 1250, 50]
     assert 400 not in waits
+
+
+def test_t1_hard_flux_cycle_applies_compensation_on_target_and_return():
+    prog = RecordingProgram()
+    prog.soccfg = {"gens": [{}, {}, {}, {"maxv": 32767}]}
+    prog.cfg = {
+        "ff_ch": 3,
+        "ff_gain": -20000,
+        "ff_park_gain": -25790,
+    }
+    prog.reset_config = type("ResetConfig", (), {"hard_flux_steps": True})()
+    prog._t1_stepping = True
+    prog._t1_ff_settle_us = 0.5
+    prog._t1_hold_us = 1.0
+    prog._t1_ff_compensation = {
+        "segment_edges_ns": [0.0, 500.0, 1000.0],
+        "multipliers": [1.1, 1.0, 0.9],
+    }
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value, gen_ch=None: int(round(float(value) * 100))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync", cycles))
+
+    OPXResetT1Program._wait_t1_payload(prog, 1.0)
+
+    gains = [entry[1]["gain"] for entry in prog.asm if entry[0] == "set"]
+    lengths = [entry[1]["length"] for entry in prog.asm if entry[0] == "set"]
+    assert gains == [-19421, -20000, -20579, -26369, -25790]
+    assert lengths == [50, 50, 50, 50, 3]
+
+
+def test_dynamic_t1_compensation_uses_dc_delta_for_both_directions():
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog._t1_flux_ff_page = 1
+    prog._t1_flux_regs = {
+        "dc_gain": 9,
+        "dc_delta": 10,
+        "park_gain": 11,
+        "command": 12,
+    }
+    prog._t1_flux_direction = 1
+    prog.sreg = lambda channel, name: 13
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value, gen_ch=None: int(round(float(value) * 100))
+
+    OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment(
+        prog, 1.1, 0.5, returning=False
+    )
+    OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment(
+        prog, 1.1, 0.5, returning=True
+    )
+
+    assert ("math", 12, 9, "+", 12) in prog.asm
+    assert ("math", 12, 11, "-", 12) in prog.asm
+    assert sum(entry == ("pulse", 3) for entry in prog.asm) == 2
 
 
 def test_three_point_dynamic_flux_target_comes_from_dc_loop_register():
