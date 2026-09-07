@@ -1,4 +1,5 @@
 import sys
+import threading
 import types
 
 import numpy as np
@@ -31,6 +32,123 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order 
     _compensated_hold_segments,
     _uniform_frequency_registers,
 )
+
+
+def test_tproc_progress_reports_every_completed_outer_shot():
+    class TProc:
+        def __init__(self):
+            self.values = iter((0, 0, 3, 6))
+            self.finished = threading.Event()
+
+        def single_read(self, addr):
+            value = next(self.values, 6)
+            if value == 6:
+                self.finished.set()
+            return value
+
+    tproc = TProc()
+    updates = []
+
+    def acquire():
+        assert tproc.finished.wait(1.0)
+        return "result"
+
+    result = qua_order._call_with_tproc_shot_progress(
+        acquire,
+        tproc=tproc,
+        counter_addr=1,
+        total_records=6,
+        total_shots=2,
+        progress=lambda done, total: updates.append((done, total)),
+        poll_interval_s=0.001,
+    )
+
+    assert result == "result"
+    assert updates == [(1, 2), (2, 2)]
+
+
+def test_readout_grid_progress_uses_outer_shots(monkeypatch):
+    class Program:
+        def __init__(self, soccfg, cfg, **kwargs):
+            self.reps = 12
+            self.ro_chs = {
+                0: {"freq": 10.0, "length": 5, "sel": "product", "gen_ch": 0}
+            }
+            self.frequency_registers = np.array([10, 20])
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+            self.counter_addr = 1
+
+        def dump_prog(self):
+            return {"program": 1}
+
+    class TProc:
+        def single_read(self, addr):
+            return 0
+
+    class Soc:
+        tproc = TProc()
+
+        def acquire_qick_resident_readout(self, *args, **kwargs):
+            return {"records": np.zeros((3, 2, 2, 2))}
+
+    monkeypatch.setattr(qua_order, "QUAResidentReadoutGridProgram", Program)
+    monkeypatch.setattr(
+        qua_order,
+        "_call_with_tproc_shot_progress",
+        lambda call, **kwargs: (
+            kwargs["progress"](1, kwargs["total_shots"]),
+            kwargs["progress"](2, kwargs["total_shots"]),
+            kwargs["progress"](3, kwargs["total_shots"]),
+            call(),
+        )[-1],
+        raising=False,
+    )
+    updates = []
+
+    acquire_passive_readout_grid(
+        Soc(),
+        object(),
+        {"shots": 3},
+        frequencies_mhz=[10.0, 20.0],
+        values=[1.0, 2.0],
+        kind="readout_gain",
+        progress=lambda done, total: updates.append((done, total)),
+    )
+
+    assert updates == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_qubit_optimizer_forwards_outer_shot_callback(monkeypatch):
+    updates = []
+
+    class Program:
+        def __init__(self, soccfg, cfg, **kwargs):
+            self.progress = None
+
+        def acquire_records(self, soc, progress=False):
+            self.progress = progress
+            progress(1, 2)
+            progress(2, 2)
+            values = np.zeros(2 * 2 * 3 * 2)
+            return values, values
+
+    monkeypatch.setattr(qua_order, "QUAOptimizerGridProgram", Program)
+
+    acquire_passive_optimizer_grid(
+        object(),
+        object(),
+        {"shots": 2},
+        frequencies_mhz=[10.0, 20.0],
+        gains=[1.0, 2.0, 3.0],
+        kind="qubit",
+        drive_pulses=1,
+        drive_gain=7,
+        progress=lambda done, total: updates.append((done, total)),
+    )
+
+    assert updates == [(1, 2), (2, 2)]
 
 
 class PulseGridRecorder:
@@ -603,6 +721,7 @@ def test_readout_optimizer_uses_one_resident_program_when_supported(monkeypatch)
             self.command_addr = 2
             self.ready_addr = 3
             self.frequency_addr = 4
+            self.counter_addr = 1
             created.append(self)
 
         def dump_prog(self):
@@ -633,7 +752,17 @@ def test_readout_optimizer_uses_one_resident_program_when_supported(monkeypatch)
         Program,
         raising=False,
     )
+    monkeypatch.setattr(
+        qua_order,
+        "_call_with_tproc_shot_progress",
+        lambda call, **kwargs: (
+            kwargs["progress"](1, kwargs["total_shots"]),
+            kwargs["progress"](2, kwargs["total_shots"]),
+            call(),
+        )[-1],
+    )
     soc = Soc()
+    updates = []
     i_values, q_values, telemetry = acquire_passive_optimizer_grid(
         soc,
         object(),
@@ -643,6 +772,7 @@ def test_readout_optimizer_uses_one_resident_program_when_supported(monkeypatch)
         kind="readout",
         drive_pulses=1,
         drive_gain=7,
+        progress=lambda done, total: updates.append((done, total)),
     )
     assert len(created) == 1
     assert created[0].drive_pulses == 1
@@ -657,6 +787,7 @@ def test_readout_optimizer_uses_one_resident_program_when_supported(monkeypatch)
     assert telemetry["resident_handshake"] is True
     assert telemetry["records"] == 16
     assert telemetry["order"] == "shot_frequency_gain_state"
+    assert updates == [(1, 2), (2, 2)]
 
 
 def test_qubit_optimizer_uses_one_shot_major_streaming_program(monkeypatch):
@@ -1076,6 +1207,9 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
             created.append(self)
 
         def acquire_records(self, soc, progress=False, load_pulses=True):
+            if callable(progress):
+                for shot in range(1, self.shots + 1):
+                    progress(shot, self.shots)
             values = np.arange(self.reps, dtype=float)
             return values, -values
 
@@ -1084,6 +1218,7 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
         "QUAFluxSpectroscopyProgram",
         Program,
     )
+    updates = []
     common = dict(
         soc=object(),
         soccfg=object(),
@@ -1095,6 +1230,7 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
         baseline_rearm_us=10.0,
         post_readout_reset_us=20.0,
         readout_after_park=False,
+        progress=lambda done, total: updates.append((done, total)),
     )
     i_frequency, q_frequency, frequency_meta = acquire_passive_flux_spectroscopy_grid(
         **common,
@@ -1117,6 +1253,7 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
     assert q_dc.shape == (2, 3, 2, 2)
     assert i_dc[1, 2, 1, 1] == 23
     assert dc_meta["order"] == "shot_dc_frequency_time"
+    assert updates == [(1, 2), (2, 2), (1, 2), (2, 2)]
 
 
 def test_flux_step_response_routes_to_shot_frequency_time_stream(monkeypatch):

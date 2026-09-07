@@ -524,6 +524,89 @@ def test_qubit_spec_active_grid_reports_outer_shot_progress(tmp_path, monkeypatc
     assert updates == [(1, 3, "qubit spec")]
 
 
+def test_qubit_spec_passive_grid_reports_outer_shot_progress(tmp_path, monkeypatch):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mQubitSpec
+
+    updates = []
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        kwargs["progress"](2, 3)
+        values = np.zeros((3, 1, 3), dtype=float)
+        return values, values, {"order": "shot_frequency_gain"}
+
+    monkeypatch.setattr(mQubitSpec, "acquire_passive_pulse_grid", acquire)
+    monkeypatch.setattr(
+        mQubitSpec,
+        "progress_counter",
+        lambda iteration, total, **kwargs: updates.append(
+            (iteration, total, kwargs["label"])
+        ),
+    )
+    experiment = mQubitSpec.QubitSpec(
+        soc=object(),
+        soccfg={},
+        path="q3",
+        outerFolder=tmp_path,
+        cfg={
+            "qua_shot_order": True,
+            "reset_mode": "passive",
+            "shots": 3,
+            "qubit_freq_start": 4300.0,
+            "qubit_freq_stop": 4302.0,
+            "qubit_freq_expts": 3,
+            "qubit_gain": 1000,
+        },
+        save=False,
+    )
+
+    experiment.acquire(progress=True, plotDisp=False)
+
+    assert updates == [(1, 3, "qubit spec")]
+
+
+def test_qubit_spec_gain_sweep_passive_grid_reports_outer_shot_progress(
+    tmp_path, monkeypatch
+):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mQubitSpec
+
+    updates = []
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        kwargs["progress"](3, 3)
+        values = np.zeros((3, 2, 3), dtype=float)
+        return values, values, {"order": "shot_frequency_gain"}
+
+    monkeypatch.setattr(mQubitSpec, "acquire_passive_pulse_grid", acquire)
+    monkeypatch.setattr(
+        mQubitSpec,
+        "progress_counter",
+        lambda iteration, total, **kwargs: updates.append(
+            (iteration, total, kwargs["label"])
+        ),
+    )
+    experiment = mQubitSpec.QubitSpecGainSweep(
+        soc=object(),
+        soccfg={},
+        path="q3",
+        outerFolder=tmp_path,
+        cfg={
+            "qua_shot_order": True,
+            "reset_mode": "passive",
+            "shots": 3,
+            "qubit_freq_start": 4300.0,
+            "qubit_freq_stop": 4302.0,
+            "qubit_freq_expts": 3,
+            "qubit_gain": 1000,
+        },
+        gains=[1000, 2000],
+        save=False,
+    )
+
+    experiment.acquire(progress=True, plotDisp=False)
+
+    assert updates == [(2, 3, "qubit spec gain sweep")]
+
+
 def test_t1_qua_sweep_reports_outer_shot_progress(monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mCoherence
 

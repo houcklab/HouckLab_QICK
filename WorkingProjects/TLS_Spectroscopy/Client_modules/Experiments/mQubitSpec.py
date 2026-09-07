@@ -48,15 +48,15 @@ class QubitSpec(ExperimentClass):
         telemetry = None
         started = time.time()
         if bool(cfg.get("qua_shot_order", False)):
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=started,
+                    label="qubit spec",
+                )
             if active_reset.uses_opx_unbounded(cfg):
-                callback = None
-                if progress:
-                    callback = lambda done, total: progress_counter(
-                        done - 1,
-                        total,
-                        start_time=started,
-                        label="qubit spec",
-                    )
                 i_values, q_values, telemetry = acquire_pulse_grid_iq(
                     self.soc,
                     self.soccfg,
@@ -77,7 +77,7 @@ class QubitSpec(ExperimentClass):
                     frequencies_mhz=fpts,
                     gains=[cfg["qubit_gain"]],
                     pulses=1,
-                    progress=progress,
+                    progress=callback,
                 )
             sig = np.mean(i_values[:, 0, :] + 1j * q_values[:, 0, :], axis=1)
         else:
@@ -153,16 +153,16 @@ class QubitSpecGainSweep(ExperimentClass):
         qubit_dip = np.full(n_g, np.nan)
 
         if bool(cfg.get("qua_shot_order", False)):
+            started = time.time()
+            callback = None
+            if progress:
+                callback = lambda done, total: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=started,
+                    label="qubit spec gain sweep",
+                )
             if active_reset.uses_opx_unbounded(cfg):
-                callback = None
-                started = time.time()
-                if progress:
-                    callback = lambda done, total: progress_counter(
-                        done - 1,
-                        total,
-                        start_time=started,
-                        label="qubit spec gain sweep",
-                    )
                 i_values, q_values, telemetry = acquire_pulse_grid_iq(
                     self.soc,
                     self.soccfg,
@@ -183,7 +183,7 @@ class QubitSpecGainSweep(ExperimentClass):
                     frequencies_mhz=fpts,
                     gains=gains,
                     pulses=1,
-                    progress=progress,
+                    progress=callback,
                 )
             signal_grid = np.mean(i_values + 1j * q_values, axis=2).T
             mag[:, :] = np.abs(signal_grid)

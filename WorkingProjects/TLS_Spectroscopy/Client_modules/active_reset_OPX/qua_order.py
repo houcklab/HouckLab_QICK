@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
@@ -184,15 +186,28 @@ def _measure_record(program, delay_us=None):
 
 
 def _acquire_stream_records(program, soc, progress=False, load_pulses=True):
-    d_buf, _, _ = QickProgram.acquire(
-        program,
-        soc,
-        reads_per_rep=1,
-        load_pulses=bool(load_pulses),
-        start_src="internal",
-        progress=progress,
-        debug=False,
-    )
+    def acquire():
+        return QickProgram.acquire(
+            program,
+            soc,
+            reads_per_rep=1,
+            load_pulses=bool(load_pulses),
+            start_src="internal",
+            progress=False if callable(progress) else progress,
+            debug=False,
+        )
+
+    if callable(progress) and hasattr(program, "shots"):
+        d_buf, _, _ = _call_with_tproc_shot_progress(
+            acquire,
+            tproc=getattr(soc, "tproc", None),
+            counter_addr=program.counter_addr,
+            total_records=program.reps,
+            total_shots=program.shots,
+            progress=progress,
+        )
+    else:
+        d_buf, _, _ = acquire()
     read_cycles = program.us2cycles(
         program.cfg["read_length"], ro_ch=program.cfg["ro_chs"][0]
     )
@@ -1287,6 +1302,82 @@ def _optional_soc_method(soc, name):
     return method if callable(method) else None
 
 
+def _call_with_tproc_shot_progress(
+    call,
+    *,
+    tproc,
+    counter_addr,
+    total_records,
+    total_shots,
+    progress,
+    poll_interval_s=0.02,
+):
+    total_records = int(total_records)
+    total_shots = int(total_shots)
+    if total_records <= 0 or total_shots <= 0:
+        raise ValueError("record and shot totals must be positive")
+    if total_records % total_shots:
+        raise ValueError("record total must divide evenly into outer shots")
+    if not callable(progress):
+        return call()
+    records_per_shot = total_records // total_shots
+    reader = getattr(tproc, "single_read", None)
+    if not callable(reader):
+        result = call()
+        for completed in range(1, total_shots + 1):
+            progress(completed, total_shots)
+        return result
+
+    def read_counter():
+        try:
+            return int(reader(addr=int(counter_addr)))
+        except TypeError:
+            return int(reader(int(counter_addr)))
+
+    try:
+        baseline = read_counter()
+    except Exception:
+        baseline = None
+    stopped = threading.Event()
+    reported = [0]
+
+    def emit(completed):
+        completed = max(reported[0], min(int(completed), total_shots))
+        for shot in range(reported[0] + 1, completed + 1):
+            progress(shot, total_shots)
+        reported[0] = completed
+
+    def poll():
+        claim = getattr(tproc, "_pyroClaimOwnership", None)
+        if callable(claim):
+            claim()
+        started = baseline == 0
+        while not stopped.wait(float(poll_interval_s)):
+            try:
+                count = read_counter()
+            except Exception:
+                return
+            if not started:
+                if count == 0 or (baseline is not None and count < baseline):
+                    started = True
+                else:
+                    continue
+            emit(count // records_per_shot)
+
+    worker = threading.Thread(target=poll, daemon=True)
+    worker.start()
+    try:
+        result = call()
+    finally:
+        stopped.set()
+        worker.join(timeout=max(1.0, 2.0 * float(poll_interval_s)))
+        claim = getattr(tproc, "_pyroClaimOwnership", None)
+        if callable(claim):
+            claim()
+    emit(total_shots)
+    return result
+
+
 def _resident_program_records(
     method,
     resident,
@@ -1294,6 +1385,8 @@ def _resident_program_records(
     shots,
     access_mode="driver",
     command_mode="sequenced",
+    soc=None,
+    progress=None,
 ):
     args = (
         resident.dump_prog(),
@@ -1309,10 +1402,22 @@ def _resident_program_records(
         kwargs["access_mode"] = access_mode
     if command_mode != "split":
         kwargs["command_mode"] = command_mode
-    if not kwargs:
-        result = method(*args)
+    def acquire():
+        if not kwargs:
+            return method(*args)
+        return method(*args, **kwargs)
+
+    if callable(progress):
+        result = _call_with_tproc_shot_progress(
+            acquire,
+            tproc=getattr(soc, "tproc", None),
+            counter_addr=resident.counter_addr,
+            total_records=resident.reps,
+            total_shots=shots,
+            progress=progress,
+        )
     else:
-        result = method(*args, **kwargs)
+        result = acquire()
     if not isinstance(result, dict) or "records" not in result:
         raise RuntimeError("RFSoC resident acquisition returned an invalid result")
     records = np.asarray(result["records"], dtype=float)
@@ -1408,7 +1513,8 @@ def acquire_passive_readout_grid(
         soc, "acquire_qick_resident_readout"
     )
     axis_name = "gain" if kind == "readout_gain" else "dc"
-    total = shots * frequencies.size
+    total = shots
+    program_count = shots * frequencies.size
     if resident_method is not None:
         resident_cfg = dict(cfg)
         resident_cfg["qua_assert_park_at_start"] = True
@@ -1437,9 +1543,9 @@ def acquire_passive_readout_grid(
                 shots,
                 access_mode=access_mode,
                 command_mode=command_mode,
+                soc=soc,
+                progress=progress,
             )
-            if progress is not None:
-                progress(total, total)
             return (
                 records[..., 0].transpose(1, 2, 0),
                 records[..., 1].transpose(1, 2, 0),
@@ -1525,8 +1631,8 @@ def acquire_passive_readout_grid(
             i_values[shot, frequency_index] = np.asarray(i_row, dtype=float)
             q_values[shot, frequency_index] = np.asarray(q_row, dtype=float)
             done += 1
-            if progress is not None:
-                progress(done, total)
+            if progress is not None and frequency_index == frequencies.size - 1:
+                progress(shot + 1, total)
     return (
         i_values.transpose(1, 2, 0),
         q_values.transpose(1, 2, 0),
@@ -1534,8 +1640,8 @@ def acquire_passive_readout_grid(
             "shots_per_point": shots,
             "frequency_points": int(frequencies.size),
             f"{axis_name}_points": int(values.size),
-            "host_programs": int(total),
-            "controller_programs": int(total),
+            "host_programs": int(program_count),
+            "controller_programs": int(program_count),
             "server_batches": 0,
             "records": int(shots * frequencies.size * values.size),
             "order": f"shot_frequency_{axis_name}",
@@ -1635,9 +1741,14 @@ def acquire_passive_flux_spectroscopy_grid(
             post_readout_reset_us=post_readout_reset_us,
             readout_after_park=readout_after_park,
         )
+        callback = None
+        if progress is not None:
+            callback = lambda done, count, offset=completed: progress(
+                offset + done, total_shots
+            )
         raw_i, raw_q = program.acquire_records(
             soc,
-            progress=False,
+            progress=callback,
             load_pulses=block_index == 0,
         )
         if order == "shot_frequency_dc_time":
@@ -1668,8 +1779,6 @@ def acquire_passive_flux_spectroscopy_grid(
             np.asarray(raw_q, dtype=float).reshape(block_shape).transpose(axes)
         )
         completed += int(chunk)
-        if progress is not None:
-            progress(completed, total_shots)
     i_values = np.concatenate(i_blocks, axis=3)
     q_values = np.concatenate(q_blocks, axis=3)
     return i_values, q_values, {
@@ -1710,7 +1819,7 @@ def acquire_passive_optimizer_grid(
             gains=gains,
             drive_pulses=drive_pulses,
         )
-        i_records, q_records = program.acquire_records(soc, progress=bool(progress))
+        i_records, q_records = program.acquire_records(soc, progress=progress)
         shape = (shots, frequencies.size, gains.size, 2)
         return (
             np.asarray(i_records, dtype=float).reshape(shape),
@@ -1734,7 +1843,8 @@ def acquire_passive_optimizer_grid(
     resident_method = _optional_soc_method(
         soc, "acquire_qick_resident_readout"
     )
-    total = shots * frequencies.size
+    total = shots
+    program_count = shots * frequencies.size
     if resident_method is not None:
         resident_cfg = dict(cfg)
         resident_cfg["qua_assert_park_at_start"] = True
@@ -1762,10 +1872,10 @@ def acquire_passive_optimizer_grid(
                 shots,
                 access_mode=access_mode,
                 command_mode=command_mode,
+                soc=soc,
+                progress=progress,
             )
             shape = (shots, frequencies.size, gains.size, 2)
-            if progress is not None:
-                progress(total, total)
             return (
                 records[..., 0].reshape(shape),
                 records[..., 1].reshape(shape),
@@ -1859,15 +1969,15 @@ def acquire_passive_optimizer_grid(
                 gains.size, 2
             )
             done += 1
-            if progress is not None:
-                progress(done, total)
+            if progress is not None and frequency_index == frequencies.size - 1:
+                progress(shot + 1, total)
     return i_values, q_values, {
         "shots_per_point": shots,
         "frequency_points": int(frequencies.size),
         "gain_points": int(gains.size),
         "states": 2,
-        "host_programs": int(total),
-        "controller_programs": int(total),
+        "host_programs": int(program_count),
+        "controller_programs": int(program_count),
         "server_batches": 0,
         "records": int(shots * frequencies.size * gains.size * 2),
         "order": "shot_frequency_gain_state",
