@@ -799,3 +799,63 @@ def test_tls_step3b_smoke_runner_applies_latest_correction_once(monkeypatch):
         },
         "selected": [False, False, False, True, False, False, False, False],
     }]
+
+
+def test_tls_3pt_smoke_combines_active_reset_with_validated_flux_compensation(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        RESET_MODE="passive",
+        FLUX_TAIL_COMPENSATION_GAIN=0.1,
+        P1_RESONATOR={"run": True},
+        P2_QUBIT_SPEC_FULL={"run": True},
+        P3_STEP_RESPONSE={"run_fit": True, "run_correct": True},
+        P4_LONG_TIME={"run": True},
+        P5_SS_CAL={"run": True},
+        P6_3PT_T1={"run": False},
+        P6_FULL_T1={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "reset_mode": runner.RESET_MODE,
+        "gain": runner.FLUX_TAIL_COMPENSATION_GAIN,
+        "step6": dict(runner.P6_3PT_T1),
+        "selected": [
+            runner.P1_RESONATOR["run"],
+            runner.P2_QUBIT_SPEC_FULL["run"],
+            runner.P3_STEP_RESPONSE["run_fit"],
+            runner.P3_STEP_RESPONSE["run_correct"],
+            runner.P4_LONG_TIME["run"],
+            runner.P5_SS_CAL["run"],
+            runner.P6_3PT_T1["run"],
+            runner.P6_FULL_T1["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "TLSSpectroscopy", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_tls_3pt_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "reset_mode": "active",
+        "gain": 0.75,
+        "step6": {
+            "run": True,
+            "apply_flux_tail_compensation": True,
+            "shots": 100,
+            "dc_min": -20500,
+            "dc_max": -19500,
+            "dc_step": 500,
+            "freq_step_mhz": None,
+            "wall_clock_duration_min": None,
+            "Ts_us": 70.0,
+            "min_ref_contrast": 0.05,
+            "max_plot_t1_multiple": 20.0,
+        },
+        "selected": [False, False, False, False, False, False, True, False],
+    }]

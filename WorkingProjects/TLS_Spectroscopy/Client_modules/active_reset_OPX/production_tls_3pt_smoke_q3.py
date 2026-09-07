@@ -4,6 +4,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectrosc
 def main():
     runner.LIVE_PLOTS = False
     runner.RESET_MODE = "active"
+    runner.FLUX_TAIL_COMPENSATION_GAIN = 0.75
     runner.P1_RESONATOR["run"] = False
     runner.P2_QUBIT_SPEC_FULL["run"] = False
     runner.P3_STEP_RESPONSE["run_fit"] = False
@@ -13,7 +14,7 @@ def main():
     runner.P6_FULL_T1["run"] = False
     runner.P6_3PT_T1.update({
         "run": True,
-        "apply_flux_tail_compensation": False,
+        "apply_flux_tail_compensation": True,
         "shots": 100,
         "dc_min": -20500,
         "dc_max": -19500,
