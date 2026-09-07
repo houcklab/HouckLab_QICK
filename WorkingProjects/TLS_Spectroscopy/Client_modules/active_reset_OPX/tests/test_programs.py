@@ -1080,7 +1080,7 @@ def test_measurement_projection_preserves_raw_q_for_t1_payload_storage():
     assert not any(op[0] == "mathi" and op[1] == 2 for op in prog.asm)
 
 
-def test_loop_measurement_waits_for_qua_resonator_recovery():
+def test_loop_measurement_does_not_hide_ringdown_inside_the_measurement_callback():
     prog = RecordingProgram()
     prog.cfg = {}
     prog.reset_page = 1
@@ -1109,7 +1109,25 @@ def test_loop_measurement_waits_for_qua_resonator_recovery():
     OPXResetBenchmarkProgram._measure_project(prog, CAL, "loop")
 
     syncs = [operation for operation in prog.asm if operation[0] == "sync_all"]
-    assert syncs == [("sync_all", 5), ("sync_all", 1000)]
+    assert syncs == [("sync_all", 5)]
+
+
+def test_reset_ringdown_wait_covers_feedback_latency_and_resonator_depletion():
+    prog = RecordingProgram()
+    prog.reset_config = type(
+        "ResetConfig",
+        (),
+        {
+            "feedback_syncdelay_us": 8.0,
+            "loop_recovery_us": 10.0,
+        },
+    )()
+    prog.us2cycles = lambda value: int(round(100 * value))
+    prog.sync_all = lambda cycles: prog.asm.append(("sync_all", cycles))
+
+    OPXResetBenchmarkProgram._wait_reset_ringdown(prog)
+
+    assert prog.asm == [("sync_all", 1000)]
 
 
 def test_loop_reference_matches_the_runtime_feedback_timing():
@@ -1121,7 +1139,7 @@ def test_loop_reference_matches_the_runtime_feedback_timing():
         measure=lambda: events.append("measure"),
         prepare_excited=lambda: events.append("pi"),
         wait_read_delay=lambda: events.append("read_delay"),
-        wait_feedback_delay=lambda: events.append("feedback_delay"),
+        wait_reset_ringdown=lambda: events.append("ringdown"),
         wait_reset_settle=lambda: events.append("reset_settle"),
         wait_payload_alignment=lambda: events.append("payload_alignment"),
     )
@@ -1129,7 +1147,7 @@ def test_loop_reference_matches_the_runtime_feedback_timing():
     assert events == [
         "measure",
         "read_delay",
-        "feedback_delay",
+        "ringdown",
         "pi",
         "reset_settle",
         "measure",
@@ -1145,7 +1163,7 @@ def test_payload_reference_keeps_the_existing_preparation_sequence():
         measure=lambda: events.append("measure"),
         prepare_excited=lambda: events.append("pi"),
         wait_read_delay=lambda: events.append("read_delay"),
-        wait_feedback_delay=lambda: events.append("feedback_delay"),
+        wait_reset_ringdown=lambda: events.append("ringdown"),
         wait_reset_settle=lambda: events.append("reset_settle"),
         wait_payload_alignment=lambda: events.append("payload_alignment"),
     )

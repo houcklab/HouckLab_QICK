@@ -118,6 +118,7 @@ def emit_reset_state_machine(
     measure_next,
     play_pi,
     label_prefix,
+    wait_reset_ringdown=None,
 ):
     """Emit a bounded, early-exit tProc-v1 reset branch graph.
 
@@ -141,6 +142,7 @@ def emit_reset_state_machine(
 
     ground_label = f"{label_prefix}_GROUND"
     terminal_label = f"{label_prefix}_TERMINAL"
+    wait_reset_ringdown = wait_reset_ringdown or (lambda: None)
     prog.regwi(page, regs["attempts"], 0, "OPX reset attempts")
     prog.regwi(page, regs["pi_count"], 0, "OPX reset pi count")
     _write_thresholds(prog, page, regs, payload_calibration, "payload")
@@ -152,6 +154,7 @@ def emit_reset_state_machine(
         )
         no_pi_label = f"{label_prefix}_NO_PI_{attempt}"
         prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+        wait_reset_ringdown()
         prog.condj(page, regs["z"], no_pi_op, regs["excited"], no_pi_label)
         play_pi()
         prog.mathi(page, regs["pi_count"], regs["pi_count"], "+", 1)
@@ -191,6 +194,7 @@ def emit_unbounded_reset_state_machine(
     measure_next,
     play_pi,
     label_prefix,
+    wait_reset_ringdown=None,
 ):
     required = {"z", "ground", "excited", "attempts", "pi_count", "status"}
     missing = sorted(required - set(regs))
@@ -204,6 +208,7 @@ def emit_unbounded_reset_state_machine(
     payload_no_pi_label = f"{label_prefix}_PAYLOAD_NO_PI"
     loop_label = f"{label_prefix}_LOOP"
     loop_no_pi_label = f"{label_prefix}_LOOP_NO_PI"
+    wait_reset_ringdown = wait_reset_ringdown or (lambda: None)
     prog.regwi(page, regs["attempts"], 0, "OPX reset attempts")
     prog.regwi(page, regs["pi_count"], 0, "OPX reset pi count")
     _write_thresholds(prog, page, regs, payload_calibration, "payload")
@@ -212,6 +217,7 @@ def emit_unbounded_reset_state_machine(
         payload_calibration.assembly_plan()["excited_above"]
     )
     prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+    wait_reset_ringdown()
     prog.condj(
         page,
         regs["z"],
@@ -231,6 +237,7 @@ def emit_unbounded_reset_state_machine(
     )
     prog.label(loop_label)
     prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+    wait_reset_ringdown()
     prog.condj(
         page,
         regs["z"],

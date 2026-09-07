@@ -316,6 +316,7 @@ def emit_benchmark_shot(
     measure_verification,
     play_pi,
     label_prefix,
+    wait_reset_ringdown=None,
 ):
     park_up()
     if int(preparation):
@@ -335,6 +336,7 @@ def emit_benchmark_shot(
             measure_next=lambda: measure_project(loop_calibration, "loop"),
             play_pi=play_pi,
             label_prefix=label_prefix,
+            wait_reset_ringdown=wait_reset_ringdown,
         )
     elif scheme == "opx_unbounded":
         emit_unbounded_reset_state_machine(
@@ -346,6 +348,7 @@ def emit_benchmark_shot(
             measure_next=lambda: measure_project(loop_calibration, "loop"),
             play_pi=play_pi,
             label_prefix=label_prefix,
+            wait_reset_ringdown=wait_reset_ringdown,
         )
     elif scheme == "none":
         prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
@@ -378,6 +381,7 @@ def emit_t1_shot(
     prepare_reset=None,
     wait_diagnostic_hold=None,
     diagnostic_cycles=2,
+    wait_reset_ringdown=None,
 ):
     park_up()
     if bool(do_prepare):
@@ -403,6 +407,7 @@ def emit_t1_shot(
             measure_next=lambda: measure_project(loop_calibration, "loop"),
             play_pi=play_pi,
             label_prefix=label_prefix,
+            wait_reset_ringdown=wait_reset_ringdown,
         )
     elif scheme == "none":
         prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
@@ -458,6 +463,7 @@ def emit_payload_reset_shot(
     prepare_reset,
     play_pi,
     label_prefix,
+    wait_reset_ringdown=None,
 ):
     park_up()
     emit_payload()
@@ -478,6 +484,7 @@ def emit_payload_reset_shot(
             measure_next=lambda: measure_project(loop_calibration, "loop"),
             play_pi=play_pi,
             label_prefix=label_prefix,
+            wait_reset_ringdown=wait_reset_ringdown,
         )
     elif scheme != "none":
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
@@ -656,7 +663,7 @@ def emit_timing_matched_reference_shot(
     measure,
     prepare_excited,
     wait_read_delay,
-    wait_feedback_delay,
+    wait_reset_ringdown,
     wait_reset_settle,
     wait_payload_alignment,
 ):
@@ -666,7 +673,7 @@ def emit_timing_matched_reference_shot(
     if context == "loop":
         measure()
         wait_read_delay()
-        wait_feedback_delay()
+        wait_reset_ringdown()
         if bool(prep_excited):
             prepare_excited()
         wait_reset_settle()
@@ -736,8 +743,11 @@ class TimingMatchedReferenceProgram(AveragerProgram):
             measure=self._measure,
             prepare_excited=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             wait_read_delay=self._wait_read_delay,
-            wait_feedback_delay=lambda: self.sync_all(
-                self.us2cycles(float(self.cfg.get("opx_feedback_syncdelay_us", 2.0)))
+            wait_reset_ringdown=lambda: self.sync_all(
+                self.us2cycles(max(
+                    float(self.cfg.get("opx_feedback_syncdelay_us", 2.0)),
+                    float(self.cfg.get("opx_loop_recovery_us", 10.0)),
+                ))
             ),
             wait_reset_settle=lambda: self.sync_all(
                 self.us2cycles(float(self.cfg.get("opx_reset_settle_us", 0.05)))
@@ -864,8 +874,9 @@ class TimingMatchedReferenceDMemProgram(QickProgram):
         )
         if context == "loop":
             self._measure_raw()
-            self.sync_all(self.us2cycles(float(
-                self.reset_config.feedback_syncdelay_us
+            self.sync_all(self.us2cycles(max(
+                float(self.reset_config.feedback_syncdelay_us),
+                float(self.reset_config.loop_recovery_us),
             )))
             if prep_excited:
                 self.pulse(ch=self.cfg["qubit_ch"])
@@ -1052,13 +1063,12 @@ class OPXResetBenchmarkProgram(QickProgram):
             plan["combine_op"],
             self.reset_regs["status"],
         )
-        recovery_us = float(self.reset_config.feedback_syncdelay_us)
-        if context == "loop":
-            recovery_us = max(
-                recovery_us,
-                float(self.reset_config.loop_recovery_us),
-            )
-        self.sync_all(self.us2cycles(recovery_us))
+
+    def _wait_reset_ringdown(self):
+        self.sync_all(self.us2cycles(max(
+            float(self.reset_config.feedback_syncdelay_us),
+            float(self.reset_config.loop_recovery_us),
+        )))
 
     def _measure_verification(self):
         self.sync_all(self.us2cycles(float(self.reset_config.verification_delay_us)))
@@ -1127,6 +1137,7 @@ class OPXResetBenchmarkProgram(QickProgram):
             measure_verification=self._measure_verification,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix="OPX_RESET",
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1297,6 +1308,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                 self.us2cycles(float(self.cfg.get("opx_diagnostic_hold_us", 65.1)))
             ),
             diagnostic_cycles=int(self.cfg.get("opx_diagnostic_cycles", 2)),
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1341,6 +1353,7 @@ class OPXResetT1SweepProgram(OPXResetT1Program):
             prepare_reset=self._set_reset_pulse,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix=f"OPX_T1_SWEEP_{int(point_index)}",
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1485,6 +1498,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             prepare_reset=self._set_reset_pulse,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix=f"OPX_T1_FLUX_T{int(point_index)}",
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1666,6 +1680,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             prepare_reset=self._set_reset_pulse,
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix=label,
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -1849,6 +1864,7 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
             label_prefix=(
                 f"OPX_TLS_MEMORY_{label_context}_{sequence.upper()}"
             ),
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
@@ -2231,6 +2247,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
                 "_payload_label_prefix",
                 "OPX_PAYLOAD_RESET",
             ),
+            wait_reset_ringdown=self._wait_reset_ringdown,
         )
         if reset_scheme != "none":
             self.sync_all(

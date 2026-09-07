@@ -275,6 +275,52 @@ def test_unbounded_emitter_switches_comparison_orientation_after_payload():
     assert observed["attempts"] == 1
 
 
+def test_unbounded_emitter_waits_for_ringdown_before_every_corrective_attempt():
+    prog = RecordingProgram()
+
+    emit_unbounded_reset_state_machine(
+        prog,
+        page=0,
+        regs=REGS,
+        payload_calibration=CAL,
+        loop_calibration=CAL,
+        measure_next=lambda: prog.asm.append(("measure_next", REGS["z"])),
+        play_pi=lambda: prog.asm.append(("pulse",)),
+        label_prefix="RINGDOWN",
+        wait_reset_ringdown=lambda: prog.asm.append(("ringdown",)),
+    )
+
+    ringdown_indices = [
+        index for index, operation in enumerate(prog.asm)
+        if operation[0] == "ringdown"
+    ]
+    assert len(ringdown_indices) == 2
+    payload_ground = next(
+        index for index, operation in enumerate(prog.asm)
+        if operation[0] == "condj" and operation[-1] == "RINGDOWN_GROUND"
+    )
+    payload_no_pi = next(
+        index for index, operation in enumerate(prog.asm)
+        if operation[0] == "condj" and operation[-1] == "RINGDOWN_PAYLOAD_NO_PI"
+    )
+    loop_label = next(
+        index for index, operation in enumerate(prog.asm)
+        if operation == ("label", "RINGDOWN_LOOP")
+    )
+    loop_ground = next(
+        index for index, operation in enumerate(prog.asm)
+        if index > loop_label
+        and operation[0] == "condj"
+        and operation[-1] == "RINGDOWN_GROUND"
+    )
+    loop_no_pi = next(
+        index for index, operation in enumerate(prog.asm)
+        if operation[0] == "condj" and operation[-1] == "RINGDOWN_LOOP_NO_PI"
+    )
+    assert payload_ground < ringdown_indices[0] < payload_no_pi
+    assert loop_ground < ringdown_indices[1] < loop_no_pi
+
+
 def test_emitter_handles_the_reversed_assembly_orientation():
     reversed_cal = replace(CAL, c_int=-1, ground_threshold=-10, excited_threshold=10)
     # Canonical z is -raw; assembly acc is raw.  Therefore ground is acc >= +10
