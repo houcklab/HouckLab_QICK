@@ -276,18 +276,26 @@ def read_qick_dmem(soc, address, length):
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and address + length > dmem_size:
         raise ValueError("DMem read exceeds tProcessor data memory")
-    direct_memory = _direct_tproc_memory(soc.tproc)
-    if direct_memory is None:
-        values = soc.tproc.read_dmem(address, length)
-    else:
-        memory, offset = direct_memory
-        values = memory[offset + address:offset + address + length]
-    words = np.asarray(values).reshape(-1)
-    if words.size < length:
-        raise RuntimeError(
-            f"DMem reader returned {words.size} words; expected {length}"
-        )
-    return words[:length].astype(np.uint32).astype(np.uint64).tolist()
+    reader = getattr(soc.tproc, "read_dmem", None)
+    values = None
+    try:
+        if callable(reader):
+            values = reader(address, length)
+            words = np.asarray(values).reshape(-1)
+        else:
+            words = np.asarray(
+                [soc.tproc.single_read(addr=address + offset)
+                 for offset in range(length)]
+            )
+        if words.size < length:
+            raise RuntimeError(
+                f"DMem reader returned {words.size} words; expected {length}"
+            )
+        return words[:length].astype(np.uint32).astype(np.uint64).tolist()
+    finally:
+        release = getattr(values, "freebuffer", None)
+        if callable(release):
+            release()
 
 
 def write_qick_dmem(soc, address, values):
