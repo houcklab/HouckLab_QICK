@@ -308,6 +308,71 @@ def _compensated_hold_segments(
     return segments
 
 
+def _uniform_hold_cycle_axis(program, hold_times_us):
+    cycles = np.asarray([
+        program.us2cycles(float(hold_time))
+        for hold_time in hold_times_us
+    ], dtype=np.int64)
+    if cycles.size < 2:
+        return None
+    steps = np.diff(cycles)
+    if int(steps[0]) <= 0 or not np.all(steps == steps[0]):
+        return None
+    return cycles, int(steps[0])
+
+
+def _play_compensated_runtime_hold(
+    program,
+    segments,
+    *,
+    register_page,
+    hold_register,
+    elapsed_register,
+    boundary_register,
+    label_prefix,
+):
+    done_label = f"{label_prefix}_DONE"
+    elapsed_us = 0.0
+    elapsed_cycles = 0
+    for segment_index, (gain, duration_us) in enumerate(segments["hold_segs"]):
+        stop_us = elapsed_us + float(duration_us)
+        stop_cycles = int(program.us2cycles(stop_us))
+        full_label = f"{label_prefix}_FULL_{segment_index}"
+        ff_pulse.play_hard_step(program, gain)
+        program.sync_all(0)
+        program.safe_regwi(register_page, elapsed_register, elapsed_cycles)
+        program.safe_regwi(register_page, boundary_register, stop_cycles)
+        program.condj(
+            register_page,
+            hold_register,
+            ">",
+            boundary_register,
+            full_label,
+        )
+        program.math(
+            register_page,
+            boundary_register,
+            hold_register,
+            "-",
+            elapsed_register,
+        )
+        program.sync(register_page, boundary_register)
+        program.condj(
+            register_page,
+            hold_register,
+            "==",
+            hold_register,
+            done_label,
+        )
+        program.label(full_label)
+        duration_cycles = stop_cycles - elapsed_cycles
+        if duration_cycles > 0:
+            program.sync_all(duration_cycles)
+        elapsed_us = stop_us
+        elapsed_cycles = stop_cycles
+    program.label(done_label)
+
+
 def _ff_max_gain(program):
     try:
         return int(ff_pulse.PulseFunctions.ff_maxv(program, scaled=True))
@@ -857,9 +922,12 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             self.sync_all(self.us2cycles(delay_us))
 
     def _measure_flux_point(self, dc_index, time_index):
-        cfg = self.cfg
         segments = self.flux_points[int(dc_index)][int(time_index)]
         _play_flux_point(self, segments)
+        self._finish_flux_point(segments)
+
+    def _finish_flux_point(self, segments):
+        cfg = self.cfg
         self.sync_all(self.us2cycles(0.01))
         self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.01))
@@ -879,6 +947,41 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         if cooldown > 0:
             self.sync_all(self.us2cycles(cooldown))
 
+    def _runtime_time_loop(self, dc_index, label_suffix):
+        controls = self.controls
+        self.safe_regwi(
+            0,
+            controls["hold_cycles"],
+            int(self.hold_cycle_values[0]),
+        )
+        self.regwi(0, controls["time_loop"], self.hold_times.size - 1)
+        label = f"QUA_FLUX_TIME_{label_suffix}_{dc_index}"
+        self.label(label)
+        if self.order == "shot_frequency_dc_time":
+            self._rearm_park(max(
+                self.baseline_rearm_us,
+                self.post_readout_reset_us,
+            ))
+        segments = self.flux_points[int(dc_index)][0]
+        _play_compensated_runtime_hold(
+            self,
+            segments,
+            register_page=0,
+            hold_register=controls["hold_cycles"],
+            elapsed_register=controls["elapsed_cycles"],
+            boundary_register=controls["boundary_cycles"],
+            label_prefix=f"QUA_FLUX_HOLD_{label_suffix}_{dc_index}",
+        )
+        self._finish_flux_point(segments)
+        self.mathi(
+            0,
+            controls["hold_cycles"],
+            controls["hold_cycles"],
+            "+",
+            self.hold_cycle_step,
+        )
+        self.loopnz(0, controls["time_loop"], label)
+
     def _frequency_loop(self, dc_indices, label_suffix):
         self.safe_regwi(
             self.qubit_page,
@@ -890,13 +993,16 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.label(label)
         for dc_index in dc_indices:
             self._set_readout_frequency(dc_index)
-            for time_index in range(self.hold_times.size):
-                if self.order == "shot_frequency_dc_time":
-                    self._rearm_park(max(
-                        self.baseline_rearm_us,
-                        self.post_readout_reset_us,
-                    ))
-                self._measure_flux_point(dc_index, time_index)
+            if self.compact_compensated_time_loop:
+                self._runtime_time_loop(dc_index, label_suffix)
+            else:
+                for time_index in range(self.hold_times.size):
+                    if self.order == "shot_frequency_dc_time":
+                        self._rearm_park(max(
+                            self.baseline_rearm_us,
+                            self.post_readout_reset_us,
+                        ))
+                    self._measure_flux_point(dc_index, time_index)
         self.mathi(
             self.qubit_page,
             self.qubit_frequency_register,
@@ -917,9 +1023,6 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             int(cfg.get("qubit_gain", cfg.get("qubit_pi_gain", 0))),
         )
         park_segments = _declare_park(self, require_flux=True)
-        self.controls = _allocate_stream_counter(
-            self, ("shot_loop", "frequency_loop")
-        )
         self.qubit_page = self.ch_page(cfg["qubit_ch"])
         self.qubit_frequency_register = self.sreg(cfg["qubit_ch"], "freq")
         self.res_page = self.ch_page(cfg["res_ch"])
@@ -927,18 +1030,44 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.frequency_registers, self.frequency_step = _uniform_frequency_registers(
             self, self.frequencies
         )
-        self.flux_points = [
-            [
+        hold_axis = _uniform_hold_cycle_axis(self, self.hold_times)
+        self.compact_compensated_time_loop = bool(
+            bool(cfg.get("opx_hard_flux_steps", False))
+            and ff_pulse.load_compensation(cfg)
+            and hold_axis is not None
+        )
+        extra_controls = ["shot_loop", "frequency_loop"]
+        if self.compact_compensated_time_loop:
+            extra_controls.extend([
+                "time_loop",
+                "hold_cycles",
+                "elapsed_cycles",
+                "boundary_cycles",
+            ])
+        self.controls = _allocate_stream_counter(self, extra_controls)
+        if self.compact_compensated_time_loop:
+            self.hold_cycle_values, self.hold_cycle_step = hold_axis
+            self.flux_points = [[
                 _build_flux_point(
                     self,
                     target_gain=dc_gain,
-                    hold_us=hold_time,
-                    name_prefix=f"qua_flux_{dc_index}_{time_index}",
+                    hold_us=float(self.hold_times[-1]),
+                    name_prefix=f"qua_flux_{dc_index}_runtime",
                 )
-                for time_index, hold_time in enumerate(self.hold_times)
+            ] for dc_index, dc_gain in enumerate(self.dc_gains)]
+        else:
+            self.flux_points = [
+                [
+                    _build_flux_point(
+                        self,
+                        target_gain=dc_gain,
+                        hold_us=hold_time,
+                        name_prefix=f"qua_flux_{dc_index}_{time_index}",
+                    )
+                    for time_index, hold_time in enumerate(self.hold_times)
+                ]
+                for dc_index, dc_gain in enumerate(self.dc_gains)
             ]
-            for dc_index, dc_gain in enumerate(self.dc_gains)
-        ]
         self.regwi(0, self.controls["shot_loop"], self.shots - 1)
         _begin_park(self, park_segments)
         self.label("QUA_FLUX_SHOT")

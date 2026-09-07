@@ -121,6 +121,48 @@ class ResidentOptimizerRecorder(ResidentGridRecorder):
         self.drive_gain = 7
 
 
+class FluxGridRecorder(
+    qua_order.QUAFluxSpectroscopyProgram,
+    ResidentGridRecorder,
+):
+    def __init__(self):
+        ResidentGridRecorder.__init__(self)
+        self.cfg.update({
+            "read_pulse_freq": 7000.0,
+            "res_ch": 0,
+            "ro_chs": [0],
+            "qubit_ch": 1,
+            "qubit_nqz": 2,
+            "qubit_gain": 1000,
+            "ff_ch": 3,
+            "ff_park_gain": 1000,
+            "opx_hard_flux_steps": True,
+            "readout_thermalization_us": 0.0,
+            "flux_tail_compensation": {
+                "segment_edges_ns": [0.0, 1000.0, 2000.0],
+                "multipliers": [1.2, 1.1, 1.0],
+            },
+        })
+        self.frequencies = np.array([4300.0, 4301.0])
+        self.dc_gains = np.array([2000.0])
+        self.hold_times = np.array([1.0, 2.0, 3.0])
+        self.read_frequencies = np.array([7000.0])
+        self.order = "shot_frequency_dc_time"
+        self.shots = 1
+        self.baseline_rearm_us = 0.0
+        self.post_readout_reset_us = 0.0
+        self.readout_after_park = False
+        self.hard_steps = []
+
+    def freq2reg(self, value, **kwargs):
+        return int(round(float(value) * 10))
+
+    def math(self, page, destination, first, operator, second):
+        self.instructions.append(
+            ("math", page, destination, first, operator, second)
+        )
+
+
 def test_scalar_record_order_is_shot_then_declared_axes():
     assert scalar_record_order(2, (2, 3)) == [
         (shot, first, second)
@@ -938,6 +980,59 @@ def test_hard_flux_hold_preserves_piecewise_compensation_and_total_time():
         for frequency in range(2)
         for delay in range(2)
     ]
+
+
+def test_compensated_flux_time_axis_is_a_single_runtime_loop(monkeypatch):
+    recorder = FluxGridRecorder()
+    measures = []
+    monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
+    monkeypatch.setattr(qua_order, "_set_qubit_pulse", lambda *args: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_declare_park",
+        lambda program, require_flux=False: None,
+    )
+    monkeypatch.setattr(qua_order, "_begin_park", lambda *args: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_allocate_stream_counter",
+        lambda program, extra_names=(): {
+            "stream_count": 4,
+            "shot_loop": 5,
+            "frequency_loop": 6,
+            "time_loop": 7,
+            "hold_cycles": 8,
+            "elapsed_cycles": 9,
+            "boundary_cycles": 10,
+        },
+    )
+    monkeypatch.setattr(
+        qua_order,
+        "_measure_record",
+        lambda program, delay_us=0.0: measures.append(delay_us),
+    )
+    monkeypatch.setattr(
+        qua_order.ff_pulse,
+        "play_hard_step",
+        lambda program, gain: program.hard_steps.append(int(gain)),
+    )
+
+    qua_order.QUAFluxSpectroscopyProgram.make_program(recorder)
+
+    assert [gain for gain in recorder.hard_steps if gain != 1000] == [
+        2200,
+        2100,
+        2000,
+    ]
+    assert measures == [0.0]
+    assert ("label", "QUA_FLUX_TIME_ALL_DC_0") in recorder.instructions
+    assert (
+        "loopnz",
+        0,
+        7,
+        "QUA_FLUX_TIME_ALL_DC_0",
+    ) in recorder.instructions
+    assert recorder.instructions.count(("sync", 0, 10)) == 3
 
 
 def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_errors(
