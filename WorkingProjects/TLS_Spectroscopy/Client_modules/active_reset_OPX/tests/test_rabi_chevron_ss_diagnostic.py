@@ -88,6 +88,21 @@ def test_classify_diagnostic_identifies_nested_active_grid_failure():
     assert result == "nested_grid_programming"
 
 
+def test_classify_diagnostic_identifies_persistent_park_lifecycle():
+    result = classify_diagnostic(
+        ss_fidelity=0.9,
+        contrasts={
+            "legacy_passive_axis": 1.5,
+            "resident_passive_axis": 0.6,
+            "resident_active_grid_axis": 0.35,
+            "resident_active_grid_threshold": 0.15,
+            "resident_active_grid_refresh_axis": 1.4,
+            "resident_active_rowwise_axis": 1.5,
+        },
+    )
+    assert result == "persistent_park_lifecycle"
+
+
 def test_classify_diagnostic_identifies_active_reset_failure():
     result = classify_diagnostic(
         ss_fidelity=0.9,

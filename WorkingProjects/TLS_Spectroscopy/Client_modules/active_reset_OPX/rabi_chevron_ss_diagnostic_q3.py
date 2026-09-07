@@ -90,8 +90,18 @@ def classify_diagnostic(
     if not np.isfinite(float(ss_fidelity)) or float(ss_fidelity) < min_ss_fidelity:
         return "single_shot_or_pi_calibration"
     values = {key: float(value) for key, value in dict(contrasts).items()}
+    refreshed = values.get("resident_active_grid_refresh_axis")
+    rowwise = values["resident_active_rowwise_axis"]
+    grid = values["resident_active_grid_axis"]
     if (
-        values["resident_active_grid_axis"] >= min_blob_contrast
+        refreshed is not None
+        and rowwise >= min_blob_contrast
+        and grid <= 0.5 * rowwise
+        and refreshed >= 0.75 * rowwise
+    ):
+        return "persistent_park_lifecycle"
+    if (
+        grid >= min_blob_contrast
         and values["resident_active_grid_threshold"] <= max_flat_contrast
     ):
         return "payload_classifier"
@@ -100,11 +110,11 @@ def classify_diagnostic(
     if values["resident_passive_axis"] < min_blob_contrast:
         return "resident_grid_or_dmem"
     if (
-        values["resident_active_grid_axis"] < min_blob_contrast
-        and values["resident_active_rowwise_axis"] >= min_blob_contrast
+        grid < min_blob_contrast
+        and rowwise >= min_blob_contrast
     ):
         return "nested_grid_programming"
-    if values["resident_active_grid_axis"] < min_blob_contrast:
+    if grid < min_blob_contrast:
         return "active_reset_lifecycle"
     return "failure_not_reproduced"
 
@@ -306,6 +316,7 @@ def _plot(path, frequencies, gains, views, diagnosis):
         "legacy_passive",
         "resident_passive",
         "resident_active_grid",
+        "resident_active_grid_refresh",
         "resident_active_rowwise",
     )
     view_names = ("threshold", "legacy", "axis")
@@ -317,7 +328,7 @@ def _plot(path, frequencies, gains, views, diagnosis):
     fig, axes = plt.subplots(
         len(mode_names),
         len(view_names),
-        figsize=(13, 13),
+        figsize=(13, 16),
         constrained_layout=True,
         sharex=True,
         sharey=True,
@@ -505,6 +516,25 @@ def main():
     )
     raw.update({"resident_active_grid_i": active_i, "resident_active_grid_q": active_q})
     _save_raw(output_dir / "raw_iq.npz", raw)
+    print("stage=resident_active_grid_refresh")
+    refresh_cfg = dict(active_cfg)
+    refresh_cfg["opx_refresh_park_before_shot"] = True
+    refresh_i, refresh_q, refresh_telemetry = _resident_grid(
+        soc,
+        soccfg,
+        refresh_cfg,
+        frequencies,
+        gains,
+        pulses,
+        DIAGNOSTIC_SHOTS,
+        "opx_unbounded",
+        "resident active grid with park refresh",
+    )
+    raw.update({
+        "resident_active_grid_refresh_i": refresh_i,
+        "resident_active_grid_refresh_q": refresh_q,
+    })
+    _save_raw(output_dir / "raw_iq.npz", raw)
     print("stage=resident_active_rowwise")
     try:
         row_i, row_q, row_telemetry = _active_rowwise_grid(
@@ -547,6 +577,7 @@ def main():
         "legacy_passive": (legacy_i, legacy_q),
         "resident_passive": (resident_passive_i, resident_passive_q),
         "resident_active_grid": (active_i, active_q),
+        "resident_active_grid_refresh": (refresh_i, refresh_q),
         "resident_active_rowwise": (row_i, row_q),
     }
     views = {
@@ -584,6 +615,7 @@ def main():
         "resident_passive_axis": metrics["resident_passive"]["axis"]["contrast"],
         "resident_active_grid_axis": metrics["resident_active_grid"]["axis"]["contrast"],
         "resident_active_grid_threshold": metrics["resident_active_grid"]["threshold"]["contrast"],
+        "resident_active_grid_refresh_axis": metrics["resident_active_grid_refresh"]["axis"]["contrast"],
         "resident_active_rowwise_axis": metrics["resident_active_rowwise"]["axis"]["contrast"],
     }
     diagnosis = classify_diagnostic(
@@ -607,6 +639,14 @@ def main():
         "resident_passive_vs_active_grid_axis": matrix_comparison(
             views["resident_passive"]["axis"],
             views["resident_active_grid"]["axis"],
+        ),
+        "active_grid_vs_refresh_axis": matrix_comparison(
+            views["resident_active_grid"]["axis"],
+            views["resident_active_grid_refresh"]["axis"],
+        ),
+        "active_refresh_vs_rowwise_axis": matrix_comparison(
+            views["resident_active_grid_refresh"]["axis"],
+            views["resident_active_rowwise"]["axis"],
         ),
         "active_grid_vs_rowwise_axis": matrix_comparison(
             views["resident_active_grid"]["axis"],
@@ -642,6 +682,7 @@ def main():
         "telemetry": {
             "resident_passive": resident_passive_telemetry,
             "resident_active_grid": active_telemetry,
+            "resident_active_grid_refresh": refresh_telemetry,
             "resident_active_rowwise": row_telemetry,
             "no_drive": control_telemetry,
         },
