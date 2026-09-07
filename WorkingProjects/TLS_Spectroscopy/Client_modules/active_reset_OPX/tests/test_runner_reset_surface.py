@@ -67,3 +67,11 @@ def test_each_runner_loads_an_ignored_local_override_surface():
         source = path.read_text()
         assert "LOCAL_OVERRIDE_KEYS" in source, path.name
         assert "apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)" in source, path.name
+
+
+def test_gate_optimizer_grid_defaults_match_marty_qua():
+    tree = ast.parse((RUNNER_DIR / "GateCalibration.py").read_text())
+    values = literal_dicts(tree)
+    for name in ("P_READOUT_OPT", "P_QUBIT_OPT"):
+        assert values[name]["freq_points"] == 11
+        assert values[name]["gain_points"] == 11

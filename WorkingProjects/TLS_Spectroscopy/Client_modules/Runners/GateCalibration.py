@@ -130,10 +130,10 @@ P_READOUT_OPT = {
     "num_pi": 1,
     "pulse_type": "X180",
     "freq_span_mhz": 2.0,
-    "freq_points": 21,
+    "freq_points": 11,
     "gain_min": 200,
     "gain_max": 3000,
-    "gain_points": 21,
+    "gain_points": 11,
 }
 
 P_QUBIT_OPT = {
@@ -142,10 +142,10 @@ P_QUBIT_OPT = {
     "num_pi": 1,
     "pulse_type": "X180",
     "freq_span_mhz": 2.0,
-    "freq_points": 21,
+    "freq_points": 11,
     "gain_min": 9000,
     "gain_max": 15000,
-    "gain_points": 21,
+    "gain_points": 11,
     "x90_validation_shots": 500,
     "x90_validation_rounds": 5,
 }
