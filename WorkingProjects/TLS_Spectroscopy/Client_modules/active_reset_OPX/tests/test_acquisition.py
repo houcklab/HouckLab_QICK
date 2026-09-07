@@ -149,6 +149,42 @@ def test_single_read_fallback_handles_board_without_bulk_dmem_proxy():
     assert observed == RECORDS
 
 
+def test_block_prefers_server_bulk_dmem_bridge_over_per_word_proxy_reads():
+    class CountingTProc(FakeTProc):
+        def __init__(self):
+            super().__init__(RECORDS, done_values=[2], expose_bulk=False)
+            self.single_reads = 0
+
+        def single_read(self, addr):
+            self.single_reads += 1
+            return super().single_read(addr)
+
+    class ServerBulkSoc(FakeSoc):
+        def __init__(self, tproc):
+            super().__init__(tproc)
+            self.bulk_reads = []
+
+        def read_qick_dmem(self, address, length):
+            self.bulk_reads.append((int(address), int(length)))
+            return self.tproc.memory[
+                int(address):int(address) + int(length)
+            ].tolist()
+
+    tproc = CountingTProc()
+    soc = ServerBulkSoc(tproc)
+    observed = run_dmem_block(
+        soc,
+        FakeProgram(reps=2),
+        timeout_s=1.0,
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert observed == RECORDS
+    assert soc.bulk_reads == [(32, 2 * RECORD_WORDS)]
+    assert tproc.single_reads == 1
+
+
 def test_timeout_fails_closed_and_preserves_complete_partial_records():
     tproc = FakeTProc(RECORDS, done_values=[1, 1, 1])
     soc = FakeSoc(tproc)

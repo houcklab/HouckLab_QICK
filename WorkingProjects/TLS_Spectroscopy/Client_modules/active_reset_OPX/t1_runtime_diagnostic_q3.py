@@ -64,9 +64,9 @@ def estimate_stream_overhead(
     }
 
 
-def _callable_reader(owner):
+def _callable_reader(owner, name):
     try:
-        reader = getattr(owner, "read_dmem", None)
+        reader = getattr(owner, str(name), None)
     except Exception:
         return None
     return reader if callable(reader) else None
@@ -110,8 +110,13 @@ def main():
     bank_records = (dmem_words - RECORD_BASE) // (2 * RECORD_WORDS)
     measured_words = int(bank_records * RECORD_WORDS)
     bulk = {}
-    for name, owner in (("tproc", soc.tproc), ("soc", soc)):
-        reader = _callable_reader(owner)
+    readers = (
+        ("server_bridge", soc, "read_qick_dmem"),
+        ("tproc", soc.tproc, "read_dmem"),
+        ("soc", soc, "read_dmem"),
+    )
+    for name, owner, method_name in readers:
+        reader = _callable_reader(owner, method_name)
         if reader is None:
             bulk[name] = {"available": False}
             continue

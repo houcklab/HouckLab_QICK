@@ -268,6 +268,28 @@ def _tproc_dmem_size(soc):
         return None
 
 
+def read_qick_dmem(soc, address, length):
+    address = int(address)
+    length = int(length)
+    if address < 0 or length <= 0:
+        raise ValueError("DMem address must be non-negative and length must be positive")
+    dmem_size = _tproc_dmem_size(soc)
+    if dmem_size is not None and address + length > dmem_size:
+        raise ValueError("DMem read exceeds tProcessor data memory")
+    direct_memory = _direct_tproc_memory(soc.tproc)
+    if direct_memory is None:
+        values = soc.tproc.read_dmem(address, length)
+    else:
+        memory, offset = direct_memory
+        values = memory[offset + address:offset + address + length]
+    words = np.asarray(values).reshape(-1)
+    if words.size < length:
+        raise RuntimeError(
+            f"DMem reader returned {words.size} words; expected {length}"
+        )
+    return words[:length].astype(np.uint32).astype(np.uint64).tolist()
+
+
 def _abort_resident_readout(soc):
     try:
         soc.tproc.reset()
@@ -559,6 +581,10 @@ def install_qicksoc_batch_methods(qicksoc_class=None):
             command_mode=command_mode,
         )
 
+    def dmem_read(self, address, length):
+        return read_qick_dmem(self, address, length)
+
     qicksoc_class.acquire_qick_program_batch = program_batch
     qicksoc_class.acquire_qick_resident_readout = resident_readout
+    qicksoc_class.read_qick_dmem = dmem_read
     return qicksoc_class

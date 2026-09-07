@@ -5,6 +5,7 @@ from WorkingProjects.TLS_Spectroscopy.pynq.readout_batch import (
     acquire_qick_program_batch,
     acquire_qick_resident_readout,
     install_qicksoc_batch_methods,
+    read_qick_dmem,
 )
 
 
@@ -664,7 +665,22 @@ def test_resident_server_drains_stream_before_readout_backpressure_overflows():
     )
 
 
-def test_installer_adds_both_batch_methods_to_qicksoc_class():
+def test_server_bulk_dmem_reader_returns_plain_unsigned_words():
+    class TProc:
+        def read_dmem(self, address, length):
+            assert (address, length) == (32, 2)
+            return np.asarray([0, -1], dtype=np.int64)
+
+    class Soc:
+        tproc = TProc()
+
+        def get_cfg(self):
+            return {"tprocs": [{"dmem_size": 4096}]}
+
+    assert read_qick_dmem(Soc(), 32, 2) == [0, 4294967295]
+
+
+def test_installer_adds_all_qick_server_methods_to_qicksoc_class():
     class Soc:
         pass
 
@@ -672,6 +688,7 @@ def test_installer_adds_both_batch_methods_to_qicksoc_class():
     assert result is Soc
     assert callable(Soc.acquire_qick_program_batch)
     assert callable(Soc.acquire_qick_resident_readout)
+    assert callable(Soc.read_qick_dmem)
 
 
 def test_resident_server_rejects_handshake_outside_tproc_memory():

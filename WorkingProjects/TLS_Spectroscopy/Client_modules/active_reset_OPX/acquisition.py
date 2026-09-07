@@ -66,6 +66,14 @@ def _single_read(tproc, address):
 def _read_words(soc, address, length):
     address, length = int(address), int(length)
     tproc = soc.tproc
+    server_reader = getattr(soc, "read_qick_dmem", None)
+    if callable(server_reader):
+        try:
+            data = np.asarray(server_reader(address, length)).reshape(-1)
+            if data.size >= length:
+                return data[:length]
+        except Exception:
+            pass
     for owner in (tproc, soc):
         reader = getattr(owner, "read_dmem", None)
         if callable(reader):
