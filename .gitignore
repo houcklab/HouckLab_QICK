@@ -31,9 +31,8 @@ tls-spec-env/
 WorkingProjects/TLS_Spectroscopy/tmp/
 WorkingProjects/TLS_Spectroscopy/Client_modules/logs/
 WorkingProjects/TLS_Spectroscopy/Client_modules/**/*.local.py
+WorkingProjects/TLS_Spectroscopy/*.md
+WorkingProjects/TLS_Spectroscopy/Client_modules/active_reset_OPX/*.md
+WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/
 WorkingProjects/TLS_Spectroscopy/Client_modules/active_reset_OPX/tests/
-WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/test_flux_park_lifecycle.py
-WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/test_local_settings.py
-WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/test_t1_vs_flux_outputs.py
-WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/test_tls_spectroscopy_correction_switch.py
 .worktrees/
