@@ -59,12 +59,12 @@ YOKO_VISA = "USB0::0x0B21::0x0039::91S929899::0::INSTR"
 YOKO_VOLTAGE = 0.0
 
 FLUX_FIT_PARAMS = [
-    8.08494399834,
-    0.277728945221,
-    41333.4537186,
-    -22233.4667642,
-    0.716006148725,
-    -1.71802166161e-05,
+    4.02378901539,
+    0.449998775338,
+    50575.939402,
+    -17654.3599163,
+    0.369350889718,
+    -4.72847424324e-05,
 ]
 
 BASELINE_DC_OFFSET = -25146
@@ -134,8 +134,8 @@ P3_STEP_RESPONSE = {
 }
 
 P4_LONG_TIME = {
-    "run": True,
-    "advanced_fit": True,
+    "run": False,
+    "advanced_fit": False,
     "shots": 100,
     "relax_delay_us": 500.0,
     "spec_amp": 25000,
@@ -154,11 +154,10 @@ P4_LONG_TIME = {
 }
 
 P5_SS_CAL = {
-    "run": False,
+    "run": True,
     "ss_shots": 1000,
     "min_F": 0.60,
 }
-
 
 P6_3PT_T1 = {
     "run": False,
@@ -173,7 +172,6 @@ P6_3PT_T1 = {
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
 }
-
 
 P6_FULL_T1 = {
     "run": False,

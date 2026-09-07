@@ -125,7 +125,7 @@ P_RABI_CHEVRON_SS = {
 }
 
 P_READOUT_OPT = {
-    "run": False,
+    "run": True,
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",
