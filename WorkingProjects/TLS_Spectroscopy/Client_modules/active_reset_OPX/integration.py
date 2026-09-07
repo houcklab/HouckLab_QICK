@@ -28,6 +28,10 @@ from .records import (
     TerminalStatus,
     max_records,
 )
+from .three_point import (
+    canonicalize_bidirectional_records,
+    distributed_p0_reference_indices,
+)
 
 
 def runtime_bundle(cfg):
@@ -206,18 +210,23 @@ def acquire_t1_3pt_iq(
     total_shots = int(
         cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
     )
-    if total_shots <= 0:
-        raise ValueError("three-point shots must be positive")
+    if total_shots < 2:
+        raise ValueError("three-point shots must be at least two")
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
     records_per_shot = int(rounded.size) * 3
+    p0_reference_shot_indices = distributed_p0_reference_indices(total_shots)
     run_cfg = dict(cfg)
     run_cfg.update({
         "opx_reset_scheme": reset_scheme,
         "opx_t1_3pt_shots": total_shots,
         "opx_t1_3pt_dc_gains": rounded.tolist(),
         "opx_t1_3pt_wait_us": wait_us,
+        "opx_t1_3pt_dc_scan_order": "alternating_bidirectional",
+        "opx_t1_3pt_p0_reference_shot_indices": list(
+            p0_reference_shot_indices
+        ),
         "ff_hold": wait_us,
         "t1_wait_us": wait_us,
         "opx_resident_dmem_stream": True,
@@ -235,22 +244,41 @@ def acquire_t1_3pt_iq(
         run_cfg,
         total_shots=total_shots,
     )
-    i_values = np.asarray(
+    i_records = np.asarray(
         [record.final_i for record in block], dtype=float
-    ).reshape(total_shots, rounded.size, 3).transpose(2, 1, 0)
-    q_values = np.asarray(
+    ).reshape(total_shots, rounded.size, 3)
+    q_records = np.asarray(
         [record.final_q for record in block], dtype=float
-    ).reshape(total_shots, rounded.size, 3).transpose(2, 1, 0)
+    ).reshape(total_shots, rounded.size, 3)
+    i_values = canonicalize_bidirectional_records(i_records).transpose(2, 1, 0)
+    q_values = canonicalize_bidirectional_records(q_records).transpose(2, 1, 0)
     read_cycles = last_program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
+    up_shots = (total_shots + 1) // 2
+    down_shots = total_shots // 2
+    p0_up_sweeps = sum(
+        value % 2 == 0 for value in p0_reference_shot_indices
+    )
+    p0_down_sweeps = len(p0_reference_shot_indices) - p0_up_sweeps
     return i_values / int(read_cycles), q_values / int(read_cycles), {
         "shots_per_dc": int(total_shots),
         "dc_points": int(rounded.size),
         "records": int(len(block)),
         "blocks": 1,
         "resident_stream": True,
-        "order": "shot_dc_P0_P1_Ps",
+        "order": "shot_alternating_dc_P0_sparse_P1_Ps",
+        "dc_scan_order": "alternating_bidirectional",
+        "dc_scan_up_shots": int(up_shots),
+        "dc_scan_down_shots": int(down_shots),
+        "p0_mode": "distributed_scalar",
+        "p0_reference_sweeps": int(len(p0_reference_shot_indices)),
+        "p0_reference_up_sweeps": int(p0_up_sweeps),
+        "p0_reference_down_sweeps": int(p0_down_sweeps),
+        "p0_reference_shot_indices": tuple(p0_reference_shot_indices),
+        "p0_placeholder_records": int(
+            (total_shots - len(p0_reference_shot_indices)) * rounded.size
+        ),
         "read_length_cycles": int(read_cycles),
     }
 

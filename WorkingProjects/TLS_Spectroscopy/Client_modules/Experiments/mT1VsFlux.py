@@ -1,5 +1,7 @@
 import csv
+import io
 import os
+import tempfile
 import time
 import datetime
 
@@ -23,6 +25,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integratio
     acquire_t1_flux_sweep_iq,
     acquire_t1_iq,
     classify_payload_iq,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.three_point import (
+    distributed_p0_reference_indices,
+    reduce_bidirectional_states,
 )
 
 
@@ -176,17 +182,102 @@ def _csv_base_from_pickle(pname):
     return pname[:-4] if str(pname).endswith(".pkl") else str(pname)
 
 
-def _write_csv_rows(csv_path, fieldnames, rows):
-    tmp = str(csv_path) + ".tmp"
-    with open(tmp, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+def _serialize_csv_rows(fieldnames, rows, include_header):
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    if include_header:
         writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, csv_path)
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue().encode("utf-8")
+
+
+def _atomic_write_bytes(path, payload):
+    path = os.fspath(path)
+    directory = os.path.dirname(os.path.abspath(path))
+    file_descriptor, temporary_path = tempfile.mkstemp(
+        prefix=os.path.basename(path) + ".",
+        suffix=".tmp",
+        dir=directory,
+    )
+    try:
+        with os.fdopen(file_descriptor, "wb") as output:
+            written = output.write(payload)
+            if written != len(payload):
+                raise OSError(f"short CSV write: {written} of {len(payload)} bytes")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+
+
+def _write_csv_rows(csv_path, fieldnames, rows):
+    _atomic_write_bytes(
+        csv_path,
+        _serialize_csv_rows(fieldnames, rows, include_header=True),
+    )
     return csv_path
+
+
+def _append_csv_rows(csv_path, fieldnames, rows):
+    csv_path = os.fspath(csv_path)
+    lock_path = csv_path + ".lock"
+    try:
+        lock_descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        )
+    except FileExistsError as exc:
+        raise RuntimeError(f"CSV append is already locked: {lock_path}") from exc
+    try:
+        os.write(lock_descriptor, str(os.getpid()).encode("ascii"))
+        os.close(lock_descriptor)
+        has_header = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
+        if not has_header:
+            _write_csv_rows(csv_path, fieldnames, rows)
+            return csv_path
+        with open(csv_path, newline="", encoding="utf-8") as csv_file:
+            existing_header = next(csv.reader(csv_file), None)
+        if existing_header != list(fieldnames):
+            raise ValueError(
+                "existing CSV header does not match the current wall-clock schema"
+            )
+        payload = _serialize_csv_rows(fieldnames, rows, include_header=False)
+        with open(csv_path, "r+b") as csv_file:
+            csv_file.seek(0, os.SEEK_END)
+            original_size = csv_file.tell()
+            csv_file.seek(-1, os.SEEK_END)
+            if csv_file.read(1) != b"\n":
+                raise ValueError(
+                    "existing CSV is truncated and cannot be appended safely"
+                )
+            csv_file.seek(0, os.SEEK_END)
+            try:
+                written = csv_file.write(payload)
+                if written != len(payload):
+                    raise OSError(
+                        f"short CSV append: {written} of {len(payload)} bytes"
+                    )
+                csv_file.flush()
+                os.fsync(csv_file.fileno())
+            except BaseException:
+                csv_file.seek(original_size)
+                csv_file.truncate()
+                csv_file.flush()
+                os.fsync(csv_file.fileno())
+                raise
+        return csv_path
+    finally:
+        try:
+            os.close(lock_descriptor)
+        except OSError:
+            pass
+        try:
+            os.unlink(lock_path)
+        except FileNotFoundError:
+            pass
 
 
 def _save_flux_curve_csv(csv_path, dc_vec, columns, extra_columns=None):
@@ -260,17 +351,41 @@ def get_wall_clock_repeat_full_spec(exp):
                 "scalar_columns": scalar_columns,
                 "array_columns": {"population_pe": data["ss_data"]}}
     if isinstance(exp, T13PointVsFlux):
-        return {"axes": {},
-                "scalar_columns": {
-                    "Ts_ns": float(int(exp.Ts_ns)),
-                    "Ts_effective_ns": float(data["Ts_effective_ns"]),
-                    "three_point_ref_hold_us": float(data["three_point_ref_hold_us"]),
-                    "three_point_matched_refs": float(
-                        bool(data["three_point_matched_refs"])),
-                    "P0": data["P0"], "P1": data["P1"], "Ps": data["Ps"],
-                    "ref_contrast_3pt": data["ref_contrast_3pt"],
-                    "T1_3pt_valid_mask": data["T1_3pt_valid_mask"]},
-                "array_columns": {}}
+        scalar_columns = {
+            "Ts_ns": float(int(exp.Ts_ns)),
+            "Ts_effective_ns": float(data["Ts_effective_ns"]),
+            "three_point_ref_hold_us": float(data["three_point_ref_hold_us"]),
+            "three_point_matched_refs": float(
+                bool(data["three_point_matched_refs"])
+            ),
+            "P0": data["P0"],
+            "P1": data["P1"],
+            "Ps": data["Ps"],
+            "ref_contrast_3pt": data["ref_contrast_3pt"],
+            "T1_3pt_valid_mask": data["T1_3pt_valid_mask"],
+        }
+        for key in (
+            "P0_scan_up",
+            "P0_scan_down",
+            "P1_scan_up",
+            "P1_scan_down",
+            "Ps_scan_up",
+            "Ps_scan_down",
+            "T1_3pt_us_scan_up",
+            "T1_3pt_us_scan_down",
+            "inv_T1_3pt_per_us_scan_up",
+            "inv_T1_3pt_per_us_scan_down",
+            "inv_T1_3pt_per_us_scan_direction_delta",
+            "T1_3pt_valid_mask_scan_up",
+            "T1_3pt_valid_mask_scan_down",
+        ):
+            if key in data:
+                scalar_columns[key] = data[key]
+        return {
+            "axes": {},
+            "scalar_columns": scalar_columns,
+            "array_columns": {},
+        }
     return None
 
 
@@ -318,7 +433,12 @@ def save_wall_clock_repeat_outputs(csv_base_path, dc_vec, run_metadata_list,
     return csv_path, png_path
 
 
-def save_wall_clock_repeat_full_outputs(csv_base_path, file_tag, per_run_full_data):
+def save_wall_clock_repeat_full_outputs(
+    csv_base_path,
+    file_tag,
+    per_run_full_data,
+    append=False,
+):
     if not per_run_full_data:
         return None
     meta_keys = ["wall_clock_run_index", "wall_clock_run_started_at_iso",
@@ -378,6 +498,8 @@ def save_wall_clock_repeat_full_outputs(csv_base_path, file_tag, per_run_full_da
                                   else np.nan)
                     rows.append(row)
     csv_path = f"{csv_base_path}_{file_tag}_vs_wall_clock_full.csv"
+    if append:
+        return _append_csv_rows(csv_path, fieldnames, rows)
     return _write_csv_rows(csv_path, fieldnames, rows)
 
 
@@ -722,6 +844,20 @@ class T13PointVsFlux(_T1VsFluxBase):
                 "neither vanished nor stayed put); production uses 60 us.")
         self.Ts_ns = int(Ts_ns)
         self.data["Ts_ns"] = self.Ts_ns
+        if bool(self.cfg.get("qua_shot_order", False)):
+            if self.shots < 2:
+                raise ValueError(
+                    "bidirectional acquisition requires at least two shots"
+                )
+            p0_indices = distributed_p0_reference_indices(self.shots)
+            self.data.update({
+                "dc_scan_order": "alternating_bidirectional",
+                "dc_scan_up_shots": (self.shots + 1) // 2,
+                "dc_scan_down_shots": self.shots // 2,
+                "p0_mode": "distributed_scalar",
+                "p0_reference_sweeps": len(p0_indices),
+                "p0_reference_shot_indices": p0_indices,
+            })
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         dc_vec = self.dc_vec
@@ -774,7 +910,13 @@ class T13PointVsFlux(_T1VsFluxBase):
                     q_values,
                     self.calib_params,
                 )
-            P0, P1, Ps = np.mean(states, axis=2)
+            directional = reduce_bidirectional_states(
+                states,
+                telemetry["p0_reference_shot_indices"],
+            )
+            P0 = directional["P0"]
+            P1 = directional["P1"]
+            Ps = directional["Ps"]
             self.acquisition_telemetry.append(dict(telemetry))
             self.data["acquisition_order"] = str(telemetry["order"])
             self.data["acquisition_telemetry"] = self.acquisition_telemetry
@@ -784,6 +926,7 @@ class T13PointVsFlux(_T1VsFluxBase):
             self.point_visit_orders = [list(range(len(dc_vec)))]
             self.keep_fraction = np.ones(len(dc_vec) * 3, dtype=float)
         else:
+            directional = None
             start_time = time.time()
             specs = []
             for dc in dc_vec:
@@ -817,6 +960,55 @@ class T13PointVsFlux(_T1VsFluxBase):
                           "inv_T1_3pt_per_us": inv,
                           "T1_3pt_valid_mask": est["valid_mask"],
                           "T1_3pt_max_plot_us": est["max_t1_us"]})
+        if directional is not None:
+            est_up = _compute_3pt_t1(
+                directional["P0_scan_up"],
+                directional["P1_scan_up"],
+                directional["Ps_scan_up"],
+                Ts_eff_ns,
+                min_ref_contrast=self.min_ref_contrast,
+                max_t1_multiple=self.max_plot_t1_multiple,
+            )
+            est_down = _compute_3pt_t1(
+                directional["P0_scan_down"],
+                directional["P1_scan_down"],
+                directional["Ps_scan_down"],
+                Ts_eff_ns,
+                min_ref_contrast=self.min_ref_contrast,
+                max_t1_multiple=self.max_plot_t1_multiple,
+            )
+            inv_up = _safe_inverse_t1_us(est_up["T1_3pt_us_plot"])
+            inv_down = _safe_inverse_t1_us(est_down["T1_3pt_us_plot"])
+            direction_delta = inv_up - inv_down
+            self.data.update({
+                "dc_scan_order": "alternating_bidirectional",
+                "dc_scan_up_shots": directional["dc_scan_up_shots"],
+                "dc_scan_down_shots": directional["dc_scan_down_shots"],
+                "p0_mode": "distributed_scalar",
+                "p0_reference_sweeps": directional["p0_reference_sweeps"],
+                "p0_reference_up_sweeps": directional[
+                    "p0_reference_up_sweeps"
+                ],
+                "p0_reference_down_sweeps": directional[
+                    "p0_reference_down_sweeps"
+                ],
+                "p0_reference_shot_indices": telemetry[
+                    "p0_reference_shot_indices"
+                ],
+                "P0_scan_up": directional["P0_scan_up"],
+                "P0_scan_down": directional["P0_scan_down"],
+                "P1_scan_up": directional["P1_scan_up"],
+                "P1_scan_down": directional["P1_scan_down"],
+                "Ps_scan_up": directional["Ps_scan_up"],
+                "Ps_scan_down": directional["Ps_scan_down"],
+                "T1_3pt_us_scan_up": est_up["T1_3pt_us_plot"],
+                "T1_3pt_us_scan_down": est_down["T1_3pt_us_plot"],
+                "inv_T1_3pt_per_us_scan_up": inv_up,
+                "inv_T1_3pt_per_us_scan_down": inv_down,
+                "inv_T1_3pt_per_us_scan_direction_delta": direction_delta,
+                "T1_3pt_valid_mask_scan_up": est_up["valid_mask"],
+                "T1_3pt_valid_mask_scan_down": est_down["valid_mask"],
+            })
 
         if self.write_outputs:
             base = _csv_base_from_pickle(self.pname)
@@ -847,6 +1039,27 @@ class T13PointVsFlux(_T1VsFluxBase):
             fig.savefig(self.iname[:-4] + "_3pt_invT1.png", bbox_inches="tight")
             plt.close(fig)
 
+            if directional is not None:
+                fig, axes = plt.subplots(
+                    2,
+                    1,
+                    sharex=True,
+                    constrained_layout=True,
+                )
+                axes[0].plot(dc_vec, inv_up, "-", label="scan up")
+                axes[0].plot(dc_vec, inv_down, "-", label="scan down")
+                axes[0].set_ylabel("1 / T1 (1/us)")
+                axes[0].legend()
+                axes[1].plot(dc_vec, direction_delta, "-")
+                axes[1].axhline(0.0, color="k", linewidth=1)
+                axes[1].set_xlabel("Flux DC target")
+                axes[1].set_ylabel("up - down (1/us)")
+                fig.savefig(
+                    self.iname[:-4] + "_3pt_scan_direction.png",
+                    bbox_inches="tight",
+                )
+                plt.close(fig)
+
             invalid_mask = est["valid_mask"] == 0
             if np.any(invalid_mask):
                 fig, ax = plt.subplots(constrained_layout=True)
@@ -862,14 +1075,39 @@ class T13PointVsFlux(_T1VsFluxBase):
                 fig.savefig(self.iname[:-4] + "_3pt_validity.png", bbox_inches="tight")
                 plt.close(fig)
 
+            summary_columns = {
+                "P0": P0,
+                "P1": P1,
+                "Ps": Ps,
+                "ref_contrast": est["contrast"],
+                "pe_estimator": est["pe"],
+                "T1_3pt_us_raw": est["T1_3pt_us_raw"],
+                "T1_3pt_us_plot": est["T1_3pt_us_plot"],
+                "inv_T1_3pt_per_us": inv,
+                "valid_mask": est["valid_mask"],
+            }
+            if directional is not None:
+                summary_columns.update({
+                    "P0_scan_up": directional["P0_scan_up"],
+                    "P0_scan_down": directional["P0_scan_down"],
+                    "P1_scan_up": directional["P1_scan_up"],
+                    "P1_scan_down": directional["P1_scan_down"],
+                    "Ps_scan_up": directional["Ps_scan_up"],
+                    "Ps_scan_down": directional["Ps_scan_down"],
+                    "T1_3pt_us_scan_up": est_up["T1_3pt_us_plot"],
+                    "T1_3pt_us_scan_down": est_down["T1_3pt_us_plot"],
+                    "inv_T1_3pt_per_us_scan_up": inv_up,
+                    "inv_T1_3pt_per_us_scan_down": inv_down,
+                    "inv_T1_3pt_per_us_scan_direction_delta": direction_delta,
+                    "valid_mask_scan_up": est_up["valid_mask"],
+                    "valid_mask_scan_down": est_down["valid_mask"],
+                })
             _save_flux_curve_csv(
-                base + "_3pt_summary.csv", dc_vec,
-                {"P0": P0, "P1": P1, "Ps": Ps,
-                 "ref_contrast": est["contrast"], "pe_estimator": est["pe"],
-                 "T1_3pt_us_raw": est["T1_3pt_us_raw"],
-                 "T1_3pt_us_plot": est["T1_3pt_us_plot"],
-                 "inv_T1_3pt_per_us": inv, "valid_mask": est["valid_mask"]},
-                extra_columns=self.repeat_metadata)
+                base + "_3pt_summary.csv",
+                dc_vec,
+                summary_columns,
+                extra_columns=self.repeat_metadata,
+            )
 
         self.data["time"] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if self.write_outputs:

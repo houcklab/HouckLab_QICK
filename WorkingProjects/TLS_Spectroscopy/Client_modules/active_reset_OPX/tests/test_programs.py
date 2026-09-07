@@ -856,6 +856,49 @@ def test_three_point_flux_cycle_returns_to_park_after_requested_wait(monkeypatch
     ]
 
 
+def test_three_point_placeholder_preserves_fixed_stream_shape_without_a_measurement():
+    prog = RecordingProgram()
+    prog.reset_page = 1
+    prog.reset_regs = {"i": 6, "q": 7, "address": 9}
+
+    OPXResetT13PointProgram._emit_placeholder_payload_record(prog)
+
+    assert prog.asm == [
+        ("regwi", 6, 0),
+        ("regwi", 7, 0),
+        ("memw", 6, 9),
+        ("mathi", 9, 9, "+", 1),
+        ("memw", 7, 9),
+        ("mathi", 9, 9, "+", 1),
+    ]
+
+
+def test_three_point_p0_reference_flag_compares_the_distributed_shot_schedule():
+    prog = RecordingProgram()
+    prog.cfg = {"opx_t1_3pt_p0_reference_shot_indices": [0, 1, 8, 9]}
+    controls = {"shot_index": 4, "branch_flag": 5, "p0_target": 6}
+
+    OPXResetT13PointProgram._set_p0_reference_flag(prog, controls, "P0_REF")
+
+    assert [entry for entry in prog.asm if entry[:2] == ("regwi", 6)] == [
+        ("regwi", 6, 0),
+        ("regwi", 6, 1),
+        ("regwi", 6, 8),
+        ("regwi", 6, 9),
+    ]
+    assert [
+        entry for entry in prog.asm
+        if entry[:4] == ("condj", 4, "==", 6)
+    ] == [
+        ("condj", 4, "==", 6, "P0_REF_ENABLED"),
+        ("condj", 4, "==", 6, "P0_REF_ENABLED"),
+        ("condj", 4, "==", 6, "P0_REF_ENABLED"),
+        ("condj", 4, "==", 6, "P0_REF_ENABLED"),
+    ]
+    assert ("regwi", 5, 0) in prog.asm
+    assert ("regwi", 5, 1) in prog.asm
+
+
 @pytest.mark.parametrize(
     ("sequence", "expected"),
     (

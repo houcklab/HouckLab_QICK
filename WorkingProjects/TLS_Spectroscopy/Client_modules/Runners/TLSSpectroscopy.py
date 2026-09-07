@@ -707,7 +707,6 @@ MAX_CONSECUTIVE_RUN_FAILURES = 3
 
 def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
     series_start = datetime.now()
-    per_run_full_data = []
     base_path = None
     csv_path = None
     run_index = 0
@@ -768,7 +767,7 @@ def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
                       f"CSV is still the primary record.")
         spec = get_wall_clock_repeat_spec(exp)
         full_spec = get_wall_clock_repeat_full_spec(exp) or {}
-        per_run_full_data.append({
+        run_full_data = {
             "run_metadata": repeat_metadata,
             "dc_vec": np.asarray(exp.dc_vec, dtype=float),
             "metric_column_name": spec["metric_column_name"],
@@ -780,8 +779,13 @@ def _run_one_stop_t1(factory, wall_clock_s, recalibrate=None, reprobe_s=None):
             "axes": full_spec.get("axes", {}),
             "scalar_columns": full_spec.get("scalar_columns", {}),
             "array_columns": full_spec.get("array_columns", {}),
-        })
-        csv_path = save_wall_clock_repeat_full_outputs(base_path, spec["file_tag"], per_run_full_data)
+        }
+        csv_path = save_wall_clock_repeat_full_outputs(
+            base_path,
+            spec["file_tag"],
+            [run_full_data],
+            append=completed > 1,
+        )
         print(f"  [6] one-stop CSV updated after run {run_index + 1}: {csv_path}")
         if exp.data.get("interrupted"):
             print("  [6] that pass was interrupted; stopping the series.")

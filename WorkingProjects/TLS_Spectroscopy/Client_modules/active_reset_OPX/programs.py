@@ -12,6 +12,7 @@ from .records import (
     decode_payload_records,
     signed32,
 )
+from .three_point import distributed_p0_reference_indices
 
 
 try:
@@ -1793,8 +1794,8 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             raise ValueError("opx_t1_3pt_dc_gains must be evenly spaced")
         shots = int(run_cfg.get("opx_t1_3pt_shots", 0))
         wait_us = float(run_cfg.get("opx_t1_3pt_wait_us", 0.0))
-        if shots <= 0:
-            raise ValueError("opx_t1_3pt_shots must be positive")
+        if shots < 2:
+            raise ValueError("opx_t1_3pt_shots must be at least two")
         if not np.isfinite(wait_us) or wait_us < 0.01:
             raise ValueError("opx_t1_3pt_wait_us must be at least 0.01 us")
         park_gain = int(round(float(run_cfg.get("ff_park_gain", 0) or 0)))
@@ -1804,6 +1805,10 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         )
         run_cfg.update({
             "opx_t1_3pt_dc_gains": rounded.tolist(),
+            "opx_t1_3pt_dc_scan_order": "alternating_bidirectional",
+            "opx_t1_3pt_p0_reference_shot_indices": list(
+                distributed_p0_reference_indices(shots)
+            ),
             "ff_gain": representative_gain,
             "ff_hold": wait_us,
             "t1_wait_us": wait_us,
@@ -1866,6 +1871,153 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
+    def _emit_placeholder_payload_record(self):
+        self.regwi(self.reset_page, self.reset_regs["i"], 0)
+        self.regwi(self.reset_page, self.reset_regs["q"], 0)
+        self.memw(
+            self.reset_page,
+            self.reset_regs["i"],
+            self.reset_regs["address"],
+        )
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.reset_regs["address"],
+            "+",
+            1,
+        )
+        self.memw(
+            self.reset_page,
+            self.reset_regs["q"],
+            self.reset_regs["address"],
+        )
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.reset_regs["address"],
+            "+",
+            1,
+        )
+
+    def _set_p0_reference_flag(self, controls, label_prefix):
+        enabled_label = f"{label_prefix}_ENABLED"
+        done_label = f"{label_prefix}_DONE"
+        self.regwi(0, controls["branch_flag"], 0)
+        for shot_index in self.cfg["opx_t1_3pt_p0_reference_shot_indices"]:
+            self.regwi(0, controls["p0_target"], int(shot_index))
+            self.condj(
+                0,
+                controls["shot_index"],
+                "==",
+                controls["p0_target"],
+                enabled_label,
+            )
+        self.condj(
+            0,
+            controls["p0_target"],
+            "==",
+            controls["p0_target"],
+            done_label,
+        )
+        self.label(enabled_label)
+        self.regwi(0, controls["branch_flag"], 1)
+        self.label(done_label)
+
+    def _emit_p0_slot(self, controls, label_prefix):
+        placeholder_label = f"{label_prefix}_PLACEHOLDER"
+        done_label = f"{label_prefix}_DONE"
+        self.condj(
+            0,
+            controls["branch_flag"],
+            "==",
+            0,
+            placeholder_label,
+        )
+        self._emit_three_point_payload(
+            f"{label_prefix}_PAYLOAD",
+            False,
+            False,
+            0.0,
+        )
+        self.condj(
+            0,
+            controls["branch_flag"],
+            "==",
+            controls["branch_flag"],
+            done_label,
+        )
+        self.label(placeholder_label)
+        self._emit_placeholder_payload_record()
+        self.label(done_label)
+
+    def _set_three_point_dc_delta(self):
+        if self._t1_flux_direction > 0:
+            self.math(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_delta"],
+                self._t1_3pt_regs["dc_gain"],
+                "-",
+                self._t1_3pt_regs["park_gain"],
+            )
+        else:
+            self.math(
+                self._t1_3pt_ff_page,
+                self._t1_3pt_regs["dc_delta"],
+                self._t1_3pt_regs["park_gain"],
+                "-",
+                self._t1_3pt_regs["dc_gain"],
+            )
+
+    def _emit_three_point_dc_sweep(
+        self,
+        controls,
+        *,
+        start_gain,
+        gain_step,
+        label_prefix,
+    ):
+        gains = self.cfg["opx_t1_3pt_dc_gains"]
+        self.safe_regwi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_gain"],
+            int(start_gain),
+        )
+        self.regwi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_loop"],
+            len(gains) - 1,
+        )
+        self.label(f"{label_prefix}_DC_LOOP")
+        self._set_three_point_dc_delta()
+        self._emit_p0_slot(controls, f"{label_prefix}_P0")
+        self._emit_three_point_payload(
+            f"{label_prefix}_P1",
+            True,
+            False,
+            0.0,
+        )
+        self._emit_three_point_payload(
+            f"{label_prefix}_PS",
+            True,
+            True,
+            float(self.cfg["opx_t1_3pt_wait_us"]),
+        )
+        self.mathi(0, controls["done"], controls["done"], "+", 3)
+        self.memwi(0, controls["done"], self.done_addr)
+        self._stream_after_shot()
+        self.mathi(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_gain"],
+            self._t1_3pt_regs["dc_gain"],
+            "+",
+            int(gain_step),
+        )
+        self.loopnz(
+            self._t1_3pt_ff_page,
+            self._t1_3pt_regs["dc_loop"],
+            f"{label_prefix}_DC_LOOP",
+        )
+
     def make_program(self):
         _declare_common(self)
         self._declare_experiment()
@@ -1909,7 +2061,16 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         controls = allocate_named_registers(
             self,
             0,
-            resident_control_names(self.cfg, ("shot_loop", "done")),
+            resident_control_names(
+                self.cfg,
+                (
+                    "shot_loop",
+                    "done",
+                    "shot_index",
+                    "branch_flag",
+                    "p0_target",
+                ),
+            ),
             reserved=control_reserved,
         )
         gains = self.cfg["opx_t1_3pt_dc_gains"]
@@ -1917,6 +2078,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
+        self.regwi(0, controls["shot_index"], 0)
         self.regwi(
             0,
             controls["shot_loop"],
@@ -1932,11 +2094,6 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         )
         self._begin_park_lifecycle()
         self.label("OPX_T1_3PT_SHOT_LOOP")
-        self.safe_regwi(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_gain"],
-            int(gains[0]),
-        )
         park_gain = int(round(float(self.cfg.get("ff_park_gain", 0) or 0)))
         self.safe_regwi(
             self._t1_3pt_ff_page,
@@ -1953,50 +2110,49 @@ class OPXResetT13PointProgram(OPXResetT1Program):
                 "compensated three-point T1 sweeps cannot cross ff_park_gain in one program"
             )
         self._t1_flux_direction = next(iter(directions), 1)
-        self.regwi(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_loop"],
-            len(gains) - 1,
+        self.bitwi(
+            0,
+            controls["branch_flag"],
+            controls["shot_index"],
+            "&",
+            1,
         )
-        self.label("OPX_T1_3PT_DC_LOOP")
-        if self._t1_flux_direction > 0:
-            self.math(
-                self._t1_3pt_ff_page,
-                self._t1_3pt_regs["dc_delta"],
-                self._t1_3pt_regs["dc_gain"],
-                "-",
-                self._t1_3pt_regs["park_gain"],
-            )
-        else:
-            self.math(
-                self._t1_3pt_ff_page,
-                self._t1_3pt_regs["dc_delta"],
-                self._t1_3pt_regs["park_gain"],
-                "-",
-                self._t1_3pt_regs["dc_gain"],
-            )
-        self._emit_three_point_payload("OPX_T1_3PT_P0", False, False, 0.0)
-        self._emit_three_point_payload("OPX_T1_3PT_P1", True, False, 0.0)
-        self._emit_three_point_payload(
-            "OPX_T1_3PT_PS",
-            True,
-            True,
-            float(self.cfg["opx_t1_3pt_wait_us"]),
+        self.condj(
+            0,
+            controls["branch_flag"],
+            "==",
+            0,
+            "OPX_T1_3PT_SCAN_UP",
         )
-        self.mathi(0, controls["done"], controls["done"], "+", 3)
-        self.memwi(0, controls["done"], self.done_addr)
-        self._stream_after_shot()
+        self._set_p0_reference_flag(controls, "OPX_T1_3PT_DOWN_P0_REF")
+        self._emit_three_point_dc_sweep(
+            controls,
+            start_gain=gains[-1],
+            gain_step=-gain_step,
+            label_prefix="OPX_T1_3PT_DOWN",
+        )
+        self.condj(
+            0,
+            controls["branch_flag"],
+            "==",
+            controls["branch_flag"],
+            "OPX_T1_3PT_SCAN_DONE",
+        )
+        self.label("OPX_T1_3PT_SCAN_UP")
+        self._set_p0_reference_flag(controls, "OPX_T1_3PT_UP_P0_REF")
+        self._emit_three_point_dc_sweep(
+            controls,
+            start_gain=gains[0],
+            gain_step=gain_step,
+            label_prefix="OPX_T1_3PT_UP",
+        )
+        self.label("OPX_T1_3PT_SCAN_DONE")
         self.mathi(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_gain"],
-            self._t1_3pt_regs["dc_gain"],
+            0,
+            controls["shot_index"],
+            controls["shot_index"],
             "+",
-            gain_step,
-        )
-        self.loopnz(
-            self._t1_3pt_ff_page,
-            self._t1_3pt_regs["dc_loop"],
-            "OPX_T1_3PT_DC_LOOP",
+            1,
         )
         self.loopnz(0, controls["shot_loop"], "OPX_T1_3PT_SHOT_LOOP")
         self._finish_stream()
