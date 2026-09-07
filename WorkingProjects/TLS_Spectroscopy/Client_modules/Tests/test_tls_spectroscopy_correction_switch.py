@@ -202,7 +202,9 @@ def test_step6_opx_base_config_injects_runtime_bundle_and_timing(monkeypatch):
     assert cfg["relax_delay"] == pytest.approx(10.0)
 
 
-def test_step6_opx_base_config_uses_park_history_frequency(monkeypatch):
+def test_step6_opx_base_config_keeps_payload_frequency_and_uses_park_history_for_reset(
+    monkeypatch,
+):
     calibration = {"schema_version": 1, "payload": {}, "loop": {}}
     monkeypatch.setattr(
         tls,
@@ -219,7 +221,9 @@ def test_step6_opx_base_config_uses_park_history_frequency(monkeypatch):
         np.array([-20_000.0]),
     )
 
-    assert cfg["qubit_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["qubit_pi_freq"] == pytest.approx(
+        tls.BaseConfig["qubit_pi_freq"]
+    )
     assert cfg["reset_pi_freq"] == pytest.approx(4366.392029)
     assert cfg["three_point_matched_refs"] is False
 
@@ -244,7 +248,9 @@ def test_step6_opx_recalibrator_atomically_replaces_runtime_bundle(
         monkeypatch, tmp_path):
     original = {"schema_version": 1, "payload": {"version": 1}}
     refreshed = {"schema_version": 1, "payload": {"version": 2}}
-    base = tls.ProductionResetSession.active(original, 4366.0).apply({})
+    base = tls.ProductionResetSession.active(original, 4366.0).apply({
+        "qubit_pi_freq": 4358.125,
+    })
     monkeypatch.setattr(
         tls,
         "_RESET_SESSION",
@@ -264,7 +270,8 @@ def test_step6_opx_recalibrator_atomically_replaces_runtime_bundle(
     recalibrate()
 
     assert base["opx_reset_calibration"] == refreshed
-    assert base["qubit_pi_freq"] == pytest.approx(4367.0)
+    assert base["qubit_pi_freq"] == pytest.approx(4358.125)
+    assert base["reset_pi_freq"] == pytest.approx(4367.0)
 
 
 @pytest.mark.parametrize("scan_kind", ["3pt", "full"])

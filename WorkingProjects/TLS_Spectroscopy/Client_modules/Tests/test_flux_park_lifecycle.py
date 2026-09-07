@@ -738,6 +738,8 @@ def test_gate_calibration_builds_opx_rabi_runtime_without_legacy_reset(
     assert cfg["opx_inter_shot_delay_us"] == pytest.approx(10.0)
     assert cfg["opx_persistent_park"] is True
     assert cfg["opx_hard_flux_steps"] is True
-    assert cfg["qubit_pi_freq"] == pytest.approx(4366.392029)
+    assert cfg["qubit_pi_freq"] == pytest.approx(
+        runner.BaseConfig["qubit_pi_freq"]
+    )
     assert cfg["reset_pi_freq"] == pytest.approx(4366.392029)
     assert cfg["relax_delay"] == pytest.approx(10.0)
