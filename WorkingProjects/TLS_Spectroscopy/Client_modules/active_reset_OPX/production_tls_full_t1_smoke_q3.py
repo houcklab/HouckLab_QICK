@@ -22,17 +22,17 @@ def configure_runner(target):
     target.P6_FULL_T1.update({
         "run": True,
         "apply_flux_tail_compensation": True,
-        "shots": 50,
+        "shots": 200,
         "dc_min": -20500,
         "dc_max": -19500,
         "dc_step": 500,
         "freq_step_mhz": None,
         "wall_clock_duration_min": None,
         "quality_factor": None,
-        "t_max_us": 150.0,
+        "t_max_us": 250.0,
         "auto_tmax_factor": 3.0,
         "t_min_us_default": 1.0,
-        "t_points_default": 4,
+        "t_points_default": 17,
         "T1_probe_cfg": None,
     })
 
