@@ -299,16 +299,15 @@ def write_qick_dmem(soc, address, values):
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and address + length > dmem_size:
         raise ValueError("DMem write exceeds tProcessor data memory")
-    direct_memory = _direct_tproc_memory(soc.tproc)
-    if direct_memory is not None:
-        memory, offset = direct_memory
-        memory[offset + address:offset + address + length] = words
-        return length
-    for offset, value in enumerate(words):
-        soc.tproc.single_write(
-            addr=address + offset,
-            data=int(value),
-        )
+    loader = getattr(soc.tproc, "load_dmem", None)
+    if callable(loader):
+        loader(words.view(np.int32), addr=address)
+    else:
+        for offset, value in enumerate(words):
+            soc.tproc.single_write(
+                addr=address + offset,
+                data=int(value),
+            )
     return length
 
 
