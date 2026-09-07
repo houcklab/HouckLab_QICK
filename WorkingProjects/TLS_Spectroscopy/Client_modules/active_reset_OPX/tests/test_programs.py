@@ -611,6 +611,9 @@ def test_t1_hard_flux_cycle_applies_compensation_on_target_and_return():
 
 def test_dynamic_t1_compensation_uses_dc_delta_for_both_directions():
     prog = RecordingProgram()
+    prog.soccfg = {
+        "gens": [{}, {}, {}, {"type": "axis_signal_gen_v6"}],
+    }
     prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
     prog._t1_flux_ff_page = 1
     prog._t1_flux_regs = {
@@ -637,11 +640,69 @@ def test_dynamic_t1_compensation_uses_dc_delta_for_both_directions():
     assert sum(entry == ("pulse", 3) for entry in prog.asm) == 2
 
 
+def test_dynamic_t1_compensation_packs_gain_for_interpolated_generator():
+    prog = RecordingProgram()
+    prog.soccfg = {
+        "gens": [{}, {}, {}, {"type": "axis_sg_int4_v1"}],
+    }
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog._t1_flux_ff_page = 1
+    prog._t1_flux_regs = {
+        "dc_gain": 9,
+        "dc_delta": 10,
+        "park_gain": 11,
+        "command": 12,
+    }
+    prog._t1_flux_direction = 1
+    prog.sreg = lambda channel, name: {"gain": 13, "addr": 14}[name]
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value, gen_ch=None: int(round(float(value) * 100))
+
+    OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment(
+        prog, 1.1, 0.5, returning=False
+    )
+
+    assert ("bitwi", 12, 12, "<<", 16) in prog.asm
+    assert ("mathi", 14, 12, "+", 0) in prog.asm
+    assert ("mathi", 13, 12, "+", 0) not in prog.asm
+
+
+def test_dynamic_t1_compensation_writes_raw_gain_for_full_speed_generator():
+    prog = RecordingProgram()
+    prog.soccfg = {
+        "gens": [{}, {}, {}, {"type": "axis_signal_gen_v6"}],
+    }
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog._t1_flux_ff_page = 1
+    prog._t1_flux_regs = {
+        "dc_gain": 9,
+        "dc_delta": 10,
+        "park_gain": 11,
+        "command": 12,
+    }
+    prog._t1_flux_direction = 1
+    prog.sreg = lambda channel, name: {"gain": 13, "addr": 14}[name]
+    prog.set_pulse_registers = lambda **values: prog.asm.append(("set", values))
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+    prog.us2cycles = lambda value, gen_ch=None: int(round(float(value) * 100))
+
+    OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment(
+        prog, 1.1, 0.5, returning=False
+    )
+
+    assert ("mathi", 13, 12, "+", 0) in prog.asm
+    assert ("bitwi", 12, 12, "<<", 16) not in prog.asm
+
+
 def test_three_point_dynamic_flux_target_comes_from_dc_loop_register():
     prog = RecordingProgram()
+    prog.soccfg = {
+        "gens": [{}, {}, {}, {"type": "axis_signal_gen_v6"}],
+    }
     prog.cfg = {"ff_ch": 3}
     prog._t1_3pt_ff_page = 1
-    prog._t1_3pt_regs = {"dc_gain": 9}
+    prog._t1_3pt_regs = {"dc_gain": 9, "command": 12}
     prog.sreg = lambda channel, name: 11
     prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
 
@@ -649,6 +710,26 @@ def test_three_point_dynamic_flux_target_comes_from_dc_loop_register():
 
     assert prog.asm == [
         ("mathi", 11, 9, "+", 0),
+        ("pulse", 3),
+    ]
+
+
+def test_three_point_dynamic_flux_target_packs_interpolated_gain_without_mutating_loop_register():
+    prog = RecordingProgram()
+    prog.soccfg = {
+        "gens": [{}, {}, {}, {"type": "axis_sg_int4_v1"}],
+    }
+    prog.cfg = {"ff_ch": 3}
+    prog._t1_3pt_ff_page = 1
+    prog._t1_3pt_regs = {"dc_gain": 9, "command": 12}
+    prog.sreg = lambda channel, name: {"gain": 13, "addr": 14}[name]
+    prog.pulse = lambda ch: prog.asm.append(("pulse", ch))
+
+    OPXResetT13PointProgram._play_dynamic_target(prog)
+
+    assert prog.asm == [
+        ("bitwi", 12, 9, "<<", 16),
+        ("mathi", 14, 12, "+", 0),
         ("pulse", 3),
     ]
 

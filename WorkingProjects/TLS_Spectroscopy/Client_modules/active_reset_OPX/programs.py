@@ -86,6 +86,45 @@ def initialize_payload_sweep_register(prog, *, page, register, value):
     prog.safe_regwi(page, register, int(value))
 
 
+def write_dynamic_const_gain(
+    prog,
+    *,
+    page,
+    channel,
+    value_register,
+    scratch_register=None,
+):
+    gen_type = str(prog.soccfg["gens"][int(channel)].get("type", ""))
+    if gen_type == "axis_sg_int4_v1":
+        packed_register = (
+            int(value_register)
+            if scratch_register is None
+            else int(scratch_register)
+        )
+        prog.bitwi(
+            int(page),
+            packed_register,
+            int(value_register),
+            "<<",
+            16,
+        )
+        prog.mathi(
+            int(page),
+            prog.sreg(int(channel), "addr"),
+            packed_register,
+            "+",
+            0,
+        )
+        return
+    prog.mathi(
+        int(page),
+        prog.sreg(int(channel), "gain"),
+        int(value_register),
+        "+",
+        0,
+    )
+
+
 def _reserved_registers(prog, page):
     reserved = {0}
     if int(page) == 0:
@@ -1482,12 +1521,12 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
 
     def _play_dynamic_target(self):
-        self.mathi(
-            self._t1_flux_ff_page,
-            self.sreg(self.cfg["ff_ch"], "gain"),
-            self._t1_flux_regs["dc_gain"],
-            "+",
-            0,
+        write_dynamic_const_gain(
+            self,
+            page=self._t1_flux_ff_page,
+            channel=self.cfg["ff_ch"],
+            value_register=self._t1_flux_regs["dc_gain"],
+            scratch_register=self._t1_flux_regs["command"],
         )
         self.pulse(ch=self.cfg["ff_ch"])
 
@@ -1528,12 +1567,11 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
                 gain=0,
                 length=length,
             )
-            self.mathi(
-                page,
-                self.sreg(self.cfg["ff_ch"], "gain"),
-                regs["command"],
-                "+",
-                0,
+            write_dynamic_const_gain(
+                self,
+                page=page,
+                channel=self.cfg["ff_ch"],
+                value_register=regs["command"],
             )
             self.pulse(ch=self.cfg["ff_ch"])
 
@@ -1754,12 +1792,12 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
 
     def _play_dynamic_target(self):
-        self.mathi(
-            self._t1_3pt_ff_page,
-            self.sreg(self.cfg["ff_ch"], "gain"),
-            self._t1_3pt_regs["dc_gain"],
-            "+",
-            0,
+        write_dynamic_const_gain(
+            self,
+            page=self._t1_3pt_ff_page,
+            channel=self.cfg["ff_ch"],
+            value_register=self._t1_3pt_regs["dc_gain"],
+            scratch_register=self._t1_3pt_regs["command"],
         )
         self.pulse(ch=self.cfg["ff_ch"])
 
