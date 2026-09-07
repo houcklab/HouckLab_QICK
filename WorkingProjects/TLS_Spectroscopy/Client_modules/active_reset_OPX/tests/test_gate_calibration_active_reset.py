@@ -181,6 +181,61 @@ def test_rabi_ss_qua_grid_reports_outer_shot_progress(tmp_path, monkeypatch):
     assert updates == [(2, 3, "Rabi chevron SS")]
 
 
+def test_rabi_ss_active_grid_refreshes_nonzero_park(tmp_path, monkeypatch):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mRabiChevronSS
+
+    observed = {}
+
+    def acquire(soc, soccfg, cfg, **kwargs):
+        observed.update(cfg)
+        shape = (
+            len(kwargs["frequencies_mhz"]),
+            len(kwargs["gains"]),
+            int(kwargs["shots"]),
+        )
+        values = np.zeros(shape, dtype=float)
+        return values, values, {"read_length_cycles": 100}
+
+    monkeypatch.setattr(mRabiChevronSS, "acquire_pulse_grid_iq", acquire)
+    monkeypatch.setattr(
+        mRabiChevronSS,
+        "classify_payload_iq",
+        lambda cfg, i_values, q_values, read_length_cycles: np.zeros_like(i_values),
+    )
+    cfg = {
+        "shots": 3,
+        "amp_start": 1000,
+        "amp_stop": 3000,
+        "amp_expts": 3,
+        "freq_span": 2.0,
+        "freq_points": 3,
+        "qubit_pi_freq": 4367.25,
+        "qubit_freq": 4367.25,
+        "ff_park_gain": -25790,
+        "ff_hold_gain": 0,
+        "readout_after_park": True,
+        "sigma": 0.25,
+        "read_length": 5.0,
+        "adc_trig_offset": 0.5,
+        "relax_delay": 10.0,
+        "reset_mode": "opx_unbounded",
+        "qua_shot_order": True,
+        "remeasure_outliers": False,
+    }
+    experiment = mRabiChevronSS.RabiChevronSS(
+        soc=object(),
+        soccfg={},
+        path="q3",
+        outerFolder=tmp_path,
+        cfg=cfg,
+        save=False,
+    )
+
+    experiment.acquire(progress=False, plotDisp=False)
+
+    assert observed.get("opx_refresh_park_before_shot") is True
+
+
 def test_gate_runner_keeps_rabi_iq_passive_when_session_is_active(tmp_path, monkeypatch):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (

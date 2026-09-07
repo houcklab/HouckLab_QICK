@@ -174,6 +174,11 @@ class RabiChevronSS(ExperimentClass):
 
         start_time = time.time()
         if bool(cfg.get("qua_shot_order", False)):
+            if (
+                active_reset.uses_opx_unbounded(cfg)
+                and float(cfg.get("ff_park_gain", 0) or 0) != 0.0
+            ):
+                cfg["opx_refresh_park_before_shot"] = True
             do_excursion = bool(cfg.get("ff_hold_gain", 0))
             reset_scheme = (
                 "opx_unbounded"
