@@ -64,6 +64,28 @@ CAL = ClassifierCalibration(
 )
 
 
+def test_rabi_iq_response_map_averages_shots_then_centers_each_frequency_row():
+    response_fn = getattr(analysis, "rabi_iq_response_map", None)
+    assert callable(response_fn), "rabi_iq_response_map is missing"
+    i_values = np.asarray([
+        [[1.0, 1.0], [1.0, 1.0], [3.0, 3.0]],
+        [[2.0, 2.0], [2.0, 2.0], [2.0, 2.0]],
+    ])
+    q_values = np.asarray([
+        [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+        [[0.0, 0.0], [0.0, 0.0], [4.0, 4.0]],
+    ])
+    response = response_fn(i_values, q_values, baseline_ngains=2)
+    assert response.tolist() == [[0.0, 0.0, 2.0], [0.0, 0.0, 4.0]]
+
+
+def test_rabi_iq_response_map_rejects_mismatched_iq_shapes():
+    response_fn = getattr(analysis, "rabi_iq_response_map", None)
+    assert callable(response_fn), "rabi_iq_response_map is missing"
+    with pytest.raises(ValueError, match="equal shapes"):
+        response_fn(np.zeros((2, 3)), np.zeros((3, 2)))
+
+
 def test_reference_axis_recovers_mixture_population_from_mean_iq():
     axis = ReferenceAxis.from_centers(10, -5, 110, 45)
     i = np.asarray([10, 110, 110, 10], dtype=float)

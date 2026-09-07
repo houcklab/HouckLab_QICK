@@ -23,6 +23,30 @@ def json_safe(value):
     return value
 
 
+def rabi_iq_response_map(i_values, q_values, baseline_ngains=4):
+    i_values = np.asarray(i_values, dtype=float)
+    q_values = np.asarray(q_values, dtype=float)
+    if i_values.shape != q_values.shape:
+        raise ValueError("Rabi I and Q arrays must have equal shapes")
+    if i_values.ndim not in (2, 3):
+        raise ValueError("Rabi I and Q arrays must be two- or three-dimensional")
+    if i_values.shape[1] == 0:
+        raise ValueError("Rabi IQ arrays must include at least one gain")
+    if i_values.ndim == 3:
+        if i_values.shape[2] == 0:
+            raise ValueError("Rabi IQ arrays must include at least one shot")
+        i_values = np.mean(i_values, axis=2)
+        q_values = np.mean(q_values, axis=2)
+    nlow = max(1, min(int(baseline_ngains), i_values.shape[1]))
+    centered_i = i_values - np.median(
+        i_values[:, :nlow], axis=1, keepdims=True
+    )
+    centered_q = q_values - np.median(
+        q_values[:, :nlow], axis=1, keepdims=True
+    )
+    return np.hypot(centered_i, centered_q)
+
+
 def diagnose_rabi_lifecycle(
     *, baseline_rmse, short_interval_rmse, active_short_rmse, max_rmse
 ):
