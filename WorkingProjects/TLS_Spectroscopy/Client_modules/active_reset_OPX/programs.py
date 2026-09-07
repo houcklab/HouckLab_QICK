@@ -166,6 +166,16 @@ def allocate_registers(prog, page, reserved=None):
     )
 
 
+def one_shot_bank_record_base(dmem_words, records_per_shot, record_words):
+    dmem_words = int(dmem_words)
+    records_per_shot = int(records_per_shot)
+    record_words = int(record_words)
+    record_base = dmem_words - 2 * records_per_shot * record_words
+    if min(dmem_words, records_per_shot, record_words) <= 0 or record_base <= 3:
+        raise ValueError("two one-shot banks do not fit in tProc data memory")
+    return record_base
+
+
 def resident_stream_plan(
     soccfg,
     *,

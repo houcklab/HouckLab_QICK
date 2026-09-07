@@ -197,6 +197,29 @@ def test_resident_stream_uses_two_whole_shot_banks():
     }
 
 
+def test_one_shot_bank_record_base_forces_reuse_on_the_third_shot():
+    record_base_fn = getattr(programs, "one_shot_bank_record_base", None)
+    assert callable(record_base_fn), "one_shot_bank_record_base is missing"
+    record_base = record_base_fn(
+        dmem_words=4096,
+        records_per_shot=121,
+        record_words=2,
+    )
+    plan = resident_stream_plan(
+        {"tprocs": [{"dmem_size": 4096}]},
+        done_addr=1,
+        record_base=record_base,
+        record_words=2,
+        records_per_unit=1,
+        total_units=6 * 121,
+        records_per_shot=121,
+        total_shots=6,
+    )
+    assert record_base == 3612
+    assert plan["bank_units"] == 121
+    assert plan["bank_words"] == 242
+
+
 def test_resident_stream_boundary_waits_only_before_reusing_a_bank():
     prog = RecordingProgram()
     regs = {
