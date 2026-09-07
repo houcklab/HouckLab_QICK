@@ -105,6 +105,41 @@ def test_step1_returns_to_the_declared_tls_baseline_between_flux_points(monkeypa
     assert created[0]["cfg"]["ff_park_gain"] == -25790
 
 
+def test_step2_uses_base_config_park_when_runner_baseline_is_unset(monkeypatch):
+    created = []
+
+    class FakeQubitSpec:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        def acquire(self, **kwargs):
+            return {"data": {"raw_sweep_csv": None, "flux_fit_params": None}}
+
+    monkeypatch.setattr(tls, "QubitLongTimeSpecVsFlux", FakeQubitSpec)
+    monkeypatch.setattr(tls, "BaseConfig", {"ff_park_gain": -24447})
+    monkeypatch.setattr(tls, "BASELINE_DC_OFFSET", None)
+    monkeypatch.setattr(tls, "LIVE_PLOTS", False)
+    monkeypatch.setattr(tls, "_spec_cfg", lambda *args, **kwargs: {
+        "ff_park_gain": -24447,
+    })
+    monkeypatch.setattr(tls, "P2_QUBIT_SPEC_FULL", {
+        "shots": 20,
+        "advanced_fit": False,
+        "freq_min": 4350.0,
+        "freq_max": 4380.0,
+        "freq_step": 0.5,
+        "dc_min": -24500,
+        "dc_max": -24500,
+        "dc_step": 1,
+        "live_plot": False,
+    })
+
+    tls.run_step2_qubit_spec_full_range("out", object(), object())
+
+    assert created[0]["park_voltage"] == -24447
+    assert created[0]["cfg"]["ff_park_gain"] == -24447
+
+
 def test_step6_still_requires_a_correction_by_default(tmp_path):
     with pytest.raises(ValueError, match="No flux-tail compensation JSON"):
         tls._resolve_step6_correction({}, None, tmp_path)

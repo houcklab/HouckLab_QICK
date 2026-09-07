@@ -67,7 +67,7 @@ FLUX_FIT_PARAMS = [
     -4.13273417292e-05,
 ]
 
-BASELINE_DC_OFFSET = 0
+BASELINE_DC_OFFSET = None
 TARGET_DC_OFFSET = 4000
 FLUX_TAIL_COMPENSATION_GAIN = 0.75
 
@@ -202,7 +202,6 @@ LOCAL_OVERRIDE_KEYS = (
     "YOKO_VISA",
     "YOKO_VOLTAGE",
     "FLUX_FIT_PARAMS",
-    "BASELINE_DC_OFFSET",
     "TARGET_DC_OFFSET",
     "FLUX_TAIL_COMPENSATION_GAIN",
     "SAVE_RESONATOR_LOOKUP",
@@ -221,6 +220,12 @@ LOCAL_OVERRIDE_KEYS = (
 )
 
 apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)
+
+
+def _baseline_dc_offset():
+    if BASELINE_DC_OFFSET is not None:
+        return float(BASELINE_DC_OFFSET)
+    return float(BaseConfig.get("ff_park_gain", 0))
 
 
 def _set_yoko_if_requested():
@@ -266,7 +271,7 @@ def _spec_cfg(p, extra=None):
 def _load_correction(correction_json, outer_folder):
     if correction_json is None:
         correction_json = fpd.find_latest_compensation_json(
-            outer_folder, QUBIT, baseline_dc_offset=BASELINE_DC_OFFSET)
+            outer_folder, QUBIT, baseline_dc_offset=_baseline_dc_offset())
     if correction_json is None:
         raise ValueError(
             "No flux-tail compensation JSON available. Run step 3 (calibration) "
@@ -378,7 +383,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         suffix="Resonator_Spec_vs_Flux", cfg=cfg,
         save_resonator_lookup=SAVE_RESONATOR_LOOKUP,
         resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
-        park_gain=BASELINE_DC_OFFSET,
+        park_gain=_baseline_dc_offset(),
     )
     data = exp.acquire(progress=True, plotDisp=bool(p.get("live_plot", True)) and LIVE_PLOTS)
     lookup_csv = data['data'].get('resonator_lookup_csv')
@@ -406,7 +411,7 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
         dc_vec=dc_vec,
         long_time_ns=2000.0, average_window_ns=0.0,
         readout_after_park=False,
-        park_voltage=BASELINE_DC_OFFSET,
+        park_voltage=_baseline_dc_offset(),
         advanced_fit=bool(p.get("advanced_fit", True)),
         live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
@@ -417,7 +422,7 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
 
 
 def _step3_common_cfg(p):
-    fmin, fmax = _auto_freq_window(p, BASELINE_DC_OFFSET, TARGET_DC_OFFSET)
+    fmin, fmax = _auto_freq_window(p, _baseline_dc_offset(), TARGET_DC_OFFSET)
     n = max(int(round((fmax - fmin) / p["freq_step"])) + 1, 5)
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": fmin, "qubit_freq_stop": fmax, "qubit_freq_expts": n,
@@ -538,7 +543,7 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix=suffix, cfg=_step3_common_cfg(p),
         element=QUBIT, t_vec=t_vec_ns,
-        dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
+        dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=_baseline_dc_offset(),
         shots=int(p["shots"]),
         flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
         piecewise_response_domain=p.get("piecewise_response_domain", "voltage"),
@@ -571,7 +576,7 @@ def run_step3a_step_response_fit(outer_folder, soc, soccfg):
     if FLUX_FIT_PARAMS is None:
         raise RuntimeError("Step 3a needs FLUX_FIT_PARAMS: run step 2 and paste the "
                            "printed values at the top of this file.")
-    print(f"[3a] Step-response FIT: baseline={BASELINE_DC_OFFSET:+.4f} DAC -> "
+    print(f"[3a] Step-response FIT: baseline={_baseline_dc_offset():+.4f} DAC -> "
           f"target={TARGET_DC_OFFSET:+.4f} DAC (measure + fit the distortion, no correction applied)")
     exp = _run_step3_experiment(
         p, soc, soccfg, outer_folder, suffix="Qubit_Flux_Step_Response",
@@ -590,7 +595,7 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
     if correction_json is None:
         correction_json = QubitFluxStepResponse.find_latest_rise_decay_bump_dc_compensation_json(
             outer_folder, QUBIT,
-            dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
+            dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=_baseline_dc_offset(),
         )
         if correction_json is None:
             raise RuntimeError("No correction JSON found; run step 3a (fit) first.")
@@ -670,7 +675,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         long_time_ns=p["long_time_us"] * 1e3,
         average_window_ns=p.get("average_window_us", 0.0) * 1e3,
         average_step_ns=p.get("average_step_us", 0.016) * 1e3,
-        park_voltage=BASELINE_DC_OFFSET,
+        park_voltage=_baseline_dc_offset(),
         inter_target_wait_ns=p.get("inter_target_wait_us", 100.0) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
         advanced_fit=bool(p.get("advanced_fit", False)),
@@ -852,7 +857,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
-    park_voltage = base.get("ff_park_gain", BASELINE_DC_OFFSET)
+    park_voltage = base.get("ff_park_gain", _baseline_dc_offset())
 
     def factory(repeat_metadata):
         return T13PointVsFlux(
@@ -893,7 +898,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
           f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
     base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
     correction_suffix = correction_mode.replace("-", "_")
-    park_voltage = base.get("ff_park_gain", BASELINE_DC_OFFSET)
+    park_voltage = base.get("ff_park_gain", _baseline_dc_offset())
 
     q_factor = p.get("quality_factor", None)
     notebook_fit = fx.flux_fit_params_to_notebook(FLUX_FIT_PARAMS) if q_factor is not None else None
@@ -944,7 +949,7 @@ def main():
 
     print("=" * 70)
     print(f"TLS spectroscopy pipeline | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG}")
-    print(f"park/baseline = {BASELINE_DC_OFFSET:+.0f} DAC | distortion-probe target = {TARGET_DC_OFFSET:+.0f} DAC")
+    print(f"park/baseline = {_baseline_dc_offset():+.0f} DAC | distortion-probe target = {TARGET_DC_OFFSET:+.0f} DAC")
     print(f"qubit-spec readout-IF source = {'measured-dip lookup' if USE_RESONATOR_LOOKUP else 'cosine fit'}")
     steps_enabled = [
         ("1_resonator_spec_vs_flux", P1_RESONATOR["run"]),

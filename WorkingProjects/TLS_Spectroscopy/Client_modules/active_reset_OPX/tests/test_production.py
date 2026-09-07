@@ -1029,3 +1029,69 @@ def test_p2_fixed_park_gain_sweep_selects_only_passive_qubit_gain_sweep(monkeypa
         },
         "selected": [False, False, False, True, False, False, False, False, False],
     }]
+
+
+def test_p2_same_park_probe_uses_base_config_park(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=False,
+        SET_YOKO=True,
+        RESET_MODE="active",
+        BaseConfig={"ff_park_gain": -24447},
+        BASELINE_DC_OFFSET=0,
+        USE_RESONATOR_LOOKUP=True,
+        RESONATOR_FIT_PARAMS=[1],
+        P1_RESONATOR={"run": True},
+        P2_QUBIT_SPEC_FULL={"run": False},
+        P3_STEP_RESPONSE={"run_fit": True, "run_correct": True},
+        P4_LONG_TIME={"run": True},
+        P5_SS_CAL={"run": True},
+        P6_3PT_T1={"run": True},
+        P6_FULL_T1={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "baseline": runner.BASELINE_DC_OFFSET,
+        "fit": runner.RESONATOR_FIT_PARAMS,
+        "step2": dict(runner.P2_QUBIT_SPEC_FULL),
+        "selected": [
+            runner.P1_RESONATOR["run"],
+            runner.P2_QUBIT_SPEC_FULL["run"],
+            runner.P3_STEP_RESPONSE["run_fit"],
+            runner.P3_STEP_RESPONSE["run_correct"],
+            runner.P4_LONG_TIME["run"],
+            runner.P5_SS_CAL["run"],
+            runner.P6_3PT_T1["run"],
+            runner.P6_FULL_T1["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "TLSSpectroscopy", runner, raising=False)
+    path = Path(__file__).parents[1] / "p2_same_park_probe_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "baseline": None,
+        "fit": None,
+        "step2": {
+            "run": True,
+            "advanced_fit": False,
+            "shots": 200,
+            "relax_delay_us": 100.0,
+            "spec_amp": 15000,
+            "spec_len_us": 1.0,
+            "freq_min": 4358.0,
+            "freq_max": 4373.0,
+            "freq_step": 0.25,
+            "dc_min": -24447,
+            "dc_max": -24447,
+            "dc_step": 1,
+            "live_plot": True,
+        },
+        "selected": [False, True, False, False, False, False, False, False],
+    }]
