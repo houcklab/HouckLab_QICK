@@ -726,3 +726,76 @@ def test_tls_step3a_smoke_runner_uses_measured_negative_gain_flux_fit(monkeypatc
         },
         "selected": [False, False, True, False, False, False, False, False],
     }]
+
+
+def test_tls_step3b_smoke_runner_applies_latest_correction_once(monkeypatch):
+    calls = []
+    runner = SimpleNamespace(
+        LIVE_PLOTS=True,
+        SET_YOKO=True,
+        FLUX_FIT_PARAMS=None,
+        BASELINE_DC_OFFSET=0,
+        TARGET_DC_OFFSET=0,
+        FLUX_TAIL_COMPENSATION_GAIN=0.75,
+        STEP3B_GAIN_SWEEP=[0.5, 1.0],
+        USE_RESONATOR_LOOKUP=True,
+        RESONATOR_FIT_PARAMS=[1],
+        RESET_MODE="active",
+        P1_RESONATOR={"run": True},
+        P2_QUBIT_SPEC_FULL={"run": True},
+        P3_STEP_RESPONSE={"run_fit": True, "run_correct": False},
+        P4_LONG_TIME={"run": True},
+        P5_SS_CAL={"run": True},
+        P6_3PT_T1={"run": True},
+        P6_FULL_T1={"run": True},
+    )
+    runner.main = lambda: calls.append({
+        "gain": runner.FLUX_TAIL_COMPENSATION_GAIN,
+        "gain_sweep": runner.STEP3B_GAIN_SWEEP,
+        "step3": dict(runner.P3_STEP_RESPONSE),
+        "selected": [
+            runner.P1_RESONATOR["run"],
+            runner.P2_QUBIT_SPEC_FULL["run"],
+            runner.P3_STEP_RESPONSE["run_fit"],
+            runner.P3_STEP_RESPONSE["run_correct"],
+            runner.P4_LONG_TIME["run"],
+            runner.P5_SS_CAL["run"],
+            runner.P6_3PT_T1["run"],
+            runner.P6_FULL_T1["run"],
+        ],
+    })
+    from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
+
+    module_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy"
+    )
+    monkeypatch.setitem(sys.modules, module_name, runner)
+    monkeypatch.setattr(Runners, "TLSSpectroscopy", runner, raising=False)
+    path = Path(__file__).parents[1] / "production_tls_step3b_smoke_q3.py"
+
+    runpy.run_path(str(path), run_name="__main__")
+
+    assert calls == [{
+        "gain": 1.0,
+        "gain_sweep": None,
+        "step3": {
+            "run_fit": False,
+            "run_correct": True,
+            "shots": 50,
+            "spec_amp": 15000,
+            "spec_len_us": 1.0,
+            "freq_step": 1.0,
+            "auto_center_frequency_window": True,
+            "auto_freq_absolute_min_mhz": 4200.0,
+            "auto_freq_absolute_max_mhz": 4372.0,
+            "t_min_us": 1.0,
+            "t_max_us": 501.0,
+            "t_step_us": 10.0,
+            "baseline_rearm_us": 100.0,
+            "piecewise_min_multiplier": 0.5,
+            "piecewise_max_multiplier": 1.5,
+            "readout_after_park": False,
+            "live_plot": False,
+        },
+        "selected": [False, False, False, True, False, False, False, False],
+    }]
