@@ -2,6 +2,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 qick = sys.modules.get("qick")
 if qick is None:
@@ -156,6 +157,9 @@ class FluxGridRecorder(
 
     def freq2reg(self, value, **kwargs):
         return int(round(float(value) * 10))
+
+    def us2cycles(self, value, **kwargs):
+        return int(round(float(value) * self.cycle_scale))
 
     def math(self, page, destination, first, operator, second):
         self.instructions.append(
@@ -982,8 +986,13 @@ def test_hard_flux_hold_preserves_piecewise_compensation_and_total_time():
     ]
 
 
-def test_compensated_flux_time_axis_is_a_single_runtime_loop(monkeypatch):
+@pytest.mark.parametrize("cycle_scale", [100.0, 100.25])
+def test_compensated_flux_time_axis_is_a_single_runtime_loop(
+    monkeypatch,
+    cycle_scale,
+):
     recorder = FluxGridRecorder()
+    recorder.cycle_scale = cycle_scale
     measures = []
     monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
     monkeypatch.setattr(qua_order, "_set_qubit_pulse", lambda *args: None)
@@ -1033,6 +1042,14 @@ def test_compensated_flux_time_axis_is_a_single_runtime_loop(monkeypatch):
         "QUA_FLUX_TIME_ALL_DC_0",
     ) in recorder.instructions
     assert recorder.instructions.count(("sync", 0, 10)) == 3
+    assert [
+        instruction[3]
+        for instruction in recorder.instructions
+        if instruction[:3] == ("safe_regwi", 0, 8)
+    ] == [
+        int(round(hold_time * cycle_scale))
+        for hold_time in recorder.hold_times
+    ]
 
 
 def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_errors(

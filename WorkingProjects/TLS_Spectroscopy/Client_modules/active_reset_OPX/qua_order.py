@@ -308,17 +308,46 @@ def _compensated_hold_segments(
     return segments
 
 
-def _uniform_hold_cycle_axis(program, hold_times_us):
-    cycles = np.asarray([
+def _hold_cycle_values(program, hold_times_us):
+    return np.asarray([
         program.us2cycles(float(hold_time))
         for hold_time in hold_times_us
     ], dtype=np.int64)
-    if cycles.size < 2:
-        return None
-    steps = np.diff(cycles)
-    if int(steps[0]) <= 0 or not np.all(steps == steps[0]):
-        return None
-    return cycles, int(steps[0])
+
+
+def _load_runtime_hold_cycle(
+    program,
+    cycle_values,
+    *,
+    register_page,
+    loop_register,
+    hold_register,
+    scratch_register,
+    label_prefix,
+):
+    selected_label = f"{label_prefix}_SELECTED"
+    for time_index in range(len(cycle_values)):
+        remaining = len(cycle_values) - 1 - time_index
+        load_label = f"{label_prefix}_LOAD_{time_index}"
+        program.safe_regwi(register_page, scratch_register, remaining)
+        program.condj(
+            register_page,
+            loop_register,
+            "==",
+            scratch_register,
+            load_label,
+        )
+    for time_index, cycles in enumerate(cycle_values):
+        program.label(f"{label_prefix}_LOAD_{time_index}")
+        program.safe_regwi(register_page, hold_register, int(cycles))
+        program.condj(
+            register_page,
+            loop_register,
+            "==",
+            loop_register,
+            selected_label,
+        )
+    program.label(selected_label)
 
 
 def _play_compensated_runtime_hold(
@@ -949,14 +978,18 @@ class QUAFluxSpectroscopyProgram(QickProgram):
 
     def _runtime_time_loop(self, dc_index, label_suffix):
         controls = self.controls
-        self.safe_regwi(
-            0,
-            controls["hold_cycles"],
-            int(self.hold_cycle_values[0]),
-        )
         self.regwi(0, controls["time_loop"], self.hold_times.size - 1)
         label = f"QUA_FLUX_TIME_{label_suffix}_{dc_index}"
         self.label(label)
+        _load_runtime_hold_cycle(
+            self,
+            self.hold_cycle_values,
+            register_page=0,
+            loop_register=controls["time_loop"],
+            hold_register=controls["hold_cycles"],
+            scratch_register=controls["boundary_cycles"],
+            label_prefix=f"QUA_FLUX_TIME_VALUE_{label_suffix}_{dc_index}",
+        )
         if self.order == "shot_frequency_dc_time":
             self._rearm_park(max(
                 self.baseline_rearm_us,
@@ -973,13 +1006,6 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             label_prefix=f"QUA_FLUX_HOLD_{label_suffix}_{dc_index}",
         )
         self._finish_flux_point(segments)
-        self.mathi(
-            0,
-            controls["hold_cycles"],
-            controls["hold_cycles"],
-            "+",
-            self.hold_cycle_step,
-        )
         self.loopnz(0, controls["time_loop"], label)
 
     def _frequency_loop(self, dc_indices, label_suffix):
@@ -1030,11 +1056,11 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.frequency_registers, self.frequency_step = _uniform_frequency_registers(
             self, self.frequencies
         )
-        hold_axis = _uniform_hold_cycle_axis(self, self.hold_times)
+        compensation = ff_pulse.load_compensation(cfg)
         self.compact_compensated_time_loop = bool(
             bool(cfg.get("opx_hard_flux_steps", False))
-            and ff_pulse.load_compensation(cfg)
-            and hold_axis is not None
+            and compensation
+            and self.hold_times.size > 1
         )
         extra_controls = ["shot_loop", "frequency_loop"]
         if self.compact_compensated_time_loop:
@@ -1046,7 +1072,7 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             ])
         self.controls = _allocate_stream_counter(self, extra_controls)
         if self.compact_compensated_time_loop:
-            self.hold_cycle_values, self.hold_cycle_step = hold_axis
+            self.hold_cycle_values = _hold_cycle_values(self, self.hold_times)
             self.flux_points = [[
                 _build_flux_point(
                     self,
