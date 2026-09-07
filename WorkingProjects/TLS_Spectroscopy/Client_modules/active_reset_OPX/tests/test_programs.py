@@ -607,6 +607,32 @@ def test_t1_hard_flux_cycle_applies_compensation_on_target_and_return():
     lengths = [entry[1]["length"] for entry in prog.asm if entry[0] == "set"]
     assert gains == [-19421, -20000, -20579, -26369, -25790]
     assert lengths == [50, 50, 50, 50, 3]
+    assert prog.asm[-1] == ("sync", 0)
+
+
+def test_dynamic_compensated_hold_synchronizes_before_payload_readout(monkeypatch):
+    prog = RecordingProgram()
+    prog.cfg = {"ff_ch": 3, "ff_park_gain": -25790}
+    prog._t1_ff_settle_us = 0.5
+    prog._t1_ff_compensation = {
+        "segment_edges_ns": [0.0],
+        "multipliers": [1.1],
+    }
+    prog._play_dynamic_compensation_segment = (
+        lambda multiplier, duration, returning=False: prog.asm.append(
+            ("segment", multiplier, duration, returning)
+        )
+    )
+    prog.sync_all = lambda cycles: prog.asm.append(("sync", cycles))
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_hard_step",
+        lambda program, gain: program.asm.append(("park", int(gain))),
+    )
+
+    OPXResetT1FluxSweepProgram._play_dynamic_compensated_hold(prog, 10.0)
+
+    assert prog.asm[-2:] == [("park", -25790), ("sync", 0)]
 
 
 def test_dynamic_t1_compensation_uses_dc_delta_for_both_directions():

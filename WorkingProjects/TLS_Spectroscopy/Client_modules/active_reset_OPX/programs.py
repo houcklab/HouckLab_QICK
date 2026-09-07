@@ -1326,6 +1326,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                         self._t1_ff_settle_us,
                         self._t1_ff_compensation,
                     )
+                    self.sync_all(0)
                     return
                 ff_pulse.play_hard_step(self, self.cfg["ff_gain"])
                 self.sync_all(self.us2cycles(self._t1_ff_settle_us))
@@ -1590,6 +1591,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
                 multiplier, duration, returning=True
             )
         ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+        self.sync_all(0)
 
     def _emit_t1_flux_point(self, point_index, delay_us):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
