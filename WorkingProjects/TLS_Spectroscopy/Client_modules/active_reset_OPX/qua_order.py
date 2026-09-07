@@ -914,6 +914,7 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         baseline_rearm_us,
         post_readout_reset_us,
         readout_after_park,
+        resident_readout=False,
     ):
         QickProgram.__init__(self, soccfg)
         self.cfg = dict(cfg)
@@ -939,6 +940,33 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.baseline_rearm_us = max(float(baseline_rearm_us), 0.0)
         self.post_readout_reset_us = max(float(post_readout_reset_us), 0.0)
         self.readout_after_park = bool(readout_after_park)
+        self.resident_readout = bool(resident_readout)
+        self.command_addr = self.counter_addr + 1
+        self.ready_addr = self.counter_addr + 2
+        self.frequency_addr = self.counter_addr + 3
+        self.command_mode = str(
+            self.cfg.get("qick_resident_command_mode", "sequenced")
+        )
+        if self.command_mode not in (
+            "split", "packed_frequency", "sequenced"
+        ):
+            raise ValueError("invalid resident command mode")
+        if self.order == "shot_frequency_dc_time":
+            sequence = np.tile(self.read_frequencies, self.frequencies.size)
+        else:
+            sequence = self.read_frequencies
+        self.readout_frequency_registers = np.asarray(
+            [
+                self.freq2reg(
+                    float(frequency),
+                    gen_ch=self.cfg["res_ch"],
+                    ro_ch=self.cfg["ro_chs"][0],
+                )
+                for frequency in sequence
+            ],
+            dtype=np.int64,
+        )
+        self._resident_handshake_index = 0
         self.reps = int(
             self.shots * self.frequencies.size * self.dc_gains.size
             * self.hold_times.size
@@ -948,6 +976,9 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.make_program()
 
     def _set_readout_frequency(self, dc_index):
+        if self.resident_readout:
+            self._wait_for_readout_frequency()
+            return
         cfg = self.cfg
         register = self.freq2reg(
             float(self.read_frequencies[int(dc_index)]),
@@ -955,6 +986,57 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             ro_ch=cfg["ro_chs"][0],
         )
         self.safe_regwi(self.res_page, self.res_frequency_register, int(register))
+
+    def _wait_for_readout_frequency(self):
+        controls = self.controls
+        label = f"QUA_FLUX_READOUT_WAIT_{self._resident_handshake_index}"
+        self._resident_handshake_index += 1
+        self.regwi(0, controls["handshake_elapsed"], 200)
+        self.mathi(0, controls["ready"], controls["ready"], "+", 1)
+        self.memwi(0, controls["ready"], self.ready_addr)
+        self.label(label)
+        self.mathi(
+            0,
+            controls["handshake_elapsed"],
+            controls["handshake_elapsed"],
+            "+",
+            14,
+        )
+        if self.command_mode == "packed_frequency":
+            self.memri(
+                self.res_page,
+                self.res_frequency_register,
+                self.command_addr,
+            )
+            self.condj(
+                self.res_page,
+                self.res_frequency_register,
+                "==",
+                0,
+                label,
+            )
+        elif self.command_mode == "sequenced":
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(
+                0,
+                controls["command"],
+                "!=",
+                controls["ready"],
+                label,
+            )
+        else:
+            self.memri(0, controls["command"], self.command_addr)
+            self.condj(0, controls["command"], "==", 0, label)
+        self.sync(0, controls["handshake_elapsed"])
+        if self.command_mode != "packed_frequency":
+            self.memri(
+                self.res_page,
+                self.res_frequency_register,
+                self.frequency_addr,
+            )
+        if self.command_mode != "sequenced":
+            self.regwi(0, controls["command"], 0)
+            self.memwi(0, controls["command"], self.command_addr)
 
     def _rearm_park(self, delay_us):
         if bool(self.cfg.get("opx_hard_flux_steps", False)):
@@ -1023,17 +1105,20 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self._finish_flux_point(segments)
         self.loopnz(0, controls["time_loop"], label)
 
-    def _frequency_loop(self, dc_indices, label_suffix):
+    def _frequency_loop(
+        self, dc_indices, label_suffix, update_readout_each_frequency=True
+    ):
         self.safe_regwi(
             self.qubit_page,
             self.qubit_frequency_register,
-            int(self.frequency_registers[0]),
+            int(self.qubit_frequency_registers[0]),
         )
         self.regwi(0, self.controls["frequency_loop"], self.frequencies.size - 1)
         label = f"QUA_FLUX_FREQUENCY_{label_suffix}"
         self.label(label)
         for dc_index in dc_indices:
-            self._set_readout_frequency(dc_index)
+            if update_readout_each_frequency:
+                self._set_readout_frequency(dc_index)
             if self.compact_compensated_time_loop:
                 self._runtime_time_loop(dc_index, label_suffix)
             else:
@@ -1068,9 +1153,10 @@ class QUAFluxSpectroscopyProgram(QickProgram):
         self.qubit_frequency_register = self.sreg(cfg["qubit_ch"], "freq")
         self.res_page = self.ch_page(cfg["res_ch"])
         self.res_frequency_register = self.sreg(cfg["res_ch"], "freq")
-        self.frequency_registers, self.frequency_step = _uniform_frequency_registers(
-            self, self.frequencies
-        )
+        (
+            self.qubit_frequency_registers,
+            self.frequency_step,
+        ) = _uniform_frequency_registers(self, self.frequencies)
         compensation = ff_pulse.load_compensation(cfg)
         self.compact_compensated_time_loop = bool(
             bool(cfg.get("opx_hard_flux_steps", False))
@@ -1078,6 +1164,12 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             and self.hold_times.size > 1
         )
         extra_controls = ["shot_loop", "frequency_loop"]
+        if self.resident_readout:
+            extra_controls.extend([
+                "command",
+                "ready",
+                "handshake_elapsed",
+            ])
         if self.compact_compensated_time_loop:
             extra_controls.extend([
                 "time_loop",
@@ -1086,6 +1178,11 @@ class QUAFluxSpectroscopyProgram(QickProgram):
                 "boundary_cycles",
             ])
         self.controls = _allocate_stream_counter(self, extra_controls)
+        if self.resident_readout:
+            self.regwi(0, self.controls["command"], 0)
+            self.memwi(0, self.controls["command"], self.command_addr)
+            self.regwi(0, self.controls["ready"], 0)
+            self.memwi(0, self.controls["ready"], self.ready_addr)
         if self.compact_compensated_time_loop:
             self.hold_cycle_values = _hold_cycle_values(self, self.hold_times)
             self.flux_points = [[
@@ -1118,7 +1215,11 @@ class QUAFluxSpectroscopyProgram(QickProgram):
             for dc_index in range(self.dc_gains.size):
                 self._rearm_park(self.baseline_rearm_us)
                 self._set_readout_frequency(dc_index)
-                self._frequency_loop((dc_index,), str(dc_index))
+                self._frequency_loop(
+                    (dc_index,),
+                    str(dc_index),
+                    update_readout_each_frequency=False,
+                )
         self.loopnz(0, self.controls["shot_loop"], "QUA_FLUX_SHOT")
         if bool(cfg.get("opx_hard_flux_steps", False)):
             ff_pulse.play_hard_step(
@@ -1401,11 +1502,17 @@ def _resident_program_records(
     command_mode="sequenced",
     soc=None,
     progress=None,
+    frequency_registers=None,
 ):
+    registers = (
+        resident.frequency_registers
+        if frequency_registers is None
+        else frequency_registers
+    )
     args = (
         resident.dump_prog(),
         readout_configs,
-        resident.frequency_registers.tolist(),
+        np.asarray(registers, dtype=np.int64).tolist(),
         int(shots),
         resident.command_addr,
         resident.ready_addr,
@@ -1771,39 +1878,95 @@ def acquire_passive_flux_spectroscopy_grid(
     if read_frequencies.size != dc_values.size:
         raise ValueError("read frequencies must have one value per DC point")
     total_shots = _positive_shots(cfg)
+    resident_method = _optional_soc_method(
+        soc, "acquire_qick_resident_readout"
+    )
+    synchronized_readout = bool(
+        not readout_after_park
+        and read_frequencies.size > 1
+        and np.ptp(read_frequencies) > 1e-9
+    )
+    if synchronized_readout and resident_method is None:
+        raise RuntimeError(
+            "flux spectroscopy requires synchronized readout DAC and ADC "
+            "frequency updates, but the RFSoC server does not expose "
+            "acquire_qick_resident_readout"
+        )
     points_per_shot = int(
         frequencies.size * dc_values.size * hold_times.size
     )
     chunks = _record_limited_shot_chunks(cfg, total_shots, points_per_shot)
     i_blocks = []
     q_blocks = []
+    resident_metas = []
     completed = 0
     for block_index, chunk in enumerate(chunks):
         run_cfg = dict(cfg)
         run_cfg["qua_assert_park_at_start"] = block_index == 0
+        run_cfg["qick_resident_command_mode"] = "sequenced"
+        program_kwargs = {
+            "frequencies_mhz": frequencies,
+            "dc_gains": dc_values,
+            "hold_times_us": hold_times,
+            "read_frequencies_mhz": read_frequencies,
+            "order": order,
+            "shots": chunk,
+            "baseline_rearm_us": baseline_rearm_us,
+            "post_readout_reset_us": post_readout_reset_us,
+            "readout_after_park": readout_after_park,
+        }
+        if synchronized_readout:
+            program_kwargs["resident_readout"] = True
         program = QUAFluxSpectroscopyProgram(
             soccfg,
             run_cfg,
-            frequencies_mhz=frequencies,
-            dc_gains=dc_values,
-            hold_times_us=hold_times,
-            read_frequencies_mhz=read_frequencies,
-            order=order,
-            shots=chunk,
-            baseline_rearm_us=baseline_rearm_us,
-            post_readout_reset_us=post_readout_reset_us,
-            readout_after_park=readout_after_park,
+            **program_kwargs,
         )
         callback = None
         if progress is not None:
             callback = lambda done, count, offset=completed: progress(
                 offset + done, total_shots
             )
-        raw_i, raw_q = program.acquire_records(
-            soc,
-            progress=callback,
-            load_pulses=block_index == 0,
-        )
+        if synchronized_readout:
+            if not all("freq" in ro_cfg for ro_cfg in program.ro_chs.values()):
+                raise RuntimeError(
+                    "flux spectroscopy readout declaration has no ADC frequency"
+                )
+            if order == "shot_frequency_dc_time":
+                sequence = np.tile(read_frequencies, frequencies.size)
+            else:
+                sequence = read_frequencies
+            readout_configs = [
+                {
+                    ch: {**ro_cfg, "freq": float(frequency)}
+                    for ch, ro_cfg in program.ro_chs.items()
+                }
+                for frequency in sequence
+            ]
+            block_records, resident_meta = _resident_program_records(
+                resident_method,
+                program,
+                readout_configs,
+                chunk,
+                access_mode="direct_mmio",
+                command_mode="sequenced",
+                soc=soc,
+                progress=callback,
+                frequency_registers=getattr(
+                    program,
+                    "readout_frequency_registers",
+                    None,
+                ),
+            )
+            raw_i = block_records[..., 0].reshape(-1)
+            raw_q = block_records[..., 1].reshape(-1)
+            resident_metas.append(resident_meta)
+        else:
+            raw_i, raw_q = program.acquire_records(
+                soc,
+                progress=callback,
+                load_pulses=block_index == 0,
+            )
         if order == "shot_frequency_dc_time":
             block_shape = (
                 chunk,
@@ -1834,7 +1997,7 @@ def acquire_passive_flux_spectroscopy_grid(
             live(i_block, q_block, completed, total_shots)
     i_values = np.concatenate(i_blocks, axis=3)
     q_values = np.concatenate(q_blocks, axis=3)
-    return i_values, q_values, {
+    telemetry = {
         "shots_per_point": int(total_shots),
         "frequency_points": int(frequencies.size),
         "dc_points": int(dc_values.size),
@@ -1843,6 +2006,45 @@ def acquire_passive_flux_spectroscopy_grid(
         "records": int(total_shots * points_per_shot),
         "order": str(order),
     }
+    if resident_metas:
+        timing_keys = set().union(
+            *(meta["server_timing_s"] for meta in resident_metas)
+        )
+        telemetry.update({
+            "host_programs": int(len(chunks)),
+            "controller_programs": int(sum(
+                meta["controller_programs"] for meta in resident_metas
+            )),
+            "readout_reconfigurations": int(sum(
+                meta["readout_reconfigurations"] for meta in resident_metas
+            )),
+            "server_batches": int(len(chunks)),
+            "resident_handshake": True,
+            "server_timing_s": {
+                key: float(sum(
+                    meta["server_timing_s"].get(key, 0.0)
+                    for meta in resident_metas
+                ))
+                for key in timing_keys
+            },
+            "ready_polls": int(sum(
+                meta["ready_polls"] for meta in resident_metas
+            )),
+            "frequency_update_mode": resident_metas[0][
+                "frequency_update_mode"
+            ],
+            "tproc_access_mode": resident_metas[0]["tproc_access_mode"],
+            "command_mode": resident_metas[0]["command_mode"],
+        })
+    else:
+        telemetry.update({
+            "host_programs": int(len(chunks)),
+            "controller_programs": int(len(chunks)),
+            "readout_reconfigurations": 0,
+            "server_batches": 0,
+            "resident_handshake": False,
+        })
+    return i_values, q_values, telemetry
 
 
 def acquire_passive_optimizer_grid(

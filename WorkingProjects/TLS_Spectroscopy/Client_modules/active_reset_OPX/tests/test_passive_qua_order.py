@@ -272,6 +272,7 @@ class FluxGridRecorder(
         self.baseline_rearm_us = 0.0
         self.post_readout_reset_us = 0.0
         self.readout_after_park = False
+        self.resident_readout = False
         self.hard_steps = []
 
     def freq2reg(self, value, **kwargs):
@@ -1322,6 +1323,62 @@ def test_compensated_flux_time_axis_is_a_single_runtime_loop(
     ]
 
 
+def test_flux_spectroscopy_waits_for_each_matching_adc_and_dac_frequency(
+    monkeypatch,
+):
+    recorder = FluxGridRecorder()
+    recorder.resident_readout = True
+    recorder.command_mode = "sequenced"
+    recorder.frequency_addr = 4
+    recorder.command_addr = 2
+    recorder.ready_addr = 3
+    recorder._resident_handshake_index = 0
+    recorder.cycle_scale = 100.0
+    recorder.hold_times = np.array([1.0])
+    recorder.dc_gains = np.array([2000.0, 3000.0])
+    recorder.read_frequencies = np.array([7000.0, 7001.0])
+    monkeypatch.setattr(qua_order, "_declare_readout", lambda program: None)
+    monkeypatch.setattr(qua_order, "_set_qubit_pulse", lambda *args: None)
+    monkeypatch.setattr(
+        qua_order,
+        "_declare_park",
+        lambda program, require_flux=False: None,
+    )
+    monkeypatch.setattr(qua_order, "_begin_park", lambda *args: None)
+
+    def allocate(program, extra_names=()):
+        names = ("stream_count",) + tuple(extra_names)
+        return {name: index + 4 for index, name in enumerate(names)}
+
+    monkeypatch.setattr(qua_order, "_allocate_stream_counter", allocate)
+    monkeypatch.setattr(qua_order, "_measure_record", lambda *args, **kwargs: None)
+    monkeypatch.setattr(qua_order.ff_pulse, "play_hard_step", lambda *args: None)
+
+    qua_order.QUAFluxSpectroscopyProgram.make_program(recorder)
+
+    labels = [
+        instruction[1]
+        for instruction in recorder.instructions
+        if instruction[0] == "label"
+        and instruction[1].startswith("QUA_FLUX_READOUT_WAIT_")
+    ]
+    assert labels == [
+        "QUA_FLUX_READOUT_WAIT_0",
+        "QUA_FLUX_READOUT_WAIT_1",
+    ]
+    for label in labels:
+        wait_index = recorder.instructions.index(("label", label))
+        assert recorder.instructions[wait_index + 3] == (
+            "condj",
+            0,
+            7,
+            "!=",
+            8,
+            label,
+        )
+        assert recorder.instructions[wait_index + 5] == ("memri", 0, 1, 4)
+
+
 def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_errors(
     monkeypatch,
 ):
@@ -1365,7 +1422,7 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
         frequencies_mhz=[10.0, 20.0],
         dc_gains=[100, 200, 300],
         hold_times_us=[1.0, 2.0],
-        read_frequencies_mhz=[7000.0, 7001.0, 7002.0],
+        read_frequencies_mhz=[7000.0, 7000.0, 7000.0],
         baseline_rearm_us=10.0,
         post_readout_reset_us=20.0,
         readout_after_park=False,
@@ -1393,6 +1450,106 @@ def test_tls_flux_spectroscopy_maps_frequency_dc_time_shots_without_transpose_er
     assert i_dc[1, 2, 1, 1] == 23
     assert dc_meta["order"] == "shot_dc_frequency_time"
     assert updates == [(1, 2), (2, 2), (1, 2), (2, 2)]
+
+
+def test_tls_flux_spectroscopy_synchronizes_adc_and_dac_for_varied_target_readout(
+    monkeypatch,
+):
+    created = []
+
+    class Program:
+        def __init__(
+            self, soccfg, cfg, *, frequencies_mhz, dc_gains, hold_times_us,
+            read_frequencies_mhz, order, shots, baseline_rearm_us,
+            post_readout_reset_us, readout_after_park, resident_readout,
+        ):
+            self.order = str(order)
+            self.shots = int(shots)
+            self.frequencies = np.asarray(frequencies_mhz)
+            self.dc_gains = np.asarray(dc_gains)
+            self.hold_times = np.asarray(hold_times_us)
+            self.read_frequencies = np.asarray(read_frequencies_mhz)
+            self.resident_readout = bool(resident_readout)
+            self.reps = int(
+                self.shots * self.frequencies.size * self.dc_gains.size
+                * self.hold_times.size
+            )
+            self.ro_chs = {
+                0: {
+                    "freq": float(self.read_frequencies[0]),
+                    "length": 5,
+                    "sel": "product",
+                    "gen_ch": 0,
+                }
+            }
+            sequence = np.tile(self.read_frequencies, self.frequencies.size)
+            self.frequency_registers = np.rint(sequence * 10).astype(int)
+            self.command_addr = 2
+            self.ready_addr = 3
+            self.frequency_addr = 4
+            self.counter_addr = 1
+            created.append(self)
+
+        def dump_prog(self):
+            return {"program": 1}
+
+        def acquire_records(self, *args, **kwargs):
+            raise AssertionError("varied target readout must use resident acquisition")
+
+    class Soc:
+        class TProc:
+            def single_read(self, addr):
+                return 0
+
+        tproc = TProc()
+
+        def __init__(self):
+            self.calls = []
+
+        def acquire_qick_resident_readout(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return {
+                "records": np.arange(8, dtype=float).reshape(1, 4, 1, 2),
+                "controller_programs": 1,
+                "readout_reconfigurations": 4,
+            }
+
+    monkeypatch.setattr(qua_order, "QUAFluxSpectroscopyProgram", Program)
+    soc = Soc()
+    i_values, q_values, telemetry = acquire_passive_flux_spectroscopy_grid(
+        soc,
+        object(),
+        {"shots": 1},
+        frequencies_mhz=[4300.0, 4301.0],
+        dc_gains=[100.0, 200.0],
+        hold_times_us=[1.0],
+        read_frequencies_mhz=[7000.0, 7001.0],
+        order="shot_frequency_dc_time",
+        baseline_rearm_us=10.0,
+        post_readout_reset_us=20.0,
+        readout_after_park=False,
+    )
+
+    assert len(created) == 1
+    assert created[0].resident_readout is True
+    assert len(soc.calls) == 1
+    args, kwargs = soc.calls[0]
+    assert [cfg[0]["freq"] for cfg in args[1]] == [
+        7000.0,
+        7001.0,
+        7000.0,
+        7001.0,
+    ]
+    assert args[2] == [70000, 70010, 70000, 70010]
+    assert kwargs["command_mode"] == "sequenced"
+    np.testing.assert_array_equal(
+        i_values[:, :, 0, 0],
+        [[0.0, 2.0], [4.0, 6.0]],
+    )
+    np.testing.assert_array_equal(q_values[:, :, 0, 0], i_values[:, :, 0, 0] + 1)
+    assert telemetry["resident_handshake"] is True
+    assert telemetry["readout_reconfigurations"] == 4
+    assert telemetry["order"] == "shot_frequency_dc_time"
 
 
 def test_tls_flux_spectroscopy_sends_each_completed_block_to_live_callback(
@@ -1430,7 +1587,7 @@ def test_tls_flux_spectroscopy_sends_each_completed_block_to_live_callback(
         frequencies_mhz=[10.0, 20.0],
         dc_gains=[100.0, 200.0],
         hold_times_us=[1.0, 2.0],
-        read_frequencies_mhz=[7000.0, 7001.0],
+        read_frequencies_mhz=[7000.0, 7000.0],
         order="shot_frequency_dc_time",
         baseline_rearm_us=10.0,
         post_readout_reset_us=20.0,
