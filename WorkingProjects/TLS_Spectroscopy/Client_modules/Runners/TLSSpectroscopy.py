@@ -59,17 +59,17 @@ YOKO_VISA = "USB0::0x0B21::0x0039::91S929899::0::INSTR"
 YOKO_VOLTAGE = 0.0
 
 FLUX_FIT_PARAMS = [
-    9.30070052036,
-    0.100677145556,
-    31881.294671,
-    7115.71137189,
-    0.822636051338,
-    -4.13273417292e-05,
+    8.08494399834,
+    0.277728945221,
+    41333.4537186,
+    -22233.4667642,
+    0.716006148725,
+    -1.71802166161e-05,
 ]
 
-BASELINE_DC_OFFSET = None
-TARGET_DC_OFFSET = 4000
-FLUX_TAIL_COMPENSATION_GAIN = 0.75
+BASELINE_DC_OFFSET = -25146
+TARGET_DC_OFFSET = -14750
+FLUX_TAIL_COMPENSATION_GAIN = 1.0
 
 SAVE_RESONATOR_LOOKUP = False
 USE_RESONATOR_LOOKUP = False
@@ -83,7 +83,7 @@ _RESET_SESSION = ProductionResetSession.passive()
 
 
 P1_RESONATOR = {
-    "run": True,
+    "run": False,
     "shots": 300,
     "freq_min": 6931,
     "freq_max": 6934,
@@ -99,32 +99,32 @@ P1_RESONATOR = {
 
 P2_QUBIT_SPEC_FULL = {
     "run": False,
-    "advanced_fit": True,
-    "shots": 300,
+    "advanced_fit": False,
+    "shots": 100,
     "relax_delay_us": 100.0,
-    "spec_amp": 20000,
+    "spec_amp": 25000,
     "spec_len_us": 0.5,
-    "freq_min": 4900.0,
-    "freq_max": 5200.0,
-    "freq_step": 1.0,
-    "dc_min": 8000,
-    "dc_max": 11000,
-    "dc_step": 100,
+    "freq_min": 4250.0,
+    "freq_max": 4400.0,
+    "freq_step": 0.5,
+    "dc_min": -27000,
+    "dc_max": -20000,
+    "dc_step": 250,
     "live_plot": True,
 }
 
 P3_STEP_RESPONSE = {
     "run_fit": False,
     "run_correct": False,
-    "shots": 300,
-    "spec_amp": 15000,
+    "shots": 200,
+    "spec_amp": 25000,
     "spec_len_us": 0.5,
     "freq_step": 0.5,
     "auto_center_frequency_window": True,
-    "auto_freq_absolute_min_mhz": 2430.0,
-    "auto_freq_absolute_max_mhz": 2470.0,
+    "auto_freq_absolute_min_mhz": 4010.0,
+    "auto_freq_absolute_max_mhz": 4060.0,
     "t_min_us": 1.0,
-    "t_max_us": 500.0,
+    "t_max_us": 400.0,
     "t_step_us": 4.0,
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
@@ -134,18 +134,18 @@ P3_STEP_RESPONSE = {
 }
 
 P4_LONG_TIME = {
-    "run": False,
+    "run": True,
     "advanced_fit": True,
-    "shots": 300,
+    "shots": 100,
     "relax_delay_us": 500.0,
-    "spec_amp": 20000,
+    "spec_amp": 25000,
     "spec_len_us": 0.5,
-    "freq_min": 2000.0,
-    "freq_max": 2570.0,
+    "freq_min": 3800.0,
+    "freq_max": 4500.0,
     "freq_step": 1.0,
-    "dc_min": 0,
-    "dc_max": 15000,
-    "dc_step": 100,
+    "dc_min": -30000,
+    "dc_max": -12500,
+    "dc_step": 250,
     "long_time_us": 5.0,
     "average_window_us": 0.0,
     "average_step_us": 0.016,
