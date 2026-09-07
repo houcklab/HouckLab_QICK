@@ -4,6 +4,16 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectrosc
 def main():
     runner.LIVE_PLOTS = False
     runner.RESET_MODE = "active"
+    runner.FLUX_FIT_PARAMS = [
+        8.203384791028979,
+        0.2902930003646722,
+        8774.00218131707,
+        -23058.31389817458,
+        0.9831224825856887,
+        -1.2183803188472806e-05,
+    ]
+    runner.BASELINE_DC_OFFSET = -25790
+    runner.TARGET_DC_OFFSET = -20000
     runner.FLUX_TAIL_COMPENSATION_GAIN = 0.75
     runner.P1_RESONATOR["run"] = False
     runner.P2_QUBIT_SPEC_FULL["run"] = False

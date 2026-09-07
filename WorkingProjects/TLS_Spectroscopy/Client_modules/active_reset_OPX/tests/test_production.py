@@ -806,6 +806,9 @@ def test_tls_3pt_smoke_combines_active_reset_with_validated_flux_compensation(mo
     runner = SimpleNamespace(
         LIVE_PLOTS=True,
         RESET_MODE="passive",
+        FLUX_FIT_PARAMS=None,
+        BASELINE_DC_OFFSET=0,
+        TARGET_DC_OFFSET=0,
         FLUX_TAIL_COMPENSATION_GAIN=0.1,
         P1_RESONATOR={"run": True},
         P2_QUBIT_SPEC_FULL={"run": True},
@@ -817,6 +820,9 @@ def test_tls_3pt_smoke_combines_active_reset_with_validated_flux_compensation(mo
     )
     runner.main = lambda: calls.append({
         "reset_mode": runner.RESET_MODE,
+        "flux_fit_params": runner.FLUX_FIT_PARAMS,
+        "baseline_dc_offset": runner.BASELINE_DC_OFFSET,
+        "target_dc_offset": runner.TARGET_DC_OFFSET,
         "gain": runner.FLUX_TAIL_COMPENSATION_GAIN,
         "step6": dict(runner.P6_3PT_T1),
         "selected": [
@@ -843,6 +849,16 @@ def test_tls_3pt_smoke_combines_active_reset_with_validated_flux_compensation(mo
 
     assert calls == [{
         "reset_mode": "active",
+        "flux_fit_params": [
+            8.203384791028979,
+            0.2902930003646722,
+            8774.00218131707,
+            -23058.31389817458,
+            0.9831224825856887,
+            -1.2183803188472806e-05,
+        ],
+        "baseline_dc_offset": -25790,
+        "target_dc_offset": -20000,
         "gain": 0.75,
         "step6": {
             "run": True,
