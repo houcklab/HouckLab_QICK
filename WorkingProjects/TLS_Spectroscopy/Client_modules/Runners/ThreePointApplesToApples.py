@@ -42,10 +42,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production
 
 
 P6_3PT_APPLES_TO_APPLES = {
-    "shots": 100,
+    "shots": 300,
     "dc_min": -20511,
     "dc_max": -6744,
-    "freq_min_ghz": 3.3,
+    "freq_min_ghz": 3.8,
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
@@ -55,7 +55,7 @@ P6_3PT_APPLES_TO_APPLES = {
     "reset_mode": "active",
     "sync_enabled": True,
     "sync_role": "follower",
-    "sync_session": "q3_q5_3pt_apples_20260907_v2",
+    "sync_session": "q3_q5_3pt_apples_20260907_v3",
     "sync_directory": "Z:/FluxTeam/Data",
     "sync_slot_s": 180.0,
     "sync_lead_s": 60.0,
