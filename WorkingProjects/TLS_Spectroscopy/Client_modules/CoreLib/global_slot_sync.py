@@ -147,6 +147,7 @@ class GlobalSlotSynchronizer:
         self.ntp = None
         self.first_start_epoch_s = None
         self.next_start_epoch_s = None
+        self.current_start_epoch_s = None
         self.token = None
         self.bootstrap_path = None
         self.ready_path = None
@@ -380,6 +381,7 @@ class GlobalSlotSynchronizer:
                 return None
         wait_until_epoch(target, self.corrected_clock)
         actual = self.corrected_clock()
+        self.current_start_epoch_s = float(target)
         return {
             **self.metadata(),
             "sync_scheduled_start_epoch_s": float(target),
@@ -437,9 +439,10 @@ class GlobalSlotSynchronizer:
             self.boundary_guard_s,
         )
         self.next_start_epoch_s = float(next_start)
-        nominal_end = (
-            float(self.first_start_epoch_s) + (int(run_index) + 1) * self.slot_s
-        )
+        current_start = self.current_start_epoch_s
+        if current_start is None:
+            current_start = float(self.first_start_epoch_s) + int(run_index) * self.slot_s
+        nominal_end = float(current_start) + self.slot_s
         return {
             **self.metadata(),
             "sync_actual_end_epoch_s": finish,

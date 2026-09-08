@@ -55,18 +55,18 @@ P6_3PT_APPLES_TO_APPLES = {
     "reset_mode": "active",
     "sync_enabled": True,
     "sync_role": "follower",
-    "sync_session": "q3_q5_3pt_apples_20260907_v3",
+    "sync_session": "q3_q5_3pt_apples_20260908_v4",
     "sync_directory": "Z:/FluxTeam/Data",
     "sync_slot_s": 180.0,
     "sync_lead_s": 60.0,
     "sync_timeout_s": 3600.0,
     "sync_ntp_refresh_s": 1800.0,
+    "sync_peer_wait_s": 180.0,
+    "sync_boundary_guard_s": 5.0,
+    "reset_recalibration_min": 30.0,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
 }
-
-
-MAX_CONSECUTIVE_RUN_FAILURES = 3
 
 
 def _target_frequency_grid_ghz(p):
@@ -106,7 +106,13 @@ def _integer_dc_grid(p, target):
     return dc_vec, realized
 
 
-def _run_series(factory, wall_clock_s, synchronizer, recalibrate):
+def _run_series(
+    factory,
+    wall_clock_s,
+    synchronizer,
+    recalibrate,
+    recalibration_min=AUTOMATIC_RECALIBRATION_MIN,
+):
     series_start = None
     base_path = None
     csv_path = None
@@ -134,10 +140,18 @@ def _run_series(factory, wall_clock_s, synchronizer, recalibrate):
             break
         except Exception as exc:
             consecutive_failures += 1
-            print(f"run {run_index + 1} FAILED ({type(exc).__name__}: {str(exc)[:160]})")
-            if consecutive_failures >= MAX_CONSECUTIVE_RUN_FAILURES:
-                raise
-            synchronizer.wait_for_end(run_index)
+            detail = f"{type(exc).__name__}: {str(exc)[:160]}"
+            print(
+                f"run {run_index + 1} FAILED ({detail}); continuing "
+                f"({consecutive_failures} consecutive failure(s))"
+            )
+            try:
+                synchronizer.wait_for_end(run_index, status="failed", error=detail)
+            except Exception as sync_exc:
+                print(
+                    f"[sync] completion update failed ({type(sync_exc).__name__}: "
+                    f"{sync_exc}); continuing locally."
+                )
             run_index += 1
             continue
         scan_finish = synchronizer.corrected_clock()
@@ -176,16 +190,22 @@ def _run_series(factory, wall_clock_s, synchronizer, recalibrate):
             append=completed > 1,
         )
         print(f"one-stop CSV updated: {csv_path}")
-        if (datetime.now() - last_cal).total_seconds() >= AUTOMATIC_RECALIBRATION_MIN * 60.0:
+        if (datetime.now() - last_cal).total_seconds() >= float(recalibration_min) * 60.0:
             try:
                 recalibrate()
-            except ValueError as exc:
+            except Exception as exc:
                 print(
                     "automatic reset recalibration rejected; retaining the last valid "
-                    f"calibration ({exc})"
+                    f"calibration ({type(exc).__name__}: {exc})"
                 )
             last_cal = datetime.now()
-        synchronizer.wait_for_end(run_index)
+        try:
+            synchronizer.wait_for_end(run_index, status="success")
+        except Exception as sync_exc:
+            print(
+                f"[sync] completion update failed ({type(sync_exc).__name__}: "
+                f"{sync_exc}); continuing locally."
+            )
         run_index += 1
     return csv_path
 
@@ -268,7 +288,13 @@ def main():
 
     synchronizer = GlobalSlotSynchronizer.from_config(p)
     synchronizer.prepare()
-    csv_path = _run_series(factory, wall_clock_s, synchronizer, recalibrate)
+    csv_path = _run_series(
+        factory,
+        wall_clock_s,
+        synchronizer,
+        recalibrate,
+        recalibration_min=float(p["reset_recalibration_min"]),
+    )
     print(f"apples-to-apples 3-point scan complete: {csv_path}")
 
 
