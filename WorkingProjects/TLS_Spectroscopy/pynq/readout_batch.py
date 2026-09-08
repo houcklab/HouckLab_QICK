@@ -1,6 +1,16 @@
+import threading
 import time
 
 import numpy as np
+
+
+_DMEM_READ_LOCK = threading.Lock()
+
+
+def _allocate_qick_dmem_buffer(length):
+    from pynq import allocate
+
+    return allocate(shape=int(length), dtype=np.int32)
 
 
 def _make_program(soc, values, program_factory):
@@ -268,6 +278,51 @@ def _tproc_dmem_size(soc):
         return None
 
 
+def _has_reusable_dmem_reader(tproc):
+    try:
+        receive = tproc.dma.recvchannel
+    except Exception:
+        return False
+    return all(
+        hasattr(tproc, name)
+        for name in (
+            "mem_mode_reg",
+            "mem_addr_reg",
+            "mem_len_reg",
+            "mem_start_reg",
+        )
+    ) and callable(getattr(receive, "transfer", None)) and callable(
+        getattr(receive, "wait", None)
+    )
+
+
+def _read_qick_dmem_reusable(tproc, address, length, dmem_size):
+    capacity = int(dmem_size) if dmem_size is not None else int(length)
+    capacity = max(capacity, int(length))
+    buffer = getattr(tproc, "_qick_reusable_dmem_read_buffer", None)
+    if buffer is None or int(np.asarray(buffer).size) < capacity:
+        previous = buffer
+        buffer = _allocate_qick_dmem_buffer(capacity)
+        tproc._qick_reusable_dmem_read_buffer = buffer
+        release = getattr(previous, "freebuffer", None)
+        if callable(release):
+            release()
+
+    tproc.mem_mode_reg = 0
+    tproc.mem_addr_reg = int(address)
+    tproc.mem_len_reg = int(length)
+    tproc.mem_start_reg = 1
+    try:
+        try:
+            tproc.dma.recvchannel.transfer(buffer, nbytes=int(length) * 4)
+        except TypeError:
+            tproc.dma.recvchannel.transfer(buffer[:length])
+        tproc.dma.recvchannel.wait()
+        return np.asarray(buffer)[:length].copy()
+    finally:
+        tproc.mem_start_reg = 0
+
+
 def read_qick_dmem(soc, address, length):
     address = int(address)
     length = int(length)
@@ -276,15 +331,25 @@ def read_qick_dmem(soc, address, length):
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and address + length > dmem_size:
         raise ValueError("DMem read exceeds tProcessor data memory")
-    reader = getattr(soc.tproc, "read_dmem", None)
+    tproc = soc.tproc
+    reader = getattr(tproc, "read_dmem", None)
     values = None
     try:
-        if callable(reader):
+        if _has_reusable_dmem_reader(tproc):
+            with _DMEM_READ_LOCK:
+                values = _read_qick_dmem_reusable(
+                    tproc,
+                    address,
+                    length,
+                    dmem_size,
+                )
+            words = values
+        elif callable(reader):
             values = reader(address, length)
             words = np.asarray(values).reshape(-1)
         else:
             words = np.asarray(
-                [soc.tproc.single_read(addr=address + offset)
+                [tproc.single_read(addr=address + offset)
                  for offset in range(length)]
             )
         if words.size < length:
@@ -294,7 +359,9 @@ def read_qick_dmem(soc, address, length):
         return words[:length].astype(np.uint32).astype(np.uint64).tolist()
     finally:
         release = getattr(values, "freebuffer", None)
-        if callable(release):
+        if callable(release) and values is not getattr(
+            tproc, "_qick_reusable_dmem_read_buffer", None
+        ):
             release()
 
 
