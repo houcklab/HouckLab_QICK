@@ -323,6 +323,50 @@ def _read_qick_dmem_reusable(tproc, address, length, dmem_size):
         tproc.mem_start_reg = 0
 
 
+def _has_reusable_dmem_writer(tproc):
+    try:
+        send = tproc.dma.sendchannel
+    except Exception:
+        return False
+    return all(
+        hasattr(tproc, name)
+        for name in (
+            "mem_mode_reg",
+            "mem_addr_reg",
+            "mem_len_reg",
+            "mem_start_reg",
+        )
+    ) and callable(getattr(send, "transfer", None)) and callable(
+        getattr(send, "wait", None)
+    )
+
+
+def _write_qick_dmem_reusable(tproc, address, words):
+    length = int(words.size)
+    buffer = getattr(tproc, "_qick_reusable_dmem_write_buffer", None)
+    if buffer is None or int(np.asarray(buffer).size) < length:
+        previous = buffer
+        buffer = _allocate_qick_dmem_buffer(length)
+        tproc._qick_reusable_dmem_write_buffer = buffer
+        release = getattr(previous, "freebuffer", None)
+        if callable(release):
+            release()
+    np.copyto(buffer[:length], words.view(np.int32))
+
+    tproc.mem_mode_reg = 1
+    tproc.mem_addr_reg = int(address)
+    tproc.mem_len_reg = length
+    tproc.mem_start_reg = 1
+    try:
+        try:
+            tproc.dma.sendchannel.transfer(buffer, nbytes=length * 4)
+        except TypeError:
+            tproc.dma.sendchannel.transfer(buffer[:length])
+        tproc.dma.sendchannel.wait()
+    finally:
+        tproc.mem_start_reg = 0
+
+
 def read_qick_dmem(soc, address, length):
     address = int(address)
     length = int(length)
@@ -374,12 +418,16 @@ def write_qick_dmem(soc, address, values):
     dmem_size = _tproc_dmem_size(soc)
     if dmem_size is not None and address + length > dmem_size:
         raise ValueError("DMem write exceeds tProcessor data memory")
-    loader = getattr(soc.tproc, "load_dmem", None)
-    if callable(loader):
+    tproc = soc.tproc
+    loader = getattr(tproc, "load_dmem", None)
+    if _has_reusable_dmem_writer(tproc):
+        with _DMEM_READ_LOCK:
+            _write_qick_dmem_reusable(tproc, address, words)
+    elif callable(loader):
         loader(words.view(np.int32), addr=address)
     else:
         for offset, value in enumerate(words):
-            soc.tproc.single_write(
+            tproc.single_write(
                 addr=address + offset,
                 data=int(value),
             )
