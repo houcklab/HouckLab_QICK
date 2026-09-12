@@ -25,6 +25,8 @@ try:
     from .readout_batch import (
         acquire_qick_program_batch,
         acquire_qick_resident_readout,
+        bounded_poll_timeout,
+        cleanup_qick_readout as _cleanup_qick_readout,
         read_qick_dmem,
         write_qick_dmem,
     )
@@ -32,12 +34,23 @@ except ImportError:
     from readout_batch import (
         acquire_qick_program_batch,
         acquire_qick_resident_readout,
+        bounded_poll_timeout,
+        cleanup_qick_readout as _cleanup_qick_readout,
         read_qick_dmem,
         write_qick_dmem,
     )
 
 
 class QickSocCal(QickSoc):
+    def poll_data(self, totaltime=0.1, timeout=None):
+        return super().poll_data(
+            totaltime=totaltime,
+            timeout=bounded_poll_timeout(timeout),
+        )
+
+    def cleanup_qick_readout(self):
+        return _cleanup_qick_readout(self)
+
     def read_qick_dmem(self, address, length):
         return read_qick_dmem(self, address, length)
 

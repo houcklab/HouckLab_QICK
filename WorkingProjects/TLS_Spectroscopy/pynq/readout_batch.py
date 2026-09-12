@@ -1,3 +1,4 @@
+import queue
 import threading
 import time
 
@@ -5,6 +6,58 @@ import numpy as np
 
 
 _DMEM_READ_LOCK = threading.Lock()
+
+
+def bounded_poll_timeout(timeout, default_s=0.25):
+    """Keep a disconnected Pyro client from holding a poll worker forever."""
+    return float(default_s) if timeout is None else float(timeout)
+
+
+def _drain_queue(values):
+    count = 0
+    while True:
+        try:
+            values.get_nowait()
+            count += 1
+        except queue.Empty:
+            return count
+
+
+def cleanup_qick_readout(
+    soc,
+    *,
+    wake_pollers=8,
+    wake_wait_s=0.1,
+):
+    """Stop acquisition and wake Pyro calls abandoned by interrupted clients."""
+    wake_pollers = max(int(wake_pollers), 1)
+    wake_wait_s = max(float(wake_wait_s), 0.0)
+    streamer = soc.streamer
+    was_running = bool(streamer.readout_running())
+    try:
+        soc.tproc.reset()
+    except Exception:
+        soc.tproc.stop()
+    streamer.stop_flag.set()
+    if was_running:
+        streamer.stop_readout()
+    streamer.done_flag.wait(timeout=1.0)
+
+    dropped_data = _drain_queue(streamer.data_queue)
+    dropped_errors = _drain_queue(streamer.error_queue)
+    for _ in range(wake_pollers):
+        streamer.data_queue.put((0, None))
+    if wake_wait_s:
+        time.sleep(wake_wait_s)
+    unused_wake_packets = _drain_queue(streamer.data_queue)
+    streamer.stop_flag.clear()
+    return {
+        "was_running": was_running,
+        "streamer_running": bool(streamer.readout_running()),
+        "dropped_data_packets": int(dropped_data),
+        "dropped_errors": int(dropped_errors),
+        "wake_packets_consumed": int(wake_pollers - unused_wake_packets),
+    }
 
 
 def _allocate_qick_dmem_buffer(length):
