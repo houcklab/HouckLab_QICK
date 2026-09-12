@@ -1167,6 +1167,20 @@ class OPXResetBenchmarkProgram(QickProgram):
             if getattr(self.reset_config, "hard_flux_steps", False):
                 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
+                compensation = ff_pulse.load_compensation(self.cfg)
+                if (
+                    compensation is not None
+                    and float(self.reset_config.park_preroll_us) > 0
+                ):
+                    ff_pulse.play_compensated_hard_step(
+                        self,
+                        float(self.cfg.get("ff_initial_gain", 0) or 0),
+                        self.cfg.get("ff_park_gain", 0),
+                        float(self.reset_config.park_preroll_us),
+                        compensation,
+                    )
+                    self.sync_all(0)
+                    return
                 ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
                 self.sync_all(self.us2cycles(float(
                     getattr(self.reset_config, "park_preroll_us", 0.0)
@@ -2535,6 +2549,7 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
             cfg.get("opx_payload_flux_hold_us", 0.05)
         )
         self._payload_flux_settle_us = ff_pulse.flux_settle_us(cfg)
+        self._payload_flux_compensation = ff_pulse.load_compensation(cfg)
         self._payload_park_recovery_us = float(
             cfg.get("opx_payload_park_recovery_us", 0.0)
         )
@@ -2592,6 +2607,32 @@ class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
                 self.sync_all(self.us2cycles(0.01))
 
         if self._payload_pulse_placement == "park_after_excursion":
+            if self._payload_flux_compensation is not None:
+                park_gain = cfg.get("ff_park_gain", 0)
+                target_gain = cfg["opx_payload_excursion_gain"]
+                ff_pulse.play_compensated_hard_step(
+                    self,
+                    park_gain,
+                    target_gain,
+                    self._payload_flux_settle_us + max(
+                        self._payload_flux_hold_us, 0.01
+                    ),
+                    self._payload_flux_compensation,
+                    restore_target_at_end=False,
+                )
+                ff_pulse.play_compensated_hard_step(
+                    self,
+                    target_gain,
+                    park_gain,
+                    max(
+                        self._payload_park_recovery_us,
+                        self._payload_flux_settle_us,
+                    ),
+                    self._payload_flux_compensation,
+                )
+                self.sync_all(0)
+                emit_pulses()
+                return
             emit_park_history_probe(
                 play_target=lambda: ff_pulse.play_hard_step(
                     self, cfg["opx_payload_excursion_gain"]

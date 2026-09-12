@@ -340,11 +340,22 @@ def persistent_park_enabled(cfg):
 def begin_park_lifecycle(prog, segs):
     if not persistent_park_enabled(prog.cfg):
         return
+    preroll = float(prog.cfg.get("opx_park_preroll_us", 0.0))
     if bool(prog.cfg.get("opx_hard_flux_steps", False)):
+        compensation = load_compensation(prog.cfg)
+        if compensation is not None and preroll > 0:
+            play_compensated_hard_step(
+                prog,
+                float(prog.cfg.get("ff_initial_gain", 0) or 0),
+                prog.cfg.get("ff_park_gain", 0),
+                preroll,
+                compensation,
+            )
+            prog.sync_all(0)
+            return
         play_hard_step(prog, prog.cfg.get("ff_park_gain", 0))
     else:
         play_park_up(prog, segs)
-    preroll = float(prog.cfg.get("opx_park_preroll_us", 0.0))
     if preroll > 0:
         prog.sync_all(prog.us2cycles(preroll))
 
