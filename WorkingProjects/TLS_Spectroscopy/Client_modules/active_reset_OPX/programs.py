@@ -1305,11 +1305,25 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
         self._t1_ff_segments = None
         self._t1_ff_compensation = None
         self._t1_ff_settle_us = 0.0
+        self._t1_ff_predistortion_mode = "none"
+        self._t1_ff_predistortion_tail_us = 0.0
+        self._t1_ff_predistortion_recovery_us = 0.0
         if self._t1_stepping:
             if not getattr(self, "do_park_hold", False):
                 ff_pulse.declare_ff(self)
             self._t1_ff_settle_us = ff_pulse.flux_settle_us(cfg)
             self._t1_ff_compensation = ff_pulse.load_compensation(cfg)
+            if self._t1_ff_compensation is not None:
+                self._t1_ff_predistortion_mode = (
+                    ff_pulse.predistortion_round_trip_mode(cfg)
+                )
+                if self._t1_ff_predistortion_mode == "stateful":
+                    self._t1_ff_predistortion_recovery_us = (
+                        ff_pulse.predistortion_recovery_us(
+                            cfg,
+                            self._t1_ff_compensation,
+                        )
+                    )
             if not getattr(self.reset_config, "hard_flux_steps", False):
                 self._t1_ff_segments = ff_pulse.build_ramp_hold_ramp(
                     self,
@@ -1331,6 +1345,60 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                 if getattr(self, "_t1_ff_compensation", None) is not None:
                     park_gain = self.cfg.get("ff_park_gain", 0)
                     target_gain = self.cfg["ff_gain"]
+                    if getattr(
+                        self,
+                        "_t1_ff_predistortion_mode",
+                        "stateful",
+                    ) == "stateful":
+                        target, recovery = (
+                            ff_pulse.compensation_round_trip_segments(
+                                self._t1_ff_compensation,
+                                max(hold_us, 0.01) + self._t1_ff_settle_us,
+                                recovery_us=getattr(
+                                    self,
+                                    "_t1_ff_predistortion_recovery_us",
+                                    None,
+                                ),
+                            )
+                        )
+                        prefix, tail = ff_pulse.split_compensation_segments(
+                            recovery,
+                            self._t1_ff_settle_us,
+                        )
+                        prefix_duration = sum(duration for _, duration in prefix)
+                        if prefix_duration < self._t1_ff_settle_us - 1e-12:
+                            prefix.append((
+                                0.0,
+                                self._t1_ff_settle_us - prefix_duration,
+                            ))
+                        ff_pulse.play_relative_compensation_segments(
+                            self,
+                            park_gain,
+                            target_gain,
+                            target,
+                        )
+                        ff_pulse.play_relative_compensation_segments(
+                            self,
+                            park_gain,
+                            target_gain,
+                            prefix,
+                        )
+                        if tail:
+                            self.sync_all(0)
+                            ff_pulse.play_relative_compensation_segments(
+                                self,
+                                park_gain,
+                                target_gain,
+                                tail,
+                            )
+                            ff_pulse.play_hard_step(self, park_gain)
+                            self._t1_ff_predistortion_tail_us = sum(
+                                duration for _, duration in tail
+                            )
+                        else:
+                            ff_pulse.play_hard_step(self, park_gain)
+                            self.sync_all(0)
+                        return
                     ff_pulse.play_compensated_hard_step(
                         self,
                         park_gain,
@@ -1551,20 +1619,39 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         )
         self.pulse(ch=self.cfg["ff_ch"])
 
-    def _play_dynamic_compensation_segment(self, multiplier, duration_us, returning=False):
+    def _play_dynamic_relative_segment(
+        self,
+        coefficient,
+        duration_us,
+        anchor="park",
+    ):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
         page = self._t1_flux_ff_page
         regs = self._t1_flux_regs
-        factor = float(multiplier) - 1.0
+        coefficient = float(coefficient)
+        anchor = str(anchor).strip().lower()
+        if anchor == "target":
+            base_register = regs["dc_gain"]
+            factor = coefficient - 1.0
+        elif anchor == "park":
+            base_register = regs["park_gain"]
+            factor = coefficient
+        else:
+            raise ValueError("dynamic relative segment anchor must be park or target")
         factor_fixed = int(round(abs(factor) * (1 << 16)))
-        base_register = regs["park_gain"] if returning else regs["dc_gain"]
         if factor_fixed:
-            self.mathi(page, regs["command"], regs["dc_delta"], "*", factor_fixed)
+            self.mathi(
+                page,
+                regs["command"],
+                regs["dc_delta"],
+                "*",
+                factor_fixed,
+            )
             self.bitwi(page, regs["command"], regs["command"], ">>", 16)
-            correction_sign = self._t1_flux_direction * (1 if factor > 0 else -1)
-            if returning:
-                correction_sign *= -1
+            correction_sign = self._t1_flux_direction * (
+                1 if factor > 0 else -1
+            )
             self.math(
                 page,
                 regs["command"],
@@ -1573,7 +1660,13 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
                 regs["command"],
             )
         else:
-            self.mathi(page, regs["command"], base_register, "+", 0)
+            self.mathi(
+                page,
+                regs["command"],
+                base_register,
+                "+",
+                0,
+            )
         total = max(int(self.us2cycles(duration_us, gen_ch=self.cfg["ff_ch"])), 3)
         chunk_count = max(1, (total + ff_pulse._MAX_CONST_LEN - 1) // ff_pulse._MAX_CONST_LEN)
         base, extra = divmod(total, chunk_count)
@@ -1596,10 +1689,84 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             )
             self.pulse(ch=self.cfg["ff_ch"])
 
+    def _play_dynamic_compensation_segment(
+        self,
+        multiplier,
+        duration_us,
+        returning=False,
+    ):
+        coefficient = (
+            1.0 - float(multiplier)
+            if returning
+            else float(multiplier)
+        )
+        OPXResetT1FluxSweepProgram._play_dynamic_relative_segment(
+            self,
+            coefficient,
+            duration_us,
+            anchor="park" if returning else "target",
+        )
+
     def _play_dynamic_compensated_hold(self, delay_us):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 
         target_hold = max(float(delay_us), 0.01) + self._t1_ff_settle_us
+        if getattr(
+            self,
+            "_t1_ff_predistortion_mode",
+            "stateful",
+        ) == "stateful":
+            target, recovery = ff_pulse.compensation_round_trip_segments(
+                self._t1_ff_compensation,
+                target_hold,
+                recovery_us=getattr(
+                    self,
+                    "_t1_ff_predistortion_recovery_us",
+                    None,
+                ),
+            )
+            prefix, tail = ff_pulse.split_compensation_segments(
+                recovery,
+                self._t1_ff_settle_us,
+            )
+            prefix_duration = sum(duration for _, duration in prefix)
+            if prefix_duration < self._t1_ff_settle_us - 1e-12:
+                prefix.append((
+                    0.0,
+                    self._t1_ff_settle_us - prefix_duration,
+                ))
+            for coefficient, duration in target:
+                self._play_dynamic_relative_segment(
+                    coefficient,
+                    duration,
+                    anchor="target",
+                )
+            for coefficient, duration in prefix:
+                self._play_dynamic_relative_segment(
+                    coefficient,
+                    duration,
+                    anchor="park",
+                )
+            if tail:
+                self.sync_all(0)
+                for coefficient, duration in tail:
+                    self._play_dynamic_relative_segment(
+                        coefficient,
+                        duration,
+                        anchor="park",
+                    )
+                ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+                self._t1_ff_predistortion_tail_us = max(
+                    getattr(self, "_t1_ff_predistortion_tail_us", 0.0),
+                    sum(duration for _, duration in tail),
+                )
+            else:
+                ff_pulse.play_hard_step(
+                    self,
+                    self.cfg.get("ff_park_gain", 0),
+                )
+                self.sync_all(0)
+            return
         for multiplier, duration in ff_pulse.compensation_hold_segments(
             self._t1_ff_compensation, target_hold
         ):
@@ -2103,6 +2270,11 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._t1_flux_regs = self._t1_3pt_regs
         self._play_dynamic_compensation_segment = (
             OPXResetT1FluxSweepProgram._play_dynamic_compensation_segment.__get__(
+                self, type(self)
+            )
+        )
+        self._play_dynamic_relative_segment = (
+            OPXResetT1FluxSweepProgram._play_dynamic_relative_segment.__get__(
                 self, type(self)
             )
         )

@@ -34,6 +34,41 @@ def flux_settle_us(cfg):
     return float(cfg.get("flux_settle_time_us", DEFAULT_FLUX_SETTLE_US))
 
 
+def predistortion_round_trip_mode(cfg):
+    mode = str(
+        cfg.get("flux_predistortion_round_trip_mode", "stateful")
+    ).strip().lower()
+    if mode not in {"stateful", "legacy"}:
+        raise ValueError(
+            "flux_predistortion_round_trip_mode must be 'stateful' or 'legacy'"
+        )
+    return mode
+
+
+def predistortion_recovery_us(cfg, compensation):
+    """Recovery history retained after a return to park.
+
+    Forty microseconds covers the payload readout/reset window without adding
+    the full measured 497 us correction to every condition.  ``"full"`` is
+    available for dedicated validation scans with sufficient program memory.
+    """
+    value = cfg.get("flux_predistortion_recovery_us", 40.0)
+    edges_us, _ = _compensation_arrays(compensation)
+    horizon_us = float(edges_us[-1])
+    if isinstance(value, str):
+        if value.strip().lower() != "full":
+            raise ValueError(
+                "flux_predistortion_recovery_us must be non-negative or 'full'"
+            )
+        return horizon_us
+    value = float(value)
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(
+            "flux_predistortion_recovery_us must be non-negative or 'full'"
+        )
+    return min(value, horizon_us)
+
+
 def compensation_hold_segments(compensation, hold_us):
     hold_us = max(float(hold_us), 0.0)
     if hold_us <= 0:
@@ -59,6 +94,114 @@ def compensation_hold_segments(compensation, hold_us):
         multiplier = float(multipliers[multiplier_index]) if multipliers.size else 1.0
         segments.append((multiplier, duration))
     return segments or [(1.0, hold_us)]
+
+
+def _compensation_arrays(compensation):
+    edges_us = np.asarray(compensation["segment_edges_ns"], dtype=float) / 1e3
+    multipliers = np.asarray(compensation["multipliers"], dtype=float)
+    if (
+        edges_us.ndim != 1
+        or multipliers.ndim != 1
+        or edges_us.size == 0
+        or edges_us.size != multipliers.size
+        or not np.all(np.isfinite(edges_us))
+        or not np.all(np.isfinite(multipliers))
+        or abs(float(edges_us[0])) > 1e-12
+        or np.any(np.diff(edges_us) <= 0.0)
+    ):
+        raise ValueError(
+            "flux compensation needs equally sized finite multiplier and "
+            "strictly increasing edge vectors beginning at zero"
+        )
+    return edges_us, multipliers
+
+
+def _compensation_multiplier_at(edges_us, multipliers, time_us):
+    index = int(np.searchsorted(
+        edges_us,
+        max(float(time_us), 0.0) + 1e-12,
+        side="right",
+    ) - 1)
+    return float(multipliers[min(max(index, 0), multipliers.size - 1)])
+
+
+def _merge_adjacent_segments(segments, atol=1e-12, trim_trailing_zero=False):
+    merged = []
+    for coefficient, duration_us in segments:
+        duration_us = float(duration_us)
+        if duration_us <= 1e-12:
+            continue
+        coefficient = float(coefficient)
+        if merged and abs(merged[-1][0] - coefficient) <= float(atol):
+            merged[-1] = (merged[-1][0], merged[-1][1] + duration_us)
+        else:
+            merged.append((coefficient, duration_us))
+    if trim_trailing_zero:
+        while merged and abs(merged[-1][0]) <= float(atol):
+            merged.pop()
+    return merged
+
+
+def compensation_round_trip_segments(compensation, hold_us, recovery_us=None):
+    """Return normalized commands for a compensated park-target-park trip.
+
+    ``multipliers`` describes the command for one unit step, ``m(t)``.  For a
+    target held for ``H``, LTI superposition requires the post-return command
+    ``m(H+r) - m(r)`` relative to park.  Treating the return as an isolated
+    reverse step (``1-m(r)``) is only valid after the first edge has completely
+    settled.
+    """
+    hold_us = max(float(hold_us), 0.0)
+    if hold_us <= 0.0:
+        return [], []
+    if compensation is None:
+        return [(1.0, hold_us)], []
+    edges_us, multipliers = _compensation_arrays(compensation)
+    target = compensation_hold_segments(compensation, hold_us)
+    horizon_us = float(edges_us[-1])
+    if recovery_us is not None:
+        recovery_us = float(recovery_us)
+        if not np.isfinite(recovery_us) or recovery_us < 0.0:
+            raise ValueError("round-trip recovery_us must be finite and non-negative")
+        horizon_us = min(horizon_us, recovery_us)
+    if horizon_us <= 0.0:
+        return target, []
+    bounds = {0.0, horizon_us}
+    bounds.update(float(edge) for edge in edges_us if 0.0 < edge < horizon_us)
+    bounds.update(
+        float(edge - hold_us)
+        for edge in edges_us
+        if 0.0 < edge - hold_us < horizon_us
+    )
+    bounds = sorted(bounds)
+    recovery = []
+    for start, stop in zip(bounds[:-1], bounds[1:]):
+        coefficient = (
+            _compensation_multiplier_at(edges_us, multipliers, hold_us + start)
+            - _compensation_multiplier_at(edges_us, multipliers, start)
+        )
+        recovery.append((coefficient, stop - start))
+    return target, _merge_adjacent_segments(recovery, trim_trailing_zero=True)
+
+
+def split_compensation_segments(segments, prefix_us):
+    """Split a coefficient-duration schedule without changing its waveform."""
+    remaining_prefix = max(float(prefix_us), 0.0)
+    prefix = []
+    tail = []
+    for coefficient, duration_us in segments:
+        coefficient = float(coefficient)
+        duration_us = float(duration_us)
+        if duration_us <= 1e-12:
+            continue
+        before = min(duration_us, remaining_prefix)
+        if before > 1e-12:
+            prefix.append((coefficient, before))
+            remaining_prefix -= before
+        after = duration_us - before
+        if after > 1e-12:
+            tail.append((coefficient, after))
+    return _merge_adjacent_segments(prefix), _merge_adjacent_segments(tail)
 
 
 def play_compensated_hard_step(
@@ -91,6 +234,40 @@ def play_compensated_hard_step(
             prog.pulse(ch=cfg["ff_ch"])
     if restore_target_at_end:
         play_hard_step(prog, target_gain)
+
+
+def play_relative_compensation_segments(
+    prog,
+    park_gain,
+    target_gain,
+    segments,
+):
+    """Play normalized round-trip segments relative to the park level."""
+    cfg = prog.cfg
+    maxv = PulseFunctions.ff_maxv(prog, scaled=True)
+    park_gain = float(park_gain)
+    delta = float(target_gain) - park_gain
+    for coefficient, duration_us in segments:
+        gain = int(np.clip(
+            round(park_gain + float(coefficient) * delta),
+            -maxv,
+            maxv,
+        ))
+        total = max(int(prog.us2cycles(duration_us, gen_ch=cfg["ff_ch"])), 3)
+        chunk_count = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
+        base, extra = divmod(total, chunk_count)
+        for chunk in range(chunk_count):
+            length = max(base + (1 if chunk < extra else 0), 3)
+            prog.set_pulse_registers(
+                ch=cfg["ff_ch"],
+                freq=0,
+                style="const",
+                phase=0,
+                stdysel="last",
+                gain=gain,
+                length=length,
+            )
+            prog.pulse(ch=cfg["ff_ch"])
 
 
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,

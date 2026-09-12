@@ -109,6 +109,24 @@ def reset_telemetry(records):
     }
 
 
+def flux_predistortion_telemetry(program):
+    mode = str(getattr(program, "_t1_ff_predistortion_mode", "none"))
+    tail_us = float(getattr(program, "_t1_ff_predistortion_tail_us", 0.0))
+    recovery_us = float(getattr(
+        program,
+        "_t1_ff_predistortion_recovery_us",
+        0.0,
+    ))
+    return {
+        "flux_predistortion_round_trip_mode": mode,
+        "flux_predistortion_recovery_window_us": recovery_us,
+        "flux_predistortion_return_tail_us": tail_us,
+        "flux_predistortion_tail_overlaps_payload_readout": bool(
+            mode == "stateful" and tail_us > 0.0
+        ),
+    }
+
+
 def _block_timeout_s(cfg, shots):
     hold_us = max(float(cfg.get("ff_hold", cfg.get("t1_wait_us", 0.0))), 0.0)
     inter_shot_us = max(float(cfg.get(
@@ -181,6 +199,7 @@ def acquire_t1_iq(soc, soccfg, cfg, shots=None):
     i_values, q_values = payload_iq(records, read_cycles)
     telemetry = reset_telemetry(records)
     telemetry["read_length_cycles"] = int(read_cycles)
+    telemetry.update(flux_predistortion_telemetry(last_program))
     return i_values, q_values, telemetry
 
 
@@ -281,6 +300,7 @@ def acquire_t1_3pt_iq(
             (total_shots - len(p0_reference_shot_indices)) * rounded.size
         ),
         "read_length_cycles": int(read_cycles),
+        **flux_predistortion_telemetry(last_program),
     }
 
 
@@ -375,6 +395,7 @@ def acquire_tls_memory_iq(
         "order": "shot_sequence",
         "warmup_shots": int(total_warmup_shots),
         "read_length_cycles": int(read_cycles),
+        **flux_predistortion_telemetry(last_program),
     }
 
 
@@ -522,6 +543,7 @@ def acquire_t1_flux_sweep_iq(
         "records": int(total_shots * point_count),
         "order": "shot_dc_delay",
         "read_length_cycles": int(read_cycles),
+        **flux_predistortion_telemetry(last_program),
     }
 
 
