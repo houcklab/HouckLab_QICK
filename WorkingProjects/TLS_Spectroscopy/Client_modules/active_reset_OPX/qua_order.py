@@ -427,17 +427,14 @@ def _ff_max_gain(program):
 def _build_flux_point(program, target_gain, hold_us, name_prefix):
     cfg = program.cfg
     if bool(cfg.get("opx_hard_flux_steps", False)):
-        compensation = ff_pulse.load_compensation(cfg)
         return {
             "hard": True,
             "park": int(round(float(cfg.get("ff_park_gain", 0) or 0))),
-            "target": int(round(float(target_gain))),
-            "compensation": compensation,
             "hold_segs": _compensated_hold_segments(
                 park_gain=float(cfg.get("ff_park_gain", 0) or 0),
                 target_gain=float(target_gain),
                 hold_us=float(hold_us),
-                compensation=compensation,
+                compensation=ff_pulse.load_compensation(cfg),
                 max_gain=_ff_max_gain(program),
             ),
         }
@@ -470,17 +467,6 @@ def _play_flux_point(program, segments):
 
 def _restore_flux_park(program, segments, settle_us=0.0):
     if segments.get("hard", False):
-        compensation = segments.get("compensation")
-        if compensation is not None and float(settle_us) > 0:
-            ff_pulse.play_compensated_hard_step(
-                program,
-                segments.get("target", segments.get("park", 0)),
-                segments.get("park", 0),
-                float(settle_us),
-                compensation,
-            )
-            program.sync_all(0)
-            return
         ff_pulse.play_hard_step(program, segments.get("park", 0))
     else:
         ff_pulse.play_ramp_down(program, segments)
