@@ -63,9 +63,8 @@ def _single_read(tproc, address):
     return int(reader(int(address)))
 
 
-def _read_words(soc, address, length):
+def _read_words(soc, address, length, *, tproc=None):
     address, length = int(address), int(length)
-    tproc = soc.tproc
     server_reader = getattr(soc, "read_qick_dmem", None)
     if callable(server_reader):
         try:
@@ -74,6 +73,8 @@ def _read_words(soc, address, length):
                 return data[:length]
         except Exception:
             pass
+    if tproc is None:
+        tproc = soc.tproc
     for owner in (tproc, soc):
         reader = getattr(owner, "read_dmem", None)
         if callable(reader):
@@ -86,7 +87,7 @@ def _read_words(soc, address, length):
     return np.asarray([_single_read(tproc, address + offset) for offset in range(length)])
 
 
-def _write_words(soc, address, values):
+def _write_words(soc, address, values, *, tproc=None):
     address = int(address)
     words = np.asarray(values, dtype=np.int64).reshape(-1)
     writer = getattr(soc, "write_qick_dmem", None)
@@ -95,22 +96,26 @@ def _write_words(soc, address, values):
         if written != int(words.size):
             raise RuntimeError(f"DMem writer wrote {written} words; expected {words.size}")
         return
+    if tproc is None:
+        tproc = soc.tproc
     for offset, value in enumerate(words):
-        _single_write(soc.tproc, address + offset, int(value) & 0xFFFFFFFF)
+        _single_write(tproc, address + offset, int(value) & 0xFFFFFFFF)
 
 
-def _initialize_program_dmem(soc, program):
+def _initialize_program_dmem(soc, program, *, tproc=None):
     for address, values in getattr(program, "dmem_loads", ()):
-        _write_words(soc, address, values)
+        _write_words(soc, address, values, tproc=tproc)
 
 
-def _safe_abort(soc):
+def _safe_abort(soc, *, tproc=None):
+    if tproc is None:
+        tproc = soc.tproc
     try:
-        reset = getattr(soc.tproc, "reset", None)
+        reset = getattr(tproc, "reset", None)
         if callable(reset):
             reset()
         else:
-            stop = getattr(soc.tproc, "stop", None)
+            stop = getattr(tproc, "stop", None)
             if not callable(stop):
                 raise RuntimeError("the connected tProc exposes no reset or stop API")
             stop()
@@ -165,13 +170,14 @@ def run_dmem_block(
     try:
         program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
         program.config_bufs(soc, enable_avg=True, enable_buf=False)
-        _initialize_program_dmem(soc, program)
-        _single_write(soc.tproc, program.done_addr, 0)
-        soc.tproc.start()
+        tproc = soc.tproc
+        _initialize_program_dmem(soc, program, tproc=tproc)
+        _single_write(tproc, program.done_addr, 0)
+        tproc.start()
         started = True
         deadline = clock() + timeout_s
         while True:
-            completed = _single_read(soc.tproc, program.done_addr)
+            completed = _single_read(tproc, program.done_addr)
             if completed == reps:
                 break
             if completed < 0 or completed > reps:
@@ -182,10 +188,13 @@ def run_dmem_block(
                 # Freeze all writers before reading the prefix whose completion
                 # counter we just observed.  The tProc reset erases program memory,
                 # not DMem, and reset_gens then returns latched outputs to zero.
-                _safe_abort(soc)
+                _safe_abort(soc, tproc=tproc)
                 started = False
                 words = _read_words(
-                    soc, program.record_base, completed * program.record_words
+                    soc,
+                    program.record_base,
+                    completed * program.record_words,
+                    tproc=tproc,
                 )
                 partial = _decode_program_records(
                     program, words, expected_records=completed
@@ -198,11 +207,16 @@ def run_dmem_block(
                 )
             sleeper(poll_interval_s)
 
-        words = _read_words(soc, program.record_base, reps * program.record_words)
+        words = _read_words(
+            soc,
+            program.record_base,
+            reps * program.record_words,
+            tproc=tproc,
+        )
         return _decode_program_records(program, words, expected_records=reps)
     except Exception:
         if started:
-            _safe_abort(soc)
+            _safe_abort(soc, tproc=tproc)
         raise
 
 
@@ -247,17 +261,18 @@ def run_dmem_stream(
     try:
         program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
         program.config_bufs(soc, enable_avg=True, enable_buf=False)
-        _initialize_program_dmem(soc, program)
-        _single_write(soc.tproc, program.done_addr, 0)
-        _single_write(soc.tproc, int(plan["ack_addr"]), 0)
-        _single_write(soc.tproc, int(plan["ready_addr"]), 0)
-        soc.tproc.start()
+        tproc = soc.tproc
+        _initialize_program_dmem(soc, program, tproc=tproc)
+        _single_write(tproc, program.done_addr, 0)
+        _single_write(tproc, int(plan["ack_addr"]), 0)
+        _single_write(tproc, int(plan["ready_addr"]), 0)
+        tproc.start()
         started = True
         last_activity_at = clock()
         while received_units < total_units:
             now = clock()
             activity = False
-            completed_records = _single_read(soc.tproc, program.done_addr)
+            completed_records = _single_read(tproc, program.done_addr)
             if completed_records < 0 or completed_records > expected_records:
                 raise RuntimeError(
                     f"invalid tProc completion counter {completed_records}; "
@@ -279,7 +294,7 @@ def run_dmem_stream(
                 for completed in range(reported_shots + 1, completed_shots + 1):
                     progress(completed, total_shots)
             reported_shots = completed_shots
-            ready = _single_read(soc.tproc, int(plan["ready_addr"]))
+            ready = _single_read(tproc, int(plan["ready_addr"]))
             if ready < acknowledged:
                 raise RuntimeError(
                     f"resident stream ready counter moved backwards from {acknowledged} to {ready}"
@@ -297,6 +312,7 @@ def run_dmem_stream(
                     soc,
                     address,
                     record_count * int(program.record_words),
+                    tproc=tproc,
                 )
                 records.extend(
                     _decode_program_records(
@@ -307,7 +323,7 @@ def run_dmem_stream(
                 )
                 received_units += unit_count
                 acknowledged += 1
-                _single_write(soc.tproc, int(plan["ack_addr"]), acknowledged)
+                _single_write(tproc, int(plan["ack_addr"]), acknowledged)
             if acknowledged > previous_acknowledged:
                 activity = True
             if activity:
@@ -315,7 +331,7 @@ def run_dmem_stream(
             if received_units >= total_units:
                 break
             if now - last_activity_at >= timeout_s:
-                _safe_abort(soc)
+                _safe_abort(soc, tproc=tproc)
                 started = False
                 recovered_shots = min(
                     len(records) // records_per_shot,
@@ -332,7 +348,7 @@ def run_dmem_stream(
                 )
             sleeper(poll_interval_s)
 
-        completed_records = _single_read(soc.tproc, program.done_addr)
+        completed_records = _single_read(tproc, program.done_addr)
         if completed_records != expected_records:
             raise RuntimeError(
                 f"resident stream completed {completed_records} records; "
@@ -344,5 +360,5 @@ def run_dmem_stream(
         return records
     except Exception:
         if started:
-            _safe_abort(soc)
+            _safe_abort(soc, tproc=tproc)
         raise
