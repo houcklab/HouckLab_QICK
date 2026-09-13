@@ -646,11 +646,33 @@ def calculate_piecewise_dc_correction(
             right=float(normalized_response[-1]),
         )
 
-    step_matrix = np.zeros((len(time_zeroed), len(segment_edges_ns)), dtype=float)
-    for edge_index, edge_ns in enumerate(segment_edges_ns):
-        delay_ns = time_zeroed - float(edge_ns)
-        active = delay_ns >= 0
-        step_matrix[active, edge_index] = plant_response(delay_ns[active])
+    # The command can change at every segment edge, so every edge must be
+    # represented in the inverse problem.  Step-response measurements are
+    # commonly much coarser than the early correction schedule (for example,
+    # 4 us measurements with 0.5 us command segments).  Solving only at the
+    # measured timestamps leaves those early levels underdetermined and lets
+    # the optimizer alternate between corrected and unity-valued segments.
+    solver_time_zeroed = np.unique(
+        np.concatenate(
+            [
+                time_zeroed,
+                segment_edges_ns[segment_edges_ns <= time_zeroed[-1] + 1e-9],
+            ]
+        )
+    )
+
+    def build_step_matrix(evaluation_time_ns):
+        matrix = np.zeros(
+            (len(evaluation_time_ns), len(segment_edges_ns)), dtype=float
+        )
+        for edge_index, edge_ns in enumerate(segment_edges_ns):
+            delay_ns = evaluation_time_ns - float(edge_ns)
+            active = delay_ns >= 0
+            matrix[active, edge_index] = plant_response(delay_ns[active])
+        return matrix
+
+    solver_step_matrix = build_step_matrix(solver_time_zeroed)
+    output_step_matrix = build_step_matrix(time_zeroed)
 
     if isinstance(desired_response, str):
         desired_mode = desired_response.strip().lower()
@@ -672,7 +694,7 @@ def calculate_piecewise_dc_correction(
     if not np.isfinite(desired_level):
         raise ValueError("desired_response produced a non-finite target level.")
 
-    desired = desired_level * np.ones(len(time_zeroed), dtype=float)
+    solver_desired = desired_level * np.ones(len(solver_time_zeroed), dtype=float)
     lower = float(min_multiplier) * np.ones(len(segment_edges_ns), dtype=float)
     upper = float(max_multiplier) * np.ones(len(segment_edges_ns), dtype=float)
     if np.any(lower >= upper):
@@ -682,16 +704,16 @@ def calculate_piecewise_dc_correction(
     sqrt_reg = np.sqrt(float(regularization))
     sqrt_final = np.sqrt(max(float(final_weight), 0.0))
 
-    def levels_to_response(levels):
+    def levels_to_response(levels, step_matrix):
         previous = np.concatenate([[0.0], levels[:-1]])
         jumps = levels - previous
         return step_matrix @ jumps
 
     def residual(levels):
-        predicted = levels_to_response(levels)
+        predicted = levels_to_response(levels, solver_step_matrix)
         return np.concatenate(
             [
-                predicted - desired,
+                predicted - solver_desired,
                 sqrt_reg * (levels - 1.0),
                 np.asarray([sqrt_final * (levels[-1] - 1.0)], dtype=float),
             ]
@@ -713,8 +735,14 @@ def calculate_piecewise_dc_correction(
     undamped_multipliers = np.asarray(result.x, dtype=float)
     multipliers = 1.0 + correction_gain * (undamped_multipliers - 1.0)
     multipliers = np.clip(multipliers, lower, upper)
-    undamped_corrected_response = levels_to_response(undamped_multipliers)
-    corrected_response = levels_to_response(multipliers)
+    undamped_corrected_response = levels_to_response(
+        undamped_multipliers, output_step_matrix
+    )
+    corrected_response = levels_to_response(multipliers, output_step_matrix)
+    solver_corrected_response = levels_to_response(
+        multipliers, solver_step_matrix
+    )
+    desired = desired_level * np.ones(len(time_zeroed), dtype=float)
     model_residual = desired - corrected_response
     undamped_model_residual = desired - undamped_corrected_response
     rms = float(np.sqrt(np.nanmean(model_residual**2)))
@@ -741,6 +769,9 @@ def calculate_piecewise_dc_correction(
         "desired_level": float(desired_level),
         "desired_response_level": float(desired_level),
         "segment_edges_ns": [float(x) for x in segment_edges_ns],
+        "solver_time_zeroed_ns": [float(x) for x in solver_time_zeroed],
+        "solver_corrected_response": solver_corrected_response,
+        "solver_evaluation_points": int(len(solver_time_zeroed)),
         "multipliers": [float(x) for x in multipliers],
         "undamped_multipliers": [float(x) for x in undamped_multipliers],
         "corrected_response": corrected_response,
@@ -908,6 +939,163 @@ def rise_decay_bump_model(time_zeroed_ns, asymptote, late_amplitude, late_tau_ns
         * np.exp(np.clip(-time_zeroed_ns / bump_tau_ns, -80.0, 80.0))
     )
     return float(asymptote) + late + bump
+
+
+def fit_visible_tail_exponential_response_model(
+    time_ns,
+    response,
+    fit_start_ns,
+    time_origin_ns=0.0,
+    fit_tail_fraction=0.25,
+):
+    """Fit a visible late-time step response and extrapolate to the step edge.
+
+    Some spectroscopy maps have an early readout transient that hides the
+    qubit ridge.  ``fit_start_ns`` excludes that blind region from the fit;
+    the fitted causal exponential is still evaluated from ``time_origin_ns``
+    so the generated correction covers the entire physical flux step.
+    """
+    time_ns = np.asarray(time_ns, dtype=float)
+    response = np.asarray(response, dtype=float)
+    if time_ns.shape != response.shape:
+        raise ValueError("time_ns and response must have the same shape.")
+
+    valid = np.isfinite(time_ns) & np.isfinite(response)
+    time_ns = time_ns[valid]
+    response = response[valid]
+    if time_ns.size < 12:
+        raise ValueError("Not enough finite points to fit visible step-response tail.")
+
+    order = np.argsort(time_ns)
+    time_ns = time_ns[order]
+    response = response[order]
+    fit_start_ns = float(fit_start_ns)
+    time_origin_ns = float(time_origin_ns)
+    if not np.isfinite(fit_start_ns) or not np.isfinite(time_origin_ns):
+        raise ValueError("fit_start_ns and time_origin_ns must be finite.")
+    if time_origin_ns > float(time_ns[0]):
+        raise ValueError("time_origin_ns must not be later than the first measured delay.")
+
+    fit_mask = time_ns >= fit_start_ns
+    if np.count_nonzero(fit_mask) < 12:
+        raise ValueError("Not enough finite points after fit_start_ns.")
+    fit_time_zeroed_ns = time_ns[fit_mask] - time_origin_ns
+    fit_response_data = response[fit_mask]
+    n_points = int(fit_response_data.size)
+    span_ns = max(float(fit_time_zeroed_ns[-1] - fit_time_zeroed_ns[0]), 1.0)
+    response_min = float(np.nanmin(fit_response_data))
+    response_max = float(np.nanmax(fit_response_data))
+    response_span = max(response_max - response_min, 1e-9)
+    tail_count = min(
+        max(3, int(np.ceil(n_points * float(fit_tail_fraction)))), n_points
+    )
+    asymptote_guess = float(np.nanmedian(fit_response_data[-tail_count:]))
+    amplitude_guess = float(fit_response_data[0] - asymptote_guess) * np.exp(
+        min(float(fit_time_zeroed_ns[0]) / max(span_ns / 5.0, 1.0), 20.0)
+    )
+    amplitude_bound = max(10.0 * response_span, 2.0 * abs(amplitude_guess), 1e-6)
+    lower = np.asarray(
+        [response_min - 5.0 * response_span, -amplitude_bound, 100.0],
+        dtype=float,
+    )
+    upper = np.asarray(
+        [
+            response_max + 5.0 * response_span,
+            amplitude_bound,
+            max(100.0 * span_ns, 1_000.0),
+        ],
+        dtype=float,
+    )
+    difference_scale = (
+        float(np.nanmedian(np.abs(np.diff(fit_response_data))))
+        if n_points > 1
+        else 0.0
+    )
+    robust_scale = max(difference_scale, 0.02 * response_span, 1e-7)
+
+    best = None
+    for tau_guess in [
+        max(span_ns * value, 100.0)
+        for value in (1 / 20, 1 / 10, 1 / 5, 1 / 2, 1, 2)
+    ]:
+        amplitude_seed = float(fit_response_data[0] - asymptote_guess) * np.exp(
+            min(float(fit_time_zeroed_ns[0]) / tau_guess, 20.0)
+        )
+        p0 = np.clip(
+            np.asarray([asymptote_guess, amplitude_seed, tau_guess], dtype=float),
+            lower + 1e-12,
+            upper - 1e-12,
+        )
+        try:
+            result = optimize.least_squares(
+                lambda params: (
+                    params[0]
+                    + params[1]
+                    * np.exp(
+                        np.clip(-fit_time_zeroed_ns / params[2], -80.0, 80.0)
+                    )
+                    - fit_response_data
+                ),
+                p0,
+                bounds=(lower, upper),
+                loss="soft_l1",
+                f_scale=robust_scale,
+                max_nfev=100_000,
+                xtol=1e-12,
+                ftol=1e-12,
+                gtol=1e-12,
+            )
+        except Exception:
+            continue
+        fitted_visible = result.x[0] + result.x[1] * np.exp(
+            np.clip(-fit_time_zeroed_ns / result.x[2], -80.0, 80.0)
+        )
+        residual = fit_response_data - fitted_visible
+        rss = max(float(np.nansum(residual**2)), 1e-300)
+        bic = float(
+            n_points * np.log(rss / n_points) + len(result.x) * np.log(n_points)
+        )
+        if best is None or bic < best["bic"]:
+            best = {
+                "params": np.asarray(result.x, dtype=float),
+                "rms": float(np.sqrt(np.nanmean(residual**2))),
+                "bic": bic,
+                "success": bool(result.success),
+                "error": None if result.success else result.message,
+            }
+    if best is None:
+        raise RuntimeError("Visible-tail exponential fit failed for every initial guess.")
+
+    model_time_ns = np.unique(np.concatenate([[time_origin_ns], time_ns]))
+    model_time_zeroed_ns = model_time_ns - time_origin_ns
+    params = best["params"]
+    fit_response = params[0] + params[1] * np.exp(
+        np.clip(-model_time_zeroed_ns / params[2], -80.0, 80.0)
+    )
+    return {
+        "success": bool(best["success"]),
+        "error": best["error"],
+        "method": "visible_tail_exponential_back_extrapolation",
+        "time_ns": model_time_ns,
+        "time_zeroed_ns": model_time_zeroed_ns,
+        "response": response,
+        "measured_time_ns": time_ns,
+        "measured_response": response,
+        "fit_mask": fit_mask,
+        "fit_start_ns": fit_start_ns,
+        "time_origin_ns": time_origin_ns,
+        "n_fit_points": n_points,
+        "asymptote": float(params[0]),
+        "late_amplitude": float(params[1]),
+        "late_tau_ns": float(params[2]),
+        "bump_amplitude": 0.0,
+        "rise_tau_ns": None,
+        "bump_tau_ns": None,
+        "fit_response": np.asarray(fit_response, dtype=float),
+        "rms": float(best["rms"]),
+        "bic": float(best["bic"]),
+        "extrapolated_to_origin": True,
+    }
 
 
 def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25):

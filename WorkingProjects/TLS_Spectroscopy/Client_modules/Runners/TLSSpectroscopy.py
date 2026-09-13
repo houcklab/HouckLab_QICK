@@ -126,6 +126,8 @@ P3_STEP_RESPONSE = {
     "t_min_us": 1.0,
     "t_max_us": 400.0,
     "t_step_us": 4.0,
+    "correction_fit_start_us": 100.0,
+    "correction_time_origin_us": 0.0,
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
     "piecewise_max_multiplier": 1.5,
@@ -545,6 +547,14 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         shots=int(p["shots"]),
         flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
         piecewise_response_domain=p.get("piecewise_response_domain", "voltage"),
+        piecewise_fit_start_ns=(
+            None
+            if p.get("correction_fit_start_us") is None
+            else float(p["correction_fit_start_us"]) * 1e3
+        ),
+        piecewise_time_origin_ns=float(
+            p.get("correction_time_origin_us", 0.0)
+        ) * 1e3,
         live_plot=live_plot,
         fit_rise_decay_bump_dc_correction=fit_rise_decay_bump_dc_correction,
         piecewise_min_multiplier=p.get("piecewise_min_multiplier", 0.5),

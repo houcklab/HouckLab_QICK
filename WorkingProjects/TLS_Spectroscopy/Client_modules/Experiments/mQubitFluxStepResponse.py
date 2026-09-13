@@ -154,6 +154,12 @@ class QubitFluxStepResponse(ExperimentClass):
             return True
         return any(value is not None for value in values)
 
+    @staticmethod
+    def _resolve_trace_polarity(trace_polarity, readout_after_park):
+        if trace_polarity is None:
+            return "dark" if bool(readout_after_park) else "bright"
+        return str(trace_polarity).strip().lower()
+
     def __init__(
         self,
         soc=None,
@@ -185,12 +191,14 @@ class QubitFluxStepResponse(ExperimentClass):
         piecewise_correction_gain=1.0,
         piecewise_desired_response="median",
         piecewise_response_domain="voltage",
+        piecewise_fit_start_ns=None,
+        piecewise_time_origin_ns=0.0,
         baseline_rearm_time_ns=None,
         flux_tail_compensation=None,
         compose_with_applied_flux_tail_compensation=False,
         composition_damping=0.5,
         trace_tracking_mode="ridge",
-        trace_polarity="bright",
+        trace_polarity=None,
         trace_baseline_window_mhz=25.0,
         trace_max_jump_mhz=4.0,
         trace_smoothness_penalty=0.15,
@@ -243,6 +251,17 @@ class QubitFluxStepResponse(ExperimentClass):
         self.piecewise_response_domain = str(piecewise_response_domain).strip().lower()
         if self.piecewise_response_domain not in {"frequency", "voltage"}:
             raise ValueError("piecewise_response_domain must be 'frequency' or 'voltage'.")
+        self.piecewise_fit_start_ns = (
+            None if piecewise_fit_start_ns is None else float(piecewise_fit_start_ns)
+        )
+        self.piecewise_time_origin_ns = float(piecewise_time_origin_ns)
+        if (
+            self.piecewise_fit_start_ns is not None
+            and not np.isfinite(self.piecewise_fit_start_ns)
+        ):
+            raise ValueError("piecewise_fit_start_ns must be finite or None.")
+        if not np.isfinite(self.piecewise_time_origin_ns):
+            raise ValueError("piecewise_time_origin_ns must be finite.")
         self.baseline_rearm_time_ns = int(
             self.meta_dict.get("reset_time", 500_000)
             if baseline_rearm_time_ns is None
@@ -254,7 +273,10 @@ class QubitFluxStepResponse(ExperimentClass):
         self.trace_tracking_mode = str(trace_tracking_mode).strip().lower()
         if self.trace_tracking_mode not in {"ridge", "independent_slices"}:
             raise ValueError("trace_tracking_mode must be 'ridge' or 'independent_slices'.")
-        self.trace_polarity = str(trace_polarity).strip().lower()
+        self.trace_polarity = self._resolve_trace_polarity(
+            trace_polarity,
+            cfg.get("readout_after_park", True),
+        )
         if self.trace_polarity not in {"bright", "dark", "auto"}:
             raise ValueError("trace_polarity must be 'bright', 'dark', or 'auto'.")
         self.trace_baseline_window_mhz = float(trace_baseline_window_mhz)
@@ -343,6 +365,8 @@ class QubitFluxStepResponse(ExperimentClass):
             'piecewise_correction_gain': self.piecewise_correction_gain,
             'piecewise_desired_response': self.piecewise_desired_response,
             'piecewise_response_domain': self.piecewise_response_domain,
+            'piecewise_fit_start_ns': self.piecewise_fit_start_ns,
+            'piecewise_time_origin_ns': self.piecewise_time_origin_ns,
             'baseline_rearm_time_ns': self.baseline_rearm_time_ns,
             'applied_flux_tail_compensation': self.flux_tail_compensation,
             'compose_with_applied_flux_tail_compensation': self.compose_with_applied_flux_tail_compensation,
@@ -690,11 +714,30 @@ class QubitFluxStepResponse(ExperimentClass):
             f"(domain={self.piecewise_response_domain}, finite_points={finite_count}/{len(response_for_correction)})"
         )
         try:
-            bump_model = fpd.fit_rise_decay_bump_response_model(
-                np.asarray(self.t_vec, dtype=float),
-                response_for_correction,
-                fit_tail_fraction=self.fit_tail_fraction,
-            )
+            if self.piecewise_fit_start_ns is None:
+                bump_model = fpd.fit_rise_decay_bump_response_model(
+                    np.asarray(self.t_vec, dtype=float),
+                    response_for_correction,
+                    fit_tail_fraction=self.fit_tail_fraction,
+                )
+                model_note = (
+                    "one late exponential plus an early causal rise-decay bump; "
+                    "piecewise set_dc_offset correction is solved from the fitted "
+                    "voltage response"
+                )
+            else:
+                bump_model = fpd.fit_visible_tail_exponential_response_model(
+                    np.asarray(self.t_vec, dtype=float),
+                    response_for_correction,
+                    fit_start_ns=self.piecewise_fit_start_ns,
+                    time_origin_ns=self.piecewise_time_origin_ns,
+                    fit_tail_fraction=self.fit_tail_fraction,
+                )
+                model_note = (
+                    "single exponential fitted only where the qubit ridge is visible "
+                    "and causally extrapolated to the physical step edge; piecewise "
+                    "set_dc_offset correction is solved from that fitted voltage response"
+                )
             if not bump_model["success"]:
                 raise RuntimeError(bump_model["error"])
             segment_edges_ns = self._dc_tail_segment_edges(bump_model["time_zeroed_ns"])
@@ -731,10 +774,6 @@ class QubitFluxStepResponse(ExperimentClass):
                 f"error={exc}"
             ) from exc
 
-        model_note = (
-            "one late exponential plus an early causal rise-decay bump; "
-            "piecewise set_dc_offset correction is solved from the fitted voltage response"
-        )
         fit_result.update(
             {
                 "success": bool(fit_result["success"]),
@@ -764,9 +803,15 @@ class QubitFluxStepResponse(ExperimentClass):
             "asymptote": float(bump_model["asymptote"]),
             "late_amplitude": float(bump_model["late_amplitude"]),
             "late_tau_ns": float(bump_model["late_tau_ns"]),
-            "bump_amplitude": float(bump_model["bump_amplitude"]),
-            "rise_tau_ns": float(bump_model["rise_tau_ns"]),
-            "bump_tau_ns": float(bump_model["bump_tau_ns"]),
+            "bump_amplitude": float(bump_model.get("bump_amplitude", 0.0)),
+            "rise_tau_ns": bump_model.get("rise_tau_ns"),
+            "bump_tau_ns": bump_model.get("bump_tau_ns"),
+            "response_fit_method": bump_model["method"],
+            "response_fit_start_ns": bump_model.get("fit_start_ns"),
+            "response_time_origin_ns": bump_model.get("time_origin_ns"),
+            "response_extrapolated_to_origin": bool(
+                bump_model.get("extrapolated_to_origin", False)
+            ),
             "segment_edges_ns": fit_result["segment_edges_ns"],
             "multipliers": fit_result["multipliers"],
             "undamped_multipliers": fit_result.get("undamped_multipliers", []),
@@ -809,8 +854,22 @@ class QubitFluxStepResponse(ExperimentClass):
                 fit_result.get("correction_gain", self.piecewise_correction_gain)
             ),
             "rise_decay_bump_late_tau_ns": float(bump_model["late_tau_ns"]),
-            "rise_decay_bump_rise_tau_ns": float(bump_model["rise_tau_ns"]),
-            "rise_decay_bump_bump_tau_ns": float(bump_model["bump_tau_ns"]),
+            "rise_decay_bump_rise_tau_ns": bump_model.get("rise_tau_ns"),
+            "rise_decay_bump_bump_tau_ns": bump_model.get("bump_tau_ns"),
+            "response_fit_method": bump_model["method"],
+            "response_fit_start_us": (
+                None
+                if bump_model.get("fit_start_ns") is None
+                else float(bump_model["fit_start_ns"]) / 1e3
+            ),
+            "response_time_origin_us": (
+                None
+                if bump_model.get("time_origin_ns") is None
+                else float(bump_model["time_origin_ns"]) / 1e3
+            ),
+            "response_extrapolated_to_origin": bool(
+                bump_model.get("extrapolated_to_origin", False)
+            ),
             "model_note": model_note,
         }
         self.data["rise_decay_bump_dc_compensation_json"] = fpd.save_predistortion_json(
