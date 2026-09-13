@@ -5,7 +5,7 @@ from pathlib import Path
 
 OUTPUT_DIR = Path(
     "Z:/FluxTeam/Data/q3/2026_09_13/"
-    "predistortion_validation/corrected_readout_after_park"
+    "predistortion_validation/corrected_readout_after_park_gain_0p8"
 )
 CORRECTION_JSON = Path(
     "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/"
@@ -13,6 +13,11 @@ CORRECTION_JSON = Path(
     "q3_00_53_50_Qubit_Flux_Step_Response_"
     "rise_decay_bump_dc_compensation.json"
 )
+
+
+def validation_gain():
+    """Return the damped gain inferred from the gain-zero and gain-one traces."""
+    return 0.8
 
 
 def frequency_grid_mhz():
@@ -53,13 +58,16 @@ def main():
         raise FileNotFoundError(f"QICK correction JSON not found: {CORRECTION_JSON}")
 
     runner.P3_STEP_RESPONSE.update(step_response_settings())
-    runner.FLUX_TAIL_COMPENSATION_GAIN = 1.0
+    runner.FLUX_TAIL_COMPENSATION_GAIN = validation_gain()
     runner.STEP3B_GAIN_SWEEP = None
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     soc, soccfg = runner.makeProxy()
     runner._set_yoko_if_requested()
-    print("[P3b] corrected q3 validation; no new correction will be fitted")
+    print(
+        f"[P3b] corrected q3 validation at gain {validation_gain():.3f}; "
+        "no new correction will be fitted"
+    )
     print(f"[P3b] applying {CORRECTION_JSON}")
     print("[P3b] 100 shots; 3.950--4.080 GHz at 1 MHz")
     runner.run_step3b_step_response_correct(
