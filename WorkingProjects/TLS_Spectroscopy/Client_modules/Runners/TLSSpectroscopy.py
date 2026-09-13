@@ -547,6 +547,9 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         shots=int(p["shots"]),
         flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
         piecewise_response_domain=p.get("piecewise_response_domain", "voltage"),
+        piecewise_response_model=p.get(
+            "piecewise_response_model", "rise_decay_bump"
+        ),
         piecewise_fit_start_ns=(
             None
             if p.get("correction_fit_start_us") is None
@@ -561,6 +564,10 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         piecewise_max_multiplier=p.get("piecewise_max_multiplier", 1.5),
         baseline_rearm_time_ns=float(p.get("baseline_rearm_us", 500.0)) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
+        compose_with_applied_flux_tail_compensation=bool(
+            p.get("compose_with_applied_flux_tail_compensation", False)
+        ),
+        composition_damping=float(p.get("composition_damping", 0.5)),
     )
     exp.acquire(progress=True)
     exp.save_data()

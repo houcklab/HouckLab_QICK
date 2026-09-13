@@ -5,19 +5,20 @@ from pathlib import Path
 
 OUTPUT_DIR = Path(
     "Z:/FluxTeam/Data/q3/2026_09_13/"
-    "predistortion_validation/corrected_readout_after_park_gain_0p8"
+    "predistortion_validation/"
+    "corrected_residual_composed_gain_0p8_damping_0p5"
 )
 CORRECTION_JSON = Path(
     "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/"
-    "uncorrected_readout_after_park/q3/q3_2026_09_13/"
-    "q3_00_53_50_Qubit_Flux_Step_Response_"
-    "rise_decay_bump_dc_compensation.json"
+    "corrected_readout_after_park_gain_0p8/q3/q3_2026_09_13/"
+    "q3_01_36_26_Qubit_Flux_Step_Response_"
+    "residual_composed_gain_0p8_damping_0p5_dc_compensation.json"
 )
 
 
 def validation_gain():
-    """Return the damped gain inferred from the gain-zero and gain-one traces."""
-    return 0.8
+    """Apply the already-composed candidate without another gain transform."""
+    return 1.0
 
 
 def frequency_grid_mhz():
@@ -65,8 +66,8 @@ def main():
     soc, soccfg = runner.makeProxy()
     runner._set_yoko_if_requested()
     print(
-        f"[P3b] corrected q3 validation at gain {validation_gain():.3f}; "
-        "no new correction will be fitted"
+        "[P3b] validating the gain-0.8 correction plus a 50%-damped "
+        "measured-residual refinement; no new correction will be fitted"
     )
     print(f"[P3b] applying {CORRECTION_JSON}")
     print("[P3b] 100 shots; 3.950--4.080 GHz at 1 MHz")

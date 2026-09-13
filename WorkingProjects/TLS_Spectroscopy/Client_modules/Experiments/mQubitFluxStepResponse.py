@@ -191,6 +191,7 @@ class QubitFluxStepResponse(ExperimentClass):
         piecewise_correction_gain=1.0,
         piecewise_desired_response="median",
         piecewise_response_domain="voltage",
+        piecewise_response_model="rise_decay_bump",
         piecewise_fit_start_ns=None,
         piecewise_time_origin_ns=0.0,
         baseline_rearm_time_ns=None,
@@ -251,6 +252,11 @@ class QubitFluxStepResponse(ExperimentClass):
         self.piecewise_response_domain = str(piecewise_response_domain).strip().lower()
         if self.piecewise_response_domain not in {"frequency", "voltage"}:
             raise ValueError("piecewise_response_domain must be 'frequency' or 'voltage'.")
+        self.piecewise_response_model = str(piecewise_response_model).strip().lower()
+        if self.piecewise_response_model not in {"rise_decay_bump", "measured"}:
+            raise ValueError(
+                "piecewise_response_model must be 'rise_decay_bump' or 'measured'."
+            )
         self.piecewise_fit_start_ns = (
             None if piecewise_fit_start_ns is None else float(piecewise_fit_start_ns)
         )
@@ -365,6 +371,7 @@ class QubitFluxStepResponse(ExperimentClass):
             'piecewise_correction_gain': self.piecewise_correction_gain,
             'piecewise_desired_response': self.piecewise_desired_response,
             'piecewise_response_domain': self.piecewise_response_domain,
+            'piecewise_response_model': self.piecewise_response_model,
             'piecewise_fit_start_ns': self.piecewise_fit_start_ns,
             'piecewise_time_origin_ns': self.piecewise_time_origin_ns,
             'baseline_rearm_time_ns': self.baseline_rearm_time_ns,
@@ -714,7 +721,17 @@ class QubitFluxStepResponse(ExperimentClass):
             f"(domain={self.piecewise_response_domain}, finite_points={finite_count}/{len(response_for_correction)})"
         )
         try:
-            if self.piecewise_fit_start_ns is None:
+            if self.piecewise_response_model == "measured":
+                bump_model = fpd.measured_piecewise_response_model(
+                    np.asarray(self.t_vec, dtype=float),
+                    response_for_correction,
+                    tail_fraction=self.fit_tail_fraction,
+                )
+                model_note = (
+                    "the already-smoothed measured residual is inverted directly; "
+                    "no additional parametric transient is extrapolated"
+                )
+            elif self.piecewise_fit_start_ns is None:
                 bump_model = fpd.fit_rise_decay_bump_response_model(
                     np.asarray(self.t_vec, dtype=float),
                     response_for_correction,
@@ -761,6 +778,20 @@ class QubitFluxStepResponse(ExperimentClass):
                 bump_model["fit_response"],
                 **correction_kwargs,
             )
+            if self.compose_with_applied_flux_tail_compensation:
+                if self.flux_tail_compensation is None:
+                    raise ValueError(
+                        "compose_with_applied_flux_tail_compensation=True requires "
+                        "an applied flux_tail_compensation."
+                    )
+                fit_result = fpd.compose_piecewise_dc_compensations(
+                    self.flux_tail_compensation,
+                    fit_result,
+                    damping=self.composition_damping,
+                    segment_edges_ns=segment_edges_ns,
+                    min_multiplier=self.piecewise_min_multiplier,
+                    max_multiplier=self.piecewise_max_multiplier,
+                )
         except Exception as exc:
             self.data["rise_decay_bump_dc_correction_fit"] = {
                 "success": False,
@@ -831,6 +862,19 @@ class QubitFluxStepResponse(ExperimentClass):
             "model_fit_response": bump_model["fit_response"],
             "corrected_response": fit_result["corrected_response"],
             "undamped_corrected_response": fit_result.get("undamped_corrected_response", []),
+            "previous_multipliers": fit_result.get("previous_multipliers", []),
+            "adjustment_multipliers": fit_result.get("adjustment_multipliers", []),
+            "damped_adjustment_multipliers": fit_result.get(
+                "damped_adjustment_multipliers", []
+            ),
+            "full_adjustment_composed_multipliers": fit_result.get(
+                "full_adjustment_composed_multipliers", []
+            ),
+            "composed_with_applied_flux_tail_compensation": bool(
+                fit_result.get("composed_with_applied_flux_tail_compensation", False)
+            ),
+            "composition_damping": fit_result.get("composition_damping"),
+            "source_compensation": fit_result.get("source_compensation"),
         }
 
         filter_json_path = os.path.splitext(self.iname)[0] + "_rise_decay_bump_dc_compensation.json"
@@ -848,6 +892,7 @@ class QubitFluxStepResponse(ExperimentClass):
             "fit_dt_pulseplay_us": float(self.cfg.get("dt_pulseplay", 5.0)),
             "fit_dt_pulsedef_us": float(self.cfg.get("dt_pulsedef", 0.002)),
             "rise_decay_bump_response_domain": self.piecewise_response_domain,
+            "rise_decay_bump_response_model": self.piecewise_response_model,
             "rise_decay_bump_desired_response": fit_result.get("desired_response", None),
             "rise_decay_bump_desired_response_level": desired_level,
             "rise_decay_bump_correction_gain": float(
@@ -871,6 +916,11 @@ class QubitFluxStepResponse(ExperimentClass):
                 bump_model.get("extrapolated_to_origin", False)
             ),
             "model_note": model_note,
+            "composed_with_applied_flux_tail_compensation": bool(
+                fit_result.get("composed_with_applied_flux_tail_compensation", False)
+            ),
+            "composition_damping": fit_result.get("composition_damping"),
+            "source_compensation": fit_result.get("source_compensation"),
         }
         self.data["rise_decay_bump_dc_compensation_json"] = fpd.save_predistortion_json(
             filter_json_path,

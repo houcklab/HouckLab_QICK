@@ -792,6 +792,136 @@ def calculate_piecewise_dc_correction(
     }
 
 
+def _piecewise_compensation_arrays_ns(compensation, label):
+    edges_ns = np.asarray(compensation.get("segment_edges_ns", []), dtype=float)
+    multipliers = np.asarray(compensation.get("multipliers", []), dtype=float)
+    if (
+        edges_ns.ndim != 1
+        or multipliers.ndim != 1
+        or edges_ns.size == 0
+        or edges_ns.size != multipliers.size
+        or not np.all(np.isfinite(edges_ns))
+        or not np.all(np.isfinite(multipliers))
+        or abs(float(edges_ns[0])) > 1e-9
+        or np.any(np.diff(edges_ns) <= 0.0)
+    ):
+        raise ValueError(
+            f"{label} needs equally sized finite multiplier and strictly "
+            "increasing edge vectors beginning at zero."
+        )
+    return edges_ns, multipliers
+
+
+def compose_piecewise_dc_compensations(
+    previous_compensation,
+    adjustment_compensation,
+    damping=0.5,
+    segment_edges_ns=None,
+    min_multiplier=0.5,
+    max_multiplier=1.5,
+):
+    """Cascade a residual correction with the correction already applied.
+
+    Each multiplier vector is the step response of a causal piecewise-constant
+    command filter.  Cascading two such filters means convolving their impulse
+    responses (the jumps between adjacent multiplier levels), not multiplying
+    their levels point by point.  The exact cascade is sampled on
+    ``segment_edges_ns``; by default the previous correction's grid is retained
+    so iterative refinement does not increase FPGA program size.
+    """
+    previous_edges, previous_levels = _piecewise_compensation_arrays_ns(
+        previous_compensation, "previous_compensation"
+    )
+    adjustment_edges, adjustment_levels = _piecewise_compensation_arrays_ns(
+        adjustment_compensation, "adjustment_compensation"
+    )
+
+    damping = float(damping)
+    if not np.isfinite(damping) or not 0.0 <= damping <= 1.0:
+        raise ValueError("composition damping must be finite and between 0 and 1.")
+
+    if segment_edges_ns is None:
+        output_edges = previous_edges.copy()
+    else:
+        output_edges = np.asarray(segment_edges_ns, dtype=float)
+        if (
+            output_edges.ndim != 1
+            or output_edges.size == 0
+            or not np.all(np.isfinite(output_edges))
+            or abs(float(output_edges[0])) > 1e-9
+            or np.any(np.diff(output_edges) <= 0.0)
+        ):
+            raise ValueError(
+                "segment_edges_ns must be a finite, strictly increasing vector "
+                "beginning at zero."
+            )
+
+    damped_adjustment = 1.0 + damping * (adjustment_levels - 1.0)
+
+    def cascade_levels(second_levels):
+        previous_jumps = np.diff(np.concatenate([[0.0], previous_levels]))
+        second_jumps = np.diff(np.concatenate([[0.0], second_levels]))
+        event_times = previous_edges[:, None] + adjustment_edges[None, :]
+        event_jumps = previous_jumps[:, None] * second_jumps[None, :]
+        return np.asarray(
+            [
+                float(np.sum(event_jumps[event_times <= edge + 1e-9]))
+                for edge in output_edges
+            ],
+            dtype=float,
+        )
+
+    composed_levels = cascade_levels(damped_adjustment)
+    undamped_composed_levels = cascade_levels(adjustment_levels)
+
+    clipped = False
+    if min_multiplier is not None or max_multiplier is not None:
+        if min_multiplier is None or max_multiplier is None:
+            raise ValueError(
+                "min_multiplier and max_multiplier must either both be set or both be None."
+            )
+        lower = float(min_multiplier)
+        upper = float(max_multiplier)
+        if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
+            raise ValueError("min_multiplier must be finite and smaller than max_multiplier.")
+        clipped = bool(
+            np.any(composed_levels < lower) or np.any(composed_levels > upper)
+        )
+        composed_levels = np.clip(composed_levels, lower, upper)
+
+    result = dict(adjustment_compensation)
+    result.update(
+        {
+            "success": bool(adjustment_compensation.get("success", True) and not clipped),
+            "error": (
+                "composed correction exceeded multiplier bounds"
+                if clipped
+                else adjustment_compensation.get("error")
+            ),
+            "method": "rise_decay_bump_set_dc_offset_correction",
+            "segment_edges_ns": [float(value) for value in output_edges],
+            "multipliers": [float(value) for value in composed_levels],
+            "undamped_multipliers": [
+                float(value) for value in composed_levels
+            ],
+            "full_adjustment_composed_multipliers": [
+                float(value) for value in undamped_composed_levels
+            ],
+            "previous_multipliers": [float(value) for value in previous_levels],
+            "adjustment_multipliers": [float(value) for value in adjustment_levels],
+            "damped_adjustment_multipliers": [
+                float(value) for value in damped_adjustment
+            ],
+            "composed_with_applied_flux_tail_compensation": True,
+            "composition_damping": damping,
+            "source_compensation": previous_compensation.get("source"),
+            "correction_gain": 1.0,
+            "multiplier_clipped": clipped,
+        }
+    )
+    return result
+
+
 def apply_output_filter_to_config(config, flux_channel, feedforward, feedback):
     channel = int(flux_channel)
     analog_outputs = config["controllers"]["con1"]["analog_outputs"]
@@ -856,6 +986,10 @@ def save_predistortion_json(path, fit_result, metadata=None):
         "damped_adjustment_multipliers": [
             float(x) for x in fit_result.get("damped_adjustment_multipliers", [])
         ],
+        "full_adjustment_composed_multipliers": [
+            float(x)
+            for x in fit_result.get("full_adjustment_composed_multipliers", [])
+        ],
         "composed_with_applied_flux_tail_compensation": bool(
             fit_result.get("composed_with_applied_flux_tail_compensation", False)
         ),
@@ -902,6 +1036,9 @@ def load_predistortion_json(path):
     payload["damped_adjustment_multipliers"] = [
         float(x) for x in payload.get("damped_adjustment_multipliers", [])
     ]
+    payload["full_adjustment_composed_multipliers"] = [
+        float(x) for x in payload.get("full_adjustment_composed_multipliers", [])
+    ]
     if "desired_response_level" in payload:
         payload["desired_response_level"] = float(payload["desired_response_level"])
     elif "desired_level" in payload:
@@ -939,6 +1076,54 @@ def rise_decay_bump_model(time_zeroed_ns, asymptote, late_amplitude, late_tau_ns
         * np.exp(np.clip(-time_zeroed_ns / bump_tau_ns, -80.0, 80.0))
     )
     return float(asymptote) + late + bump
+
+
+def measured_piecewise_response_model(time_ns, response, tail_fraction=0.25):
+    """Package an already-smoothed measured trace for piecewise inversion.
+
+    Residual-refinement scans use the smoothed ridge selected by the trace
+    extractor.  Re-fitting that visible residual with several exponentials can
+    be non-identifiable; this model deliberately preserves the measured shape
+    instead of extrapolating a second parametric transient from it.
+    """
+    time_ns = np.asarray(time_ns, dtype=float)
+    response = np.asarray(response, dtype=float)
+    if time_ns.shape != response.shape:
+        raise ValueError("time_ns and response must have the same shape.")
+    valid = np.isfinite(time_ns) & np.isfinite(response)
+    time_ns = time_ns[valid]
+    response = response[valid]
+    if time_ns.size < 3:
+        raise ValueError("Not enough finite points to use the measured response.")
+    order = np.argsort(time_ns)
+    time_ns = time_ns[order]
+    response = response[order]
+    tail_count = min(
+        max(3, int(np.ceil(time_ns.size * float(tail_fraction)))),
+        time_ns.size,
+    )
+    asymptote = float(np.nanmean(response[-tail_count:]))
+    return {
+        "success": True,
+        "error": None,
+        "method": "measured_piecewise_response",
+        "time_ns": time_ns,
+        "time_zeroed_ns": time_ns - float(time_ns[0]),
+        "response": response,
+        "asymptote": asymptote,
+        "late_amplitude": float(response[0] - asymptote),
+        "late_tau_ns": np.nan,
+        "bump_amplitude": 0.0,
+        "rise_tau_ns": None,
+        "bump_tau_ns": None,
+        "fit_response": response.copy(),
+        "residual": np.zeros_like(response),
+        "rms": 0.0,
+        "bic": np.nan,
+        "fit_start_ns": float(time_ns[0]),
+        "time_origin_ns": float(time_ns[0]),
+        "extrapolated_to_origin": False,
+    }
 
 
 def fit_visible_tail_exponential_response_model(
