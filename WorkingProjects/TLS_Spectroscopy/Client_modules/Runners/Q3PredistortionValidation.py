@@ -30,7 +30,7 @@ def step_response_settings():
     return {
         "run_fit": False,
         "run_correct": True,
-        "shots": 1000,
+        "shots": 200,
         "spec_amp": 25_000,
         "spec_len_us": 0.5,
         "freq_step": 0.5,
@@ -69,7 +69,7 @@ def main():
     runner._set_yoko_if_requested()
     print("[P3b] validating the high-SNR q3 correction; no new correction will be fitted")
     print(f"[P3b] applying {CORRECTION_JSON}")
-    print("[P3b] 1000 shots; 4.000--4.080 GHz at 0.5 MHz")
+    print("[P3b] 200 shots; 4.000--4.080 GHz at 0.5 MHz")
     print("[P3b] 50 delays from 1--197 us; upper shoulder tracked for early-time visibility")
     runner.run_step3b_step_response_correct(
         str(OUTPUT_DIR), soc, soccfg, correction_json=str(CORRECTION_JSON)

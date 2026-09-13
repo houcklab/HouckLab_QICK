@@ -19,7 +19,7 @@ def test_q3_step3b_matches_calibration_grid_and_uses_upper_shoulder():
     assert len(grid) == 161
     assert grid[0] == 4000.0
     assert grid[-1] == 4080.0
-    assert settings["shots"] == 1000
+    assert settings["shots"] == 200
     assert settings["freq_step"] == 0.5
     assert settings["t_min_us"] == 1.0
     assert settings["t_max_us"] == 200.0
