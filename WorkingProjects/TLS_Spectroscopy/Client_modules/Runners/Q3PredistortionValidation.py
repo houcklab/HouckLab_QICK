@@ -1,18 +1,16 @@
-"""Validate the q3 piecewise flux-step correction measured on 2026-09-13."""
+"""Measure q3 step 3b using the high-SNR 2026-09-13 candidate."""
 
 from pathlib import Path
 
 
 OUTPUT_DIR = Path(
     "Z:/FluxTeam/Data/q3/2026_09_13/"
-    "predistortion_validation/"
-    "corrected_residual_composed_gain_0p8_damping_0p5"
+    "predistortion_validation/high_snr_3b"
 )
 CORRECTION_JSON = Path(
-    "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/"
-    "corrected_readout_after_park_gain_0p8/q3/q3_2026_09_13/"
-    "q3_01_36_26_Qubit_Flux_Step_Response_"
-    "residual_composed_gain_0p8_damping_0p5_dc_compensation.json"
+    "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/high_snr_3a/"
+    "q3/q3_2026_09_13/q3_17_28_26_Qubit_Flux_Step_Response_"
+    "rise_decay_bump_dc_compensation.json"
 )
 
 
@@ -23,7 +21,7 @@ def validation_gain():
 
 def frequency_grid_mhz():
     """Return the inclusive frequency grid used by the calibration scan."""
-    return tuple(range(3950, 4081, 1))
+    return tuple(4000.0 + 0.5 * index for index in range(161))
 
 
 def step_response_settings():
@@ -32,20 +30,24 @@ def step_response_settings():
     return {
         "run_fit": False,
         "run_correct": True,
-        "shots": 100,
+        "shots": 1000,
         "spec_amp": 25_000,
         "spec_len_us": 0.5,
-        "freq_step": 1.0,
+        "freq_step": 0.5,
         "auto_center_frequency_window": True,
         "auto_freq_absolute_min_mhz": float(grid[0]),
         "auto_freq_absolute_max_mhz": float(grid[-1]),
         "t_min_us": 1.0,
-        "t_max_us": 400.0,
+        "t_max_us": 200.0,
         "t_step_us": 4.0,
         "baseline_rearm_us": 100.0,
         "piecewise_min_multiplier": 0.5,
         "piecewise_max_multiplier": 1.5,
         "readout_after_park": True,
+        "trace_tracking_mode": "image_v26",
+        "trace_polarity": "dark",
+        "trace_shoulder": "upper",
+        "trace_max_jump_mhz": 8.0,
         "live_plot": True,
     }
 
@@ -65,12 +67,10 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     soc, soccfg = runner.makeProxy()
     runner._set_yoko_if_requested()
-    print(
-        "[P3b] validating the gain-0.8 correction plus a 50%-damped "
-        "measured-residual refinement; no new correction will be fitted"
-    )
+    print("[P3b] validating the high-SNR q3 correction; no new correction will be fitted")
     print(f"[P3b] applying {CORRECTION_JSON}")
-    print("[P3b] 100 shots; 3.950--4.080 GHz at 1 MHz")
+    print("[P3b] 1000 shots; 4.000--4.080 GHz at 0.5 MHz")
+    print("[P3b] 50 delays from 1--197 us; upper shoulder tracked for early-time visibility")
     runner.run_step3b_step_response_correct(
         str(OUTPUT_DIR), soc, soccfg, correction_json=str(CORRECTION_JSON)
     )
