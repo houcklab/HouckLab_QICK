@@ -200,6 +200,7 @@ class QubitFluxStepResponse(ExperimentClass):
         composition_damping=0.5,
         trace_tracking_mode="ridge",
         trace_polarity=None,
+        trace_shoulder="auto",
         trace_baseline_window_mhz=25.0,
         trace_max_jump_mhz=4.0,
         trace_smoothness_penalty=0.15,
@@ -277,14 +278,21 @@ class QubitFluxStepResponse(ExperimentClass):
         self.compose_with_applied_flux_tail_compensation = bool(compose_with_applied_flux_tail_compensation)
         self.composition_damping = float(composition_damping)
         self.trace_tracking_mode = str(trace_tracking_mode).strip().lower()
-        if self.trace_tracking_mode not in {"ridge", "independent_slices"}:
-            raise ValueError("trace_tracking_mode must be 'ridge' or 'independent_slices'.")
+        if self.trace_tracking_mode not in {"image_v26", "ridge", "independent_slices"}:
+            raise ValueError(
+                "trace_tracking_mode must be 'image_v26', 'ridge', or 'independent_slices'."
+            )
         self.trace_polarity = self._resolve_trace_polarity(
             trace_polarity,
             cfg.get("readout_after_park", True),
         )
         if self.trace_polarity not in {"bright", "dark", "auto"}:
             raise ValueError("trace_polarity must be 'bright', 'dark', or 'auto'.")
+        self.trace_shoulder = str(trace_shoulder).strip().lower()
+        if self.trace_shoulder not in {"auto", "lower", "upper", "midpoint"}:
+            raise ValueError(
+                "trace_shoulder must be 'auto', 'lower', 'upper', or 'midpoint'."
+            )
         self.trace_baseline_window_mhz = float(trace_baseline_window_mhz)
         self.trace_max_jump_mhz = float(trace_max_jump_mhz)
         self.trace_smoothness_penalty = float(trace_smoothness_penalty)
@@ -380,6 +388,7 @@ class QubitFluxStepResponse(ExperimentClass):
             'composition_damping': self.composition_damping,
             'trace_tracking_mode': self.trace_tracking_mode,
             'trace_polarity': self.trace_polarity,
+            'trace_shoulder': self.trace_shoulder,
             'trace_baseline_window_mhz': self.trace_baseline_window_mhz,
             'trace_max_jump_mhz': self.trace_max_jump_mhz,
             'trace_smoothness_penalty': self.trace_smoothness_penalty,
@@ -605,6 +614,7 @@ class QubitFluxStepResponse(ExperimentClass):
                 frequency_margin_ghz,
                 trace_tracking_mode=self.trace_tracking_mode,
                 trace_polarity=self.trace_polarity,
+                trace_shoulder=self.trace_shoulder,
                 trace_baseline_window_mhz=self.trace_baseline_window_mhz,
                 trace_max_jump_mhz=self.trace_max_jump_mhz,
                 trace_smoothness_penalty=self.trace_smoothness_penalty,
@@ -668,6 +678,13 @@ class QubitFluxStepResponse(ExperimentClass):
             "trace_extraction_method": extraction_method,
             "trace_selected_polarity": trace_result.get("polarity", None),
             "trace_signal_source": trace_signal_source,
+            "trace_shoulder_mode": trace_result.get("shoulder_mode"),
+            "trace_shoulder_separation_mhz": trace_result.get(
+                "shoulder_separation_mhz"
+            ),
+            "trace_paired_support_fraction": trace_result.get(
+                "paired_support_fraction"
+            ),
             "measured_step_response": measured_step_response,
             "measured_frequency_step_response": measured_step_response,
             "effective_dc_offset_V": effective_dc_offset,

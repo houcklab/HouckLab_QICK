@@ -39,6 +39,10 @@ def main():
             "piecewise_min_multiplier": 0.5,
             "piecewise_max_multiplier": 1.5,
             "readout_after_park": True,
+            "trace_tracking_mode": "image_v26",
+            "trace_polarity": "dark",
+            "trace_shoulder": "auto",
+            "trace_max_jump_mhz": 8.0,
             "live_plot": True,
         }
     )

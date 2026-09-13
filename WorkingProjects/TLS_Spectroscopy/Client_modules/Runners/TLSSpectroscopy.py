@@ -132,6 +132,10 @@ P3_STEP_RESPONSE = {
     "piecewise_min_multiplier": 0.5,
     "piecewise_max_multiplier": 1.5,
     "readout_after_park": False,
+    "trace_tracking_mode": "ridge",
+    "trace_polarity": None,
+    "trace_shoulder": "auto",
+    "trace_max_jump_mhz": 4.0,
     "live_plot": True,
 }
 
@@ -568,6 +572,10 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
             p.get("compose_with_applied_flux_tail_compensation", False)
         ),
         composition_damping=float(p.get("composition_damping", 0.5)),
+        trace_tracking_mode=p.get("trace_tracking_mode", "ridge"),
+        trace_polarity=p.get("trace_polarity", None),
+        trace_shoulder=p.get("trace_shoulder", "auto"),
+        trace_max_jump_mhz=float(p.get("trace_max_jump_mhz", 4.0)),
     )
     exp.acquire(progress=True)
     exp.save_data()

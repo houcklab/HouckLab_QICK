@@ -3,6 +3,9 @@ import numpy as np
 from scipy import signal, optimize
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.image_ridge_tracker import (
+    track_image_ridge,
+)
 
 
 def _odd_savgol_window(requested, n):
@@ -305,6 +308,9 @@ def extract_trace_from_map(iq_magnitude_dbm, frequency_axis_ghz, time_ns,
                            baseline_frequency_ghz, target_frequency_ghz,
                            frequency_margin_ghz, trace_tracking_mode="ridge",
                            **trace_knobs):
+    legacy_trace_knobs = {
+        key: value for key, value in trace_knobs.items() if key != "trace_shoulder"
+    }
     expected_min_ghz = min(baseline_frequency_ghz, target_frequency_ghz) - frequency_margin_ghz
     expected_max_ghz = max(baseline_frequency_ghz, target_frequency_ghz) + frequency_margin_ghz
     frequency_axis_ghz = np.asarray(frequency_axis_ghz, dtype=float)
@@ -317,10 +323,33 @@ def extract_trace_from_map(iq_magnitude_dbm, frequency_axis_ghz, time_ns,
             f"sweep=[{float(np.nanmin(frequency_axis_ghz)):.6f}, "
             f"{float(np.nanmax(frequency_axis_ghz)):.6f}] GHz")
 
-    if trace_tracking_mode == "ridge":
+    if trace_tracking_mode == "image_v26":
+        try:
+            trace_result = track_image_ridge(
+                frequency_axis_ghz,
+                iq_magnitude_dbm,
+                expected_window_mask=expected_window_mask,
+                polarity=trace_knobs.get("trace_polarity", "auto"),
+                max_jump_mhz=max(
+                    float(trace_knobs.get("trace_max_jump_mhz", 4.0)),
+                    8.0,
+                ),
+                shoulder=trace_knobs.get("trace_shoulder", "auto"),
+            )
+        except Exception as exc:
+            print(f"Image trace extraction failed; falling back to legacy ridge: {exc}")
+            trace_result = extract_trace_ridge(
+                iq_magnitude_dbm,
+                frequency_axis_ghz,
+                time_ns,
+                expected_window_mask,
+                **legacy_trace_knobs,
+            )
+    elif trace_tracking_mode == "ridge":
         try:
             trace_result = extract_trace_ridge(iq_magnitude_dbm, frequency_axis_ghz,
-                                               time_ns, expected_window_mask, **trace_knobs)
+                                               time_ns, expected_window_mask,
+                                               **legacy_trace_knobs)
         except Exception as exc:
             print(f"Ridge trace extraction failed; falling back to independent slices: {exc}")
             trace_result = extract_trace_independent_slices(
