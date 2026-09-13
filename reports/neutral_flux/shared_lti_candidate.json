@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "model": {
+    "schema_version": 1,
+    "algorithm": "stable_parallel_highpass_inverse_v1",
+    "taus_ns": [
+      8000.0,
+      24000.0,
+      64000.0,
+      192000.0
+    ],
+    "amplitudes": [
+      1.0
+    ],
+    "coefficients": [
+      [
+        -0.015321963972329468,
+        -0.018817043911388578,
+        0.04976596549085921,
+        0.00725085153012129
+      ]
+    ],
+    "resolution_ns": 4000.0,
+    "max_l1": 0.25
+  },
+  "coordinate": {
+    "park": 0.1827868,
+    "scale": 0.23964306326392007,
+    "unit": "V"
+  },
+  "evidence": {
+    "numerical_targets_pass": false,
+    "scientific_gate_pass": false,
+    "hardware_ready": false,
+    "hardware_gate_reason": "Actual controller compilation, dispatch timing and plant validation required",
+    "emission_sample_ns": 2000,
+    "snapshot_sha256": "1de379fbaea287cf75fcabd057a744ece65b5c90b1ad9761f7b8038a1757eadf",
+    "training_ids": [
+      "12_57_45",
+      "12_18_02",
+      "13_21_04"
+    ],
+    "validation_ids": [
+      "14_22_26",
+      "14_30_44",
+      "14_39_01"
+    ],
+    "reasons": [
+      "conditional residual-transport forecast is not a measured correction",
+      "unresolved onset below 5 us and unknown analog initial history",
+      "no uncorrected band-edge amplitude scans or shot-resolved noise estimates",
+      "actual controller clock, compiler memory and dispatch timing not validated"
+    ]
+  }
+}

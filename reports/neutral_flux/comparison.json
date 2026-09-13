@@ -1,0 +1,1555 @@
+{
+  "schema_version": 1,
+  "snapshot_sha256": "1de379fbaea287cf75fcabd057a744ece65b5c90b1ad9761f7b8038a1757eadf",
+  "emission_sample_ns": 2000,
+  "inverse_regularization": 1e-05,
+  "training_ids": [
+    "12_57_45",
+    "12_18_02",
+    "13_21_04"
+  ],
+  "validation_ids": [
+    "14_22_26",
+    "14_30_44",
+    "14_39_01"
+  ],
+  "metric_definition": "raw estimates smoothed ONCE17 samples; RMS about late mean>=300us; early<=21us; forecasts only>=5us",
+  "selection": [
+    {
+      "taus_ns": [
+        8000,
+        32000,
+        128000
+      ],
+      "regularization": 1e-05,
+      "blocked_raw_rms": 0.017579561378623734
+    },
+    {
+      "taus_ns": [
+        8000,
+        32000,
+        128000
+      ],
+      "regularization": 0.0001,
+      "blocked_raw_rms": 0.0077337193000944215
+    },
+    {
+      "taus_ns": [
+        8000,
+        32000,
+        128000
+      ],
+      "regularization": 0.001,
+      "blocked_raw_rms": 0.001943363334831367
+    },
+    {
+      "taus_ns": [
+        8000,
+        24000,
+        64000,
+        192000
+      ],
+      "regularization": 1e-05,
+      "blocked_raw_rms": 0.001561390502364565
+    },
+    {
+      "taus_ns": [
+        8000,
+        24000,
+        64000,
+        192000
+      ],
+      "regularization": 0.0001,
+      "blocked_raw_rms": 0.005195276144903919
+    },
+    {
+      "taus_ns": [
+        8000,
+        24000,
+        64000,
+        192000
+      ],
+      "regularization": 0.001,
+      "blocked_raw_rms": 0.002461692889960612
+    }
+  ],
+  "selected": {
+    "taus_ns": [
+      8000,
+      24000,
+      64000,
+      192000
+    ],
+    "regularization": 1e-05,
+    "blocked_raw_rms": 0.001561390502364565
+  },
+  "shared_plant": {
+    "coefficients": [
+      0.013443792337008433,
+      0.019421793809053817,
+      -0.047315909491732935,
+      -0.008107057441137664
+    ],
+    "offsets": [
+      -0.01784591053331786,
+      -0.012643458166612859,
+      -0.006499384322253291
+    ],
+    "rms": 0.0006705729207084017,
+    "condition_number": 26.899363672000675,
+    "regularization": 1e-05
+  },
+  "amplitude_plants": [
+    {
+      "coefficients": [
+        0.01566046383727446,
+        0.01628241522610889,
+        -0.04511158106099678,
+        -0.009002001213147584
+      ],
+      "offsets": [
+        -0.017692477054271256
+      ],
+      "rms": 0.0005021809750586093,
+      "condition_number": 26.899363672000653,
+      "regularization": 1e-05
+    },
+    {
+      "coefficients": [
+        0.014341557165702819,
+        0.019626283326482228,
+        -0.04792300927260098,
+        -0.008279153175241612
+      ],
+      "offsets": [
+        -0.012527179377953241
+      ],
+      "rms": 0.0006156539675952818,
+      "condition_number": 26.899363672000653,
+      "regularization": 1e-05
+    },
+    {
+      "coefficients": [
+        0.011469723999425707,
+        0.020635853194719795,
+        -0.04755754181514187,
+        -0.007575397551890158
+      ],
+      "offsets": [
+        -0.006686503432750927
+      ],
+      "rms": 0.0008211644945107121,
+      "condition_number": 26.899363672000653,
+      "regularization": 1e-05
+    }
+  ],
+  "amplitudes": [
+    0.7504861989638247,
+    0.8813657992987257,
+    1.0
+  ],
+  "loao": [
+    {
+      "id": "q5_12_57_45_Qubit_Flux_Step_Response_Transfer_4p3GHz",
+      "amplitude": 0.7504861989638247,
+      "outside_training_hull": true,
+      "boundary_rule": "constant endpoint diagnostic; not validated extrapolation",
+      "nested_train_only_selection": {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 0.001,
+        "blocked_raw_rms": 0.002009701288775728
+      },
+      "lti_forecast": {
+        "smooth_rms_mhz": 0.817731883208948,
+        "early_minus_late_mhz": -0.8069017087736938,
+        "raw_rms_mhz": 0.8715734547686398,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 1.0802281395830202,
+        "early_minus_late_mhz": -1.7630902894225073,
+        "raw_rms_mhz": 1.1243781998796687,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "id": "q5_12_18_02_Qubit_Flux_Step_Response",
+      "amplitude": 0.8813657992987257,
+      "outside_training_hull": false,
+      "boundary_rule": "constant endpoint diagnostic; not validated extrapolation",
+      "nested_train_only_selection": {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 1e-05,
+        "blocked_raw_rms": 0.0018607867940106406
+      },
+      "lti_forecast": {
+        "smooth_rms_mhz": 0.8149841708887966,
+        "early_minus_late_mhz": 0.42025749741787877,
+        "raw_rms_mhz": 1.1053569246730537,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 0.8218689189495219,
+        "early_minus_late_mhz": 0.4310434200533564,
+        "raw_rms_mhz": 1.1096361059139164,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "id": "q5_13_21_04_Qubit_Flux_Step_Response_Transfer_3p8GHz",
+      "amplitude": 1.0,
+      "outside_training_hull": true,
+      "boundary_rule": "constant endpoint diagnostic; not validated extrapolation",
+      "nested_train_only_selection": {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 1e-05,
+        "blocked_raw_rms": 0.0015700898071578327
+      },
+      "lti_forecast": {
+        "smooth_rms_mhz": 1.7099480340670885,
+        "early_minus_late_mhz": -1.641032647107295,
+        "raw_rms_mhz": 2.034976036133357,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 1.7735359134251756,
+        "early_minus_late_mhz": -1.7599573128131851,
+        "raw_rms_mhz": 2.0886289757264525,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    }
+  ],
+  "later_comparison": [
+    {
+      "id": "q5_14_22_26_Qubit_Flux_Step_Response_Transfer_4p3GHz",
+      "target_native": 0.36263561165698677,
+      "amplitude": 0.7504861989638247,
+      "piecewise_saved_all_supported": {
+        "smooth_rms_mhz": 0.27481359209671896,
+        "early_minus_late_mhz": -0.29787135281912924,
+        "raw_rms_mhz": 0.27481359209671896,
+        "supported_fraction": 0.992,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "piecewise_raw_smoothed_same_support": {
+        "smooth_rms_mhz": 0.3457672757675858,
+        "early_minus_late_mhz": -1.0353198418979446,
+        "raw_rms_mhz": 0.604851429961313,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "shared_lti_forecast": {
+        "smooth_rms_mhz": 0.512835615689525,
+        "early_minus_late_mhz": 0.13031413669432368,
+        "raw_rms_mhz": 0.6296741375654917,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 0.527553763436001,
+        "early_minus_late_mhz": -0.10220565230338252,
+        "raw_rms_mhz": 0.6210280827037934,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "plant_discrepancy_raw_rms_normalized": 0.0005142707281212431
+    },
+    {
+      "id": "q5_14_30_44_Qubit_Flux_Step_Response_Transfer_center",
+      "target_native": 0.394,
+      "amplitude": 0.8813657992987257,
+      "piecewise_saved_all_supported": {
+        "smooth_rms_mhz": 0.7915987029913119,
+        "early_minus_late_mhz": -0.7263340541690013,
+        "raw_rms_mhz": 0.7915987029913119,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "piecewise_raw_smoothed_same_support": {
+        "smooth_rms_mhz": 0.8004140741257575,
+        "early_minus_late_mhz": -0.9713959707605682,
+        "raw_rms_mhz": 1.4094592384778826,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "shared_lti_forecast": {
+        "smooth_rms_mhz": 0.792316802329944,
+        "early_minus_late_mhz": 0.6146456321653204,
+        "raw_rms_mhz": 1.4097251334564873,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 0.8919785161766985,
+        "early_minus_late_mhz": 0.14240640365096624,
+        "raw_rms_mhz": 1.4649539232274638,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "plant_discrepancy_raw_rms_normalized": 0.0008012102082058975
+    },
+    {
+      "id": "q5_14_39_01_Qubit_Flux_Step_Response_Transfer_3p8GHz",
+      "target_native": 0.42242986326392007,
+      "amplitude": 1.0,
+      "piecewise_saved_all_supported": {
+        "smooth_rms_mhz": 1.54793330208039,
+        "early_minus_late_mhz": -2.85462555488175,
+        "raw_rms_mhz": 1.54793330208039,
+        "supported_fraction": 0.984,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "piecewise_raw_smoothed_same_support": {
+        "smooth_rms_mhz": 1.4337030762942897,
+        "early_minus_late_mhz": -1.6051938184155006,
+        "raw_rms_mhz": 2.1062868713695826,
+        "supported_fraction": 0.976,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "shared_lti_forecast": {
+        "smooth_rms_mhz": 1.564474849627116,
+        "early_minus_late_mhz": 0.4272764356992411,
+        "raw_rms_mhz": 2.232622246291733,
+        "supported_fraction": 0.976,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "conditioned_forecast": {
+        "smooth_rms_mhz": 1.4740952945475594,
+        "early_minus_late_mhz": 1.3584656673374411,
+        "raw_rms_mhz": 2.2034601692566445,
+        "supported_fraction": 0.976,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "plant_discrepancy_raw_rms_normalized": 0.000999748337689181
+    }
+  ],
+  "model_only": [
+    {
+      "amplitude": 0.7504861989638247,
+      "inverse": "lti",
+      "metrics": {
+        "smooth_rms_mhz": 0.08340995504238595,
+        "early_minus_late_mhz": 0.2581532774520383,
+        "raw_rms_mhz": 0.0861675213409469,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "amplitude": 0.7504861989638247,
+      "inverse": "conditioned",
+      "metrics": {
+        "smooth_rms_mhz": 0.07016531635536707,
+        "early_minus_late_mhz": 0.007367873066868924,
+        "raw_rms_mhz": 0.07398261934407048,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "amplitude": 0.8813657992987257,
+      "inverse": "lti",
+      "metrics": {
+        "smooth_rms_mhz": 0.23765891182016438,
+        "early_minus_late_mhz": 0.4923693072687456,
+        "raw_rms_mhz": 0.23682664659323957,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "amplitude": 0.8813657992987257,
+      "inverse": "conditioned",
+      "metrics": {
+        "smooth_rms_mhz": 0.1038664132553064,
+        "early_minus_late_mhz": -0.0038260086025729834,
+        "raw_rms_mhz": 0.10932386049851339,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "amplitude": 1.0,
+      "inverse": "lti",
+      "metrics": {
+        "smooth_rms_mhz": 0.5194155966225139,
+        "early_minus_late_mhz": -1.0119534826289964,
+        "raw_rms_mhz": 0.5430418516566285,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    },
+    {
+      "amplitude": 1.0,
+      "inverse": "conditioned",
+      "metrics": {
+        "smooth_rms_mhz": 0.12765964008218025,
+        "early_minus_late_mhz": -0.036883437540836894,
+        "raw_rms_mhz": 0.1344741155836518,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      }
+    }
+  ],
+  "emitter_comparison": [
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 4.0,
+      "hold_ns": 1000,
+      "mismatch": {
+        "max_abs": 7.104152794212112e-05,
+        "rms": 1.4876751663844196e-05,
+        "integrated_abs_ns": 16.848169500259168,
+        "signed_area_ns": 9.540711083179179
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 704,
+      "qua_source_operations": 1605,
+      "terminal_filter_tail_bound": 8.428274110089328e-09,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 4.0,
+      "hold_ns": 13004,
+      "mismatch": {
+        "max_abs": 7.104152794212112e-05,
+        "rms": 2.1207640342622482e-05,
+        "integrated_abs_ns": 23.57328208176316,
+        "signed_area_ns": 8.980004579702536
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 2176,
+      "qua_source_operations": 1617,
+      "terminal_filter_tail_bound": 1.0624827016843795e-07,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 4.0,
+      "hold_ns": 100000,
+      "mismatch": {
+        "max_abs": 7.458305637950483e-05,
+        "rms": 2.660287774465593e-05,
+        "integrated_abs_ns": 33.086469881779756,
+        "signed_area_ns": 7.755951813671154
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 5696,
+      "qua_source_operations": 1703,
+      "terminal_filter_tail_bound": 6.586718751109052e-07,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 4.0,
+      "hold_ns": 497000,
+      "mismatch": {
+        "max_abs": 7.456661896330062e-05,
+        "rms": 2.908836660736805e-05,
+        "integrated_abs_ns": 46.66444730260615,
+        "signed_area_ns": 6.3089313488760155
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 9280,
+      "qua_source_operations": 2101,
+      "terminal_filter_tail_bound": 1.5005515763683846e-06,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 2.5,
+      "hold_ns": 1000,
+      "mismatch": {
+        "max_abs": 7.104152794212112e-05,
+        "rms": 1.4876751663844196e-05,
+        "integrated_abs_ns": 16.848169500259168,
+        "signed_area_ns": 9.540711083179179
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 800,
+      "qua_source_operations": 1605,
+      "terminal_filter_tail_bound": 8.428274110089328e-09,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 2.5,
+      "hold_ns": 13004,
+      "mismatch": {
+        "max_abs": 1.0246894589860733,
+        "rms": 0.0008061025799586315,
+        "integrated_abs_ns": 24.610435484918035,
+        "signed_area_ns": 10.012716834740743
+      },
+      "horizon_difference_ns": 1.0,
+      "qick_instruction_allowance": 2272,
+      "qua_source_operations": 1617,
+      "terminal_filter_tail_bound": 1.0624827016843795e-07,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 2.5,
+      "hold_ns": 100000,
+      "mismatch": {
+        "max_abs": 7.458305637950483e-05,
+        "rms": 2.660287774465593e-05,
+        "integrated_abs_ns": 33.08646988177975,
+        "signed_area_ns": 7.755951813671154
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 5792,
+      "qua_source_operations": 1703,
+      "terminal_filter_tail_bound": 6.586718751109052e-07,
+      "hardware_compiled": false
+    },
+    {
+      "profile_note": "illustrative fabric clock; actual q3 soccfg absent",
+      "qick_clock_ns": 2.5,
+      "hold_ns": 497000,
+      "mismatch": {
+        "max_abs": 7.456661896330062e-05,
+        "rms": 2.908836660736805e-05,
+        "integrated_abs_ns": 46.66444730260615,
+        "signed_area_ns": 6.3089313488760155
+      },
+      "horizon_difference_ns": 0.0,
+      "qick_instruction_allowance": 9376,
+      "qua_source_operations": 2101,
+      "terminal_filter_tail_bound": 1.5005515763683846e-06,
+      "hardware_compiled": false
+    }
+  ],
+  "repeat_comparison": [
+    {
+      "first": "q5_11_47_02_Qubit_Flux_Step_Response",
+      "second": "q5_12_18_02_Qubit_Flux_Step_Response",
+      "raw_difference_rms_mhz": 1.3830948769591698,
+      "difference_metrics": {
+        "smooth_rms_mhz": 0.853887350531145,
+        "early_minus_late_mhz": 1.6206259984386224,
+        "raw_rms_mhz": 1.383094876959112,
+        "supported_fraction": 1.0,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "note": "noise, ridge bias and real drift confounded; not a noise confidence interval"
+    },
+    {
+      "first": "q5_14_30_44_Qubit_Flux_Step_Response_Transfer_center",
+      "second": "q5_14_54_13_Qubit_Flux_Step_Response_Transfer_center",
+      "raw_difference_rms_mhz": 1.7460032580299316,
+      "difference_metrics": {
+        "smooth_rms_mhz": 1.1225743662856928,
+        "early_minus_late_mhz": -2.5645657511016013,
+        "raw_rms_mhz": 1.7460032580299298,
+        "supported_fraction": 0.992,
+        "smooth_window": 17,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "note": "noise, ridge bias and real drift confounded; not a noise confidence interval"
+    }
+  ],
+  "first_sample_sensitivity": [
+    {
+      "id": "q5_12_57_45_Qubit_Flux_Step_Response_Transfer_4p3GHz",
+      "coefficients_from_5us": [
+        0.01566046383727446,
+        0.01628241522610889,
+        -0.04511158106099678,
+        -0.009002001213147584
+      ],
+      "coefficients_including_1us": [
+        0.01566046383727446,
+        0.01628241522610889,
+        -0.04511158106099678,
+        -0.009002001213147584
+      ]
+    },
+    {
+      "id": "q5_12_18_02_Qubit_Flux_Step_Response",
+      "coefficients_from_5us": [
+        0.014341557165702819,
+        0.019626283326482228,
+        -0.04792300927260098,
+        -0.008279153175241612
+      ],
+      "coefficients_including_1us": [
+        0.05658762837052087,
+        -0.0078093766720330905,
+        -0.03586917208856124,
+        -0.011829399983073545
+      ]
+    },
+    {
+      "id": "q5_13_21_04_Qubit_Flux_Step_Response_Transfer_3p8GHz",
+      "coefficients_from_5us": [
+        0.011469723999425707,
+        0.020635853194719795,
+        -0.04755754181514187,
+        -0.007575397551890158
+      ],
+      "coefficients_including_1us": [
+        0.05799832404215149,
+        -0.009580779202711371,
+        -0.034282062323729004,
+        -0.011485413242086358
+      ]
+    }
+  ],
+  "trace_audit": [
+    {
+      "id": "q5_14_22_26_Qubit_Flux_Step_Response_Transfer_4p3GHz",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "463961a76f310345dadc17ccdfb99fb90e13d5a61ad964626853a7295de4a059",
+        "frequency_drift_csv": "82085e0dbc46a6ee07eac7ef4fc4981807edc270e184a41c82c6c18061f44759",
+        "raw_sweep_csv": "d010b4536b489069a8416e87b8a7391e9e18c8c8d6b8c7e18b2dd2e9b3b4717f"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.27481359209671896,
+        "early_minus_late_mhz": -0.29787135281912924,
+        "raw_rms_mhz": 0.27481359209671896,
+        "supported_fraction": 0.992,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.5441712102619395,
+        "ridge_local_rms_mhz": 0.325101526701698,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 5.571616265693592,
+        "smooth_peak_to_peak_mhz": 1.3253611357731643,
+        "width_median_mhz": 3.474308786757514,
+        "width_p90_mhz": 4.394134399468208,
+        "width_max_mhz": 5.380280927671071,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 0.0008875938310666243,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.08805270525967054,
+            "max_abs_shift_vs_8mhz": 0.2753935283399187
+          },
+          "8": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.19626599407900017,
+            "max_abs_shift_vs_8mhz": 0.6327557213708133
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.278416516997252e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_14_30_44_Qubit_Flux_Step_Response_Transfer_center",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "07062d15a3bc714b015694cf28855dfac9a3cbae7f38e2f1408da9744b9b0f70",
+        "frequency_drift_csv": "e467d7831f92f27065bdc2d6a0e156f88a5b4fbe89ba96a522a8a98525fee3b7",
+        "raw_sweep_csv": "fbfad971dce8df8992da2d4b3d98fc078cd9892cfec8ddcac84aed0ed5fd109d"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.7915987029913119,
+        "early_minus_late_mhz": -0.7263340541690013,
+        "raw_rms_mhz": 0.7915987029913119,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.176561140398027,
+        "ridge_local_rms_mhz": 1.1274452519400402,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 8.431171625908519,
+        "smooth_peak_to_peak_mhz": 3.124265054780608,
+        "width_median_mhz": 8.2162240434504,
+        "width_p90_mhz": 9.443559701403082,
+        "width_max_mhz": 11.169009366609382,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -0.8611161699172953,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.4830185930320031,
+            "max_abs_shift_vs_8mhz": 1.2159841218463043
+          },
+          "8": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.6483576382847227,
+            "max_abs_shift_vs_8mhz": 2.076956097177572
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.0361855215615735e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_14_39_01_Qubit_Flux_Step_Response_Transfer_3p8GHz",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "5ec77753ce9a36b7e82e3270e7ca8f2fb3ee04fe86ad23dffe804b716187849f",
+        "frequency_drift_csv": "0fe82f81b1fddc841c714cd95d6584ab03645fc559f8a2521b35f683f02db85d",
+        "raw_sweep_csv": "f9e108b491dde979a78ae7b8ed7a67fb2224ece76ea078c6b01882e4fdca263c"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 1.54793330208039,
+        "early_minus_late_mhz": -2.85462555488175,
+        "raw_rms_mhz": 1.54793330208039,
+        "supported_fraction": 0.984,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.7020206543048766,
+        "ridge_local_rms_mhz": 0.9506555666633811,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 15.249947425944356,
+        "smooth_peak_to_peak_mhz": 6.984738681465842,
+        "width_median_mhz": 8.82653545808004,
+        "width_p90_mhz": 10.420049898576481,
+        "width_max_mhz": 11.48859529907779,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -1.5588080512038687,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 123,
+            "rms_shift_vs_8mhz": 0.5865924112950823,
+            "max_abs_shift_vs_8mhz": 2.237523527933263
+          },
+          "8": {
+            "supported_count": 123,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 123,
+            "rms_shift_vs_8mhz": 0.8586142919204411,
+            "max_abs_shift_vs_8mhz": 2.3789468929476243
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.2403040707744678e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_14_54_13_Qubit_Flux_Step_Response_Transfer_center",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "6231eab0d6fd392ee443d97693c0d81c78a2ab4ac3bd3e6ec6e55c8e996ca5b5",
+        "frequency_drift_csv": "ffb536b6fd434bc61645c615971627044f8187e2ba058dc054daeb683569dfbc",
+        "raw_sweep_csv": "1d0453f280cbc82f34448d3c210d5cc004cadaedb7afb96fe443c295447e926b"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.8646709334034264,
+        "early_minus_late_mhz": 2.3205501448833274,
+        "raw_rms_mhz": 0.8646709334034264,
+        "supported_fraction": 0.992,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.8041802597461254,
+        "ridge_local_rms_mhz": 1.5084690392664908,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 5.510459184049068,
+        "smooth_peak_to_peak_mhz": 4.209123279430514,
+        "width_median_mhz": 7.391670549798111,
+        "width_p90_mhz": 8.933547320032444,
+        "width_max_mhz": 10.102838841252051,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 2.299656453314583,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.3961804203290254,
+            "max_abs_shift_vs_8mhz": 1.5224600035189724
+          },
+          "8": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.6761944073802145,
+            "max_abs_shift_vs_8mhz": 1.87721339846712
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.00197660373348e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_00_06_11_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "5c6460aff467177d08f86e07dc42089a13cae6a3c4d26f66b95e157b86553fb8",
+        "frequency_drift_csv": "3b53cfe0cbdd7f8e118541b20b7d06caae05e40029da6bac0889693180db18d9",
+        "raw_sweep_csv": "59abc32a087cc445ada9305ae23456b50d172555ff08bc60fff14d36a823d3f1"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 7.341563493660965,
+        "early_minus_late_mhz": -0.7819403661205797,
+        "raw_rms_mhz": 7.341563493660965,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.4326190959531764,
+        "ridge_local_rms_mhz": 1.2703847009675349,
+        "spectral_grid_step_mhz": 0.25,
+        "raw_peak_to_peak_mhz": 25.075913894298992,
+        "smooth_peak_to_peak_mhz": 21.618876936709057,
+        "width_median_mhz": 3.370024616996183,
+        "width_p90_mhz": 9.276771133825038,
+        "width_max_mhz": 12.496172016247447,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -0.24511811485172075
+      }
+    },
+    {
+      "id": "q5_11_24_43_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "b065e9837a2e3c784e050cfd474391f7fe32a2813308384592b70d6b263b48e2",
+        "frequency_drift_csv": "24f3381a127232ec40056741c40ac0e09239aaad0e89b3c1b073e0545ae7cedf",
+        "raw_sweep_csv": "971550a961ce0d01c0f7c1e280a5237f5c339540dd04b144600b6f6558f91748"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 1.752376068205372,
+        "early_minus_late_mhz": -0.33920877568516516,
+        "raw_rms_mhz": 1.752376068205372,
+        "supported_fraction": 0.992,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.7857072112284503,
+        "ridge_local_rms_mhz": 1.6181570747974203,
+        "spectral_grid_step_mhz": 0.4999999999997726,
+        "raw_peak_to_peak_mhz": 6.995632117934747,
+        "smooth_peak_to_peak_mhz": 7.317282928621353,
+        "width_median_mhz": 6.990636570155401,
+        "width_p90_mhz": 8.114301379014861,
+        "width_max_mhz": 9.083279073824972,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -0.25778077425957235,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.3592516406593995,
+            "max_abs_shift_vs_8mhz": 1.0602972133888215
+          },
+          "8": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.725655023422843,
+            "max_abs_shift_vs_8mhz": 2.3758757788059484
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.3575019878134733e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_11_47_02_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "cecf9a865ea13a2e30e72ec51740701d407b6f134f61063baa95b5ded736edaa",
+        "frequency_drift_csv": "9c67cd98df33e06846dc49710864d617e336040cf0a97bcb289ab5d96d5b7fd4",
+        "raw_sweep_csv": "8cc51533f9b9290a4ffaf88494f1bc4ce24186c69f40f61b01923540569c679b"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.7623737487453627,
+        "early_minus_late_mhz": -1.1022660902299322,
+        "raw_rms_mhz": 0.7623737487453627,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.8963023681599033,
+        "ridge_local_rms_mhz": 1.3130057364153305,
+        "spectral_grid_step_mhz": 0.4999999999997726,
+        "raw_peak_to_peak_mhz": 6.341994514617909,
+        "smooth_peak_to_peak_mhz": 3.519221805455345,
+        "width_median_mhz": 7.06025671511344,
+        "width_p90_mhz": 8.371501575650267,
+        "width_max_mhz": 10.43879242844176,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -0.7797562436039698,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.4423095409299797,
+            "max_abs_shift_vs_8mhz": 1.722237928044251
+          },
+          "8": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.5561504075326571,
+            "max_abs_shift_vs_8mhz": 1.6613992166267053
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.4659519880994622e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_12_18_02_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "5662ed34bfad88e9baeae35ccfba5ee10c02d891cfb347d5af01d86205f331e9",
+        "frequency_drift_csv": "dcf3a2d64857f2dd14c2d699c0cd5b53056662fc73b855e952cdcddc3b81b402",
+        "raw_sweep_csv": "2fbf950b964444e4a0d04ea12cb2871d9226b8b1daabebf1974cc2b8a4e7a028"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.8314821426912491,
+        "early_minus_late_mhz": -2.7228920886682317,
+        "raw_rms_mhz": 0.8314821426912491,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.8810540180982547,
+        "ridge_local_rms_mhz": 1.4228481926032408,
+        "spectral_grid_step_mhz": 0.4999999999997726,
+        "raw_peak_to_peak_mhz": 9.314862473643188,
+        "smooth_peak_to_peak_mhz": 5.141306677148805,
+        "width_median_mhz": 6.877178048888759,
+        "width_p90_mhz": 8.310533461607463,
+        "width_max_mhz": 10.18423241399082,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -2.1981525825676727,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.36182890447500204,
+            "max_abs_shift_vs_8mhz": 1.849118127971451
+          },
+          "8": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.7606260723848834,
+            "max_abs_shift_vs_8mhz": 2.046655611676215
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.2397183462881903e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_12_57_45_Qubit_Flux_Step_Response_Transfer_4p3GHz",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "5be5fc664979b83713161ba359b8defc1e64712a6a58439497c2759b4307ceeb",
+        "frequency_drift_csv": "fc1dfa39c36720d51ec0a7076ee8eb6af8d610233fa3c6831faeb8d37949c129",
+        "raw_sweep_csv": "c19f51a9d7413a607fee5b64a50dea6cf59b477ede671ea953bb512b3fb94ff7"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.66643054802217,
+        "early_minus_late_mhz": -2.2176345909429074,
+        "raw_rms_mhz": 0.66643054802217,
+        "supported_fraction": 0.992,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.5426027787695117,
+        "ridge_local_rms_mhz": 0.2333075033293805,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 6.374184045213042,
+        "smooth_peak_to_peak_mhz": 3.4662613038117343,
+        "width_median_mhz": 2.8921076210874785,
+        "width_p90_mhz": 3.372065437144707,
+        "width_max_mhz": 4.5737311378888705,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -1.243923985888614,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.0343054791351568,
+            "max_abs_shift_vs_8mhz": 0.16849705466120213
+          },
+          "8": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 124,
+            "rms_shift_vs_8mhz": 0.12247148151560476,
+            "max_abs_shift_vs_8mhz": 0.39394091213944193
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.3144352971573683e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_13_21_04_Qubit_Flux_Step_Response_Transfer_3p8GHz",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "0ce985e541cf0b847d3358ff75e9c88493ff2147a3705f47c2a5626494e5f80d",
+        "frequency_drift_csv": "c613cfeccc258d053ac17f53f68fcd73ca42744bd0217dc4d6d92e7ee9bf39f5",
+        "raw_sweep_csv": "228c386116d9a3ab696af622a84f90473b4e84e8bff299709c929d21d2b5b8c8"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 1.9200347856292665,
+        "early_minus_late_mhz": -5.775553895546636,
+        "raw_rms_mhz": 1.9200347856292665,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.1926079074964404,
+        "ridge_local_rms_mhz": 1.2462945904944207,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 13.163532708034836,
+        "smooth_peak_to_peak_mhz": 9.628988626989667,
+        "width_median_mhz": 7.772952535193517,
+        "width_p90_mhz": 9.32288153770455,
+        "width_max_mhz": 10.921011178611208,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -4.9602096306803105,
+        "centroid_half_window_mhz": {
+          "6": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.45174200914748397,
+            "max_abs_shift_vs_8mhz": 2.004421888336765
+          },
+          "8": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.0,
+            "max_abs_shift_vs_8mhz": 0.0
+          },
+          "10": {
+            "supported_count": 125,
+            "rms_shift_vs_8mhz": 0.7502241544652826,
+            "max_abs_shift_vs_8mhz": 2.8292492757082073
+          }
+        },
+        "reextracted_8mhz_vs_saved_local_rms_mhz": 1.246372813557238e-12,
+        "centroid_window_boundary_convention": "original saved GHz floats retained to reproduce inclusive-window comparisons"
+      }
+    },
+    {
+      "id": "q5_02_27_31_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "b6e92afdf459b34f678e33f5acb20ee36fc35370a1fa8f09d9a7672ea061b129",
+        "frequency_drift_csv": "db0fc5e5993df79ac45ddab67c76720f9f2582643be8fbe0dc37d240b6b5ff8a",
+        "raw_sweep_csv": "6cb109407438f5ba17e9106849267d0581320e1d737443a6b6e0cf58a436a5ce"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 1.357388110076836,
+        "early_minus_late_mhz": 0.5339648389094691,
+        "raw_rms_mhz": 1.357388110076836,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.3455882148673988,
+        "ridge_local_rms_mhz": 1.2826350349301923,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 10.897284566337476,
+        "smooth_peak_to_peak_mhz": 8.081857562172445,
+        "width_median_mhz": 6.171254333593753,
+        "width_p90_mhz": 9.30394442195942,
+        "width_max_mhz": 14.946897305238942,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 0.7826401086604164
+      }
+    },
+    {
+      "id": "q5_02_48_47_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "899e45a8e8694657917d029e33be4ab887e221e871755d33f84fe50537a8e2db",
+        "frequency_drift_csv": "c38a7cd7866e085b06a1a0227ab4ac35537b6cb4f5d28f2665ebbf0381fc0953",
+        "raw_sweep_csv": "74cca5f32262bc4c2b1140d9a2b0b4ca51e000d023084445dfd0d003bcd67f61"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 2.8164941410538376,
+        "early_minus_late_mhz": -0.4404059749508633,
+        "raw_rms_mhz": 2.8164941410538376,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 3.2701888250185767,
+        "ridge_local_rms_mhz": 2.535477753187125,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 22.345413842586822,
+        "smooth_peak_to_peak_mhz": 11.546788302102414,
+        "width_median_mhz": 0.556844964923553,
+        "width_p90_mhz": 6.961627666206246,
+        "width_max_mhz": 36.0,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 0.11081439733879961
+      }
+    },
+    {
+      "id": "q5_01_19_20_Qubit_Flux_Step_Response",
+      "qubit": "q5",
+      "source_sha256": {
+        "pkl": "da0a266bef832296696bec4328d01752ceec02aac21335dc508262b324503046",
+        "frequency_drift_csv": "57a1754c2c545b6ae891202c9b184c64f0c408aa085454e5a3a682a8eec7456f",
+        "raw_sweep_csv": "c5186402cde944986742f225667cf50f77589f73a0717aa160ad0e7a30040072"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 21.49297803821986,
+        "early_minus_late_mhz": 54.21127345435934,
+        "raw_rms_mhz": 21.49297803821986,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 1.738348900531241,
+        "ridge_local_rms_mhz": 0.8988662162197779,
+        "spectral_grid_step_mhz": 0.5,
+        "raw_peak_to_peak_mhz": 61.64901740316145,
+        "smooth_peak_to_peak_mhz": 56.39885034786312,
+        "width_median_mhz": 2.650848086880337,
+        "width_p90_mhz": 9.493354893708462,
+        "width_max_mhz": 13.366137433022985,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 54.482624467894766
+      }
+    },
+    {
+      "id": "q3_01_14_36_Qubit_Flux_Step_Response",
+      "qubit": "q3",
+      "source_sha256": {
+        "pkl": "cac1dc251862773cbe551006a35c2d80b3e1c00ad71cf662ffa335f2dacc96b5",
+        "frequency_drift_csv": "794fed91c5b22239e5e4cd848fe647f771b09c313b66b3adade92bbf3244e0b4",
+        "raw_sweep_csv": "fcd0c1da30991f05024a28161082ee88d13900b49685106b0555649f6bc6df61"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 1.1191866417019127,
+        "early_minus_late_mhz": -4.173148603843856,
+        "raw_rms_mhz": 1.1191866417019127,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.4511039188064715,
+        "ridge_local_rms_mhz": 0.6108762030758517,
+        "spectral_grid_step_mhz": 1.0,
+        "raw_peak_to_peak_mhz": 9.426270553418362,
+        "smooth_peak_to_peak_mhz": 6.756154609920031,
+        "width_median_mhz": 3.911278513155285,
+        "width_p90_mhz": 5.728864552272492,
+        "width_max_mhz": 17.349868296582375,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": -4.008040558992889
+      }
+    },
+    {
+      "id": "q3_01_36_26_Qubit_Flux_Step_Response",
+      "qubit": "q3",
+      "source_sha256": {
+        "pkl": "9bc96f594f50c6a4b9ff9946b8d6038229690a6839e48daccb9b7647216f8ba2",
+        "frequency_drift_csv": "c764b7b2c2d5a4b59361689e70b35ae59a5a6120e6c4ed6f0bf4f572d6d7fe6b",
+        "raw_sweep_csv": "6f740cdda79c9be8fa363a191700e426deba33fa38f31481ba8a4deab8e44934"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.914976621415761,
+        "early_minus_late_mhz": 0.2678599478504111,
+        "raw_rms_mhz": 0.914976621415761,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.4221137688434498,
+        "ridge_local_rms_mhz": 0.5788282298462412,
+        "spectral_grid_step_mhz": 1.0,
+        "raw_peak_to_peak_mhz": 5.891620274398974,
+        "smooth_peak_to_peak_mhz": 3.5984117971029264,
+        "width_median_mhz": 4.735628235998062,
+        "width_p90_mhz": 8.263391390749279,
+        "width_max_mhz": 16.625589072216393,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 0.6179356230054509
+      }
+    },
+    {
+      "id": "q3_02_02_25_Qubit_Flux_Step_Response",
+      "qubit": "q3",
+      "source_sha256": {
+        "pkl": "96bca35976530d3888ea19d255cd028405b9bd6b666aba7f9b8a66cd5320ffde",
+        "frequency_drift_csv": "e0b7bcf99bb92de14a75c077b6902aa30d3807e136e24c03b72011211f3d554a",
+        "raw_sweep_csv": "aebfcf62833f2ccc8a0b7a47002d966f20f4266f50b3415430857fa7b07d4dc8"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 0.5348266585228443,
+        "early_minus_late_mhz": -0.1802501733191093,
+        "raw_rms_mhz": 0.5348266585228443,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.3895649107858986,
+        "ridge_local_rms_mhz": 0.5305633916987658,
+        "spectral_grid_step_mhz": 1.0,
+        "raw_peak_to_peak_mhz": 5.232339275235518,
+        "smooth_peak_to_peak_mhz": 2.3864725713515327,
+        "width_median_mhz": 3.674935633884572,
+        "width_p90_mhz": 4.984758947564761,
+        "width_max_mhz": 8.11156824603414,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 0.045279332210611756
+      }
+    },
+    {
+      "id": "q3_00_53_50_Qubit_Flux_Step_Response",
+      "qubit": "q3",
+      "source_sha256": {
+        "pkl": "9f6b3f52ffe7eeb24db5195e911b9ecc697dffee204ae49564d91197cddd361f",
+        "frequency_drift_csv": "e9c50aa705f72e2dae92cb013d7441cc933af3ed76fbe16379007d736fe3d515",
+        "raw_sweep_csv": "4cda6229f95f9a27d0ff404136b07af11044ce652512d8d522663566e5630c0e"
+      },
+      "metrics": {
+        "smooth_rms_mhz": 6.868006154135392,
+        "early_minus_late_mhz": 20.21257716646005,
+        "raw_rms_mhz": 6.868006154135392,
+        "supported_fraction": 1.0,
+        "smooth_window": 1,
+        "early_stop_ns": 21000,
+        "late_start_ns": 300000
+      },
+      "sensitivity": {
+        "raw_smooth_rms_mhz": 0.9802408889846534,
+        "ridge_local_rms_mhz": 0.6798388177839558,
+        "spectral_grid_step_mhz": 1.0,
+        "raw_peak_to_peak_mhz": 23.239976874197964,
+        "smooth_peak_to_peak_mhz": 22.358588040518953,
+        "width_median_mhz": 3.638963672253486,
+        "width_p90_mhz": 5.408857976332658,
+        "width_max_mhz": 22.917628834940235,
+        "width_note": "spectral feature widths, not noise or centroid confidence intervals",
+        "raw_inversion_out_of_branch_count": 0,
+        "raw_early_minus_late_mhz": 21.18344887382591
+      }
+    }
+  ],
+  "gates": {
+    "numerical_targets_pass": false,
+    "scientific_gate_pass": false,
+    "hardware_ready": false,
+    "hardware_gate_reason": "Actual controller compilation, dispatch timing and plant validation required",
+    "emission_sample_ns": 2000,
+    "snapshot_sha256": "1de379fbaea287cf75fcabd057a744ece65b5c90b1ad9761f7b8038a1757eadf",
+    "training_ids": [
+      "12_57_45",
+      "12_18_02",
+      "13_21_04"
+    ],
+    "validation_ids": [
+      "14_22_26",
+      "14_30_44",
+      "14_39_01"
+    ],
+    "reasons": [
+      "conditional residual-transport forecast is not a measured correction",
+      "unresolved onset below 5 us and unknown analog initial history",
+      "no uncorrected band-edge amplitude scans or shot-resolved noise estimates",
+      "actual controller clock, compiler memory and dispatch timing not validated"
+    ]
+  },
+  "q3_single_amplitude": {
+    "selection": [
+      {
+        "taus_ns": [
+          8000,
+          32000,
+          128000
+        ],
+        "regularization": 1e-05,
+        "blocked_raw_rms": 0.004377402106694136
+      },
+      {
+        "taus_ns": [
+          8000,
+          32000,
+          128000
+        ],
+        "regularization": 0.0001,
+        "blocked_raw_rms": 0.0018281364734128824
+      },
+      {
+        "taus_ns": [
+          8000,
+          32000,
+          128000
+        ],
+        "regularization": 0.001,
+        "blocked_raw_rms": 0.00400729981203943
+      },
+      {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 1e-05,
+        "blocked_raw_rms": 0.0051128606565110386
+      },
+      {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 0.0001,
+        "blocked_raw_rms": 0.001977562117499427
+      },
+      {
+        "taus_ns": [
+          8000,
+          24000,
+          64000,
+          192000
+        ],
+        "regularization": 0.001,
+        "blocked_raw_rms": 0.003339547121072975
+      }
+    ],
+    "selected": {
+      "taus_ns": [
+        8000,
+        32000,
+        128000
+      ],
+      "regularization": 0.0001,
+      "blocked_raw_rms": 0.0018281364734128824
+    },
+    "plant": {
+      "coefficients": [
+        0.028039076744294778,
+        -0.03941504706246182,
+        -0.01416865203820789
+      ],
+      "offsets": [
+        -0.009875754190295068
+      ],
+      "rms": 0.0012984333469881887,
+      "condition_number": 10.342101112545087,
+      "regularization": 0.0001
+    },
+    "model": {
+      "schema_version": 1,
+      "algorithm": "stable_parallel_highpass_inverse_v1",
+      "taus_ns": [
+        8000.0,
+        32000.0,
+        128000.0
+      ],
+      "amplitudes": [
+        1.0
+      ],
+      "coefficients": [
+        [
+          -0.029424343753500372,
+          0.042321980739784056,
+          0.013533264785395141
+        ]
+      ],
+      "resolution_ns": 4000.0,
+      "max_l1": 0.25
+    },
+    "comparisons": [
+      {
+        "id": "q3_01_14_36_Qubit_Flux_Step_Response",
+        "used_in_fit": false,
+        "forecast": {
+          "smooth_rms_mhz": 1.1052135132240186,
+          "early_minus_late_mhz": -3.9096647529013353,
+          "raw_rms_mhz": 1.2370091976982667,
+          "supported_fraction": 0.99,
+          "smooth_window": 17,
+          "early_stop_ns": 21000,
+          "late_start_ns": 300000
+        }
+      },
+      {
+        "id": "q3_01_36_26_Qubit_Flux_Step_Response",
+        "used_in_fit": false,
+        "forecast": {
+          "smooth_rms_mhz": 1.0753472907858124,
+          "early_minus_late_mhz": -3.8148019464597382,
+          "raw_rms_mhz": 1.1215165950962522,
+          "supported_fraction": 0.99,
+          "smooth_window": 17,
+          "early_stop_ns": 21000,
+          "late_start_ns": 300000
+        }
+      },
+      {
+        "id": "q3_02_02_25_Qubit_Flux_Step_Response",
+        "used_in_fit": false,
+        "forecast": {
+          "smooth_rms_mhz": 1.0889183543471734,
+          "early_minus_late_mhz": -3.7337455692049843,
+          "raw_rms_mhz": 1.1769906927249458,
+          "supported_fraction": 0.99,
+          "smooth_window": 17,
+          "early_stop_ns": 21000,
+          "late_start_ns": 300000
+        }
+      },
+      {
+        "id": "q3_00_53_50_Qubit_Flux_Step_Response",
+        "used_in_fit": true,
+        "forecast": {
+          "smooth_rms_mhz": 0.5259442041540943,
+          "early_minus_late_mhz": -0.37569750504735566,
+          "raw_rms_mhz": 0.9134101254159518,
+          "supported_fraction": 0.99,
+          "smooth_window": 17,
+          "early_stop_ns": 21000,
+          "late_start_ns": 300000
+        }
+      }
+    ]
+  },
+  "q3_scope": "one measured amplitude only; no LOAO or cross-band validation; q5 artifact emission on QICK is a normalized-command witness, not a q3 calibration"
+}

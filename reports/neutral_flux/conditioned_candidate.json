@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "model": {
+    "schema_version": 1,
+    "algorithm": "stable_parallel_highpass_inverse_v1",
+    "taus_ns": [
+      8000.0,
+      24000.0,
+      64000.0,
+      192000.0
+    ],
+    "amplitudes": [
+      0.7504861989638247,
+      0.8813657992987257,
+      1.0
+    ],
+    "coefficients": [
+      [
+        -0.01756860629140727,
+        -0.01565764117885165,
+        0.0475762738938609,
+        0.008145466756770482
+      ],
+      [
+        -0.016278512187566773,
+        -0.019054119517268982,
+        0.05047336512354702,
+        0.007394567166353808
+      ],
+      [
+        -0.013262587118294228,
+        -0.020022754581448955,
+        0.049900469917195545,
+        0.006749793610236608
+      ]
+    ],
+    "resolution_ns": 4000.0,
+    "max_l1": 0.25
+  },
+  "coordinate": {
+    "park": 0.1827868,
+    "scale": 0.23964306326392007,
+    "unit": "V"
+  },
+  "evidence": {
+    "numerical_targets_pass": false,
+    "scientific_gate_pass": false,
+    "hardware_ready": false,
+    "hardware_gate_reason": "Actual controller compilation, dispatch timing and plant validation required",
+    "emission_sample_ns": 2000,
+    "snapshot_sha256": "1de379fbaea287cf75fcabd057a744ece65b5c90b1ad9761f7b8038a1757eadf",
+    "training_ids": [
+      "12_57_45",
+      "12_18_02",
+      "13_21_04"
+    ],
+    "validation_ids": [
+      "14_22_26",
+      "14_30_44",
+      "14_39_01"
+    ],
+    "reasons": [
+      "conditional residual-transport forecast is not a measured correction",
+      "unresolved onset below 5 us and unknown analog initial history",
+      "no uncorrected band-edge amplitude scans or shot-resolved noise estimates",
+      "actual controller clock, compiler memory and dispatch timing not validated"
+    ]
+  }
+}

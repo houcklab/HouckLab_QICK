@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "model": {
+    "schema_version": 1,
+    "algorithm": "stable_parallel_highpass_inverse_v1",
+    "taus_ns": [
+      8000.0,
+      32000.0,
+      128000.0
+    ],
+    "amplitudes": [
+      1.0
+    ],
+    "coefficients": [
+      [
+        -0.029424343753500372,
+        0.042321980739784056,
+        0.013533264785395141
+      ]
+    ],
+    "resolution_ns": 4000.0,
+    "max_l1": 0.25
+  },
+  "coordinate": {
+    "park": -25146.0,
+    "scale": 10396.0,
+    "unit": "DAC_gain"
+  },
+  "evidence": {
+    "numerical_targets_pass": false,
+    "scientific_gate_pass": false,
+    "hardware_ready": false,
+    "hardware_gate_reason": "Actual controller compilation, dispatch timing and plant validation required",
+    "emission_sample_ns": 2000,
+    "snapshot_sha256": "1de379fbaea287cf75fcabd057a744ece65b5c90b1ad9761f7b8038a1757eadf",
+    "training_ids": [
+      "q3_00_53_50_Qubit_Flux_Step_Response"
+    ],
+    "validation_ids": [
+      "q3_01_14_36_Qubit_Flux_Step_Response",
+      "q3_01_36_26_Qubit_Flux_Step_Response",
+      "q3_02_02_25_Qubit_Flux_Step_Response"
+    ],
+    "reasons": [
+      "single q3 amplitude; changed-command forecasts fail; nominal emitted history only",
+      "no actual controller compilation or physical settling verification"
+    ]
+  }
+}
