@@ -1283,7 +1283,12 @@ def fit_visible_tail_exponential_response_model(
     }
 
 
-def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25):
+def fit_rise_decay_bump_response_model(
+    time_ns,
+    response,
+    fit_tail_fraction=0.25,
+    time_origin_ns=None,
+):
     time_ns = np.asarray(time_ns, dtype=float)
     response = np.asarray(response, dtype=float)
     valid = np.isfinite(time_ns) & np.isfinite(response)
@@ -1295,7 +1300,20 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
     order = np.argsort(time_ns)
     time_ns = time_ns[order]
     response = response[order]
-    time_zeroed_ns = time_ns - float(time_ns[0])
+    first_measured_time_ns = float(time_ns[0])
+    if time_origin_ns is None:
+        time_origin_ns = first_measured_time_ns
+        model_time_ns = time_ns
+    else:
+        time_origin_ns = float(time_origin_ns)
+        if not np.isfinite(time_origin_ns):
+            raise ValueError("time_origin_ns must be finite.")
+        if time_origin_ns > first_measured_time_ns + 1e-9:
+            raise ValueError(
+                "time_origin_ns cannot be later than the first measured point."
+            )
+        model_time_ns = np.unique(np.concatenate([[time_origin_ns], time_ns]))
+    time_zeroed_ns = time_ns - time_origin_ns
     n_points = int(time_zeroed_ns.size)
     span_ns = max(float(time_zeroed_ns[-1] - time_zeroed_ns[0]), 1.0)
     response_min = float(np.nanmin(response))
@@ -1368,8 +1386,10 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
                             ftol=1e-12,
                             gtol=1e-12,
                         )
-                        fit_response = rise_decay_bump_model(time_zeroed_ns, *result.x)
-                        residual = response - fit_response
+                        measured_fit_response = rise_decay_bump_model(
+                            time_zeroed_ns, *result.x
+                        )
+                        residual = response - measured_fit_response
                         rss = float(np.nansum(residual**2))
                         rss = max(rss, 1e-300)
                         rms = float(np.sqrt(np.nanmean(residual**2)))
@@ -1377,7 +1397,7 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
                         if best is None or bic < best["bic"]:
                             best = {
                                 "params": np.asarray(result.x, dtype=float),
-                                "fit_response": fit_response,
+                                "fit_response": measured_fit_response,
                                 "residual": residual,
                                 "rms": rms,
                                 "bic": bic,
@@ -1390,12 +1410,17 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
         raise RuntimeError("; ".join(errors[-5:]) if errors else "Rise-decay bump fit failed.")
 
     params = np.asarray(best["params"], dtype=float)
+    model_time_zeroed_ns = model_time_ns - time_origin_ns
+    model_fit_response = rise_decay_bump_model(model_time_zeroed_ns, *params)
     return {
         "success": bool(best["success"]),
         "error": best["error"],
         "method": "late_exponential_plus_rise_decay_bump",
-        "time_ns": time_ns,
-        "time_zeroed_ns": time_zeroed_ns,
+        "time_ns": model_time_ns,
+        "time_zeroed_ns": model_time_zeroed_ns,
+        "measured_time_ns": time_ns,
+        "measured_time_zeroed_ns": time_zeroed_ns,
+        "time_origin_ns": float(time_origin_ns),
         "response": response,
         "asymptote": float(params[0]),
         "late_amplitude": float(params[1]),
@@ -1403,7 +1428,7 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
         "bump_amplitude": float(params[3]),
         "rise_tau_ns": float(params[4]),
         "bump_tau_ns": float(params[5]),
-        "fit_response": np.asarray(best["fit_response"], dtype=float),
+        "fit_response": np.asarray(model_fit_response, dtype=float),
         "residual": np.asarray(best["residual"], dtype=float),
         "rms": float(best["rms"]),
         "bic": float(best["bic"]),
