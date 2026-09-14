@@ -16,6 +16,10 @@ from pathlib import Path
 
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
+    progress_counter,
+)
+
 
 _directory = os.path.dirname(os.path.abspath(__file__))
 while _directory != os.path.dirname(_directory):
@@ -57,6 +61,16 @@ def _median(values):
     values = np.asarray(values, dtype=float)
     finite = values[np.isfinite(values)]
     return float(np.median(finite)) if finite.size else float("nan")
+
+
+def make_shot_progress(start_time):
+    """Report resident-stream progress in completed shot sweeps."""
+    return lambda done, total: progress_counter(
+        done - 1,
+        total,
+        start_time=start_time,
+        label="five-point diagnostic",
+    )
 
 
 def _json_default(value):
@@ -340,6 +354,7 @@ def main():
         reference_hold_us=float(params["reference_hold_us"]),
         shots=shots,
         reset_scheme=reset_scheme,
+        progress=make_shot_progress(started),
     )
     elapsed = time.monotonic() - started
     states = classify_payload_iq(

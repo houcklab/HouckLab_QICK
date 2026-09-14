@@ -71,6 +71,28 @@ def test_qick_measurement_diagnostic_applies_requested_accumulator_read_delay():
     assert cfg == {"shots": 20, "opx_read_delay_us": 10.0}
 
 
+def test_qick_measurement_diagnostic_reports_resident_shot_progress(monkeypatch):
+    module = diagnostic()
+    assert hasattr(module, "make_shot_progress")
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "progress_counter",
+        lambda iteration, total, **kwargs: calls.append(
+            (iteration, total, kwargs)
+        ),
+    )
+
+    callback = module.make_shot_progress(start_time=123.0)
+    callback(7, 180)
+
+    assert calls == [(
+        6,
+        180,
+        {"start_time": 123.0, "label": "five-point diagnostic"},
+    )]
+
+
 def test_feedback_read_uses_qick_wait_all_sequence_when_requested():
     """The diagnostic timing mode must follow QICK's documented feedback order."""
     programs = importlib.import_module(
@@ -552,9 +574,11 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
         )
         for x in range(20)
     ]
-    def acquire(_soc, prog, _timeout, cfg, *, total_shots):
+    shot_progress = object()
+    def acquire(_soc, prog, _timeout, cfg, *, total_shots, progress=None):
         assert total_shots == 2
         assert cfg["opx_t1_5pt_delays_us"] == [10, 50, 200]
+        assert progress is shot_progress
         return records
     monkeypatch.setattr(module, "_run_program", acquire)
     i, q, telemetry = module.acquire_t1_5pt_iq(None, None,
@@ -565,7 +589,7 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
             "opx_diagnostic_condition_tags": True,
         },
         dc_gains=[-100, -90], delays_us=[10, 50, 200], reference_hold_us=2,
-        shots=2, reset_scheme="none")
+        shots=2, reset_scheme="none", progress=shot_progress)
     assert i.shape == (5, 2, 2)
     np.testing.assert_equal(i[0], [[0, 15], [5, 10]])
     np.testing.assert_equal(i[4], [[4, 19], [9, 14]])
@@ -669,8 +693,13 @@ def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatc
     probabilities = [.1, .9, .806, .528, .166]
     states = np.array([[[int(s < p*180) for s in range(180)]]*2 for p in probabilities])
     telemetry = {"read_length_cycles": 2, "order": "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"}
-    monkeypatch.setattr(module, "acquire_t1_5pt_iq", lambda *a, **k: (states, states, telemetry))
-    exp.acquire()
+    forwarded = {}
+    def acquire(*args, **kwargs):
+        forwarded["progress"] = kwargs.get("progress")
+        return states, states, telemetry
+    monkeypatch.setattr(module, "acquire_t1_5pt_iq", acquire)
+    exp.acquire(progress=True)
+    assert callable(forwarded["progress"])
     spec = module.get_wall_clock_repeat_full_spec(exp)
     for direction in ("scan_up", "scan_down"):
         for key in ("T1_5pt_err_us", "T1_5pt_us_raw", "T1_5pt_fit_success", "T1_5pt_fit_deviance", "T1_5pt_valid_mask"):

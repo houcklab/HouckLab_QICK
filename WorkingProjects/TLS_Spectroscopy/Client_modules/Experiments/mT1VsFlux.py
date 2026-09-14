@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import datetime
+from contextlib import nullcontext
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -968,7 +969,16 @@ class T15PointVsFlux(_T1VsFluxBase):
             if active_reset.uses_opx_unbounded(self.reset_mode)
             else "none"
         )
-        with suppress_stdout():
+        started = time.time()
+        callback = None
+        if progress:
+            callback = lambda done, total: progress_counter(
+                done - 1,
+                total,
+                start_time=started,
+                label="five-point T1 vs flux",
+            )
+        with (nullcontext() if progress else suppress_stdout()):
             i_values, q_values, telemetry = acquire_t1_5pt_iq(
                 self.soc,
                 self.soccfg,
@@ -978,6 +988,7 @@ class T15PointVsFlux(_T1VsFluxBase):
                 reference_hold_us=self.reference_hold_us,
                 shots=self.shots,
                 reset_scheme=reset_scheme,
+                progress=callback,
             )
         if reset_scheme == "opx_unbounded":
             states = classify_payload_iq(

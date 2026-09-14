@@ -316,6 +316,7 @@ def acquire_t1_5pt_iq(
     reference_hold_us,
     shots=None,
     reset_scheme="opx_unbounded",
+    progress=None,
 ):
     bundle = runtime_bundle(cfg)
     gains = np.asarray(dc_gains, dtype=float).reshape(-1)
@@ -369,6 +370,7 @@ def acquire_t1_5pt_iq(
         _block_timeout_s(run_cfg, total_shots * records_per_shot),
         run_cfg,
         total_shots=total_shots,
+        progress=progress,
     )
     i_records = np.asarray(
         [record.final_i for record in block], dtype=float
