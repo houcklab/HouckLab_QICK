@@ -104,6 +104,19 @@ def apply_diagnostic_read_delay(cfg, environ=None):
     return read_delay_us
 
 
+def apply_diagnostic_dmem_verification(cfg, environ=None):
+    """Keep exhaustive per-word DMem checks opt-in for small transport tests."""
+    environ = os.environ if environ is None else environ
+    value = environ.get(
+        "Q3_DIAGNOSTIC_VERIFY_DMEM_READS", "off"
+    ).strip().lower()
+    if value not in ("on", "off"):
+        raise ValueError("Q3_DIAGNOSTIC_VERIFY_DMEM_READS must be on or off")
+    enabled = value == "on"
+    cfg["opx_verify_dmem_reads"] = enabled
+    return enabled
+
+
 def apply_diagnostic_feedback_timing(cfg, environ=None):
     """Select the accumulator handoff sequence for this isolated test."""
     environ = os.environ if environ is None else environ
@@ -314,9 +327,9 @@ def main():
             params["readout_thermalization_us"]
         ),
         "opx_t1_3pt_gain_lookup": True,
-        "opx_verify_dmem_reads": True,
         "opx_diagnostic_condition_tags": True,
     })
+    verify_dmem_reads = apply_diagnostic_dmem_verification(cfg)
     read_delay_us = apply_diagnostic_read_delay(cfg)
     feedback_timing = apply_diagnostic_feedback_timing(cfg)
     feedback_flush = apply_diagnostic_feedback_flush(cfg)
@@ -339,7 +352,8 @@ def main():
         f"reset={reset_mode}; predistortion={correction_mode}; "
         f"accumulator_read_delay={read_delay_us:g} us; "
         f"feedback_timing={feedback_timing}; feedback_flush={feedback_flush}"
-        f"; pre_measure_sync={pre_measure_sync}"
+        f"; pre_measure_sync={pre_measure_sync}; "
+        f"exhaustive_dmem_verify={verify_dmem_reads}"
     )
     print(
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "

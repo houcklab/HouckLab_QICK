@@ -71,6 +71,17 @@ def test_qick_measurement_diagnostic_applies_requested_accumulator_read_delay():
     assert cfg == {"shots": 20, "opx_read_delay_us": 10.0}
 
 
+def test_qick_measurement_diagnostic_skips_exhaustive_dmem_reads_by_default():
+    module = diagnostic()
+    assert hasattr(module, "apply_diagnostic_dmem_verification")
+    cfg = {}
+
+    enabled = module.apply_diagnostic_dmem_verification(cfg, {})
+
+    assert enabled is False
+    assert cfg["opx_verify_dmem_reads"] is False
+
+
 def test_qick_measurement_diagnostic_reports_resident_shot_progress(monkeypatch):
     module = diagnostic()
     assert hasattr(module, "make_shot_progress")
