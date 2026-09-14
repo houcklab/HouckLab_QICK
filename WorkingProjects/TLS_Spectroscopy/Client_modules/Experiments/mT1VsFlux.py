@@ -925,6 +925,11 @@ class T15PointVsFlux(_T1VsFluxBase):
         max_fit_t1_us=3000.0,
         **kw,
     ):
+        # The base constructor accepts shots as its tenth positional argument
+        # and coerces it to int; validate the original value before that cast.
+        requested_shots = float(args[9] if len(args) > 9 else kw.get("shots", 2000))
+        if not np.isfinite(requested_shots) or requested_shots < 2 or not requested_shots.is_integer():
+            raise ValueError("five-point shots must be an integer of at least two")
         super().__init__(*args, **kw)
         self.decay_delays_us = validate_five_point_delays(decay_delays_us)
         if not np.array_equal(self.decay_delays_us, [10.0, 50.0, 200.0]):

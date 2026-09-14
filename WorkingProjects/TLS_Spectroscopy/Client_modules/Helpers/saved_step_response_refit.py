@@ -1,5 +1,8 @@
 """Refit a saved step-response map without reacquiring controller data."""
 
+import pickle
+from pathlib import Path
+
 import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit
@@ -23,6 +26,71 @@ _APPLIED_COMPENSATION_TIMING_KEYS = (
 
 def _portable_name(path):
     return str(path).replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def refit_pickle(source_pickle, output_json, *, previous_json=None, timing=None,
+                 damping=0.5, min_multiplier=0.5, max_multiplier=1.5,
+                 refit_options=None):
+    """Refit a trusted local saved map and save a provenance-bearing correction.
+
+    Uncorrected maps require explicit controller timing. Corrected maps inherit
+    timing only after their recorded applied correction has been verified.
+    Tracker options are forwarded to :func:`refit_saved_step_response`.
+    """
+    source_pickle, output_json = Path(source_pickle), Path(output_json)
+    with source_pickle.open("rb") as stream:
+        data = pickle.load(stream)
+    previous = None
+    if previous_json is not None:
+        previous, timing = verify_applied_compensation(data, previous_json)
+    else:
+        timing = dict(timing or {})
+        for key in _APPLIED_COMPENSATION_TIMING_KEYS:
+            value = float(timing.get(key, np.nan))
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"explicit positive {key} is required")
+            timing[key] = value
+    options = {"signal_source": "magnitude", "polarity": "dark", "shoulder": "upper",
+               "time_origin_ns": 0.0, **dict(refit_options or {})}
+    result = refit_saved_step_response(data, **options)
+    correction = result["correction"]
+    if previous is not None:
+        correction = compose_verified_saved_response_residual(
+            previous, correction, damping=damping,
+            min_multiplier=min_multiplier, max_multiplier=max_multiplier,
+        )
+        result["composed_correction"] = correction
+    meta_dict = data.get("meta_dict", {}) or {}
+    trace = result["trace"]
+    metadata = {
+        "qubit": data.get("qubit"), "flux_channel": meta_dict.get("flux_channel"),
+        "flux_name": meta_dict.get("flux_name"), "dc_offset": data.get("dc_offset"),
+        "baseline_dc_offset": data.get("baseline_dc_offset"),
+        "source": "saved_step_response_refit", "source_pickle": str(source_pickle),
+        "source_png": data.get("summary_image"),
+        "intended_use": "rise_decay_bump_set_dc_offset_tail_compensation",
+        **timing,
+        "rise_decay_bump_response_domain": "voltage",
+        "rise_decay_bump_response_model": "rise_decay_bump",
+        "rise_decay_bump_desired_response": options.get("desired_response", "median"),
+        "response_fit_method": result["model"]["method"],
+        "response_time_origin_us": float(options["time_origin_ns"]) / 1e3,
+        "response_extrapolated_to_origin": True,
+        "trace_signal_source": options["signal_source"],
+        "trace_corroborating_signal_source": options.get("corroborating_signal_source"),
+        "trace_polarity": options["polarity"], "trace_shoulder": options["shoulder"],
+        "trace_shoulder_mode": trace.get("shoulder_mode"),
+        "trace_shoulder_separation_mhz": trace.get("shoulder_separation_mhz"),
+        "trace_supported_fraction": result["support_fraction"],
+        "trace_first_supported_time_us": result["first_supported_time_ns"] / 1e3,
+        "corroboration": result.get("corroboration"),
+        "model_note": correction.get("model_note"),
+    }
+    if previous is not None:
+        metadata.update(previous_compensation_json=str(previous_json), composition_damping=float(damping))
+    flux_predistortion.save_predistortion_json(output_json, correction, metadata=metadata)
+    result["output_json"] = str(output_json)
+    return result
 
 
 def verify_applied_compensation(

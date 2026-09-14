@@ -36,3 +36,4 @@ WorkingProjects/TLS_Spectroscopy/Client_modules/active_reset_OPX/*.md
 WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/
 WorkingProjects/TLS_Spectroscopy/Client_modules/active_reset_OPX/tests/
 .worktrees/
+/.superpowers/

@@ -130,6 +130,9 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
     class HardwareProgram:
         def __init__(self, board, cfg, *_args):
             self.cfg = cfg
+            self._t1_ff_predistortion_mode = "stateful"
+            self._t1_ff_predistortion_tail_us = 8.0
+            self._t1_ff_predistortion_recovery_us = 25.0
             assert cfg["opx_resident_dmem_stream"] is True
         def us2cycles(self, *_args, **_kwargs):
             return 2
@@ -149,6 +152,10 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
     np.testing.assert_equal(i[4], [[4, 19], [9, 14]])
     np.testing.assert_equal(q, -i)
     assert telemetry["records"] == 20
+    assert telemetry["flux_predistortion_round_trip_mode"] == "stateful"
+    assert telemetry["flux_predistortion_return_tail_us"] == 8.0
+    assert telemetry["flux_predistortion_recovery_window_us"] == 25.0
+    assert telemetry["flux_predistortion_tail_overlaps_payload_readout"] is True
     assert telemetry["p0_mode"] == "matched_frequency_resolved"
     assert telemetry["condition_names"] == ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
 
@@ -359,6 +366,19 @@ def test_integration_rejects_fractional_shots_before_hardware(monkeypatch):
     with pytest.raises(ValueError, match="integer"):
         module.acquire_t1_5pt_iq(None, None, {"reset_mode": "passive"}, dc_gains=[-100],
                                 delays_us=[10, 50, 200], reference_hold_us=2, shots=180.5)
+
+
+@pytest.mark.parametrize("shots", [180.5, 0, 1, np.nan, np.inf])
+@pytest.mark.parametrize("positional", [False, True])
+def test_public_constructor_rejects_invalid_shots_before_base_setup(monkeypatch, shots, positional):
+    module = load_experiments(monkeypatch)
+    def unexpected_base(*args, **kwargs):
+        pytest.fail("invalid shot budget reached base setup")
+    monkeypatch.setattr(module._T1VsFluxBase, "__init__", unexpected_base)
+    args = (None, None, "", "", "data", "data", {}, None, [-100], shots) if positional else ()
+    kwargs = {} if positional else {"shots": shots}
+    with pytest.raises(ValueError, match="integer of at least two"):
+        module.T15PointVsFlux(*args, decay_delays_us=[10, 50, 200], **kwargs)
 
 
 def test_synchronized_overrun_uses_slower_completion_and_keeps_series_alive(monkeypatch, tmp_path):

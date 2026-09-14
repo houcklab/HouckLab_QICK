@@ -398,6 +398,7 @@ def acquire_t1_5pt_iq(
         "reference_hold_us": reference_hold_us,
         "decay_delays_us": tuple(float(value) for value in delays),
         "read_length_cycles": int(read_cycles),
+        **flux_predistortion_telemetry(program),
     }
 
 
