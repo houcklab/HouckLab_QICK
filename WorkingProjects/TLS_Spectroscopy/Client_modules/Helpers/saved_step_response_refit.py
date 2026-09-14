@@ -40,6 +40,9 @@ def refit_pickle(source_pickle, output_json, *, previous_json=None, timing=None,
     source_pickle, output_json = Path(source_pickle), Path(output_json)
     with source_pickle.open("rb") as stream:
         data = pickle.load(stream)
+    applied = data.get("applied_flux_tail_compensation") or {}
+    if applied.get("enabled", False) and previous_json is None:
+        raise ValueError("previous_json is required for an already-corrected saved map")
     previous = None
     if previous_json is not None:
         previous, timing = verify_applied_compensation(data, previous_json)

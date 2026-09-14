@@ -57,6 +57,31 @@ def test_refit_pickle_writes_a_loadable_production_correction(tmp_path, monkeypa
 
 import pytest
 
+
+def test_corrected_map_requires_previous_filter_before_fitting_or_saving(tmp_path, monkeypatch):
+    source = tmp_path / "corrected_response.pkl"
+    output = tmp_path / "unsafe_dc_compensation.json"
+    source.write_bytes(pickle.dumps({
+        "applied_flux_tail_compensation": {"enabled": True},
+    }))
+
+    def unexpected_fit(*args, **kwargs):
+        pytest.fail("corrected map was fitted without its previous correction")
+
+    def unexpected_save(*args, **kwargs):
+        pytest.fail("corrected map was saved without its previous correction")
+
+    monkeypatch.setattr(runner, "refit_saved_step_response", unexpected_fit)
+    monkeypatch.setattr(flux_predistortion, "save_predistortion_json", unexpected_save)
+    with pytest.raises(ValueError, match="previous_json"):
+        runner.refit_pickle(source, output, timing={
+            "fit_ff_ramp_length_us": 4.0,
+            "fit_dt_pulseplay_us": 0.5,
+            "fit_dt_pulsedef_us": 0.002,
+        })
+    assert not output.exists()
+
+
 def test_residual_refit_corroborates_with_phase_and_saves_composed_candidate(
     tmp_path, monkeypatch
 ):
