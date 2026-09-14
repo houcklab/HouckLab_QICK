@@ -104,6 +104,17 @@ def apply_diagnostic_feedback_timing(cfg, environ=None):
     return mode
 
 
+def apply_diagnostic_feedback_flush(cfg, environ=None):
+    """Enable a second readout event solely to locate accumulator latency."""
+    environ = os.environ if environ is None else environ
+    value = environ.get("Q3_DIAGNOSTIC_FEEDBACK_FLUSH", "off").strip().lower()
+    if value not in ("on", "off"):
+        raise ValueError("Q3_DIAGNOSTIC_FEEDBACK_FLUSH must be on or off")
+    enabled = value == "on"
+    cfg["opx_feedback_flush_measurement"] = enabled
+    return enabled
+
+
 def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
     """Cross-check server bulk DMA against direct tProc AXI access."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
@@ -278,6 +289,7 @@ def main():
     })
     read_delay_us = apply_diagnostic_read_delay(cfg)
     feedback_timing = apply_diagnostic_feedback_timing(cfg)
+    feedback_flush = apply_diagnostic_feedback_flush(cfg)
     if reset_mode == "active":
         cfg = classifier_session.apply(cfg)
     else:
@@ -295,7 +307,7 @@ def main():
         f"{target[0]:.4f}..{target[-1]:.4f} GHz; "
         f"reset={reset_mode}; predistortion={correction_mode}; "
         f"accumulator_read_delay={read_delay_us:g} us; "
-        f"feedback_timing={feedback_timing}"
+        f"feedback_timing={feedback_timing}; feedback_flush={feedback_flush}"
     )
     print(
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "
@@ -449,6 +461,7 @@ def main():
         "classifier_calibration": str(classifier_session.calibration_output),
         "accumulator_read_delay_us": read_delay_us,
         "feedback_read_timing": feedback_timing,
+        "feedback_flush_measurement": feedback_flush,
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),

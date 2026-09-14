@@ -76,18 +76,26 @@ def emit_measure_and_read_feedback(
         "syncdelay": None,
     }
     read_delay = max(int(prog.us2cycles(float(read_delay_us))), 0)
-    if timing == "official_wait_all":
-        prog.measure(wait=False, **measure_kwargs)
-        prog.wait_all(read_delay)
-    elif timing == "legacy_absolute_wait":
-        prog.measure(wait=True, **measure_kwargs)
-        adc_end = int(max(prog._adc_ts))
-        prog.waiti(0, adc_end + read_delay)
-    else:
-        raise ValueError(
-            "opx_feedback_read_timing must be 'legacy_absolute_wait' or "
-            "'official_wait_all'"
-        )
+    def measure_and_wait():
+        if timing == "official_wait_all":
+            prog.measure(wait=False, **measure_kwargs)
+            prog.wait_all(read_delay)
+        elif timing == "legacy_absolute_wait":
+            prog.measure(wait=True, **measure_kwargs)
+            adc_end = int(max(prog._adc_ts))
+            prog.waiti(0, adc_end + read_delay)
+        else:
+            raise ValueError(
+                "opx_feedback_read_timing must be 'legacy_absolute_wait' or "
+                "'official_wait_all'"
+            )
+
+    measure_and_wait()
+    if bool(cfg.get("opx_feedback_flush_measurement", False)):
+        # Diagnostic only: if the tProc input advances on the next readout
+        # event rather than with elapsed time, this second acquisition exposes
+        # the first acquisition at the feedback port.
+        measure_and_wait()
     tproc_ch = int(prog.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
     if tproc_ch < 0:
         raise RuntimeError(
