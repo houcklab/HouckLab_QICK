@@ -78,3 +78,43 @@ Implementation commit: `38a8762cda68988b3da2e18ab59bf768b29b53e6`.
 `python3 -m pytest -q` across the repository cannot collect seven unrelated
 hardware-facing files because this environment lacks the `qick` package. The
 scoped `tests/` suite is green.
+
+## Fix round 1: discovery hardening
+
+Review identified that discovery duplicated the supported compensation method
+literal and that malformed candidate metadata could abort the complete search.
+
+### RED evidence
+
+```text
+python3 -m pytest -q \
+  tests/test_predistortion_production.py::test_discovery_reuses_the_supported_method_set_for_loading_and_matching \
+  tests/test_predistortion_production.py::test_discovery_skips_candidates_with_malformed_metadata
+2 failed
+```
+
+The first failure showed `load_compensation_json` rejecting a method added to
+the intended shared policy. The second showed a non-numeric `dc_offset` raising
+`ValueError` during candidate discovery.
+
+### GREEN evidence
+
+```text
+python3 -m pytest -q \
+  tests/test_predistortion_production.py::test_discovery_reuses_the_supported_method_set_for_loading_and_matching \
+  tests/test_predistortion_production.py::test_discovery_skips_candidates_with_malformed_metadata
+2 passed in 0.60s
+
+python3 -m pytest -q tests/test_predistortion_production.py \
+  tests/test_q3_predistortion_residual_refit_runner.py \
+  tests/test_saved_step_response_refit.py
+15 passed in 1.16s
+
+git diff --check
+exit 0
+```
+
+`SUPPORTED_COMPENSATION_METHODS` is now the one method policy used by both
+loading and discovery. Candidates with non-mapping metadata or unusable
+requested DC/baseline values are rejected individually, allowing later valid
+candidates to be selected.

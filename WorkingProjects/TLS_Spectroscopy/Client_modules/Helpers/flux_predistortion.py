@@ -1,10 +1,16 @@
 
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 from scipy import optimize, signal
+
+
+SUPPORTED_COMPENSATION_METHODS = frozenset(
+    {"rise_decay_bump_set_dc_offset_correction"}
+)
 
 
 def expdecay(time_ns, amplitude, tau_ns):
@@ -1441,10 +1447,7 @@ import glob as _glob
 
 def load_compensation_json(json_path):
     payload = load_predistortion_json(json_path)
-    allowed_methods = {
-        "rise_decay_bump_set_dc_offset_correction",
-    }
-    if payload.get("method") not in allowed_methods:
+    if payload.get("method") not in SUPPORTED_COMPENSATION_METHODS:
         raise ValueError(
             "flux_tail_compensation_json must contain a supported set_dc_offset "
             f"compensation, got method={payload.get('method')!r}: {json_path}"
@@ -1488,24 +1491,38 @@ def find_latest_compensation_json(
             payload = load_predistortion_json(candidate)
         except Exception:
             continue
-        if payload.get("method") != "rise_decay_bump_set_dc_offset_correction":
+        if payload.get("method") not in SUPPORTED_COMPENSATION_METHODS:
             continue
         if require_success and not payload.get("success", True):
             continue
         if payload.get("multiplier_clipped", False):
             continue
         metadata = payload.get("metadata", {})
+        if not isinstance(metadata, Mapping):
+            continue
         candidate_dc = metadata.get("dc_offset", None)
         candidate_baseline = metadata.get("baseline_dc_offset", None)
         if dc_offset is not None:
-            if candidate_dc is None or not np.isclose(float(candidate_dc), float(dc_offset), atol=1e-9):
+            try:
+                dc_matches = bool(
+                    np.isclose(float(candidate_dc), float(dc_offset), atol=1e-9)
+                )
+            except (TypeError, ValueError):
+                continue
+            if not dc_matches:
                 continue
         if baseline_dc_offset is not None:
-            if candidate_baseline is None or not np.isclose(
-                float(candidate_baseline),
-                float(baseline_dc_offset),
-                atol=1e-9,
-            ):
+            try:
+                baseline_matches = bool(
+                    np.isclose(
+                        float(candidate_baseline),
+                        float(baseline_dc_offset),
+                        atol=1e-9,
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+            if not baseline_matches:
                 continue
         matching_candidates.append(candidate)
     if not matching_candidates:

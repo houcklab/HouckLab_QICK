@@ -60,6 +60,58 @@ def test_discovery_accepts_supported_generic_filename_but_rejects_bad_method_and
     assert found == str(qubit_dir / "q3_old_dc_compensation.json")
 
 
+def test_discovery_reuses_the_supported_method_set_for_loading_and_matching(
+    tmp_path, monkeypatch
+):
+    """Would fail if discovery and loading keep separate supported-method lists."""
+    alternate_method = "future_set_dc_offset_correction"
+    monkeypatch.setattr(
+        flux_predistortion,
+        "SUPPORTED_COMPENSATION_METHODS",
+        {
+            "rise_decay_bump_set_dc_offset_correction",
+            alternate_method,
+        },
+        raising=False,
+    )
+    candidate = tmp_path / "q3" / "q3_future_dc_compensation.json"
+    _write_compensation(candidate, method=alternate_method)
+
+    assert flux_predistortion.load_compensation_json(candidate)["method"] == alternate_method
+    assert flux_predistortion.find_latest_compensation_json(
+        tmp_path,
+        "q3",
+        dc_offset=-14750.0,
+        baseline_dc_offset=-25146.0,
+    ) == str(candidate)
+
+
+def test_discovery_skips_candidates_with_malformed_metadata(tmp_path):
+    """Would fail if malformed candidate metadata aborts discovery instead of being rejected."""
+    qubit_dir = tmp_path / "q3"
+    valid = qubit_dir / "q3_valid_dc_compensation.json"
+    _write_compensation(valid)
+    _write_compensation(
+        qubit_dir / "q3_list_metadata_dc_compensation.json",
+        metadata=["not", "a", "mapping"],
+    )
+    _write_compensation(
+        qubit_dir / "q3_non_numeric_metadata_dc_compensation.json",
+        metadata={
+            **_METADATA,
+            "dc_offset": "not-a-number",
+            "baseline_dc_offset": "also-not-a-number",
+        },
+    )
+
+    assert flux_predistortion.find_latest_compensation_json(
+        tmp_path,
+        "q3",
+        dc_offset=-14750.0,
+        baseline_dc_offset=-25146.0,
+    ) == str(valid)
+
+
 def test_saved_response_composition_requires_the_recorded_applied_correction(tmp_path):
     """Would fail if composition accepts a different previous filter than acquisition used."""
     previous_path = tmp_path / "q3_previous_dc_compensation.json"
