@@ -108,11 +108,13 @@ def apply_diagnostic_feedback_flush(cfg, environ=None):
     """Enable a second readout event solely to locate accumulator latency."""
     environ = os.environ if environ is None else environ
     value = environ.get("Q3_DIAGNOSTIC_FEEDBACK_FLUSH", "off").strip().lower()
-    if value not in ("on", "off"):
-        raise ValueError("Q3_DIAGNOSTIC_FEEDBACK_FLUSH must be on or off")
-    enabled = value == "on"
-    cfg["opx_feedback_flush_measurement"] = enabled
-    return enabled
+    value = {"on": "readout"}.get(value, value)
+    if value not in ("off", "readout", "adc_only"):
+        raise ValueError(
+            "Q3_DIAGNOSTIC_FEEDBACK_FLUSH must be off, readout, or adc_only"
+        )
+    cfg["opx_feedback_flush_mode"] = value
+    return value
 
 
 def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
@@ -461,7 +463,7 @@ def main():
         "classifier_calibration": str(classifier_session.calibration_output),
         "accumulator_read_delay_us": read_delay_us,
         "feedback_read_timing": feedback_timing,
-        "feedback_flush_measurement": feedback_flush,
+        "feedback_flush_mode": feedback_flush,
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),

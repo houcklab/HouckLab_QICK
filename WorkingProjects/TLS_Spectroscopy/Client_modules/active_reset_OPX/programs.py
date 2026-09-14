@@ -90,10 +90,23 @@ def emit_measure_and_read_feedback(
                 "'official_wait_all'"
             )
 
+    flush_mode = cfg.get("opx_feedback_flush_mode")
+    if flush_mode is None:
+        flush_mode = (
+            "readout"
+            if bool(cfg.get("opx_feedback_flush_measurement", False))
+            else "off"
+        )
+    flush_mode = str(flush_mode).strip().lower()
+    if flush_mode not in ("off", "readout", "adc_only"):
+        raise ValueError(
+            "opx_feedback_flush_mode must be 'off', 'readout', or 'adc_only'"
+        )
+
     measure_and_wait()
-    if bool(cfg.get("opx_feedback_flush_measurement", False)):
+    if flush_mode != "off":
         # Diagnostic only: if the tProc input advances on the next readout
-        # event rather than with elapsed time, this second acquisition exposes
+        # event rather than with elapsed time, this later acquisition exposes
         # the first acquisition at the feedback port.
         prog.sync_all(
             max(
@@ -101,7 +114,14 @@ def emit_measure_and_read_feedback(
                 1,
             )
         )
-        measure_and_wait()
+        if flush_mode == "readout":
+            measure_and_wait()
+        else:
+            prog.trigger(
+                adcs=cfg["ro_chs"],
+                adc_trig_offset=prog.us2cycles(cfg["adc_trig_offset"]),
+            )
+            prog.wait_all(read_delay)
     tproc_ch = int(prog.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
     if tproc_ch < 0:
         raise RuntimeError(
