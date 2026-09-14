@@ -74,6 +74,15 @@ def make_shot_progress(start_time):
     )
 
 
+def start_diagnostic_timers(
+    *,
+    monotonic_clock=time.monotonic,
+    wall_clock=time.time,
+):
+    """Start elapsed and ETA timers in the clock domains they each require."""
+    return float(monotonic_clock()), float(wall_clock())
+
+
 def _json_default(value):
     if isinstance(value, (np.integer, np.floating)):
         return value.item()
@@ -359,7 +368,7 @@ def main():
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "
         "acquiring now"
     )
-    started = time.monotonic()
+    started, progress_started = start_diagnostic_timers()
     i_values, q_values, telemetry = acquire_t1_5pt_iq(
         soc,
         soccfg,
@@ -369,7 +378,7 @@ def main():
         reference_hold_us=float(params["reference_hold_us"]),
         shots=shots,
         reset_scheme=reset_scheme,
-        progress=make_shot_progress(started),
+        progress=make_shot_progress(progress_started),
     )
     elapsed = time.monotonic() - started
     states = classify_payload_iq(

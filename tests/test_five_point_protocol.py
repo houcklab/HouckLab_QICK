@@ -104,6 +104,19 @@ def test_qick_measurement_diagnostic_reports_resident_shot_progress(monkeypatch)
     )]
 
 
+def test_qick_measurement_diagnostic_uses_matching_clock_domains_for_timers():
+    module = diagnostic()
+    assert hasattr(module, "start_diagnostic_timers")
+
+    elapsed_start, progress_start = module.start_diagnostic_timers(
+        monotonic_clock=lambda: 456.0,
+        wall_clock=lambda: 1_789_000_000.0,
+    )
+
+    assert elapsed_start == 456.0
+    assert progress_start == 1_789_000_000.0
+
+
 def test_feedback_read_uses_qick_wait_all_sequence_when_requested():
     """The diagnostic timing mode must follow QICK's documented feedback order."""
     programs = importlib.import_module(
