@@ -136,6 +136,8 @@ P3_STEP_RESPONSE = {
     "trace_polarity": None,
     "trace_shoulder": "auto",
     "trace_max_jump_mhz": 4.0,
+    "fit_residual_composition": False,
+    "residual_composition_damping": 0.5,
     "live_plot": True,
 }
 
@@ -539,7 +541,9 @@ def _write_gain_sweep_summary_csv(experiments, rows):
 
 
 def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compensation,
-                          fit_rise_decay_bump_dc_correction, live_plot):
+                          fit_rise_decay_bump_dc_correction, live_plot,
+                          compose_with_applied_flux_tail_compensation=None,
+                          composition_damping=None):
     run_kind = "calibration" if fit_rise_decay_bump_dc_correction else "validation"
     print(f"Running flux-step {run_kind} target dc_offset={TARGET_DC_OFFSET:+.6f} DAC")
     t_vec_ns = np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"]) * 1e3
@@ -570,8 +574,14 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         flux_tail_compensation=flux_tail_compensation,
         compose_with_applied_flux_tail_compensation=bool(
             p.get("compose_with_applied_flux_tail_compensation", False)
+            if compose_with_applied_flux_tail_compensation is None
+            else compose_with_applied_flux_tail_compensation
         ),
-        composition_damping=float(p.get("composition_damping", 0.5)),
+        composition_damping=float(
+            p.get("composition_damping", 0.5)
+            if composition_damping is None
+            else composition_damping
+        ),
         trace_tracking_mode=p.get("trace_tracking_mode", "ridge"),
         trace_polarity=p.get("trace_polarity", None),
         trace_shoulder=p.get("trace_shoulder", "auto"),
@@ -615,6 +625,7 @@ def run_step3a_step_response_fit(outer_folder, soc, soccfg):
 
 def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=None):
     p = P3_STEP_RESPONSE
+    fit_residual_composition = bool(p.get("fit_residual_composition", False))
     if correction_json is None:
         correction_json = QubitFluxStepResponse.find_latest_rise_decay_bump_dc_compensation_json(
             outer_folder, QUBIT,
@@ -638,6 +649,7 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
         )
         experiments = []
         gain_sweep_rows = []
+        composed_json = None
         for gain in gain_sweep_values:
             run_flux_tail_compensation = fpd.scale_compensation_gain(
                 base_comp, gain,
@@ -652,13 +664,24 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
             exp = _run_step3_experiment(
                 p, soc, soccfg, outer_folder, suffix=suffix,
                 flux_tail_compensation=run_flux_tail_compensation,
-                fit_rise_decay_bump_dc_correction=False, live_plot=False,
+                fit_rise_decay_bump_dc_correction=fit_residual_composition,
+                live_plot=False,
+                compose_with_applied_flux_tail_compensation=fit_residual_composition,
+                composition_damping=p.get("residual_composition_damping", 0.5),
             )
             experiments.append(exp)
             gain_sweep_rows.append(_gain_sweep_row(gain, TARGET_DC_OFFSET, exp, run_flux_tail_compensation))
+            if fit_residual_composition:
+                composed_json = exp.data.get("rise_decay_bump_dc_compensation_json")
+                if composed_json is None:
+                    raise RuntimeError("Step 3b residual composition did not save a correction JSON.")
+                fpd.load_compensation_json(composed_json)
         summary_csv = _write_gain_sweep_summary_csv(experiments, gain_sweep_rows)
         if summary_csv is not None:
             experiments[-1].data["gain_sweep_summary_csv"] = summary_csv
+        if fit_residual_composition:
+            correction_json = composed_json
+            print(f"[3b] Saved final gain-sweep composed residual correction JSON: {composed_json}")
         print("[3b] Done. Pick the best gain from the *_gain_sweep_summary.csv, then set "
               "FLUX_TAIL_COMPENSATION_GAIN to it for steps 4 & 6.")
     else:
@@ -669,12 +692,21 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
             max_multiplier=p.get("piecewise_max_multiplier", 1.5),
         )
         print(f"Applying fixed flux-tail compensation gain: {float(FLUX_TAIL_COMPENSATION_GAIN):.3f}")
-        _run_step3_experiment(
+        exp = _run_step3_experiment(
             p, soc, soccfg, outer_folder, suffix="Qubit_Flux_Step_Response",
             flux_tail_compensation=compensation,
-            fit_rise_decay_bump_dc_correction=False,
+            fit_rise_decay_bump_dc_correction=fit_residual_composition,
             live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
+            compose_with_applied_flux_tail_compensation=fit_residual_composition,
+            composition_damping=p.get("residual_composition_damping", 0.5),
         )
+        if fit_residual_composition:
+            composed_json = exp.data.get("rise_decay_bump_dc_compensation_json")
+            if composed_json is None:
+                raise RuntimeError("Step 3b residual composition did not save a correction JSON.")
+            fpd.load_compensation_json(composed_json)
+            print(f"[3b] Saved composed residual correction JSON: {composed_json}")
+            correction_json = composed_json
         print("[3b] Done (the post-correction trace should be flat).")
     return correction_json
 

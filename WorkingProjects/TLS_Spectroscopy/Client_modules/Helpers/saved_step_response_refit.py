@@ -14,6 +14,160 @@ _SIGNAL_KEYS = {
     "phase": "IQ_phase",
 }
 
+_APPLIED_COMPENSATION_TIMING_KEYS = (
+    "fit_ff_ramp_length_us",
+    "fit_dt_pulseplay_us",
+    "fit_dt_pulsedef_us",
+)
+
+
+def _portable_name(path):
+    return str(path).replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def verify_applied_compensation(
+    data,
+    previous_json,
+    *,
+    timing_keys=_APPLIED_COMPENSATION_TIMING_KEYS,
+):
+    """Verify that ``previous_json`` is exactly the filter used for ``data``.
+
+    Saved corrected maps must be refitted against the gain-scaled correction
+    recorded at acquisition, rather than merely a similarly named JSON.
+    """
+    previous_json = str(previous_json)
+    previous = flux_predistortion.load_compensation_json(previous_json)
+    applied = data.get("applied_flux_tail_compensation")
+    if not isinstance(applied, dict) or not applied.get("enabled", False):
+        raise ValueError(
+            "The saved response does not record an applied flux-tail compensation."
+        )
+    if applied.get("method") != previous.get("method"):
+        raise ValueError("Applied and requested compensation methods do not match.")
+    if _portable_name(applied.get("source", "")) != _portable_name(previous_json):
+        raise ValueError(
+            "The requested previous JSON is not the compensation source recorded "
+            "by the saved response."
+        )
+
+    for key in ("segment_edges_ns", "multipliers"):
+        recorded = np.asarray(applied.get(key, []), dtype=float)
+        requested = np.asarray(previous.get(key, []), dtype=float)
+        if (
+            recorded.ndim != 1
+            or requested.ndim != 1
+            or recorded.size == 0
+            or recorded.shape != requested.shape
+            or not np.all(np.isfinite(recorded))
+            or not np.all(np.isfinite(requested))
+            or not np.allclose(recorded, requested, rtol=1e-12, atol=1e-12)
+        ):
+            raise ValueError(
+                f"The {key} in the requested previous JSON do not match the "
+                "gain-scaled correction actually applied to the saved response."
+            )
+
+    recorded_gain_value = applied.get("correction_gain", 1.0)
+    requested_gain_value = previous.get("correction_gain", 1.0)
+    recorded_gain = float(1.0 if recorded_gain_value is None else recorded_gain_value)
+    requested_gain = float(1.0 if requested_gain_value is None else requested_gain_value)
+    if not np.isclose(recorded_gain, requested_gain, rtol=1e-12, atol=1e-12):
+        raise ValueError(
+            "The requested previous correction gain does not match the gain "
+            "actually applied to the saved response."
+        )
+
+    recorded_metadata = applied.get("metadata", {}) or {}
+    requested_metadata = previous.get("metadata", {}) or {}
+    data_metadata = data.get("meta_dict", {}) or {}
+    expected_values = {
+        "qubit": data.get("qubit"),
+        "flux_channel": data_metadata.get("flux_channel"),
+        "dc_offset": data.get("dc_offset"),
+        "baseline_dc_offset": data.get("baseline_dc_offset"),
+    }
+    for key, expected in expected_values.items():
+        recorded = recorded_metadata.get(key)
+        requested = requested_metadata.get(key)
+        if expected is None or recorded is None or requested is None:
+            raise ValueError(f"Cannot verify previous compensation metadata field {key!r}.")
+        if key == "qubit":
+            matches = str(recorded) == str(expected) == str(requested)
+        else:
+            matches = bool(
+                np.isclose(float(recorded), float(expected), rtol=1e-12, atol=1e-12)
+                and np.isclose(float(requested), float(expected), rtol=1e-12, atol=1e-12)
+            )
+        if not matches:
+            raise ValueError(
+                f"Previous compensation metadata {key!r} does not match the saved response."
+            )
+
+    verified_timing = {}
+    for key in timing_keys:
+        recorded = recorded_metadata.get(key)
+        requested = requested_metadata.get(key)
+        if recorded is None or requested is None or not np.isclose(
+            float(recorded), float(requested), rtol=1e-12, atol=1e-12
+        ):
+            raise ValueError(
+                f"Cannot verify waveform timing {key!r} between the applied "
+                "correction and requested previous JSON."
+            )
+        verified_timing[key] = float(recorded)
+
+    verified_previous = dict(applied)
+    verified_previous["source"] = previous_json
+    return verified_previous, verified_timing
+
+
+def compose_saved_response_residual(
+    data,
+    previous_json,
+    adjustment_compensation,
+    *,
+    damping=0.5,
+    min_multiplier=0.5,
+    max_multiplier=1.5,
+    timing_keys=_APPLIED_COMPENSATION_TIMING_KEYS,
+):
+    """Strictly verify and compose a residual correction for a saved map."""
+    previous, verified_timing = verify_applied_compensation(
+        data, previous_json, timing_keys=timing_keys
+    )
+    composed = compose_verified_saved_response_residual(
+        previous,
+        adjustment_compensation,
+        damping=damping,
+        min_multiplier=min_multiplier,
+        max_multiplier=max_multiplier,
+    )
+    return composed, verified_timing
+
+
+def compose_verified_saved_response_residual(
+    verified_previous_compensation,
+    adjustment_compensation,
+    *,
+    damping=0.5,
+    min_multiplier=0.5,
+    max_multiplier=1.5,
+):
+    """Compose a residual correction after strict provenance verification."""
+    composed = flux_predistortion.compose_piecewise_dc_compensations(
+        verified_previous_compensation,
+        adjustment_compensation,
+        damping=float(damping),
+        min_multiplier=min_multiplier,
+        max_multiplier=max_multiplier,
+    )
+    if not composed.get("success", False) or composed.get("multiplier_clipped", False):
+        raise RuntimeError(
+            "Residual composition did not produce an unclipped successful correction."
+        )
+    return composed
+
 
 def refit_saved_step_response(
     data,

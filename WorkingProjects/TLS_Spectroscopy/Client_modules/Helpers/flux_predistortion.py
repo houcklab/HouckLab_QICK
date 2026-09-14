@@ -1473,7 +1473,10 @@ def find_latest_compensation_json(
     require_success=True,
 ):
     qubit_dir = Path(outer_folder) / qubit
-    pattern = f"{qubit}_*_rise_decay_bump_dc_compensation.json"
+    # The filename describes neither the correction method nor whether it is
+    # safe to apply.  Discover every historical q*-named compensation and let
+    # the strict payload and provenance checks below make that decision.
+    pattern = "q*_dc_compensation.json"
     if not qubit_dir.exists():
         return None
     candidates = list(qubit_dir.rglob(pattern))
