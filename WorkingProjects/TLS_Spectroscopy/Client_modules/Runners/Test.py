@@ -93,9 +93,6 @@ def main():
         estimate_five_point_t1,
         reduce_bidirectional_condition_states,
     )
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
-        discriminate_shots,
-    )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as runner,
     )
@@ -136,27 +133,23 @@ def main():
         params, None, tls.outerFolder
     )
 
-    if reset_mode == "passive":
-        print("[diagnostic] running the normal single-shot calibration")
-        calib_params = tls.run_step5_single_shot_cal(
-            tls.outerFolder, soc, soccfg
-        )
-        reset_session = ProductionResetSession.passive()
-    else:
-        calib_params = None
-        reset_session = prepare_reset_session(
-            "active",
-            outer_folder=tls.outerFolder,
-            qubit=tls.QUBIT,
-            base_cfg=tls.BaseConfig,
-            soc=soc,
-            soccfg=soccfg,
-            purpose="FivePointMeasurementDiagnostic",
-        )
-        print(
-            "[diagnostic] active-reset calibration saved: "
-            f"{reset_session.calibration_output}"
-        )
+    print(
+        "[diagnostic] acquiring the DMem-native IQ classifier; the five-point "
+        f"scan itself will use {reset_mode} reset"
+    )
+    classifier_session = prepare_reset_session(
+        "active",
+        outer_folder=tls.outerFolder,
+        qubit=tls.QUBIT,
+        base_cfg=tls.BaseConfig,
+        soc=soc,
+        soccfg=soccfg,
+        purpose="FivePointMeasurementDiagnosticClassifier",
+    )
+    print(
+        "[diagnostic] DMem-native classifier calibration saved: "
+        f"{classifier_session.calibration_output}"
+    )
 
     cfg = dict(tls.BaseConfig)
     cfg.update({
@@ -173,7 +166,13 @@ def main():
         ),
         "opx_t1_3pt_gain_lookup": True,
     })
-    cfg = reset_session.apply(cfg)
+    if reset_mode == "active":
+        cfg = classifier_session.apply(cfg)
+    else:
+        cfg = ProductionResetSession.passive().apply(cfg)
+        # Preserve the DMem-native payload classifier while leaving the scan's
+        # between-record reset behavior strictly passive.
+        cfg["opx_reset_calibration"] = dict(classifier_session.calibration)
     park_gain = cfg.get("ff_park_gain", tls._baseline_dc_offset())
     condition_names = ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
     reset_scheme = "opx_unbounded" if reset_mode == "active" else "none"
@@ -200,12 +199,9 @@ def main():
         reset_scheme=reset_scheme,
     )
     elapsed = time.monotonic() - started
-    if reset_mode == "active":
-        states = classify_payload_iq(
-            cfg, i_values, q_values, telemetry["read_length_cycles"]
-        )
-    else:
-        states = discriminate_shots(i_values, q_values, calib_params)
+    states = classify_payload_iq(
+        cfg, i_values, q_values, telemetry["read_length_cycles"]
+    )
     directional = reduce_bidirectional_condition_states(
         states, condition_names, canonical_dc_axis=True
     )
@@ -323,6 +319,7 @@ def main():
         "total_t1_points": int(valid.size),
         "condition_shift_reference_contrasts": shift_contrasts,
         "telemetry": telemetry,
+        "classifier_calibration": str(classifier_session.calibration_output),
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),

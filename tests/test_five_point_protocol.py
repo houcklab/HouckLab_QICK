@@ -1,10 +1,12 @@
 """Hardware-free contracts for the matched five-point production scan."""
 
 import importlib
+import ast
 import csv
 import json
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -40,6 +42,19 @@ def test_qick_measurement_diagnostic_selects_small_contiguous_frequency_slice():
     assert selected_indices.tolist() == list(range(495, 506))
     assert selected_frequency[5] == pytest.approx(4.05)
     assert np.allclose(np.diff(selected_frequency), -0.0005)
+
+
+def test_qick_measurement_diagnostic_bypasses_legacy_ss_streamer():
+    path = Path(diagnostic().__file__)
+    tree = ast.parse(path.read_text())
+    main = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    attributes = {
+        node.attr for node in ast.walk(main) if isinstance(node, ast.Attribute)
+    }
+    assert "run_step5_single_shot_cal" not in attributes
 
 
 @pytest.mark.parametrize("delays", [[10, 50], [10, 50, 200, 300], [0, 50, 200],
