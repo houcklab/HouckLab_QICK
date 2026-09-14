@@ -48,6 +48,55 @@ REGISTER_NAMES = (
 TLS_MEMORY_SEQUENCES = ("single", "double", "ground_double")
 
 
+def emit_measure_and_read_feedback(
+    prog,
+    *,
+    cfg,
+    read_delay_us,
+    page,
+    i_register,
+    q_register,
+):
+    """Measure once, wait for the accumulator, and read its tProc input.
+
+    ``official_wait_all`` is an isolated diagnostic mode that follows QICK's
+    documented active-reset sequence exactly: launch the measurement without
+    an implicit wait, then use ``wait_all(extra_cycles)`` before reading the
+    feedback port.  The legacy mode remains the default until hardware data
+    demonstrates that the new sequence fixes the stale accumulator value.
+    """
+    ro_ch = int(cfg["ro_chs"][0])
+    timing = str(
+        cfg.get("opx_feedback_read_timing", "legacy_absolute_wait")
+    ).strip().lower()
+    measure_kwargs = {
+        "pulse_ch": cfg["res_ch"],
+        "adcs": cfg["ro_chs"],
+        "adc_trig_offset": prog.us2cycles(cfg["adc_trig_offset"]),
+        "syncdelay": None,
+    }
+    read_delay = max(int(prog.us2cycles(float(read_delay_us))), 0)
+    if timing == "official_wait_all":
+        prog.measure(wait=False, **measure_kwargs)
+        prog.wait_all(read_delay)
+    elif timing == "legacy_absolute_wait":
+        prog.measure(wait=True, **measure_kwargs)
+        adc_end = int(max(prog._adc_ts))
+        prog.waiti(0, adc_end + read_delay)
+    else:
+        raise ValueError(
+            "opx_feedback_read_timing must be 'legacy_absolute_wait' or "
+            "'official_wait_all'"
+        )
+    tproc_ch = int(prog.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
+    if tproc_ch < 0:
+        raise RuntimeError(
+            f"readout {ro_ch} has no tProc feedback path (tproc_ch={tproc_ch})"
+        )
+    prog.read(tproc_ch, page, "lower", i_register)
+    prog.read(tproc_ch, page, "upper", q_register)
+
+
 def payload_sweep_plan(cfg, *, freq2reg):
     kind = str(cfg.get("opx_payload_sweep_kind", "gain")).strip().lower()
     if kind == "gain":
@@ -861,29 +910,14 @@ class TimingMatchedReferenceDMemProgram(QickProgram):
         self.make_program()
 
     def _measure_raw(self):
-        cfg = self.cfg
-        ro_ch = int(cfg["ro_chs"][0])
-        self.measure(
-            pulse_ch=cfg["res_ch"],
-            adcs=cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-            wait=True,
-            syncdelay=None,
+        emit_measure_and_read_feedback(
+            self,
+            cfg=self.cfg,
+            read_delay_us=self.reset_config.read_delay_us,
+            page=self.reset_page,
+            i_register=self.reset_regs["i"],
+            q_register=self.reset_regs["q"],
         )
-        adc_end = int(max(self._adc_ts))
-        self.waiti(
-            0,
-            adc_end + max(
-                int(self.us2cycles(float(self.reset_config.read_delay_us))), 0
-            ),
-        )
-        tproc_ch = int(self.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
-        if tproc_ch < 0:
-            raise RuntimeError(
-                f"readout {ro_ch} has no tProc feedback path (tproc_ch={tproc_ch})"
-            )
-        self.read(tproc_ch, self.reset_page, "lower", self.reset_regs["i"])
-        self.read(tproc_ch, self.reset_page, "upper", self.reset_regs["q"])
 
     def _park_up(self):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
@@ -1076,27 +1110,14 @@ class OPXResetBenchmarkProgram(QickProgram):
             emit_resident_stream_finish(self)
 
     def _measure_raw(self):
-        cfg = self.cfg
-        ro_ch = int(cfg["ro_chs"][0])
-        self.measure(
-            pulse_ch=cfg["res_ch"],
-            adcs=cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-            wait=True,
-            syncdelay=None,
+        emit_measure_and_read_feedback(
+            self,
+            cfg=self.cfg,
+            read_delay_us=self.reset_config.read_delay_us,
+            page=self.reset_page,
+            i_register=self.reset_regs["i"],
+            q_register=self.reset_regs["q"],
         )
-        adc_end = int(max(self._adc_ts))
-        read_delay = max(
-            int(self.us2cycles(float(self.reset_config.read_delay_us))), 0
-        )
-        self.waiti(0, adc_end + read_delay)
-        tproc_ch = int(self.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
-        if tproc_ch < 0:
-            raise RuntimeError(
-                f"readout {ro_ch} has no tProc feedback path (tproc_ch={tproc_ch})"
-            )
-        self.read(tproc_ch, self.reset_page, "lower", self.reset_regs["i"])
-        self.read(tproc_ch, self.reset_page, "upper", self.reset_regs["q"])
 
     def _measure_project(self, calibration, context):
         if context == "loop":

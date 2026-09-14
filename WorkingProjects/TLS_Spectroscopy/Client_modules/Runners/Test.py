@@ -89,6 +89,21 @@ def apply_diagnostic_read_delay(cfg, environ=None):
     return read_delay_us
 
 
+def apply_diagnostic_feedback_timing(cfg, environ=None):
+    """Select the accumulator handoff sequence for this isolated test."""
+    environ = os.environ if environ is None else environ
+    mode = environ.get(
+        "Q3_DIAGNOSTIC_FEEDBACK_TIMING", "official_wait_all"
+    ).strip().lower()
+    if mode not in ("official_wait_all", "legacy_absolute_wait"):
+        raise ValueError(
+            "Q3_DIAGNOSTIC_FEEDBACK_TIMING must be official_wait_all or "
+            "legacy_absolute_wait"
+        )
+    cfg["opx_feedback_read_timing"] = mode
+    return mode
+
+
 def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
     """Cross-check server bulk DMA against direct tProc AXI access."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
@@ -262,6 +277,7 @@ def main():
         "opx_diagnostic_condition_tags": True,
     })
     read_delay_us = apply_diagnostic_read_delay(cfg)
+    feedback_timing = apply_diagnostic_feedback_timing(cfg)
     if reset_mode == "active":
         cfg = classifier_session.apply(cfg)
     else:
@@ -278,7 +294,8 @@ def main():
         f"{shots} shots x {len(dc_vec)} frequencies x 5 conditions; "
         f"{target[0]:.4f}..{target[-1]:.4f} GHz; "
         f"reset={reset_mode}; predistortion={correction_mode}; "
-        f"accumulator_read_delay={read_delay_us:g} us"
+        f"accumulator_read_delay={read_delay_us:g} us; "
+        f"feedback_timing={feedback_timing}"
     )
     print(
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "
@@ -431,6 +448,7 @@ def main():
         "dmem_roundtrip": dmem_roundtrip,
         "classifier_calibration": str(classifier_session.calibration_output),
         "accumulator_read_delay_us": read_delay_us,
+        "feedback_read_timing": feedback_timing,
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),

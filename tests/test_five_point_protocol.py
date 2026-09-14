@@ -71,6 +71,75 @@ def test_qick_measurement_diagnostic_applies_requested_accumulator_read_delay():
     assert cfg == {"shots": 20, "opx_read_delay_us": 10.0}
 
 
+def test_feedback_read_uses_qick_wait_all_sequence_when_requested():
+    """The diagnostic timing mode must follow QICK's documented feedback order."""
+    programs = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.programs"
+    )
+
+    class Program:
+        soccfg = {"readouts": [{"tproc_ch": 4}]}
+
+        def __init__(self):
+            self.calls = []
+
+        def us2cycles(self, value):
+            return int(round(100 * float(value)))
+
+        def measure(self, **kwargs):
+            self.calls.append(("measure", kwargs))
+
+        def wait_all(self, cycles):
+            self.calls.append(("wait_all", int(cycles)))
+
+        def waiti(self, *args):
+            self.calls.append(("waiti", args))
+
+        def read(self, *args):
+            self.calls.append(("read", args))
+
+    program = Program()
+    programs.emit_measure_and_read_feedback(
+        program,
+        cfg={
+            "res_ch": 2,
+            "ro_chs": [0],
+            "adc_trig_offset": 0.25,
+            "opx_feedback_read_timing": "official_wait_all",
+        },
+        read_delay_us=10.0,
+        page=1,
+        i_register=6,
+        q_register=7,
+    )
+
+    assert program.calls == [
+        (
+            "measure",
+            {
+                "pulse_ch": 2,
+                "adcs": [0],
+                "adc_trig_offset": 25,
+                "wait": False,
+                "syncdelay": None,
+            },
+        ),
+        ("wait_all", 1000),
+        ("read", (4, 1, "lower", 6)),
+        ("read", (4, 1, "upper", 7)),
+    ]
+
+
+def test_qick_diagnostic_selects_official_feedback_timing_by_default():
+    module = diagnostic()
+    cfg = {}
+
+    mode = module.apply_diagnostic_feedback_timing(cfg, {})
+
+    assert mode == "official_wait_all"
+    assert cfg["opx_feedback_read_timing"] == "official_wait_all"
+
+
 def test_qick_measurement_diagnostic_roundtrips_bulk_and_direct_dmem():
     module = diagnostic()
 
