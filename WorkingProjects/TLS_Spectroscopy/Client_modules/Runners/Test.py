@@ -16,10 +16,6 @@ from pathlib import Path
 
 import numpy as np
 
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
-    progress_counter,
-)
-
 
 _directory = os.path.dirname(os.path.abspath(__file__))
 while _directory != os.path.dirname(_directory):
@@ -30,6 +26,11 @@ while _directory != os.path.dirname(_directory):
     _directory = os.path.dirname(_directory)
 else:
     raise RuntimeError("Could not find the HouckLab_QICK repo root.")
+
+
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
+    progress_counter,
+)
 
 
 def select_diagnostic_slice(
