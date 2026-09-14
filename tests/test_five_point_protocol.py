@@ -611,6 +611,27 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert cfg["sync_slot_s"] == 300
 
 
+def test_production_runner_applies_hardware_verified_feedback_timing(monkeypatch):
+    """The seven-day scan must use the timing sequence that passed on q3."""
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    assert hasattr(runner, "apply_verified_feedback_timing")
+    cfg = {"unrelated": "preserved"}
+
+    returned = runner.apply_verified_feedback_timing(cfg)
+
+    assert returned is cfg
+    assert cfg == {
+        "unrelated": "preserved",
+        "opx_feedback_read_timing": "official_wait_all",
+        "opx_feedback_pre_measure_sync": True,
+        "opx_feedback_flush_mode": "off",
+        "opx_read_delay_us": 10.0,
+    }
+
+
 def test_production_runner_installs_latest_q3_p4_calibration(monkeypatch):
     load_experiments(monkeypatch)
     runner = importlib.import_module(

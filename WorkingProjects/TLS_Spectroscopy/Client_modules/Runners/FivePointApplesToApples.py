@@ -92,6 +92,17 @@ APPLE_DT_PULSEPLAY_US = 0.5
 APPLE_DT_PULSEDEF_US = 0.002
 
 
+def apply_verified_feedback_timing(cfg):
+    """Apply the q3 readout timing sequence accepted by the hardware gate."""
+    cfg.update({
+        "opx_feedback_read_timing": "official_wait_all",
+        "opx_feedback_pre_measure_sync": True,
+        "opx_feedback_flush_mode": "off",
+        "opx_read_delay_us": 10.0,
+    })
+    return cfg
+
+
 def install_scan_calibration(tls):
     """Install the P4/step-response calibration frozen for this long scan."""
     tls.FLUX_FIT_PARAMS = list(APPLE_FLUX_FIT_PARAMS)
@@ -275,6 +286,7 @@ def main():
         "opx_t1_3pt_gain_lookup": True,
     })
     base = reset_session.apply(base)
+    apply_verified_feedback_timing(base)
     park_gain = base.get("ff_park_gain", tls._baseline_dc_offset())
     state = {"session": reset_session}
 
