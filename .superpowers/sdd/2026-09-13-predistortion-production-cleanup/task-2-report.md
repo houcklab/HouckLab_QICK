@@ -71,7 +71,7 @@ and that q3 preserves its pre-refit provenance gate.
 
 ## Commit
 
-Pending amend with final commit SHA.
+Implementation commit: `38a8762cda68988b3da2e18ab59bf768b29b53e6`.
 
 ## Concerns
 
