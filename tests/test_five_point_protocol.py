@@ -195,7 +195,7 @@ def test_production_runner_installs_latest_q3_p4_calibration(monkeypatch):
     runner = importlib.import_module(
         f"{PREFIX}.Runners.FivePointApplesToApples"
     )
-    tls = types.SimpleNamespace()
+    tls = types.SimpleNamespace(BaseConfig={})
     runner.install_scan_calibration(tls)
     assert tls.FLUX_FIT_PARAMS == [
         6.0089036599253225,
@@ -207,6 +207,8 @@ def test_production_runner_installs_latest_q3_p4_calibration(monkeypatch):
     ]
     assert tls.BASELINE_DC_OFFSET == -25146
     assert tls.TARGET_DC_OFFSET == -14750
+    assert tls.BaseConfig["dt_pulseplay"] == 0.5
+    assert tls.BaseConfig["dt_pulsedef"] == 0.002
 
 
 def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatch, tmp_path):

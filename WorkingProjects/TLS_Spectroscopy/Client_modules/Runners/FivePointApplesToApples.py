@@ -88,6 +88,8 @@ APPLE_FLUX_FIT_PARAMS = [
 ]
 APPLE_BASELINE_DC_OFFSET = -25146
 APPLE_TARGET_DC_OFFSET = -14750
+APPLE_DT_PULSEPLAY_US = 0.5
+APPLE_DT_PULSEDEF_US = 0.002
 
 
 def install_scan_calibration(tls):
@@ -95,6 +97,11 @@ def install_scan_calibration(tls):
     tls.FLUX_FIT_PARAMS = list(APPLE_FLUX_FIT_PARAMS)
     tls.BASELINE_DC_OFFSET = APPLE_BASELINE_DC_OFFSET
     tls.TARGET_DC_OFFSET = APPLE_TARGET_DC_OFFSET
+    # Keep the scan waveform identical to the waveform used to fit the
+    # accepted predistortion correction.  Scope this override to this runner
+    # so legacy experiments retain their existing defaults.
+    tls.BaseConfig["dt_pulseplay"] = APPLE_DT_PULSEPLAY_US
+    tls.BaseConfig["dt_pulsedef"] = APPLE_DT_PULSEDEF_US
 
 
 def _run_series(
