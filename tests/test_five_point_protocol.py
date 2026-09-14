@@ -254,6 +254,10 @@ def test_series_appends_completed_rows_through_failure_and_overrun(monkeypatch, 
     assert sync.finished == [(0, "success"), (1, "failed"), (2, "success")]
     for row in rows:
         assert row["acquisition_order"] == "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"
+        assert row["acquisition_loop_order"] == "shot,frequency,condition"
+        assert row["condition_order"] == "P0,P1,Ps_10us,Ps_50us,Ps_200us"
+        assert row["reference_mode"] == "matched_frequency_resolved"
+        assert float(row["correction_gain"]) == 1.0
         assert json.loads(row["condition_order_json"]) == ["P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us"]
         assert json.loads(row["correction_provenance_json"]) == compensation
         assert float(row["sync_scan_duration_s"]) == 350
@@ -366,6 +370,13 @@ def test_integration_rejects_fractional_shots_before_hardware(monkeypatch):
     with pytest.raises(ValueError, match="integer"):
         module.acquire_t1_5pt_iq(None, None, {"reset_mode": "passive"}, dc_gains=[-100],
                                 delays_us=[10, 50, 200], reference_hold_us=2, shots=180.5)
+
+
+def test_common_provenance_preserves_an_explicit_zero_correction_gain():
+    result = analysis().five_point_output_metadata({"flux_tail_compensation": {
+        "correction_gain": 0., "multipliers": [1.], "segment_edges_ns": [0.],
+    }}, ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us"))
+    assert result["correction_gain"] == 0.
 
 
 @pytest.mark.parametrize("shots", [180.5, 0, 1, np.nan, np.inf])

@@ -274,16 +274,28 @@ def _spec_cfg(p, extra=None):
     return ProductionResetSession.passive().apply(cfg)
 
 
+def _correction_requirements():
+    return {
+        "flux_channel": int(BaseConfig["ff_ch"]),
+        "flux_name": f"ff_ch{BaseConfig['ff_ch']}",
+        "fit_ff_ramp_length_us": float(BaseConfig.get("ff_ramp_length", 0.5)),
+        "fit_dt_pulseplay_us": float(BaseConfig.get("dt_pulseplay", 5.0)),
+        "fit_dt_pulsedef_us": float(BaseConfig.get("dt_pulsedef", 0.002)),
+    }
+
+
 def _load_correction(correction_json, outer_folder):
+    provenance = dict(qubit=QUBIT, baseline_dc_offset=_baseline_dc_offset(),
+                      required_metadata=_correction_requirements(), match_mode="baseline")
     if correction_json is None:
         correction_json = fpd.find_latest_compensation_json(
-            outer_folder, QUBIT, baseline_dc_offset=_baseline_dc_offset())
+            outer_folder, **provenance)
     if correction_json is None:
         raise ValueError(
             "No flux-tail compensation JSON available. Run step 3 (calibration) "
             "first, or set the correction path explicitly."
         )
-    compensation = fpd.load_compensation_json(correction_json)
+    compensation = fpd.load_compensation_json(correction_json, **provenance)
     if FLUX_TAIL_COMPENSATION_GAIN != 1.0:
         compensation = fpd.scale_compensation_gain(compensation, FLUX_TAIL_COMPENSATION_GAIN)
     print(f"    Applying flux-tail compensation: {correction_json}")
@@ -627,13 +639,19 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
     p = P3_STEP_RESPONSE
     fit_residual_composition = bool(p.get("fit_residual_composition", False))
     if correction_json is None:
-        correction_json = QubitFluxStepResponse.find_latest_rise_decay_bump_dc_compensation_json(
+        correction_json = fpd.find_latest_compensation_json(
             outer_folder, QUBIT,
             dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=_baseline_dc_offset(),
+            required_metadata=_correction_requirements(), match_mode="exact",
         )
         if correction_json is None:
             raise RuntimeError("No correction JSON found; run step 3a (fit) first.")
     base_comp = QubitFluxStepResponse.load_piecewise_dc_compensation_json(correction_json)
+    fpd.validate_compensation_provenance(
+        base_comp, qubit=QUBIT, dc_offset=TARGET_DC_OFFSET,
+        baseline_dc_offset=_baseline_dc_offset(),
+        required_metadata=_correction_requirements(), match_mode="exact",
+    )
 
     if STEP3B_GAIN_SWEEP is not None:
         print(f"[3b] Step-response CORRECT (gain sweep {STEP3B_GAIN_SWEEP}): applying {correction_json}")
@@ -653,6 +671,7 @@ def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=
         for gain in gain_sweep_values:
             run_flux_tail_compensation = fpd.scale_compensation_gain(
                 base_comp, gain,
+                rescale_composed=True,
                 min_multiplier=p.get("piecewise_min_multiplier", 0.5),
                 max_multiplier=p.get("piecewise_max_multiplier", 1.5),
             )

@@ -12,6 +12,13 @@ SUPPORTED_COMPENSATION_METHODS = frozenset(
     {"rise_decay_bump_set_dc_offset_correction"}
 )
 
+COMPENSATION_INTENDED_USES = {
+    "rise_decay_bump_set_dc_offset_correction": frozenset({
+        "rise_decay_bump_set_dc_offset_tail_compensation",
+        "residual_composed_set_dc_offset_tail_compensation",
+    }),
+}
+
 
 def expdecay(time_ns, amplitude, tau_ns):
     time_ns = np.asarray(time_ns, dtype=float)
@@ -1445,9 +1452,9 @@ import os as _os
 import glob as _glob
 
 
-def load_compensation_json(json_path):
+def load_compensation_json(json_path, **provenance):
     payload = load_predistortion_json(json_path)
-    if payload.get("method") not in SUPPORTED_COMPENSATION_METHODS:
+    if not isinstance(payload.get("method"), str) or payload["method"] not in SUPPORTED_COMPENSATION_METHODS:
         raise ValueError(
             "flux_tail_compensation_json must contain a supported set_dc_offset "
             f"compensation, got method={payload.get('method')!r}: {json_path}"
@@ -1456,6 +1463,9 @@ def load_compensation_json(json_path):
         raise ValueError(f"Refusing to apply unsuccessful flux-tail compensation: {json_path}")
     if payload.get("multiplier_clipped", False):
         raise ValueError(f"Refusing to apply clipped flux-tail compensation: {json_path}")
+    _piecewise_compensation_arrays_ns(payload, "compensation")
+    if provenance:
+        validate_compensation_provenance(payload, **provenance)
     return {
         "enabled": True,
         "method": payload.get("method"),
@@ -1464,74 +1474,86 @@ def load_compensation_json(json_path):
         "multipliers": payload.get("multipliers", []),
         "undamped_multipliers": payload.get("undamped_multipliers", []),
         "correction_gain": payload.get("correction_gain", None),
+        "composed_with_applied_flux_tail_compensation": bool(payload.get("composed_with_applied_flux_tail_compensation", False)),
+        "gain_semantics": "absolute_applied" if payload.get("composed_with_applied_flux_tail_compensation", False) else "source_relative",
         "metadata": payload.get("metadata", {}),
     }
 
 
+def validate_compensation_provenance(compensation, *, qubit, dc_offset=None,
+                                     baseline_dc_offset=None, required_metadata=None,
+                                     match_mode=None):
+    """Reject incompatible controller, pulse, and waveform metadata before use."""
+    mode = match_mode or ("exact" if dc_offset is not None else "baseline")
+    if mode not in {"exact", "baseline"}:
+        raise ValueError("match_mode must be 'exact' or 'baseline'")
+    if mode == "exact" and dc_offset is None:
+        raise ValueError("exact matching requires dc_offset")
+    metadata = compensation.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise ValueError("correction metadata must be a mapping")
+    method = compensation.get("method")
+    allowed = COMPENSATION_INTENDED_USES.get(method, ())
+    if not isinstance(metadata.get("intended_use"), str) or metadata["intended_use"] not in allowed:
+        raise ValueError("correction intended_use is incompatible with its method")
+    expected = {**dict(required_metadata or {}), "qubit": str(qubit)}
+    if baseline_dc_offset is not None:
+        expected["baseline_dc_offset"] = baseline_dc_offset
+    if mode == "exact":
+        expected["dc_offset"] = dc_offset
+    # Even callers without a target configuration must reject incomplete provenance.
+    for key in ("flux_channel", "fit_ff_ramp_length_us", "fit_dt_pulseplay_us",
+                "fit_dt_pulsedef_us"):
+        value = metadata.get(key)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"correction metadata missing or invalid: {key}") from None
+        if not np.isfinite(number) or number < 0 or (
+            key == "flux_channel" and not number.is_integer()
+        ) or (key in {"fit_dt_pulseplay_us", "fit_dt_pulsedef_us"} and number <= 0):
+            raise ValueError(f"correction metadata invalid: {key}")
+    for key, value in expected.items():
+        observed = metadata.get(key)
+        try:
+            matches = (
+                bool(np.isclose(float(observed), float(value), rtol=0.0, atol=1e-9))
+                if isinstance(value, (int, float, np.integer, np.floating))
+                else observed == value
+            )
+        except (TypeError, ValueError):
+            matches = False
+        if not matches:
+            raise ValueError(f"correction metadata mismatch: {key}")
+
+
 def find_latest_compensation_json(
-    outer_folder,
-    qubit,
-    dc_offset=None,
-    baseline_dc_offset=None,
-    require_success=True,
+    outer_folder, qubit, dc_offset=None, baseline_dc_offset=None,
+    require_success=True, *, required_metadata=None, match_mode=None,
 ):
     qubit_dir = Path(outer_folder) / qubit
-    # The filename describes neither the correction method nor whether it is
-    # safe to apply.  Discover every historical q*-named compensation and let
-    # the strict payload and provenance checks below make that decision.
-    pattern = "q*_dc_compensation.json"
     if not qubit_dir.exists():
         return None
-    candidates = list(qubit_dir.rglob(pattern))
-    if not candidates:
-        return None
-    matching_candidates = []
-    for candidate in candidates:
+    matches = []
+    for candidate in qubit_dir.rglob("*_dc_compensation.json"):
+        if not candidate.is_file():
+            continue
         try:
-            payload = load_predistortion_json(candidate)
-        except Exception:
+            payload = load_compensation_json(candidate)
+            validate_compensation_provenance(
+                payload, qubit=qubit, dc_offset=dc_offset,
+                baseline_dc_offset=baseline_dc_offset,
+                required_metadata=required_metadata, match_mode=match_mode,
+            )
+        except (ValueError, TypeError, KeyError, OSError, AttributeError):
             continue
-        if payload.get("method") not in SUPPORTED_COMPENSATION_METHODS:
-            continue
-        if require_success and not payload.get("success", True):
-            continue
-        if payload.get("multiplier_clipped", False):
-            continue
-        metadata = payload.get("metadata", {})
-        if not isinstance(metadata, Mapping):
-            continue
-        candidate_dc = metadata.get("dc_offset", None)
-        candidate_baseline = metadata.get("baseline_dc_offset", None)
-        if dc_offset is not None:
-            try:
-                dc_matches = bool(
-                    np.isclose(float(candidate_dc), float(dc_offset), atol=1e-9)
-                )
-            except (TypeError, ValueError):
-                continue
-            if not dc_matches:
-                continue
-        if baseline_dc_offset is not None:
-            try:
-                baseline_matches = bool(
-                    np.isclose(
-                        float(candidate_baseline),
-                        float(baseline_dc_offset),
-                        atol=1e-9,
-                    )
-                )
-            except (TypeError, ValueError):
-                continue
-            if not baseline_matches:
-                continue
-        matching_candidates.append(candidate)
-    if not matching_candidates:
+        matches.append(candidate)
+    if not matches:
         return None
-    latest = max(matching_candidates, key=lambda path: path.stat().st_mtime)
-    return str(latest)
+    return str(max(matches, key=lambda path: path.stat().st_mtime))
 
 
-def scale_compensation_gain(flux_tail_compensation, gain, min_multiplier=None, max_multiplier=None):
+def scale_compensation_gain(flux_tail_compensation, gain, min_multiplier=None, max_multiplier=None, *, rescale_composed=False):
     import copy
     if flux_tail_compensation is None:
         raise ValueError("Cannot sweep gain without a loaded flux-tail compensation.")
@@ -1540,6 +1562,10 @@ def scale_compensation_gain(flux_tail_compensation, gain, min_multiplier=None, m
         raise ValueError("flux_tail_compensation_gain_sweep values must be finite and non-negative.")
 
     scaled = copy.deepcopy(flux_tail_compensation)
+    # Composed coefficients include the previous applied gain and residual update.
+    # Only an explicitly requested gain sweep may rescale that complete waveform.
+    if scaled.get("composed_with_applied_flux_tail_compensation", False) and not rescale_composed:
+        return scaled
     multipliers = np.asarray(scaled.get("multipliers", []), dtype=float)
     undamped = np.asarray(scaled.get("undamped_multipliers", []), dtype=float)
     if undamped.size != multipliers.size or not np.all(np.isfinite(undamped)):

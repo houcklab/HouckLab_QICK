@@ -10,6 +10,8 @@ def five_point_output_metadata(data, condition_names):
     correction = data.get("flux_tail_compensation")
     return {
         "acquisition_order": data.get("acquisition_order", ""),
+        "acquisition_loop_order": "shot,frequency,condition",
+        "condition_order": ",".join(condition_names),
         "condition_order_json": json.dumps(list(condition_names)),
         "dc_scan_order": "alternating_bidirectional",
         "dc_scan_axis_convention": "up=forward input dc_vec; down=reverse input dc_vec",
@@ -17,9 +19,11 @@ def five_point_output_metadata(data, condition_names):
         "dc_scan_up_shots": data.get("dc_scan_up_shots"),
         "dc_scan_down_shots": data.get("dc_scan_down_shots"),
         "p0_mode": "matched_frequency_resolved",
+        "reference_mode": "matched_frequency_resolved",
         "correction_mode": data.get("correction_mode", "distortion-corrected" if correction else "uncorrected"),
         "correction_source": (correction or {}).get("source", ""),
         "correction_method": (correction or {}).get("method", ""),
+        "correction_gain": (float(correction["correction_gain"] if correction.get("correction_gain") is not None else 1.0) if correction else 0.0),
         "correction_provenance_json": json.dumps(correction, sort_keys=True, default=lambda x: np.asarray(x).tolist()),
     }
 
