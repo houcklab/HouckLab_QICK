@@ -649,14 +649,18 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert cfg["shots_per_condition"] == 180
     assert cfg["reset_mode"] == "active"
     assert cfg["shots_per_condition"] * 5 == 900
-    assert cfg["freq_min_ghz"] == 3.8
+    assert cfg["freq_min_ghz"] == 3.9
     assert cfg["freq_max_ghz"] == 4.3
     assert cfg["freq_step_mhz"] == 0.5
+    assert round(
+        (cfg["freq_max_ghz"] - cfg["freq_min_ghz"])
+        * 1000.0 / cfg["freq_step_mhz"]
+    ) + 1 == 801
     assert cfg["dc_min"] == -20550
     assert cfg["dc_max"] == -11800
     assert cfg["sync_session"] == "q3_q5_5pt_apples_20260914_v1"
     assert cfg["sync_directory"] == "Z:/FluxTeam/Data/.qick_qua_sync"
-    assert cfg["sync_slot_s"] == 300
+    assert cfg["sync_slot_s"] == 150
 
 
 def test_production_runner_applies_hardware_verified_feedback_timing(monkeypatch):
