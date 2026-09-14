@@ -2008,7 +2008,11 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             "ff_hold": wait_us,
             "t1_wait_us": wait_us,
             "do_ff": True,
-            "reps": shots * int(rounded.size) * 3,
+            "reps": (
+                shots
+                * int(rounded.size)
+                * self._records_per_dc()
+            ),
         })
         super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
         self.dmem_loads = (
@@ -2148,6 +2152,24 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._emit_placeholder_payload_record()
         self.label(done_label)
 
+    def _records_per_dc(self):
+        return 3
+
+    def _emit_t1_conditions(self, controls, label_prefix):
+        self._emit_p0_slot(controls, f"{label_prefix}_P0")
+        self._emit_three_point_payload(
+            f"{label_prefix}_P1",
+            True,
+            False,
+            0.0,
+        )
+        self._emit_three_point_payload(
+            f"{label_prefix}_PS",
+            True,
+            True,
+            float(self.cfg["opx_t1_3pt_wait_us"]),
+        )
+
     def _set_three_point_dc_delta(self):
         if self._t1_flux_direction > 0:
             self.math(
@@ -2203,20 +2225,14 @@ class OPXResetT13PointProgram(OPXResetT1Program):
                 self._t1_3pt_regs["dc_lut_addr"],
             )
         self._set_three_point_dc_delta()
-        self._emit_p0_slot(controls, f"{label_prefix}_P0")
-        self._emit_three_point_payload(
-            f"{label_prefix}_P1",
-            True,
-            False,
-            0.0,
+        self._emit_t1_conditions(controls, label_prefix)
+        self.mathi(
+            0,
+            controls["done"],
+            controls["done"],
+            "+",
+            self._records_per_dc(),
         )
-        self._emit_three_point_payload(
-            f"{label_prefix}_PS",
-            True,
-            True,
-            float(self.cfg["opx_t1_3pt_wait_us"]),
-        )
-        self.mathi(0, controls["done"], controls["done"], "+", 3)
         self.memwi(0, controls["done"], self.done_addr)
         self._stream_after_shot()
         register = "dc_lut_addr" if use_gain_lookup else "dc_gain"
@@ -2310,12 +2326,13 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             controls["shot_loop"],
             int(self.cfg["opx_t1_3pt_shots"]) - 1,
         )
+        records_per_dc = self._records_per_dc()
         self._initialize_stream(
             controls,
             total_shots=int(self.cfg["opx_t1_3pt_shots"]),
-            records_per_shot=len(gains) * 3,
+            records_per_shot=len(gains) * records_per_dc,
             total_units=int(self.cfg["opx_t1_3pt_shots"]) * len(gains),
-            records_per_unit=3,
+            records_per_unit=records_per_dc,
             prefix="OPX_T1_3PT_STREAM",
         )
         self._begin_park_lifecycle()
@@ -2388,6 +2405,77 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self._finish_stream()
         self._end_park_lifecycle()
         self.end()
+
+
+class OPXResetT15PointProgram(OPXResetT13PointProgram):
+    """Five-condition T1 program with matched flux trajectories.
+
+    Every frequency receives P0, P1, and three survival measurements inside
+    the same alternating bidirectional shot loop.  P0/P1 use a short reference
+    hold; each survival hold adds its configured effective decay delay.
+    """
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        delays = np.asarray(
+            run_cfg.get("opx_t1_5pt_delays_us", ()), dtype=float
+        ).reshape(-1)
+        if (
+            delays.size != 3
+            or not np.all(np.isfinite(delays))
+            or np.any(delays <= 0.0)
+            or np.any(np.diff(delays) <= 0.0)
+        ):
+            raise ValueError(
+                "opx_t1_5pt_delays_us must contain three positive increasing delays"
+            )
+        reference_hold_us = float(
+            run_cfg.get("opx_t1_5pt_reference_hold_us", 0.0)
+        )
+        if not np.isfinite(reference_hold_us) or reference_hold_us < 0.01:
+            raise ValueError(
+                "opx_t1_5pt_reference_hold_us must be at least 0.01 us"
+            )
+        run_cfg.update({
+            "opx_t1_5pt_delays_us": delays.tolist(),
+            "opx_t1_5pt_reference_hold_us": reference_hold_us,
+            "opx_t1_3pt_wait_us": reference_hold_us + float(delays[-1]),
+        })
+        super().__init__(
+            soccfg,
+            run_cfg,
+            payload_calibration,
+            loop_calibration,
+        )
+
+    def _records_per_dc(self):
+        return 5
+
+    def _set_p0_reference_flag(self, controls, label_prefix):
+        # P0 is frequency-resolved on every shot in the five-point protocol.
+        return None
+
+    def _emit_t1_conditions(self, controls, label_prefix):
+        reference = float(self.cfg["opx_t1_5pt_reference_hold_us"])
+        self._emit_three_point_payload(
+            f"{label_prefix}_P0",
+            False,
+            True,
+            reference,
+        )
+        self._emit_three_point_payload(
+            f"{label_prefix}_P1",
+            True,
+            True,
+            reference,
+        )
+        for index, delay in enumerate(self.cfg["opx_t1_5pt_delays_us"]):
+            self._emit_three_point_payload(
+                f"{label_prefix}_PS{index}",
+                True,
+                True,
+                reference + float(delay),
+            )
 
 
 class OPXResetTLSMemoryProgram(OPXResetT1Program):

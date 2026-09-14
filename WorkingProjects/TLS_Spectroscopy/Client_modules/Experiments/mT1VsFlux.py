@@ -22,9 +22,16 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_t1_3pt_iq,
+    acquire_t1_5pt_iq,
     acquire_t1_flux_sweep_iq,
     acquire_t1_iq,
     classify_payload_iq,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import (
+    estimate_five_point_t1,
+    five_point_output_metadata,
+    reduce_bidirectional_condition_states,
+    validate_five_point_delays,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.three_point import (
     distributed_p0_reference_indices,
@@ -322,6 +329,22 @@ def build_wall_clock_repeat_metadata(run_start_dt, series_start_dt, run_index):
 
 def get_wall_clock_repeat_spec(exp):
     data = exp.data
+    if isinstance(exp, T15PointVsFlux):
+        return {
+            "metric_values": data["inv_T1_5pt_per_us"],
+            "metric_column_name": "inv_T1_5pt_per_us",
+            "extra_metric_matrices": {
+                "T1_5pt_us_raw": data["T1_5pt_us_raw"],
+                "T1_5pt_us": data["T1_5pt_us"],
+                "T1_5pt_err_us": data["T1_5pt_err_us"],
+                "inv_T1_5pt_err_per_us": data[
+                    "inv_T1_5pt_err_per_us"
+                ],
+            },
+            "colorbar_label": "1 / T1 (1/us)",
+            "plot_title": f"{exp.element} 1/T1_5pt vs flux and wall clock",
+            "file_tag": "T1_5pt",
+        }
     if isinstance(exp, T13PointVsFlux):
         return {"metric_values": data["inv_T1_3pt_per_us"],
                 "metric_column_name": "inv_T1_3pt_per_us",
@@ -341,6 +364,57 @@ def get_wall_clock_repeat_spec(exp):
 
 def get_wall_clock_repeat_full_spec(exp):
     data = exp.data
+    if isinstance(exp, T15PointVsFlux):
+        scalar_columns = {
+            "reference_hold_us": float(exp.reference_hold_us),
+            "shots_per_condition": int(exp.shots),
+            "measurements_per_frequency": int(
+                exp.shots * len(exp.CONDITION_NAMES)
+            ),
+            "delay_0_us": float(exp.decay_delays_us[0]),
+            "delay_1_us": float(exp.decay_delays_us[1]),
+            "delay_2_us": float(exp.decay_delays_us[2]),
+            "P0": data["P0"],
+            "P1": data["P1"],
+            "Ps_10us": data["Ps_10us"],
+            "Ps_50us": data["Ps_50us"],
+            "Ps_200us": data["Ps_200us"],
+            "P0_fit": data["P0_fit"],
+            "P1_fit": data["P1_fit"],
+            "ref_contrast_5pt": data["ref_contrast_5pt"],
+            "T1_5pt_valid_mask": data["T1_5pt_valid_mask"],
+            "T1_5pt_fit_success": data["T1_5pt_fit_success"],
+            "T1_5pt_fit_deviance": data["T1_5pt_fit_deviance"],
+        }
+        for key in (
+            "P0_scan_up",
+            "P0_scan_down",
+            "P1_scan_up",
+            "P1_scan_down",
+            "Ps_10us_scan_up",
+            "Ps_10us_scan_down",
+            "Ps_50us_scan_up",
+            "Ps_50us_scan_down",
+            "Ps_200us_scan_up",
+            "Ps_200us_scan_down",
+            "T1_5pt_us_scan_up",
+            "T1_5pt_us_scan_down",
+            "inv_T1_5pt_per_us_scan_up",
+            "inv_T1_5pt_per_us_scan_down",
+            "inv_T1_5pt_per_us_scan_direction_delta",
+            "T1_5pt_valid_mask_scan_up",
+            "T1_5pt_valid_mask_scan_down",
+            "T1_5pt_us_raw_scan_up", "T1_5pt_us_raw_scan_down",
+            "T1_5pt_err_us_scan_up", "T1_5pt_err_us_scan_down",
+            "inv_T1_5pt_err_per_us_scan_up", "inv_T1_5pt_err_per_us_scan_down",
+            "T1_5pt_fit_success_scan_up", "T1_5pt_fit_success_scan_down",
+            "T1_5pt_fit_deviance_scan_up", "T1_5pt_fit_deviance_scan_down",
+            "P0_fit_scan_up", "P0_fit_scan_down",
+            "P1_fit_scan_up", "P1_fit_scan_down",
+        ):
+            if key in data:
+                scalar_columns[key] = data[key]
+        return {"axes": {}, "scalar_columns": scalar_columns, "array_columns": {}}
     if isinstance(exp, T1FullCurveVsFlux):
         scalar_columns = {}
         for key in ("T1_fit_err_us", "inv_T1_fit_err_per_us", "fit_success",
@@ -829,6 +903,247 @@ class _T1VsFluxBase(ExperimentClass):
         if not ok[0]:
             raise RuntimeError("Park T1 probe fit failed.")
         return float(T1_fit[0])
+
+
+class T15PointVsFlux(_T1VsFluxBase):
+
+    CONDITION_NAMES = (
+        "P0",
+        "P1",
+        "Ps_10us",
+        "Ps_50us",
+        "Ps_200us",
+    )
+
+    def __init__(
+        self,
+        *args,
+        decay_delays_us,
+        reference_hold_us=2.0,
+        min_ref_contrast=0.05,
+        max_relative_error=1.0,
+        max_fit_t1_us=3000.0,
+        **kw,
+    ):
+        super().__init__(*args, **kw)
+        self.decay_delays_us = validate_five_point_delays(decay_delays_us)
+        if not np.array_equal(self.decay_delays_us, [10.0, 50.0, 200.0]):
+            raise ValueError("matched five-point protocol requires delays [10, 50, 200] us")
+        self.reference_hold_us = float(reference_hold_us)
+        if not np.isfinite(self.reference_hold_us) or self.reference_hold_us < 0.01:
+            raise ValueError("reference_hold_us must be at least 0.01 us")
+        if self.shots < 2:
+            raise ValueError("bidirectional acquisition requires at least two shots")
+        self.min_ref_contrast = float(min_ref_contrast)
+        self.max_relative_error = float(max_relative_error)
+        self.max_fit_t1_us = float(max_fit_t1_us)
+        self.data.update({
+            "decay_delays_us": self.decay_delays_us,
+            "reference_hold_us": self.reference_hold_us,
+            "shots_per_condition": self.shots,
+            "measurements_per_frequency": (
+                self.shots * len(self.CONDITION_NAMES)
+            ),
+            "min_ref_contrast": self.min_ref_contrast,
+            "max_relative_error": self.max_relative_error,
+            "max_fit_t1_us": self.max_fit_t1_us,
+            "p0_mode": "matched_frequency_resolved",
+            "dc_scan_order": "alternating_bidirectional",
+            "dc_scan_up_shots": (self.shots + 1) // 2,
+            "dc_scan_down_shots": self.shots // 2,
+        })
+
+    def acquire(self, progress=False, plotDisp=False, figNum=1):
+        if not bool(self.cfg.get("qua_shot_order", False)):
+            raise ValueError(
+                "five-point T1 requires the resident QUA-equivalent shot order"
+            )
+        reset_scheme = (
+            "opx_unbounded"
+            if active_reset.uses_opx_unbounded(self.reset_mode)
+            else "none"
+        )
+        with suppress_stdout():
+            i_values, q_values, telemetry = acquire_t1_5pt_iq(
+                self.soc,
+                self.soccfg,
+                self.cfg,
+                dc_gains=self.dc_vec,
+                delays_us=self.decay_delays_us,
+                reference_hold_us=self.reference_hold_us,
+                shots=self.shots,
+                reset_scheme=reset_scheme,
+            )
+        if reset_scheme == "opx_unbounded":
+            states = classify_payload_iq(
+                self.cfg,
+                i_values,
+                q_values,
+                telemetry["read_length_cycles"],
+            )
+        else:
+            states = discriminate_shots(
+                i_values,
+                q_values,
+                self.calib_params,
+            )
+        directional = reduce_bidirectional_condition_states(
+            states,
+            self.CONDITION_NAMES,
+            canonical_dc_axis=True,
+        )
+        self.acquisition_telemetry.append(dict(telemetry))
+        self.data.update({
+            "acquisition_order": str(telemetry["order"]),
+            "acquisition_telemetry": self.acquisition_telemetry,
+            "p0_mode": str(telemetry.get(
+                "p0_mode", "matched_frequency_resolved"
+            )),
+            "dc_scan_up_shots": directional["dc_scan_up_shots"],
+            "dc_scan_down_shots": directional["dc_scan_down_shots"],
+        })
+        if reset_scheme == "opx_unbounded":
+            self.opx_reset_telemetry.append(dict(telemetry))
+            self.data["opx_reset_telemetry"] = self.opx_reset_telemetry
+        for name in self.CONDITION_NAMES:
+            self.data[name] = directional[name]
+            self.data[f"{name}_scan_up"] = directional[f"{name}_scan_up"]
+            self.data[f"{name}_scan_down"] = directional[f"{name}_scan_down"]
+
+        survival = np.column_stack(
+            [directional[name] for name in self.CONDITION_NAMES[2:]]
+        )
+        estimate = estimate_five_point_t1(
+            directional["P0"],
+            directional["P1"],
+            survival,
+            self.decay_delays_us,
+            shots_per_condition=self.shots,
+            min_ref_contrast=self.min_ref_contrast,
+            max_relative_error=self.max_relative_error,
+            max_t1_us=self.max_fit_t1_us,
+        )
+        inv, inv_err = _safe_inverse_t1_us(
+            estimate["T1_5pt_us"],
+            estimate["T1_5pt_err_us"],
+        )
+        self.data.update({
+            "T1_5pt_us_raw": estimate["T1_5pt_us_raw"],
+            "T1_5pt_us": estimate["T1_5pt_us"],
+            "T1_5pt_err_us": estimate["T1_5pt_err_us"],
+            "inv_T1_5pt_per_us": inv,
+            "inv_T1_5pt_err_per_us": inv_err,
+            "T1_5pt_valid_mask": estimate["T1_5pt_valid_mask"],
+            "T1_5pt_fit_success": estimate["fit_success"],
+            "T1_5pt_fit_deviance": estimate["fit_deviance"],
+            "P0_fit": estimate["P0_fit"],
+            "P1_fit": estimate["P1_fit"],
+            "ref_contrast_5pt": estimate["ref_contrast_5pt"],
+        })
+
+        for direction in ("scan_up", "scan_down"):
+            direction_survival = np.column_stack([
+                directional[f"{name}_{direction}"]
+                for name in self.CONDITION_NAMES[2:]
+            ])
+            direction_estimate = estimate_five_point_t1(
+                directional[f"P0_{direction}"],
+                directional[f"P1_{direction}"],
+                direction_survival,
+                self.decay_delays_us,
+                shots_per_condition=directional[
+                    f"dc_{direction}_shots"
+                ],
+                min_ref_contrast=self.min_ref_contrast,
+                max_relative_error=self.max_relative_error,
+                max_t1_us=self.max_fit_t1_us,
+            )
+            direction_inv, direction_inv_err = _safe_inverse_t1_us(
+                direction_estimate["T1_5pt_us"], direction_estimate["T1_5pt_err_us"]
+            )
+            for source, output in (
+                ("T1_5pt_us_raw", "T1_5pt_us_raw"),
+                ("T1_5pt_err_us", "T1_5pt_err_us"),
+                ("fit_success", "T1_5pt_fit_success"),
+                ("fit_deviance", "T1_5pt_fit_deviance"),
+                ("P0_fit", "P0_fit"), ("P1_fit", "P1_fit"),
+            ):
+                self.data[f"{output}_{direction}"] = direction_estimate[source]
+            self.data[f"inv_T1_5pt_err_per_us_{direction}"] = direction_inv_err
+            self.data[f"T1_5pt_us_{direction}"] = direction_estimate[
+                "T1_5pt_us"
+            ]
+            self.data[f"inv_T1_5pt_per_us_{direction}"] = direction_inv
+            self.data[f"T1_5pt_valid_mask_{direction}"] = direction_estimate[
+                "T1_5pt_valid_mask"
+            ]
+        self.data["inv_T1_5pt_per_us_scan_direction_delta"] = (
+            self.data["inv_T1_5pt_per_us_scan_up"]
+            - self.data["inv_T1_5pt_per_us_scan_down"]
+        )
+        self.keep_fraction = np.ones(
+            len(self.dc_vec) * len(self.CONDITION_NAMES), dtype=float
+        )
+
+        if self.write_outputs:
+            base = _csv_base_from_pickle(self.pname)
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.plot(self.dc_vec, self.data["P0"], label="P0")
+            ax.plot(self.dc_vec, self.data["P1"], label="P1")
+            for index, delay in enumerate(self.decay_delays_us):
+                ax.plot(
+                    self.dc_vec,
+                    self.data[self.CONDITION_NAMES[index + 2]],
+                    label=f"Ps ({delay:g} us)",
+                )
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("P(excited)")
+            ax.legend()
+            fig.savefig(self.iname[:-4] + "_5pt_populations.png",
+                        bbox_inches="tight")
+            plt.close(fig)
+
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.errorbar(
+                self.dc_vec,
+                self.data["T1_5pt_us"],
+                yerr=self.data["T1_5pt_err_us"],
+                fmt="-",
+                linewidth=1,
+            )
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("T1 (us), five-point binomial fit")
+            fig.savefig(self.iname[:-4] + "_5pt_T1.png", bbox_inches="tight")
+            plt.close(fig)
+
+            columns = {
+                key: value
+                for key, value in self.data.items()
+                if isinstance(value, np.ndarray)
+                and np.asarray(value).shape == self.dc_vec.shape
+            }
+            _save_flux_curve_csv(
+                base + "_5pt_summary.csv",
+                self.dc_vec,
+                columns,
+                extra_columns={**self.repeat_metadata, **five_point_output_metadata(self.data, self.CONDITION_NAMES)},
+            )
+
+        self.data["time"] = datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        if self.write_outputs:
+            self.pickle_data()
+        return {"config": self.cfg, "data": self.data}
+
+    def save_data(self, data=None):
+        print(f"Saving {self.fname}")
+        arrays = {
+            key: value
+            for key, value in self.data.items()
+            if isinstance(value, np.ndarray)
+        }
+        super().save_data(data=arrays)
 
 
 class T13PointVsFlux(_T1VsFluxBase):

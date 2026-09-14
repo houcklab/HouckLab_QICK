@@ -18,6 +18,7 @@ from .programs import (
     OPXResetPulseSweepProgram,
     OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
+    OPXResetT15PointProgram,
     OPXResetT1FluxSweepProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
@@ -301,6 +302,102 @@ def acquire_t1_3pt_iq(
         ),
         "read_length_cycles": int(read_cycles),
         **flux_predistortion_telemetry(last_program),
+    }
+
+
+def acquire_t1_5pt_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    dc_gains,
+    delays_us,
+    reference_hold_us,
+    shots=None,
+    reset_scheme="opx_unbounded",
+):
+    bundle = runtime_bundle(cfg)
+    gains = np.asarray(dc_gains, dtype=float).reshape(-1)
+    if gains.size == 0 or not np.all(np.isfinite(gains)):
+        raise ValueError("at least one finite five-point DC gain is required")
+    rounded = np.rint(gains).astype(np.int64)
+    if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+        raise ValueError("five-point DC gains must be integer DAC values")
+    delays = np.asarray(delays_us, dtype=float).reshape(-1)
+    if (
+        delays.size != 3
+        or not np.all(np.isfinite(delays))
+        or np.any(delays <= 0.0)
+        or np.any(np.diff(delays) <= 0.0)
+    ):
+        raise ValueError(
+            "five-point delays must contain three positive increasing values"
+        )
+    reference_hold_us = float(reference_hold_us)
+    if not np.isfinite(reference_hold_us) or reference_hold_us < 0.01:
+        raise ValueError("five-point reference hold must be at least 0.01 us")
+    requested_shots = float(cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots)
+    if not np.isfinite(requested_shots) or requested_shots < 2 or not requested_shots.is_integer():
+        raise ValueError("five-point shots must be an integer of at least two")
+    total_shots = int(requested_shots)
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+    records_per_dc = 5
+    records_per_shot = int(rounded.size) * records_per_dc
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_t1_3pt_shots": total_shots,
+        "opx_t1_3pt_dc_gains": rounded.tolist(),
+        "opx_t1_5pt_delays_us": delays.tolist(),
+        "opx_t1_5pt_reference_hold_us": reference_hold_us,
+        "ff_hold": reference_hold_us + float(delays[-1]),
+        "t1_wait_us": reference_hold_us + float(delays[-1]),
+        "opx_resident_dmem_stream": True,
+    })
+    program = OPXResetT15PointProgram(
+        soccfg,
+        run_cfg,
+        bundle.payload,
+        bundle.loop,
+    )
+    block = _run_program(
+        soc,
+        program,
+        _block_timeout_s(run_cfg, total_shots * records_per_shot),
+        run_cfg,
+        total_shots=total_shots,
+    )
+    i_records = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, records_per_dc)
+    q_records = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, records_per_dc)
+    i_records[1::2] = i_records[1::2, ::-1]
+    q_records[1::2] = q_records[1::2, ::-1]
+    i_values = i_records.transpose(2, 1, 0)
+    q_values = q_records.transpose(2, 1, 0)
+    read_cycles = program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    return i_values / int(read_cycles), q_values / int(read_cycles), {
+        "shots_per_condition": int(total_shots),
+        "dc_points": int(rounded.size),
+        "records": int(len(block)),
+        "records_per_dc": records_per_dc,
+        "blocks": 1,
+        "resident_stream": True,
+        "order": "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2",
+        "condition_names": ("P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)),
+        "dc_scan_order": "alternating_bidirectional",
+        "dc_scan_up_shots": int((total_shots + 1) // 2),
+        "dc_scan_down_shots": int(total_shots // 2),
+        "p0_mode": "matched_frequency_resolved",
+        "reference_hold_us": reference_hold_us,
+        "decay_delays_us": tuple(float(value) for value in delays),
+        "read_length_cycles": int(read_cycles),
     }
 
 
