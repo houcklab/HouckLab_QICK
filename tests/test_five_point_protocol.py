@@ -180,9 +180,33 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert cfg["shots_per_condition"] == 180
     assert cfg["reset_mode"] == "active"
     assert cfg["shots_per_condition"] * 5 == 900
-    assert cfg["sync_session"] == "q3_q5_5pt_apples_v1"
+    assert cfg["freq_min_ghz"] == 3.8
+    assert cfg["freq_max_ghz"] == 4.3
+    assert cfg["freq_step_mhz"] == 0.5
+    assert cfg["dc_min"] == -20550
+    assert cfg["dc_max"] == -11800
+    assert cfg["sync_session"] == "q3_q5_5pt_apples_20260914_v1"
     assert cfg["sync_directory"] == "Z:/FluxTeam/Data/.qick_qua_sync"
     assert cfg["sync_slot_s"] == 300
+
+
+def test_production_runner_installs_latest_q3_p4_calibration(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    tls = types.SimpleNamespace()
+    runner.install_scan_calibration(tls)
+    assert tls.FLUX_FIT_PARAMS == [
+        6.0089036599253225,
+        0.24978861537376948,
+        46821.65898343736,
+        -16500.00011106883,
+        0.4052706711778531,
+        -5.54146293201133e-05,
+    ]
+    assert tls.BASELINE_DC_OFFSET == -25146
+    assert tls.TARGET_DC_OFFSET == -14750
 
 
 def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatch, tmp_path):

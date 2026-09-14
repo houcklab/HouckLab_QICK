@@ -51,9 +51,9 @@ P6_5PT_APPLES_TO_APPLES = {
     "shots_per_condition": 180,
     "decay_delays_us": [10.0, 50.0, 200.0],
     "reference_hold_us": 2.0,
-    "dc_min": -20511,
-    "dc_max": -6744,
-    "freq_min_ghz": 3.88,
+    "dc_min": -20550,
+    "dc_max": -11800,
+    "freq_min_ghz": 3.8,
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
@@ -63,7 +63,7 @@ P6_5PT_APPLES_TO_APPLES = {
     "reset_mode": "active",
     "sync_enabled": True,
     "sync_role": "follower",
-    "sync_session": "q3_q5_5pt_apples_v1",
+    "sync_session": "q3_q5_5pt_apples_20260914_v1",
     "sync_directory": "Z:/FluxTeam/Data/.qick_qua_sync",
     "sync_slot_s": 300.0,
     "sync_lead_s": 60.0,
@@ -76,6 +76,25 @@ P6_5PT_APPLES_TO_APPLES = {
     "max_relative_error": 0.5,
     "max_fit_t1_us": 3000.0,
 }
+
+
+APPLE_FLUX_FIT_PARAMS = [
+    6.0089036599253225,
+    0.24978861537376948,
+    46821.65898343736,
+    -16500.00011106883,
+    0.4052706711778531,
+    -5.54146293201133e-05,
+]
+APPLE_BASELINE_DC_OFFSET = -25146
+APPLE_TARGET_DC_OFFSET = -14750
+
+
+def install_scan_calibration(tls):
+    """Install the P4/step-response calibration frozen for this long scan."""
+    tls.FLUX_FIT_PARAMS = list(APPLE_FLUX_FIT_PARAMS)
+    tls.BASELINE_DC_OFFSET = APPLE_BASELINE_DC_OFFSET
+    tls.TARGET_DC_OFFSET = APPLE_TARGET_DC_OFFSET
 
 
 def _run_series(
@@ -212,6 +231,7 @@ def main():
         _integer_dc_grid, _target_frequency_grid_ghz,
     )
 
+    install_scan_calibration(tls)
     gc.collect()
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
