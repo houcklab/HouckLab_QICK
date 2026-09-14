@@ -18,6 +18,30 @@ def analysis():
     return importlib.import_module(spec.name)
 
 
+def diagnostic():
+    spec = importlib.util.find_spec(f"{PREFIX}.Runners.Test")
+    assert spec is not None, "measurement-first QICK diagnostic is missing"
+    return importlib.import_module(spec.name)
+
+
+def test_qick_measurement_diagnostic_selects_small_contiguous_frequency_slice():
+    module = diagnostic()
+    frequencies = np.linspace(4.3, 3.8, 1001)
+    dc_values = np.arange(1001)
+
+    selected_frequency, selected_dc, selected_indices = (
+        module.select_diagnostic_slice(
+            frequencies, dc_values, center_ghz=4.05, points=11,
+        )
+    )
+
+    assert selected_frequency.shape == (11,)
+    assert selected_dc.shape == (11,)
+    assert selected_indices.tolist() == list(range(495, 506))
+    assert selected_frequency[5] == pytest.approx(4.05)
+    assert np.allclose(np.diff(selected_frequency), -0.0005)
+
+
 @pytest.mark.parametrize("delays", [[10, 50], [10, 50, 200, 300], [0, 50, 200],
                                    [10, np.nan, 200], [10, 200, 50], [10, 10, 200]])
 def test_delay_validation_rejects_invalid_protocol_axes(delays):
