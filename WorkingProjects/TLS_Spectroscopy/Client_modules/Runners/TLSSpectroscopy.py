@@ -131,6 +131,7 @@ P3_STEP_RESPONSE = {
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
     "piecewise_max_multiplier": 1.5,
+    "piecewise_desired_response": "unity",
     "readout_after_park": False,
     "trace_tracking_mode": "ridge",
     "trace_polarity": None,
@@ -281,6 +282,7 @@ def _correction_requirements():
         "fit_ff_ramp_length_us": float(BaseConfig.get("ff_ramp_length", 0.5)),
         "fit_dt_pulseplay_us": float(BaseConfig.get("dt_pulseplay", 5.0)),
         "fit_dt_pulsedef_us": float(BaseConfig.get("dt_pulsedef", 0.002)),
+        "rise_decay_bump_desired_response": "unity",
     }
 
 
@@ -582,6 +584,9 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         fit_rise_decay_bump_dc_correction=fit_rise_decay_bump_dc_correction,
         piecewise_min_multiplier=p.get("piecewise_min_multiplier", 0.5),
         piecewise_max_multiplier=p.get("piecewise_max_multiplier", 1.5),
+        piecewise_desired_response=p.get(
+            "piecewise_desired_response", "unity"
+        ),
         baseline_rearm_time_ns=float(p.get("baseline_rearm_us", 500.0)) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
         compose_with_applied_flux_tail_compensation=bool(

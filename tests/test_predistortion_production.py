@@ -20,6 +20,7 @@ _METADATA = {
     "fit_ff_ramp_length_us": 3.5,
     "fit_dt_pulseplay_us": 0.25,
     "fit_dt_pulsedef_us": 0.004,
+    "rise_decay_bump_desired_response": "unity",
 }
 
 
@@ -359,6 +360,23 @@ def test_step3a_ignores_the_step3b_residual_composition_control(monkeypatch):
 
     assert result == "/tmp/composed.json"
     assert response.calls[-1]["compose_with_applied_flux_tail_compensation"] is False
+
+
+def test_step3a_targets_the_physical_flux_setpoint_by_default(monkeypatch):
+    runner, response = _load_step3_runner(monkeypatch)
+
+    runner.run_step3a_step_response_fit("/tmp", None, None)
+
+    assert runner.P3_STEP_RESPONSE["piecewise_desired_response"] == "unity"
+    assert response.calls[-1]["piecewise_desired_response"] == "unity"
+
+
+def test_production_correction_requirements_reject_nonunity_candidates(monkeypatch):
+    runner, _response = _load_step3_runner(monkeypatch)
+
+    assert runner._correction_requirements()[
+        "rise_decay_bump_desired_response"
+    ] == "unity"
 
 
 @pytest.mark.parametrize("automatic", [False, True])
