@@ -71,6 +71,108 @@ def test_qick_measurement_diagnostic_applies_requested_accumulator_read_delay():
     assert cfg == {"shots": 20, "opx_read_delay_us": 10.0}
 
 
+def test_qick_measurement_diagnostic_roundtrips_bulk_and_direct_dmem():
+    module = diagnostic()
+
+    class TProc:
+        def __init__(self, words):
+            self.words = list(words)
+
+        def single_read(self, address):
+            return self.words[int(address)]
+
+        def single_write(self, address, value):
+            self.words[int(address)] = int(value) & 0xFFFFFFFF
+
+    class Soc:
+        def __init__(self):
+            self.tproc = TProc(range(64))
+
+        def read_qick_dmem(self, address, length):
+            return self.tproc.words[int(address):int(address) + int(length)]
+
+        def write_qick_dmem(self, address, values):
+            start = int(address)
+            for offset, value in enumerate(values):
+                self.tproc.words[start + offset] = int(value) & 0xFFFFFFFF
+            return len(values)
+
+    soc = Soc()
+    before = list(soc.tproc.words)
+
+    report = module.verify_dmem_roundtrip(soc, dmem_words=64, scratch_words=8)
+
+    assert report["bulk_write_bulk_read_matches"] is True
+    assert report["bulk_write_direct_read_matches"] is True
+    assert report["direct_write_bulk_read_matches"] is True
+    assert report["direct_write_direct_read_matches"] is True
+    assert soc.tproc.words == before
+
+
+def test_condition_tagged_payload_decoder_preserves_iq_and_tag_order():
+    records = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.records"
+    )
+
+    decoded = records.decode_condition_tagged_payload_records(
+        [11, 12, 0, 21, 22, 1, 31, 32, 2],
+        expected_records=3,
+    )
+
+    assert [record.final_i for record in decoded] == [11, 21, 31]
+    assert [record.final_q for record in decoded] == [12, 22, 32]
+    assert [record.condition_tag for record in decoded] == [0, 1, 2]
+
+
+def test_dmem_read_verification_rejects_a_shifted_bulk_bank():
+    acquisition = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.acquisition"
+    )
+
+    class TProc:
+        def __init__(self, words):
+            self.words = list(words)
+
+        def single_read(self, address):
+            return self.words[int(address)]
+
+    tproc = TProc([101, 102, 103, 104, 105])
+    assert acquisition.verify_dmem_read_match(
+        tproc,
+        address=1,
+        bulk_words=[102, 103, 104],
+    ) == 3
+    with pytest.raises(RuntimeError, match="first mismatch at DMem address 1"):
+        acquisition.verify_dmem_read_match(
+            tproc,
+            address=1,
+            bulk_words=[103, 104, 102],
+        )
+
+
+def test_integration_forwards_the_dmem_verification_switch(monkeypatch):
+    integration = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.integration"
+    )
+    observed = {}
+    program = types.SimpleNamespace(stream_plan={})
+
+    def run_stream(*args, **kwargs):
+        observed.update(kwargs)
+        return []
+
+    monkeypatch.setattr(integration, "run_dmem_stream", run_stream)
+    integration._run_program(
+        object(),
+        program,
+        3.0,
+        {"opx_verify_dmem_reads": True},
+        total_shots=2,
+    )
+
+    assert observed["verify_dmem_reads"] is True
+
+
 @pytest.mark.parametrize("delays", [[10, 50], [10, 50, 200, 300], [0, 50, 200],
                                    [10, np.nan, 200], [10, 200, 50], [10, 10, 200]])
 def test_delay_validation_rejects_invalid_protocol_axes(delays):
@@ -150,6 +252,37 @@ def test_resident_condition_order_matches_references_and_resets_every_record(mon
                       "POINT_PS2", "pi", (202, True), "controller_reset"]
 
 
+def test_five_point_diagnostic_writes_condition_tag_after_each_iq_record():
+    _module, cls = program_type()
+    prog = object.__new__(cls)
+    prog.cfg = {
+        "opx_t1_5pt_reference_hold_us": 2,
+        "opx_t1_5pt_delays_us": [10, 50, 200],
+        "opx_diagnostic_condition_tags": True,
+    }
+    prog.reset_page = 0
+    prog.reset_regs = {"q": 7, "address": 8}
+    events = []
+    prog._emit_three_point_payload = lambda label, pi, ff, hold: events.append(
+        ("payload", label, pi, ff, hold)
+    )
+    prog.regwi = lambda page, reg, value, *args: events.append(
+        ("tag", page, reg, value)
+    )
+    prog.memw = lambda page, reg, address: events.append(
+        ("memw", page, reg, address)
+    )
+    prog.mathi = lambda page, dst, src, op, value: events.append(
+        ("advance", page, dst, src, op, value)
+    )
+
+    prog._emit_t1_conditions({}, "POINT")
+
+    assert [event[3] for event in events if event[0] == "tag"] == [0, 1, 2, 3, 4]
+    assert len([event for event in events if event[0] == "memw"]) == 5
+    assert len([event for event in events if event[0] == "advance"]) == 5
+
+
 def test_five_point_budget_and_lut_stream_size_preserve_three_point(monkeypatch):
     module, cls = program_type()
     def hardware_init(self, soccfg, cfg, *_args):
@@ -190,14 +323,26 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
         def us2cycles(self, *_args, **_kwargs):
             return 2
     monkeypatch.setattr(module, "OPXResetT15PointProgram", HardwareProgram)
-    records = [types.SimpleNamespace(final_i=x*2, final_q=-x*2) for x in range(20)]
+    records = [
+        types.SimpleNamespace(
+            final_i=x * 2,
+            final_q=-x * 2,
+            condition_tag=x % 5,
+        )
+        for x in range(20)
+    ]
     def acquire(_soc, prog, _timeout, cfg, *, total_shots):
         assert total_shots == 2
         assert cfg["opx_t1_5pt_delays_us"] == [10, 50, 200]
         return records
     monkeypatch.setattr(module, "_run_program", acquire)
     i, q, telemetry = module.acquire_t1_5pt_iq(None, None,
-        {"reset_mode": "passive", "read_length": 1, "ro_chs": [0]},
+        {
+            "reset_mode": "passive",
+            "read_length": 1,
+            "ro_chs": [0],
+            "opx_diagnostic_condition_tags": True,
+        },
         dc_gains=[-100, -90], delays_us=[10, 50, 200], reference_hold_us=2,
         shots=2, reset_scheme="none")
     assert i.shape == (5, 2, 2)
@@ -211,6 +356,8 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
     assert telemetry["flux_predistortion_tail_overlaps_payload_readout"] is True
     assert telemetry["p0_mode"] == "matched_frequency_resolved"
     assert telemetry["condition_names"] == ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
+    assert telemetry["condition_tag_mismatches"] == 0
+    assert telemetry["condition_tags_match_decoded_conditions"] is True
 
 
 def load_experiments(monkeypatch):

@@ -148,6 +148,7 @@ def _run_program(soc, program, timeout_s, cfg, *, total_shots, progress=None):
             timeout_s=timeout_s,
             poll_interval_s=poll_interval_s,
             progress=progress,
+            verify_dmem_reads=bool(cfg.get("opx_verify_dmem_reads", False)),
         )
     records = run_dmem_block(
         soc,
@@ -375,10 +376,26 @@ def acquire_t1_5pt_iq(
     q_records = np.asarray(
         [record.final_q for record in block], dtype=float
     ).reshape(total_shots, rounded.size, records_per_dc)
+    condition_tags = None
+    if block and all(hasattr(record, "condition_tag") for record in block):
+        condition_tags = np.asarray(
+            [record.condition_tag for record in block], dtype=int
+        ).reshape(total_shots, rounded.size, records_per_dc)
     i_records[1::2] = i_records[1::2, ::-1]
     q_records[1::2] = q_records[1::2, ::-1]
+    if condition_tags is not None:
+        condition_tags[1::2] = condition_tags[1::2, ::-1]
     i_values = i_records.transpose(2, 1, 0)
     q_values = q_records.transpose(2, 1, 0)
+    tag_telemetry = {}
+    if condition_tags is not None:
+        decoded_tags = condition_tags.transpose(2, 1, 0)
+        expected_tags = np.arange(records_per_dc, dtype=int)[:, None, None]
+        mismatches = int(np.count_nonzero(decoded_tags != expected_tags))
+        tag_telemetry = {
+            "condition_tag_mismatches": mismatches,
+            "condition_tags_match_decoded_conditions": bool(mismatches == 0),
+        }
     read_cycles = program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
@@ -398,6 +415,12 @@ def acquire_t1_5pt_iq(
         "reference_hold_us": reference_hold_us,
         "decay_delays_us": tuple(float(value) for value in delays),
         "read_length_cycles": int(read_cycles),
+        **tag_telemetry,
+        "dmem_read_verification": getattr(
+            program,
+            "dmem_read_verification",
+            {"enabled": False},
+        ),
         **flux_predistortion_telemetry(program),
     }
 

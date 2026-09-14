@@ -6,10 +6,12 @@ from .classifier import ClassifierCalibration
 from .config import OPXResetConfig
 from .control_flow import emit_reset_state_machine, emit_unbounded_reset_state_machine
 from .records import (
+    CONDITION_TAGGED_PAYLOAD_RECORD_WORDS,
     PAYLOAD_RECORD_WORDS,
     RECORD_WORDS,
     TerminalStatus,
     decode_payload_records,
+    decode_condition_tagged_payload_records,
     signed32,
 )
 from .three_point import distributed_p0_reference_indices
@@ -2417,6 +2419,9 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
 
     def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
         run_cfg = dict(cfg)
+        if bool(run_cfg.get("opx_diagnostic_condition_tags", False)):
+            self.record_words = CONDITION_TAGGED_PAYLOAD_RECORD_WORDS
+            self.decode_dmem_records = decode_condition_tagged_payload_records
         delays = np.asarray(
             run_cfg.get("opx_t1_5pt_delays_us", ()), dtype=float
         ).reshape(-1)
@@ -2457,25 +2462,38 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
 
     def _emit_t1_conditions(self, controls, label_prefix):
         reference = float(self.cfg["opx_t1_5pt_reference_hold_us"])
-        self._emit_three_point_payload(
-            f"{label_prefix}_P0",
-            False,
-            True,
-            reference,
+        self._emit_tagged_condition(
+            f"{label_prefix}_P0", False, True, reference, 0
         )
-        self._emit_three_point_payload(
-            f"{label_prefix}_P1",
-            True,
-            True,
-            reference,
+        self._emit_tagged_condition(
+            f"{label_prefix}_P1", True, True, reference, 1
         )
         for index, delay in enumerate(self.cfg["opx_t1_5pt_delays_us"]):
-            self._emit_three_point_payload(
+            self._emit_tagged_condition(
                 f"{label_prefix}_PS{index}",
                 True,
                 True,
                 reference + float(delay),
+                index + 2,
             )
+
+    def _emit_tagged_condition(self, label, do_pi, do_ff, hold_us, tag):
+        self._emit_three_point_payload(label, do_pi, do_ff, hold_us)
+        if not bool(self.cfg.get("opx_diagnostic_condition_tags", False)):
+            return
+        self.regwi(self.reset_page, self.reset_regs["q"], int(tag))
+        self.memw(
+            self.reset_page,
+            self.reset_regs["q"],
+            self.reset_regs["address"],
+        )
+        self.mathi(
+            self.reset_page,
+            self.reset_regs["address"],
+            self.reset_regs["address"],
+            "+",
+            1,
+        )
 
 
 class OPXResetTLSMemoryProgram(OPXResetT1Program):

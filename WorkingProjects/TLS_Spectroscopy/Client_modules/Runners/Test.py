@@ -89,6 +89,75 @@ def apply_diagnostic_read_delay(cfg, environ=None):
     return read_delay_us
 
 
+def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
+    """Cross-check server bulk DMA against direct tProc AXI access."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
+        _read_words,
+        _single_read,
+        _single_write,
+        _write_words,
+    )
+
+    dmem_words = int(dmem_words)
+    scratch_words = int(scratch_words)
+    if scratch_words < 2 or dmem_words <= scratch_words:
+        raise ValueError("DMem scratch region must fit at the end of data memory")
+    address = dmem_words - scratch_words
+    tproc = soc.tproc
+
+    def direct_read():
+        return np.asarray(
+            [_single_read(tproc, address + offset) for offset in range(scratch_words)],
+            dtype=np.uint32,
+        )
+
+    def bulk_read():
+        return np.asarray(
+            _read_words(soc, address, scratch_words, tproc=tproc),
+            dtype=np.uint32,
+        )
+
+    original = direct_read()
+    pattern_a = np.asarray(
+        [
+            (0x13579BDF + 0x1020304 * index) & 0xFFFFFFFF
+            for index in range(scratch_words)
+        ],
+        dtype=np.uint32,
+    )
+    pattern_b = np.bitwise_xor(pattern_a, np.uint32(0xA5A5A5A5))
+    report = {"address": address, "words": scratch_words}
+    try:
+        _write_words(soc, address, pattern_a, tproc=tproc)
+        report["bulk_write_bulk_read_matches"] = bool(
+            np.array_equal(bulk_read(), pattern_a)
+        )
+        report["bulk_write_direct_read_matches"] = bool(
+            np.array_equal(direct_read(), pattern_a)
+        )
+        for offset, value in enumerate(pattern_b):
+            _single_write(tproc, address + offset, int(value))
+        report["direct_write_bulk_read_matches"] = bool(
+            np.array_equal(bulk_read(), pattern_b)
+        )
+        report["direct_write_direct_read_matches"] = bool(
+            np.array_equal(direct_read(), pattern_b)
+        )
+    finally:
+        for offset, value in enumerate(original):
+            _single_write(tproc, address + offset, int(value))
+    failures = [
+        name for name, passed in report.items()
+        if name.endswith("_matches") and not passed
+    ]
+    if failures:
+        raise RuntimeError(
+            "DMem round-trip mismatch at the bulk/direct boundary: "
+            + ", ".join(failures)
+        )
+    return report
+
+
 def main():
     reset_mode = os.environ.get(
         "Q3_DIAGNOSTIC_RESET_MODE", "passive"
@@ -133,6 +202,18 @@ def main():
             "QICK streamer is already running. Stop the other QICK acquisition "
             "before launching this isolated diagnostic."
         )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
+        dmem_words_from_soccfg,
+    )
+    dmem_roundtrip = verify_dmem_roundtrip(
+        soc,
+        dmem_words=dmem_words_from_soccfg(soccfg),
+    )
+    print(
+        "[transport] DMem sentinel PASS: bulk DMA and direct AXI agree for "
+        f"both write paths at address {dmem_roundtrip['address']} "
+        f"({dmem_roundtrip['words']} words)"
+    )
 
     params = dict(runner.P6_5PT_APPLES_TO_APPLES)
     full_target = _target_frequency_grid_ghz(params)
@@ -177,6 +258,8 @@ def main():
             params["readout_thermalization_us"]
         ),
         "opx_t1_3pt_gain_lookup": True,
+        "opx_verify_dmem_reads": True,
+        "opx_diagnostic_condition_tags": True,
     })
     read_delay_us = apply_diagnostic_read_delay(cfg)
     if reset_mode == "active":
@@ -236,6 +319,18 @@ def main():
     print(
         f"[measurement] completed in {elapsed:.2f} s; "
         f"IQ shape={i_values.shape}; states shape={states.shape}"
+    )
+    dmem_verification = telemetry.get("dmem_read_verification", {})
+    print(
+        "[transport] resident-bank verification: "
+        f"bulk_matches_direct={dmem_verification.get('bulk_matches_direct')}, "
+        f"banks={dmem_verification.get('banks_compared')}, "
+        f"words={dmem_verification.get('words_compared')}"
+    )
+    print(
+        "[ordering] FPGA condition tags: "
+        f"mismatches={telemetry.get('condition_tag_mismatches')}; "
+        "zero means the tProc emission order and host decode agree"
     )
     print(
         "[populations] medians: "
@@ -333,6 +428,7 @@ def main():
         "total_t1_points": int(valid.size),
         "condition_shift_reference_contrasts": shift_contrasts,
         "telemetry": telemetry,
+        "dmem_roundtrip": dmem_roundtrip,
         "classifier_calibration": str(classifier_session.calibration_output),
         "accumulator_read_delay_us": read_delay_us,
         "correction_mode": correction_mode,

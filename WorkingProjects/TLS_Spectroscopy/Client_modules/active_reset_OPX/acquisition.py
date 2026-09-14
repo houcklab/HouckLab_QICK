@@ -102,6 +102,24 @@ def _write_words(soc, address, values, *, tproc=None):
         _single_write(tproc, address + offset, int(value) & 0xFFFFFFFF)
 
 
+def verify_dmem_read_match(tproc, *, address, bulk_words):
+    """Compare a bulk-DMA bank with direct AXI reads before acknowledging it."""
+    address = int(address)
+    bulk = np.asarray(bulk_words).reshape(-1).astype(np.uint32)
+    direct = np.asarray(
+        [_single_read(tproc, address + offset) for offset in range(bulk.size)]
+    ).astype(np.uint32)
+    mismatches = np.flatnonzero(bulk != direct)
+    if mismatches.size:
+        offset = int(mismatches[0])
+        raise RuntimeError(
+            "bulk and direct DMem reads disagree; first mismatch at DMem "
+            f"address {address + offset}: bulk={int(bulk[offset])}, "
+            f"direct={int(direct[offset])}"
+        )
+    return int(bulk.size)
+
+
 def _initialize_program_dmem(soc, program, *, tproc=None):
     for address, values in getattr(program, "dmem_loads", ()):
         _write_words(soc, address, values, tproc=tproc)
@@ -227,6 +245,7 @@ def run_dmem_stream(
     *,
     poll_interval_s=0.002,
     progress=None,
+    verify_dmem_reads=False,
     clock=time.monotonic,
     sleeper=time.sleep,
 ):
@@ -258,6 +277,8 @@ def run_dmem_stream(
     received_units = 0
     acknowledged = 0
     started = False
+    verified_banks = 0
+    verified_words = 0
     try:
         program.config_all(soc, load_pulses=True, start_src="internal", debug=False)
         program.config_bufs(soc, enable_avg=True, enable_buf=False)
@@ -314,6 +335,13 @@ def run_dmem_stream(
                     record_count * int(program.record_words),
                     tproc=tproc,
                 )
+                if bool(verify_dmem_reads):
+                    verified_words += verify_dmem_read_match(
+                        tproc,
+                        address=address,
+                        bulk_words=words,
+                    )
+                    verified_banks += 1
                 records.extend(
                     _decode_program_records(
                         program,
@@ -357,6 +385,12 @@ def run_dmem_stream(
         if progress is not None:
             for completed in range(reported_shots + 1, total_shots + 1):
                 progress(completed, total_shots)
+        program.dmem_read_verification = {
+            "enabled": bool(verify_dmem_reads),
+            "banks_compared": int(verified_banks),
+            "words_compared": int(verified_words),
+            "bulk_matches_direct": True if verify_dmem_reads else None,
+        }
         return records
     except Exception:
         if started:
