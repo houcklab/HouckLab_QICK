@@ -77,6 +77,18 @@ def _save_csv(path, columns):
             writer.writerow(row)
 
 
+def apply_diagnostic_read_delay(cfg, environ=None):
+    """Apply the requested ADC-accumulator settling delay to a diagnostic run."""
+    environ = os.environ if environ is None else environ
+    read_delay_us = float(environ.get("Q3_DIAGNOSTIC_READ_DELAY_US", "2.0"))
+    if not np.isfinite(read_delay_us) or read_delay_us < 0.0:
+        raise ValueError(
+            "Q3_DIAGNOSTIC_READ_DELAY_US must be finite and non-negative"
+        )
+    cfg["opx_read_delay_us"] = read_delay_us
+    return read_delay_us
+
+
 def main():
     reset_mode = os.environ.get(
         "Q3_DIAGNOSTIC_RESET_MODE", "passive"
@@ -166,6 +178,7 @@ def main():
         ),
         "opx_t1_3pt_gain_lookup": True,
     })
+    read_delay_us = apply_diagnostic_read_delay(cfg)
     if reset_mode == "active":
         cfg = classifier_session.apply(cfg)
     else:
@@ -181,7 +194,8 @@ def main():
         "[diagnostic] small real measurement: "
         f"{shots} shots x {len(dc_vec)} frequencies x 5 conditions; "
         f"{target[0]:.4f}..{target[-1]:.4f} GHz; "
-        f"reset={reset_mode}; predistortion={correction_mode}"
+        f"reset={reset_mode}; predistortion={correction_mode}; "
+        f"accumulator_read_delay={read_delay_us:g} us"
     )
     print(
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "
@@ -320,6 +334,7 @@ def main():
         "condition_shift_reference_contrasts": shift_contrasts,
         "telemetry": telemetry,
         "classifier_calibration": str(classifier_session.calibration_output),
+        "accumulator_read_delay_us": read_delay_us,
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),

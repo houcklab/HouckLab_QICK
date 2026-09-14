@@ -57,6 +57,20 @@ def test_qick_measurement_diagnostic_bypasses_legacy_ss_streamer():
     assert "run_step5_single_shot_cal" not in attributes
 
 
+def test_qick_measurement_diagnostic_applies_requested_accumulator_read_delay():
+    """A requested hardware-read delay must reach the tProc run config."""
+    module = diagnostic()
+    cfg = {"shots": 20}
+
+    delay = module.apply_diagnostic_read_delay(
+        cfg,
+        {"Q3_DIAGNOSTIC_READ_DELAY_US": "10"},
+    )
+
+    assert delay == pytest.approx(10.0)
+    assert cfg == {"shots": 20, "opx_read_delay_us": 10.0}
+
+
 @pytest.mark.parametrize("delays", [[10, 50], [10, 50, 200, 300], [0, 50, 200],
                                    [10, np.nan, 200], [10, 200, 50], [10, 10, 200]])
 def test_delay_validation_rejects_invalid_protocol_axes(delays):
