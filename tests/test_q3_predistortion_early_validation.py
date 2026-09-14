@@ -31,7 +31,7 @@ def test_early_validation_is_dense_narrow_and_measurement_only():
 def test_early_validation_uses_current_composed_correction():
     runner = _runner()
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
-        Q3PredistortionResidualRefit as residual,
+        Q3PredistortionEarlyResidualRefit as residual,
     )
 
     assert runner.CORRECTION_JSON == residual.OUTPUT_JSON

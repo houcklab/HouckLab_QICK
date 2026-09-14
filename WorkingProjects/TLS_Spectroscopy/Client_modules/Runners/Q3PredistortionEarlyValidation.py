@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
-    Q3PredistortionResidualRefit as residual_refit,
+    Q3PredistortionEarlyResidualRefit as residual_refit,
 )
 
 
@@ -62,7 +62,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     soc, soccfg = runner.makeProxy()
     runner._set_yoko_if_requested()
-    print("[early] measuring the composed q3 correction; no correction will be fitted")
+    print("[early] measuring the final composed q3 correction; no correction will be fitted")
     print(f"[early] applying {CORRECTION_JSON}")
     print("[early] 200 shots; 4.025--4.060 GHz at 0.5 MHz")
     print("[early] 40 delays from 1--40 us at 1 us spacing")
