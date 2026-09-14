@@ -167,6 +167,58 @@ def test_refit_rejects_a_trace_that_starts_too_late_for_causal_alignment(
         raise AssertionError("late-starting trace was accepted")
 
 
+def test_refit_uses_phase_to_resolve_upper_shoulder_identity_swaps(monkeypatch):
+    _replace_slow_parametric_fit(monkeypatch)
+    data = _synthetic_q3_step_map()
+    data["IQ_phase"] = np.asarray(data["IQ_mag"], dtype=float).copy()
+    count = len(data["t_vec"])
+    magnitude_frequency = np.full(count, 4.0450, dtype=float)
+    magnitude_frequency[10] -= 0.00475
+    magnitude_supported = np.ones(count, dtype=bool)
+    magnitude_supported[0] = False
+    phase_frequency = np.full(count, 4.0451, dtype=float)
+    phase_supported = np.ones(count, dtype=bool)
+    traces = iter(
+        [
+            {
+                "selected_frequency_ghz": magnitude_frequency,
+                "supported": magnitude_supported,
+                "shoulder_mode": "paired_upper",
+                "shoulder_separation_mhz": 4.75,
+                "paired_support_fraction": 0.9,
+            },
+            {
+                "selected_frequency_ghz": phase_frequency,
+                "supported": phase_supported,
+                "shoulder_mode": "paired_upper",
+                "shoulder_separation_mhz": 4.75,
+                "paired_support_fraction": 1.0,
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        saved_step_response_refit,
+        "track_image_ridge",
+        lambda *_args, **_kwargs: next(traces),
+    )
+
+    result = refit_saved_step_response(
+        data,
+        signal_source="magnitude",
+        corroborating_signal_source="phase",
+        max_signal_disagreement_mhz=2.0,
+        polarity="dark",
+        shoulder="upper",
+        time_origin_ns=0.0,
+        max_first_supported_ns=5_000.0,
+    )
+
+    assert result["tracked_frequency_ghz"][0] == phase_frequency[0]
+    assert result["tracked_frequency_ghz"][10] == phase_frequency[10]
+    assert result["corroboration"]["secondary_only_points"] == 1
+    assert result["corroboration"]["identity_swaps_resolved"] == 1
+
+
 def test_parametric_model_can_be_evaluated_from_the_physical_step_origin(
     monkeypatch,
 ):

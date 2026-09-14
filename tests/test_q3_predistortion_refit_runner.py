@@ -52,11 +52,11 @@ def test_refit_pickle_writes_a_loadable_production_correction(tmp_path, monkeypa
     assert saved["metadata"]["fit_dt_pulseplay_us"] == 0.5
 
 
-def test_q3_validation_points_to_the_offline_refit_candidate():
+def test_q3_validation_no_longer_points_to_the_first_offline_refit_candidate():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         Q3PredistortionValidation as validation,
     )
 
     assert validation.CORRECTION_JSON.name.endswith(
-        "_upper_refit_dc_compensation.json"
+        "_upper_phase_residual_composed_dc_compensation.json"
     )

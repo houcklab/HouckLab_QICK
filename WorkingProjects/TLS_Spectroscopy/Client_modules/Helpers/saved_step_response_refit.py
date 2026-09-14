@@ -19,6 +19,8 @@ def refit_saved_step_response(
     data,
     *,
     signal_source="magnitude",
+    corroborating_signal_source=None,
+    max_signal_disagreement_mhz=2.0,
     polarity="dark",
     shoulder="upper",
     time_origin_ns=0.0,
@@ -64,6 +66,90 @@ def refit_saved_step_response(
         trace["selected_frequency_ghz"], dtype=float
     )
     supported = np.asarray(trace["supported"], dtype=bool)
+    corroboration = {
+        "source": None,
+        "secondary_only_points": 0,
+        "identity_swaps_resolved": 0,
+        "rejected_disagreements": 0,
+    }
+    if corroborating_signal_source is not None:
+        corroborating_name = str(corroborating_signal_source).strip().lower()
+        try:
+            corroborating_key = _SIGNAL_KEYS[corroborating_name]
+        except KeyError as exc:
+            raise ValueError(
+                "corroborating_signal_source must be 'magnitude', 'phase', or None."
+            ) from exc
+        if corroborating_key == signal_key:
+            raise ValueError(
+                "corroborating_signal_source must differ from signal_source."
+            )
+        corroborating_map = np.asarray(data[corroborating_key], dtype=float)
+        if corroborating_map.shape != signal_map.shape:
+            raise ValueError(
+                "Saved corroborating signal map shape must match the primary signal map."
+            )
+        max_disagreement = float(max_signal_disagreement_mhz)
+        if not np.isfinite(max_disagreement) or max_disagreement <= 0.0:
+            raise ValueError("max_signal_disagreement_mhz must be finite and positive.")
+        corroborating_trace = track_image_ridge(
+            frequency_axis_ghz,
+            corroborating_map,
+            expected_window_mask=expected_window_mask,
+            polarity=polarity,
+            max_jump_mhz=max_jump_mhz,
+            shoulder=shoulder,
+        )
+        corroborating_frequency = np.asarray(
+            corroborating_trace["selected_frequency_ghz"], dtype=float
+        )
+        corroborating_supported = np.asarray(
+            corroborating_trace["supported"], dtype=bool
+        ) & np.isfinite(corroborating_frequency)
+        primary_supported = supported & np.isfinite(selected_frequency_ghz)
+        secondary_only = (~primary_supported) & corroborating_supported
+        selected_frequency_ghz = selected_frequency_ghz.copy()
+        selected_frequency_ghz[secondary_only] = corroborating_frequency[secondary_only]
+        supported = primary_supported | secondary_only
+
+        both = primary_supported & corroborating_supported
+        disagreement_mhz = (
+            np.abs(selected_frequency_ghz - corroborating_frequency) * 1e3
+        )
+        conflicts = both & (disagreement_mhz > max_disagreement)
+        separation_mhz = float(trace.get("shoulder_separation_mhz", np.nan))
+        plausible_limit_mhz = (
+            1.75 * separation_mhz
+            if np.isfinite(separation_mhz) and separation_mhz > 0.0
+            else 4.0 * max_disagreement
+        )
+        plausible_swaps = conflicts & (disagreement_mhz <= plausible_limit_mhz)
+        if shoulder == "upper":
+            selected_frequency_ghz[plausible_swaps] = np.maximum(
+                selected_frequency_ghz[plausible_swaps],
+                corroborating_frequency[plausible_swaps],
+            )
+        elif shoulder == "lower":
+            selected_frequency_ghz[plausible_swaps] = np.minimum(
+                selected_frequency_ghz[plausible_swaps],
+                corroborating_frequency[plausible_swaps],
+            )
+        else:
+            plausible_swaps[:] = False
+        rejected = conflicts & ~plausible_swaps
+        supported[rejected] = False
+        selected_frequency_ghz[~supported] = np.nan
+        trace = dict(trace)
+        trace["selected_frequency_ghz"] = selected_frequency_ghz.copy()
+        trace["supported"] = supported.copy()
+        trace["corroborating_trace"] = corroborating_trace
+        trace["corroborating_signal_source"] = corroborating_name
+        corroboration = {
+            "source": corroborating_name,
+            "secondary_only_points": int(np.count_nonzero(secondary_only)),
+            "identity_swaps_resolved": int(np.count_nonzero(plausible_swaps)),
+            "rejected_disagreements": int(np.count_nonzero(rejected)),
+        }
     supported &= np.isfinite(selected_frequency_ghz) & np.isfinite(time_ns)
     if not np.any(supported):
         raise ValueError("The saved map has no supported trace points.")
@@ -132,6 +218,7 @@ def refit_saved_step_response(
     )
     return {
         "trace": trace,
+        "corroboration": corroboration,
         "tracked_frequency_ghz": tracked_frequency_ghz,
         "effective_dc_offset": effective_dc,
         "voltage_response": voltage_response,

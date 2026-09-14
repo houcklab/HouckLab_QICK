@@ -3,11 +3,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def test_q3_step3b_uses_upper_shoulder_refit_candidate():
+def test_q3_step3b_uses_phase_corroborated_residual_candidate():
     assert validation.CORRECTION_JSON.as_posix().endswith(
-        "high_snr_3a/q3/q3_2026_09_13/"
-        "q3_17_28_26_Qubit_Flux_Step_Response_"
-        "upper_refit_dc_compensation.json"
+        "high_snr_3b/q3/q3_2026_09_13/"
+        "q3_20_03_47_Qubit_Flux_Step_Response_"
+        "upper_phase_residual_composed_dc_compensation.json"
     )
     assert validation.validation_gain() == 1.0
 

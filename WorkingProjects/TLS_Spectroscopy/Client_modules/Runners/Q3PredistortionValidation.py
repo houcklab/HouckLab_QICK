@@ -8,9 +8,9 @@ OUTPUT_DIR = Path(
     "predistortion_validation/high_snr_3b"
 )
 CORRECTION_JSON = Path(
-    "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/high_snr_3a/"
-    "q3/q3_2026_09_13/q3_17_28_26_Qubit_Flux_Step_Response_"
-    "upper_refit_dc_compensation.json"
+    "Z:/FluxTeam/Data/q3/2026_09_13/predistortion_validation/high_snr_3b/"
+    "q3/q3_2026_09_13/q3_20_03_47_Qubit_Flux_Step_Response_"
+    "upper_phase_residual_composed_dc_compensation.json"
 )
 
 
@@ -67,7 +67,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     soc, soccfg = runner.makeProxy()
     runner._set_yoko_if_requested()
-    print("[P3b] validating the upper-shoulder q3 refit; no new correction will be fitted")
+    print("[P3b] validating the phase-corroborated q3 residual correction")
     print(f"[P3b] applying {CORRECTION_JSON}")
     print("[P3b] 200 shots; 4.000--4.080 GHz at 0.5 MHz")
     print("[P3b] 50 delays from 1--197 us; upper shoulder tracked for early-time visibility")
