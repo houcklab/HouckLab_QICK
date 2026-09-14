@@ -95,6 +95,12 @@ def emit_measure_and_read_feedback(
         # Diagnostic only: if the tProc input advances on the next readout
         # event rather than with elapsed time, this second acquisition exposes
         # the first acquisition at the feedback port.
+        prog.sync_all(
+            max(
+                int(prog.us2cycles(float(cfg.get("readout_guard_us", 1.0)))),
+                1,
+            )
+        )
         measure_and_wait()
     tproc_ch = int(prog.soccfg["readouts"][ro_ch].get("tproc_ch", -1))
     if tproc_ch < 0:

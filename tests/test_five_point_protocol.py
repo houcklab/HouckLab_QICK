@@ -92,6 +92,9 @@ def test_feedback_read_uses_qick_wait_all_sequence_when_requested():
         def wait_all(self, cycles):
             self.calls.append(("wait_all", int(cycles)))
 
+        def sync_all(self, cycles):
+            self.calls.append(("sync_all", int(cycles)))
+
         def waiti(self, *args):
             self.calls.append(("waiti", args))
 
@@ -150,6 +153,9 @@ def test_feedback_read_can_flush_one_accumulator_event_before_tproc_read():
         def wait_all(self, cycles):
             self.calls.append(("wait_all", int(cycles)))
 
+        def sync_all(self, cycles):
+            self.calls.append(("sync_all", int(cycles)))
+
         def read(self, *args):
             self.calls.append(("read", args))
 
@@ -170,8 +176,9 @@ def test_feedback_read_can_flush_one_accumulator_event_before_tproc_read():
     )
 
     assert [name for name, _ in program.calls] == [
-        "measure", "wait_all", "measure", "wait_all", "read", "read"
+        "measure", "wait_all", "sync_all", "measure", "wait_all", "read", "read"
     ]
+    assert program.calls[2] == ("sync_all", 100)
 
 
 def test_qick_diagnostic_selects_official_feedback_timing_by_default():
