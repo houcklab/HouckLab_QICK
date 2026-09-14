@@ -103,6 +103,8 @@ def emit_measure_and_read_feedback(
             "opx_feedback_flush_mode must be 'off', 'readout', or 'adc_only'"
         )
 
+    if bool(cfg.get("opx_feedback_pre_measure_sync", False)):
+        prog.sync_all(0)
     measure_and_wait()
     if flush_mode != "off":
         # Diagnostic only: if the tProc input advances on the next readout

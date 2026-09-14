@@ -117,6 +117,19 @@ def apply_diagnostic_feedback_flush(cfg, environ=None):
     return value
 
 
+def apply_diagnostic_pre_measure_sync(cfg, environ=None):
+    """Align all scheduled channels before the original payload readout."""
+    environ = os.environ if environ is None else environ
+    value = environ.get(
+        "Q3_DIAGNOSTIC_PRE_MEASURE_SYNC", "off"
+    ).strip().lower()
+    if value not in ("on", "off"):
+        raise ValueError("Q3_DIAGNOSTIC_PRE_MEASURE_SYNC must be on or off")
+    enabled = value == "on"
+    cfg["opx_feedback_pre_measure_sync"] = enabled
+    return enabled
+
+
 def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
     """Cross-check server bulk DMA against direct tProc AXI access."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
@@ -292,6 +305,7 @@ def main():
     read_delay_us = apply_diagnostic_read_delay(cfg)
     feedback_timing = apply_diagnostic_feedback_timing(cfg)
     feedback_flush = apply_diagnostic_feedback_flush(cfg)
+    pre_measure_sync = apply_diagnostic_pre_measure_sync(cfg)
     if reset_mode == "active":
         cfg = classifier_session.apply(cfg)
     else:
@@ -310,6 +324,7 @@ def main():
         f"reset={reset_mode}; predistortion={correction_mode}; "
         f"accumulator_read_delay={read_delay_us:g} us; "
         f"feedback_timing={feedback_timing}; feedback_flush={feedback_flush}"
+        f"; pre_measure_sync={pre_measure_sync}"
     )
     print(
         f"[diagnostic] expecting {shots * len(dc_vec) * 5} resident records; "
@@ -464,6 +479,7 @@ def main():
         "accumulator_read_delay_us": read_delay_us,
         "feedback_read_timing": feedback_timing,
         "feedback_flush_mode": feedback_flush,
+        "pre_measure_sync": pre_measure_sync,
         "correction_mode": correction_mode,
         "raw_iq_npz": str(npz_path),
         "populations_csv": str(csv_path),
