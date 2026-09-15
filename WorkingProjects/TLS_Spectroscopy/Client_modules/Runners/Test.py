@@ -36,6 +36,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
 def fresh_step3a_plan(environ=None):
     """Return the high-SNR, correction-free q3 calibration contract."""
     environ = os.environ if environ is None else environ
+    readout_after_park = str(
+        environ.get("Q3_FRESH_3A_READOUT_AFTER_PARK", "off")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     delay_vector_us = np.concatenate([
         np.arange(0.5, 25.5, 0.5),
         np.arange(27.0, 61.0, 2.0),
@@ -50,6 +53,8 @@ def fresh_step3a_plan(environ=None):
         "delay_vector_us": delay_vector_us,
         "apply_flux_tail_compensation": False,
         "compose_with_applied_flux_tail_compensation": False,
+        "readout_after_park": readout_after_park,
+        "trace_polarity": None if readout_after_park else "bright",
     }
 
 
@@ -75,7 +80,8 @@ def run_fresh_step3a(plan=None):
         "piecewise_desired_response": "unity",
         "piecewise_response_model": "rise_decay_bump",
         "trace_tracking_mode": "image_v26",
-        "trace_polarity": "bright",
+        "readout_after_park": bool(plan["readout_after_park"]),
+        "trace_polarity": plan["trace_polarity"],
         "trace_shoulder": "auto",
         "trace_max_jump_mhz": 4.0,
         "trace_smoothing_window_points": 7,
@@ -87,7 +93,8 @@ def run_fresh_step3a(plan=None):
     print(
         "[fresh 3a] q3 absolute calibration: correction OFF, composition OFF; "
         f"{plan['shots']} shots, {len(plan['delay_vector_us'])} delays, "
-        f"{low_mhz / 1000:.3f}--{high_mhz / 1000:.3f} GHz"
+        f"{low_mhz / 1000:.3f}--{high_mhz / 1000:.3f} GHz; "
+        f"readout={'PARK' if plan['readout_after_park'] else 'held flux'}"
     )
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
