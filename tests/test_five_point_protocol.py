@@ -173,8 +173,8 @@ def test_qick_measurement_diagnostic_uses_matching_clock_domains_for_timers():
     assert progress_start == 1_789_000_000.0
 
 
-def test_qick_causality_plan_is_one_native_21_delay_scan_per_mode():
-    """The temporary A/B must not silently fall back to seven 3-delay runs."""
+def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
+    """The temporary A/B result must expose the full requested delay grid."""
     plan = diagnostic().predistortion_causality_plan({})
 
     assert plan == {
@@ -189,6 +189,101 @@ def test_qick_causality_plan_is_one_native_21_delay_scan_per_mode():
         "reset_mode": "active",
         "modes": ("on", "off"),
     }
+
+
+def test_qick_causality_partitions_21_delays_into_hardware_safe_triplets():
+    """Each resident program stays within the measured 16,384-word PMem limit."""
+    module = diagnostic()
+    delays = module.predistortion_causality_plan({})["delays_us"]
+
+    chunks = module.partition_delay_triplets(delays)
+
+    assert chunks == [
+        (0.5, 1.0, 2.0),
+        (3.0, 4.0, 6.0),
+        (8.0, 10.0, 12.0),
+        (16.0, 20.0, 25.0),
+        (30.0, 40.0, 50.0),
+        (65.0, 80.0, 100.0),
+        (125.0, 160.0, 200.0),
+    ]
+
+
+def test_qick_causality_combines_chunk_references_and_all_survivals():
+    """Chunking changes transport only; the saved result remains one delay scan."""
+    module = diagnostic()
+
+    def directional(p0, p1, delays, survival):
+        result = {
+            "P0": np.asarray([p0]),
+            "P0_scan_up": np.asarray([p0 + 0.01]),
+            "P0_scan_down": np.asarray([p0 - 0.01]),
+            "P1": np.asarray([p1]),
+            "P1_scan_up": np.asarray([p1 + 0.01]),
+            "P1_scan_down": np.asarray([p1 - 0.01]),
+        }
+        for delay, value in zip(delays, survival):
+            name = f"Ps_{delay:g}us"
+            result[name] = np.asarray([value])
+            result[f"{name}_scan_up"] = np.asarray([value + 0.01])
+            result[f"{name}_scan_down"] = np.asarray([value - 0.01])
+        return result
+
+    chunks = [
+        {
+            "delays_us": (1.0, 2.0, 3.0),
+            "directional": directional(0.1, 0.9, (1, 2, 3), (0.8, 0.7, 0.6)),
+        },
+        {
+            "delays_us": (4.0, 5.0, 6.0),
+            "directional": directional(0.2, 0.8, (4, 5, 6), (0.5, 0.4, 0.3)),
+        },
+    ]
+
+    combined = module.combine_causality_chunks(
+        chunks, delays_us=[1, 2, 3, 4, 5, 6]
+    )
+
+    np.testing.assert_allclose(combined["P0"], [0.15])
+    np.testing.assert_allclose(combined["P1"], [0.85])
+    np.testing.assert_allclose(combined["Ps_1us"], [0.8])
+    np.testing.assert_allclose(combined["Ps_6us"], [0.3])
+    assert list(combined)[:2] == ["P0", "P0_scan_up"]
+
+
+def test_qick_causality_normalizes_each_delay_with_its_local_chunk_references():
+    """Repeated P0/P1 measurements remove drift between hardware chunks."""
+    module = diagnostic()
+    chunks = [
+        {
+            "delays_us": (1.0, 2.0, 3.0),
+            "directional": {
+                "P0": np.asarray([0.1]),
+                "P1": np.asarray([0.9]),
+                "Ps_1us": np.asarray([0.7]),
+                "Ps_2us": np.asarray([0.7]),
+                "Ps_3us": np.asarray([0.7]),
+            },
+        },
+        {
+            "delays_us": (4.0, 5.0, 6.0),
+            "directional": {
+                "P0": np.asarray([0.3]),
+                "P1": np.asarray([0.7]),
+                "Ps_4us": np.asarray([0.6]),
+                "Ps_5us": np.asarray([0.6]),
+                "Ps_6us": np.asarray([0.6]),
+            },
+        },
+    ]
+
+    summary = module.summarize_causality_chunks(
+        chunks, delays_us=[1, 2, 3, 4, 5, 6], shots=300
+    )
+
+    np.testing.assert_allclose(summary["normalized"], [[0.75] * 6])
+    np.testing.assert_allclose(summary["P0"], [0.2])
+    np.testing.assert_allclose(summary["P1"], [0.8])
 
 
 def test_qick_npoint_program_emits_all_21_delays_in_one_dc_visit():

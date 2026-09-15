@@ -412,6 +412,70 @@ def predistortion_causality_plan(environ=None):
     }
 
 
+def partition_delay_triplets(delays_us):
+    """Split a dense audit grid into hardware-proven five-condition programs."""
+    delays = np.asarray(delays_us, dtype=float).reshape(-1)
+    if (
+        delays.size == 0
+        or delays.size % 3
+        or not np.all(np.isfinite(delays))
+        or np.any(delays <= 0.0)
+        or np.any(np.diff(delays) <= 0.0)
+    ):
+        raise ValueError(
+            "dense causality delays must be positive, increasing, and divisible by three"
+        )
+    return [
+        tuple(float(value) for value in delays[start:start + 3])
+        for start in range(0, delays.size, 3)
+    ]
+
+
+def combine_causality_chunks(chunks, *, delays_us):
+    """Merge chunked transport into one dense directional population result."""
+    if not chunks:
+        raise ValueError("at least one causality chunk is required")
+    requested = tuple(float(value) for value in delays_us)
+    observed = tuple(
+        float(delay)
+        for chunk in chunks
+        for delay in chunk["delays_us"]
+    )
+    if observed != requested:
+        raise ValueError(
+            f"causality chunk delays {observed} do not match requested delays {requested}"
+        )
+
+    combined = {}
+    for name in (
+        "P0", "P0_scan_up", "P0_scan_down",
+        "P1", "P1_scan_up", "P1_scan_down",
+    ):
+        values = [
+            np.asarray(chunk["directional"][name], dtype=float)
+            for chunk in chunks
+        ]
+        combined[name] = np.mean(np.stack(values, axis=0), axis=0)
+    for chunk in chunks:
+        for delay in chunk["delays_us"]:
+            condition = f"Ps_{float(delay):g}us"
+            for name in (
+                condition,
+                f"{condition}_scan_up",
+                f"{condition}_scan_down",
+            ):
+                combined[name] = np.asarray(
+                    chunk["directional"][name], dtype=float
+                ).copy()
+    combined["dc_scan_up_shots"] = int(
+        sum(chunk["directional"].get("dc_scan_up_shots", 0) for chunk in chunks)
+    )
+    combined["dc_scan_down_shots"] = int(
+        sum(chunk["directional"].get("dc_scan_down_shots", 0) for chunk in chunks)
+    )
+    return combined
+
+
 def make_npoint_program_class():
     """Build the temporary resident P0/P1/N-delay QICK program class."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
@@ -678,6 +742,54 @@ def summarize_dense_populations(matrix, *, delays_us, shots):
     }
 
 
+def summarize_causality_chunks(chunks, *, delays_us, shots):
+    """Normalize each chunk with its contemporaneous P0/P1 references."""
+    requested = tuple(float(value) for value in delays_us)
+    observed = tuple(
+        float(delay)
+        for chunk in chunks
+        for delay in chunk["delays_us"]
+    )
+    if observed != requested:
+        raise ValueError(
+            f"causality chunk delays {observed} do not match requested delays {requested}"
+        )
+    chunk_summaries = []
+    for chunk in chunks:
+        names = (
+            "P0", "P1",
+            *(f"Ps_{float(delay):g}us" for delay in chunk["delays_us"]),
+        )
+        matrix = np.column_stack(
+            [chunk["directional"][name] for name in names]
+        )
+        chunk_summaries.append(
+            summarize_dense_populations(
+                matrix,
+                delays_us=chunk["delays_us"],
+                shots=shots,
+            )
+        )
+    return {
+        "delays_us": np.asarray(requested, dtype=float),
+        "P0": np.mean(
+            np.stack([summary["P0"] for summary in chunk_summaries]), axis=0
+        ),
+        "P1": np.mean(
+            np.stack([summary["P1"] for summary in chunk_summaries]), axis=0
+        ),
+        "survival": np.concatenate(
+            [summary["survival"] for summary in chunk_summaries], axis=1
+        ),
+        "normalized": np.concatenate(
+            [summary["normalized"] for summary in chunk_summaries], axis=1
+        ),
+        "normalized_sigma": np.concatenate(
+            [summary["normalized_sigma"] for summary in chunk_summaries], axis=1
+        ),
+    }
+
+
 def save_predistortion_causality_outputs(
     output_base,
     *,
@@ -696,20 +808,25 @@ def save_predistortion_causality_outputs(
     json_path = Path(str(output_base) + "_summary.json")
     png_path = Path(str(output_base) + "_comparison.png")
 
-    np.savez_compressed(
-        raw_iq_path,
-        target_frequency_ghz=np.asarray(target_frequency_ghz, dtype=float),
-        realized_frequency_ghz=np.asarray(realized_frequency_ghz, dtype=float),
-        dc_offset_dac=np.asarray(dc_vec, dtype=int),
-        delays_us=np.asarray(plan["delays_us"], dtype=float),
-        condition_names=np.asarray(mode_results["on"]["condition_names"]),
-        I_on=mode_results["on"]["I"],
-        Q_on=mode_results["on"]["Q"],
-        states_on=mode_results["on"]["states"],
-        I_off=mode_results["off"]["I"],
-        Q_off=mode_results["off"]["Q"],
-        states_off=mode_results["off"]["states"],
-    )
+    raw_payload = {
+        "target_frequency_ghz": np.asarray(target_frequency_ghz, dtype=float),
+        "realized_frequency_ghz": np.asarray(realized_frequency_ghz, dtype=float),
+        "dc_offset_dac": np.asarray(dc_vec, dtype=int),
+        "delays_us": np.asarray(plan["delays_us"], dtype=float),
+        "condition_names": np.asarray(mode_results["on"]["condition_names"]),
+    }
+    for mode in plan["modes"]:
+        for chunk_index, chunk in enumerate(mode_results[mode]["chunks"]):
+            prefix = f"{mode}_chunk_{chunk_index}"
+            raw_payload[f"delays_{prefix}"] = np.asarray(
+                chunk["delays_us"], dtype=float
+            )
+            raw_payload[f"I_{prefix}"] = np.asarray(chunk["I"], dtype=float)
+            raw_payload[f"Q_{prefix}"] = np.asarray(chunk["Q"], dtype=float)
+            raw_payload[f"states_{prefix}"] = np.asarray(
+                chunk["states"], dtype=float
+            )
+    np.savez_compressed(raw_iq_path, **raw_payload)
 
     fields = [
         "mode", "target_frequency_ghz", "realized_frequency_ghz",
@@ -874,7 +991,7 @@ def save_predistortion_causality_outputs(
             axis.spines["right"].set_visible(False)
             axis.legend(frameon=False)
     fig.suptitle(
-        "q3 native 21-delay predistortion test: identical sequence, correction on/off"
+        "q3 21-delay predistortion test: PMem-safe chunks, correction on/off"
     )
     fig.savefig(png_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -882,7 +999,7 @@ def save_predistortion_causality_outputs(
 
 
 def run_predistortion_causality():
-    """Run two independent native many-delay q3 scans with correction ON/OFF."""
+    """Run one dense q3 ON/OFF audit using PMem-safe resident chunks."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import (
         reduce_bidirectional_condition_states,
     )
@@ -899,6 +1016,7 @@ def run_predistortion_causality():
         dmem_words_from_soccfg,
     )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+        acquire_t1_5pt_iq,
         classify_payload_iq,
     )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
@@ -944,11 +1062,16 @@ def run_predistortion_causality():
     compensation, _correction_mode = tls._resolve_step6_correction(
         params, correction_override, tls.outerFolder
     )
+    delay_chunks = partition_delay_triplets(plan["delays_us"])
     print(
-        "[causality] q3 native A/B: "
+        "[causality] q3 A/B: "
         f"{len(target_frequency_ghz)} frequencies x "
         f"{len(plan['delays_us'])} delays x {plan['shots']} shots; "
         f"reset={plan['reset_mode']}; no handshake"
+    )
+    print(
+        "[causality] the 21-delay dataset will be assembled from "
+        f"{len(delay_chunks)} hardware-safe three-delay resident programs per mode"
     )
     print(f"[causality] ON uses {correction_override}")
     print("[causality] OFF uses no flux-tail correction")
@@ -994,66 +1117,101 @@ def run_predistortion_causality():
     condition_names = (
         "P0", "P1", *(f"Ps_{delay:g}us" for delay in plan["delays_us"])
     )
+    mode_chunks = {mode: [] for mode in plan["modes"]}
+    total_acquisitions = len(delay_chunks) * len(plan["modes"])
+    acquisition_index = 0
+    for chunk_index, delays in enumerate(delay_chunks):
+        # Reverse mode order on alternating chunks so slow drift cannot always
+        # favor the same correction state.
+        mode_order = ("on", "off") if chunk_index % 2 == 0 else ("off", "on")
+        for mode in mode_order:
+            acquisition_index += 1
+            cfg = dict(common_cfg)
+            cfg.update({
+                "apply_flux_tail_compensation": mode == "on",
+                "flux_tail_compensation": compensation if mode == "on" else None,
+            })
+            chunk_names = (
+                "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
+            )
+            records = plan["shots"] * len(dc_vec) * len(chunk_names)
+            print(
+                f"[{mode} chunk {chunk_index + 1}/{len(delay_chunks)}; "
+                f"acquisition {acquisition_index}/{total_acquisitions}] "
+                f"delays={list(delays)} us; {records} records"
+            )
+            elapsed_started = time.monotonic()
+            progress_started = time.time()
+            i_values, q_values, telemetry = acquire_t1_5pt_iq(
+                soc,
+                soccfg,
+                cfg,
+                dc_gains=dc_vec,
+                delays_us=delays,
+                reference_hold_us=float(params["reference_hold_us"]),
+                shots=plan["shots"],
+                reset_scheme=reset_scheme,
+                progress=lambda done, total, _mode=mode, _chunk=chunk_index: progress_counter(
+                    done - 1,
+                    total,
+                    start_time=progress_started,
+                    label=f"q3 {_mode} chunk {_chunk + 1}/{len(delay_chunks)}",
+                ),
+            )
+            states = classify_payload_iq(
+                cfg, i_values, q_values, telemetry["read_length_cycles"]
+            )
+            chunk_condition_names = tuple(telemetry["condition_names"])
+            if chunk_condition_names != chunk_names:
+                raise RuntimeError(
+                    f"{mode} chunk {chunk_index + 1} condition axis mismatch: "
+                    f"{chunk_condition_names} != {chunk_names}"
+                )
+            if telemetry.get("condition_tag_mismatches", 0) != 0:
+                raise RuntimeError(
+                    f"{mode} chunk {chunk_index + 1} condition tags do not "
+                    "match the decoded condition axis"
+                )
+            directional = reduce_bidirectional_condition_states(
+                states, chunk_names, canonical_dc_axis=True
+            )
+            mode_chunks[mode].append({
+                "chunk_index": chunk_index,
+                "delays_us": delays,
+                "I": i_values,
+                "Q": q_values,
+                "states": states,
+                "condition_names": chunk_names,
+                "directional": directional,
+                "telemetry": telemetry,
+            })
+            print(
+                f"[{mode} chunk {chunk_index + 1}] complete in "
+                f"{time.monotonic() - elapsed_started:.2f} s; "
+                f"condition-tag mismatches={telemetry.get('condition_tag_mismatches')}"
+            )
+
     mode_results = {}
     for mode in plan["modes"]:
-        cfg = dict(common_cfg)
-        cfg.update({
-            "apply_flux_tail_compensation": mode == "on",
-            "flux_tail_compensation": compensation if mode == "on" else None,
-        })
-        print(
-            f"[{mode}] acquiring one native {len(condition_names)}-condition "
-            f"resident program ({plan['shots'] * len(dc_vec) * len(condition_names)} records)"
+        chunks = sorted(mode_chunks[mode], key=lambda item: item["chunk_index"])
+        directional = combine_causality_chunks(
+            chunks, delays_us=plan["delays_us"]
         )
-        elapsed_started = time.monotonic()
-        progress_started = time.time()
-        i_values, q_values, telemetry = acquire_t1_npoint_iq(
-            soc,
-            soccfg,
-            cfg,
-            dc_gains=dc_vec,
-            delays_us=plan["delays_us"],
-            reference_hold_us=float(params["reference_hold_us"]),
-            shots=plan["shots"],
-            reset_scheme=reset_scheme,
-            progress=lambda done, total, _mode=mode: progress_counter(
-                done - 1,
-                total,
-                start_time=progress_started,
-                label=f"q3 21-delay {_mode}",
-            ),
-        )
-        states = classify_payload_iq(
-            cfg, i_values, q_values, telemetry["read_length_cycles"]
-        )
-        directional = reduce_bidirectional_condition_states(
-            states, condition_names, canonical_dc_axis=True
-        )
-        matrix = np.column_stack(
-            [directional[name] for name in condition_names]
-        )
-        summary = summarize_dense_populations(
-            matrix,
+        summary = summarize_causality_chunks(
+            chunks,
             delays_us=plan["delays_us"],
             shots=plan["shots"],
         )
-        if telemetry.get("condition_tag_mismatches", 0) != 0:
-            raise RuntimeError(
-                f"{mode} condition tags do not match the decoded condition axis"
-            )
         mode_results[mode] = {
-            "I": i_values,
-            "Q": q_values,
-            "states": states,
+            "chunks": chunks,
             "condition_names": condition_names,
             "directional": directional,
             "summary": summary,
-            "telemetry": telemetry,
+            "telemetry": [chunk["telemetry"] for chunk in chunks],
         }
         print(
-            f"[{mode}] complete in {time.monotonic() - elapsed_started:.2f} s; "
-            f"median P1-P0={_median(summary['P1'] - summary['P0']):.4f}; "
-            f"condition-tag mismatches={telemetry.get('condition_tag_mismatches')}"
+            f"[{mode}] assembled all 21 delays; "
+            f"median P1-P0={_median(summary['P1'] - summary['P0']):.4f}"
         )
 
     now = datetime.now()
@@ -1085,7 +1243,10 @@ def run_predistortion_causality():
             "flux_predistortion_recovery_us": params.get(
                 "flux_predistortion_recovery_us"
             ),
-            "sequence_implementation": "temporary OPXResetT1NPointProgram",
+            "sequence_implementation": (
+                "seven temporary OPXResetT15PointProgram chunks; shared classifier; "
+                "P0/P1 repeated per chunk; no T1 fit"
+            ),
         },
     )
     for frequency_index, frequency in enumerate(target_frequency_ghz):
