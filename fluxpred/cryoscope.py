@@ -1,0 +1,257 @@
+import numpy as np
+
+QUADRATURES = ("x", "y")
+DEFAULT_CONTRAST_THRESHOLD = 0.25
+
+
+def _vector(value, name):
+    array = np.asarray(value, dtype=float)
+    if array.ndim != 1 or array.size == 0:
+        raise ValueError(f"{name} must be a nonempty one-dimensional array")
+    return array
+
+
+def bloch_components(p_x, p_y, *, p_ground, p_excited, min_reference_contrast=0.05):
+    p_x = _vector(p_x, "p_x")
+    p_y = _vector(p_y, "p_y")
+    if p_x.shape != p_y.shape:
+        raise ValueError("p_x and p_y must have the same shape")
+    reference = float(p_excited) - float(p_ground)
+    if not np.isfinite(reference) or reference < float(min_reference_contrast):
+        raise ValueError(
+            f"assignment reference contrast {reference!r} is below the required "
+            f"{float(min_reference_contrast)!r}; the readout cannot resolve the Bloch vector")
+    x = 2.0 * (p_x - float(p_ground)) / reference - 1.0
+    y = 2.0 * (p_y - float(p_ground)) / reference - 1.0
+    return x, y
+
+
+def contrast(x, y):
+    return np.hypot(_vector(x, "x"), _vector(y, "y"))
+
+
+def support_mask(x, y, *, threshold=DEFAULT_CONTRAST_THRESHOLD):
+    magnitude = contrast(x, y)
+    finite = np.isfinite(magnitude) & np.isfinite(x) & np.isfinite(y)
+    return finite & (magnitude >= float(threshold))
+
+
+def wrapped_phase(x, y):
+    return np.arctan2(_vector(y, "y"), _vector(x, "x"))
+
+
+def phase_uncertainty(x, y, sigma_x, sigma_y):
+    x = _vector(x, "x")
+    y = _vector(y, "y")
+    sigma_x = _vector(sigma_x, "sigma_x")
+    sigma_y = _vector(sigma_y, "sigma_y")
+    squared = x ** 2 + y ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sigma = np.sqrt((x * sigma_y) ** 2 + (y * sigma_x) ** 2) / squared
+    return np.where(squared > 0, sigma, np.inf)
+
+
+def shot_noise_sigma(population, shots):
+    population = np.clip(_vector(population, "population"), 0.0, 1.0)
+    shots = float(shots)
+    if not np.isfinite(shots) or shots <= 0:
+        raise ValueError("shots must be a positive number")
+    return np.sqrt(population * (1.0 - population) / shots)
+
+
+def unwrap_masked(phase, mask):
+    phase = _vector(phase, "phase")
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != phase.shape:
+        raise ValueError("mask must have the same shape as phase")
+    if np.count_nonzero(mask) < 2:
+        raise ValueError("phase unwrapping needs at least two supported samples")
+    out = np.full(phase.shape, np.nan)
+    out[mask] = np.unwrap(phase[mask])
+    return out
+
+
+def detuning_from_window(phase_rad, window_ns):
+    phase_rad = _vector(phase_rad, "phase_rad")
+    window_ns = float(window_ns)
+    if not np.isfinite(window_ns) or window_ns <= 0:
+        raise ValueError("window_ns must be positive and finite")
+    return phase_rad * 1000.0 / (2.0 * np.pi * window_ns)
+
+
+def window_unambiguous_range_mhz(window_ns):
+    window_ns = float(window_ns)
+    if not np.isfinite(window_ns) or window_ns <= 0:
+        raise ValueError("window_ns must be positive and finite")
+    return 500.0 / window_ns
+
+
+def resolve_branch(phase_fine, window_fine_ns, phase_coarse, window_coarse_ns, *, mask=None):
+    phase_fine = _vector(phase_fine, "phase_fine")
+    phase_coarse = _vector(phase_coarse, "phase_coarse")
+    if phase_fine.shape != phase_coarse.shape:
+        raise ValueError("fine and coarse phase arrays must have the same shape")
+    window_fine_ns = float(window_fine_ns)
+    window_coarse_ns = float(window_coarse_ns)
+    if not np.isfinite(window_fine_ns) or not np.isfinite(window_coarse_ns):
+        raise ValueError("probe windows must be finite")
+    if window_fine_ns <= window_coarse_ns:
+        raise ValueError("the fine window must be longer than the coarse window")
+    coarse_mhz = detuning_from_window(phase_coarse, window_coarse_ns)
+    branch = np.rint((coarse_mhz * 2.0 * np.pi * window_fine_ns / 1000.0 - phase_fine) / (2.0 * np.pi))
+    resolved = phase_fine + 2.0 * np.pi * branch
+    fine_mhz = detuning_from_window(resolved, window_fine_ns)
+    slip = np.abs(fine_mhz - coarse_mhz)
+    tolerance = 0.5 * window_unambiguous_range_mhz(window_fine_ns)
+    ambiguous = ~np.isfinite(slip) | (slip > tolerance)
+    if mask is not None:
+        ambiguous &= np.asarray(mask, dtype=bool)
+    return {"detuning_mhz": fine_mhz, "resolved_phase_rad": resolved, "branch": branch,
+            "coarse_detuning_mhz": coarse_mhz, "branch_slip_mhz": slip,
+            "branch_tolerance_mhz": tolerance, "ambiguous": ambiguous,
+            "ambiguous_count": int(np.count_nonzero(ambiguous))}
+
+
+def smooth_derivative(time_ns, phase_rad, *, window, polyorder=2):
+    from scipy.signal import savgol_filter
+
+    time_ns = _vector(time_ns, "time_ns")
+    phase_rad = _vector(phase_rad, "phase_rad")
+    if time_ns.shape != phase_rad.shape:
+        raise ValueError("time and phase arrays must have the same shape")
+    if np.any(np.diff(time_ns) <= 0):
+        raise ValueError("time_ns must be strictly increasing")
+    spacing = np.diff(time_ns)
+    if not np.allclose(spacing, spacing[0], rtol=1e-9, atol=1e-9):
+        raise ValueError("the smooth differentiator requires a uniform delay grid")
+    window = int(window)
+    if window < 5 or window % 2 == 0 or window > phase_rad.size:
+        raise ValueError("differentiator window must be odd, at least 5, and fit the trace")
+    if not 1 <= int(polyorder) < window:
+        raise ValueError("differentiator polyorder must be at least 1 and below the window")
+    derivative = savgol_filter(phase_rad, window, int(polyorder), deriv=1, delta=float(spacing[0]))
+    return derivative * 1000.0 / (2.0 * np.pi)
+
+
+def local_monotonic_branch(frequency_of_coordinate, *, park, target, margin=0.25, points=200001):
+    park = float(park)
+    target = float(target)
+    if not np.isfinite(park) or not np.isfinite(target):
+        raise ValueError("park and target coordinates must be finite")
+    if park == target:
+        raise ValueError("park and target coordinates must differ")
+    points = int(points)
+    if points < 3:
+        raise ValueError("the inversion grid needs at least three points")
+    margin = float(margin)
+    if not np.isfinite(margin) or margin < 0:
+        raise ValueError("margin must be a nonnegative finite fraction of the park-target span")
+    inside = np.linspace(park, target, points)
+    step = inside[1] - inside[0]
+    extra = int(round(margin * (points - 1)))
+    below = park - step * np.arange(extra, 0, -1)
+    above = target + step * np.arange(1, extra + 1)
+    grid = np.concatenate([below, inside, above])
+    values = np.asarray(frequency_of_coordinate(grid), dtype=float)
+    if values.shape != grid.shape or not np.all(np.isfinite(values)):
+        raise ValueError("frequency_of_coordinate must return a finite value for every coordinate")
+    difference = np.diff(values)
+    interior = difference[extra:extra + points - 1]
+    if not (np.all(interior > 0) or np.all(interior < 0)):
+        raise ValueError(
+            "the static flux model is not monotonic between park and target; the measured "
+            "frequency cannot be assigned to a unique flux coordinate on this branch")
+    sign = 1.0 if interior[0] > 0 else -1.0
+    lower = extra
+    while lower > 0 and sign * difference[lower - 1] > 0:
+        lower -= 1
+    upper = extra + points - 1
+    while upper < difference.size and sign * difference[upper] > 0:
+        upper += 1
+    grid = grid[lower:upper + 1]
+    values = values[lower:upper + 1]
+    if sign < 0:
+        grid = grid[::-1]
+        values = values[::-1]
+    return grid, values
+
+
+def invert_static_model(frequency_ghz, frequency_of_coordinate, *, park, target,
+                        margin=0.25, points=200001):
+    grid, values = local_monotonic_branch(
+        frequency_of_coordinate, park=park, target=target, margin=margin, points=points)
+    frequency = np.asarray(frequency_ghz, dtype=float)
+    coordinate = np.interp(frequency, values, grid, left=np.nan, right=np.nan)
+    outside = ~np.isfinite(coordinate) & np.isfinite(frequency)
+    return coordinate, outside
+
+
+def normalized_amplitude(frequency_ghz, frequency_of_coordinate, *, park, target, margin=0.25):
+    coordinate, outside = invert_static_model(
+        frequency_ghz, frequency_of_coordinate, park=park, target=target, margin=margin)
+    return (coordinate - float(park)) / (float(target) - float(park)), outside
+
+
+def nominal_detuning_mhz(ideal_amplitude, frequency_of_coordinate, *, park, target, probe_frequency_ghz):
+    ideal = np.asarray(ideal_amplitude, dtype=float)
+    coordinate = float(park) + ideal * (float(target) - float(park))
+    frequency = np.asarray(frequency_of_coordinate(coordinate), dtype=float)
+    if frequency.shape != ideal.shape or not np.all(np.isfinite(frequency)):
+        raise ValueError("the static flux model must give a finite nominal frequency at every sample")
+    return (frequency - float(probe_frequency_ghz)) * 1000.0
+
+
+def trace_from_measurement(*, delays_ns, phase_rad, mask, probe_window_ns, probe_frequency_ghz,
+                           frequency_of_coordinate, park, target, ideal_amplitude=None,
+                           sigma_phase_rad=None):
+    delays_ns = _vector(delays_ns, "delays_ns")
+    phase_rad = _vector(phase_rad, "phase_rad")
+    mask = np.asarray(mask, dtype=bool)
+    if delays_ns.shape != phase_rad.shape or mask.shape != delays_ns.shape:
+        raise ValueError("delays, phase and mask must have the same shape")
+    if np.any(np.diff(delays_ns) <= 0):
+        raise ValueError("delays_ns must be strictly increasing")
+    residual_mhz = detuning_from_window(phase_rad, probe_window_ns)
+    if ideal_amplitude is None:
+        ideal = np.ones_like(delays_ns)
+    else:
+        ideal = np.asarray(ideal_amplitude, dtype=float)
+        if ideal.shape != delays_ns.shape:
+            raise ValueError("ideal_amplitude must match the delay grid")
+    nominal_mhz = nominal_detuning_mhz(
+        ideal, frequency_of_coordinate, park=park, target=target,
+        probe_frequency_ghz=probe_frequency_ghz)
+    measured_mhz = nominal_mhz + residual_mhz
+    frequency_ghz = float(probe_frequency_ghz) + measured_mhz / 1000.0
+    amplitude, outside = normalized_amplitude(
+        frequency_ghz, frequency_of_coordinate, park=park, target=target)
+    support = mask & np.isfinite(amplitude) & ~outside
+    result = {"delays_ns": delays_ns, "residual_detuning_mhz": residual_mhz,
+              "nominal_detuning_mhz": nominal_mhz, "measured_detuning_mhz": measured_mhz,
+              "frequency_ghz": frequency_ghz, "normalized_amplitude": amplitude,
+              "outside_static_model": outside, "support": support,
+              "probe_window_ns": float(probe_window_ns),
+              "supported_fraction": float(np.mean(support))}
+    if sigma_phase_rad is not None:
+        sigma_phase_rad = _vector(sigma_phase_rad, "sigma_phase_rad")
+        result["sigma_detuning_mhz"] = np.abs(detuning_from_window(sigma_phase_rad, probe_window_ns))
+    return result
+
+
+def drift_report(repeats, *, mask=None):
+    stack = np.asarray(repeats, dtype=float)
+    if stack.ndim != 2 or stack.shape[0] < 2:
+        raise ValueError("drift needs at least two repeated traces of equal length")
+    if mask is None:
+        mask = np.isfinite(stack).all(axis=0)
+    else:
+        mask = np.asarray(mask, dtype=bool) & np.isfinite(stack).all(axis=0)
+    if np.count_nonzero(mask) < 2:
+        raise ValueError("drift needs at least two jointly supported samples")
+    supported = stack[:, mask]
+    means = supported.mean(axis=1)
+    spread = supported.std(axis=0, ddof=1)
+    return {"per_repeat_mean": means.tolist(),
+            "between_repeat_range": float(np.max(means) - np.min(means)),
+            "within_repeat_rms": float(np.sqrt(np.mean(spread ** 2))),
+            "supported_samples": int(np.count_nonzero(mask))}
