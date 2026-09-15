@@ -328,6 +328,9 @@ def acquire_t1_5pt_iq(
     shots=None,
     reset_scheme="opx_unbounded",
     progress=None,
+    _include_references=True,
+    _survival_index_offset=0,
+    _allow_chunking=True,
 ):
     bundle = runtime_bundle(cfg)
     gains = np.asarray(dc_gains, dtype=float).reshape(-1)
@@ -356,7 +359,74 @@ def acquire_t1_5pt_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    records_per_dc = 2 + int(delays.size)
+    if _allow_chunking and delays.size > 3:
+        delay_chunks = tuple(
+            delays[index:index + 3]
+            for index in range(0, delays.size, 3)
+        )
+        chunk_results = []
+        survival_offset = 0
+        for chunk_index, chunk_delays in enumerate(delay_chunks):
+            include_references = chunk_index == 0
+            chunk_progress = None
+            if progress is not None:
+                chunk_progress = (
+                    lambda done, total, index=chunk_index: progress(
+                        index * total_shots + done,
+                        len(delay_chunks) * total_shots,
+                    )
+                )
+            chunk_results.append(acquire_t1_5pt_iq(
+                soc,
+                soccfg,
+                cfg,
+                dc_gains=rounded,
+                delays_us=chunk_delays,
+                reference_hold_us=reference_hold_us,
+                shots=total_shots,
+                reset_scheme=reset_scheme,
+                progress=chunk_progress,
+                _include_references=include_references,
+                _survival_index_offset=survival_offset,
+                _allow_chunking=False,
+            ))
+            survival_offset += int(chunk_delays.size)
+
+        i_values = np.concatenate(
+            [result[0] for result in chunk_results], axis=0
+        )
+        q_values = np.concatenate(
+            [result[1] for result in chunk_results], axis=0
+        )
+        chunk_telemetry = [dict(result[2]) for result in chunk_results]
+        telemetry = dict(chunk_telemetry[0])
+        telemetry.update({
+            "records": int(sum(item["records"] for item in chunk_telemetry)),
+            "records_per_dc": 2 + int(delays.size),
+            "blocks": int(sum(item["blocks"] for item in chunk_telemetry)),
+            "program_chunks": len(chunk_telemetry),
+            "condition_names": (
+                "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
+            ),
+            "decay_delays_us": tuple(float(value) for value in delays),
+            "condition_tag_mismatches": int(sum(
+                item.get("condition_tag_mismatches", 0)
+                for item in chunk_telemetry
+            )),
+            "condition_tags_match_decoded_conditions": bool(all(
+                item.get("condition_tags_match_decoded_conditions", True)
+                for item in chunk_telemetry
+            )),
+            "chunk_telemetry": chunk_telemetry,
+            "order": "shot_alternating_dc_chunked_P0_P1_then_survivals",
+        })
+        return i_values, q_values, telemetry
+
+    include_references = bool(_include_references)
+    survival_index_offset = int(_survival_index_offset)
+    records_per_dc = (
+        (2 if include_references else 0) + int(delays.size)
+    )
     records_per_shot = int(rounded.size) * records_per_dc
     run_cfg = dict(cfg)
     run_cfg.update({
@@ -365,6 +435,8 @@ def acquire_t1_5pt_iq(
         "opx_t1_3pt_dc_gains": rounded.tolist(),
         "opx_t1_5pt_delays_us": delays.tolist(),
         "opx_t1_5pt_reference_hold_us": reference_hold_us,
+        "opx_t1_include_references": include_references,
+        "opx_t1_survival_index_offset": survival_index_offset,
         "ff_hold": reference_hold_us + float(delays[-1]),
         "t1_wait_us": reference_hold_us + float(delays[-1]),
         "opx_resident_dmem_stream": True,
@@ -402,16 +474,31 @@ def acquire_t1_5pt_iq(
     if condition_tags is not None:
         condition_tags[1::2] = condition_tags[1::2, ::-1]
     if bool(run_cfg.get("opx_reverse_survival_order", False)):
-        i_records = canonicalize_matched_t1_records(i_records)
-        q_records = canonicalize_matched_t1_records(q_records)
-        if condition_tags is not None:
-            condition_tags = canonicalize_matched_t1_records(condition_tags)
+        if include_references:
+            i_records = canonicalize_matched_t1_records(i_records)
+            q_records = canonicalize_matched_t1_records(q_records)
+            if condition_tags is not None:
+                condition_tags = canonicalize_matched_t1_records(condition_tags)
+        else:
+            i_records[1::2] = i_records[1::2, ..., ::-1]
+            q_records[1::2] = q_records[1::2, ..., ::-1]
+            if condition_tags is not None:
+                condition_tags[1::2] = condition_tags[1::2, ..., ::-1]
     i_values = i_records.transpose(2, 1, 0)
     q_values = q_records.transpose(2, 1, 0)
     tag_telemetry = {}
     if condition_tags is not None:
         decoded_tags = condition_tags.transpose(2, 1, 0)
-        expected_tags = np.arange(records_per_dc, dtype=int)[:, None, None]
+        expected_tags = np.asarray(
+            (
+                ([0, 1] if include_references else [])
+                + [
+                    2 + survival_index_offset + index
+                    for index in range(delays.size)
+                ]
+            ),
+            dtype=int,
+        )[:, None, None]
         mismatches = int(np.count_nonzero(decoded_tags != expected_tags))
         tag_telemetry = {
             "condition_tag_mismatches": mismatches,
@@ -432,7 +519,10 @@ def acquire_t1_5pt_iq(
             if bool(run_cfg.get("opx_reverse_survival_order", False))
             else "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"
         ),
-        "condition_names": ("P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)),
+        "condition_names": (
+            *(("P0", "P1") if include_references else ()),
+            *(f"Ps_{delay:g}us" for delay in delays),
+        ),
         "dc_scan_order": "alternating_bidirectional",
         "dc_scan_up_shots": int((total_shots + 1) // 2),
         "dc_scan_down_shots": int(total_shots // 2),

@@ -835,6 +835,32 @@ def test_qick_seven_condition_program_emits_reverse_survival_with_canonical_tags
     assert [entry[1] for entry in emitted] == [2, 2, 202, 162, 122, 82, 42]
 
 
+def test_qick_survival_only_chunk_omits_references_and_keeps_global_tags():
+    """The PMem-safe second chunk must contain only the remaining survivals."""
+    module, _cls = program_type()
+    prog = object.__new__(module.OPXResetT1NPointProgram)
+    prog.cfg = {
+        "opx_t1_5pt_reference_hold_us": 2.0,
+        "opx_t1_5pt_delays_us": [160.0, 200.0],
+        "opx_t1_include_references": False,
+        "opx_t1_survival_index_offset": 3,
+        "opx_reverse_survival_order": True,
+        "opx_diagnostic_condition_tags": True,
+    }
+    emitted = []
+    prog._emit_tagged_condition = (
+        lambda label, do_pi, do_ff, hold, tag:
+        emitted.append((label, do_pi, do_ff, hold, tag))
+    )
+
+    prog._emit_t1_conditions({}, "OPX_T1_3PT_DOWN")
+
+    assert emitted == [
+        ("OPX_T1_3PT_DOWN_PS1", True, True, 202.0, 6),
+        ("OPX_T1_3PT_DOWN_PS0", True, True, 162.0, 5),
+    ]
+
+
 def test_qick_seven_condition_acquisition_canonicalizes_reverse_shots(monkeypatch):
     module = importlib.import_module(f"{PREFIX}.active_reset_OPX.integration")
 
@@ -867,12 +893,89 @@ def test_qick_seven_condition_acquisition_canonicalizes_reverse_shots(monkeypatc
         reference_hold_us=2,
         shots=2,
         reset_scheme="none",
+        _allow_chunking=False,
     )
 
     np.testing.assert_equal(i[:, 0, 0], canonical)
     np.testing.assert_equal(i[:, 0, 1], np.arange(10, 17))
     np.testing.assert_equal(q, -i)
     assert telemetry["records_per_dc"] == 7
+    assert telemetry["condition_names"] == (
+        "P0", "P1", "Ps_40us", "Ps_80us", "Ps_120us", "Ps_160us", "Ps_200us",
+    )
+
+
+def test_qick_seven_condition_acquisition_uses_two_pmem_safe_chunks(monkeypatch):
+    """Five survival delays must not compile as one oversized tProc program."""
+    module = importlib.import_module(f"{PREFIX}.active_reset_OPX.integration")
+    constructed = []
+
+    class HardwareProgram:
+        def __init__(self, board, cfg, *_args):
+            self.cfg = cfg
+            constructed.append(dict(cfg))
+
+        def us2cycles(self, *_args, **_kwargs):
+            return 1
+
+    monkeypatch.setattr(module, "OPXResetT15PointProgram", HardwareProgram)
+    monkeypatch.setattr(module, "OPXResetT1NPointProgram", HardwareProgram)
+
+    def acquire(_soc, prog, _timeout, cfg, **_kwargs):
+        delays = list(cfg["opx_t1_5pt_delays_us"])
+        include_refs = bool(cfg.get("opx_t1_include_references", True))
+        offset = int(cfg.get("opx_t1_survival_index_offset", 0))
+        canonical = (
+            ([0, 1] if include_refs else [])
+            + [2 + offset + index for index in range(len(delays))]
+        )
+        reverse = (
+            ([0, 1] if include_refs else [])
+            + list(reversed(canonical[2:] if include_refs else canonical))
+        )
+        return [
+            types.SimpleNamespace(
+                final_i=float(value),
+                final_q=-float(value),
+                condition_tag=int(value),
+            )
+            for value in (*canonical, *reverse)
+        ]
+
+    monkeypatch.setattr(module, "_run_program", acquire)
+
+    i, q, telemetry = module.acquire_t1_5pt_iq(
+        None,
+        None,
+        {
+            "reset_mode": "passive",
+            "read_length": 1,
+            "ro_chs": [0],
+            "opx_reverse_survival_order": True,
+            "opx_diagnostic_condition_tags": True,
+        },
+        dc_gains=[-100],
+        delays_us=[40, 80, 120, 160, 200],
+        reference_hold_us=2,
+        shots=2,
+        reset_scheme="none",
+    )
+
+    assert len(constructed) == 2
+    assert constructed[0]["opx_t1_5pt_delays_us"] == [40.0, 80.0, 120.0]
+    assert constructed[0]["opx_t1_include_references"] is True
+    assert constructed[1]["opx_t1_5pt_delays_us"] == [160.0, 200.0]
+    assert constructed[1]["opx_t1_include_references"] is False
+    assert constructed[1]["opx_t1_survival_index_offset"] == 3
+    assert i.shape == (7, 1, 2)
+    np.testing.assert_equal(i[:, 0, 0], np.arange(7))
+    np.testing.assert_equal(i[:, 0, 1], np.arange(7))
+    np.testing.assert_equal(q, -i)
+    assert telemetry["blocks"] == 2
+    assert telemetry["program_chunks"] == 2
+    assert telemetry["records"] == 14
+    assert telemetry["records_per_dc"] == 7
+    assert telemetry["condition_tag_mismatches"] == 0
     assert telemetry["condition_names"] == (
         "P0", "P1", "Ps_40us", "Ps_80us", "Ps_120us", "Ps_160us", "Ps_200us",
     )

@@ -2512,7 +2512,12 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
             "opx_t1_5pt_reference_hold_us": reference_hold_us,
             "opx_t1_3pt_wait_us": reference_hold_us + float(delays[-1]),
         })
-        self._matched_condition_count = 2 + int(delays.size)
+        include_references = bool(
+            run_cfg.get("opx_t1_include_references", True)
+        )
+        self._matched_condition_count = (
+            (2 if include_references else 0) + int(delays.size)
+        )
         super().__init__(
             soccfg,
             run_cfg,
@@ -2523,7 +2528,10 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
     def _records_per_dc(self):
         if hasattr(self, "_matched_condition_count"):
             return int(self._matched_condition_count)
-        return 2 + len(self.cfg["opx_t1_5pt_delays_us"])
+        return (
+            (2 if bool(self.cfg.get("opx_t1_include_references", True)) else 0)
+            + len(self.cfg["opx_t1_5pt_delays_us"])
+        )
 
     def _set_p0_reference_flag(self, controls, label_prefix):
         # P0 is frequency-resolved on every shot in the five-point protocol.
@@ -2531,29 +2539,31 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
 
     def _emit_t1_conditions(self, controls, label_prefix):
         reference = float(self.cfg["opx_t1_5pt_reference_hold_us"])
-        self._emit_tagged_condition(
-            f"{label_prefix}_P0", False, True, reference, 0
-        )
-        self._emit_tagged_condition(
-            f"{label_prefix}_P1", True, True, reference, 1
-        )
+        if bool(self.cfg.get("opx_t1_include_references", True)):
+            self._emit_tagged_condition(
+                f"{label_prefix}_P0", False, True, reference, 0
+            )
+            self._emit_tagged_condition(
+                f"{label_prefix}_P1", True, True, reference, 1
+            )
         delays = self.cfg["opx_t1_5pt_delays_us"]
-        order = matched_t1_condition_order(
-            len(delays),
-            reverse_survival=(
-                bool(self.cfg.get("opx_reverse_survival_order", False))
-                and str(label_prefix).endswith("_DOWN")
-            ),
-        )[2:]
-        for canonical_index in order:
-            index = canonical_index - 2
+        order = tuple(range(len(delays)))
+        if (
+            bool(self.cfg.get("opx_reverse_survival_order", False))
+            and str(label_prefix).endswith("_DOWN")
+        ):
+            order = tuple(reversed(order))
+        survival_offset = int(
+            self.cfg.get("opx_t1_survival_index_offset", 0)
+        )
+        for index in order:
             delay = delays[index]
             self._emit_tagged_condition(
                 f"{label_prefix}_PS{index}",
                 True,
                 True,
                 reference + float(delay),
-                index + 2,
+                survival_offset + index + 2,
             )
 
     def _emit_tagged_condition(self, label, do_pi, do_ff, hold_us, tag):
