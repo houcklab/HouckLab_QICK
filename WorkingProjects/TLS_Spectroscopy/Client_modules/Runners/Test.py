@@ -9,6 +9,7 @@ can be isolated from feedback reset.
 import csv
 import json
 import os
+import pickle
 import sys
 import time
 from datetime import datetime
@@ -31,6 +32,127 @@ else:
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
     progress_counter,
 )
+
+
+def template_refit_plan(environ=None):
+    """Return the offline full-line-template refit contract."""
+    environ = os.environ if environ is None else environ
+    source = environ.get("Q3_TEMPLATE_REFIT_PKL")
+    if not source:
+        raise ValueError("Q3_TEMPLATE_REFIT_PKL must name a saved raw step-response PKL.")
+    return {
+        "source_pkl": Path(source),
+        "trace_tracking_mode": "image_template_causal",
+        "trace_min_supported_fraction": float(
+            environ.get("Q3_TEMPLATE_REFIT_MIN_SUPPORT", "0.8")
+        ),
+        "trace_polarity": environ.get("Q3_TEMPLATE_REFIT_POLARITY", "dark"),
+    }
+
+
+def run_template_refit(plan=None):
+    """Refit an existing raw q3 map without contacting any measurement hardware."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import (
+        QubitFluxStepResponse,
+    )
+
+    plan = template_refit_plan() if plan is None else dict(plan)
+    source_pkl = Path(plan["source_pkl"])
+    source_config = source_pkl.with_suffix(".json")
+    if not source_pkl.is_file():
+        raise FileNotFoundError(f"Saved raw step-response PKL not found: {source_pkl}")
+    if not source_config.is_file():
+        raise FileNotFoundError(f"Saved step-response config JSON not found: {source_config}")
+    with source_pkl.open("rb") as handle:
+        source = pickle.load(handle)
+    with source_config.open("r") as handle:
+        cfg = json.load(handle)
+    required = ("IQ_mag", "IQ_phase", "f_vec", "t_vec", "flux_fit_params")
+    missing = [name for name in required if name not in source]
+    if missing:
+        raise ValueError(f"Saved step-response PKL is missing: {missing}")
+
+    qubit = str(source.get("qubit", "q3"))
+    # A normal source is <RFSOC>/<q3>/<q3_date>/<file>; preserve that standard
+    # output hierarchy for the refit products.
+    outer_folder = source_pkl.parents[2]
+    experiment = QubitFluxStepResponse(
+        soc=None,
+        soccfg=None,
+        path=qubit,
+        outerFolder=str(outer_folder),
+        prefix=qubit,
+        suffix="Qubit_Flux_Step_Response_TEMPLATE_CAUSAL_REFIT",
+        cfg=cfg,
+        element=qubit,
+        f_vec=np.asarray(source["f_vec"], dtype=float),
+        t_vec=np.asarray(source["t_vec"], dtype=float),
+        dc_offset=float(source["dc_offset"]),
+        baseline_dc_offset=float(source["baseline_dc_offset"]),
+        shots=int(source.get("shots", cfg.get("reps", 1))),
+        flux_fit_params=source["flux_fit_params"],
+        flux_lookup_mode="fit",
+        live_plot=False,
+        fit_rise_decay_bump_dc_correction=True,
+        fit_tail_fraction=float(source.get("fit_tail_fraction", 0.25)),
+        piecewise_segment_edges_ns=source.get("piecewise_segment_edges_ns"),
+        piecewise_regularization=float(source.get("piecewise_regularization", 0.02)),
+        piecewise_final_weight=float(source.get("piecewise_final_weight", 0.0)),
+        piecewise_min_multiplier=float(source.get("piecewise_min_multiplier", 0.5)),
+        piecewise_max_multiplier=float(source.get("piecewise_max_multiplier", 1.5)),
+        piecewise_correction_gain=float(source.get("piecewise_correction_gain", 1.0)),
+        piecewise_desired_response=source.get("piecewise_desired_response", "unity"),
+        piecewise_response_domain=source.get("piecewise_response_domain", "voltage"),
+        # The trace extractor has already produced the robust causal model.
+        # Invert that smooth trajectory directly; fitting a second transient
+        # model here is redundant and can introduce a new local optimum.
+        piecewise_response_model="measured",
+        piecewise_fit_start_ns=source.get("piecewise_fit_start_ns"),
+        piecewise_time_origin_ns=float(source.get("piecewise_time_origin_ns", 0.0)),
+        baseline_rearm_time_ns=int(source.get("baseline_rearm_time_ns", 40_000)),
+        trace_tracking_mode=plan["trace_tracking_mode"],
+        trace_polarity=plan["trace_polarity"],
+        trace_min_supported_fraction=float(plan["trace_min_supported_fraction"]),
+    )
+    experiment.data.update({
+        "IQ_mag": np.asarray(source["IQ_mag"], dtype=float),
+        "IQ_phase": np.asarray(source["IQ_phase"], dtype=float),
+        "offline_refit_source_pkl": str(source_pkl),
+    })
+    print(f"[template refit] source={source_pkl}")
+    print(
+        "[template refit] extracting one full-line translation per delay, then "
+        "fitting a smooth causal trajectory; no measurement hardware is used"
+    )
+    experiment._extract_trace_from_map(
+        experiment.data["IQ_mag"],
+        experiment.data["IQ_phase"],
+    )
+    supported = np.asarray(experiment.data["trace_supported"], dtype=bool)
+    print(
+        f"[template refit] support={supported.sum()}/{supported.size} "
+        f"({supported.mean():.3f}); causal RMS="
+        f"{experiment.data['trace_causal_model_rms_mhz']:.3f} MHz"
+    )
+    experiment._fit_rise_decay_bump_dc_correction_from_step_response()
+    generated_correction = Path(
+        experiment.data["rise_decay_bump_dc_compensation_json"]
+    )
+    candidate_correction = generated_correction.with_name(
+        generated_correction.stem + "_CANDIDATE.json"
+    )
+    generated_correction.replace(candidate_correction)
+    experiment.data["rise_decay_bump_dc_compensation_json"] = str(
+        candidate_correction
+    )
+    experiment.finalize_analysis()
+    experiment.pickle_data()
+    experiment.save_config()
+    correction = experiment.data["rise_decay_bump_dc_compensation_json"]
+    print(f"TEMPLATE_REFIT_IMAGE={experiment.data['summary_image']}")
+    print(f"TEMPLATE_REFIT_CORRECTION_JSON={correction}")
+    print("[template refit] CANDIDATE ONLY: inspect the smooth overlay before running 3b")
+    return correction
 
 
 def fresh_step3a_plan(environ=None):
@@ -95,7 +217,7 @@ def run_fresh_step3a(plan=None):
         "baseline_rearm_us": 40.0,
         "piecewise_desired_response": "unity",
         "piecewise_response_model": "rise_decay_bump",
-        "trace_tracking_mode": "image_v26",
+        "trace_tracking_mode": "image_template_causal",
         "readout_after_park": bool(plan["readout_after_park"]),
         "trace_polarity": plan["trace_polarity"],
         "trace_shoulder": "auto",
@@ -368,6 +490,9 @@ def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
 
 
 def main():
+    if os.environ.get("Q3_TEMPLATE_REFIT_PKL"):
+        run_template_refit()
+        return
     if os.environ.get("Q3_FRESH_3B", "0").strip().lower() in {
         "1", "true", "yes", "on",
     }:

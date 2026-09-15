@@ -6,7 +6,7 @@ ridge extraction cannot become another controller-dependent difference.
 """
 
 import numpy as np
-from scipy import ndimage, signal
+from scipy import ndimage, optimize, signal
 
 
 def _robust_scale(values, axis=None, keepdims=False):
@@ -77,6 +77,279 @@ def _smooth_supported_path(values, supported, window_points=7, polyorder=2):
         min(polyorder, window - 1),
         mode="interp",
     )
+
+
+def _causal_frequency_model(time_us, parameters):
+    """Smooth step trajectory: prompt exponential plus a causal bump."""
+    asymptote, prompt_amp, prompt_tau, bump_amp, rise_tau, bump_tau = parameters
+    time_us = np.asarray(time_us, dtype=float)
+    return (
+        asymptote
+        + prompt_amp * np.exp(np.clip(-time_us / prompt_tau, -80.0, 0.0))
+        + bump_amp
+        * (1.0 - np.exp(np.clip(-time_us / rise_tau, -80.0, 0.0)))
+        * np.exp(np.clip(-time_us / bump_tau, -80.0, 0.0))
+    )
+
+
+def _fit_causal_frequency_trajectory(time_us, centers_ghz, weights):
+    """Robustly fit a globally smooth physical trajectory to template shifts."""
+    time_us = np.asarray(time_us, dtype=float)
+    centers = np.asarray(centers_ghz, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    valid = np.isfinite(time_us) & np.isfinite(centers) & np.isfinite(weights)
+    if np.count_nonzero(valid) < 12:
+        raise ValueError("At least 12 finite template centers are required.")
+    t = time_us[valid]
+    y = centers[valid]
+    w = np.clip(weights[valid], 0.05, 1.0)
+    order = np.argsort(t)
+    t, y, w = t[order], y[order], w[order]
+    positive_dt = np.diff(np.unique(t))
+    positive_dt = positive_dt[positive_dt > 0.0]
+    min_dt = float(np.min(positive_dt)) if positive_dt.size else 0.5
+    duration = max(float(np.max(t)), min_dt)
+    late_count = max(5, int(np.ceil(0.20 * y.size)))
+    asymptote0 = float(np.median(y[-late_count:]))
+    span = max(float(np.ptp(y)), 0.004)
+    lower = np.asarray(
+        [np.min(y) - span, -2.5 * span, min_dt / 10.0, -2.5 * span, min_dt / 10.0, min_dt / 4.0]
+    )
+    upper = np.asarray(
+        [np.max(y) + span, 2.5 * span, max(20.0 * duration, 200.0), 2.5 * span, max(duration, 20.0), max(20.0 * duration, 200.0)]
+    )
+
+    scale_ghz = max(0.00075, 1.4826 * float(np.median(np.abs(y - np.median(y)))))
+    sqrt_weight = np.sqrt(w)
+
+    def residual(parameters):
+        return sqrt_weight * (_causal_frequency_model(t, parameters) - y) / scale_ghz
+
+    best = None
+    prompt0 = float(y[0] - asymptote0)
+    excursion0 = float(y[np.argmax(np.abs(y - asymptote0))] - asymptote0)
+    prompt_taus = (max(min_dt, 2.0), 10.0, 40.0, 150.0)
+    rise_taus = (max(min_dt / 2.0, 0.25), 1.5, 5.0, 15.0)
+    bump_taus = (25.0, 65.0, 180.0, max(duration, 400.0))
+    bump_guesses = (excursion0, -excursion0, 0.5 * span, -0.5 * span)
+    # Deterministic multistart avoids a local solution that flattens the real
+    # early-time turn.  The robust loss prevents an occasional shoulder swap
+    # in the diagnostic centers from pulling the physical model with it.
+    for prompt_tau in prompt_taus:
+        for rise_tau, bump_tau, bump_amp in zip(
+            rise_taus,
+            bump_taus,
+            bump_guesses,
+        ):
+            initial = np.asarray(
+                [asymptote0, prompt0, prompt_tau, bump_amp, rise_tau, bump_tau]
+            )
+            initial = np.minimum(np.maximum(initial, lower + 1e-12), upper - 1e-12)
+            fit = optimize.least_squares(
+                residual,
+                initial,
+                bounds=(lower, upper),
+                loss="soft_l1",
+                f_scale=0.75,
+                max_nfev=5000,
+            )
+            cost = float(np.sum(np.square(residual(fit.x))))
+            if best is None or cost < best[0]:
+                best = (cost, fit)
+    if best is None or not best[1].success:
+        raise RuntimeError("The causal template trajectory fit did not converge.")
+    parameters = np.asarray(best[1].x, dtype=float)
+    fitted = _causal_frequency_model(time_us, parameters)
+    residual_mhz = 1e3 * (centers - fitted)
+    residual_scale_mhz = 1.4826 * float(
+        np.nanmedian(np.abs(residual_mhz - np.nanmedian(residual_mhz)))
+    )
+    support_limit_mhz = max(1.5, 3.0 * residual_scale_mhz)
+    supported = valid & (np.abs(residual_mhz) <= support_limit_mhz)
+    rms_mhz = float(np.sqrt(np.nanmean(np.square(residual_mhz[supported]))))
+    return {
+        "parameters": parameters,
+        "fitted_frequency_ghz": fitted,
+        "supported": supported,
+        "residual_mhz": residual_mhz,
+        "residual_scale_mhz": residual_scale_mhz,
+        "support_limit_mhz": support_limit_mhz,
+        "rms_mhz": rms_mhz,
+    }
+
+
+def _normalized_template_shifts(template, image, maximum_shift_rows):
+    """Measure one translation of the complete late-time line per column."""
+    template = np.asarray(template, dtype=float)
+    image = np.asarray(image, dtype=float)
+    n_rows, n_time = image.shape
+    raw_shifts = np.full(n_time, np.nan, dtype=float)
+    correlations = np.full(n_time, np.nan, dtype=float)
+    maximum_shift_rows = min(int(maximum_shift_rows), n_rows - 5)
+    shifts = np.arange(-maximum_shift_rows, maximum_shift_rows + 1, dtype=int)
+    for column in range(n_time):
+        values = image[:, column]
+        scores = np.full(shifts.size, -np.inf, dtype=float)
+        for index, shift in enumerate(shifts):
+            if shift >= 0:
+                reference = template[: n_rows - shift]
+                measured = values[shift:]
+            else:
+                reference = template[-shift:]
+                measured = values[: n_rows + shift]
+            finite = np.isfinite(reference) & np.isfinite(measured)
+            if np.count_nonzero(finite) < max(7, int(0.60 * n_rows)):
+                continue
+            reference = reference[finite] - np.mean(reference[finite])
+            measured = measured[finite] - np.mean(measured[finite])
+            denominator = float(np.linalg.norm(reference) * np.linalg.norm(measured))
+            if denominator > 1e-12:
+                scores[index] = float(np.dot(reference, measured) / denominator)
+        best = int(np.argmax(scores))
+        if not np.isfinite(scores[best]):
+            continue
+        refined = float(shifts[best])
+        if 0 < best < scores.size - 1:
+            left, center, right = scores[best - 1 : best + 2]
+            denominator = left - 2.0 * center + right
+            if np.isfinite(denominator) and abs(denominator) > 1e-12:
+                refined += float(np.clip(0.5 * (left - right) / denominator, -1.0, 1.0))
+        raw_shifts[column] = refined
+        correlations[column] = scores[best]
+    return raw_shifts, correlations
+
+
+def track_template_causal_ridge(
+    frequency_axis_ghz,
+    time_axis_us,
+    image,
+    expected_window_mask=None,
+    polarity="auto",
+    template_tail_fraction=0.25,
+    detrend_width_mhz=10.0,
+    maximum_shift_mhz=60.0,
+):
+    """Track a step-response band without selecting peaks frame by frame.
+
+    The median late-time spectrum is used as a complete line-shape template.
+    Each frame contributes only its best translation of that template.  Those
+    noisy translations are diagnostics; the correction is driven by a robust
+    causal rise/decay trajectory, which cannot jump between two shoulders.
+    """
+    frequency = np.asarray(frequency_axis_ghz, dtype=float)
+    time_us = np.asarray(time_axis_us, dtype=float)
+    raw = np.asarray(image, dtype=float)
+    if frequency.ndim != 1 or frequency.size < 15:
+        raise ValueError("frequency_axis_ghz must contain at least 15 points.")
+    if time_us.ndim != 1 or raw.shape != (frequency.size, time_us.size):
+        raise ValueError("image must have shape (frequency, time_axis_us).")
+    if not np.all(np.isfinite(frequency)) or np.any(np.diff(frequency) == 0.0):
+        raise ValueError("frequency_axis_ghz must be finite and strictly monotonic.")
+    if not np.all(np.isfinite(time_us)) or np.any(time_us < 0.0):
+        raise ValueError("time_axis_us must be finite and non-negative.")
+    polarity = str(polarity).strip().lower()
+    if polarity not in {"bright", "dark", "auto"}:
+        raise ValueError("polarity must be 'bright', 'dark', or 'auto'.")
+    window = (
+        np.ones(frequency.size, dtype=bool)
+        if expected_window_mask is None
+        else np.asarray(expected_window_mask, dtype=bool)
+    )
+    if window.shape != frequency.shape or np.count_nonzero(window) < 15:
+        raise ValueError("expected_window_mask must select at least 15 points.")
+    if frequency[0] > frequency[-1]:
+        frequency = frequency[::-1]
+        raw = raw[::-1, :]
+        window = window[::-1]
+    frequency = frequency[window]
+    raw = raw[window, :]
+    filled, valid_columns = _fill_spectral_nans(raw)
+    step_mhz = 1e3 * abs(float(np.median(np.diff(frequency))))
+    sigma_rows = max(2.0, float(detrend_width_mhz) / max(step_mhz, 1e-9))
+    broad = ndimage.gaussian_filter1d(filled, sigma_rows, axis=0, mode="nearest")
+    foreground = filled - broad
+    foreground -= np.median(foreground, axis=0, keepdims=True)
+    foreground /= _robust_scale(foreground, axis=0, keepdims=True)
+    tail_count = max(5, int(np.ceil(float(template_tail_fraction) * time_us.size)))
+
+    choices = []
+    for selected_polarity in (["bright", "dark"] if polarity == "auto" else [polarity]):
+        oriented = foreground if selected_polarity == "bright" else -foreground
+        template = np.nanmedian(oriented[:, -tail_count:], axis=1)
+        template -= np.nanmedian(template)
+        center_row = int(np.nanargmax(template))
+        maximum_shift_rows = max(2, int(round(float(maximum_shift_mhz) / step_mhz)))
+        shifts, correlations = _normalized_template_shifts(
+            template,
+            oriented,
+            maximum_shift_rows,
+        )
+        centers = frequency[center_row] + shifts * step_mhz / 1e3
+        finite_correlation = correlations[np.isfinite(correlations)]
+        if finite_correlation.size == 0:
+            continue
+        correlation_floor = float(np.nanpercentile(finite_correlation, 5.0))
+        weights = np.clip(
+            (correlations - correlation_floor) / max(1.0 - correlation_floor, 1e-9),
+            0.05,
+            1.0,
+        )
+        fit = _fit_causal_frequency_trajectory(time_us, centers, weights)
+        fit["supported"] &= valid_columns & np.isfinite(correlations)
+        quality = float(np.nanmedian(correlations)) - 0.05 * fit["rms_mhz"]
+        choices.append((quality, selected_polarity, template, centers, correlations, fit))
+    if not choices:
+        raise ValueError("No finite full-line template trajectory could be extracted.")
+    _, selected_polarity, template, centers, correlations, fit = max(
+        choices, key=lambda item: item[0]
+    )
+    fitted = np.asarray(fit["fitted_frequency_ghz"], dtype=float)
+    supported = np.asarray(fit["supported"], dtype=bool)
+    selected = np.where(supported, fitted, np.nan)
+    parameters = np.asarray(fit["parameters"], dtype=float)
+    return {
+        "selected_frequency_ghz": selected,
+        "ridge_frequency_ghz": centers,
+        "local_frequency_ghz": centers,
+        "smoothed_frequency_ghz": fitted,
+        "extracted_if_frequency_hz": selected * 1e9,
+        "extracted_fwhm_hz": np.full(time_us.size, np.nan),
+        "supported": supported,
+        "method": [
+            f"image_template_causal_{selected_polarity}"
+            if ok
+            else "image_template_causal_ambiguous"
+            for ok in supported
+        ],
+        "polarity": selected_polarity,
+        "score": correlations,
+        "trace_score": correlations,
+        "ambiguity_ratio": np.zeros(time_us.size, dtype=float),
+        "shoulder_mode": "full_line_template",
+        "shoulder_separation_mhz": np.nan,
+        "paired_support_fraction": 0.0,
+        "lower_shoulder_frequency_ghz": np.full(time_us.size, np.nan),
+        "upper_shoulder_frequency_ghz": np.full(time_us.size, np.nan),
+        "foreground_z": foreground,
+        "raw_center_evidence": foreground,
+        "multiscale_evidence": np.asarray([foreground]),
+        "temporal_background": "late_time_full_line_template",
+        "template_profile": template,
+        "template_frequency_axis_ghz": frequency,
+        "template_correlation": correlations,
+        "template_raw_frequency_ghz": centers,
+        "causal_model_parameters": {
+            "asymptote_ghz": float(parameters[0]),
+            "prompt_amplitude_ghz": float(parameters[1]),
+            "prompt_tau_us": float(parameters[2]),
+            "bump_amplitude_ghz": float(parameters[3]),
+            "rise_tau_us": float(parameters[4]),
+            "bump_tau_us": float(parameters[5]),
+        },
+        "causal_model_rms_mhz": float(fit["rms_mhz"]),
+        "template_residual_mhz": fit["residual_mhz"],
+        "template_support_limit_mhz": float(fit["support_limit_mhz"]),
+    }
 
 
 def _parabolic_peak(axis, values, row):

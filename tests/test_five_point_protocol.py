@@ -73,6 +73,18 @@ def test_q3_fresh_step3a_can_probe_at_park_readout_without_wrong_polarity():
     assert plan["trace_polarity"] is None
 
 
+def test_q3_template_refit_is_offline_and_uses_smooth_full_line_tracker():
+    source = Path("Z:/FluxTeam/Data/q3_saved_step_response.pkl")
+    plan = diagnostic().template_refit_plan({
+        "Q3_TEMPLATE_REFIT_PKL": str(source),
+    })
+
+    assert plan["source_pkl"] == source
+    assert plan["trace_tracking_mode"] == "image_template_causal"
+    assert plan["trace_min_supported_fraction"] == pytest.approx(0.8)
+    assert plan["trace_polarity"] == "dark"
+
+
 def test_q3_fresh_step3b_matches_the_accepted_at_park_calibration_grid():
     plan = diagnostic().fresh_step3b_plan({})
 

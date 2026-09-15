@@ -19,6 +19,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.image_ridge_tracker import (
     select_step_response_trace,
     track_image_ridge,
+    track_template_causal_ridge,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
@@ -283,9 +284,15 @@ class QubitFluxStepResponse(ExperimentClass):
         self.compose_with_applied_flux_tail_compensation = bool(compose_with_applied_flux_tail_compensation)
         self.composition_damping = float(composition_damping)
         self.trace_tracking_mode = str(trace_tracking_mode).strip().lower()
-        if self.trace_tracking_mode not in {"image_v26", "ridge", "independent_slices"}:
+        if self.trace_tracking_mode not in {
+            "image_template_causal",
+            "image_v26",
+            "ridge",
+            "independent_slices",
+        }:
             raise ValueError(
-                "trace_tracking_mode must be 'image_v26', 'ridge', or 'independent_slices'."
+                "trace_tracking_mode must be 'image_template_causal', "
+                "'image_v26', 'ridge', or 'independent_slices'."
             )
         self.trace_polarity = self._resolve_trace_polarity(
             trace_polarity,
@@ -606,7 +613,21 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
         self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
 
-        if self.trace_tracking_mode == "image_v26":
+        if self.trace_tracking_mode == "image_template_causal":
+            trace_result = track_template_causal_ridge(
+                frequency_axis_ghz,
+                np.asarray(self.t_vec, dtype=float) / 1e3,
+                iq_magnitude_dbm,
+                expected_window_mask=expected_window_mask,
+                polarity=self.trace_polarity,
+            )
+            trace_signal_source = "magnitude"
+            self.data["trace_hypothesis_selection"] = {
+                "selection_method": "full_line_template_then_causal_model",
+                "selected_signal_source": trace_signal_source,
+                "selected_polarity": trace_result.get("polarity"),
+            }
+        elif self.trace_tracking_mode == "image_v26":
             candidates = []
             phase_polarity = {
                 "bright": "dark",
@@ -739,6 +760,18 @@ class QubitFluxStepResponse(ExperimentClass):
             ),
             "trace_paired_support_fraction": trace_result.get(
                 "paired_support_fraction"
+            ),
+            "trace_template_raw_frequency_ghz": trace_result.get(
+                "template_raw_frequency_ghz"
+            ),
+            "trace_template_correlation": trace_result.get(
+                "template_correlation"
+            ),
+            "trace_causal_model_parameters": trace_result.get(
+                "causal_model_parameters"
+            ),
+            "trace_causal_model_rms_mhz": trace_result.get(
+                "causal_model_rms_mhz"
             ),
             "measured_step_response": measured_step_response,
             "measured_frequency_step_response": measured_step_response,
@@ -1044,6 +1077,16 @@ class QubitFluxStepResponse(ExperimentClass):
             "model_note": model_note,
             "trace_supported_fraction": supported_fraction,
             "trace_min_supported_fraction": self.trace_min_supported_fraction,
+            "trace_tracking_mode": self.trace_tracking_mode,
+            "trace_selected_polarity": self.data.get("trace_selected_polarity"),
+            "trace_signal_source": self.data.get("trace_signal_source"),
+            "trace_shoulder_mode": self.data.get("trace_shoulder_mode"),
+            "trace_causal_model_parameters": self.data.get(
+                "trace_causal_model_parameters"
+            ),
+            "trace_causal_model_rms_mhz": self.data.get(
+                "trace_causal_model_rms_mhz"
+            ),
             "composed_with_applied_flux_tail_compensation": bool(
                 fit_result.get("composed_with_applied_flux_tail_compensation", False)
             ),
