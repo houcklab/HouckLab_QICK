@@ -209,7 +209,7 @@ class QubitFluxStepResponse(ExperimentClass):
         trace_max_jump_mhz=4.0,
         trace_smoothness_penalty=0.15,
         trace_local_fit_half_window_mhz=8.0,
-        trace_smoothing_window_points=17,
+        trace_smoothing_window_points=7,
         trace_smoothing_polyorder=2,
         trace_use_smoothed_frequency=True,
         resonator_lookup_csv=None,
@@ -628,6 +628,8 @@ class QubitFluxStepResponse(ExperimentClass):
                         jump_penalty=jump_penalty,
                         shoulder=self.trace_shoulder,
                         temporal_background=temporal_background,
+                        smoothing_window_points=self.trace_smoothing_window_points,
+                        smoothing_polyorder=self.trace_smoothing_polyorder,
                     )
                     candidate["signal_source"] = signal_source
                     candidates.append(candidate)
@@ -794,6 +796,7 @@ class QubitFluxStepResponse(ExperimentClass):
                     np.asarray(self.t_vec, dtype=float),
                     response_for_correction,
                     fit_tail_fraction=self.fit_tail_fraction,
+                    time_origin_ns=self.piecewise_time_origin_ns,
                 )
                 model_note = (
                     "one late exponential plus an early causal rise-decay bump; "
@@ -816,6 +819,48 @@ class QubitFluxStepResponse(ExperimentClass):
             if not bump_model["success"]:
                 raise RuntimeError(bump_model["error"])
             segment_edges_ns = self._dc_tail_segment_edges(bump_model["time_zeroed_ns"])
+            if self.piecewise_response_model == "measured":
+                correction_time_ns = np.asarray(bump_model["time_ns"], dtype=float)
+                correction_response = np.asarray(
+                    bump_model["fit_response"],
+                    dtype=float,
+                )
+            else:
+                correction_time_zeroed_ns = np.unique(
+                    np.concatenate(
+                        [
+                            np.asarray(segment_edges_ns, dtype=float),
+                            [float(np.nanmax(bump_model["time_zeroed_ns"]))],
+                        ]
+                    )
+                )
+                correction_time_ns = (
+                    float(bump_model["time_origin_ns"])
+                    + correction_time_zeroed_ns
+                )
+                if bump_model["method"] == "visible_tail_exponential_back_extrapolation":
+                    correction_response = (
+                        float(bump_model["asymptote"])
+                        + float(bump_model["late_amplitude"])
+                        * np.exp(
+                            np.clip(
+                                -correction_time_zeroed_ns
+                                / float(bump_model["late_tau_ns"]),
+                                -80.0,
+                                80.0,
+                            )
+                        )
+                    )
+                else:
+                    correction_response = fpd.rise_decay_bump_model(
+                        correction_time_zeroed_ns,
+                        bump_model["asymptote"],
+                        bump_model["late_amplitude"],
+                        bump_model["late_tau_ns"],
+                        bump_model["bump_amplitude"],
+                        bump_model["rise_tau_ns"],
+                        bump_model["bump_tau_ns"],
+                    )
             correction_kwargs = {
                 "segment_edges_ns": segment_edges_ns,
                 "regularization": self.piecewise_regularization,
@@ -832,8 +877,8 @@ class QubitFluxStepResponse(ExperimentClass):
             if supports_correction_gain:
                 correction_kwargs["correction_gain"] = self.piecewise_correction_gain
             fit_result = fpd.calculate_piecewise_dc_correction(
-                bump_model["time_ns"],
-                bump_model["fit_response"],
+                correction_time_ns,
+                correction_response,
                 **correction_kwargs,
             )
             if self.compose_with_applied_flux_tail_compensation:

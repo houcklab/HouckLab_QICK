@@ -76,8 +76,9 @@ class ImageRidgeTrackerTests(unittest.TestCase):
         self.assertGreater(np.mean(result["supported"][:15]), 0.8)
         self.assertGreater(np.mean(result["supported"][36:]), 0.8)
 
-    def test_keeps_one_shoulder_identity_when_parallel_shoulders_trade_brightness(self):
-        frequency, time = self._grid(n_time=81)
+    def test_auto_tracks_both_parallel_shoulders_and_keeps_one_identity(self):
+        frequency = np.linspace(4.0, 4.04, 241)
+        time = np.arange(81, dtype=float)
         lower = 4.017 + 0.003 * np.sin(time / 20.0)
         upper = lower + 0.0045
         f_mhz = frequency[:, None] * 1e3
@@ -93,13 +94,75 @@ class ImageRidgeTrackerTests(unittest.TestCase):
             -0.5 * ((f_mhz - upper_mhz) / 1.25) ** 2
         )
 
-        result = track_image_ridge(frequency, image, polarity="bright")
+        result = track_image_ridge(
+            frequency,
+            image,
+            polarity="bright",
+            smoothing_window_points=7,
+        )
 
         path = np.asarray(result["local_frequency_ghz"])
         chooses_lower = np.abs(path - lower) < np.abs(path - upper)
         lower_fraction = float(np.mean(chooses_lower))
+        self.assertIn(
+            result["shoulder_mode"], {"paired_auto_lower", "paired_auto_upper"}
+        )
         self.assertTrue(lower_fraction < 0.05 or lower_fraction > 0.95)
+        lower_trace = np.asarray(result["lower_shoulder_frequency_ghz"])
+        upper_trace = np.asarray(result["upper_shoulder_frequency_ghz"])
+        separation_mhz = (upper_trace - lower_trace) * 1e3
+        self.assertLess(abs(np.nanmedian(separation_mhz) - 4.5), 0.65)
+        self.assertGreater(result["paired_support_fraction"], 0.8)
         self.assertGreater(np.mean(result["supported"]), 0.8)
+        smooth_path = np.asarray(result["smoothed_frequency_ghz"])
+        raw_roughness = np.nanmedian(np.abs(np.diff(path, n=2)))
+        smooth_roughness = np.nanmedian(np.abs(np.diff(smooth_path, n=2)))
+        self.assertLess(smooth_roughness, raw_roughness)
+        np.testing.assert_allclose(
+            result["selected_frequency_ghz"][result["supported"]],
+            smooth_path[result["supported"]],
+        )
+
+    def test_auto_keeps_single_ridge_mode_when_no_persistent_pair_exists(self):
+        frequency, time = self._grid(n_time=61)
+        truth = 4.021 + 0.002 * np.sin(time / 14.0)
+        image = self._ridge_map(frequency, truth, shoulder=False, seed=52)
+
+        result = track_image_ridge(
+            frequency,
+            image,
+            polarity="bright",
+            shoulder="auto",
+        )
+
+        error_mhz = np.abs((result["local_frequency_ghz"] - truth) * 1e3)
+        self.assertEqual(result["shoulder_mode"], "single")
+        self.assertLess(np.nanpercentile(error_mhz, 95), 0.5)
+
+    def test_detected_sibling_ridge_is_not_misclassified_as_identity_ambiguity(self):
+        frequency = np.linspace(4.0, 4.04, 241)
+        time = np.arange(81, dtype=float)
+        lower = 4.017 + 0.002 * np.sin(time / 18.0)
+        upper = lower + 0.004
+        f_mhz = frequency[:, None] * 1e3
+        rng = np.random.default_rng(7)
+        image = rng.normal(scale=0.45, size=(frequency.size, time.size))
+        trade = 0.3 * np.sin(np.pi * time / 4.0)
+        image += (1.2 + trade)[None, :] * np.exp(
+            -0.5 * ((f_mhz - lower[None, :] * 1e3) / 1.25) ** 2
+        )
+        image += (1.2 - trade)[None, :] * np.exp(
+            -0.5 * ((f_mhz - upper[None, :] * 1e3) / 1.25) ** 2
+        )
+
+        result = track_image_ridge(frequency, image, polarity="bright")
+
+        self.assertTrue(result["shoulder_mode"].startswith("paired_auto_"))
+        self.assertGreater(result["paired_support_fraction"], 0.85)
+        self.assertGreaterEqual(
+            np.mean(result["supported"]),
+            result["paired_support_fraction"] - 0.05,
+        )
 
     def test_explicit_lower_shoulder_never_switches_to_the_upper_branch(self):
         frequency, time = self._grid(n_time=81)
@@ -309,6 +372,43 @@ class ImageRidgeTrackerTests(unittest.TestCase):
 
         self.assertIs(selected, persistent)
         self.assertEqual(diagnostics["selection_reason"], "persistent_fallback")
+
+    def test_step_response_selector_accepts_a_recovering_trace_that_has_not_settled(self):
+        target = 4.050
+        transient_frequency = np.asarray(
+            [4.100, 4.125, 4.140, 4.135, 4.120, 4.105, 4.092, 4.080]
+        )
+        persistent_frequency = np.asarray(
+            [4.137, 4.138, 4.139, 4.135, 4.120, 4.105, 4.092, 4.080]
+        )
+
+        def candidate(frequency, temporal_background):
+            supported = np.ones(frequency.size, dtype=bool)
+            return {
+                "local_frequency_ghz": frequency.copy(),
+                "selected_frequency_ghz": frequency.copy(),
+                "smoothed_frequency_ghz": frequency.copy(),
+                "ridge_frequency_ghz": frequency.copy(),
+                "extracted_if_frequency_hz": frequency.copy() * 1e9,
+                "extracted_fwhm_hz": np.full(frequency.size, 2e6),
+                "supported": supported,
+                "trace_score": np.full(frequency.size, 6.0),
+                "signal_source": "magnitude",
+                "temporal_background": temporal_background,
+            }
+
+        persistent = candidate(persistent_frequency, "none")
+        transient = candidate(transient_frequency, "median")
+        selected, diagnostics = select_step_response_trace(
+            [persistent, transient],
+            target_frequency_ghz=target,
+            baseline_frequency_ghz=5.0,
+        )
+
+        self.assertEqual(diagnostics["selection_reason"], "physical_transient")
+        np.testing.assert_allclose(
+            selected["local_frequency_ghz"], transient_frequency
+        )
 
 
 if __name__ == "__main__":

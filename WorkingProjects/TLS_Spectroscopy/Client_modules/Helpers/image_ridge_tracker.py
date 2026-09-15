@@ -50,6 +50,35 @@ def _observed_local_support(finite_pixels, path_rows, half_width_rows=2):
     return observed
 
 
+def _smooth_supported_path(values, supported, window_points=7, polyorder=2):
+    """Return a continuous ridge trajectory without moving its time origin."""
+    values = np.asarray(values, dtype=float)
+    supported = np.asarray(supported, dtype=bool)
+    if int(window_points) <= 1:
+        return values.copy()
+    valid = supported & np.isfinite(values)
+    if np.count_nonzero(valid) < 5:
+        return values.copy()
+    columns = np.arange(values.size, dtype=float)
+    filled = values.copy()
+    filled[~valid] = np.interp(columns[~valid], columns[valid], values[valid])
+    polyorder = max(0, int(polyorder))
+    window = min(
+        max(polyorder + 3, int(window_points)),
+        filled.size if filled.size % 2 else filled.size - 1,
+    )
+    if window % 2 == 0:
+        window -= 1
+    if window <= polyorder:
+        return filled
+    return signal.savgol_filter(
+        filled,
+        window,
+        min(polyorder, window - 1),
+        mode="interp",
+    )
+
+
 def _parabolic_peak(axis, values, row):
     """Refine a discrete local maximum without assuming a line shape."""
     if row <= 0 or row >= len(axis) - 1:
@@ -479,6 +508,8 @@ def track_image_ridge(
     shoulder="auto",
     shoulder_min_persistence=0.6,
     temporal_background="none",
+    smoothing_window_points=1,
+    smoothing_polyorder=2,
 ):
     """Track one spectroscopy ridge using raw-image evidence and path context.
 
@@ -559,7 +590,8 @@ def track_image_ridge(
         paired_support_fraction = 0.0
         measured_pair = np.ones(evidence.shape[1], dtype=bool)
         pair_rows = None
-        if shoulder in {"lower", "upper", "midpoint"}:
+        pair_shoulder = "midpoint" if shoulder == "auto" else shoulder
+        if shoulder in {"auto", "lower", "upper", "midpoint"}:
             paired = _decode_shoulder_pair(
                 frequency,
                 evidence,
@@ -568,7 +600,7 @@ def track_image_ridge(
                 path_rows,
                 float(max_jump_mhz),
                 float(min_prominence_z),
-                shoulder,
+                pair_shoulder,
             )
             if paired is not None:
                 (
@@ -579,13 +611,30 @@ def track_image_ridge(
                     candidates,
                 ) = paired
                 if paired_support_fraction >= float(shoulder_min_persistence):
-                    path_rows = pair_rows[:, 0 if shoulder in {"lower", "midpoint"} else 1]
-                    shoulder_mode = f"paired_{shoulder}"
+                    if shoulder == "auto":
+                        columns = np.arange(evidence.shape[1])
+                        lower_strength = float(np.nanmedian(
+                            evidence[pair_rows[:, 0], columns][measured_pair]
+                        ))
+                        upper_strength = float(np.nanmedian(
+                            evidence[pair_rows[:, 1], columns][measured_pair]
+                        ))
+                        pair_index = 0 if lower_strength >= upper_strength else 1
+                        pair_label = "lower" if pair_index == 0 else "upper"
+                        path_rows = pair_rows[:, pair_index]
+                        shoulder_mode = f"paired_auto_{pair_label}"
+                    else:
+                        path_rows = pair_rows[
+                            :, 0 if pair_shoulder in {"lower", "midpoint"} else 1
+                        ]
+                        shoulder_mode = f"paired_{pair_shoulder}"
                 else:
                     measured_pair = np.ones(evidence.shape[1], dtype=bool)
-                    shoulder_mode = "single_fallback"
+                    shoulder_mode = (
+                        "single" if shoulder == "auto" else "single_fallback"
+                    )
             else:
-                shoulder_mode = "single_fallback"
+                shoulder_mode = "single" if shoulder == "auto" else "single_fallback"
         centers, widths_hz, supported, trace_score, ambiguity = _path_diagnostics(
             frequency,
             foreground,
@@ -602,7 +651,7 @@ def track_image_ridge(
             supported &= measured_pair
         lower_centers = np.full(evidence.shape[1], np.nan, dtype=float)
         upper_centers = np.full(evidence.shape[1], np.nan, dtype=float)
-        if shoulder_mode == "paired_midpoint":
+        if shoulder_mode.startswith("paired_"):
             lower_centers = np.asarray(
                 [
                     _parabolic_peak(frequency, center_map[:, column], int(row))
@@ -615,15 +664,26 @@ def track_image_ridge(
                     for column, row in enumerate(pair_rows[:, 1])
                 ]
             )
-            supported &= _observed_local_support(finite_pixels, pair_rows[:, 0])
-            supported &= _observed_local_support(finite_pixels, pair_rows[:, 1])
-            centers = 0.5 * (lower_centers + upper_centers)
-            widths_hz = np.abs(upper_centers - lower_centers) * 1e9
-            trace_score = 0.5 * (
-                evidence[pair_rows[:, 0], np.arange(evidence.shape[1])]
-                + evidence[pair_rows[:, 1], np.arange(evidence.shape[1])]
-            )
-            ambiguity = np.zeros(evidence.shape[1], dtype=float)
+            if shoulder_mode.startswith("paired_auto_"):
+                # The sibling is an expected member of the decoded pair, not
+                # an alternative identity.  Once the ordered pair has met the
+                # persistence gate, support is determined by direct evidence
+                # for that pair and measured pixels around the fixed label.
+                supported = measured_pair & _observed_local_support(
+                    finite_pixels,
+                    path_rows,
+                )
+                ambiguity = np.zeros(evidence.shape[1], dtype=float)
+            if shoulder_mode == "paired_midpoint":
+                supported &= _observed_local_support(finite_pixels, pair_rows[:, 0])
+                supported &= _observed_local_support(finite_pixels, pair_rows[:, 1])
+                centers = 0.5 * (lower_centers + upper_centers)
+                widths_hz = np.abs(upper_centers - lower_centers) * 1e9
+                trace_score = 0.5 * (
+                    evidence[pair_rows[:, 0], np.arange(evidence.shape[1])]
+                    + evidence[pair_rows[:, 1], np.arange(evidence.shape[1])]
+                )
+                ambiguity = np.zeros(evidence.shape[1], dtype=float)
         quality = float(np.nanmedian(trace_score)) + 0.5 * float(np.mean(supported))
         choices.append(
             (
@@ -666,12 +726,18 @@ def track_image_ridge(
         lower_centers,
         upper_centers,
     ) = max(choices, key=lambda item: item[0])
-    selected = np.where(supported, centers, np.nan)
+    smoothed = _smooth_supported_path(
+        centers,
+        supported,
+        window_points=smoothing_window_points,
+        polyorder=smoothing_polyorder,
+    )
+    selected = np.where(supported, smoothed, np.nan)
     return {
         "selected_frequency_ghz": selected,
         "ridge_frequency_ghz": frequency[path_rows],
         "local_frequency_ghz": centers,
-        "smoothed_frequency_ghz": selected.copy(),
+        "smoothed_frequency_ghz": smoothed,
         "extracted_if_frequency_hz": selected * 1e9,
         "extracted_fwhm_hz": widths_hz,
         "supported": supported,
@@ -743,6 +809,8 @@ def select_step_response_trace(
         persistent = persistent_by_source.get(candidate.get("signal_source"))
         merge_index = None
         persistent_late_target_error = np.inf
+        transient_late_target_error = np.inf
+        recovered_excursion_mhz = -np.inf
         if is_transient and persistent is not None:
             persistent_local = np.asarray(
                 persistent["local_frequency_ghz"], dtype=float
@@ -752,6 +820,13 @@ def select_step_response_trace(
             persistent_late_target_error = float(np.nanmedian(
                 np.abs(persistent_local[late_start:] - target) * 1e3
             ))
+            transient_late_target_error = float(np.nanmedian(
+                np.abs(local[late_start:] - target) * 1e3
+            ))
+            recovered_excursion_mhz = float(
+                directed_excursion
+                - np.nanmedian(np.maximum(directed[late_start:], 0.0))
+            )
             peak_index = int(np.nanargmax(directed[:early_stop]))
             separation_mhz = np.abs(local - persistent_local) * 1e3
             merge_candidates = np.flatnonzero(
@@ -771,6 +846,15 @@ def select_step_response_trace(
             if supported_scores.size
             else np.nanmedian(score[:evaluation_stop])
         )
+        settled_or_recovering = bool(
+            persistent_late_target_error
+            <= float(transient_max_late_target_error_mhz)
+            or (
+                recovered_excursion_mhz
+                >= max(10.0, 0.25 * max(directed_excursion, 0.0))
+                and transient_late_target_error < directed_excursion
+            )
+        )
         physical_transient = bool(
             is_transient
             and persistent is not None
@@ -778,8 +862,7 @@ def select_step_response_trace(
             and support_fraction >= float(transient_min_supported_fraction)
             and path_score >= float(transient_min_path_score)
             and directed_excursion >= float(transient_min_excursion_mhz)
-            and persistent_late_target_error
-            <= float(transient_max_late_target_error_mhz)
+            and settled_or_recovering
         )
         diagnostics.append({
             "signal_source": candidate.get("signal_source"),
@@ -788,6 +871,9 @@ def select_step_response_trace(
             "path_score": path_score,
             "directed_excursion_mhz": directed_excursion,
             "persistent_late_target_error_mhz": persistent_late_target_error,
+            "transient_late_target_error_mhz": transient_late_target_error,
+            "recovered_excursion_mhz": recovered_excursion_mhz,
+            "settled_or_recovering": settled_or_recovering,
             "merge_index": merge_index,
             "physical_transient": physical_transient,
         })

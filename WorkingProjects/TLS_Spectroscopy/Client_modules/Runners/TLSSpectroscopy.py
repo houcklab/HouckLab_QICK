@@ -137,6 +137,9 @@ P3_STEP_RESPONSE = {
     "trace_polarity": None,
     "trace_shoulder": "auto",
     "trace_max_jump_mhz": 4.0,
+    "trace_smoothing_window_points": 7,
+    "trace_smoothing_polyorder": 2,
+    "trace_use_smoothed_frequency": True,
     "fit_residual_composition": False,
     "residual_composition_damping": 0.5,
     "live_plot": True,
@@ -603,6 +606,13 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         trace_polarity=p.get("trace_polarity", None),
         trace_shoulder=p.get("trace_shoulder", "auto"),
         trace_max_jump_mhz=float(p.get("trace_max_jump_mhz", 4.0)),
+        trace_smoothing_window_points=int(
+            p.get("trace_smoothing_window_points", 7)
+        ),
+        trace_smoothing_polyorder=int(p.get("trace_smoothing_polyorder", 2)),
+        trace_use_smoothed_frequency=bool(
+            p.get("trace_use_smoothed_frequency", True)
+        ),
     )
     exp.acquire(progress=True)
     exp.save_data()

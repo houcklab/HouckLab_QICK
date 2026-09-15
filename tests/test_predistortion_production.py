@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import json
 import sys
@@ -326,6 +327,55 @@ def test_step3b_composes_residual_when_enabled_and_returns_composed_json(monkeyp
     assert response.calls[-1]["fit_rise_decay_bump_dc_correction"] is True
     assert response.calls[-1]["compose_with_applied_flux_tail_compensation"] is True
     assert response.calls[-1]["composition_damping"] == 0.25
+
+
+def test_live_step_response_fit_passes_the_physical_time_origin():
+    path = (
+        Path(__file__).parents[1]
+        / "WorkingProjects/TLS_Spectroscopy/Client_modules/Experiments/mQubitFluxStepResponse.py"
+    )
+    tree = ast.parse(path.read_text())
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "fit_rise_decay_bump_response_model"
+    ]
+
+    assert len(calls) == 1
+    keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+    assert "time_origin_ns" in keywords
+    assert ast.unparse(keywords["time_origin_ns"]) == "self.piecewise_time_origin_ns"
+
+
+def test_live_piecewise_inverse_is_evaluated_on_its_control_grid():
+    path = (
+        Path(__file__).parents[1]
+        / "WorkingProjects/TLS_Spectroscopy/Client_modules/Experiments/mQubitFluxStepResponse.py"
+    )
+    tree = ast.parse(path.read_text())
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "calculate_piecewise_dc_correction"
+    ]
+
+    assert len(calls) == 1
+    assert ast.unparse(calls[0].args[0]) == "correction_time_ns"
+    assert ast.unparse(calls[0].args[1]) == "correction_response"
+
+
+def test_step3_defaults_use_a_local_smooth_curve_without_erasing_the_turnover(
+    monkeypatch,
+):
+    runner, _response = _load_step3_runner(monkeypatch)
+
+    assert runner.P3_STEP_RESPONSE["trace_smoothing_window_points"] == 7
+    assert runner.P3_STEP_RESPONSE["trace_smoothing_polyorder"] == 2
+    assert runner.P3_STEP_RESPONSE["trace_use_smoothed_frequency"] is True
 
 
 def test_step3b_gain_sweep_returns_the_last_composed_json_when_enabled(monkeypatch):
