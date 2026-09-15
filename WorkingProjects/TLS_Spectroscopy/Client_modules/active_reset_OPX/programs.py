@@ -2466,10 +2466,19 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         self.end()
 
 
-class OPXResetT15PointProgram(OPXResetT13PointProgram):
-    """Five-condition T1 program with matched flux trajectories.
+def matched_t1_condition_order(survival_count, *, reverse_survival=False):
+    """Canonical condition indices in the requested physical play order."""
+    survival_count = int(survival_count)
+    if survival_count < 1:
+        raise ValueError("survival_count must be positive")
+    survival = tuple(range(2, 2 + survival_count))
+    return (0, 1, *(reversed(survival) if reverse_survival else survival))
 
-    Every frequency receives P0, P1, and three survival measurements inside
+
+class OPXResetT1NPointProgram(OPXResetT13PointProgram):
+    """Matched-reference T1 program with a configurable survival axis.
+
+    Every frequency receives P0, P1, and the configured survival measurements inside
     the same alternating bidirectional shot loop.  P0/P1 use a short reference
     hold; each survival hold adds its configured effective decay delay.
     """
@@ -2483,13 +2492,13 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
             run_cfg.get("opx_t1_5pt_delays_us", ()), dtype=float
         ).reshape(-1)
         if (
-            delays.size != 3
+            delays.size < 1
             or not np.all(np.isfinite(delays))
             or np.any(delays <= 0.0)
             or np.any(np.diff(delays) <= 0.0)
         ):
             raise ValueError(
-                "opx_t1_5pt_delays_us must contain three positive increasing delays"
+                "opx_t1_5pt_delays_us must contain positive increasing delays"
             )
         reference_hold_us = float(
             run_cfg.get("opx_t1_5pt_reference_hold_us", 0.0)
@@ -2503,6 +2512,7 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
             "opx_t1_5pt_reference_hold_us": reference_hold_us,
             "opx_t1_3pt_wait_us": reference_hold_us + float(delays[-1]),
         })
+        self._matched_condition_count = 2 + int(delays.size)
         super().__init__(
             soccfg,
             run_cfg,
@@ -2511,7 +2521,9 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
         )
 
     def _records_per_dc(self):
-        return 5
+        if hasattr(self, "_matched_condition_count"):
+            return int(self._matched_condition_count)
+        return 2 + len(self.cfg["opx_t1_5pt_delays_us"])
 
     def _set_p0_reference_flag(self, controls, label_prefix):
         # P0 is frequency-resolved on every shot in the five-point protocol.
@@ -2525,7 +2537,17 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
         self._emit_tagged_condition(
             f"{label_prefix}_P1", True, True, reference, 1
         )
-        for index, delay in enumerate(self.cfg["opx_t1_5pt_delays_us"]):
+        delays = self.cfg["opx_t1_5pt_delays_us"]
+        order = matched_t1_condition_order(
+            len(delays),
+            reverse_survival=(
+                bool(self.cfg.get("opx_reverse_survival_order", False))
+                and str(label_prefix).endswith("_DOWN")
+            ),
+        )[2:]
+        for canonical_index in order:
+            index = canonical_index - 2
+            delay = delays[index]
             self._emit_tagged_condition(
                 f"{label_prefix}_PS{index}",
                 True,
@@ -2551,6 +2573,20 @@ class OPXResetT15PointProgram(OPXResetT13PointProgram):
             "+",
             1,
         )
+
+
+class OPXResetT15PointProgram(OPXResetT1NPointProgram):
+    """Backward-compatible five-condition specialization."""
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        delays = np.asarray(
+            cfg.get("opx_t1_5pt_delays_us", ()), dtype=float
+        ).reshape(-1)
+        if delays.size != 3:
+            raise ValueError(
+                "opx_t1_5pt_delays_us must contain three positive increasing delays"
+            )
+        super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
 
 
 class OPXResetTLSMemoryProgram(OPXResetT1Program):

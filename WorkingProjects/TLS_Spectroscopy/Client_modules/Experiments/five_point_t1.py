@@ -13,6 +13,15 @@ def five_point_output_metadata(data, condition_names):
         "acquisition_loop_order": "shot,frequency,condition",
         "condition_order": ",".join(condition_names),
         "condition_order_json": json.dumps(list(condition_names)),
+        "survival_order_alternates": bool(
+            data.get("survival_order_alternates", False)
+        ),
+        "survival_order_forward_json": json.dumps(list(condition_names[2:])),
+        "survival_order_reverse_json": json.dumps(
+            list(reversed(condition_names[2:]))
+            if data.get("survival_order_alternates", False)
+            else list(condition_names[2:])
+        ),
         "dc_scan_order": "alternating_bidirectional",
         "dc_scan_axis_convention": "up=forward input dc_vec; down=reverse input dc_vec",
         "dc_scan_first_direction": "forward",
@@ -29,13 +38,23 @@ def five_point_output_metadata(data, condition_names):
 
 
 def validate_five_point_delays(delays_us):
+    return validate_matched_t1_delays(delays_us, expected_count=3)
+
+
+def validate_matched_t1_delays(delays_us, expected_count=None):
+    """Validate an ordered matched-reference survival-delay axis."""
     delays = np.asarray(delays_us, dtype=float).reshape(-1)
-    if delays.size != 3:
-        raise ValueError("five-point T1 requires exactly three decay delays")
+    if expected_count is not None and delays.size != int(expected_count):
+        raise ValueError(
+            f"matched-reference T1 requires exactly {int(expected_count)} "
+            "decay delays"
+        )
+    if delays.size < 1:
+        raise ValueError("matched-reference T1 requires at least one decay delay")
     if not np.all(np.isfinite(delays)) or np.any(delays <= 0.0):
-        raise ValueError("five-point decay delays must be finite and positive")
+        raise ValueError("matched-reference decay delays must be finite and positive")
     if np.any(np.diff(delays) <= 0.0):
-        raise ValueError("five-point decay delays must be strictly increasing")
+        raise ValueError("matched-reference decay delays must be strictly increasing")
     return delays
 
 
@@ -58,7 +77,7 @@ def _prediction_and_jacobian(parameters, delays_us):
     dp0_da = p0 * (1.0 - p0)
     dp1_da = dp0_da * (1.0 - excited_fraction)
     dp1_db = (1.0 - p0) * excited_fraction * (1.0 - excited_fraction)
-    jacobian = np.zeros((5, 3), dtype=float)
+    jacobian = np.zeros((2 + delays_us.size, 3), dtype=float)
     jacobian[0] = (dp0_da, 0.0, 0.0)
     jacobian[1] = (dp1_da, dp1_db, 0.0)
     jacobian[2:, 0] = (1.0 - decay) * dp0_da + decay * dp1_da
@@ -176,7 +195,7 @@ def _fit_one_five_point(observed, delays_us, shots, *, min_t1_us, max_t1_us):
     }
 
 
-def estimate_five_point_t1(
+def estimate_matched_t1(
     P0,
     P1,
     survival_probabilities,
@@ -188,30 +207,34 @@ def estimate_five_point_t1(
     min_t1_us=0.25,
     max_t1_us=3000.0,
 ):
-    """Jointly fit P0, P1, and T1 with the five binomial populations."""
+    """Jointly fit P0, P1, and T1 with matched binomial populations."""
 
-    delays = validate_five_point_delays(delays_us)
+    delays = validate_matched_t1_delays(delays_us)
     p0 = np.asarray(P0, dtype=float).reshape(-1)
     p1 = np.asarray(P1, dtype=float).reshape(-1)
     survival = np.asarray(survival_probabilities, dtype=float)
     if survival.ndim == 1:
         survival = survival.reshape(1, -1)
-    if survival.shape != (p0.size, 3) or p1.shape != p0.shape:
+    survival_count = int(delays.size)
+    condition_count = 2 + survival_count
+    if survival.shape != (p0.size, survival_count) or p1.shape != p0.shape:
         raise ValueError(
-            "P0/P1 must be 1D and survival probabilities must have shape (n, 3)"
+            "P0/P1 must be 1D and survival probabilities must have shape "
+            f"(n, {survival_count})"
         )
     if np.isscalar(shots_per_condition):
-        shots = np.full(5, float(shots_per_condition), dtype=float)
+        shots = np.full(condition_count, float(shots_per_condition), dtype=float)
     else:
         shots = np.asarray(shots_per_condition, dtype=float).reshape(-1)
     if (
-        shots.size != 5
+        shots.size != condition_count
         or not np.all(np.isfinite(shots))
         or np.any(shots <= 0.0)
         or np.any(shots != np.floor(shots))
     ):
         raise ValueError(
-            "shots_per_condition must be a positive integer or five positive integers"
+            "shots_per_condition must be a positive integer or one positive "
+            "integer per condition"
         )
     min_t1_us = float(min_t1_us)
     max_t1_us = float(max_t1_us)
@@ -259,17 +282,35 @@ def estimate_five_point_t1(
         )
 
     return {
-        "T1_5pt_us_raw": raw_t1,
-        "T1_5pt_us": np.where(valid.astype(bool), raw_t1, np.nan),
-        "T1_5pt_err_us": np.where(valid.astype(bool), error, np.nan),
-        "T1_5pt_valid_mask": valid,
+        "T1_us_raw": raw_t1,
+        "T1_us": np.where(valid.astype(bool), raw_t1, np.nan),
+        "T1_err_us": np.where(valid.astype(bool), error, np.nan),
+        "valid_mask": valid,
         "fit_success": fit_success,
         "P0_fit": p0_fit,
         "P1_fit": p1_fit,
-        "ref_contrast_5pt": contrast,
+        "ref_contrast": contrast,
         "fit_deviance": deviance,
         "decay_delays_us": delays,
         "shots_per_condition": shots,
+    }
+
+
+def estimate_five_point_t1(*args, **kwargs):
+    """Backward-compatible five-condition estimator."""
+    delays = validate_five_point_delays(args[3] if len(args) > 3 else kwargs["delays_us"])
+    if len(args) > 3:
+        args = (*args[:3], delays, *args[4:])
+    else:
+        kwargs = {**kwargs, "delays_us": delays}
+    result = estimate_matched_t1(*args, **kwargs)
+    return {
+        **result,
+        "T1_5pt_us_raw": result["T1_us_raw"],
+        "T1_5pt_us": result["T1_us"],
+        "T1_5pt_err_us": result["T1_err_us"],
+        "T1_5pt_valid_mask": result["valid_mask"],
+        "ref_contrast_5pt": result["ref_contrast"],
     }
 
 

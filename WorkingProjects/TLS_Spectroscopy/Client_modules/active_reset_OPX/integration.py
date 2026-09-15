@@ -19,6 +19,7 @@ from .programs import (
     OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
     OPXResetT15PointProgram,
+    OPXResetT1NPointProgram,
     OPXResetT1FluxSweepProgram,
     OPXResetT1Program,
     OPXResetT1SweepProgram,
@@ -306,6 +307,16 @@ def acquire_t1_3pt_iq(
     }
 
 
+def canonicalize_matched_t1_records(records):
+    """Canonicalize odd-shot reverse-survival records, preserving P0/P1."""
+    canonical = np.asarray(records).copy()
+    if canonical.ndim != 3 or canonical.shape[-1] < 3:
+        raise ValueError("records must have shape (shot, dc, condition>=3)")
+    order = (0, 1, *range(canonical.shape[-1] - 1, 1, -1))
+    canonical[1::2] = canonical[1::2][..., order]
+    return canonical
+
+
 def acquire_t1_5pt_iq(
     soc,
     soccfg,
@@ -327,13 +338,13 @@ def acquire_t1_5pt_iq(
         raise ValueError("five-point DC gains must be integer DAC values")
     delays = np.asarray(delays_us, dtype=float).reshape(-1)
     if (
-        delays.size != 3
+        delays.size < 1
         or not np.all(np.isfinite(delays))
         or np.any(delays <= 0.0)
         or np.any(np.diff(delays) <= 0.0)
     ):
         raise ValueError(
-            "five-point delays must contain three positive increasing values"
+            "matched-reference delays must contain positive increasing values"
         )
     reference_hold_us = float(reference_hold_us)
     if not np.isfinite(reference_hold_us) or reference_hold_us < 0.01:
@@ -345,7 +356,7 @@ def acquire_t1_5pt_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    records_per_dc = 5
+    records_per_dc = 2 + int(delays.size)
     records_per_shot = int(rounded.size) * records_per_dc
     run_cfg = dict(cfg)
     run_cfg.update({
@@ -358,7 +369,10 @@ def acquire_t1_5pt_iq(
         "t1_wait_us": reference_hold_us + float(delays[-1]),
         "opx_resident_dmem_stream": True,
     })
-    program = OPXResetT15PointProgram(
+    program_type = (
+        OPXResetT15PointProgram if delays.size == 3 else OPXResetT1NPointProgram
+    )
+    program = program_type(
         soccfg,
         run_cfg,
         bundle.payload,
@@ -387,6 +401,11 @@ def acquire_t1_5pt_iq(
     q_records[1::2] = q_records[1::2, ::-1]
     if condition_tags is not None:
         condition_tags[1::2] = condition_tags[1::2, ::-1]
+    if bool(run_cfg.get("opx_reverse_survival_order", False)):
+        i_records = canonicalize_matched_t1_records(i_records)
+        q_records = canonicalize_matched_t1_records(q_records)
+        if condition_tags is not None:
+            condition_tags = canonicalize_matched_t1_records(condition_tags)
     i_values = i_records.transpose(2, 1, 0)
     q_values = q_records.transpose(2, 1, 0)
     tag_telemetry = {}
@@ -408,7 +427,11 @@ def acquire_t1_5pt_iq(
         "records_per_dc": records_per_dc,
         "blocks": 1,
         "resident_stream": True,
-        "order": "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2",
+        "order": (
+            "shot_alternating_dc_and_survival_P0_P1_Ps"
+            if bool(run_cfg.get("opx_reverse_survival_order", False))
+            else "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"
+        ),
         "condition_names": ("P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)),
         "dc_scan_order": "alternating_bidirectional",
         "dc_scan_up_shots": int((total_shots + 1) // 2),

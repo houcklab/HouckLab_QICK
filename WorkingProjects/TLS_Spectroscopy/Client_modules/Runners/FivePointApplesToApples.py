@@ -75,6 +75,7 @@ P6_5PT_APPLES_TO_APPLES = {
     "min_ref_contrast": 0.05,
     "max_relative_error": 0.5,
     "max_fit_t1_us": 3000.0,
+    "reverse_survival_order": False,
 }
 
 
@@ -283,7 +284,7 @@ def main():
         base_cfg=tls.BaseConfig,
         soc=soc,
         soccfg=soccfg,
-        purpose="FivePointApplesToApples",
+        purpose=f"{2 + len(p['decay_delays_us'])}PointApplesToApples",
     )
     print(f"automatic reset calibration saved: {reset_session.calibration_output}")
     base = dict(tls.BaseConfig)
@@ -300,6 +301,9 @@ def main():
             p["readout_thermalization_us"]
         ),
         "opx_t1_3pt_gain_lookup": True,
+        "opx_reverse_survival_order": bool(
+            p.get("reverse_survival_order", False)
+        ),
     })
     base = reset_session.apply(base)
     apply_verified_feedback_timing(base)
@@ -314,7 +318,7 @@ def main():
             base_cfg=tls.BaseConfig,
             soc=soc,
             soccfg=soccfg,
-            purpose="FivePointApplesToApples",
+            purpose=f"{2 + len(p['decay_delays_us'])}PointApplesToApples",
         )
         refreshed = state["session"].apply(base)
         base.clear()
@@ -330,7 +334,7 @@ def main():
             soccfg=soccfg,
             path=tls.QUBIT,
             outerFolder=tls.outerFolder,
-            suffix="TLS_5pt_Apples_to_Apples",
+            suffix=f"TLS_{2 + len(p['decay_delays_us'])}pt_Apples_to_Apples",
             cfg=dict(base),
             dc_vec=dc_vec,
             decay_delays_us=p["decay_delays_us"],
@@ -352,8 +356,8 @@ def main():
         return exp
 
     print(
-        f"five-point protocol: {len(target)} frequencies, "
-        f"{p['shots_per_condition']} shots x 5 conditions, "
+        f"{2 + len(p['decay_delays_us'])}-condition protocol: {len(target)} frequencies, "
+        f"{p['shots_per_condition']} shots x {2 + len(p['decay_delays_us'])} conditions, "
         f"delays={p['decay_delays_us']} us, {correction_mode}"
     )
     synchronizer = GlobalSlotSynchronizer.from_config(p)
@@ -365,7 +369,10 @@ def main():
         recalibrate,
         recalibration_min=float(p["reset_recalibration_min"]),
     )
-    print(f"apples-to-apples five-point scan complete: {csv_path}")
+    print(
+        f"apples-to-apples {2 + len(p['decay_delays_us'])}-condition "
+        f"scan complete: {csv_path}"
+    )
 
 
 if __name__ == "__main__":

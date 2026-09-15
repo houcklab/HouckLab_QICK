@@ -775,6 +775,109 @@ def test_binomial_fit_recovers_lifetime_and_shot_scaled_uncertainty():
     assert precise["T1_5pt_err_us"][0] == pytest.approx(fitted["T1_5pt_err_us"][0] / 2)
 
 
+def test_matched_reference_fit_accepts_five_survival_delays():
+    module = analysis()
+    delays = np.asarray([40.0, 80.0, 120.0, 160.0, 200.0])
+    survival = 0.08 + 0.80 * np.exp(-delays / 95.0)
+
+    result = module.estimate_matched_t1(
+        [0.08], [0.88], survival, delays, shots_per_condition=180
+    )
+
+    assert result["T1_us"][0] == pytest.approx(95.0, rel=0.001)
+    assert result["T1_err_us"][0] > 0.0
+    assert result["valid_mask"][0] == 1
+    assert result["shots_per_condition"].tolist() == [180.0] * 7
+
+
+def test_seven_condition_order_reverses_survival_only():
+    module, _cls = program_type()
+
+    assert module.matched_t1_condition_order(5, reverse_survival=False) == (
+        0, 1, 2, 3, 4, 5, 6,
+    )
+    assert module.matched_t1_condition_order(5, reverse_survival=True) == (
+        0, 1, 6, 5, 4, 3, 2,
+    )
+
+
+def test_seven_condition_record_canonicalization_restores_named_columns():
+    module = importlib.import_module(f"{PREFIX}.active_reset_OPX.integration")
+    raw = np.asarray([
+        [[0, 1, 2, 3, 4, 5, 6]],
+        [[10, 11, 16, 15, 14, 13, 12]],
+    ], dtype=float)
+
+    canonical = module.canonicalize_matched_t1_records(raw)
+
+    np.testing.assert_equal(canonical[0, 0], np.arange(7))
+    np.testing.assert_equal(canonical[1, 0], np.arange(10, 17))
+
+
+def test_qick_seven_condition_program_emits_reverse_survival_with_canonical_tags():
+    module, _cls = program_type()
+    prog = object.__new__(module.OPXResetT1NPointProgram)
+    prog.cfg = {
+        "opx_t1_5pt_reference_hold_us": 2.0,
+        "opx_t1_5pt_delays_us": [40.0, 80.0, 120.0, 160.0, 200.0],
+        "opx_reverse_survival_order": True,
+        "opx_diagnostic_condition_tags": True,
+    }
+    emitted = []
+    prog._emit_tagged_condition = (
+        lambda label, do_pi, do_ff, hold, tag:
+        emitted.append((label, hold, tag))
+    )
+
+    prog._emit_t1_conditions({}, "OPX_T1_3PT_DOWN")
+
+    assert [entry[2] for entry in emitted] == [0, 1, 6, 5, 4, 3, 2]
+    assert [entry[1] for entry in emitted] == [2, 2, 202, 162, 122, 82, 42]
+
+
+def test_qick_seven_condition_acquisition_canonicalizes_reverse_shots(monkeypatch):
+    module = importlib.import_module(f"{PREFIX}.active_reset_OPX.integration")
+
+    class HardwareProgram:
+        def __init__(self, board, cfg, *_args):
+            self.cfg = cfg
+        def us2cycles(self, *_args, **_kwargs):
+            return 1
+
+    monkeypatch.setattr(module, "OPXResetT1NPointProgram", HardwareProgram)
+    canonical = np.arange(7)
+    reverse = np.asarray([10, 11, 16, 15, 14, 13, 12])
+    records = [
+        types.SimpleNamespace(final_i=float(value), final_q=-float(value))
+        for value in np.r_[canonical, reverse]
+    ]
+    monkeypatch.setattr(module, "_run_program", lambda *args, **kwargs: records)
+
+    i, q, telemetry = module.acquire_t1_5pt_iq(
+        None,
+        None,
+        {
+            "reset_mode": "passive",
+            "read_length": 1,
+            "ro_chs": [0],
+            "opx_reverse_survival_order": True,
+        },
+        dc_gains=[-100],
+        delays_us=[40, 80, 120, 160, 200],
+        reference_hold_us=2,
+        shots=2,
+        reset_scheme="none",
+    )
+
+    np.testing.assert_equal(i[:, 0, 0], canonical)
+    np.testing.assert_equal(i[:, 0, 1], np.arange(10, 17))
+    np.testing.assert_equal(q, -i)
+    assert telemetry["records_per_dc"] == 7
+    assert telemetry["condition_names"] == (
+        "P0", "P1", "Ps_40us", "Ps_80us", "Ps_120us", "Ps_160us", "Ps_200us",
+    )
+
+
 def test_uninformative_or_nonphysical_populations_are_marked_invalid():
     fitted = analysis().estimate_five_point_t1([0.5, np.nan, -1], [0.51, 0.9, 0.9],
                                                [[0.5]*3]*3, [10, 50, 200],

@@ -29,9 +29,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integratio
     classify_payload_iq,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import (
+    estimate_matched_t1,
     estimate_five_point_t1,
     five_point_output_metadata,
     reduce_bidirectional_condition_states,
+    validate_matched_t1_delays,
     validate_five_point_delays,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.three_point import (
@@ -331,20 +333,21 @@ def build_wall_clock_repeat_metadata(run_start_dt, series_start_dt, run_index):
 def get_wall_clock_repeat_spec(exp):
     data = exp.data
     if isinstance(exp, T15PointVsFlux):
+        metric_prefix = f"T1_{len(exp.CONDITION_NAMES)}pt"
         return {
-            "metric_values": data["inv_T1_5pt_per_us"],
-            "metric_column_name": "inv_T1_5pt_per_us",
+            "metric_values": data[f"inv_{metric_prefix}_per_us"],
+            "metric_column_name": f"inv_{metric_prefix}_per_us",
             "extra_metric_matrices": {
-                "T1_5pt_us_raw": data["T1_5pt_us_raw"],
-                "T1_5pt_us": data["T1_5pt_us"],
-                "T1_5pt_err_us": data["T1_5pt_err_us"],
-                "inv_T1_5pt_err_per_us": data[
-                    "inv_T1_5pt_err_per_us"
+                f"{metric_prefix}_us_raw": data[f"{metric_prefix}_us_raw"],
+                f"{metric_prefix}_us": data[f"{metric_prefix}_us"],
+                f"{metric_prefix}_err_us": data[f"{metric_prefix}_err_us"],
+                f"inv_{metric_prefix}_err_per_us": data[
+                    f"inv_{metric_prefix}_err_per_us"
                 ],
             },
             "colorbar_label": "1 / T1 (1/us)",
-            "plot_title": f"{exp.element} 1/T1_5pt vs flux and wall clock",
-            "file_tag": "T1_5pt",
+            "plot_title": f"{exp.element} 1/{metric_prefix} vs flux and wall clock",
+            "file_tag": metric_prefix,
         }
     if isinstance(exp, T13PointVsFlux):
         return {"metric_values": data["inv_T1_3pt_per_us"],
@@ -366,15 +369,19 @@ def get_wall_clock_repeat_spec(exp):
 def get_wall_clock_repeat_full_spec(exp):
     data = exp.data
     if isinstance(exp, T15PointVsFlux):
+        point_count = len(exp.CONDITION_NAMES)
+        metric_prefix = f"T1_{point_count}pt"
+        contrast_key = f"ref_contrast_{point_count}pt"
         scalar_columns = {
             "reference_hold_us": float(exp.reference_hold_us),
             "shots_per_condition": int(exp.shots),
             "measurements_per_frequency": int(
                 exp.shots * len(exp.CONDITION_NAMES)
             ),
-            "delay_0_us": float(exp.decay_delays_us[0]),
-            "delay_1_us": float(exp.decay_delays_us[1]),
-            "delay_2_us": float(exp.decay_delays_us[2]),
+            **{
+                f"delay_{index}_us": float(delay)
+                for index, delay in enumerate(exp.decay_delays_us)
+            },
             "P0": data["P0"],
             "P1": data["P1"],
             **{
@@ -383,10 +390,10 @@ def get_wall_clock_repeat_full_spec(exp):
             },
             "P0_fit": data["P0_fit"],
             "P1_fit": data["P1_fit"],
-            "ref_contrast_5pt": data["ref_contrast_5pt"],
-            "T1_5pt_valid_mask": data["T1_5pt_valid_mask"],
-            "T1_5pt_fit_success": data["T1_5pt_fit_success"],
-            "T1_5pt_fit_deviance": data["T1_5pt_fit_deviance"],
+            contrast_key: data[contrast_key],
+            f"{metric_prefix}_valid_mask": data[f"{metric_prefix}_valid_mask"],
+            f"{metric_prefix}_fit_success": data[f"{metric_prefix}_fit_success"],
+            f"{metric_prefix}_fit_deviance": data[f"{metric_prefix}_fit_deviance"],
         }
         for key in (
             "P0_scan_up",
@@ -398,18 +405,18 @@ def get_wall_clock_repeat_full_spec(exp):
                 for name in exp.CONDITION_NAMES[2:]
                 for direction in ("scan_up", "scan_down")
             ),
-            "T1_5pt_us_scan_up",
-            "T1_5pt_us_scan_down",
-            "inv_T1_5pt_per_us_scan_up",
-            "inv_T1_5pt_per_us_scan_down",
-            "inv_T1_5pt_per_us_scan_direction_delta",
-            "T1_5pt_valid_mask_scan_up",
-            "T1_5pt_valid_mask_scan_down",
-            "T1_5pt_us_raw_scan_up", "T1_5pt_us_raw_scan_down",
-            "T1_5pt_err_us_scan_up", "T1_5pt_err_us_scan_down",
-            "inv_T1_5pt_err_per_us_scan_up", "inv_T1_5pt_err_per_us_scan_down",
-            "T1_5pt_fit_success_scan_up", "T1_5pt_fit_success_scan_down",
-            "T1_5pt_fit_deviance_scan_up", "T1_5pt_fit_deviance_scan_down",
+            f"{metric_prefix}_us_scan_up",
+            f"{metric_prefix}_us_scan_down",
+            f"inv_{metric_prefix}_per_us_scan_up",
+            f"inv_{metric_prefix}_per_us_scan_down",
+            f"inv_{metric_prefix}_per_us_scan_direction_delta",
+            f"{metric_prefix}_valid_mask_scan_up",
+            f"{metric_prefix}_valid_mask_scan_down",
+            f"{metric_prefix}_us_raw_scan_up", f"{metric_prefix}_us_raw_scan_down",
+            f"{metric_prefix}_err_us_scan_up", f"{metric_prefix}_err_us_scan_down",
+            f"inv_{metric_prefix}_err_per_us_scan_up", f"inv_{metric_prefix}_err_per_us_scan_down",
+            f"{metric_prefix}_fit_success_scan_up", f"{metric_prefix}_fit_success_scan_down",
+            f"{metric_prefix}_fit_deviance_scan_up", f"{metric_prefix}_fit_deviance_scan_down",
             "P0_fit_scan_up", "P0_fit_scan_down",
             "P1_fit_scan_up", "P1_fit_scan_down",
         ):
@@ -932,7 +939,7 @@ class T15PointVsFlux(_T1VsFluxBase):
         if not np.isfinite(requested_shots) or requested_shots < 2 or not requested_shots.is_integer():
             raise ValueError("five-point shots must be an integer of at least two")
         super().__init__(*args, **kw)
-        self.decay_delays_us = validate_five_point_delays(decay_delays_us)
+        self.decay_delays_us = validate_matched_t1_delays(decay_delays_us)
         self.CONDITION_NAMES = (
             "P0",
             "P1",
@@ -960,6 +967,11 @@ class T15PointVsFlux(_T1VsFluxBase):
             "dc_scan_order": "alternating_bidirectional",
             "dc_scan_up_shots": (self.shots + 1) // 2,
             "dc_scan_down_shots": self.shots // 2,
+            "survival_order_alternates": bool(
+                getattr(self, "cfg", {}).get(
+                    "opx_reverse_survival_order", False
+                )
+            ),
         })
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
@@ -1032,7 +1044,9 @@ class T15PointVsFlux(_T1VsFluxBase):
         survival = np.column_stack(
             [directional[name] for name in self.CONDITION_NAMES[2:]]
         )
-        estimate = estimate_five_point_t1(
+        metric_prefix = f"T1_{len(self.CONDITION_NAMES)}pt"
+        contrast_key = f"ref_contrast_{len(self.CONDITION_NAMES)}pt"
+        estimate = estimate_matched_t1(
             directional["P0"],
             directional["P1"],
             survival,
@@ -1043,21 +1057,21 @@ class T15PointVsFlux(_T1VsFluxBase):
             max_t1_us=self.max_fit_t1_us,
         )
         inv, inv_err = _safe_inverse_t1_us(
-            estimate["T1_5pt_us"],
-            estimate["T1_5pt_err_us"],
+            estimate["T1_us"],
+            estimate["T1_err_us"],
         )
         self.data.update({
-            "T1_5pt_us_raw": estimate["T1_5pt_us_raw"],
-            "T1_5pt_us": estimate["T1_5pt_us"],
-            "T1_5pt_err_us": estimate["T1_5pt_err_us"],
-            "inv_T1_5pt_per_us": inv,
-            "inv_T1_5pt_err_per_us": inv_err,
-            "T1_5pt_valid_mask": estimate["T1_5pt_valid_mask"],
-            "T1_5pt_fit_success": estimate["fit_success"],
-            "T1_5pt_fit_deviance": estimate["fit_deviance"],
+            f"{metric_prefix}_us_raw": estimate["T1_us_raw"],
+            f"{metric_prefix}_us": estimate["T1_us"],
+            f"{metric_prefix}_err_us": estimate["T1_err_us"],
+            f"inv_{metric_prefix}_per_us": inv,
+            f"inv_{metric_prefix}_err_per_us": inv_err,
+            f"{metric_prefix}_valid_mask": estimate["valid_mask"],
+            f"{metric_prefix}_fit_success": estimate["fit_success"],
+            f"{metric_prefix}_fit_deviance": estimate["fit_deviance"],
             "P0_fit": estimate["P0_fit"],
             "P1_fit": estimate["P1_fit"],
-            "ref_contrast_5pt": estimate["ref_contrast_5pt"],
+            contrast_key: estimate["ref_contrast"],
         })
 
         for direction in ("scan_up", "scan_down"):
@@ -1065,7 +1079,7 @@ class T15PointVsFlux(_T1VsFluxBase):
                 directional[f"{name}_{direction}"]
                 for name in self.CONDITION_NAMES[2:]
             ])
-            direction_estimate = estimate_five_point_t1(
+            direction_estimate = estimate_matched_t1(
                 directional[f"P0_{direction}"],
                 directional[f"P1_{direction}"],
                 direction_survival,
@@ -1078,27 +1092,27 @@ class T15PointVsFlux(_T1VsFluxBase):
                 max_t1_us=self.max_fit_t1_us,
             )
             direction_inv, direction_inv_err = _safe_inverse_t1_us(
-                direction_estimate["T1_5pt_us"], direction_estimate["T1_5pt_err_us"]
+                direction_estimate["T1_us"], direction_estimate["T1_err_us"]
             )
             for source, output in (
-                ("T1_5pt_us_raw", "T1_5pt_us_raw"),
-                ("T1_5pt_err_us", "T1_5pt_err_us"),
-                ("fit_success", "T1_5pt_fit_success"),
-                ("fit_deviance", "T1_5pt_fit_deviance"),
+                ("T1_us_raw", f"{metric_prefix}_us_raw"),
+                ("T1_err_us", f"{metric_prefix}_err_us"),
+                ("fit_success", f"{metric_prefix}_fit_success"),
+                ("fit_deviance", f"{metric_prefix}_fit_deviance"),
                 ("P0_fit", "P0_fit"), ("P1_fit", "P1_fit"),
             ):
                 self.data[f"{output}_{direction}"] = direction_estimate[source]
-            self.data[f"inv_T1_5pt_err_per_us_{direction}"] = direction_inv_err
-            self.data[f"T1_5pt_us_{direction}"] = direction_estimate[
-                "T1_5pt_us"
+            self.data[f"inv_{metric_prefix}_err_per_us_{direction}"] = direction_inv_err
+            self.data[f"{metric_prefix}_us_{direction}"] = direction_estimate[
+                "T1_us"
             ]
-            self.data[f"inv_T1_5pt_per_us_{direction}"] = direction_inv
-            self.data[f"T1_5pt_valid_mask_{direction}"] = direction_estimate[
-                "T1_5pt_valid_mask"
+            self.data[f"inv_{metric_prefix}_per_us_{direction}"] = direction_inv
+            self.data[f"{metric_prefix}_valid_mask_{direction}"] = direction_estimate[
+                "valid_mask"
             ]
-        self.data["inv_T1_5pt_per_us_scan_direction_delta"] = (
-            self.data["inv_T1_5pt_per_us_scan_up"]
-            - self.data["inv_T1_5pt_per_us_scan_down"]
+        self.data[f"inv_{metric_prefix}_per_us_scan_direction_delta"] = (
+            self.data[f"inv_{metric_prefix}_per_us_scan_up"]
+            - self.data[f"inv_{metric_prefix}_per_us_scan_down"]
         )
         self.keep_fraction = np.ones(
             len(self.dc_vec) * len(self.CONDITION_NAMES), dtype=float
@@ -1125,14 +1139,14 @@ class T15PointVsFlux(_T1VsFluxBase):
             fig, ax = plt.subplots(constrained_layout=True)
             ax.errorbar(
                 self.dc_vec,
-                self.data["T1_5pt_us"],
-                yerr=self.data["T1_5pt_err_us"],
+                self.data[f"{metric_prefix}_us"],
+                yerr=self.data[f"{metric_prefix}_err_us"],
                 fmt="-",
                 linewidth=1,
             )
             ax.set_xlabel("Flux DC target")
-            ax.set_ylabel("T1 (us), five-point binomial fit")
-            fig.savefig(self.iname[:-4] + "_5pt_T1.png", bbox_inches="tight")
+            ax.set_ylabel(f"T1 (us), {len(self.CONDITION_NAMES)}-condition binomial fit")
+            fig.savefig(self.iname[:-4] + f"_{len(self.CONDITION_NAMES)}pt_T1.png", bbox_inches="tight")
             plt.close(fig)
 
             columns = {
