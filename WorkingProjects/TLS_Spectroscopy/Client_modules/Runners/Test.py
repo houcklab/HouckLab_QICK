@@ -354,6 +354,754 @@ def _save_csv(path, columns):
             writer.writerow(row)
 
 
+def sequence_audit_requested(environ=None):
+    """Select the temporary native many-delay A/B diagnostic."""
+    environ = os.environ if environ is None else environ
+    return str(environ.get("Q3_T1_SEQUENCE_AUDIT", "off")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def predistortion_causality_plan(environ=None):
+    """Return the independent 21-delay q3 predistortion A/B contract."""
+    environ = os.environ if environ is None else environ
+    frequencies = [
+        float(value)
+        for value in str(
+            environ.get("Q3_CAUSALITY_FREQUENCIES_GHZ", "3.900,4.050,4.300")
+        ).split(",")
+    ]
+    delays = [
+        float(value)
+        for value in str(
+            environ.get(
+                "Q3_CAUSALITY_DELAYS_US",
+                "0.5,1,2,3,4,6,8,10,12,16,20,25,30,40,50,65,80,100,125,160,200",
+            )
+        ).split(",")
+    ]
+    shots = int(environ.get("Q3_CAUSALITY_SHOTS", "300"))
+    reset_mode = str(
+        environ.get("Q3_CAUSALITY_RESET_MODE", "active")
+    ).strip().lower()
+    if len(frequencies) < 2 or not np.all(np.isfinite(frequencies)):
+        raise ValueError(
+            "Q3_CAUSALITY_FREQUENCIES_GHZ needs at least two finite values"
+        )
+    if len(set(frequencies)) != len(frequencies):
+        raise ValueError("Q3_CAUSALITY_FREQUENCIES_GHZ values must be unique")
+    if (
+        len(delays) < 3
+        or not np.all(np.isfinite(delays))
+        or np.any(np.asarray(delays) <= 0.0)
+        or np.any(np.diff(delays) <= 0.0)
+    ):
+        raise ValueError(
+            "Q3_CAUSALITY_DELAYS_US needs at least three positive increasing values"
+        )
+    if shots < 2:
+        raise ValueError("Q3_CAUSALITY_SHOTS must be at least two")
+    if reset_mode not in ("active", "passive"):
+        raise ValueError("Q3_CAUSALITY_RESET_MODE must be active or passive")
+    return {
+        "target_frequencies_ghz": frequencies,
+        "delays_us": delays,
+        "shots": shots,
+        "reset_mode": reset_mode,
+        "modes": ("on", "off"),
+    }
+
+
+def make_npoint_program_class():
+    """Build the temporary resident P0/P1/N-delay QICK program class."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
+        OPXResetT13PointProgram,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import (
+        CONDITION_TAGGED_PAYLOAD_RECORD_WORDS,
+        decode_condition_tagged_payload_records,
+    )
+
+    class OPXResetT1NPointProgram(OPXResetT13PointProgram):
+        """One resident program containing P0, P1, and every requested delay."""
+
+        def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+            run_cfg = dict(cfg)
+            if bool(run_cfg.get("opx_diagnostic_condition_tags", False)):
+                self.record_words = CONDITION_TAGGED_PAYLOAD_RECORD_WORDS
+                self.decode_dmem_records = decode_condition_tagged_payload_records
+            delays = np.asarray(
+                run_cfg.get("opx_t1_npoint_delays_us", ()), dtype=float
+            ).reshape(-1)
+            if (
+                delays.size < 3
+                or not np.all(np.isfinite(delays))
+                or np.any(delays <= 0.0)
+                or np.any(np.diff(delays) <= 0.0)
+            ):
+                raise ValueError(
+                    "opx_t1_npoint_delays_us must contain at least three "
+                    "positive increasing delays"
+                )
+            reference_hold_us = float(
+                run_cfg.get("opx_t1_npoint_reference_hold_us", 0.0)
+            )
+            if not np.isfinite(reference_hold_us) or reference_hold_us < 0.01:
+                raise ValueError(
+                    "opx_t1_npoint_reference_hold_us must be at least 0.01 us"
+                )
+            run_cfg.update({
+                "opx_t1_npoint_delays_us": delays.tolist(),
+                "opx_t1_npoint_reference_hold_us": reference_hold_us,
+                "opx_t1_3pt_wait_us": reference_hold_us + float(delays[-1]),
+            })
+            self._npoint_records_per_dc = 2 + int(delays.size)
+            super().__init__(
+                soccfg,
+                run_cfg,
+                payload_calibration,
+                loop_calibration,
+            )
+
+        def _records_per_dc(self):
+            if hasattr(self, "_npoint_records_per_dc"):
+                return int(self._npoint_records_per_dc)
+            return 2 + len(self.cfg["opx_t1_npoint_delays_us"])
+
+        def _set_p0_reference_flag(self, controls, label_prefix):
+            # The audit measures frequency-resolved P0 on every shot.
+            return None
+
+        def _emit_t1_conditions(self, controls, label_prefix):
+            reference = float(self.cfg["opx_t1_npoint_reference_hold_us"])
+            self._emit_tagged_condition(
+                f"{label_prefix}_P0", False, True, reference, 0
+            )
+            self._emit_tagged_condition(
+                f"{label_prefix}_P1", True, True, reference, 1
+            )
+            for index, delay in enumerate(self.cfg["opx_t1_npoint_delays_us"]):
+                self._emit_tagged_condition(
+                    f"{label_prefix}_PS{index}",
+                    True,
+                    True,
+                    reference + float(delay),
+                    index + 2,
+                )
+
+        def _emit_tagged_condition(self, label, do_pi, do_ff, hold_us, tag):
+            self._emit_three_point_payload(label, do_pi, do_ff, hold_us)
+            if not bool(self.cfg.get("opx_diagnostic_condition_tags", False)):
+                return
+            self.regwi(self.reset_page, self.reset_regs["q"], int(tag))
+            self.memw(
+                self.reset_page,
+                self.reset_regs["q"],
+                self.reset_regs["address"],
+            )
+            self.mathi(
+                self.reset_page,
+                self.reset_regs["address"],
+                self.reset_regs["address"],
+                "+",
+                1,
+            )
+
+    return OPXResetT1NPointProgram
+
+
+def acquire_t1_npoint_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    dc_gains,
+    delays_us,
+    reference_hold_us,
+    shots,
+    reset_scheme="opx_unbounded",
+    progress=None,
+    program_class=None,
+):
+    """Acquire P0, P1, and N survival delays in one resident QICK program."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
+        integration,
+    )
+
+    bundle = integration.runtime_bundle(cfg)
+    gains = np.asarray(dc_gains, dtype=float).reshape(-1)
+    if gains.size == 0 or not np.all(np.isfinite(gains)):
+        raise ValueError("at least one finite N-point DC gain is required")
+    rounded = np.rint(gains).astype(np.int64)
+    if not np.allclose(gains, rounded, rtol=0.0, atol=1e-9):
+        raise ValueError("N-point DC gains must be integer DAC values")
+    delays = np.asarray(delays_us, dtype=float).reshape(-1)
+    if (
+        delays.size < 3
+        or not np.all(np.isfinite(delays))
+        or np.any(delays <= 0.0)
+        or np.any(np.diff(delays) <= 0.0)
+    ):
+        raise ValueError(
+            "N-point delays must contain at least three positive increasing values"
+        )
+    reference_hold_us = float(reference_hold_us)
+    if not np.isfinite(reference_hold_us) or reference_hold_us < 0.01:
+        raise ValueError("N-point reference hold must be at least 0.01 us")
+    total_shots = int(shots)
+    if float(shots) != total_shots or total_shots < 2:
+        raise ValueError("N-point shots must be an integer of at least two")
+    reset_scheme = str(reset_scheme).strip().lower()
+    if reset_scheme not in ("opx_unbounded", "none"):
+        raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
+
+    records_per_dc = 2 + int(delays.size)
+    records_per_shot = int(rounded.size) * records_per_dc
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": reset_scheme,
+        "opx_t1_3pt_shots": total_shots,
+        "opx_t1_3pt_dc_gains": rounded.tolist(),
+        "opx_t1_npoint_delays_us": delays.tolist(),
+        "opx_t1_npoint_reference_hold_us": reference_hold_us,
+        "ff_hold": reference_hold_us + float(delays[-1]),
+        "t1_wait_us": reference_hold_us + float(delays[-1]),
+        "opx_resident_dmem_stream": True,
+    })
+    program_type = make_npoint_program_class() if program_class is None else program_class
+    program = program_type(soccfg, run_cfg, bundle.payload, bundle.loop)
+    block = integration._run_program(
+        soc,
+        program,
+        integration._block_timeout_s(
+            run_cfg, total_shots * records_per_shot
+        ),
+        run_cfg,
+        total_shots=total_shots,
+        progress=progress,
+    )
+    i_records = np.asarray(
+        [record.final_i for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, records_per_dc)
+    q_records = np.asarray(
+        [record.final_q for record in block], dtype=float
+    ).reshape(total_shots, rounded.size, records_per_dc)
+    condition_tags = None
+    if block and all(hasattr(record, "condition_tag") for record in block):
+        condition_tags = np.asarray(
+            [record.condition_tag for record in block], dtype=int
+        ).reshape(total_shots, rounded.size, records_per_dc)
+    i_records[1::2] = i_records[1::2, ::-1]
+    q_records[1::2] = q_records[1::2, ::-1]
+    if condition_tags is not None:
+        condition_tags[1::2] = condition_tags[1::2, ::-1]
+    i_values = i_records.transpose(2, 1, 0)
+    q_values = q_records.transpose(2, 1, 0)
+    tag_telemetry = {}
+    if condition_tags is not None:
+        decoded_tags = condition_tags.transpose(2, 1, 0)
+        expected_tags = np.arange(records_per_dc, dtype=int)[:, None, None]
+        mismatches = int(np.count_nonzero(decoded_tags != expected_tags))
+        tag_telemetry = {
+            "condition_tag_mismatches": mismatches,
+            "condition_tags_match_decoded_conditions": bool(mismatches == 0),
+        }
+    read_cycles = program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    condition_names = (
+        "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
+    )
+    return i_values / int(read_cycles), q_values / int(read_cycles), {
+        "shots_per_condition": total_shots,
+        "dc_points": int(rounded.size),
+        "records": int(len(block)),
+        "records_per_dc": records_per_dc,
+        "blocks": 1,
+        "resident_stream": True,
+        "native_many_delay_program": True,
+        "order": "shot_alternating_dc_P0_P1_Ps_all_delays",
+        "condition_names": condition_names,
+        "dc_scan_order": "alternating_bidirectional",
+        "dc_scan_up_shots": int((total_shots + 1) // 2),
+        "dc_scan_down_shots": int(total_shots // 2),
+        "p0_mode": "matched_frequency_resolved",
+        "reference_hold_us": reference_hold_us,
+        "decay_delays_us": tuple(float(value) for value in delays),
+        "read_length_cycles": int(read_cycles),
+        **tag_telemetry,
+        "dmem_read_verification": getattr(
+            program,
+            "dmem_read_verification",
+            {"enabled": False},
+        ),
+        **integration.flux_predistortion_telemetry(program),
+    }
+
+
+def summarize_dense_populations(matrix, *, delays_us, shots):
+    """Normalize every survival point against its mode-matched P0/P1."""
+    matrix = np.asarray(matrix, dtype=float)
+    delays = np.asarray(delays_us, dtype=float)
+    shots = int(shots)
+    expected_columns = 2 + len(delays)
+    if matrix.ndim != 2 or matrix.shape[1] != expected_columns:
+        raise ValueError(
+            f"dense population matrix needs {expected_columns} columns"
+        )
+    if shots < 2:
+        raise ValueError("dense population summary needs at least two shots")
+    p0 = matrix[:, 0]
+    p1 = matrix[:, 1]
+    survival = matrix[:, 2:]
+    contrast = p1 - p0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        normalized = (survival - p0[:, None]) / contrast[:, None]
+        variance_p0 = p0 * (1.0 - p0) / shots
+        variance_p1 = p1 * (1.0 - p1) / shots
+        variance_ps = survival * (1.0 - survival) / shots
+        derivative_ps = 1.0 / contrast[:, None]
+        derivative_p0 = (survival - p1[:, None]) / contrast[:, None] ** 2
+        derivative_p1 = -(survival - p0[:, None]) / contrast[:, None] ** 2
+        normalized_variance = (
+            derivative_ps ** 2 * variance_ps
+            + derivative_p0 ** 2 * variance_p0[:, None]
+            + derivative_p1 ** 2 * variance_p1[:, None]
+        )
+    return {
+        "delays_us": delays,
+        "P0": p0,
+        "P1": p1,
+        "survival": survival,
+        "normalized": normalized,
+        "normalized_sigma": np.sqrt(normalized_variance),
+    }
+
+
+def save_predistortion_causality_outputs(
+    output_base,
+    *,
+    plan,
+    target_frequency_ghz,
+    realized_frequency_ghz,
+    dc_vec,
+    mode_results,
+    correction_source,
+    readout_contract,
+):
+    """Save raw IQ, directional populations, propagated errors, and A/B plot."""
+    output_base = Path(output_base)
+    raw_iq_path = Path(str(output_base) + "_raw_iq.npz")
+    csv_path = Path(str(output_base) + "_raw_populations.csv")
+    json_path = Path(str(output_base) + "_summary.json")
+    png_path = Path(str(output_base) + "_comparison.png")
+
+    np.savez_compressed(
+        raw_iq_path,
+        target_frequency_ghz=np.asarray(target_frequency_ghz, dtype=float),
+        realized_frequency_ghz=np.asarray(realized_frequency_ghz, dtype=float),
+        dc_offset_dac=np.asarray(dc_vec, dtype=int),
+        delays_us=np.asarray(plan["delays_us"], dtype=float),
+        condition_names=np.asarray(mode_results["on"]["condition_names"]),
+        I_on=mode_results["on"]["I"],
+        Q_on=mode_results["on"]["Q"],
+        states_on=mode_results["on"]["states"],
+        I_off=mode_results["off"]["I"],
+        Q_off=mode_results["off"]["Q"],
+        states_off=mode_results["off"]["states"],
+    )
+
+    fields = [
+        "mode", "target_frequency_ghz", "realized_frequency_ghz",
+        "dc_offset_dac", "condition", "delay_us", "population",
+        "population_scan_up", "population_scan_down",
+        "normalized_survival", "normalized_survival_sigma",
+        "shots", "reset_mode", "correction_source",
+    ]
+    with csv_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for mode in plan["modes"]:
+            result = mode_results[mode]
+            summary = result["summary"]
+            directional = result["directional"]
+            for frequency_index, frequency in enumerate(target_frequency_ghz):
+                for condition in ("P0", "P1"):
+                    writer.writerow({
+                        "mode": mode,
+                        "target_frequency_ghz": frequency,
+                        "realized_frequency_ghz": realized_frequency_ghz[frequency_index],
+                        "dc_offset_dac": dc_vec[frequency_index],
+                        "condition": condition,
+                        "delay_us": "",
+                        "population": directional[condition][frequency_index],
+                        "population_scan_up": directional[f"{condition}_scan_up"][frequency_index],
+                        "population_scan_down": directional[f"{condition}_scan_down"][frequency_index],
+                        "normalized_survival": "",
+                        "normalized_survival_sigma": "",
+                        "shots": plan["shots"],
+                        "reset_mode": plan["reset_mode"],
+                        "correction_source": correction_source if mode == "on" else "",
+                    })
+                for delay_index, delay in enumerate(plan["delays_us"]):
+                    condition = f"Ps_{delay:g}us"
+                    writer.writerow({
+                        "mode": mode,
+                        "target_frequency_ghz": frequency,
+                        "realized_frequency_ghz": realized_frequency_ghz[frequency_index],
+                        "dc_offset_dac": dc_vec[frequency_index],
+                        "condition": condition,
+                        "delay_us": delay,
+                        "population": directional[condition][frequency_index],
+                        "population_scan_up": directional[f"{condition}_scan_up"][frequency_index],
+                        "population_scan_down": directional[f"{condition}_scan_down"][frequency_index],
+                        "normalized_survival": summary["normalized"][frequency_index, delay_index],
+                        "normalized_survival_sigma": summary["normalized_sigma"][frequency_index, delay_index],
+                        "shots": plan["shots"],
+                        "reset_mode": plan["reset_mode"],
+                        "correction_source": correction_source if mode == "on" else "",
+                    })
+
+    metrics = {
+        "plan": plan,
+        "correction_source": correction_source,
+        "readout_contract": readout_contract,
+        "raw_iq_npz": str(raw_iq_path),
+        "frequencies": {},
+        "telemetry": {
+            mode: mode_results[mode]["telemetry"] for mode in plan["modes"]
+        },
+    }
+    for frequency_index, frequency in enumerate(target_frequency_ghz):
+        key = f"{frequency:.6f}GHz"
+        metrics["frequencies"][key] = {}
+        for mode in plan["modes"]:
+            summary = mode_results[mode]["summary"]
+            normalized = summary["normalized"][frequency_index]
+            upward = np.diff(normalized)
+            metrics["frequencies"][key][mode] = {
+                "P0": float(summary["P0"][frequency_index]),
+                "P1": float(summary["P1"][frequency_index]),
+                "reference_contrast": float(
+                    summary["P1"][frequency_index]
+                    - summary["P0"][frequency_index]
+                ),
+                "largest_upward_step": float(max(0.0, np.nanmax(upward))),
+                "normalized_survival": normalized.tolist(),
+                "normalized_survival_sigma": summary[
+                    "normalized_sigma"
+                ][frequency_index].tolist(),
+            }
+        on = mode_results["on"]["summary"]
+        off = mode_results["off"]["summary"]
+        delta = on["normalized"][frequency_index] - off["normalized"][frequency_index]
+        sigma = np.sqrt(
+            on["normalized_sigma"][frequency_index] ** 2
+            + off["normalized_sigma"][frequency_index] ** 2
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z_score = delta / sigma
+        metrics["frequencies"][key]["on_minus_off_normalized"] = delta.tolist()
+        metrics["frequencies"][key]["on_minus_off_z"] = z_score.tolist()
+        metrics["frequencies"][key]["on_minus_off_max_abs_z"] = float(
+            np.nanmax(np.abs(z_score))
+        )
+    with json_path.open("w") as handle:
+        json.dump(metrics, handle, indent=2, default=_json_default)
+
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(
+        len(target_frequency_ghz),
+        2,
+        figsize=(11.0, 3.2 * len(target_frequency_ghz)),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    colors = {"on": "#2457a6", "off": "#d97706"}
+    delays = np.asarray(plan["delays_us"], dtype=float)
+    for frequency_index, frequency in enumerate(target_frequency_ghz):
+        raw_ax, normalized_ax = axes[frequency_index]
+        for mode in plan["modes"]:
+            summary = mode_results[mode]["summary"]
+            survival = summary["survival"][frequency_index]
+            raw_sigma = np.sqrt(
+                survival * (1.0 - survival) / plan["shots"]
+            )
+            raw_ax.errorbar(
+                delays,
+                survival,
+                yerr=raw_sigma,
+                marker="o",
+                ms=3.5,
+                lw=1.0,
+                capsize=2,
+                color=colors[mode],
+                label=mode,
+            )
+            raw_ax.axhline(
+                summary["P0"][frequency_index],
+                color=colors[mode],
+                lw=0.8,
+                ls=":",
+                alpha=0.75,
+            )
+            raw_ax.axhline(
+                summary["P1"][frequency_index],
+                color=colors[mode],
+                lw=0.8,
+                ls="--",
+                alpha=0.75,
+            )
+            normalized_ax.errorbar(
+                delays,
+                summary["normalized"][frequency_index],
+                yerr=summary["normalized_sigma"][frequency_index],
+                marker="o",
+                ms=3.5,
+                lw=1.0,
+                capsize=2,
+                color=colors[mode],
+                label=mode,
+            )
+        raw_ax.set_title(f"{frequency:.3f} GHz: raw P(excited)")
+        normalized_ax.set_title(f"{frequency:.3f} GHz: normalized survival")
+        raw_ax.set_ylabel("P(excited)")
+        normalized_ax.set_ylabel("(Ps - P0) / (P1 - P0)")
+        for axis in (raw_ax, normalized_ax):
+            axis.set_xlabel("Delay [us]")
+            axis.spines["top"].set_visible(False)
+            axis.spines["right"].set_visible(False)
+            axis.legend(frameon=False)
+    fig.suptitle(
+        "q3 native 21-delay predistortion test: identical sequence, correction on/off"
+    )
+    fig.savefig(png_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return raw_iq_path, csv_path, json_path, png_path
+
+
+def run_predistortion_causality():
+    """Run two independent native many-delay q3 scans with correction ON/OFF."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import (
+        reduce_bidirectional_condition_states,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        FivePointApplesToApples as runner,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        TLSSpectroscopy as tls,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ThreePointApplesToApples import (
+        _integer_dc_grid,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
+        dmem_words_from_soccfg,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+        classify_payload_iq,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+        PASSIVE_T1_RESET_US,
+        ProductionResetSession,
+        prepare_reset_session,
+    )
+
+    plan = predistortion_causality_plan()
+    correction_override = str(
+        os.environ.get("Q3_CAUSALITY_CORRECTION_JSON", "")
+    ).strip()
+    if not correction_override:
+        raise ValueError(
+            "Q3_CAUSALITY_CORRECTION_JSON must explicitly name the accepted "
+            "q3 correction for this A/B test"
+        )
+
+    runner.install_scan_calibration(tls)
+    tls._set_yoko_if_requested()
+    soc, soccfg = tls.makeProxy()
+    if bool(soc.streamer.readout_running()):
+        raise RuntimeError(
+            "QICK streamer is already running. Stop the other QICK acquisition "
+            "before launching this isolated test."
+        )
+    dmem_roundtrip = verify_dmem_roundtrip(
+        soc,
+        dmem_words=dmem_words_from_soccfg(soccfg),
+    )
+    print(
+        "[transport] DMem sentinel PASS: bulk DMA and direct AXI agree at "
+        f"address {dmem_roundtrip['address']}"
+    )
+
+    params = dict(runner.P6_5PT_APPLES_TO_APPLES)
+    target_frequency_ghz = np.asarray(
+        plan["target_frequencies_ghz"], dtype=float
+    )
+    dc_vec, realized_frequency_ghz = _integer_dc_grid(
+        params, target_frequency_ghz
+    )
+    compensation, _correction_mode = tls._resolve_step6_correction(
+        params, correction_override, tls.outerFolder
+    )
+    print(
+        "[causality] q3 native A/B: "
+        f"{len(target_frequency_ghz)} frequencies x "
+        f"{len(plan['delays_us'])} delays x {plan['shots']} shots; "
+        f"reset={plan['reset_mode']}; no handshake"
+    )
+    print(f"[causality] ON uses {correction_override}")
+    print("[causality] OFF uses no flux-tail correction")
+    print("[causality] acquiring one shared DMem-native classifier calibration")
+    classifier_session = prepare_reset_session(
+        "active",
+        outer_folder=tls.outerFolder,
+        qubit=tls.QUBIT,
+        base_cfg=tls.BaseConfig,
+        soc=soc,
+        soccfg=soccfg,
+        purpose="Predistortion21PointTemporaryTest",
+    )
+    print(
+        "[causality] classifier calibration saved: "
+        f"{classifier_session.calibration_output}"
+    )
+
+    common_cfg = dict(tls.BaseConfig)
+    common_cfg.update({
+        "shots": int(plan["shots"]),
+        "ff_gain_vec": dc_vec,
+        "flux_fit_params": tls.FLUX_FIT_PARAMS,
+        "relax_delay": PASSIVE_T1_RESET_US,
+        "qubit_pulse_style": "arb",
+        "flux_settle_time_us": float(params["flux_settle_us"]),
+        "readout_thermalization_us": float(params["readout_thermalization_us"]),
+        "opx_t1_3pt_gain_lookup": True,
+        "opx_diagnostic_condition_tags": True,
+        "opx_verify_dmem_reads": False,
+    })
+    runner.apply_verified_feedback_timing(common_cfg)
+    if plan["reset_mode"] == "active":
+        common_cfg = classifier_session.apply(common_cfg)
+        reset_scheme = "opx_unbounded"
+    else:
+        common_cfg = ProductionResetSession.passive().apply(common_cfg)
+        common_cfg["opx_reset_calibration"] = dict(
+            classifier_session.calibration
+        )
+        reset_scheme = "none"
+
+    condition_names = (
+        "P0", "P1", *(f"Ps_{delay:g}us" for delay in plan["delays_us"])
+    )
+    mode_results = {}
+    for mode in plan["modes"]:
+        cfg = dict(common_cfg)
+        cfg.update({
+            "apply_flux_tail_compensation": mode == "on",
+            "flux_tail_compensation": compensation if mode == "on" else None,
+        })
+        print(
+            f"[{mode}] acquiring one native {len(condition_names)}-condition "
+            f"resident program ({plan['shots'] * len(dc_vec) * len(condition_names)} records)"
+        )
+        elapsed_started = time.monotonic()
+        progress_started = time.time()
+        i_values, q_values, telemetry = acquire_t1_npoint_iq(
+            soc,
+            soccfg,
+            cfg,
+            dc_gains=dc_vec,
+            delays_us=plan["delays_us"],
+            reference_hold_us=float(params["reference_hold_us"]),
+            shots=plan["shots"],
+            reset_scheme=reset_scheme,
+            progress=lambda done, total, _mode=mode: progress_counter(
+                done - 1,
+                total,
+                start_time=progress_started,
+                label=f"q3 21-delay {_mode}",
+            ),
+        )
+        states = classify_payload_iq(
+            cfg, i_values, q_values, telemetry["read_length_cycles"]
+        )
+        directional = reduce_bidirectional_condition_states(
+            states, condition_names, canonical_dc_axis=True
+        )
+        matrix = np.column_stack(
+            [directional[name] for name in condition_names]
+        )
+        summary = summarize_dense_populations(
+            matrix,
+            delays_us=plan["delays_us"],
+            shots=plan["shots"],
+        )
+        if telemetry.get("condition_tag_mismatches", 0) != 0:
+            raise RuntimeError(
+                f"{mode} condition tags do not match the decoded condition axis"
+            )
+        mode_results[mode] = {
+            "I": i_values,
+            "Q": q_values,
+            "states": states,
+            "condition_names": condition_names,
+            "directional": directional,
+            "summary": summary,
+            "telemetry": telemetry,
+        }
+        print(
+            f"[{mode}] complete in {time.monotonic() - elapsed_started:.2f} s; "
+            f"median P1-P0={_median(summary['P1'] - summary['P0']):.4f}; "
+            f"condition-tag mismatches={telemetry.get('condition_tag_mismatches')}"
+        )
+
+    now = datetime.now()
+    output_dir = (
+        Path(tls.outerFolder) / tls.QUBIT / f"{tls.QUBIT}_{now:%Y_%m_%d}"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_base = output_dir / (
+        f"{tls.QUBIT}_{now:%H_%M_%S}_Predistortion_21pt_Temporary_Test"
+    )
+    outputs = save_predistortion_causality_outputs(
+        output_base,
+        plan=plan,
+        target_frequency_ghz=target_frequency_ghz,
+        realized_frequency_ghz=realized_frequency_ghz,
+        dc_vec=dc_vec,
+        mode_results=mode_results,
+        correction_source=correction_override,
+        readout_contract={
+            "readout_location": "park",
+            "park_gain_dac": common_cfg.get(
+                "ff_park_gain", tls._baseline_dc_offset()
+            ),
+            "accumulator_read_delay_us": common_cfg.get("opx_read_delay_us"),
+            "feedback_read_timing": common_cfg.get("opx_feedback_read_timing"),
+            "pre_measure_sync": common_cfg.get(
+                "opx_feedback_pre_measure_sync"
+            ),
+            "flux_predistortion_recovery_us": params.get(
+                "flux_predistortion_recovery_us"
+            ),
+            "sequence_implementation": "temporary OPXResetT1NPointProgram",
+        },
+    )
+    for frequency_index, frequency in enumerate(target_frequency_ghz):
+        on = mode_results["on"]["summary"]["normalized"][frequency_index]
+        off = mode_results["off"]["summary"]["normalized"][frequency_index]
+        print(
+            f"[result] {frequency:.3f} GHz: largest upward normalized step "
+            f"on={max(0.0, np.nanmax(np.diff(on))):.3f}, "
+            f"off={max(0.0, np.nanmax(np.diff(off))):.3f}"
+        )
+    print(f"RAW_IQ_NPZ={outputs[0]}")
+    print(f"RAW_CSV={outputs[1]}")
+    print(f"SUMMARY_JSON={outputs[2]}")
+    print(f"COMPARISON_PNG={outputs[3]}")
+
+
 def apply_diagnostic_read_delay(cfg, environ=None):
     """Apply the requested ADC-accumulator settling delay to a diagnostic run."""
     environ = os.environ if environ is None else environ
@@ -490,6 +1238,9 @@ def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
 
 
 def main():
+    if sequence_audit_requested():
+        run_predistortion_causality()
+        return
     if os.environ.get("Q3_TEMPLATE_REFIT_PKL"):
         run_template_refit()
         return

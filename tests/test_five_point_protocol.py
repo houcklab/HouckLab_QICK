@@ -173,6 +173,169 @@ def test_qick_measurement_diagnostic_uses_matching_clock_domains_for_timers():
     assert progress_start == 1_789_000_000.0
 
 
+def test_qick_causality_plan_is_one_native_21_delay_scan_per_mode():
+    """The temporary A/B must not silently fall back to seven 3-delay runs."""
+    plan = diagnostic().predistortion_causality_plan({})
+
+    assert plan == {
+        "target_frequencies_ghz": [3.9, 4.05, 4.3],
+        "delays_us": [
+            0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0,
+            10.0, 12.0, 16.0, 20.0, 25.0, 30.0,
+            40.0, 50.0, 65.0, 80.0, 100.0, 125.0,
+            160.0, 200.0,
+        ],
+        "shots": 300,
+        "reset_mode": "active",
+        "modes": ("on", "off"),
+    }
+
+
+def test_qick_npoint_program_emits_all_21_delays_in_one_dc_visit():
+    """A native audit point contains P0, P1, and every requested survival."""
+    module = diagnostic()
+    cls = module.make_npoint_program_class()
+    delays = module.predistortion_causality_plan({})["delays_us"]
+    program = object.__new__(cls)
+    program.cfg = {
+        "opx_t1_npoint_reference_hold_us": 2.0,
+        "opx_t1_npoint_delays_us": delays,
+    }
+    emitted = []
+    program._emit_tagged_condition = lambda *args: emitted.append(args)
+
+    program._emit_t1_conditions({}, "POINT")
+
+    assert program._records_per_dc() == 23
+    assert len(emitted) == 23
+    assert emitted[0] == ("POINT_P0", False, True, 2.0, 0)
+    assert emitted[1] == ("POINT_P1", True, True, 2.0, 1)
+    assert emitted[2] == ("POINT_PS0", True, True, 2.5, 2)
+    assert emitted[-1] == ("POINT_PS20", True, True, 202.0, 22)
+
+
+def test_qick_npoint_program_sizes_the_resident_stream_during_construction(monkeypatch):
+    """The dynamic condition count must exist before the parent sizes DMem."""
+    module = diagnostic()
+    programs = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.programs"
+    )
+    cls = module.make_npoint_program_class()
+    monkeypatch.setattr(
+        programs.OPXResetT1Program,
+        "__init__",
+        lambda self, _board, cfg, *_args: setattr(self, "cfg", cfg),
+    )
+    delays = module.predistortion_causality_plan({})["delays_us"]
+    program = cls(
+        {"tprocs": [{"dmem_size": 16384}]},
+        {
+            "opx_t1_3pt_dc_gains": [-100, -90, -80],
+            "opx_t1_3pt_gain_lookup": True,
+            "opx_t1_3pt_shots": 2,
+            "opx_t1_npoint_delays_us": delays,
+            "opx_t1_npoint_reference_hold_us": 2.0,
+        },
+        None,
+        None,
+    )
+
+    assert program.cfg["reps"] == 2 * 3 * 23
+    assert program._records_per_dc() == 23
+
+
+def test_qick_npoint_acquisition_decodes_23_conditions_without_batching(monkeypatch):
+    """The host decoder must retain all conditions and canonical scan direction."""
+    module = diagnostic()
+    integration = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.integration"
+    )
+    delays = module.predistortion_causality_plan({})["delays_us"]
+
+    class HardwareProgram:
+        def __init__(self, board, cfg, *_args):
+            self.cfg = cfg
+            self._t1_ff_predistortion_mode = "stateful"
+            self._t1_ff_predistortion_tail_us = 39.5
+            self._t1_ff_predistortion_recovery_us = 40.0
+
+        def us2cycles(self, *_args, **_kwargs):
+            return 2
+
+    records = [
+        types.SimpleNamespace(
+            final_i=value * 2,
+            final_q=-value * 2,
+            condition_tag=value % 23,
+        )
+        for value in range(2 * 2 * 23)
+    ]
+
+    def acquire(_soc, program, _timeout, cfg, *, total_shots, progress=None):
+        assert isinstance(program, HardwareProgram)
+        assert total_shots == 2
+        assert cfg["opx_t1_npoint_delays_us"] == delays
+        return records
+
+    monkeypatch.setattr(integration, "_run_program", acquire)
+    i_values, q_values, telemetry = module.acquire_t1_npoint_iq(
+        None,
+        None,
+        {
+            "reset_mode": "passive",
+            "read_length": 1,
+            "ro_chs": [0],
+            "opx_diagnostic_condition_tags": True,
+        },
+        dc_gains=[-100, -90],
+        delays_us=delays,
+        reference_hold_us=2.0,
+        shots=2,
+        reset_scheme="none",
+        program_class=HardwareProgram,
+    )
+
+    assert i_values.shape == (23, 2, 2)
+    np.testing.assert_equal(i_values[0], [[0, 69], [23, 46]])
+    np.testing.assert_equal(i_values[-1], [[22, 91], [45, 68]])
+    np.testing.assert_equal(q_values, -i_values)
+    assert telemetry["records_per_dc"] == 23
+    assert telemetry["condition_names"][0:2] == ("P0", "P1")
+    assert telemetry["condition_names"][-1] == "Ps_200us"
+    assert telemetry["condition_tag_mismatches"] == 0
+    assert telemetry["flux_predistortion_round_trip_mode"] == "stateful"
+
+
+def test_qick_dense_summary_normalizes_every_delay_against_matched_references():
+    """The comparison uses each mode's measured P0/P1 rather than raw Ps."""
+    module = diagnostic()
+    summary = module.summarize_dense_populations(
+        [[0.1, 0.9, 0.9, 0.5, 0.1]],
+        delays_us=[1.0, 2.0, 3.0],
+        shots=100,
+    )
+
+    np.testing.assert_allclose(summary["normalized"], [[1.0, 0.5, 0.0]])
+    assert summary["normalized_sigma"].shape == (1, 3)
+    assert np.all(np.isfinite(summary["normalized_sigma"]))
+
+
+def test_qick_sequence_audit_dispatches_before_the_small_diagnostic(monkeypatch):
+    """The explicit audit flag must run only the native many-delay hardware test."""
+    module = diagnostic()
+    calls = []
+    monkeypatch.setenv("Q3_T1_SEQUENCE_AUDIT", "on")
+    monkeypatch.setattr(
+        module,
+        "run_predistortion_causality",
+        lambda: calls.append("native-21-delay"),
+    )
+
+    module.main()
+
+    assert calls == ["native-21-delay"]
+
+
 def test_feedback_read_uses_qick_wait_all_sequence_when_requested():
     """The diagnostic timing mode must follow QICK's documented feedback order."""
     programs = importlib.import_module(
