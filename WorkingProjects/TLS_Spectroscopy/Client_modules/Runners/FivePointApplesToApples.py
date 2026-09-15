@@ -49,7 +49,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production
 
 P6_5PT_APPLES_TO_APPLES = {
     "shots_per_condition": 180,
-    "decay_delays_us": [10.0, 50.0, 200.0],
+    "decay_delays_us": [40.0, 80.0, 200.0],
     "reference_hold_us": 2.0,
     "dc_min": -20550,
     "dc_max": -11800,
