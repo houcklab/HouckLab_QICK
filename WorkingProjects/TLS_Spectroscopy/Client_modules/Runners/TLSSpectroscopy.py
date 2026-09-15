@@ -140,6 +140,7 @@ P3_STEP_RESPONSE = {
     "trace_smoothing_window_points": 7,
     "trace_smoothing_polyorder": 2,
     "trace_use_smoothed_frequency": True,
+    "trace_min_supported_fraction": 0.8,
     "fit_residual_composition": False,
     "residual_composition_damping": 0.5,
     "live_plot": True,
@@ -630,6 +631,9 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         trace_smoothing_polyorder=int(p.get("trace_smoothing_polyorder", 2)),
         trace_use_smoothed_frequency=bool(
             p.get("trace_use_smoothed_frequency", True)
+        ),
+        trace_min_supported_fraction=float(
+            p.get("trace_min_supported_fraction", 0.8)
         ),
     )
     exp.acquire(progress=True)

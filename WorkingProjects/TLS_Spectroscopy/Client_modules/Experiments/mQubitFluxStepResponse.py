@@ -212,6 +212,7 @@ class QubitFluxStepResponse(ExperimentClass):
         trace_smoothing_window_points=7,
         trace_smoothing_polyorder=2,
         trace_use_smoothed_frequency=True,
+        trace_min_supported_fraction=0.0,
         resonator_lookup_csv=None,
         **kw,
     ):
@@ -304,6 +305,9 @@ class QubitFluxStepResponse(ExperimentClass):
         self.trace_smoothing_window_points = int(trace_smoothing_window_points)
         self.trace_smoothing_polyorder = int(trace_smoothing_polyorder)
         self.trace_use_smoothed_frequency = bool(trace_use_smoothed_frequency)
+        self.trace_min_supported_fraction = float(trace_min_supported_fraction)
+        if not 0.0 <= self.trace_min_supported_fraction <= 1.0:
+            raise ValueError("trace_min_supported_fraction must be between 0 and 1.")
         self.flux_lookup_mode_requested = str(flux_lookup_mode).strip().lower()
         if self.flux_lookup_mode_requested not in {"auto", "csv", "fit"}:
             raise ValueError(
@@ -784,11 +788,21 @@ class QubitFluxStepResponse(ExperimentClass):
 
         response_for_correction = self._response_for_dc_tail_correction()
         finite_count = int(np.count_nonzero(np.isfinite(response_for_correction)))
+        supported_fraction = float(finite_count / max(len(response_for_correction), 1))
         print(
             "Calculating rise-decay-bump DC compensation JSON "
-            f"(domain={self.piecewise_response_domain}, finite_points={finite_count}/{len(response_for_correction)})"
+            f"(domain={self.piecewise_response_domain}, "
+            f"finite_points={finite_count}/{len(response_for_correction)}, "
+            f"supported_fraction={supported_fraction:.3f})"
         )
         try:
+            if supported_fraction < self.trace_min_supported_fraction:
+                raise ValueError(
+                    "Trace-confidence gate rejected the correction: "
+                    f"{finite_count}/{len(response_for_correction)} supported points "
+                    f"({supported_fraction:.3f}) is below the required "
+                    f"{self.trace_min_supported_fraction:.3f}."
+                )
             if self.piecewise_response_model == "measured":
                 bump_model = fpd.measured_piecewise_response_model(
                     np.asarray(self.t_vec, dtype=float),
@@ -969,6 +983,7 @@ class QubitFluxStepResponse(ExperimentClass):
             "correction_gain": float(fit_result.get("correction_gain", self.piecewise_correction_gain)),
             "multiplier_clipped": bool(fit_result["multiplier_clipped"]),
             "time_zeroed_ns": fit_result["time_zeroed_ns"],
+            "model_time_zeroed_ns": bump_model["time_zeroed_ns"],
             "normalized_response": fit_result["normalized_response"],
             "model_fit_response": bump_model["fit_response"],
             "corrected_response": fit_result["corrected_response"],
@@ -1027,6 +1042,8 @@ class QubitFluxStepResponse(ExperimentClass):
                 bump_model.get("extrapolated_to_origin", False)
             ),
             "model_note": model_note,
+            "trace_supported_fraction": supported_fraction,
+            "trace_min_supported_fraction": self.trace_min_supported_fraction,
             "composed_with_applied_flux_tail_compensation": bool(
                 fit_result.get("composed_with_applied_flux_tail_compensation", False)
             ),
@@ -1478,8 +1495,11 @@ class QubitFluxStepResponse(ExperimentClass):
         )
         ax3.plot(time_us, ideal_step_response, "o--", ms=3, lw=1.2, color="tab:purple", label="Ideal step response")
         if bump_fit.get("success", False):
+            model_time_us = (
+                np.asarray(bump_fit["model_time_zeroed_ns"], dtype=float) / 1e3
+            )
             ax3.plot(
-                np.asarray(bump_fit["time_zeroed_ns"], dtype=float) / 1e3,
+                model_time_us,
                 bump_fit["model_fit_response"],
                 "--",
                 lw=1.5,

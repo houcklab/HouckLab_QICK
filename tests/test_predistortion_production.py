@@ -389,6 +389,36 @@ def test_step3_defaults_use_a_local_smooth_curve_without_erasing_the_turnover(
     assert runner.P3_STEP_RESPONSE["trace_use_smoothed_frequency"] is True
 
 
+def test_step3_calibration_requires_broad_trace_support(monkeypatch):
+    runner, response = _load_step3_runner(monkeypatch)
+
+    assert runner.P3_STEP_RESPONSE["trace_min_supported_fraction"] == 0.8
+
+    runner._run_step3_experiment(
+        runner.P3_STEP_RESPONSE,
+        None,
+        None,
+        "/tmp",
+        "support_gate",
+        None,
+        True,
+        False,
+    )
+
+    assert response.calls[-1]["trace_min_supported_fraction"] == 0.8
+
+
+def test_step_response_plot_uses_the_model_grid_for_the_model_curve():
+    path = (
+        Path(__file__).parents[1]
+        / "WorkingProjects/TLS_Spectroscopy/Client_modules/Experiments/mQubitFluxStepResponse.py"
+    )
+    source = path.read_text()
+
+    assert '"model_time_zeroed_ns": bump_model["time_zeroed_ns"]' in source
+    assert 'bump_fit["model_time_zeroed_ns"]' in source
+
+
 def test_step3b_gain_sweep_returns_the_last_composed_json_when_enabled(monkeypatch):
     """Would fail if the gain-sweep branch discards its composed correction."""
     runner, _response = _load_step3_runner(monkeypatch)
