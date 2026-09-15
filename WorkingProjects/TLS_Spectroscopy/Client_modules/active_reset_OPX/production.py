@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 
 from .analysis import load_park_history_method_frequencies
+from .acquisition import AcquisitionTimeout
 from .benchmark_settings import q3_benchmark_settings
 from .calibration import (
     acquire_calibration,
@@ -160,22 +161,40 @@ def prepare_reset_session(
         suffix = "" if attempt == 1 else f"_attempt_{attempt}"
         output = parent / f"{stem}{suffix}"
         output.mkdir(parents=True, exist_ok=False)
-        bundle, raw = acquire_calibration(
-            soc,
-            soccfg,
-            cfg,
-            shots=int(CALIBRATION_SHOTS),
-            **q3_benchmark_settings().calibration_options(),
-            metadata={
-                "qubit": str(qubit),
-                "created": created.isoformat(),
-                "purpose": str(purpose),
-                "park_history_result": None if history_result is None else str(history_result),
-                "method_frequency_mhz": frequency,
-                "method_frequency_source": str(frequency_source),
-                "attempt": int(attempt),
-            },
-        )
+        try:
+            bundle, raw = acquire_calibration(
+                soc,
+                soccfg,
+                cfg,
+                shots=int(CALIBRATION_SHOTS),
+                **q3_benchmark_settings().calibration_options(),
+                metadata={
+                    "qubit": str(qubit),
+                    "created": created.isoformat(),
+                    "purpose": str(purpose),
+                    "park_history_result": None if history_result is None else str(history_result),
+                    "method_frequency_mhz": frequency,
+                    "method_frequency_source": str(frequency_source),
+                    "attempt": int(attempt),
+                },
+            )
+        except AcquisitionTimeout as exc:
+            if attempt >= int(CALIBRATION_ATTEMPTS):
+                raise
+            streamer = getattr(soc, "streamer", None)
+            readout_running = getattr(streamer, "readout_running", None)
+            stop_readout = getattr(streamer, "stop_readout", None)
+            if (
+                callable(readout_running)
+                and callable(stop_readout)
+                and bool(readout_running())
+            ):
+                stop_readout()
+            print(
+                f"[reset] automatic calibration attempt {attempt} hit a "
+                f"DMem transport timeout ({exc}); cleaned up and retrying"
+            )
+            continue
         save_calibration(output / "calibration.json", bundle)
         save_raw_calibration(output / "calibration_raw.npz", raw)
         try:
