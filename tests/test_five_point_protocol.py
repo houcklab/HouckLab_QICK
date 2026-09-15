@@ -73,6 +73,21 @@ def test_q3_fresh_step3a_can_probe_at_park_readout_without_wrong_polarity():
     assert plan["trace_polarity"] is None
 
 
+def test_q3_fresh_step3b_matches_the_accepted_at_park_calibration_grid():
+    plan = diagnostic().fresh_step3b_plan({})
+
+    assert plan["shots"] == 500
+    assert plan["apply_flux_tail_compensation"] is True
+    assert plan["compose_with_applied_flux_tail_compensation"] is False
+    assert plan["readout_after_park"] is True
+    assert plan["trace_polarity"] is None
+    assert plan["frequency_window_mhz"] == [4000.0, 4100.0]
+    assert plan["frequency_step_mhz"] == pytest.approx(0.5)
+    assert plan["delay_vector_us"] == diagnostic().fresh_step3a_plan(
+        {"Q3_FRESH_3A_READOUT_AFTER_PARK": "on"}
+    )["delay_vector_us"]
+
+
 def test_qick_measurement_diagnostic_bypasses_legacy_ss_streamer():
     path = Path(diagnostic().__file__)
     tree = ast.parse(path.read_text())

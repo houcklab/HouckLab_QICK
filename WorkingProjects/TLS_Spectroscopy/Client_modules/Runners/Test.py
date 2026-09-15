@@ -58,6 +58,22 @@ def fresh_step3a_plan(environ=None):
     }
 
 
+def fresh_step3b_plan(environ=None):
+    """Return the matched correction-ON validation contract for fresh q3 3a."""
+    environ = os.environ if environ is None else environ
+    plan = fresh_step3a_plan({
+        "Q3_FRESH_3A_SHOTS": environ.get("Q3_FRESH_3B_SHOTS", "500"),
+        "Q3_FRESH_3A_SPEC_AMP": environ.get("Q3_FRESH_3B_SPEC_AMP", "25000"),
+        "Q3_FRESH_3A_READOUT_AFTER_PARK": "on",
+    })
+    plan.update({
+        "apply_flux_tail_compensation": True,
+        "compose_with_applied_flux_tail_compensation": False,
+        "correction_json": environ.get("Q3_FRESH_3B_CORRECTION_JSON"),
+    })
+    return plan
+
+
 def run_fresh_step3a(plan=None):
     """Run one absolute q3 step-response fit without an existing correction."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -99,6 +115,53 @@ def run_fresh_step3a(plan=None):
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
     return tls.run_step3a_step_response_fit(tls.outerFolder, soc, soccfg)
+
+
+def run_fresh_step3b(plan=None):
+    """Validate the accepted absolute q3 correction on its calibration grid."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        TLSSpectroscopy as tls,
+    )
+
+    plan = fresh_step3b_plan() if plan is None else dict(plan)
+    low_mhz, high_mhz = plan["frequency_window_mhz"]
+    tls.P3_STEP_RESPONSE.update({
+        "shots": int(plan["shots"]),
+        "spec_amp": int(plan["spec_amp"]),
+        "freq_step": float(plan["frequency_step_mhz"]),
+        "auto_center_frequency_window": True,
+        "auto_freq_absolute_min_mhz": float(low_mhz),
+        "auto_freq_absolute_max_mhz": float(high_mhz),
+        "t_vec_us": list(plan["delay_vector_us"]),
+        "correction_fit_start_us": None,
+        "correction_time_origin_us": 0.0,
+        "baseline_rearm_us": 40.0,
+        "piecewise_desired_response": "unity",
+        "piecewise_response_model": "rise_decay_bump",
+        "trace_tracking_mode": "image_v26",
+        "readout_after_park": True,
+        "trace_polarity": None,
+        "trace_shoulder": "auto",
+        "trace_max_jump_mhz": 4.0,
+        "trace_smoothing_window_points": 7,
+        "trace_smoothing_polyorder": 2,
+        "trace_use_smoothed_frequency": True,
+        "fit_residual_composition": False,
+        "live_plot": True,
+    })
+    print(
+        "[fresh 3b] q3 validation: correction ON, composition OFF; "
+        f"{plan['shots']} shots, {len(plan['delay_vector_us'])} delays, "
+        f"{low_mhz / 1000:.3f}--{high_mhz / 1000:.3f} GHz; readout=PARK"
+    )
+    tls._set_yoko_if_requested()
+    soc, soccfg = tls.makeProxy()
+    return tls.run_step3b_step_response_correct(
+        tls.outerFolder,
+        soc,
+        soccfg,
+        correction_json=plan.get("correction_json"),
+    )
 
 
 def select_diagnostic_slice(
@@ -305,6 +368,12 @@ def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
 
 
 def main():
+    if os.environ.get("Q3_FRESH_3B", "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        correction_json = run_fresh_step3b()
+        print(f"FRESH_3B_CORRECTION_JSON={correction_json}")
+        return
     if os.environ.get("Q3_FRESH_3A", "0").strip().lower() in {
         "1", "true", "yes", "on",
     }:
