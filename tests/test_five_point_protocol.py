@@ -978,6 +978,55 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert cfg["sync_slot_s"] == 150
 
 
+def test_production_delays_reach_the_qick_experiment_and_keep_truthful_labels(monkeypatch):
+    """The production runner's delays must survive the experiment constructor."""
+    module = load_experiments(monkeypatch)
+
+    def initialize_base(self, *args, **kwargs):
+        self.shots = int(kwargs.get("shots", 180))
+        self.data = {}
+
+    monkeypatch.setattr(module._T1VsFluxBase, "__init__", initialize_base)
+    experiment = module.T15PointVsFlux(
+        shots=180,
+        decay_delays_us=[40.0, 80.0, 200.0],
+    )
+
+    np.testing.assert_allclose(experiment.decay_delays_us, [40.0, 80.0, 200.0])
+    assert experiment.CONDITION_NAMES == (
+        "P0", "P1", "Ps_40us", "Ps_80us", "Ps_200us",
+    )
+
+
+def test_wall_clock_output_uses_the_configured_delay_columns(monkeypatch):
+    """Do not label 40/80 us measurements as the retired 10/50 us protocol."""
+    module = load_experiments(monkeypatch)
+    experiment = module.T15PointVsFlux.__new__(module.T15PointVsFlux)
+    experiment.shots = 180
+    experiment.reference_hold_us = 2.0
+    experiment.decay_delays_us = np.asarray([40.0, 80.0, 200.0])
+    experiment.CONDITION_NAMES = (
+        "P0", "P1", "Ps_40us", "Ps_80us", "Ps_200us",
+    )
+    values = np.asarray([0.1, 0.2])
+    experiment.data = {
+        key: values
+        for key in (
+            *experiment.CONDITION_NAMES,
+            "P0_fit", "P1_fit", "ref_contrast_5pt",
+            "T1_5pt_valid_mask", "T1_5pt_fit_success",
+            "T1_5pt_fit_deviance",
+        )
+    }
+
+    columns = module.get_wall_clock_repeat_full_spec(experiment)["scalar_columns"]
+
+    assert "Ps_40us" in columns
+    assert "Ps_80us" in columns
+    assert "Ps_10us" not in columns
+    assert "Ps_50us" not in columns
+
+
 def test_production_runner_applies_hardware_verified_feedback_timing(monkeypatch):
     """The seven-day scan must use the timing sequence that passed on q3."""
     load_experiments(monkeypatch)
@@ -1070,6 +1119,7 @@ def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatc
     exp.soc = exp.soccfg = exp.calib_params = None
     exp.dc_vec = np.array([-100, -90])
     exp.decay_delays_us = np.array([10, 50, 200])
+    exp.CONDITION_NAMES = ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
     exp.reference_hold_us, exp.shots = 2, 180
     exp.min_ref_contrast, exp.max_relative_error, exp.max_fit_t1_us = .05, 1, 3000
     exp.reset_mode, exp.element = "passive", "test"

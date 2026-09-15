@@ -377,9 +377,10 @@ def get_wall_clock_repeat_full_spec(exp):
             "delay_2_us": float(exp.decay_delays_us[2]),
             "P0": data["P0"],
             "P1": data["P1"],
-            "Ps_10us": data["Ps_10us"],
-            "Ps_50us": data["Ps_50us"],
-            "Ps_200us": data["Ps_200us"],
+            **{
+                name: data[name]
+                for name in exp.CONDITION_NAMES[2:]
+            },
             "P0_fit": data["P0_fit"],
             "P1_fit": data["P1_fit"],
             "ref_contrast_5pt": data["ref_contrast_5pt"],
@@ -392,12 +393,11 @@ def get_wall_clock_repeat_full_spec(exp):
             "P0_scan_down",
             "P1_scan_up",
             "P1_scan_down",
-            "Ps_10us_scan_up",
-            "Ps_10us_scan_down",
-            "Ps_50us_scan_up",
-            "Ps_50us_scan_down",
-            "Ps_200us_scan_up",
-            "Ps_200us_scan_down",
+            *(
+                f"{name}_{direction}"
+                for name in exp.CONDITION_NAMES[2:]
+                for direction in ("scan_up", "scan_down")
+            ),
             "T1_5pt_us_scan_up",
             "T1_5pt_us_scan_down",
             "inv_T1_5pt_per_us_scan_up",
@@ -911,9 +911,9 @@ class T15PointVsFlux(_T1VsFluxBase):
     CONDITION_NAMES = (
         "P0",
         "P1",
-        "Ps_10us",
-        "Ps_50us",
-        "Ps_200us",
+        "Ps_delay_0",
+        "Ps_delay_1",
+        "Ps_delay_2",
     )
 
     def __init__(
@@ -933,8 +933,11 @@ class T15PointVsFlux(_T1VsFluxBase):
             raise ValueError("five-point shots must be an integer of at least two")
         super().__init__(*args, **kw)
         self.decay_delays_us = validate_five_point_delays(decay_delays_us)
-        if not np.array_equal(self.decay_delays_us, [10.0, 50.0, 200.0]):
-            raise ValueError("matched five-point protocol requires delays [10, 50, 200] us")
+        self.CONDITION_NAMES = (
+            "P0",
+            "P1",
+            *(f"Ps_{delay:g}us" for delay in self.decay_delays_us),
+        )
         self.reference_hold_us = float(reference_hold_us)
         if not np.isfinite(self.reference_hold_us) or self.reference_hold_us < 0.01:
             raise ValueError("reference_hold_us must be at least 0.01 us")

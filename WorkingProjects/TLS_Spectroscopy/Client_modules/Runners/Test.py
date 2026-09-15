@@ -1532,7 +1532,11 @@ def main():
         # between-record reset behavior strictly passive.
         cfg["opx_reset_calibration"] = dict(classifier_session.calibration)
     park_gain = cfg.get("ff_park_gain", tls._baseline_dc_offset())
-    condition_names = ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
+    condition_names = (
+        "P0",
+        "P1",
+        *(f"Ps_{delay:g}us" for delay in params["decay_delays_us"]),
+    )
     reset_scheme = "opx_unbounded" if reset_mode == "active" else "none"
 
     print(
