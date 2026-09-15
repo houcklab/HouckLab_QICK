@@ -478,13 +478,17 @@ def track_image_ridge(
     ambiguity_ratio=0.95,
     shoulder="auto",
     shoulder_min_persistence=0.6,
+    temporal_background="none",
 ):
     """Track one spectroscopy ridge using raw-image evidence and path context.
 
     A single-ridge or explicit-shoulder trace is the sub-bin location of an
     actual image maximum.  ``shoulder='midpoint'`` first tracks an ordered
     lower/upper pair and returns their centerline.  No post-hoc temporal
-    smoothing is applied.
+    smoothing is applied.  ``temporal_background='median'`` removes each
+    frequency row's time median before forming ridge evidence.  That option is
+    useful for a short-lived step-response trajectory which would otherwise be
+    outscored by a persistent spectral line at the final target frequency.
     """
     frequency = np.asarray(frequency_axis_ghz, dtype=float)
     raw = np.asarray(image, dtype=float)
@@ -500,6 +504,9 @@ def track_image_ridge(
     shoulder = str(shoulder).strip().lower()
     if shoulder not in {"auto", "lower", "upper", "midpoint"}:
         raise ValueError("shoulder must be 'auto', 'lower', 'upper', or 'midpoint'.")
+    temporal_background = str(temporal_background).strip().lower()
+    if temporal_background not in {"none", "median"}:
+        raise ValueError("temporal_background must be 'none' or 'median'.")
 
     window = (
         np.ones(frequency.size, dtype=bool)
@@ -516,6 +523,8 @@ def track_image_ridge(
         raw = raw[::-1, :]
         window = window[::-1]
     finite_pixels = np.isfinite(raw)
+    if temporal_background == "median":
+        raw = raw - np.nanmedian(raw, axis=1, keepdims=True)
     filled, valid_columns = _fill_spectral_nans(raw)
 
     choices = []
@@ -682,4 +691,160 @@ def track_image_ridge(
         "foreground_z": foreground,
         "raw_center_evidence": center_map,
         "multiscale_evidence": scale_evidence,
+        "temporal_background": temporal_background,
+    }
+
+
+def select_step_response_trace(
+    candidates,
+    *,
+    target_frequency_ghz,
+    baseline_frequency_ghz,
+    transient_min_supported_fraction=0.30,
+    transient_min_path_score=3.0,
+    transient_min_excursion_mhz=10.0,
+    transient_max_late_target_error_mhz=20.0,
+    transient_merge_tolerance_mhz=5.0,
+):
+    """Choose a physical step trajectory over a persistent spectral distractor.
+
+    A step-response map may contain both a long-lived feature near the target
+    and a shorter causal trajectory.  Raw-image Viterbi scoring naturally
+    favors the former because it accrues evidence for more frames.  A
+    temporal-median hypothesis is accepted only when it has measured support,
+    moves from the target in the direction of the baseline endpoint, and then
+    returns close to the target.  Otherwise the ordinary persistent hypothesis
+    remains the conservative fallback.
+    """
+    candidates = list(candidates)
+    if not candidates:
+        raise ValueError("At least one step-response trace candidate is required.")
+    target = float(target_frequency_ghz)
+    baseline = float(baseline_frequency_ghz)
+    direction = float(np.sign(baseline - target))
+    if not np.isfinite(direction) or direction == 0.0:
+        direction = 1.0
+
+    persistent_by_source = {
+        candidate.get("signal_source"): candidate
+        for candidate in candidates
+        if candidate.get("temporal_background", "none") == "none"
+    }
+    diagnostics = []
+    for candidate in candidates:
+        local = np.asarray(candidate["local_frequency_ghz"], dtype=float)
+        supported = np.asarray(candidate["supported"], dtype=bool)
+        score = np.asarray(candidate["trace_score"], dtype=float)
+        n_time = local.size
+        early_stop = max(1, int(np.ceil(0.6 * n_time)))
+        directed = direction * (local - target) * 1e3
+        directed_excursion = float(np.nanmax(directed[:early_stop]))
+        is_transient = candidate.get("temporal_background", "none") == "median"
+        persistent = persistent_by_source.get(candidate.get("signal_source"))
+        merge_index = None
+        persistent_late_target_error = np.inf
+        if is_transient and persistent is not None:
+            persistent_local = np.asarray(
+                persistent["local_frequency_ghz"], dtype=float
+            )
+            persistent_supported = np.asarray(persistent["supported"], dtype=bool)
+            late_start = min(n_time - 1, int(np.floor(0.75 * n_time)))
+            persistent_late_target_error = float(np.nanmedian(
+                np.abs(persistent_local[late_start:] - target) * 1e3
+            ))
+            peak_index = int(np.nanargmax(directed[:early_stop]))
+            separation_mhz = np.abs(local - persistent_local) * 1e3
+            merge_candidates = np.flatnonzero(
+                (np.arange(n_time) >= peak_index)
+                & (separation_mhz <= float(transient_merge_tolerance_mhz))
+                & supported
+                & persistent_supported
+            )
+            if merge_candidates.size:
+                merge_index = int(merge_candidates[0])
+        evaluation_stop = n_time if merge_index is None else merge_index + 1
+        evaluation_supported = supported[:evaluation_stop]
+        support_fraction = float(np.mean(evaluation_supported))
+        supported_scores = score[:evaluation_stop][evaluation_supported]
+        path_score = float(
+            np.nanmedian(supported_scores)
+            if supported_scores.size
+            else np.nanmedian(score[:evaluation_stop])
+        )
+        physical_transient = bool(
+            is_transient
+            and persistent is not None
+            and merge_index is not None
+            and support_fraction >= float(transient_min_supported_fraction)
+            and path_score >= float(transient_min_path_score)
+            and directed_excursion >= float(transient_min_excursion_mhz)
+            and persistent_late_target_error
+            <= float(transient_max_late_target_error_mhz)
+        )
+        diagnostics.append({
+            "signal_source": candidate.get("signal_source"),
+            "temporal_background": candidate.get("temporal_background", "none"),
+            "support_fraction": support_fraction,
+            "path_score": path_score,
+            "directed_excursion_mhz": directed_excursion,
+            "persistent_late_target_error_mhz": persistent_late_target_error,
+            "merge_index": merge_index,
+            "physical_transient": physical_transient,
+        })
+
+    physical = [
+        (candidate, diagnostic)
+        for candidate, diagnostic in zip(candidates, diagnostics)
+        if diagnostic["physical_transient"]
+    ]
+    if physical:
+        transient, selected_diagnostic = max(
+            physical,
+            key=lambda item: (
+                item[1]["path_score"],
+                item[1]["support_fraction"],
+            ),
+        )
+        persistent = persistent_by_source[transient.get("signal_source")]
+        merge_index = int(selected_diagnostic["merge_index"])
+        selected = dict(persistent)
+        n_time = np.asarray(transient["local_frequency_ghz"]).size
+        for key, persistent_value in persistent.items():
+            if key not in transient:
+                continue
+            persistent_array = np.asarray(persistent_value)
+            transient_array = np.asarray(transient[key])
+            if persistent_array.ndim == 0 or transient_array.shape != persistent_array.shape:
+                continue
+            if persistent_array.shape[-1] == n_time:
+                combined = persistent_array.copy()
+                combined[..., : merge_index + 1] = transient_array[..., : merge_index + 1]
+                selected[key] = combined
+        selected["temporal_background"] = "hybrid_median_to_persistent"
+        selected["hybrid_merge_index"] = merge_index
+        reason = "physical_transient"
+    else:
+        persistent = [
+            (candidate, diagnostic)
+            for candidate, diagnostic in zip(candidates, diagnostics)
+            if diagnostic["temporal_background"] == "none"
+        ]
+        pool = persistent if persistent else list(zip(candidates, diagnostics))
+        selected, selected_diagnostic = max(
+            pool,
+            key=lambda item: (
+                item[1]["path_score"],
+                item[1]["support_fraction"],
+            ),
+        )
+        reason = "persistent_fallback"
+
+    return selected, {
+        "selection_reason": reason,
+        "selected_signal_source": selected.get("signal_source"),
+        "selected_temporal_background": selected.get(
+            "temporal_background", "none"
+        ),
+        "selected_candidate": selected_diagnostic,
+        "candidates": diagnostics,
     }

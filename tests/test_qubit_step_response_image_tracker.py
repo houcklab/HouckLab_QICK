@@ -2,6 +2,9 @@ import unittest
 
 import numpy as np
 
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.image_ridge_tracker import (
+    select_step_response_trace,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.trace_extraction import track_image_ridge
 
 
@@ -213,6 +216,99 @@ class ImageRidgeTrackerTests(unittest.TestCase):
             automatic["raw_center_evidence"],
             explicit["raw_center_evidence"],
         )
+
+    def test_temporal_median_background_recovers_a_short_lived_step_trajectory(self):
+        """A persistent target line must not hide the causal moving branch."""
+        frequency, time = self._grid(n_time=61)
+        target = 4.018
+        moving = np.full(time.size, target)
+        moving[:9] = np.array(
+            [4.032, 4.039, 4.044, 4.047, 4.045, 4.040, 4.033, 4.026, 4.020]
+        )
+        f_mhz = frequency[:, None] * 1e3
+        rng = np.random.default_rng(91)
+        image = rng.normal(scale=0.14, size=(frequency.size, time.size))
+        image += 4.0 * np.exp(
+            -0.5 * ((f_mhz - target * 1e3) / 1.3) ** 2
+        )
+        transient_amplitude = np.r_[np.full(9, 3.6), np.zeros(time.size - 9)]
+        image += transient_amplitude[None, :] * np.exp(
+            -0.5 * ((f_mhz - moving[None, :] * 1e3) / 1.3) ** 2
+        )
+
+        persistent = track_image_ridge(
+            frequency,
+            image,
+            polarity="bright",
+            max_jump_mhz=9.0,
+        )
+        transient = track_image_ridge(
+            frequency,
+            image,
+            polarity="bright",
+            max_jump_mhz=9.0,
+            jump_penalty=4.0,
+            temporal_background="median",
+        )
+
+        persistent_error = np.abs(
+            (persistent["local_frequency_ghz"][:9] - moving[:9]) * 1e3
+        )
+        transient_error = np.abs(
+            (transient["local_frequency_ghz"][:9] - moving[:9]) * 1e3
+        )
+        self.assertGreater(np.nanmedian(persistent_error), 8.0)
+        self.assertLess(np.nanmedian(transient_error), 0.75)
+        self.assertEqual(transient["temporal_background"], "median")
+
+        persistent["signal_source"] = "magnitude"
+        transient["signal_source"] = "magnitude"
+        selected, diagnostics = select_step_response_trace(
+            [persistent, transient],
+            target_frequency_ghz=target,
+            baseline_frequency_ghz=5.0,
+        )
+        self.assertEqual(diagnostics["selection_reason"], "physical_transient")
+        self.assertEqual(
+            selected["temporal_background"], "hybrid_median_to_persistent"
+        )
+        hybrid_error = np.abs(
+            (selected["local_frequency_ghz"][:9] - moving[:9]) * 1e3
+        )
+        self.assertLess(np.nanmedian(hybrid_error), 0.75)
+        self.assertLess(
+            abs(selected["local_frequency_ghz"][-1] - target) * 1e3,
+            0.75,
+        )
+
+    def test_step_response_selector_keeps_persistent_trace_without_supported_motion(self):
+        frequency, time = self._grid(n_time=61)
+        target = 4.018
+        image = self._ridge_map(
+            frequency,
+            np.full(time.size, target),
+            shoulder=False,
+            seed=92,
+        )
+        persistent = track_image_ridge(frequency, image, polarity="bright")
+        transient = track_image_ridge(
+            frequency,
+            image,
+            polarity="bright",
+            jump_penalty=4.0,
+            temporal_background="median",
+        )
+        persistent["signal_source"] = "magnitude"
+        transient["signal_source"] = "magnitude"
+
+        selected, diagnostics = select_step_response_trace(
+            [persistent, transient],
+            target_frequency_ghz=target,
+            baseline_frequency_ghz=5.0,
+        )
+
+        self.assertIs(selected, persistent)
+        self.assertEqual(diagnostics["selection_reason"], "persistent_fallback")
 
 
 if __name__ == "__main__":

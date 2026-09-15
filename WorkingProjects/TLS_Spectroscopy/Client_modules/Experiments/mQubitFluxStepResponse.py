@@ -16,6 +16,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import trace_extraction as trx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.image_ridge_tracker import (
+    select_step_response_trace,
+    track_image_ridge,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
     interleaved_average, resolve_rounds, suppress_stdout)
@@ -598,43 +602,80 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
         self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
 
-        candidates = []
-        for signal_source, signal_map in (
-            ("magnitude", iq_magnitude_dbm),
-            ("phase", iq_phase),
-        ):
-            if signal_map is None:
-                continue
-            trace_result = trx.extract_trace_from_map(
-                signal_map,
-                frequency_axis_ghz,
-                self.t_vec,
-                baseline_frequency_ghz,
-                target_frequency_ghz,
-                frequency_margin_ghz,
-                trace_tracking_mode=self.trace_tracking_mode,
-                trace_polarity=self.trace_polarity,
-                trace_shoulder=self.trace_shoulder,
-                trace_baseline_window_mhz=self.trace_baseline_window_mhz,
-                trace_max_jump_mhz=self.trace_max_jump_mhz,
-                trace_smoothness_penalty=self.trace_smoothness_penalty,
-                trace_local_fit_half_window_mhz=self.trace_local_fit_half_window_mhz,
-                trace_smoothing_window_points=self.trace_smoothing_window_points,
-                trace_smoothing_polyorder=self.trace_smoothing_polyorder,
-                trace_use_smoothed_frequency=self.trace_use_smoothed_frequency,
+        if self.trace_tracking_mode == "image_v26":
+            candidates = []
+            phase_polarity = {
+                "bright": "dark",
+                "dark": "bright",
+                "auto": "auto",
+            }[self.trace_polarity]
+            for signal_source, signal_map, polarity in (
+                ("magnitude", iq_magnitude_dbm, self.trace_polarity),
+                ("phase", iq_phase, phase_polarity),
+            ):
+                if signal_map is None:
+                    continue
+                for temporal_background, jump_penalty, max_jump_mhz in (
+                    ("none", 128.0, max(self.trace_max_jump_mhz, 8.0)),
+                    ("median", 4.0, max(self.trace_max_jump_mhz, 20.0)),
+                ):
+                    candidate = track_image_ridge(
+                        frequency_axis_ghz,
+                        signal_map,
+                        expected_window_mask=expected_window_mask,
+                        polarity=polarity,
+                        max_jump_mhz=max_jump_mhz,
+                        jump_penalty=jump_penalty,
+                        shoulder=self.trace_shoulder,
+                        temporal_background=temporal_background,
+                    )
+                    candidate["signal_source"] = signal_source
+                    candidates.append(candidate)
+            trace_result, trace_selection = select_step_response_trace(
+                candidates,
+                target_frequency_ghz=target_frequency_ghz,
+                baseline_frequency_ghz=baseline_frequency_ghz,
             )
-            score = np.asarray(trace_result.get("score", []), dtype=float)
-            ridge = np.asarray(trace_result.get("ridge_frequency_ghz", []), dtype=float)
-            if score.shape == (frequency_axis_ghz.size, self.t_vec.size) and ridge.size == self.t_vec.size:
-                rows = np.asarray(
-                    [int(np.nanargmin(np.abs(frequency_axis_ghz - value))) for value in ridge],
-                    dtype=int,
+            trace_signal_source = trace_result.get("signal_source")
+            self.data["trace_hypothesis_selection"] = trace_selection
+        else:
+            candidates = []
+            for signal_source, signal_map in (
+                ("magnitude", iq_magnitude_dbm),
+                ("phase", iq_phase),
+            ):
+                if signal_map is None:
+                    continue
+                trace_result = trx.extract_trace_from_map(
+                    signal_map,
+                    frequency_axis_ghz,
+                    self.t_vec,
+                    baseline_frequency_ghz,
+                    target_frequency_ghz,
+                    frequency_margin_ghz,
+                    trace_tracking_mode=self.trace_tracking_mode,
+                    trace_polarity=self.trace_polarity,
+                    trace_shoulder=self.trace_shoulder,
+                    trace_baseline_window_mhz=self.trace_baseline_window_mhz,
+                    trace_max_jump_mhz=self.trace_max_jump_mhz,
+                    trace_smoothness_penalty=self.trace_smoothness_penalty,
+                    trace_local_fit_half_window_mhz=self.trace_local_fit_half_window_mhz,
+                    trace_smoothing_window_points=self.trace_smoothing_window_points,
+                    trace_smoothing_polyorder=self.trace_smoothing_polyorder,
+                    trace_use_smoothed_frequency=self.trace_use_smoothed_frequency,
                 )
-                path_score = float(np.nanmedian(score[rows, np.arange(self.t_vec.size)]))
-            else:
-                path_score = -np.inf
-            candidates.append((path_score, signal_source, trace_result))
-        _, trace_signal_source, trace_result = max(candidates, key=lambda item: item[0])
+                score = np.asarray(trace_result.get("score", []), dtype=float)
+                ridge = np.asarray(trace_result.get("ridge_frequency_ghz", []), dtype=float)
+                if score.shape == (frequency_axis_ghz.size, self.t_vec.size) and ridge.size == self.t_vec.size:
+                    rows = np.asarray(
+                        [int(np.nanargmin(np.abs(frequency_axis_ghz - value))) for value in ridge],
+                        dtype=int,
+                    )
+                    path_score = float(np.nanmedian(score[rows, np.arange(self.t_vec.size)]))
+                else:
+                    path_score = -np.inf
+                candidates.append((path_score, signal_source, trace_result))
+            _, trace_signal_source, trace_result = max(candidates, key=lambda item: item[0])
 
         extracted_qubit_frequency_ghz = np.asarray(trace_result["selected_frequency_ghz"], dtype=float)
         extracted_if_frequency_hz = np.asarray(trace_result["extracted_if_frequency_hz"], dtype=float)
