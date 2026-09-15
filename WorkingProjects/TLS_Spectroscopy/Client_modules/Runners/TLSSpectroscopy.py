@@ -284,7 +284,9 @@ def _correction_requirements():
         "flux_channel": int(BaseConfig["ff_ch"]),
         "flux_name": f"ff_ch{BaseConfig['ff_ch']}",
         "fit_ff_ramp_length_us": float(BaseConfig.get("ff_ramp_length", 0.5)),
-        "fit_dt_pulseplay_us": float(BaseConfig.get("dt_pulseplay", 5.0)),
+        # QubitFluxStepResponse uses 0.5 us when the shared BaseConfig omits
+        # dt_pulseplay; provenance must describe that same executed waveform.
+        "fit_dt_pulseplay_us": float(BaseConfig.get("dt_pulseplay", 0.5)),
         "fit_dt_pulsedef_us": float(BaseConfig.get("dt_pulsedef", 0.002)),
         "rise_decay_bump_desired_response": "unity",
     }

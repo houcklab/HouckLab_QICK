@@ -485,6 +485,13 @@ def test_production_correction_requirements_reject_nonunity_candidates(monkeypat
     ] == "unity"
 
 
+def test_step3_provenance_uses_the_experiment_dt_pulseplay_default(monkeypatch):
+    runner, _response = _load_step3_runner(monkeypatch)
+    runner.BaseConfig.pop("dt_pulseplay", None)
+
+    assert runner._correction_requirements()["fit_dt_pulseplay_us"] == 0.5
+
+
 @pytest.mark.parametrize("automatic", [False, True])
 def test_regular_loader_rejects_incompatible_waveform_before_application(monkeypatch, tmp_path, automatic):
     runner, _ = _load_step3_runner(monkeypatch)
