@@ -761,6 +761,48 @@ def test_production_runner_installs_latest_q3_p4_calibration(monkeypatch):
     assert tls.BaseConfig["dt_pulsedef"] == 0.002
 
 
+def test_explicit_q3_correction_path_is_forwarded_exactly_to_resolver(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    requested = (
+        "Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/"
+        "q3_2026_09_15/validated_CANDIDATE.json"
+    )
+    calls = []
+
+    override, compensation, mode = runner.resolve_production_correction(
+        {"apply_flux_tail_compensation": True},
+        lambda path: calls.append(path) or ({"source": path}, "distortion-corrected"),
+        {"Q3_5PT_CORRECTION_JSON": f"  {requested}  "},
+    )
+
+    assert override == requested
+    assert calls == [requested]
+    assert compensation == {"source": requested}
+    assert mode == "distortion-corrected"
+
+
+def test_blank_q3_correction_override_preserves_automatic_discovery(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    calls = []
+
+    override, compensation, mode = runner.resolve_production_correction(
+        {"apply_flux_tail_compensation": True},
+        lambda path: calls.append(path) or ({"source": "auto.json"}, "distortion-corrected"),
+        {"Q3_5PT_CORRECTION_JSON": "   "},
+    )
+
+    assert override is None
+    assert calls == [None]
+    assert compensation == {"source": "auto.json"}
+    assert mode == "distortion-corrected"
+
+
 def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatch, tmp_path):
     module = load_experiments(monkeypatch)
     assert hasattr(module, "T15PointVsFlux"), "five-point experiment missing"

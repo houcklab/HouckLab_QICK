@@ -115,6 +115,19 @@ def install_scan_calibration(tls):
     tls.BaseConfig["dt_pulsedef"] = APPLE_DT_PULSEDEF_US
 
 
+def resolve_production_correction(params, resolve, environ=None):
+    """Resolve the exact requested correction, retaining auto-discovery fallback."""
+    environ = os.environ if environ is None else environ
+    correction_json = str(environ.get("Q3_5PT_CORRECTION_JSON", "")).strip() or None
+    if correction_json is not None:
+        print(
+            "[predistortion] explicit Q3_5PT_CORRECTION_JSON="
+            f"{correction_json}"
+        )
+    compensation, correction_mode = resolve(correction_json)
+    return correction_json, compensation, correction_mode
+
+
 def _run_series(
     factory,
     wall_clock_s,
@@ -257,8 +270,11 @@ def main():
     target = _target_frequency_grid_ghz(p)
     dc_vec, realized = _integer_dc_grid(p, target)
     wall_clock_s = 60.0 * float(p["wall_clock_duration_min"])
-    compensation, correction_mode = tls._resolve_step6_correction(
-        p, None, tls.outerFolder
+    correction_json, compensation, correction_mode = resolve_production_correction(
+        p,
+        lambda requested: tls._resolve_step6_correction(
+            p, requested, tls.outerFolder
+        ),
     )
     reset_session = prepare_reset_session(
         p["reset_mode"],
