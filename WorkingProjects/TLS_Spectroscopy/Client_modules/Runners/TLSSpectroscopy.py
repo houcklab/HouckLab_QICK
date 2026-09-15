@@ -563,7 +563,25 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
                           composition_damping=None):
     run_kind = "calibration" if fit_rise_decay_bump_dc_correction else "validation"
     print(f"Running flux-step {run_kind} target dc_offset={TARGET_DC_OFFSET:+.6f} DAC")
-    t_vec_ns = np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"]) * 1e3
+    if p.get("t_vec_us") is None:
+        t_vec_ns = (
+            np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"])
+            * 1e3
+        )
+    else:
+        t_vec_us = np.asarray(p["t_vec_us"], dtype=float)
+        if (
+            t_vec_us.ndim != 1
+            or t_vec_us.size == 0
+            or not np.all(np.isfinite(t_vec_us))
+            or np.any(t_vec_us < 0.0)
+            or np.any(np.diff(t_vec_us) <= 0.0)
+        ):
+            raise ValueError(
+                "P3_STEP_RESPONSE['t_vec_us'] must be a finite, strictly "
+                "increasing one-dimensional delay grid"
+            )
+        t_vec_ns = t_vec_us * 1e3
     exp = QubitFluxStepResponse(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix=suffix, cfg=_step3_common_cfg(p),

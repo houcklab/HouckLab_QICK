@@ -5,6 +5,7 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion
@@ -137,6 +138,16 @@ def test_discovery_skips_nonstring_method_and_accepts_generic_filename(tmp_path)
     path = tmp_path / "q3" / "final_dc_compensation.json"
     _write_compensation(path)
     assert flux_predistortion.find_latest_compensation_json(tmp_path, "q3") == str(path)
+
+
+def test_unsupported_image_trace_points_are_excluded_from_correction_fit():
+    values = np.asarray([4.01, 4.02, 4.03, 4.04])
+    supported = np.asarray([True, False, True, False])
+
+    masked = flux_predistortion.mask_unsupported_trace(values, supported)
+
+    np.testing.assert_allclose(masked[[0, 2]], values[[0, 2]])
+    assert np.isnan(masked[[1, 3]]).all()
 
 
 def test_discovery_skips_a_nonmapping_payload_and_matches_zero_ramp(tmp_path):
@@ -419,6 +430,21 @@ def test_step3a_targets_the_physical_flux_setpoint_by_default(monkeypatch):
 
     assert runner.P3_STEP_RESPONSE["piecewise_desired_response"] == "unity"
     assert response.calls[-1]["piecewise_desired_response"] == "unity"
+
+
+def test_step3a_forwards_an_explicit_nonuniform_delay_grid(monkeypatch):
+    runner, response = _load_step3_runner(monkeypatch)
+    runner.P3_STEP_RESPONSE = {
+        **runner.P3_STEP_RESPONSE,
+        "t_vec_us": [0.5, 1.0, 2.0, 5.0, 25.0, 65.0, 200.0],
+    }
+
+    runner.run_step3a_step_response_fit("/tmp", None, None)
+
+    np.testing.assert_allclose(
+        response.calls[-1]["t_vec"],
+        [500.0, 1000.0, 2000.0, 5000.0, 25000.0, 65000.0, 200000.0],
+    )
 
 
 def test_production_correction_requirements_reject_nonunity_candidates(monkeypatch):

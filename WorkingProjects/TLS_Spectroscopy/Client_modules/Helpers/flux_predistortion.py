@@ -1622,3 +1622,12 @@ def build_inclusive_sweep(vmin, vmax, step):
     if values.size and np.isclose(values[-1], vmax, rtol=1e-12, atol=1e-12):
         values[-1] = vmax
     return values
+
+
+def mask_unsupported_trace(values, supported):
+    """Replace image-tracker guesses without data support by NaN."""
+    values = np.asarray(values, dtype=float)
+    supported = np.asarray(supported, dtype=bool)
+    if values.shape != supported.shape:
+        raise ValueError("trace values and support mask must have matching shapes")
+    return np.where(supported, values, np.nan)

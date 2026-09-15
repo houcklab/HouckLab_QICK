@@ -44,6 +44,24 @@ def test_qick_measurement_diagnostic_selects_small_contiguous_frequency_slice():
     assert np.allclose(np.diff(selected_frequency), -0.0005)
 
 
+def test_q3_fresh_step3a_plan_is_uncorrected_high_snr_and_early_time_resolved():
+    plan = diagnostic().fresh_step3a_plan({})
+
+    assert plan["shots"] == 1000
+    assert plan["spec_amp"] == 25000
+    assert plan["frequency_window_mhz"] == [4000.0, 4100.0]
+    assert plan["frequency_step_mhz"] == pytest.approx(0.5)
+    assert plan["apply_flux_tail_compensation"] is False
+    assert plan["compose_with_applied_flux_tail_compensation"] is False
+    delays = np.asarray(plan["delay_vector_us"], dtype=float)
+    np.testing.assert_allclose(delays[:50], np.arange(0.5, 25.5, 0.5))
+    np.testing.assert_allclose(delays[50:67], np.arange(27.0, 61.0, 2.0))
+    np.testing.assert_allclose(delays[67:80], np.arange(65.0, 195.0, 10.0))
+    np.testing.assert_allclose(delays[-2:], [197.0, 200.0])
+    assert len(delays) == 82
+    assert np.all(np.diff(delays) > 0)
+
+
 def test_qick_measurement_diagnostic_bypasses_legacy_ss_streamer():
     path = Path(diagnostic().__file__)
     tree = ast.parse(path.read_text())

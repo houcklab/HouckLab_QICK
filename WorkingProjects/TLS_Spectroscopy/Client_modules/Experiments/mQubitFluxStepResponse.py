@@ -684,6 +684,14 @@ class QubitFluxStepResponse(ExperimentClass):
         extracted_fwhm_hz = np.asarray(trace_result["extracted_fwhm_hz"], dtype=float)
         extracted_supported = np.asarray(trace_result["supported"], dtype=bool)
         extraction_method = trace_result["method"]
+        extracted_qubit_frequency_ghz = fpd.mask_unsupported_trace(
+            extracted_qubit_frequency_ghz,
+            extracted_supported,
+        )
+        extracted_if_frequency_hz = fpd.mask_unsupported_trace(
+            extracted_if_frequency_hz,
+            extracted_supported,
+        )
 
         step_denominator_ghz = target_frequency_ghz - baseline_frequency_ghz
         if abs(step_denominator_ghz) < 1e-12:
