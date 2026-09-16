@@ -504,22 +504,12 @@ def _verify_completed_artifacts(manifest: Mapping[str, Any]) -> None:
                 raise ValueError("completed pass artifact checksum mismatch")
 
 
-def load_resume_manifest(
-    manifest_path: str | Path, plan: BenchmarkPlan, *, device: str, controller: str,
-    model_sha256: str, calibration_id: str,
-) -> dict[str, Any]:
-    """Load a resumable manifest after strict provenance and artifact validation."""
+def _validate_manifest_plan(manifest: Mapping[str, Any], plan: BenchmarkPlan) -> None:
+    """Validate that a checkpoint's canonical pass contract belongs to ``plan``."""
     _validate_plan(plan)
-    manifest = _read_manifest(manifest_path)
     _require_manifest_match(manifest, "schema", _MANIFEST_SCHEMA)
     _require_manifest_match(manifest, "plan", canonical_document(plan))
     _require_manifest_match(manifest, "plan_fingerprint", plan_fingerprint(plan))
-    _require_manifest_match(manifest, "device", device)
-    _require_manifest_match(manifest, "controller", controller)
-    model = manifest.get("model_provenance")
-    if not isinstance(model, Mapping) or model.get("sha256") != model_sha256:
-        raise ValueError("resume model mismatch")
-    _require_manifest_match(manifest, "calibration_id", calibration_id)
     entries = manifest.get("passes")
     if not isinstance(entries, list) or len(entries) != len(plan.passes):
         raise ValueError("resume pass list mismatch")
@@ -528,15 +518,31 @@ def load_resume_manifest(
             raise ValueError("resume pass list mismatch")
         if entry.get("status") not in {"pending", "running", "complete", "failed"}:
             raise ValueError("resume pass status mismatch")
+
+
+def load_resume_manifest(
+    manifest_path: str | Path, plan: BenchmarkPlan, *, device: str, controller: str,
+    model_sha256: str, calibration_id: str,
+) -> dict[str, Any]:
+    """Load a resumable manifest after strict provenance and artifact validation."""
+    _validate_plan(plan)
+    manifest = _read_manifest(manifest_path)
+    _validate_manifest_plan(manifest, plan)
+    _require_manifest_match(manifest, "device", device)
+    _require_manifest_match(manifest, "controller", controller)
+    model = manifest.get("model_provenance")
+    if not isinstance(model, Mapping) or model.get("sha256") != model_sha256:
+        raise ValueError("resume model mismatch")
+    _require_manifest_match(manifest, "calibration_id", calibration_id)
     _verify_completed_artifacts(manifest)
     return manifest
 
 
 def pending_passes(manifest: Mapping[str, Any], plan: BenchmarkPlan) -> tuple[BenchmarkPass, ...]:
     """Return canonical passes not backed by verified completion records."""
+    _validate_manifest_plan(manifest, plan)
     entries = manifest.get("passes")
-    if not isinstance(entries, list) or len(entries) != len(plan.passes):
-        raise ValueError("manifest pass list does not match plan")
+    assert isinstance(entries, list)
     _verify_completed_artifacts(manifest)
     statuses = {entry.get("index"): entry.get("status") for entry in entries if isinstance(entry, Mapping)}
     return tuple(item for item in plan.passes if statuses.get(item.index) != "complete")
@@ -809,16 +815,43 @@ def _session_rows(session: Any) -> dict[int, Sequence[Mapping[str, Any]]]:
     return result
 
 
+def _condition_label(index: int, rows: Sequence[Mapping[str, Any]]) -> str:
+    first = rows[0]
+    protocol = str(first.get("protocol", "unknown protocol"))
+    shots = first.get("shots_per_condition", "?")
+    conditions = first.get("condition_count", "?")
+    try:
+        total_budget = int(shots) * int(conditions)
+        budget = f"{total_budget} shots"
+    except (TypeError, ValueError):
+        budget = "unknown budget"
+    mode = str(first.get("predistortion", "unknown")).upper()
+    return (
+        f"pass {index:02d} — {protocol} | {shots} shots/condition × "
+        f"{conditions} = {budget} | {mode}"
+    )
+
+
+def _mark_invalid_points(
+    axis: Any, frequency: np.ndarray, values: np.ndarray, valid: np.ndarray
+) -> int:
+    invalid_count = int(np.count_nonzero(~valid))
+    if invalid_count:
+        finite_values = values[valid]
+        marker_y = float(np.min(finite_values)) if len(finite_values) else 0.0
+        axis.scatter(
+            frequency[~valid], np.full(invalid_count, marker_y), marker="x",
+            color="crimson", s=16, label="masked invalid",
+        )
+    return invalid_count
+
+
 def _plot_linecut(axis: Any, rows: Sequence[Mapping[str, Any]], title: str) -> None:
     frequency = np.asarray([row.get("realized_frequency_ghz", row.get("target_frequency_ghz", np.nan)) for row in rows], dtype=float)
     gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
     valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
     axis.plot(frequency[valid], gamma[valid], color="C0", linewidth=1.0)
-    invalid_count = int(np.count_nonzero(~valid))
-    if invalid_count:
-        finite_gamma = gamma[valid]
-        marker_y = float(np.min(finite_gamma)) if len(finite_gamma) else 0.0
-        axis.scatter(frequency[~valid], np.full(invalid_count, marker_y), marker="x", color="crimson", s=16, label="masked")
+    invalid_count = _mark_invalid_points(axis, frequency, gamma, valid)
     axis.set_title(f"{title}\ninvalid {invalid_count}/{len(rows)}", fontsize=8)
     axis.set_xlabel("frequency (GHz)", fontsize=7)
     axis.set_ylabel("Gamma1 (1/us)", fontsize=7)
@@ -858,7 +891,7 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
         axis = figure.add_subplot(grid[index // 4, index % 4])
         rows = rows_by_index.get(index, ())
         if rows:
-            _plot_linecut(axis, rows, f"pass {index:02d}")
+            _plot_linecut(axis, rows, _condition_label(index, rows))
         else:
             axis.text(0.5, 0.5, "missing pass", ha="center", va="center")
             axis.set_title(f"pass {index:02d}\ninvalid 0/0", fontsize=8)
@@ -880,8 +913,12 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
             & np.isfinite(opening_gamma)
             & np.isfinite(closing_gamma)
         )
-        sentinel_axis.plot(frequency[valid], (closing_gamma - opening_gamma)[valid], color="C3")
-        sentinel_axis.set_title("opening / closing sentinel difference")
+        difference = closing_gamma - opening_gamma
+        sentinel_axis.plot(frequency[valid], difference[valid], color="C3")
+        invalid_count = _mark_invalid_points(sentinel_axis, frequency, difference, valid)
+        sentinel_axis.set_title(
+            f"opening / closing sentinel difference\ninvalid {invalid_count}/{len(opening)}"
+        )
     else:
         opening_axis.text(0.5, 0.5, "opening unavailable", ha="center", va="center")
         closing_axis.text(0.5, 0.5, "terminal unavailable", ha="center", va="center")
@@ -907,7 +944,9 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
             valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
             uncertain = valid & np.isfinite(error) & (error > 0)
             color = f"C{(pair_number * 2 + (mode == 'on')) % 10}"
-            label = f"pair {pair_number + 1} {mode}"
+            invalid_count = _mark_invalid_points(overlay_axis, frequency, gamma, valid)
+            label = _condition_label(int(rows[0].get("pass_index", pair_number)), rows)
+            label += f" | invalid {invalid_count}/{len(rows)}"
             if not np.any(uncertain):
                 label += " (uncertainty unavailable)"
                 uncertainty_unavailable_series += 1

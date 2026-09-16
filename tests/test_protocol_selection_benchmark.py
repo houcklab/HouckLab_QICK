@@ -351,6 +351,49 @@ def test_pending_passes_rejects_a_forged_complete_entry_without_artifacts():
         benchmark.pending_passes(manifest, plan)
 
 
+def test_pending_passes_rejects_checksum_valid_artifacts_from_a_different_plan(tmp_path):
+    plan = benchmark.smoke_plan()
+    manifest_path = tmp_path / "manifest.json"
+    manifest = benchmark.new_manifest(
+        plan, device="q3", controller="qick", code_commit="abc",
+        model_provenance={"sha256": "1" * 64}, calibration_id="cal-1",
+    )
+    benchmark.atomic_write_json(manifest_path, manifest)
+    raw_path, metadata_path = benchmark.artifact_paths(tmp_path, "q3", plan.passes[0])
+    raw_path.write_text("raw")
+    metadata_path.write_text("{}")
+    completed = benchmark.record_pass_complete(
+        manifest_path, 0, raw_path=raw_path, metadata_path=metadata_path,
+        ended_at="2026-09-16T12:00:00-04:00", duration_s=1.0,
+    )
+    shifted_plan = replace(
+        plan, frequency_start_ghz=4.305, frequency_stop_ghz=4.3
+    )
+
+    with pytest.raises(ValueError, match="plan"):
+        benchmark.pending_passes(completed, shifted_plan)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda manifest: manifest.__setitem__("plan_fingerprint", "forged"), "plan fingerprint"),
+        (lambda manifest: manifest["passes"][0].__setitem__("pass_id", "forged"), "pass list"),
+        (lambda manifest: manifest["passes"][0].__setitem__("status", "forged"), "pass status"),
+    ],
+)
+def test_pending_passes_validates_manifest_fingerprint_identity_and_status(mutate, message):
+    plan = benchmark.smoke_plan()
+    manifest = benchmark.new_manifest(
+        plan, device="q3", controller="qick", code_commit="abc",
+        model_provenance={"sha256": "1" * 64}, calibration_id="cal-1",
+    )
+    mutate(manifest)
+
+    with pytest.raises(ValueError, match=message):
+        benchmark.pending_passes(manifest, plan)
+
+
 def test_normalization_preserves_raw_populations_and_directional_diagnostics():
     spec = benchmark.full_plan().passes[8]
     data = fake_five_point_data(points=801)
@@ -489,3 +532,39 @@ def test_csv_summary_and_linecut_figure_artifacts_are_written(tmp_path):
     assert metadata["metrics_table_columns"] == [
         "pass", "valid", "uncertainty", "direction", "runtime", "contrast"
     ]
+
+
+def test_comparison_figure_labels_each_condition_and_marks_invalid_nonprimary_points(
+    tmp_path, monkeypatch,
+):
+    import matplotlib.pyplot as plt
+
+    captured = []
+    original_close = plt.close
+    monkeypatch.setattr(plt, "close", lambda figure: captured.append(figure))
+    off_rows = synthetic_rows(valid_fraction=0.95)
+    on_rows = [dict(row, predistortion="on") for row in synthetic_rows(valid_fraction=0.95)]
+    session = {
+        "passes": [
+            {"index": 0, "rows": off_rows},
+            {"index": 1, "rows": on_rows},
+            {"index": 16, "rows": [dict(row, gamma1_per_us=row["gamma1_per_us"] + 0.002) for row in off_rows]},
+        ]
+    }
+    benchmark.render_comparison_figure(session, tmp_path / "labels.png")
+    figure = captured[0]
+    primary_title = figure.axes[0].get_title()
+    difference_axis = next(axis for axis in figure.axes if "sentinel difference" in axis.get_title())
+    overlay_axis = next(axis for axis in figure.axes if axis.get_title() == "matched-budget Gamma1 comparisons")
+    overlay_labels = [text.get_text() for text in overlay_axis.get_legend().get_texts()]
+    original_close(figure)
+
+    assert "3pt_ts100" in primary_title
+    assert "300 shots/condition" in primary_title
+    assert "900 shots" in primary_title
+    assert "OFF" in primary_title
+    assert "invalid 1/20" in difference_axis.get_title()
+    assert any("invalid 1/20" in label for label in overlay_labels)
+    assert any("3pt_ts100" in label and "900 shots" in label and "ON" in label for label in overlay_labels)
+    assert difference_axis.collections
+    assert overlay_axis.collections
