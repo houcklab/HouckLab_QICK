@@ -25,6 +25,11 @@ _PROTOCOL_DELAYS_US = {
     "5pt": (40.0, 80.0, 200.0),
     "7pt": (40.0, 80.0, 120.0, 160.0, 200.0),
 }
+_LOW_COST_OVERLAY_CONDITIONS = {
+    ("3pt_ts100", 300, 3),
+    ("5pt", 180, 5),
+    ("7pt", 128, 7),
+}
 
 PASS_ROW_COLUMNS = (
     "pass_index", "pass_id", "protocol", "predistortion",
@@ -841,19 +846,26 @@ def _mark_invalid_points(
         marker_y = float(np.min(finite_values)) if len(finite_values) else 0.0
         axis.scatter(
             frequency[~valid], np.full(invalid_count, marker_y), marker="x",
-            color="crimson", s=16, label="masked invalid",
+            color="crimson", s=16, label="_nolegend_",
         )
     return invalid_count
 
 
+def _realized_frequency(rows: Sequence[Mapping[str, Any]]) -> np.ndarray:
+    return np.asarray(
+        [row.get("realized_frequency_ghz", row.get("target_frequency_ghz", np.nan)) for row in rows],
+        dtype=float,
+    )
+
+
 def _plot_linecut(axis: Any, rows: Sequence[Mapping[str, Any]], title: str) -> None:
-    frequency = np.asarray([row.get("realized_frequency_ghz", row.get("target_frequency_ghz", np.nan)) for row in rows], dtype=float)
+    frequency = _realized_frequency(rows)
     gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
     valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
     axis.plot(frequency[valid], gamma[valid], color="C0", linewidth=1.0)
     invalid_count = _mark_invalid_points(axis, frequency, gamma, valid)
     axis.set_title(f"{title}\ninvalid {invalid_count}/{len(rows)}", fontsize=8)
-    axis.set_xlabel("frequency (GHz)", fontsize=7)
+    axis.set_xlabel("realized frequency (GHz)", fontsize=7)
     axis.set_ylabel("Gamma1 (1/us)", fontsize=7)
     axis.tick_params(labelsize=7)
 
@@ -904,7 +916,7 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
         _plot_linecut(opening_axis, opening, "opening sentinel")
         _plot_linecut(closing_axis, closing, "terminal sentinel")
         compare_sentinels(opening, closing)
-        frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in opening], dtype=float)
+        frequency = _realized_frequency(opening)
         opening_gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in opening], dtype=float)
         closing_gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing], dtype=float)
         valid = (
@@ -923,7 +935,7 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
         opening_axis.text(0.5, 0.5, "opening unavailable", ha="center", va="center")
         closing_axis.text(0.5, 0.5, "terminal unavailable", ha="center", va="center")
         sentinel_axis.text(0.5, 0.5, "sentinel unavailable", ha="center", va="center")
-    sentinel_axis.set_xlabel("frequency (GHz)")
+    sentinel_axis.set_xlabel("realized frequency (GHz)")
     sentinel_axis.set_ylabel("delta Gamma1 (1/us)")
 
     overlay_axis = figure.add_subplot(bottom[0, 3])
@@ -933,12 +945,14 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
             continue
         first = rows[0]
         key = (first.get("protocol"), first.get("shots_per_condition"), first.get("condition_count"))
+        if key not in _LOW_COST_OVERLAY_CONDITIONS:
+            continue
         pairs.setdefault(key, {})[str(first.get("predistortion"))] = rows
     uncertainty_band_series = 0
     uncertainty_unavailable_series = 0
     for pair_number, mode_rows in enumerate(pairs.values()):
         for mode, rows in mode_rows.items():
-            frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in rows], dtype=float)
+            frequency = _realized_frequency(rows)
             gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
             error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in rows], dtype=float)
             valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
@@ -960,7 +974,7 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
                 )
                 uncertainty_band_series += 1
     overlay_axis.set_title("matched-budget Gamma1 comparisons")
-    overlay_axis.set_xlabel("frequency (GHz)")
+    overlay_axis.set_xlabel("realized frequency (GHz)")
     overlay_axis.set_ylabel("Gamma1 (1/us)")
     if pairs:
         overlay_axis.legend(fontsize=6, ncol=2)

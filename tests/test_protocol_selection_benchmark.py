@@ -568,3 +568,84 @@ def test_comparison_figure_labels_each_condition_and_marks_invalid_nonprimary_po
     assert any("3pt_ts100" in label and "900 shots" in label and "ON" in label for label in overlay_labels)
     assert difference_axis.collections
     assert overlay_axis.collections
+
+
+def _full_session_with_shifted_realization():
+    def rows_for(item, gamma_offset=0.0):
+        rows = []
+        for point, target_frequency in enumerate((4.3, 4.2, 4.1)):
+            valid = point != 2
+            rows.append({
+                "pass_index": item.index,
+                "pass_id": item.pass_id,
+                "protocol": item.protocol,
+                "predistortion": item.predistortion,
+                "shots_per_condition": item.shots_per_condition,
+                "condition_count": item.condition_count,
+                "target_frequency_ghz": target_frequency,
+                "realized_frequency_ghz": target_frequency + 0.025,
+                "gamma1_per_us": 0.01 + gamma_offset if valid else np.nan,
+                "gamma1_err_per_us": 0.001,
+                "valid": valid,
+                "P0": 0.1,
+                "P1": 0.9,
+                "scan_direction_delta": 0.0,
+                "fit_deviance": 0.01,
+            })
+        return rows
+
+    plan = benchmark.full_plan()
+    return {
+        "passes": [
+            {"index": item.index, "rows": rows_for(item)}
+            for item in plan.passes[:16]
+        ] + [{"index": 16, "rows": rows_for(plan.passes[16], gamma_offset=0.002)}]
+    }
+
+
+def test_full_matrix_overlay_has_only_six_low_cost_series_and_no_marker_legend_duplicates(
+    tmp_path, monkeypatch,
+):
+    import matplotlib.pyplot as plt
+
+    captured = []
+    original_close = plt.close
+    monkeypatch.setattr(plt, "close", lambda figure: captured.append(figure))
+    benchmark.render_comparison_figure(
+        _full_session_with_shifted_realization(), tmp_path / "full.png"
+    )
+    figure = captured[0]
+    overlay_axis = next(axis for axis in figure.axes if axis.get_title() == "matched-budget Gamma1 comparisons")
+    overlay_labels = [text.get_text() for text in overlay_axis.get_legend().get_texts()]
+    original_close(figure)
+
+    assert len(overlay_labels) == 6
+    assert not any("masked invalid" in label for label in overlay_labels)
+    assert all("invalid 1/3" in label for label in overlay_labels)
+    assert {"3pt_ts100", "5pt", "7pt"} == {
+        next(protocol for protocol in ("3pt_ts100", "5pt", "7pt") if protocol in label)
+        for label in overlay_labels
+    }
+    assert not any("1500 shots" in label or "1498 shots" in label for label in overlay_labels)
+
+
+def test_nonprimary_panels_plot_shifted_realized_frequency(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    captured = []
+    original_close = plt.close
+    monkeypatch.setattr(plt, "close", lambda figure: captured.append(figure))
+    benchmark.render_comparison_figure(
+        _full_session_with_shifted_realization(), tmp_path / "realized.png"
+    )
+    figure = captured[0]
+    sentinel_axis = next(axis for axis in figure.axes if "sentinel difference" in axis.get_title())
+    overlay_axis = next(axis for axis in figure.axes if axis.get_title() == "matched-budget Gamma1 comparisons")
+    sentinel_x = sentinel_axis.lines[0].get_xdata()
+    overlay_x = overlay_axis.lines[0].get_xdata()
+    original_close(figure)
+
+    np.testing.assert_allclose(sentinel_x, [4.325, 4.225])
+    np.testing.assert_allclose(overlay_x, [4.325, 4.225])
+    assert sentinel_axis.get_xlabel() == "realized frequency (GHz)"
+    assert overlay_axis.get_xlabel() == "realized frequency (GHz)"
