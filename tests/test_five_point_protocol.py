@@ -209,6 +209,25 @@ def test_qick_causality_plan_can_wait_for_return_tail_before_readout():
     assert plan["overlap_payload_readout"] is False
 
 
+def test_qick_causality_plan_supports_single_frequency_71_delay_decay():
+    plan = diagnostic().predistortion_causality_plan({
+        "Q3_CAUSALITY_FREQUENCIES_GHZ": "4.050",
+        "Q3_CAUSALITY_DELAY_POINTS": "71",
+        "Q3_CAUSALITY_DELAY_MIN_US": "0.5",
+        "Q3_CAUSALITY_DELAY_MAX_US": "500",
+        "Q3_CAUSALITY_SHOTS": "180",
+        "Q3_CAUSALITY_MODE_ORDER": "off,on",
+    })
+
+    assert plan["target_frequencies_ghz"] == [4.05]
+    assert len(plan["delays_us"]) == 71
+    assert plan["delays_us"][0] == pytest.approx(0.5)
+    assert plan["delays_us"][-1] == pytest.approx(500.0)
+    assert np.all(np.diff(plan["delays_us"]) > 0.0)
+    assert plan["shots"] == 180
+    assert plan["modes"] == ("off", "on")
+
+
 def test_qick_causality_partitions_21_delays_into_hardware_safe_triplets():
     """Each resident program stays within the measured 16,384-word PMem limit."""
     module = diagnostic()
@@ -225,6 +244,16 @@ def test_qick_causality_partitions_21_delays_into_hardware_safe_triplets():
         (65.0, 80.0, 100.0),
         (125.0, 160.0, 200.0),
     ]
+
+
+def test_qick_causality_partitions_71_delays_with_safe_final_pair():
+    delays = np.linspace(0.5, 500.0, 71)
+
+    chunks = diagnostic().partition_delay_triplets(delays)
+
+    assert len(chunks) == 24
+    assert all(len(chunk) == 3 for chunk in chunks[:-1])
+    assert chunks[-1] == pytest.approx(tuple(delays[-2:]))
 
 
 def test_qick_causality_combines_chunk_references_and_all_survivals():

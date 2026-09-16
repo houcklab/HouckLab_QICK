@@ -363,7 +363,7 @@ def sequence_audit_requested(environ=None):
 
 
 def predistortion_causality_plan(environ=None):
-    """Return the independent 21-delay q3 predistortion A/B contract."""
+    """Return the independent dense q3 predistortion A/B contract."""
     environ = os.environ if environ is None else environ
     frequencies = [
         float(value)
@@ -371,15 +371,26 @@ def predistortion_causality_plan(environ=None):
             environ.get("Q3_CAUSALITY_FREQUENCIES_GHZ", "3.900,4.050,4.300")
         ).split(",")
     ]
-    delays = [
-        float(value)
-        for value in str(
-            environ.get(
-                "Q3_CAUSALITY_DELAYS_US",
-                "0.5,1,2,3,4,6,8,10,12,16,20,25,30,40,50,65,80,100,125,160,200",
-            )
-        ).split(",")
-    ]
+    delay_points_text = str(
+        environ.get("Q3_CAUSALITY_DELAY_POINTS", "")
+    ).strip()
+    if delay_points_text:
+        delay_points = int(delay_points_text)
+        if delay_points < 3:
+            raise ValueError("Q3_CAUSALITY_DELAY_POINTS must be at least three")
+        delay_min_us = float(environ.get("Q3_CAUSALITY_DELAY_MIN_US", "0.5"))
+        delay_max_us = float(environ.get("Q3_CAUSALITY_DELAY_MAX_US", "500"))
+        delays = np.linspace(delay_min_us, delay_max_us, delay_points).tolist()
+    else:
+        delays = [
+            float(value)
+            for value in str(
+                environ.get(
+                    "Q3_CAUSALITY_DELAYS_US",
+                    "0.5,1,2,3,4,6,8,10,12,16,20,25,30,40,50,65,80,100,125,160,200",
+                )
+            ).split(",")
+        ]
     shots = int(environ.get("Q3_CAUSALITY_SHOTS", "300"))
     recovery_us = float(environ.get("Q3_CAUSALITY_RECOVERY_US", "40"))
     reset_mode = str(
@@ -388,9 +399,15 @@ def predistortion_causality_plan(environ=None):
     overlap_value = str(
         environ.get("Q3_CAUSALITY_OVERLAP_READOUT", "on")
     ).strip().lower()
-    if len(frequencies) < 2 or not np.all(np.isfinite(frequencies)):
+    modes = tuple(
+        value.strip().lower()
+        for value in str(
+            environ.get("Q3_CAUSALITY_MODE_ORDER", "on,off")
+        ).split(",")
+    )
+    if len(frequencies) < 1 or not np.all(np.isfinite(frequencies)):
         raise ValueError(
-            "Q3_CAUSALITY_FREQUENCIES_GHZ needs at least two finite values"
+            "Q3_CAUSALITY_FREQUENCIES_GHZ needs at least one finite value"
         )
     if len(set(frequencies)) != len(frequencies):
         raise ValueError("Q3_CAUSALITY_FREQUENCIES_GHZ values must be unique")
@@ -411,6 +428,10 @@ def predistortion_causality_plan(environ=None):
         raise ValueError("Q3_CAUSALITY_RESET_MODE must be active or passive")
     if overlap_value not in ("on", "off"):
         raise ValueError("Q3_CAUSALITY_OVERLAP_READOUT must be on or off")
+    if len(modes) != 2 or set(modes) != {"on", "off"}:
+        raise ValueError(
+            "Q3_CAUSALITY_MODE_ORDER must contain on and off exactly once"
+        )
     return {
         "target_frequencies_ghz": frequencies,
         "delays_us": delays,
@@ -418,7 +439,7 @@ def predistortion_causality_plan(environ=None):
         "recovery_us": recovery_us,
         "reset_mode": reset_mode,
         "overlap_payload_readout": overlap_value == "on",
-        "modes": ("on", "off"),
+        "modes": modes,
     }
 
 
@@ -427,13 +448,12 @@ def partition_delay_triplets(delays_us):
     delays = np.asarray(delays_us, dtype=float).reshape(-1)
     if (
         delays.size == 0
-        or delays.size % 3
         or not np.all(np.isfinite(delays))
         or np.any(delays <= 0.0)
         or np.any(np.diff(delays) <= 0.0)
     ):
         raise ValueError(
-            "dense causality delays must be positive, increasing, and divisible by three"
+            "dense causality delays must be positive and increasing"
         )
     return [
         tuple(float(value) for value in delays[start:start + 3])
@@ -1001,7 +1021,8 @@ def save_predistortion_causality_outputs(
             axis.spines["right"].set_visible(False)
             axis.legend(frameon=False)
     fig.suptitle(
-        "q3 21-delay predistortion test: PMem-safe chunks, correction on/off"
+        f"q3 {len(delays)}-delay predistortion test: "
+        "PMem-safe chunks, correction on/off"
     )
     fig.savefig(png_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -1125,7 +1146,7 @@ def run_predistortion_causality():
         "no handshake"
     )
     print(
-        "[causality] the 21-delay dataset will be assembled from "
+        f"[causality] the {len(plan['delays_us'])}-delay dataset will be assembled from "
         f"{len(delay_chunks)} hardware-safe three-delay resident programs per mode"
     )
     print(f"[causality] ON uses {correction_label}")
@@ -1138,7 +1159,7 @@ def run_predistortion_causality():
         base_cfg=tls.BaseConfig,
         soc=soc,
         soccfg=soccfg,
-        purpose="Predistortion21PointTemporaryTest",
+        purpose=f"Predistortion{len(plan['delays_us'])}PointTemporaryTest",
     )
     print(
         "[causality] classifier calibration saved: "
@@ -1182,7 +1203,11 @@ def run_predistortion_causality():
     for chunk_index, delays in enumerate(delay_chunks):
         # Reverse mode order on alternating chunks so slow drift cannot always
         # favor the same correction state.
-        mode_order = ("on", "off") if chunk_index % 2 == 0 else ("off", "on")
+        mode_order = (
+            tuple(plan["modes"])
+            if chunk_index % 2 == 0
+            else tuple(reversed(plan["modes"]))
+        )
         for mode in mode_order:
             acquisition_index += 1
             cfg = dict(common_cfg)
@@ -1269,7 +1294,7 @@ def run_predistortion_causality():
             "telemetry": [chunk["telemetry"] for chunk in chunks],
         }
         print(
-            f"[{mode}] assembled all 21 delays; "
+            f"[{mode}] assembled all {len(plan['delays_us'])} delays; "
             f"median P1-P0={_median(summary['P1'] - summary['P0']):.4f}"
         )
 
@@ -1279,7 +1304,8 @@ def run_predistortion_causality():
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     output_base = output_dir / (
-        f"{tls.QUBIT}_{now:%H_%M_%S}_Predistortion_21pt_Temporary_Test"
+        f"{tls.QUBIT}_{now:%H_%M_%S}_Predistortion_"
+        f"{len(plan['delays_us'])}pt_Temporary_Test"
     )
     outputs = save_predistortion_causality_outputs(
         output_base,
