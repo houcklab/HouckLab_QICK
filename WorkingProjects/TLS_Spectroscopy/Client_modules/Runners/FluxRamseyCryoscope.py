@@ -138,8 +138,10 @@ def build_command(settings, *, quantum_ns=1000.0):
     model = None
     if settings["model_json"]:
         model, _ = schema.load_model(
-            settings["model_json"], device=DEVICE, park=settings["park"],
-            scale=settings["target"]-settings["park"], diagnostic_override=True)
+            settings["model_json"], device=DEVICE,
+            park=settings["production_park"],
+            scale=settings["production_target"]-settings["production_park"],
+            diagnostic_override=True)
     if model is None:
         model = fpc.identity_model(resolution_ns=max(quantum_ns, 1000.0))
     schedule = shot_schedule(

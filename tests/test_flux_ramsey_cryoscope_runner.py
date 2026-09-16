@@ -1,10 +1,11 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from fluxpred import cryoscope
+from fluxpred import cryoscope, schema
 from fluxpred.core import probe_delays, probe_fits_constant_segment
 
 RUNNERS = {
@@ -173,6 +174,27 @@ def test_built_command_holds_every_probe_inside_one_constant_segment():
         assert probe_fits_constant_segment(command, delay, span)
     assert float(command.edges_ns[-1]) == pytest.approx(
         settings["hold_ns"]+settings["recovery_ns"])
+
+
+def test_residual_run_loads_a_model_in_the_production_coordinate(tmp_path):
+    document = schema.build_model_document(
+        device=DEVICE,
+        park=PARK,
+        scale=TARGET-PARK,
+        taus_us=[8.0, 24.0, 64.0, 192.0],
+        coefficients=[0.01, -0.01, 0.01, -0.01],
+        source_files=["raw.csv"],
+        source_sha256=["a" * 64],
+    )
+    model_path = tmp_path / "candidate.json"
+    model_path.write_text(json.dumps(document))
+    settings = plan({f"{PREFIX}_CRYO_BASE_MODEL_JSON": str(model_path)})
+
+    command, _, model = RUNNER.build_command(settings)
+
+    assert settings["park"] != settings["production_park"]
+    assert command.values.size > 1
+    assert np.any(np.abs(model.coefficients) > 0)
 
 
 def test_delay_grid_straddles_the_return_edge_on_both_sides():

@@ -381,6 +381,7 @@ def predistortion_causality_plan(environ=None):
         ).split(",")
     ]
     shots = int(environ.get("Q3_CAUSALITY_SHOTS", "300"))
+    recovery_us = float(environ.get("Q3_CAUSALITY_RECOVERY_US", "40"))
     reset_mode = str(
         environ.get("Q3_CAUSALITY_RESET_MODE", "active")
     ).strip().lower()
@@ -401,12 +402,15 @@ def predistortion_causality_plan(environ=None):
         )
     if shots < 2:
         raise ValueError("Q3_CAUSALITY_SHOTS must be at least two")
+    if not np.isfinite(recovery_us) or recovery_us <= 0.0:
+        raise ValueError("Q3_CAUSALITY_RECOVERY_US must be finite and positive")
     if reset_mode not in ("active", "passive"):
         raise ValueError("Q3_CAUSALITY_RESET_MODE must be active or passive")
     return {
         "target_frequencies_ghz": frequencies,
         "delays_us": delays,
         "shots": shots,
+        "recovery_us": recovery_us,
         "reset_mode": reset_mode,
         "modes": ("on", "off"),
     }
@@ -1026,13 +1030,21 @@ def run_predistortion_causality():
     )
 
     plan = predistortion_causality_plan()
+    neutral_model_path = str(
+        os.environ.get("Q3_CAUSALITY_NEUTRAL_MODEL_JSON", "")
+    ).strip() or None
     correction_override = str(
         os.environ.get("Q3_CAUSALITY_CORRECTION_JSON", "")
-    ).strip()
-    if not correction_override:
+    ).strip() or None
+    if neutral_model_path is not None and correction_override is not None:
         raise ValueError(
-            "Q3_CAUSALITY_CORRECTION_JSON must explicitly name the accepted "
-            "q3 correction for this A/B test"
+            "Set only one of Q3_CAUSALITY_NEUTRAL_MODEL_JSON and "
+            "Q3_CAUSALITY_CORRECTION_JSON"
+        )
+    if neutral_model_path is None and correction_override is None:
+        raise ValueError(
+            "Set Q3_CAUSALITY_NEUTRAL_MODEL_JSON for the controller-neutral "
+            "A/B test, or Q3_CAUSALITY_CORRECTION_JSON for a legacy comparison"
         )
 
     runner.install_scan_calibration(tls)
@@ -1059,21 +1071,57 @@ def run_predistortion_causality():
     dc_vec, realized_frequency_ghz = _integer_dc_grid(
         params, target_frequency_ghz
     )
-    compensation, _correction_mode = tls._resolve_step6_correction(
-        params, correction_override, tls.outerFolder
-    )
+    if neutral_model_path is not None:
+        from fluxpred import production as fluxpred_production
+
+        neutral_choice = fluxpred_production.selection(
+            "q3",
+            park=float(tls._baseline_dc_offset()),
+            scale=float(tls.TARGET_DC_OFFSET) - float(tls._baseline_dc_offset()),
+            environ={
+                "Q3_FLUXPRED_MODE": "neutral",
+                "Q3_FLUXPRED_MODEL_JSON": neutral_model_path,
+                "Q3_FLUXPRED_DIAGNOSTIC_OVERRIDE": "1",
+            },
+            amplitude_range=(0.0, 1.0),
+        )
+        for line in fluxpred_production.describe(neutral_choice):
+            print(line)
+        max_hold_ns = 1000.0 * (
+            float(params["flux_settle_us"])
+            + max(
+                float(params["reference_hold_us"]),
+                *[float(value) for value in plan["delays_us"]],
+            )
+        )
+        compensation = fluxpred_production.neutral_step_table(
+            neutral_choice,
+            max_hold_ns=max_hold_ns,
+            recovery_ns=1000.0 * float(plan["recovery_us"]),
+            schedule_first_ns=4_000.0,
+            schedule_growth=1.2,
+            schedule_max_ns=100_000.0,
+            quantum_ns=1_000.0,
+        )
+        correction_label = neutral_model_path
+    else:
+        compensation, _correction_mode = tls._resolve_step6_correction(
+            params, correction_override, tls.outerFolder
+        )
+        correction_label = correction_override
     delay_chunks = partition_delay_triplets(plan["delays_us"])
     print(
         "[causality] q3 A/B: "
         f"{len(target_frequency_ghz)} frequencies x "
         f"{len(plan['delays_us'])} delays x {plan['shots']} shots; "
-        f"reset={plan['reset_mode']}; no handshake"
+        f"reset={plan['reset_mode']}; recovery={plan['recovery_us']:g} us; "
+        "no handshake"
     )
     print(
         "[causality] the 21-delay dataset will be assembled from "
         f"{len(delay_chunks)} hardware-safe three-delay resident programs per mode"
     )
-    print(f"[causality] ON uses {correction_override}")
+    print(f"[causality] ON uses {correction_label}")
     print("[causality] OFF uses no flux-tail correction")
     print("[causality] acquiring one shared DMem-native classifier calibration")
     classifier_session = prepare_reset_session(
@@ -1102,6 +1150,7 @@ def run_predistortion_causality():
         "opx_t1_3pt_gain_lookup": True,
         "opx_diagnostic_condition_tags": True,
         "opx_verify_dmem_reads": False,
+        "flux_predistortion_recovery_us": float(plan["recovery_us"]),
     })
     runner.apply_verified_feedback_timing(common_cfg)
     if plan["reset_mode"] == "active":
@@ -1229,7 +1278,7 @@ def run_predistortion_causality():
         realized_frequency_ghz=realized_frequency_ghz,
         dc_vec=dc_vec,
         mode_results=mode_results,
-        correction_source=correction_override,
+        correction_source=correction_label,
         readout_contract={
             "readout_location": "park",
             "park_gain_dac": common_cfg.get(
@@ -1240,9 +1289,13 @@ def run_predistortion_causality():
             "pre_measure_sync": common_cfg.get(
                 "opx_feedback_pre_measure_sync"
             ),
-            "flux_predistortion_recovery_us": params.get(
-                "flux_predistortion_recovery_us"
+            "flux_predistortion_recovery_us": float(plan["recovery_us"]),
+            "correction_method": str(compensation.get("method", "legacy_piecewise")),
+            "correction_model_sha256": str(compensation.get("model_sha256", "")),
+            "correction_segment_edges_ns": list(
+                compensation.get("segment_edges_ns", [])
             ),
+            "correction_multipliers": list(compensation.get("multipliers", [])),
             "sequence_implementation": (
                 "seven temporary OPXResetT15PointProgram chunks; shared classifier; "
                 "P0/P1 repeated per chunk; no T1 fit"

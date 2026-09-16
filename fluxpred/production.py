@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from . import report, schema
-from .core import Command
+from .core import Command, geometric_schedule, render_on_schedule
 from .validation import shot_schedule
 
 MODES = ("off", "neutral")
@@ -90,6 +90,39 @@ def condition_commands(choice, *, amplitude, holds_ns, recovery_ns, schedule_fir
         tail_tolerance=tail_tolerance, terminal_park_ns=terminal_park_ns,
         schedule_first_ns=schedule_first_ns, schedule_growth=schedule_growth,
         schedule_max_ns=schedule_max_ns, schedule_quantum_ns=quantum_ns)
+
+
+def neutral_step_table(choice, *, max_hold_ns, recovery_ns, schedule_first_ns,
+                       schedule_growth, schedule_max_ns, quantum_ns):
+    """Render one normalized neutral step for the existing stateful scheduler.
+
+    The QICK round-trip implementation already constructs the return command as
+    ``m(hold + recovery) - m(recovery)``.  Supplying the unit-step table here
+    therefore preserves the same causal superposition used by the controller-
+    neutral model instead of baking one particular hold time into the JSON.
+    """
+    if choice.get("mode") != "neutral" or choice.get("model") is None:
+        raise ValueError("neutral_step_table requires a selected neutral model")
+    max_hold_ns = float(max_hold_ns)
+    recovery_ns = float(recovery_ns)
+    if not np.isfinite(max_hold_ns) or max_hold_ns <= 0.0:
+        raise ValueError("max_hold_ns must be finite and positive")
+    if not np.isfinite(recovery_ns) or recovery_ns <= 0.0:
+        raise ValueError("recovery_ns must be finite and positive")
+    horizon_ns = max_hold_ns + recovery_ns
+    schedule = geometric_schedule(
+        1.0, horizon_ns, first_ns=float(schedule_first_ns),
+        growth=float(schedule_growth), max_ns=float(schedule_max_ns),
+        quantum_ns=float(quantum_ns))
+    command, _ = render_on_schedule(choice["model"], schedule)
+    return {
+        "enabled": True,
+        "method": "neutral_parallel_highpass_inverse_v1",
+        "source": str(choice["model_path"]),
+        "model_sha256": str(choice["model_sha256"]),
+        "segment_edges_ns": [*command.edges_ns[:-1].tolist(), command.edges_ns[-1]],
+        "multipliers": [*command.values.tolist(), 1.0],
+    }
 
 
 def provenance(choice, *, bank=None, backend=None, backend_report=None, code_commit=None):

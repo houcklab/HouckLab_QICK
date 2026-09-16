@@ -59,6 +59,7 @@ P6_5PT_APPLES_TO_APPLES = {
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
     "flux_settle_us": 0.5,
+    "flux_predistortion_recovery_us": 40.0,
     "readout_thermalization_us": 10.0,
     "apply_flux_tail_compensation": True,
     "reset_mode": "active",
@@ -258,24 +259,94 @@ def _run_series(
     return csv_path
 
 
-def resolve_neutral_selection(tls, environ=None):
+def resolve_neutral_selection(tls, environ=None, execution_test_mode=""):
     park = float(tls._baseline_dc_offset())
     scale = float(tls.TARGET_DC_OFFSET)-park
     choice = fluxpred_production.selection(
         "q3", park=park, scale=scale, environ=environ, amplitude_range=(0.0, 1.0))
     for line in fluxpred_production.describe(choice):
         print(line)
-    if choice["mode"] == "neutral":
+    if choice["mode"] == "neutral" and not execution_test_mode:
         raise RuntimeError(
-            "Q3_FLUXPRED_MODE=neutral is refused for the production T1 scan: the neutral inverse "
-            "is loaded and validated here, but applying it inside the five-point flux lifecycle "
-            "requires the center production-path acceptance run first. Run "
-            "Runners.FluxRamseyCryoscope, fit a candidate, pass the exact-sequence acceptance "
-            "test, then enable it. Leave Q3_FLUXPRED_MODE unset (off) for the long scan.")
+            "Q3_FLUXPRED_MODE=neutral is currently limited to a single-round execution test. "
+            "Set Q3_5PT_EXECUTION_TEST=active (or passive) to collect the full-band hardware "
+            "acceptance map; the synchronized long series remains blocked until that map passes.")
     return choice
 
 
+def render_neutral_scan_compensation(choice, params):
+    """Render the shared model for QICK's existing stateful round trip."""
+    maximum_hold_ns = 1000.0 * (
+        float(params["flux_settle_us"])
+        + max(
+            float(params["reference_hold_us"]),
+            *[float(value) for value in params["decay_delays_us"]],
+        )
+    )
+    return fluxpred_production.neutral_step_table(
+        choice,
+        max_hold_ns=maximum_hold_ns,
+        recovery_ns=1000.0 * float(params["flux_predistortion_recovery_us"]),
+        schedule_first_ns=4_000.0,
+        schedule_growth=1.2,
+        schedule_max_ns=100_000.0,
+        quantum_ns=1_000.0,
+    )
+
+
+def execution_test_settings(environ=None):
+    environ = os.environ if environ is None else environ
+    mode = str(environ.get("Q3_5PT_EXECUTION_TEST", "")).strip().lower()
+    if mode not in ("", "passive", "active"):
+        raise ValueError(
+            "Q3_5PT_EXECUTION_TEST must be unset, 'passive', or 'active'"
+        )
+    save = str(environ.get("Q3_5PT_EXECUTION_TEST_SAVE", "")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if save and not mode:
+        raise ValueError(
+            "Q3_5PT_EXECUTION_TEST_SAVE requires Q3_5PT_EXECUTION_TEST"
+        )
+    return mode, save
+
+
+def save_execution_test_outputs(exp):
+    """Save one isolated full-band acquisition without entering the series."""
+    now = datetime.now()
+    metadata = build_wall_clock_repeat_metadata(now, now, 0)
+    metadata["execution_test"] = True
+    metadata.update(five_point_output_metadata(exp.data, exp.CONDITION_NAMES))
+    exp.data.update(metadata)
+    exp.save_config()
+    spec = get_wall_clock_repeat_spec(exp)
+    full_spec = get_wall_clock_repeat_full_spec(exp) or {}
+    scalar_columns = dict(full_spec.get("scalar_columns", {}))
+    scalar_columns["target_frequency_ghz"] = exp.data["target_frequency_ghz"]
+    scalar_columns["fit_frequency_ghz"] = exp.data["fit_frequency_ghz"]
+    run_data = {
+        "run_metadata": metadata,
+        "dc_vec": np.asarray(exp.dc_vec, dtype=float),
+        "metric_column_name": spec["metric_column_name"],
+        "metric_values": np.asarray(spec["metric_values"], dtype=float),
+        "extra_metric_matrices": {
+            key: np.asarray(values, dtype=float)
+            for key, values in dict(spec.get("extra_metric_matrices", {})).items()
+        },
+        "axes": full_spec.get("axes", {}),
+        "scalar_columns": scalar_columns,
+        "array_columns": full_spec.get("array_columns", {}),
+    }
+    return save_wall_clock_repeat_full_outputs(
+        _csv_base_from_pickle(exp.pname),
+        spec["file_tag"],
+        [run_data],
+        append=False,
+    )
+
+
 def main():
+    execution_test_mode, execution_test_save = execution_test_settings()
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ThreePointApplesToApples import (
         _integer_dc_grid, _target_frequency_grid_ghz,
@@ -286,16 +357,30 @@ def main():
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
     p = dict(P6_5PT_APPLES_TO_APPLES)
+    if execution_test_mode:
+        p["reset_mode"] = execution_test_mode
     target = _target_frequency_grid_ghz(p)
     dc_vec, realized = _integer_dc_grid(p, target)
     wall_clock_s = 60.0 * float(p["wall_clock_duration_min"])
-    correction_json, compensation, correction_mode = resolve_production_correction(
-        p,
-        lambda requested: tls._resolve_step6_correction(
-            p, requested, tls.outerFolder
-        ),
+    neutral = resolve_neutral_selection(
+        tls, execution_test_mode=execution_test_mode
     )
-    neutral = resolve_neutral_selection(tls)
+    if neutral["mode"] == "neutral":
+        correction_json = neutral["model_path"]
+        compensation = render_neutral_scan_compensation(neutral, p)
+        correction_mode = "distortion-corrected"
+        print(
+            "[predistortion] rendered controller-neutral model for the exact "
+            f"production lifecycle: {len(compensation['multipliers'])} segments, "
+            f"recovery={p['flux_predistortion_recovery_us']:g} us"
+        )
+    else:
+        correction_json, compensation, correction_mode = resolve_production_correction(
+            p,
+            lambda requested: tls._resolve_step6_correction(
+                p, requested, tls.outerFolder
+            ),
+        )
     neutral_record = fluxpred_production.provenance(
         neutral, backend="qick",
         code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"))
@@ -319,6 +404,9 @@ def main():
         "relax_delay": PASSIVE_T1_RESET_US,
         "qubit_pulse_style": "arb",
         "flux_settle_time_us": float(p["flux_settle_us"]),
+        "flux_predistortion_recovery_us": float(
+            p["flux_predistortion_recovery_us"]
+        ),
         "readout_thermalization_us": float(
             p["readout_thermalization_us"]
         ),
@@ -383,6 +471,20 @@ def main():
         f"{p['shots_per_condition']} shots x {2 + len(p['decay_delays_us'])} conditions, "
         f"delays={p['decay_delays_us']} us, {correction_mode}"
     )
+    if execution_test_mode:
+        print(
+            f"[execution-test] one complete {p['shots_per_condition']} x "
+            f"{len(target)} x {2 + len(p['decay_delays_us'])} pass with "
+            f"{execution_test_mode} reset; scan results will "
+            f"{'be saved' if execution_test_save else 'not be saved'}"
+        )
+        exp = factory({})
+        exp.acquire(progress=True)
+        if execution_test_save:
+            output_path = save_execution_test_outputs(exp)
+            print(f"[execution-test] saved full-band output: {output_path}")
+        print("[execution-test] PASS: the complete workload finished")
+        return
     synchronizer = GlobalSlotSynchronizer.from_config(p)
     synchronizer.prepare()
     csv_path = _run_series(

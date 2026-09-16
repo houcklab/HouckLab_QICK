@@ -186,9 +186,18 @@ def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
             160.0, 200.0,
         ],
         "shots": 300,
+        "recovery_us": 40.0,
         "reset_mode": "active",
         "modes": ("on", "off"),
     }
+
+
+def test_qick_causality_plan_accepts_neutral_recovery_override():
+    plan = diagnostic().predistortion_causality_plan({
+        "Q3_CAUSALITY_RECOVERY_US": "3000",
+    })
+
+    assert plan["recovery_us"] == 3000.0
 
 
 def test_qick_causality_partitions_21_delays_into_hardware_safe_triplets():
@@ -1315,6 +1324,66 @@ def test_blank_q3_correction_override_preserves_automatic_discovery(monkeypatch)
     assert calls == [None]
     assert compensation == {"source": "auto.json"}
     assert mode == "distortion-corrected"
+
+
+def test_qick_neutral_execution_test_renders_shared_stateful_step_table(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    from fluxpred.core import Filter
+
+    choice = {
+        "mode": "neutral",
+        "model": Filter(
+            taus_ns=[12_000.0, 40_000.0, 120_000.0, 360_000.0],
+            amplitudes=[1.0],
+            coefficients=[[0.001, 0.009, 0.022, 0.025]],
+            resolution_ns=4_000.0,
+        ),
+        "model_path": "q3_neutral.json",
+        "model_sha256": "a" * 64,
+    }
+    params = {
+        "decay_delays_us": [40.0, 80.0, 200.0],
+        "reference_hold_us": 2.0,
+        "flux_settle_us": 0.5,
+        "flux_predistortion_recovery_us": 40.0,
+    }
+
+    source = runner.render_neutral_scan_compensation(choice, params)
+
+    assert source["method"] == "neutral_parallel_highpass_inverse_v1"
+    assert source["segment_edges_ns"][-1] == pytest.approx(240_500.0)
+    assert source["multipliers"][-1] == 1.0
+
+
+def test_qick_neutral_model_is_limited_to_one_round_until_hardware_acceptance(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    choice = {
+        "mode": "neutral",
+        "diagnostic_override": True,
+        "document": {"acceptance": {"software": True, "scientific": False, "hardware": False}},
+    }
+    monkeypatch.setattr(
+        runner.fluxpred_production, "selection", lambda *args, **kwargs: choice
+    )
+    monkeypatch.setattr(runner.fluxpred_production, "describe", lambda value: [])
+    tls = types.SimpleNamespace(
+        _baseline_dc_offset=lambda: -25146.0,
+        TARGET_DC_OFFSET=-14750.0,
+    )
+
+    assert runner.resolve_neutral_selection(
+        tls, environ={}, execution_test_mode="active"
+    ) is choice
+    with pytest.raises(RuntimeError, match="single-round execution test"):
+        runner.resolve_neutral_selection(
+            tls, environ={}, execution_test_mode=""
+        )
 
 
 def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatch, tmp_path):

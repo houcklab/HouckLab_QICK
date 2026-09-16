@@ -123,6 +123,28 @@ def test_neutral_mode_emits_one_distinct_command_per_condition(tmp_path):
     assert record["acceptance"] == {"software": True, "scientific": True, "hardware": True}
 
 
+def test_neutral_step_table_drives_the_existing_stateful_round_trip(tmp_path):
+    path = model_file(tmp_path, "q3", Q3["park"], Q3["scale"])
+    choice = production.selection(
+        "q3", park=Q3["park"], scale=Q3["scale"],
+        environ={"Q3_FLUXPRED_MODE": "neutral", "Q3_FLUXPRED_MODEL_JSON": str(path),
+                 "Q3_FLUXPRED_DIAGNOSTIC_OVERRIDE": "1"})
+
+    table = production.neutral_step_table(
+        choice, max_hold_ns=200_500.0, recovery_ns=3_000_000.0,
+        schedule_first_ns=4_000.0, schedule_growth=1.2,
+        schedule_max_ns=100_000.0, quantum_ns=1_000.0)
+
+    assert table["enabled"] is True
+    assert table["method"] == "neutral_parallel_highpass_inverse_v1"
+    assert table["source"] == str(path)
+    assert len(table["segment_edges_ns"]) == len(table["multipliers"])
+    assert table["segment_edges_ns"][0] == 0.0
+    assert table["segment_edges_ns"][-1] == pytest.approx(3_200_500.0)
+    assert table["multipliers"][-1] == 1.0
+    assert table["multipliers"][0] != pytest.approx(1.0)
+
+
 def test_provenance_is_json_serializable(tmp_path):
     path = model_file(tmp_path, "q5", Q5["park"], Q5["scale"], accepted=True)
     choice = production.selection(
