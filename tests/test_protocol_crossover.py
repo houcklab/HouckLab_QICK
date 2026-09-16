@@ -2,6 +2,8 @@ import importlib
 import sys
 import types
 
+import numpy as np
+
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.protocol_crossover import (
     apply_phase,
     annotate_metadata,
@@ -137,3 +139,28 @@ def test_q3_current_runner_exposes_the_crossover_runtime_parameters():
 
     assert plan["wall_clock_duration_min"] == 30.0
     assert plan["output_suffix"] == "TLS_Protocol_Crossover_5pt_ON"
+
+
+def test_q3_shared_integer_grid_uses_the_callers_calibrated_tls_module(monkeypatch):
+    """The 5-point caller must not depend on ThreePoint.main initializing tls."""
+    runner = _runner("ThreePointApplesToApples")
+
+    class FakeTLS:
+        FLUX_FIT_PARAMS = ["current-calibration"]
+
+    def estimate(params, dc_values):
+        assert params == ["current-calibration"]
+        return 3.9 + 0.1 * np.asarray(dc_values, dtype=float)
+
+    monkeypatch.setattr(runner.fx, "estimate_fit_frequency_ghz_array", estimate)
+    params = {
+        "dc_min": 0,
+        "dc_max": 4,
+        "freq_step_mhz": 100.0,
+    }
+    target = np.array([4.3, 4.2, 4.1])
+
+    dc_vec, realized = runner._integer_dc_grid(params, target, FakeTLS)
+
+    np.testing.assert_array_equal(dc_vec, [4, 3, 2])
+    np.testing.assert_allclose(realized, target, atol=1e-12)

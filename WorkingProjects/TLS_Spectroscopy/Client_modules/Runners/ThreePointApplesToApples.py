@@ -96,9 +96,15 @@ def _target_frequency_grid_ghz(p):
     return target
 
 
-def _integer_dc_grid(p, target):
+def _integer_dc_grid(p, target, tls_module=None):
+    if tls_module is None:
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+            TLSSpectroscopy as tls_module,
+        )
     candidates = np.arange(int(p["dc_min"]), int(p["dc_max"]) + 1, dtype=np.int64)
-    fitted = fx.estimate_fit_frequency_ghz_array(tls.FLUX_FIT_PARAMS, candidates)
+    fitted = fx.estimate_fit_frequency_ghz_array(
+        tls_module.FLUX_FIT_PARAMS, candidates
+    )
     delta = np.diff(fitted)
     if np.all(delta > 0):
         mapped = np.interp(target, fitted, candidates)
@@ -109,7 +115,9 @@ def _integer_dc_grid(p, target):
     dc_vec = np.rint(mapped).astype(np.int64)
     if np.unique(dc_vec).size != dc_vec.size:
         raise RuntimeError("the QICK DAC resolution cannot realize every target frequency")
-    realized = fx.estimate_fit_frequency_ghz_array(tls.FLUX_FIT_PARAMS, dc_vec)
+    realized = fx.estimate_fit_frequency_ghz_array(
+        tls_module.FLUX_FIT_PARAMS, dc_vec
+    )
     error_mhz = 1e3 * (realized - target)
     if float(np.max(np.abs(error_mhz))) > 0.1:
         raise RuntimeError("the nearest-DAC frequency error exceeds 0.1 MHz")
