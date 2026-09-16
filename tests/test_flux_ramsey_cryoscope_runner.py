@@ -143,6 +143,11 @@ def test_plan_accepts_an_explicit_window_ladder():
     assert settings["effective_windows_ns"] == (416.0, 2000.0)
 
 
+def test_plan_records_an_explicit_contrast_threshold():
+    settings = plan({f"{PREFIX}_CRYO_CONTRAST_THRESHOLD": "0.15"})
+    assert settings["contrast_threshold"] == pytest.approx(0.15)
+
+
 def test_plan_refuses_an_effective_window_shorter_than_the_pulse():
     with pytest.raises(ValueError, match="shorter than"):
         plan({f"{PREFIX}_CRYO_WINDOWS_NS": "2000,100"})

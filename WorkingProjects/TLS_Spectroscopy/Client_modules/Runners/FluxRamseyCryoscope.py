@@ -197,6 +197,9 @@ def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=No
                 "recovery_ns": _env_float("Q3_CRYO_RECOVERY_US", DEFAULTS["recovery_us"], environ)*1000.0,
                 "shots": _env_int("Q3_CRYO_SHOTS", DEFAULTS["shots"], environ),
                 "rounds": _env_int("Q3_CRYO_ROUNDS", DEFAULTS["rounds"], environ),
+                "contrast_threshold": _env_float(
+                    "Q3_CRYO_CONTRAST_THRESHOLD", cryoscope.DEFAULT_CONTRAST_THRESHOLD,
+                    environ),
                 "schedule_growth": _env_float("Q3_CRYO_SCHEDULE_GROWTH",
                                               DEFAULTS["schedule_growth"], environ),
                 "schedule_max_ns": _env_float("Q3_CRYO_SCHEDULE_MAX_US",
@@ -334,7 +337,8 @@ def main():
             settings["flux_fit_params"], coordinate),
         timestamp=datetime.now().isoformat(timespec="seconds"),
         code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"),
-        operator_note=settings["note"])
+        operator_note=settings["note"],
+        contrast_threshold=settings["contrast_threshold"])
     analysis = artifacts["analysis"]
     raw_path = artifacts["raw_csv"]
     command_path = artifacts["command_json"]
