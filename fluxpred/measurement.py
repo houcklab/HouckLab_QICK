@@ -229,3 +229,58 @@ def command_from_summary(document, *, root=None):
             f"the normalized command at {str(path)!r} hashes to {actual}, but the summary "
             f"recorded {recorded}")
     return command
+
+
+def write_measurement_artifacts(stem, *, device, park, scale, park_coordinate,
+                                target_coordinate, amplitude, delays_ns, effective_windows_ns,
+                                idle_windows_ns, pulse_ns, shots, rounds, recovery_ns, hold_ns,
+                                command, populations, keep_fractions, probe_frequency_ghz,
+                                static_flux_model, frequency_of_coordinate, timestamp,
+                                code_commit, operator_note, contrast_threshold=None):
+    stem = Path(stem)
+    delays_ns = np.asarray(delays_ns, dtype=float)
+    windows = [float(value) for value in effective_windows_ns]
+    expected = ARM_LABELS+quadrature_labels(len(windows))
+    missing = [name for name in expected if name not in populations]
+    if missing:
+        raise ValueError(
+            f"the measurement is missing population column(s) {missing}; expected {list(expected)} "
+            f"for {len(windows)} probe window(s)")
+    for name in expected:
+        values = np.asarray(populations[name], dtype=float)
+        if values.shape != delays_ns.shape:
+            raise ValueError(
+                f"population column {name!r} has shape {values.shape}, but there are "
+                f"{delays_ns.size} delays")
+    raw_path = write_raw_csv(
+        stem.with_name(stem.name+"_raw.csv"), delays_ns=delays_ns, populations=populations,
+        keep_fractions=keep_fractions, window_count=len(windows),
+        probe_frequency_ghz=probe_frequency_ghz)
+    command_path = write_command_json(stem.with_name(stem.name+"_command.json"), command)
+    raw = read_raw_csv(raw_path)
+    ideal = np.where(delays_ns < float(hold_ns), float(amplitude), 0.0)
+    analysis = analyze(
+        delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
+        quadratures=quadratures_from_raw(raw, len(windows)), windows_ns=windows,
+        probe_frequency_ghz=raw["probe_freq_ghz"],
+        frequency_of_coordinate=frequency_of_coordinate,
+        park=park_coordinate, target=target_coordinate, shots=shots,
+        ideal_amplitude=ideal, contrast_threshold=contrast_threshold)
+    document = build_summary(
+        device=device, park=park, scale=scale, park_coordinate=park_coordinate,
+        target_coordinate=target_coordinate, normalized_amplitude=amplitude,
+        delays_ns=delays_ns, windows_ns=windows, shots=shots, rounds=rounds,
+        recovery_ns=recovery_ns, command=command, trace=analysis,
+        static_flux_model=static_flux_model,
+        differentiator={"method": "fixed_window",
+                        "effective_window_ns": float(max(windows)),
+                        "idle_windows_ns": [float(value) for value in idle_windows_ns],
+                        "pulse_ns": float(pulse_ns),
+                        "convention": "center_to_center"},
+        timestamp=timestamp, controller_commit=code_commit, code_commit=code_commit,
+        operator_note=operator_note,
+        files={"raw_csv": describe_file(raw_path),
+               "command_json": describe_file(command_path)})
+    summary_path = write_summary(stem.with_name(stem.name+"_summary.json"), document)
+    return {"raw_csv": raw_path, "command_json": command_path, "summary_json": summary_path,
+            "analysis": analysis, "document": document}

@@ -474,3 +474,33 @@ def plan_probe(frequency_of_coordinate, *, park, target, pulse_ns, readout_span_
             "readout_span_ns": float(readout_span_ns),
             "coarsest_range_mhz": window_unambiguous_range_mhz(min(windows)),
             "finest_range_mhz": window_unambiguous_range_mhz(max(windows))}
+
+
+def branch_sensitivity_mhz_per_unit(frequency_of_coordinate, *, park, target, amplitude):
+    park = float(park)
+    target = float(target)
+    span = target-park
+    coordinate = park+float(amplitude)*span
+    step = max(abs(span)*1e-6, 1e-12)
+    high = float(np.asarray(frequency_of_coordinate(np.array([coordinate+step])), dtype=float)[0])
+    low = float(np.asarray(frequency_of_coordinate(np.array([coordinate-step])), dtype=float)[0])
+    return (high-low)/(2.0*step)*1000.0*span
+
+
+def assert_branch_sensitivity(frequency_of_coordinate, *, park, target, minimum_mhz_per_unit,
+                              amplitudes=(0.0, 1.0)):
+    report = {}
+    for amplitude in amplitudes:
+        value = branch_sensitivity_mhz_per_unit(
+            frequency_of_coordinate, park=park, target=target, amplitude=amplitude)
+        report[float(amplitude)] = value
+        if abs(value) < float(minimum_mhz_per_unit):
+            raise ValueError(
+                f"the flux line is only {abs(value):.1f} MHz per unit amplitude sensitive at "
+                f"normalized amplitude {float(amplitude):g} (coordinate "
+                f"{float(park)+float(amplitude)*(float(target)-float(park)):.6f}); a flux error "
+                f"there produces almost no frequency shift, so the Ramsey cannot see it. This is "
+                f"what happens at a flux sweet spot. Move the identification interval away from "
+                f"the extremum: the plant is linear, so a model identified on a different flux "
+                f"interval still applies at the production bias")
+    return report

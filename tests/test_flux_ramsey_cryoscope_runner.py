@@ -139,6 +139,22 @@ def test_plan_refuses_an_effective_window_shorter_than_the_pulse():
         plan({f"{PREFIX}_CRYO_WINDOWS_NS": "2000,100"})
 
 
+def test_identification_interval_avoids_the_production_park():
+    settings = plan()
+    assert settings["production_park"] == PARK
+    assert settings["park"] != PARK
+    assert abs(settings["branch_sensitivity_mhz_per_unit"][0.0]) >= 50.0
+    assert abs(settings["branch_sensitivity_mhz_per_unit"][1.0]) >= 50.0
+
+
+def test_explicit_identification_interval_is_honoured():
+    span = TARGET-PARK
+    settings = plan({f"{PREFIX}_CRYO_PARK_V": repr(PARK+0.2*span),
+                     f"{PREFIX}_CRYO_TARGET_V": repr(PARK+0.6*span)})
+    assert settings["park"] == pytest.approx(PARK+0.2*span)
+    assert settings["target"] == pytest.approx(PARK+0.6*span)
+
+
 def test_plan_reports_an_amplitude_within_its_ceiling():
     settings = plan()
     assert 0.0 < settings["amplitude"] <= settings["amplitude_ceiling"]+1e-12

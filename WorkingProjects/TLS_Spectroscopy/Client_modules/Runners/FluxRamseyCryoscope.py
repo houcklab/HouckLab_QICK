@@ -38,6 +38,9 @@ DEFAULTS = {
     "amplitude_safety": 0.8,
     "min_idle_ns": 16.0,
     "assumed_overshoot": 0.20,
+    "park_fraction": 0.10,
+    "target_fraction": 0.50,
+    "min_sensitivity_mhz_per_unit": 50.0,
     "emission_quantum_ns": 1000.0,
 }
 
@@ -79,8 +82,22 @@ def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=No
     explicit = environ.get("Q3_CRYO_WINDOWS_NS", "").strip()
     requested_windows = ([float(value) for value in explicit.split(",")] if explicit else None)
     requested_amplitude = environ.get("Q3_CRYO_AMPLITUDE", "").strip()
+    production_park = float(park)
+    production_target = float(target)
+    production_span = production_target-production_park
+    id_park = _env_float("Q3_CRYO_PARK_V", production_park
+                         + _env_float("Q3_CRYO_PARK_FRACTION", DEFAULTS["park_fraction"],
+                                      environ)*production_span, environ)
+    id_target = _env_float("Q3_CRYO_TARGET_V", production_park
+                           + _env_float("Q3_CRYO_TARGET_FRACTION",
+                                        DEFAULTS["target_fraction"], environ)*production_span,
+                           environ)
+    sensitivity = cryoscope.assert_branch_sensitivity(
+        frequency, park=id_park, target=id_target,
+        minimum_mhz_per_unit=_env_float("Q3_CRYO_MIN_SENSITIVITY",
+                                        DEFAULTS["min_sensitivity_mhz_per_unit"], environ))
     probe = cryoscope.plan_probe(
-        frequency, park=float(park), target=float(target), pulse_ns=float(pulse_ns),
+        frequency, park=id_park, target=id_target, pulse_ns=float(pulse_ns),
         readout_span_ns=float(readout_span_ns),
         min_idle_ns=_env_float("Q3_CRYO_MIN_IDLE_NS", DEFAULTS["min_idle_ns"], environ),
         finest_effective_ns=_env_float("Q3_CRYO_FINEST_WINDOW_NS",
@@ -93,7 +110,9 @@ def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=No
         emission_quantum_ns=DEFAULTS["emission_quantum_ns"],
         requested_first_ns=_env_float("Q3_CRYO_SCHEDULE_FIRST_US",
                                       DEFAULTS["schedule_first_us"], environ)*1000.0)
-    settings = {"park": float(park), "target": float(target), "flux_fit_params": flux_fit_params,
+    settings = {"park": id_park, "target": id_target,
+                "production_park": production_park, "production_target": production_target,
+                "branch_sensitivity_mhz_per_unit": sensitivity, "flux_fit_params": flux_fit_params,
                 "static_flux_model": model,
                 "sensitivity_mhz_per_unit": sensitivity_mhz_per_unit(
                     flux_fit_params, float(park), float(target)),
@@ -197,51 +216,35 @@ def main():
         hold_ns=settings["hold_ns"], recovery_ns=settings["recovery_ns"],
         readout_span_ns=readout_span_ns, save=True)
     data = experiment.acquire(progress=True)
+    print(f"PICKLE={getattr(experiment, 'pname', getattr(experiment, 'fname', None))}")
 
     labels = ("g", "e")+measurement.quadrature_labels(len(settings["windows_ns"]))
     populations = {name: np.array([record["populations"][name] for record in data["records"]])
                    for name in labels}
     keeps = {name: np.array([record["keep_fraction"][name] for record in data["records"]])
              for name in labels}
-    base = Path(experiment.dname)
-    raw_path = measurement.write_raw_csv(
-        base.with_name(base.name+"_raw.csv"), delays_ns=delays, populations=populations,
-        keep_fractions=keeps, window_count=len(settings["windows_ns"]),
-        probe_frequency_ghz=probe_ghz)
-    command_path = measurement.write_command_json(
-        base.with_name(base.name+"_command.json"), command)
+    base = Path(experiment.fname).with_suffix("")
     static = flux_fit_dict(settings["flux_fit_params"])
     static["probe_frequency_ghz"] = float(probe_ghz[0])
-    raw = measurement.read_raw_csv(raw_path)
-    analysis = measurement.analyze(
-        delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
-        quadratures=measurement.quadratures_from_raw(raw, len(settings["windows_ns"])),
-        windows_ns=settings["effective_windows_ns"], probe_frequency_ghz=raw["probe_freq_ghz"],
+    artifacts = measurement.write_measurement_artifacts(
+        base, device=DEVICE, park=settings["production_park"],
+        scale=settings["production_target"]-settings["production_park"],
+        park_coordinate=settings["park"],
+        target_coordinate=settings["target"], amplitude=settings["amplitude"],
+        delays_ns=delays, effective_windows_ns=settings["effective_windows_ns"],
+        idle_windows_ns=settings["windows_ns"], pulse_ns=x90_ns, shots=settings["shots"],
+        rounds=settings["rounds"], recovery_ns=settings["recovery_ns"],
+        hold_ns=settings["hold_ns"], command=command, populations=populations,
+        keep_fractions=keeps, probe_frequency_ghz=probe_ghz, static_flux_model=static,
         frequency_of_coordinate=lambda coordinate: fx.estimate_fit_frequency_ghz_array(
             settings["flux_fit_params"], coordinate),
-        park=settings["park"], target=settings["target"], shots=settings["shots"],
-        ideal_amplitude=ideal)
-    document = measurement.build_summary(
-        device=DEVICE, park=settings["park"], scale=settings["target"]-settings["park"],
-        park_coordinate=settings["park"], target_coordinate=settings["target"],
-        normalized_amplitude=settings["amplitude"], delays_ns=delays,
-        windows_ns=settings["effective_windows_ns"], shots=settings["shots"],
-        rounds=settings["rounds"],
-        recovery_ns=settings["recovery_ns"], command=command, trace=analysis,
-        static_flux_model=static,
-        differentiator={"method": "fixed_window",
-                        "effective_window_ns": float(max(settings["effective_windows_ns"])),
-                        "idle_windows_ns": [float(v) for v in settings["windows_ns"]],
-                        "pulse_ns": float(x90_ns),
-                        "convention": "center_to_center"},
         timestamp=datetime.now().isoformat(timespec="seconds"),
-        controller_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"),
         code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"),
-        operator_note=settings["note"],
-        files={"raw_csv": measurement.describe_file(raw_path),
-               "command_json": measurement.describe_file(command_path)})
-    summary_path = measurement.write_summary(
-        base.with_name(base.name+"_summary.json"), document)
+        operator_note=settings["note"])
+    analysis = artifacts["analysis"]
+    raw_path = artifacts["raw_csv"]
+    command_path = artifacts["command_json"]
+    summary_path = artifacts["summary_json"]
 
     print(f"[ramsey] supported fraction {analysis['supported_fraction']:.3f}, "
           f"{analysis['resolved']['ambiguous_count']} ambiguous branch point(s)")

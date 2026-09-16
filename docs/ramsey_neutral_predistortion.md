@@ -56,6 +56,33 @@ The readout resonator is pulled by the held flux level, but `g` and `e` are meas
 at the same delay under the same flux, so the contrast normalization absorbs it.
 That is why the reference arms are re-measured at every delay rather than once.
 
+### Identification runs away from the production park
+
+q5's production park (0.156232 V) sits **exactly on the maximum** of the tilted
+transmon curve: the first-order flux sensitivity there is identically zero, and the
+local sensitivity only reaches 18 MHz per unit at 1% of the span and 91 at 5%. A flux
+error at park therefore produces a second-order-only frequency shift that the Ramsey
+cannot see, and the sign of the error is not even resolvable. The return-to-park
+transient - the part that makes the pole fit identifiable - is invisible at that bias.
+
+So identification runs on a flux interval that avoids the extremum. The default is
+10% to 50% of the production span (q5: 0.179383 -> 0.271987 V), where the sensitivity
+is 73 and 370 MHz per unit at the two ends. `assert_branch_sensitivity` refuses an
+interval whose either end is flatter than `*_CRYO_MIN_SENSITIVITY` (50 MHz per unit)
+and says so explicitly.
+
+This is sound because the plant is assumed linear: the flux line's step response is a
+property of the wiring, not of the bias point, so coefficients identified on one
+interval apply at another. That assumption is the premise of the whole method, and the
+production-path acceptance run is what tests it.
+
+The two coordinates are kept separate in the artifacts. `coordinate.park` and
+`coordinate.scale` record the **production** bias, because that is where the model will
+be applied and what the production loader checks. `sequence.park_coordinate` and
+`sequence.target_coordinate` record the **identification** interval that the trace was
+actually measured on. Override it with `*_CRYO_PARK_V` / `*_CRYO_TARGET_V`, or shift
+it with `*_CRYO_PARK_FRACTION` / `*_CRYO_TARGET_FRACTION`.
+
 ### The drive frequency follows the nominal level
 
 A single fixed drive frequency would be roughly 100 MHz off resonance during the
