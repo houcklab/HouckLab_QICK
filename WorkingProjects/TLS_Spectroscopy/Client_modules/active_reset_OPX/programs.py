@@ -2126,9 +2126,14 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         park_up, park_down = self._shot_park_callbacks()
 
         def emit_payload():
-            if bool(do_pi):
+            prepare_after_return = bool(self.cfg.get(
+                "opx_t1_prepare_excited_after_return", False
+            ))
+            if bool(do_pi) and not prepare_after_return:
                 self._prepare_excited()
             self._wait_three_point_payload(hold_us, do_ff)
+            if bool(do_pi) and prepare_after_return:
+                self._prepare_excited()
 
         emit_payload_reset_shot(
             self,

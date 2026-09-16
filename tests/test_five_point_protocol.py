@@ -1238,6 +1238,51 @@ def test_stateful_return_tail_can_finish_before_payload_readout(monkeypatch):
     assert telemetry["flux_predistortion_tail_overlaps_payload_readout"] is False
 
 
+def test_post_return_reference_prepares_excited_state_after_flux_lifecycle(monkeypatch):
+    """The diagnostic P1 pulse must not experience the target or return wait."""
+    module, cls = program_type()
+    prog = object.__new__(module.OPXResetT13PointProgram)
+    prog.cfg = {
+        "opx_reset_scheme": "none",
+        "opx_t1_prepare_excited_after_return": True,
+        "qubit_ch": 1,
+    }
+    prog.reset_page = 0
+    prog.reset_regs = {}
+    prog.payload_calibration = object()
+    prog.loop_calibration = object()
+    prog._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    events = []
+    prog._prepare_excited = lambda: events.append("prepare")
+    prog._wait_three_point_payload = (
+        lambda hold_us, do_ff: events.append(("wait", hold_us, do_ff))
+    )
+    prog._measure_project = lambda: None
+    prog._set_reset_pulse = lambda: None
+    prog.pulse = lambda **kwargs: None
+    prog.reset_config = types.SimpleNamespace(inter_shot_delay_us=0.0)
+    prog.us2cycles = lambda value: int(value)
+    prog.sync_all = lambda cycles: None
+
+    monkeypatch.setattr(
+        module,
+        "emit_payload_reset_shot",
+        lambda _prog, **kwargs: kwargs["emit_payload"](),
+    )
+
+    prog._emit_three_point_payload("P1", True, True, 42.0)
+
+    assert events == [("wait", 42.0, True), "prepare"]
+
+
+def test_qick_return_contract_plan_crosses_correction_with_overlap():
+    plan = diagnostic().return_readout_contract_plan({})
+    assert plan["hold_times_us"] == [2.0, 42.0, 82.0, 202.0]
+    assert plan["modes"] == (
+        "on_overlap", "off_overlap", "on_waited", "off_waited",
+    )
+
+
 def load_experiments(monkeypatch):
     # QICK and the single-shot experiment require hardware-only dependencies.
     monkeypatch.setitem(sys.modules, "qick", types.SimpleNamespace(AveragerProgram=object))

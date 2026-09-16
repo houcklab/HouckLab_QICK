@@ -6,6 +6,7 @@ is involved.  Passive reset is the default so record generation and decoding
 can be isolated from feedback reset.
 """
 
+import copy
 import csv
 import json
 import os
@@ -362,6 +363,90 @@ def sequence_audit_requested(environ=None):
     }
 
 
+def return_readout_contract_requested(environ=None):
+    """Select the temporary post-return preparation/readout diagnostic."""
+    environ = os.environ if environ is None else environ
+    return str(
+        environ.get("Q3_RETURN_READOUT_CONTRACT", "off")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def return_readout_contract_plan(environ=None):
+    """Cross correction ON/OFF with overlapping/waited return timing."""
+    environ = os.environ if environ is None else environ
+    frequencies = [
+        float(value)
+        for value in str(
+            environ.get(
+                "Q3_RETURN_CONTRACT_FREQUENCIES_GHZ",
+                "4.050,4.060,4.070",
+            )
+        ).split(",")
+    ]
+    holds = [
+        float(value)
+        for value in str(
+            environ.get("Q3_RETURN_CONTRACT_HOLDS_US", "2,42,82,202")
+        ).split(",")
+    ]
+    shots = int(environ.get("Q3_RETURN_CONTRACT_SHOTS", "300"))
+    reset_mode = str(
+        environ.get("Q3_RETURN_CONTRACT_RESET_MODE", "active")
+    ).strip().lower()
+    if (
+        not frequencies
+        or not np.all(np.isfinite(frequencies))
+        or len(set(frequencies)) != len(frequencies)
+    ):
+        raise ValueError(
+            "Q3_RETURN_CONTRACT_FREQUENCIES_GHZ needs unique finite values"
+        )
+    if (
+        len(holds) < 2
+        or not np.all(np.isfinite(holds))
+        or np.any(np.asarray(holds) < 0.01)
+        or np.any(np.diff(holds) <= 0.0)
+    ):
+        raise ValueError(
+            "Q3_RETURN_CONTRACT_HOLDS_US needs increasing positive values"
+        )
+    if shots < 2:
+        raise ValueError("Q3_RETURN_CONTRACT_SHOTS must be at least two")
+    if reset_mode not in ("active", "passive"):
+        raise ValueError(
+            "Q3_RETURN_CONTRACT_RESET_MODE must be active or passive"
+        )
+    return {
+        "target_frequencies_ghz": frequencies,
+        "hold_times_us": holds,
+        "shots": shots,
+        "reset_mode": reset_mode,
+        "recovery_us": float(
+            environ.get("Q3_RETURN_CONTRACT_RECOVERY_US", "40")
+        ),
+        "modes": (
+            "on_overlap", "off_overlap", "on_waited", "off_waited",
+        ),
+        "min_contrast": float(
+            environ.get("Q3_RETURN_CONTRACT_MIN_CONTRAST", "0.5")
+        ),
+        "max_population_span": float(
+            environ.get("Q3_RETURN_CONTRACT_MAX_POPULATION_SPAN", "0.1")
+        ),
+        "max_directional_delta": float(
+            environ.get("Q3_RETURN_CONTRACT_MAX_DIRECTIONAL_DELTA", "0.15")
+        ),
+    }
+
+
+def unity_timing_table(compensation):
+    """Keep every segment boundary while removing correction amplitude."""
+    result = copy.deepcopy(compensation)
+    result["multipliers"] = [1.0] * len(result["multipliers"])
+    result["diagnostic_predistortion_mode"] = "timing_matched_unity"
+    return result
+
+
 def predistortion_causality_plan(environ=None):
     """Return the independent dense q3 predistortion A/B contract."""
     environ = os.environ if environ is None else environ
@@ -549,7 +634,25 @@ def make_npoint_program_class():
                 "opx_t1_npoint_reference_hold_us": reference_hold_us,
                 "opx_t1_3pt_wait_us": reference_hold_us + float(delays[-1]),
             })
-            self._npoint_records_per_dc = 2 + int(delays.size)
+            custom_holds = run_cfg.get("opx_t1_condition_holds_us")
+            custom_flags = run_cfg.get("opx_t1_condition_excitation_flags")
+            if custom_holds is not None or custom_flags is not None:
+                holds = np.asarray(custom_holds, dtype=float).reshape(-1)
+                flags = np.asarray(custom_flags, dtype=int).reshape(-1)
+                if (
+                    holds.size < 2 or holds.size != flags.size
+                    or not np.all(np.isfinite(holds)) or np.any(holds < 0.01)
+                    or np.any((flags != 0) & (flags != 1))
+                ):
+                    raise ValueError(
+                        "custom return/readout conditions need matched finite "
+                        "positive holds and zero/one excitation flags"
+                    )
+                run_cfg["opx_t1_condition_holds_us"] = holds.tolist()
+                run_cfg["opx_t1_condition_excitation_flags"] = flags.tolist()
+                self._npoint_records_per_dc = int(holds.size)
+            else:
+                self._npoint_records_per_dc = 2 + int(delays.size)
             super().__init__(
                 soccfg,
                 run_cfg,
@@ -567,6 +670,15 @@ def make_npoint_program_class():
             return None
 
         def _emit_t1_conditions(self, controls, label_prefix):
+            custom_holds = self.cfg.get("opx_t1_condition_holds_us")
+            if custom_holds is not None:
+                flags = self.cfg["opx_t1_condition_excitation_flags"]
+                for index, (hold, flag) in enumerate(zip(custom_holds, flags)):
+                    self._emit_tagged_condition(
+                        f"{label_prefix}_C{index}", bool(flag), True,
+                        float(hold), index,
+                    )
+                return
             reference = float(self.cfg["opx_t1_npoint_reference_hold_us"])
             self._emit_tagged_condition(
                 f"{label_prefix}_P0", False, True, reference, 0
@@ -616,6 +728,10 @@ def acquire_t1_npoint_iq(
     reset_scheme="opx_unbounded",
     progress=None,
     program_class=None,
+    condition_holds_us=None,
+    condition_excitation_flags=None,
+    condition_names=None,
+    prepare_excited_after_return=False,
 ):
     """Acquire P0, P1, and N survival delays in one resident QICK program."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import (
@@ -649,7 +765,36 @@ def acquire_t1_npoint_iq(
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
 
-    records_per_dc = 2 + int(delays.size)
+    custom_conditions = condition_holds_us is not None
+    if custom_conditions:
+        holds = np.asarray(condition_holds_us, dtype=float).reshape(-1)
+        flags = np.asarray(condition_excitation_flags, dtype=int).reshape(-1)
+        if (
+            holds.size < 2 or holds.size != flags.size
+            or not np.all(np.isfinite(holds)) or np.any(holds < 0.01)
+            or np.any((flags != 0) & (flags != 1))
+        ):
+            raise ValueError(
+                "custom conditions need matched finite positive holds and "
+                "zero/one excitation flags"
+            )
+        names = tuple(
+            str(value) for value in (
+                condition_names
+                if condition_names is not None
+                else tuple(f"condition_{index}" for index in range(holds.size))
+            )
+        )
+        if len(names) != holds.size:
+            raise ValueError("condition_names must match custom conditions")
+        records_per_dc = int(holds.size)
+    else:
+        holds = None
+        flags = None
+        names = (
+            "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
+        )
+        records_per_dc = 2 + int(delays.size)
     records_per_shot = int(rounded.size) * records_per_dc
     run_cfg = dict(cfg)
     run_cfg.update({
@@ -661,7 +806,17 @@ def acquire_t1_npoint_iq(
         "ff_hold": reference_hold_us + float(delays[-1]),
         "t1_wait_us": reference_hold_us + float(delays[-1]),
         "opx_resident_dmem_stream": True,
+        "opx_t1_prepare_excited_after_return": bool(
+            prepare_excited_after_return
+        ),
     })
+    if custom_conditions:
+        run_cfg.update({
+            "opx_t1_condition_holds_us": holds.tolist(),
+            "opx_t1_condition_excitation_flags": flags.tolist(),
+            "ff_hold": float(np.max(holds)),
+            "t1_wait_us": float(np.max(holds)),
+        })
     program_type = make_npoint_program_class() if program_class is None else program_class
     program = program_type(soccfg, run_cfg, bundle.payload, bundle.loop)
     block = integration._run_program(
@@ -703,9 +858,6 @@ def acquire_t1_npoint_iq(
     read_cycles = program.us2cycles(
         cfg["read_length"], ro_ch=cfg["ro_chs"][0]
     )
-    condition_names = (
-        "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
-    )
     return i_values / int(read_cycles), q_values / int(read_cycles), {
         "shots_per_condition": total_shots,
         "dc_points": int(rounded.size),
@@ -715,13 +867,20 @@ def acquire_t1_npoint_iq(
         "resident_stream": True,
         "native_many_delay_program": True,
         "order": "shot_alternating_dc_P0_P1_Ps_all_delays",
-        "condition_names": condition_names,
+        "condition_names": names,
         "dc_scan_order": "alternating_bidirectional",
         "dc_scan_up_shots": int((total_shots + 1) // 2),
         "dc_scan_down_shots": int(total_shots // 2),
         "p0_mode": "matched_frequency_resolved",
         "reference_hold_us": reference_hold_us,
         "decay_delays_us": tuple(float(value) for value in delays),
+        "condition_holds_us": (
+            tuple(float(value) for value in holds)
+            if custom_conditions else None
+        ),
+        "prepare_excited_after_return": bool(
+            prepare_excited_after_return
+        ),
         "read_length_cycles": int(read_cycles),
         **tag_telemetry,
         "dmem_read_verification": getattr(
@@ -731,6 +890,438 @@ def acquire_t1_npoint_iq(
         ),
         **integration.flux_predistortion_telemetry(program),
     }
+
+
+def summarize_return_readout_states(
+    states,
+    *,
+    hold_times_us,
+    min_contrast,
+    max_population_span,
+    max_directional_delta,
+):
+    """Summarize paired P0/P1 references prepared only after flux return."""
+    states = np.asarray(states, dtype=float)
+    holds = np.asarray(hold_times_us, dtype=float)
+    if states.ndim != 3 or states.shape[0] != 2 * holds.size:
+        raise ValueError("return/readout states need P0/P1 for every hold")
+    if states.shape[2] < 2:
+        raise ValueError("return/readout states need at least two shots")
+    combined = np.mean(states, axis=2).T
+    up = np.mean(states[:, :, 0::2], axis=2).T
+    down = np.mean(states[:, :, 1::2], axis=2).T
+    p0 = combined[:, 0::2]
+    p1 = combined[:, 1::2]
+    contrast = p1 - p0
+    p0_span = np.ptp(p0, axis=1)
+    p1_span = np.ptp(p1, axis=1)
+    directional = np.maximum(
+        np.max(np.abs(up[:, 0::2] - down[:, 0::2]), axis=1),
+        np.max(np.abs(up[:, 1::2] - down[:, 1::2]), axis=1),
+    )
+    failures = []
+    for index in range(combined.shape[0]):
+        reasons = []
+        if float(np.min(contrast[index])) < float(min_contrast):
+            reasons.append("low P1-P0 contrast")
+        if float(max(p0_span[index], p1_span[index])) > float(max_population_span):
+            reasons.append("hold-dependent park mapping")
+        if float(directional[index]) > float(max_directional_delta):
+            reasons.append("scan-direction dependence")
+        failures.append(reasons)
+    return {
+        "combined": combined,
+        "up": up,
+        "down": down,
+        "P0": p0,
+        "P1": p1,
+        "contrast": contrast,
+        "P0_span": p0_span,
+        "P1_span": p1_span,
+        "max_directional_delta": directional,
+        "failures": failures,
+        "passed": not any(failures),
+    }
+
+
+def save_return_readout_contract_outputs(
+    output_base,
+    *,
+    plan,
+    target_frequency_ghz,
+    realized_frequency_ghz,
+    dc_vec,
+    mode_results,
+    correction_source,
+):
+    """Persist shot-level IQ plus concise return/readout comparison products."""
+    npz_path = Path(str(output_base) + "_raw_iq.npz")
+    csv_path = Path(str(output_base) + "_raw_iq.csv")
+    json_path = Path(str(output_base) + "_summary.json")
+    png_path = Path(str(output_base) + "_comparison.png")
+    archive = {}
+    for mode, result in mode_results.items():
+        archive[f"{mode}_I"] = result["I"]
+        archive[f"{mode}_Q"] = result["Q"]
+        archive[f"{mode}_states"] = result["states"]
+    archive.update({
+        "target_frequency_ghz": np.asarray(target_frequency_ghz),
+        "realized_frequency_ghz": np.asarray(realized_frequency_ghz),
+        "dc_offset_dac": np.asarray(dc_vec),
+        "hold_times_us": np.asarray(plan["hold_times_us"]),
+    })
+    np.savez_compressed(npz_path, **archive)
+
+    fields = [
+        "mode", "target_frequency_ghz", "realized_frequency_ghz",
+        "dc_offset_dac", "hold_us", "prepared_state", "shot",
+        "scan_direction", "I", "Q", "classified_excited",
+    ]
+    with csv_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for mode in plan["modes"]:
+            result = mode_results[mode]
+            for hold_index, hold in enumerate(plan["hold_times_us"]):
+                for state_offset, state_name in enumerate(("P0", "P1_after_return")):
+                    condition = 2 * hold_index + state_offset
+                    for frequency_index, frequency in enumerate(target_frequency_ghz):
+                        for shot in range(plan["shots"]):
+                            writer.writerow({
+                                "mode": mode,
+                                "target_frequency_ghz": frequency,
+                                "realized_frequency_ghz": realized_frequency_ghz[frequency_index],
+                                "dc_offset_dac": dc_vec[frequency_index],
+                                "hold_us": hold,
+                                "prepared_state": state_name,
+                                "shot": shot,
+                                "scan_direction": "up" if shot % 2 == 0 else "down",
+                                "I": result["I"][condition, frequency_index, shot],
+                                "Q": result["Q"][condition, frequency_index, shot],
+                                "classified_excited": int(
+                                    result["states"][condition, frequency_index, shot]
+                                ),
+                            })
+
+    payload = {
+        "plan": plan,
+        "correction_source": correction_source,
+        "raw_iq_npz": str(npz_path),
+        "raw_iq_csv": str(csv_path),
+        "overall_passed": bool(all(
+            result["summary"]["passed"] for result in mode_results.values()
+        )),
+        "modes": {},
+    }
+    for mode, result in mode_results.items():
+        summary = result["summary"]
+        payload["modes"][mode] = {
+            "passed": bool(summary["passed"]),
+            "P0": summary["P0"].tolist(),
+            "P1_after_return": summary["P1"].tolist(),
+            "contrast": summary["contrast"].tolist(),
+            "P0_span": summary["P0_span"].tolist(),
+            "P1_span": summary["P1_span"].tolist(),
+            "max_directional_delta": summary["max_directional_delta"].tolist(),
+            "failures": summary["failures"],
+            "telemetry": result["telemetry"],
+        }
+    with json_path.open("w") as handle:
+        json.dump(payload, handle, indent=2, default=_json_default)
+
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(
+        len(target_frequency_ghz), 1,
+        figsize=(8.5, 3.2 * len(target_frequency_ghz)),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    colors = {
+        "on_overlap": "#2457a6", "off_overlap": "#d97706",
+        "on_waited": "#3b9e77", "off_waited": "#cc79a7",
+    }
+    holds = np.asarray(plan["hold_times_us"], dtype=float)
+    for frequency_index, frequency in enumerate(target_frequency_ghz):
+        axis = axes[frequency_index, 0]
+        for mode in plan["modes"]:
+            summary = mode_results[mode]["summary"]
+            axis.plot(
+                holds, summary["P0"][frequency_index], "o--",
+                color=colors[mode], alpha=0.65, label=f"{mode} P0",
+            )
+            axis.plot(
+                holds, summary["P1"][frequency_index], "o-",
+                color=colors[mode], label=f"{mode} P1 after return",
+            )
+        axis.set_title(
+            f"{frequency:.3f} GHz target: park mapping versus target hold"
+        )
+        axis.set_xlabel("Target hold [us]")
+        axis.set_ylabel("P(excited) at park readout")
+        axis.set_ylim(-0.05, 1.05)
+        axis.grid(alpha=0.2)
+        axis.legend(frameon=False, ncol=2, fontsize=8)
+    fig.suptitle(
+        "q3 return/readout contract: state prepared after flux return"
+    )
+    fig.savefig(png_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return npz_path, csv_path, json_path, png_path
+
+
+def run_return_readout_contract():
+    """Run the timing-matched four-way return/readout diagnostic on q3."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        FivePointApplesToApples as runner,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        TLSSpectroscopy as tls,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ThreePointApplesToApples import (
+        _integer_dc_grid,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import (
+        dmem_words_from_soccfg,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+        classify_payload_iq,
+    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+        PASSIVE_T1_RESET_US,
+        ProductionResetSession,
+        prepare_reset_session,
+    )
+    from fluxpred import production as fluxpred_production
+
+    plan = return_readout_contract_plan()
+    model_path = str(
+        os.environ.get("Q3_RETURN_CONTRACT_NEUTRAL_MODEL_JSON", "")
+    ).strip()
+    if not model_path:
+        raise ValueError(
+            "Q3_RETURN_CONTRACT_NEUTRAL_MODEL_JSON must name the accepted "
+            "controller-neutral q3 model"
+        )
+    runner.install_scan_calibration(tls)
+    tls._set_yoko_if_requested()
+    soc, soccfg = tls.makeProxy()
+    if bool(soc.streamer.readout_running()):
+        raise RuntimeError(
+            "QICK streamer is already running. Stop the other QICK "
+            "acquisition before launching this isolated test."
+        )
+    dmem_roundtrip = verify_dmem_roundtrip(
+        soc, dmem_words=dmem_words_from_soccfg(soccfg)
+    )
+    print(
+        "[transport] DMem sentinel PASS: bulk DMA and direct AXI agree at "
+        f"address {dmem_roundtrip['address']}"
+    )
+    params = dict(runner.P6_5PT_APPLES_TO_APPLES)
+    target_frequency_ghz = np.asarray(
+        plan["target_frequencies_ghz"], dtype=float
+    )
+    dc_vec, realized_frequency_ghz = _integer_dc_grid(
+        params, target_frequency_ghz
+    )
+    choice = fluxpred_production.selection(
+        "q3",
+        park=float(tls._baseline_dc_offset()),
+        scale=float(tls.TARGET_DC_OFFSET) - float(tls._baseline_dc_offset()),
+        environ={
+            "Q3_FLUXPRED_MODE": "neutral",
+            "Q3_FLUXPRED_MODEL_JSON": model_path,
+            "Q3_FLUXPRED_DIAGNOSTIC_OVERRIDE": "1",
+        },
+        amplitude_range=(0.0, 1.0),
+    )
+    for line in fluxpred_production.describe(choice):
+        print(line)
+    compensation = fluxpred_production.neutral_step_table(
+        choice,
+        max_hold_ns=1000.0 * (
+            float(params["flux_settle_us"]) + max(plan["hold_times_us"])
+        ),
+        recovery_ns=1000.0 * float(plan["recovery_us"]),
+        schedule_first_ns=4_000.0,
+        schedule_growth=1.2,
+        schedule_max_ns=100_000.0,
+        quantum_ns=1_000.0,
+    )
+    unity = unity_timing_table(compensation)
+    print(
+        "[return contract] q3 four-way test: correction ON/OFF x "
+        "overlap/waited; OFF retains the exact segmented timing schedule"
+    )
+    print(
+        "[return contract] the qubit remains in |g> throughout the flux "
+        "excursion; P1 is prepared only after the selected return timing"
+    )
+    print("[return contract] acquiring one shared DMem-native classifier")
+    classifier_session = prepare_reset_session(
+        "active",
+        outer_folder=tls.outerFolder,
+        qubit=tls.QUBIT,
+        base_cfg=tls.BaseConfig,
+        soc=soc,
+        soccfg=soccfg,
+        purpose="PredistortionReturnReadoutContract",
+    )
+    common_cfg = dict(tls.BaseConfig)
+    common_cfg.update({
+        "shots": int(plan["shots"]),
+        "ff_gain_vec": dc_vec,
+        "flux_fit_params": tls.FLUX_FIT_PARAMS,
+        "relax_delay": PASSIVE_T1_RESET_US,
+        "qubit_pulse_style": "arb",
+        "flux_settle_time_us": float(params["flux_settle_us"]),
+        "readout_thermalization_us": float(params["readout_thermalization_us"]),
+        "opx_t1_3pt_gain_lookup": True,
+        "opx_diagnostic_condition_tags": True,
+        "opx_verify_dmem_reads": False,
+        "flux_predistortion_recovery_us": float(plan["recovery_us"]),
+    })
+    runner.apply_verified_feedback_timing(common_cfg)
+    if plan["reset_mode"] == "active":
+        common_cfg = classifier_session.apply(common_cfg)
+        reset_scheme = "opx_unbounded"
+    else:
+        common_cfg = ProductionResetSession.passive().apply(common_cfg)
+        common_cfg["opx_reset_calibration"] = dict(
+            classifier_session.calibration
+        )
+        reset_scheme = "none"
+
+    holds = list(plan["hold_times_us"])
+    hold_chunks = [holds[start:start + 2] for start in range(0, len(holds), 2)]
+    mode_chunks = {mode: [] for mode in plan["modes"]}
+    total = len(hold_chunks) * len(plan["modes"])
+    acquisition_index = 0
+    for chunk_index, chunk_holds in enumerate(hold_chunks):
+        mode_order = (
+            plan["modes"] if chunk_index % 2 == 0
+            else tuple(reversed(plan["modes"]))
+        )
+        condition_holds = [
+            hold for hold in chunk_holds for _state in (0, 1)
+        ]
+        excitation_flags = [
+            state for _hold in chunk_holds for state in (0, 1)
+        ]
+        condition_names = tuple(
+            name
+            for hold in chunk_holds
+            for name in (
+                f"P0_hold_{hold:g}us",
+                f"P1_after_return_hold_{hold:g}us",
+            )
+        )
+        for mode in mode_order:
+            acquisition_index += 1
+            cfg = dict(common_cfg)
+            cfg.update({
+                "apply_flux_tail_compensation": True,
+                "flux_tail_compensation": (
+                    compensation if mode.startswith("on") else unity
+                ),
+                "flux_predistortion_overlap_payload_readout": mode.endswith(
+                    "_overlap"
+                ),
+            })
+            print(
+                f"[{mode} {acquisition_index}/{total}] holds={chunk_holds} us; "
+                f"{plan['shots']} shots x {len(dc_vec)} targets x "
+                f"{len(condition_names)} conditions"
+            )
+            progress_started = time.time()
+            i_values, q_values, telemetry = acquire_t1_npoint_iq(
+                soc,
+                soccfg,
+                cfg,
+                dc_gains=dc_vec,
+                delays_us=(10.0, 50.0, 200.0),
+                reference_hold_us=2.0,
+                shots=plan["shots"],
+                reset_scheme=reset_scheme,
+                condition_holds_us=condition_holds,
+                condition_excitation_flags=excitation_flags,
+                condition_names=condition_names,
+                prepare_excited_after_return=True,
+                progress=lambda done, count, _mode=mode: progress_counter(
+                    done - 1,
+                    count,
+                    start_time=progress_started,
+                    label=f"q3 return {_mode}",
+                ),
+            )
+            states = classify_payload_iq(
+                cfg, i_values, q_values, telemetry["read_length_cycles"]
+            )
+            if telemetry.get("condition_tag_mismatches", 0) != 0:
+                raise RuntimeError(
+                    f"{mode} condition tags do not match decoded records"
+                )
+            mode_chunks[mode].append({
+                "chunk_index": chunk_index,
+                "I": i_values,
+                "Q": q_values,
+                "states": states,
+                "telemetry": telemetry,
+            })
+
+    mode_results = {}
+    for mode in plan["modes"]:
+        chunks = sorted(mode_chunks[mode], key=lambda item: item["chunk_index"])
+        i_values = np.concatenate([item["I"] for item in chunks], axis=0)
+        q_values = np.concatenate([item["Q"] for item in chunks], axis=0)
+        states = np.concatenate([item["states"] for item in chunks], axis=0)
+        summary = summarize_return_readout_states(
+            states,
+            hold_times_us=holds,
+            min_contrast=plan["min_contrast"],
+            max_population_span=plan["max_population_span"],
+            max_directional_delta=plan["max_directional_delta"],
+        )
+        mode_results[mode] = {
+            "I": i_values,
+            "Q": q_values,
+            "states": states,
+            "summary": summary,
+            "telemetry": [item["telemetry"] for item in chunks],
+        }
+
+    now = datetime.now()
+    output_dir = Path(tls.outerFolder) / tls.QUBIT / f"{tls.QUBIT}_{now:%Y_%m_%d}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_base = output_dir / (
+        f"{tls.QUBIT}_{now:%H_%M_%S}_Predistortion_Return_Readout_Contract"
+    )
+    outputs = save_return_readout_contract_outputs(
+        output_base,
+        plan=plan,
+        target_frequency_ghz=target_frequency_ghz,
+        realized_frequency_ghz=realized_frequency_ghz,
+        dc_vec=dc_vec,
+        mode_results=mode_results,
+        correction_source=model_path,
+    )
+    for mode in plan["modes"]:
+        summary = mode_results[mode]["summary"]
+        for frequency_index, frequency in enumerate(target_frequency_ghz):
+            failures = summary["failures"][frequency_index]
+            print(
+                f"[result] {mode} {frequency:.3f} GHz: "
+                f"min contrast={np.min(summary['contrast'][frequency_index]):.3f}; "
+                f"P0 span={summary['P0_span'][frequency_index]:.3f}; "
+                f"P1 span={summary['P1_span'][frequency_index]:.3f}; "
+                f"direction delta={summary['max_directional_delta'][frequency_index]:.3f}; "
+                + ("PASS" if not failures else "FAIL: " + ", ".join(failures))
+            )
+    print(f"RAW_IQ_NPZ={outputs[0]}")
+    print(f"RAW_IQ_CSV={outputs[1]}")
+    print(f"SUMMARY_JSON={outputs[2]}")
+    print(f"COMPARISON_PNG={outputs[3]}")
 
 
 def summarize_dense_populations(matrix, *, delays_us, shots):
@@ -1491,6 +2082,10 @@ def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
 
 
 def main():
+    if return_readout_contract_requested():
+        os.environ["MPLBACKEND"] = "Agg"
+        run_return_readout_contract()
+        return
     if sequence_audit_requested():
         run_predistortion_causality()
         return
