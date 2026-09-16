@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
+import math
 
 import numpy as np
 
@@ -134,6 +135,26 @@ def _decimal(value: float) -> Decimal:
         raise ValueError("frequency fields must be finite decimal values") from exc
 
 
+def _require_finite_number(value: object, field: str) -> None:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be finite")
+    try:
+        if not math.isfinite(value):
+            raise ValueError(f"{field} must be finite")
+    except TypeError as exc:
+        raise ValueError(f"{field} must be finite") from exc
+
+
+def _require_nonnegative_integer(value: object, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field} must be a non-negative integer")
+
+
+def _require_positive_integer(value: object, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+
+
 def _validate_plan(plan: BenchmarkPlan) -> None:
     if plan.schema != _SCHEMA:
         raise ValueError(f"unsupported benchmark schema: {plan.schema!r}")
@@ -144,11 +165,13 @@ def _validate_plan(plan: BenchmarkPlan) -> None:
     if plan.calibration_policy != "once":
         raise ValueError("benchmark calibration policy must be once")
 
+    _require_finite_number(plan.frequency_start_ghz, "frequency start")
+    _require_finite_number(plan.frequency_stop_ghz, "frequency stop")
+    _require_finite_number(plan.frequency_step_mhz, "frequency step")
+    _require_positive_integer(plan.frequency_count, "frequency count")
     start = _decimal(plan.frequency_start_ghz)
     stop = _decimal(plan.frequency_stop_ghz)
     step_mhz = _decimal(plan.frequency_step_mhz)
-    if not start.is_finite() or not stop.is_finite() or not step_mhz.is_finite():
-        raise ValueError("frequency fields must be finite")
     if start <= stop or step_mhz <= 0:
         raise ValueError("frequency grid must descend with a positive step")
     step_ghz = step_mhz / Decimal("1000")
@@ -159,29 +182,37 @@ def _validate_plan(plan: BenchmarkPlan) -> None:
         raise ValueError("frequency count does not match the exact grid arithmetic")
 
     for expected_index, benchmark_pass in enumerate(plan.passes):
+        _require_nonnegative_integer(benchmark_pass.index, "benchmark pass index")
         if benchmark_pass.index != expected_index:
             raise ValueError("benchmark pass indices must be sequential")
+        _require_positive_integer(
+            benchmark_pass.shots_per_condition, "shots per condition"
+        )
+        _require_positive_integer(benchmark_pass.condition_count, "condition count")
+        try:
+            delays_us = tuple(benchmark_pass.delays_us)
+        except TypeError as exc:
+            raise ValueError("benchmark delays must be finite") from exc
+        if not delays_us:
+            raise ValueError("benchmark delays must be positive and increasing")
+        for delay in delays_us:
+            _require_finite_number(delay, "benchmark delays")
         expected_delays = _PROTOCOL_DELAYS_US.get(benchmark_pass.protocol)
         if expected_delays is None:
             raise ValueError(f"unknown benchmark protocol: {benchmark_pass.protocol!r}")
-        if tuple(benchmark_pass.delays_us) != expected_delays:
+        if delays_us != expected_delays:
             raise ValueError("benchmark protocol delays do not match its canonical definition")
         if (
-            not benchmark_pass.delays_us
-            or any(delay <= 0 for delay in benchmark_pass.delays_us)
+            any(delay <= 0 for delay in delays_us)
             or any(
                 following <= preceding
-                for preceding, following in zip(
-                    benchmark_pass.delays_us, benchmark_pass.delays_us[1:]
-                )
+                for preceding, following in zip(delays_us, delays_us[1:])
             )
         ):
             raise ValueError("benchmark delays must be positive and increasing")
         if benchmark_pass.predistortion not in {"on", "off"}:
             raise ValueError("predistortion must be 'on' or 'off'")
-        if benchmark_pass.shots_per_condition <= 0:
-            raise ValueError("shots per condition must be positive")
-        if benchmark_pass.condition_count != 2 + len(benchmark_pass.delays_us):
+        if benchmark_pass.condition_count != 2 + len(delays_us):
             raise ValueError("condition count must include P0/P1 references")
 
 

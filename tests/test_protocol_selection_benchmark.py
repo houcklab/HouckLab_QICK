@@ -1,7 +1,14 @@
+from dataclasses import replace
+from pathlib import Path
+import sys
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
     protocol_selection_benchmark as benchmark,
 )
-import pytest
 
 
 def test_full_plan_is_the_approved_17_pass_matrix():
@@ -141,4 +148,36 @@ def test_canonical_document_rejects_frequency_count_that_does_not_match_grid():
     )
 
     with pytest.raises(ValueError, match="frequency count"):
+        benchmark.canonical_document(invalid_plan)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("index", 1.5, "integer"),
+        ("index", True, "integer"),
+        ("shots_per_condition", 1.5, "integer"),
+        ("shots_per_condition", float("nan"), "integer"),
+        ("shots_per_condition", True, "integer"),
+        ("condition_count", 3.0, "integer"),
+        ("condition_count", True, "integer"),
+        ("delays_us", (float("nan"),), "finite"),
+    ],
+)
+def test_canonical_document_rejects_invalid_pass_numbers(field, value, message):
+    plan = benchmark.full_plan()
+    invalid_pass = replace(plan.passes[1], **{field: value})
+    invalid_plan = replace(
+        plan, passes=(plan.passes[0], invalid_pass, *plan.passes[2:])
+    )
+
+    with pytest.raises(ValueError, match=message):
+        benchmark.canonical_document(invalid_plan)
+
+
+@pytest.mark.parametrize("value", [801.0, True])
+def test_canonical_document_rejects_non_integer_frequency_count(value):
+    invalid_plan = replace(benchmark.full_plan(), frequency_count=value)
+
+    with pytest.raises(ValueError, match="frequency count must be a positive integer"):
         benchmark.canonical_document(invalid_plan)
