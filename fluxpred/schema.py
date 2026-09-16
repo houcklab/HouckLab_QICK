@@ -35,6 +35,14 @@ class SchemaError(ValueError):
     pass
 
 
+def basename(value):
+    return str(value).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def resolve_against(value, root):
+    return Path(value) if root is None else Path(root)/basename(value)
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -177,7 +185,7 @@ def verify_source_hashes(document, *, root=None, missing_ok=False):
     calibration = document["calibration"]
     report = []
     for name, expected in zip(calibration["source_files"], calibration["source_sha256"]):
-        path = Path(name) if root is None else Path(root) / Path(name).name
+        path = resolve_against(name, root)
         if not path.exists():
             _require(missing_ok, f"calibration source file {str(path)!r} is not readable for hash verification")
             report.append({"path": str(path), "status": "missing", "expected_sha256": expected})

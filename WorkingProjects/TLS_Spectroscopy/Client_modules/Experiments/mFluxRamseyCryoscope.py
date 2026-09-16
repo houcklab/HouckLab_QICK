@@ -91,7 +91,7 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
         self.probe_start_ns = parts["probe_start_ns"]
         self.probe_end_ns = parts["probe_end_ns"]
         self.flux_plans = {}
-        for name in ("before", "first_pulse", "probe", "second_pulse"):
+        for name in ("before", "first_pulse", "probe", "second_pulse", "after"):
             part = parts[name]
             if part is None:
                 self.flux_plans[name] = None
@@ -160,6 +160,7 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
             pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
             wait=True, syncdelay=self.us2cycles(0.01))
+        self._play("after")
         self._play("park_return")
         self.sync_all(self.us2cycles(
             cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))

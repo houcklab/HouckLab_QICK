@@ -158,9 +158,7 @@ def read_summary(path, *, device=None, verify_hashes=False, hash_root=None):
     schema.validate_measurement_document(document, device=device)
     if verify_hashes:
         for key, entry in document["files"].items():
-            candidate = Path(entry["path"])
-            if hash_root is not None:
-                candidate = Path(hash_root)/candidate.name
+            candidate = schema.resolve_against(entry["path"], hash_root)
             if not candidate.exists():
                 raise schema.SchemaError(
                     f"measurement file {key!r} is not readable at {str(candidate)!r}")
@@ -218,9 +216,7 @@ def command_from_summary(document, *, root=None):
         raise schema.SchemaError(
             "the measurement summary does not reference the emitted normalized command; "
             "identification cannot proceed without the exact commanded waveform")
-    path = Path(entry["path"])
-    if root is not None:
-        path = Path(root)/path.name
+    path = schema.resolve_against(entry["path"], root)
     command = read_command_json(path)
     recorded = document["sequence"]["emitted_plan_sha256"]
     actual = schema.sha256_json(command.to_dict())

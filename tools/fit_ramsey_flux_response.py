@@ -38,10 +38,7 @@ def load_traces(summary_paths, *, device, root=None, verify_hashes=True):
     for path in summary_paths:
         document = measurement.read_summary(path, device=device, verify_hashes=verify_hashes,
                                             hash_root=root)
-        raw_entry = document["files"]["raw_csv"]
-        raw_path = Path(raw_entry["path"])
-        if root is not None:
-            raw_path = Path(root)/raw_path.name
+        raw_path = schema.resolve_against(document["files"]["raw_csv"]["path"], root)
         raw = measurement.read_raw_csv(raw_path)
         command = measurement.command_from_summary(document, root=root)
         ideal = ideal_amplitude(command, raw["delay_ns"], document)
@@ -69,11 +66,14 @@ def ideal_amplitude(command, delays_ns, document):
     return np.where(np.asarray(delays_ns, dtype=float) < hold_ns, amplitude, 0.0)
 
 
-def fit(traces, *, banks_us, regularizations, folds, horizon_ns, sample_ns, max_l1):
+def fit(traces, *, banks_us, regularizations, folds, horizon_ns, sample_ns, max_l1,
+        static_gain=True):
     banks = [np.asarray(bank, dtype=float)*1000.0 for bank in banks_us]
-    chosen = offline.select_plant_bank(traces, banks, regularizations=regularizations, folds=folds)
+    chosen = offline.select_plant_bank(traces, banks, regularizations=regularizations, folds=folds,
+                                       static_gain=static_gain)
     taus = chosen["taus_ns"]
-    plant = fit_plant(traces, taus, regularization=chosen["regularization"], max_l1=max_l1)
+    plant = fit_plant(traces, taus, regularization=chosen["regularization"], max_l1=max_l1,
+                      static_gain=static_gain)
     inverse = fit_inverse([plant["coefficients"]], taus, regularization=chosen["regularization"],
                           horizon_ns=horizon_ns, sample_ns=sample_ns)
     return chosen, plant, inverse
@@ -111,8 +111,10 @@ def diagnostic_figure(path, *, analyses, traces, plant, model, cancellation, rou
         axes[1, 0].plot(delays_us, analysis["residual_detuning_mhz"], ".-", label=f"trace {index}")
     for index, trace in enumerate(traces):
         support = np.asarray(trace.support, dtype=bool)
-        predicted = plant_response(trace.command, trace.time_ns, taus_ns, plant["coefficients"],
-                                   probe_ns=trace.probe_ns)+plant["offsets"][index]
+        predicted = ((1.0+plant.get("static_gain", 0.0))
+                     * plant_response(trace.command, trace.time_ns, taus_ns,
+                                      plant["coefficients"], probe_ns=trace.probe_ns)
+                     + plant["offsets"][index])
         axes[1, 1].plot(trace.time_ns[support]/1000.0, trace.response[support], ".",
                         label=f"measured {index}")
         axes[1, 1].plot(trace.time_ns/1000.0, predicted, "-", label=f"plant fit {index}")
@@ -155,6 +157,7 @@ def main(argv=None):
     parser.add_argument("--inverse-horizon-ns", type=float, default=1_000_000.0)
     parser.add_argument("--recovery-ns", type=float, default=1_600_000.0)
     parser.add_argument("--skip-hash-verification", action="store_true")
+    parser.add_argument("--no-static-gain", action="store_true")
     parser.add_argument("--operator-note", default="")
     args = parser.parse_args(argv)
 
@@ -169,7 +172,8 @@ def main(argv=None):
 
     chosen, plant, inverse = fit(
         traces, banks_us=banks_us, regularizations=tuple(args.regularizations), folds=args.folds,
-        horizon_ns=args.inverse_horizon_ns, sample_ns=args.emission_sample_ns, max_l1=args.max_l1)
+        horizon_ns=args.inverse_horizon_ns, sample_ns=args.emission_sample_ns,
+        max_l1=args.max_l1, static_gain=not args.no_static_gain)
     model = inverse["model"]
     cancellation, round_trip = evaluate(
         model, plant["coefficients"], amplitude=amplitude, hold_ns=hold_ns,
@@ -193,6 +197,8 @@ def main(argv=None):
                       "plant_coefficients": np.asarray(plant["coefficients"]).tolist(),
                       "plant_offsets": np.asarray(plant["offsets"]).tolist(),
                       "plant_rms": float(plant["rms"]),
+                      "static_gain": float(plant.get("static_gain", 0.0)),
+                      "static_gain_fitted": not args.no_static_gain,
                       "plant_condition_number": float(plant["condition_number"]),
                       "inverse_design_rms": float(inverse["design_rms"]),
                       "operator_note": str(args.operator_note)},
@@ -223,6 +229,8 @@ def main(argv=None):
     print(f"regularization   = {chosen['regularization']:g}")
     print(f"held-out rms     = {chosen['held_out_rms']:.6g} (best {chosen['best_held_out_rms']:.6g})")
     print(f"plant            = {np.asarray(plant['coefficients']).tolist()}")
+    print(f"static nuisance  = gain {plant.get('static_gain', 0.0):+.4f}, offsets "
+          f"{np.round(np.asarray(plant['offsets']), 6).tolist()}")
     print(f"inverse          = {np.asarray(model.coefficients[0]).tolist()}  "
           f"L1={float(np.sum(np.abs(model.coefficients))):.4f}")
     print(f"forecast rms     = {cancellation['corrected_rms']:.6g} vs uncorrected "

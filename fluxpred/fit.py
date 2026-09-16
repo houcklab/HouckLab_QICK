@@ -64,17 +64,20 @@ class Trace:
             raise ValueError("supported responses must be finite")
 
 
-def fit_plant(traces, taus_ns, *, regularization=1e-4, max_l1=0.25):
+def fit_plant(traces, taus_ns, *, regularization=1e-4, max_l1=0.25, static_gain=False):
     tau = np.asarray(taus_ns, float)
     if not np.isfinite(regularization) or regularization < 0 or not traces:
         raise ValueError("nonnegative regularization and traces required")
     Filter(tau, [1], [np.zeros(len(tau))], max_l1=max_l1)
+    width = len(tau)+(1 if static_gain else 0)
     xx, yy, means, originals = [], [], [], []
     for trace in traces:
         valid = trace.support
-        if np.count_nonzero(valid) < len(tau)+3:
+        if np.count_nonzero(valid) < width+3:
             raise ValueError("insufficient supported samples")
         u, x = highpass_features(trace.command, trace.time_ns[valid], tau, probe_ns=trace.probe_ns)
+        if static_gain:
+            x = np.column_stack([x, u])
         y = trace.response[valid]-u
         xm, ym = x.mean(axis=0), y.mean()
         xx.append((x-xm)/np.sqrt(len(y)))
@@ -82,15 +85,21 @@ def fit_plant(traces, taus_ns, *, regularization=1e-4, max_l1=0.25):
         means.append((xm, ym))
         originals.append((x, y))
     x, y = np.vstack(xx), np.concatenate(yy)
-    if np.linalg.matrix_rank(x) < len(tau):
+    if np.linalg.matrix_rank(x) < width:
         raise ValueError("rank-deficient plant identification")
-    a = np.linalg.lstsq(np.vstack([x, np.sqrt(regularization)*np.eye(len(tau))]),
-                        np.r_[y, np.zeros(len(tau))], rcond=None)[0]
-    if np.sum(np.abs(a)) > max_l1:
+    penalty = np.sqrt(regularization)*np.eye(width)
+    if static_gain:
+        penalty[-1, -1] = 0.0
+    a = np.linalg.lstsq(np.vstack([x, penalty]), np.r_[y, np.zeros(width)], rcond=None)[0]
+    gain = float(a[-1]) if static_gain else 0.0
+    if static_gain and abs(1.0+gain) < 1e-6:
+        raise ValueError("fitted static gain cancels the commanded level; the trace is unusable")
+    coefficients = a[:len(tau)]/(1.0+gain)
+    if np.sum(np.abs(coefficients)) > max_l1:
         raise ValueError("plant coefficient L1 bound exceeded; model unsupported")
     offsets = np.array([ym-xm@a for xm, ym in means])
     residuals = [y-x@a-offset for (x, y), offset in zip(originals, offsets)]
-    return {"coefficients": a, "offsets": offsets,
+    return {"coefficients": coefficients, "offsets": offsets, "static_gain": gain,
             "rms": float(np.sqrt(np.mean(np.concatenate(residuals)**2))),
             "condition_number": float(np.linalg.cond(x)), "regularization": regularization}
 

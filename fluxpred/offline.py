@@ -12,7 +12,7 @@ def forecast(model, amplitude, plant, trace, *, sample_ns=None):
     return trace.response+after-before
 
 
-def blocked_plant_score(traces, taus_ns, *, regularization, folds=5):
+def blocked_plant_score(traces, taus_ns, *, regularization, folds=5, static_gain=False):
     errors = []
     for fold in range(folds):
         training, masks = [], []
@@ -22,9 +22,11 @@ def blocked_plant_score(traces, taus_ns, *, regularization, folds=5):
             train = (block != fold) & tr.support
             masks.append(test)
             training.append(Trace(tr.time_ns, tr.response, tr.command, train, tr.probe_ns))
-        fit = fit_plant(training, taus_ns, regularization=regularization)
+        fit = fit_plant(training, taus_ns, regularization=regularization, static_gain=static_gain)
         for tr, test, offset in zip(traces, masks, fit['offsets']):
-            predicted = plant_response(tr.command, tr.time_ns, taus_ns, fit['coefficients'], probe_ns=tr.probe_ns)+offset
+            gain = 1.0+fit.get('static_gain', 0.0)
+            predicted = gain*plant_response(tr.command, tr.time_ns, taus_ns, fit['coefficients'],
+                                            probe_ns=tr.probe_ns)+offset
             errors.extend((predicted[test]-tr.response[test]).tolist())
     if not errors:
         raise ValueError("no held-out supported samples")
@@ -47,7 +49,7 @@ DEFAULT_REGULARIZATIONS = (1e-5, 1e-4, 1e-3, 1e-2)
 
 
 def select_plant_bank(traces, banks_ns, *, regularizations=DEFAULT_REGULARIZATIONS, folds=5,
-                      simpler_within=0.05):
+                      simpler_within=0.05, static_gain=False):
     if not banks_ns:
         raise ValueError("at least one candidate pole bank is required")
     if not regularizations:
@@ -57,7 +59,8 @@ def select_plant_bank(traces, banks_ns, *, regularizations=DEFAULT_REGULARIZATIO
         taus = np.asarray(bank, float)
         for regularization in regularizations:
             try:
-                score = blocked_plant_score(traces, taus, regularization=regularization, folds=folds)
+                score = blocked_plant_score(traces, taus, regularization=regularization,
+                                            folds=folds, static_gain=static_gain)
             except (ValueError, np.linalg.LinAlgError) as error:
                 table.append({"taus_ns": taus.tolist(), "regularization": float(regularization),
                               "held_out_rms": None, "order": int(taus.size),
