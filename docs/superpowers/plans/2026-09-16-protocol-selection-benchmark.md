@@ -384,7 +384,7 @@ The summary must calculate:
 }
 ```
 
-`render_comparison_figure()` must make a 4-by-4 map grid for passes 0–15, a sentinel-difference panel, a metrics table, and representative linecuts with uncertainty bands. Invalid values must be visibly masked and counted in each title.
+`render_comparison_figure()` must make a 4-by-4 linecut grid for passes 0–15, a sentinel-difference panel, a metrics table, and an overlaid matched-budget comparison with uncertainty bands. These are single frequency scans, so the primary panels are Gamma1-versus-frequency linecuts rather than wall-clock colormaps. Invalid values must be visibly masked and counted in each title.
 
 - [ ] **Step 6: Run focused tests and static import check**
 

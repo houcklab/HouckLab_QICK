@@ -241,7 +241,7 @@ The analysis must not infer that narrower features are intrinsically more accura
 
 The final figure uses the same visual language as the existing Gamma1-versus-frequency linecut and colormap comparisons. It includes:
 
-- a 4 by 4 grid of the 16 primary Gamma1 maps, grouped by protocol and shot budget with ON/OFF adjacent;
+- a 4 by 4 grid of the 16 primary Gamma1-versus-frequency linecuts, grouped by protocol and shot budget with ON/OFF adjacent;
 - shared frequency axis and protocol-appropriate but explicitly labeled color normalization;
 - a table or compact panel of validity, uncertainty, directional disagreement, runtime, and reference contrast;
 - opening and terminal sentinel linecuts and their difference;
