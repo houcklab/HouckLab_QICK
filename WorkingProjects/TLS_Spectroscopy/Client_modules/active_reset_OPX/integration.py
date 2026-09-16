@@ -119,12 +119,17 @@ def flux_predistortion_telemetry(program):
         "_t1_ff_predistortion_recovery_us",
         0.0,
     ))
+    overlap_payload_readout = bool(getattr(
+        program,
+        "cfg",
+        {},
+    ).get("flux_predistortion_overlap_payload_readout", True))
     return {
         "flux_predistortion_round_trip_mode": mode,
         "flux_predistortion_recovery_window_us": recovery_us,
         "flux_predistortion_return_tail_us": tail_us,
         "flux_predistortion_tail_overlaps_payload_readout": bool(
-            mode == "stateful" and tail_us > 0.0
+            mode == "stateful" and tail_us > 0.0 and overlap_payload_readout
         ),
     }
 

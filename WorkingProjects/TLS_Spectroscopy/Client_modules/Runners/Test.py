@@ -385,6 +385,9 @@ def predistortion_causality_plan(environ=None):
     reset_mode = str(
         environ.get("Q3_CAUSALITY_RESET_MODE", "active")
     ).strip().lower()
+    overlap_value = str(
+        environ.get("Q3_CAUSALITY_OVERLAP_READOUT", "on")
+    ).strip().lower()
     if len(frequencies) < 2 or not np.all(np.isfinite(frequencies)):
         raise ValueError(
             "Q3_CAUSALITY_FREQUENCIES_GHZ needs at least two finite values"
@@ -406,12 +409,15 @@ def predistortion_causality_plan(environ=None):
         raise ValueError("Q3_CAUSALITY_RECOVERY_US must be finite and positive")
     if reset_mode not in ("active", "passive"):
         raise ValueError("Q3_CAUSALITY_RESET_MODE must be active or passive")
+    if overlap_value not in ("on", "off"):
+        raise ValueError("Q3_CAUSALITY_OVERLAP_READOUT must be on or off")
     return {
         "target_frequencies_ghz": frequencies,
         "delays_us": delays,
         "shots": shots,
         "recovery_us": recovery_us,
         "reset_mode": reset_mode,
+        "overlap_payload_readout": overlap_value == "on",
         "modes": ("on", "off"),
     }
 
@@ -1115,6 +1121,7 @@ def run_predistortion_causality():
         f"{len(target_frequency_ghz)} frequencies x "
         f"{len(plan['delays_us'])} delays x {plan['shots']} shots; "
         f"reset={plan['reset_mode']}; recovery={plan['recovery_us']:g} us; "
+        f"overlap-readout={plan['overlap_payload_readout']}; "
         "no handshake"
     )
     print(
@@ -1151,6 +1158,9 @@ def run_predistortion_causality():
         "opx_diagnostic_condition_tags": True,
         "opx_verify_dmem_reads": False,
         "flux_predistortion_recovery_us": float(plan["recovery_us"]),
+        "flux_predistortion_overlap_payload_readout": bool(
+            plan["overlap_payload_readout"]
+        ),
     })
     runner.apply_verified_feedback_timing(common_cfg)
     if plan["reset_mode"] == "active":
@@ -1290,6 +1300,9 @@ def run_predistortion_causality():
                 "opx_feedback_pre_measure_sync"
             ),
             "flux_predistortion_recovery_us": float(plan["recovery_us"]),
+            "flux_predistortion_tail_overlaps_payload_readout": bool(
+                plan["overlap_payload_readout"]
+            ),
             "correction_method": str(compensation.get("method", "legacy_piecewise")),
             "correction_model_sha256": str(compensation.get("model_sha256", "")),
             "correction_segment_edges_ns": list(

@@ -1454,6 +1454,15 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                             self._t1_ff_predistortion_tail_us = sum(
                                 duration for _, duration in tail
                             )
+                            if not bool(self.cfg.get(
+                                "flux_predistortion_overlap_payload_readout",
+                                True,
+                            )):
+                                # The tail is scheduled only on the flux
+                                # generator.  Without this barrier, the park
+                                # readout begins while that generator is still
+                                # playing the return correction.
+                                self.sync_all(0)
                         else:
                             ff_pulse.play_hard_step(self, park_gain)
                             self.sync_all(0)
@@ -1819,6 +1828,13 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
                     getattr(self, "_t1_ff_predistortion_tail_us", 0.0),
                     sum(duration for _, duration in tail),
                 )
+                if not bool(self.cfg.get(
+                    "flux_predistortion_overlap_payload_readout",
+                    True,
+                )):
+                    # Make the diagnostic wait for the complete stateful
+                    # return before any payload readout can start.
+                    self.sync_all(0)
             else:
                 ff_pulse.play_hard_step(
                     self,

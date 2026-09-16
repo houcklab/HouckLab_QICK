@@ -188,6 +188,7 @@ def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
         "shots": 300,
         "recovery_us": 40.0,
         "reset_mode": "active",
+        "overlap_payload_readout": True,
         "modes": ("on", "off"),
     }
 
@@ -198,6 +199,14 @@ def test_qick_causality_plan_accepts_neutral_recovery_override():
     })
 
     assert plan["recovery_us"] == 3000.0
+
+
+def test_qick_causality_plan_can_wait_for_return_tail_before_readout():
+    plan = diagnostic().predistortion_causality_plan({
+        "Q3_CAUSALITY_OVERLAP_READOUT": "off",
+    })
+
+    assert plan["overlap_payload_readout"] is False
 
 
 def test_qick_causality_partitions_21_delays_into_hardware_safe_triplets():
@@ -1156,6 +1165,48 @@ def test_integration_canonicalizes_records_without_reordering_conditions(monkeyp
     assert telemetry["condition_names"] == ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us")
     assert telemetry["condition_tag_mismatches"] == 0
     assert telemetry["condition_tags_match_decoded_conditions"] is True
+
+
+def test_stateful_return_tail_can_finish_before_payload_readout(monkeypatch):
+    """A diagnostic barrier must wait for the asynchronous return tail."""
+    module, cls = program_type()
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+    prog = object.__new__(cls)
+    prog.cfg = {
+        "ff_ch": 0,
+        "ff_park_gain": -100,
+        "flux_predistortion_overlap_payload_readout": False,
+    }
+    prog._t1_ff_settle_us = 0.5
+    prog._t1_ff_predistortion_mode = "stateful"
+    prog._t1_ff_predistortion_recovery_us = 40.0
+    prog._t1_ff_compensation = {
+        "segment_edges_ns": [0.0, 4000.0, 8000.0, 40000.0],
+        "multipliers": [1.03, 1.02, 1.01, 1.0],
+    }
+    events = []
+    prog.sync_all = lambda cycles: events.append(("sync", cycles))
+    prog._play_dynamic_relative_segment = (
+        lambda coefficient, duration, anchor: events.append(
+            ("segment", anchor, coefficient, duration)
+        )
+    )
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_hard_step",
+        lambda _prog, gain: events.append(("hard_step", gain)),
+    )
+
+    module.OPXResetT1FluxSweepProgram._play_dynamic_compensated_hold(prog, 2.0)
+
+    hard_step = events.index(("hard_step", -100))
+    assert events[hard_step + 1] == ("sync", 0)
+    prog._t1_ff_predistortion_tail_us = 39.5
+    telemetry = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.integration"
+    ).flux_predistortion_telemetry(prog)
+    assert telemetry["flux_predistortion_tail_overlaps_payload_readout"] is False
 
 
 def load_experiments(monkeypatch):
