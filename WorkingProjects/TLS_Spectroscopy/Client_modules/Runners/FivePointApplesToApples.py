@@ -28,6 +28,7 @@ import numpy as np
 matplotlib.use("Agg", force=True)
 
 
+from fluxpred import production as fluxpred_production
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.global_slot_sync import (
     GlobalSlotSynchronizer,
 )
@@ -257,6 +258,23 @@ def _run_series(
     return csv_path
 
 
+def resolve_neutral_selection(tls, environ=None):
+    park = float(tls._baseline_dc_offset())
+    scale = float(tls.TARGET_DC_OFFSET)-park
+    choice = fluxpred_production.selection(
+        "q3", park=park, scale=scale, environ=environ, amplitude_range=(0.0, 1.0))
+    for line in fluxpred_production.describe(choice):
+        print(line)
+    if choice["mode"] == "neutral":
+        raise RuntimeError(
+            "Q3_FLUXPRED_MODE=neutral is refused for the production T1 scan: the neutral inverse "
+            "is loaded and validated here, but applying it inside the five-point flux lifecycle "
+            "requires the center production-path acceptance run first. Run "
+            "Runners.FluxRamseyCryoscope, fit a candidate, pass the exact-sequence acceptance "
+            "test, then enable it. Leave Q3_FLUXPRED_MODE unset (off) for the long scan.")
+    return choice
+
+
 def main():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ThreePointApplesToApples import (
@@ -277,6 +295,10 @@ def main():
             p, requested, tls.outerFolder
         ),
     )
+    neutral = resolve_neutral_selection(tls)
+    neutral_record = fluxpred_production.provenance(
+        neutral, backend="qick",
+        code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"))
     reset_session = prepare_reset_session(
         p["reset_mode"],
         outer_folder=tls.outerFolder,
@@ -353,6 +375,7 @@ def main():
         exp.data["target_frequency_ghz"] = target
         exp.data["fit_frequency_ghz"] = realized
         exp.data["correction_mode"] = correction_mode
+        exp.data["fluxpred_provenance"] = neutral_record
         return exp
 
     print(
