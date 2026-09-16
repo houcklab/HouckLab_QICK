@@ -71,6 +71,83 @@ def sensitivity_mhz_per_unit(params, park, target):
     return (high-low)/(2.0*step)*1000.0*(target-park)
 
 
+def _identification_interval(frequency, *, production_park, production_target,
+                             minimum_sensitivity, environ):
+    """Choose a measurable interval without changing the production coordinate.
+
+    The plant is assumed linear, so it may be identified away from a sweet spot.
+    Explicit voltage overrides remain strict; automatic movement is only used for
+    the default fractional interval.
+    """
+    span = float(production_target)-float(production_park)
+    park_fraction = _env_float(
+        "Q3_CRYO_PARK_FRACTION", DEFAULTS["park_fraction"], environ)
+    target_fraction = _env_float(
+        "Q3_CRYO_TARGET_FRACTION", DEFAULTS["target_fraction"], environ)
+    explicit = any(
+        str(environ.get(name, "")).strip()
+        for name in ("Q3_CRYO_PARK_V", "Q3_CRYO_TARGET_V")
+    )
+
+    def coordinates(start_fraction, stop_fraction):
+        park = _env_float(
+            "Q3_CRYO_PARK_V",
+            float(production_park)+float(start_fraction)*span,
+            environ,
+        )
+        target = _env_float(
+            "Q3_CRYO_TARGET_V",
+            float(production_park)+float(stop_fraction)*span,
+            environ,
+        )
+        return park, target
+
+    amplitudes = tuple(np.linspace(0.0, 1.0, 9))
+    id_park, id_target = coordinates(park_fraction, target_fraction)
+    if explicit:
+        report = cryoscope.assert_branch_sensitivity(
+            frequency, park=id_park, target=id_target,
+            minimum_mhz_per_unit=minimum_sensitivity,
+            amplitudes=amplitudes,
+        )
+        return id_park, id_target, report, "explicit"
+
+    try:
+        report = cryoscope.assert_branch_sensitivity(
+            frequency, park=id_park, target=id_target,
+            minimum_mhz_per_unit=minimum_sensitivity,
+            amplitudes=amplitudes,
+        )
+        return id_park, id_target, report, "preferred"
+    except ValueError as preferred_error:
+        width = target_fraction-park_fraction
+        if not 0.0 < width <= 1.0:
+            raise ValueError(
+                "Q3 cryoscope identification fractions must define a positive interval "
+                "inside the calibrated production span"
+            ) from preferred_error
+        starts = np.arange(0.0, 1.0-width+1e-12, 0.05)
+        starts = sorted(starts, key=lambda value: (abs(value-park_fraction), value))
+        for start in starts:
+            if abs(start-park_fraction) < 1e-12:
+                continue
+            candidate_park = float(production_park)+float(start)*span
+            candidate_target = float(production_park)+float(start+width)*span
+            try:
+                report = cryoscope.assert_branch_sensitivity(
+                    frequency, park=candidate_park, target=candidate_target,
+                    minimum_mhz_per_unit=minimum_sensitivity,
+                    amplitudes=amplitudes,
+                )
+            except ValueError:
+                continue
+            return candidate_park, candidate_target, report, "auto_high_sensitivity"
+        raise ValueError(
+            "no high-sensitivity q3 Ramsey identification interval exists inside the "
+            "calibrated production span; inspect the P4 flux fit before measuring"
+        ) from preferred_error
+
+
 def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=None):
     environ = os.environ if environ is None else environ
     if flux_fit_params is None:
@@ -84,18 +161,15 @@ def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=No
     requested_amplitude = environ.get("Q3_CRYO_AMPLITUDE", "").strip()
     production_park = float(park)
     production_target = float(target)
-    production_span = production_target-production_park
-    id_park = _env_float("Q3_CRYO_PARK_V", production_park
-                         + _env_float("Q3_CRYO_PARK_FRACTION", DEFAULTS["park_fraction"],
-                                      environ)*production_span, environ)
-    id_target = _env_float("Q3_CRYO_TARGET_V", production_park
-                           + _env_float("Q3_CRYO_TARGET_FRACTION",
-                                        DEFAULTS["target_fraction"], environ)*production_span,
-                           environ)
-    sensitivity = cryoscope.assert_branch_sensitivity(
-        frequency, park=id_park, target=id_target,
-        minimum_mhz_per_unit=_env_float("Q3_CRYO_MIN_SENSITIVITY",
-                                        DEFAULTS["min_sensitivity_mhz_per_unit"], environ))
+    minimum_sensitivity = _env_float(
+        "Q3_CRYO_MIN_SENSITIVITY", DEFAULTS["min_sensitivity_mhz_per_unit"], environ)
+    id_park, id_target, sensitivity, interval_mode = _identification_interval(
+        frequency,
+        production_park=production_park,
+        production_target=production_target,
+        minimum_sensitivity=minimum_sensitivity,
+        environ=environ,
+    )
     probe = cryoscope.plan_probe(
         frequency, park=id_park, target=id_target, pulse_ns=float(pulse_ns),
         readout_span_ns=float(readout_span_ns),
@@ -112,6 +186,7 @@ def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=No
                                       DEFAULTS["schedule_first_us"], environ)*1000.0)
     settings = {"park": id_park, "target": id_target,
                 "production_park": production_park, "production_target": production_target,
+                "identification_interval_mode": interval_mode,
                 "branch_sensitivity_mhz_per_unit": sensitivity, "flux_fit_params": flux_fit_params,
                 "static_flux_model": model,
                 "sensitivity_mhz_per_unit": sensitivity_mhz_per_unit(
@@ -157,8 +232,12 @@ def main():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mFluxRamseyCryoscope import (
         FluxRamseyCryoscope,
     )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        FivePointApplesToApples as production_runner,
+    )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
 
+    production_runner.install_scan_calibration(tls)
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
     clock_ns = fpc.fabric_clock_ns(soccfg, tls.BaseConfig["ff_ch"])
@@ -190,6 +269,10 @@ def main():
 
     print(f"[ramsey] device={DEVICE} park={settings['park']:+.1f} target={settings['target']:+.1f} "
           f"DAC_gain  amplitude={settings['amplitude']:.4f} (ceiling {settings['amplitude_ceiling']:.4f})")
+    print(f"[ramsey] identification interval={settings['identification_interval_mode']} "
+          f"sensitivity={min(abs(value) for value in settings['branch_sensitivity_mhz_per_unit'].values()):.1f}.."
+          f"{max(abs(value) for value in settings['branch_sensitivity_mhz_per_unit'].values()):.1f} "
+          "MHz per normalized unit")
     print(f"[ramsey] effective windows={[round(v) for v in settings['effective_windows_ns']]} ns "
           f"(idle {[round(v) for v in settings['windows_ns']]} ns), resolving "
           f"+-{settings['coarsest_range_mhz']:.3f} MHz down to "

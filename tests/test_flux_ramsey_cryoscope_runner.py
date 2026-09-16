@@ -15,6 +15,14 @@ RUNNERS = {
 COORDINATES = {"q3": (-25146.0, -14750.0), "q5": (0.156232010522, 0.387741615)}
 FLUX_FIT = {"q3": [19.0, 0.22, 60000.0, 0.0, 0.1, 0.0],
             "q5": [19.0, 0.22, 1.0, 0.0, 0.1, 0.0]}
+Q3_PRODUCTION_FLUX_FIT = [
+    6.0089036599253225,
+    0.24978861537376948,
+    46821.65898343736,
+    -16500.00011106883,
+    0.4052706711778531,
+    -5.54146293201133e-05,
+]
 
 
 def load_runner():
@@ -154,6 +162,39 @@ def test_explicit_identification_interval_is_honoured():
                      f"{PREFIX}_CRYO_TARGET_V": repr(PARK+0.6*span)})
     assert settings["park"] == pytest.approx(PARK+0.2*span)
     assert settings["target"] == pytest.approx(PARK+0.6*span)
+
+
+@pytest.mark.skipif(DEVICE != "q3", reason="q3 production-fit regression")
+def test_real_q3_fit_automatically_moves_identification_away_from_the_sweet_spot():
+    settings = RUNNER.plan(
+        park=-25146.0,
+        target=-14750.0,
+        flux_fit_params=Q3_PRODUCTION_FLUX_FIT,
+        pulse_ns=PULSE_NS,
+        readout_span_ns=READOUT_SPAN_NS,
+        environ={},
+    )
+
+    assert settings["identification_interval_mode"] == "auto_high_sensitivity"
+    assert settings["park"] == pytest.approx(-23066.8)
+    assert settings["target"] == pytest.approx(-18908.4)
+    assert min(abs(value) for value in settings["branch_sensitivity_mhz_per_unit"].values()) >= 50.0
+
+
+@pytest.mark.skipif(DEVICE != "q3", reason="q3 production-fit regression")
+def test_explicit_low_sensitivity_q3_interval_is_still_rejected():
+    with pytest.raises(ValueError, match="sweet spot"):
+        RUNNER.plan(
+            park=-25146.0,
+            target=-14750.0,
+            flux_fit_params=Q3_PRODUCTION_FLUX_FIT,
+            pulse_ns=PULSE_NS,
+            readout_span_ns=READOUT_SPAN_NS,
+            environ={
+                "Q3_CRYO_PARK_V": "-24106.4",
+                "Q3_CRYO_TARGET_V": "-19948.0",
+            },
+        )
 
 
 def test_plan_reports_an_amplitude_within_its_ceiling():
