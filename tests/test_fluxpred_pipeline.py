@@ -26,6 +26,10 @@ WINDOWS_NS = (20.0, 100.0, 500.0)
 SHOTS = 400
 X90_NS = 40.0
 AMPLITUDE = 0.04
+SCHEDULE_FIRST_NS = 4000.0
+SCHEDULE_GROWTH = 1.2
+READOUT_SPAN_NS = 3000.0
+PROBE_INSET_NS = 16.0
 
 
 def frequency(coordinate):
@@ -39,11 +43,12 @@ def identity_model():
 def build_measurement(tmp_path, *, seed=0, noise_shots=SHOTS, name="q5_center",
                       amplitude=AMPLITUDE):
     schedule = shot_schedule(amplitude=amplitude, hold_ns=HOLD_NS, recovery_ns=RECOVERY_NS,
-                             first_ns=2000.0, growth=1.35, max_ns=100_000.0, quantum_ns=1000.0)
+                             first_ns=SCHEDULE_FIRST_NS, growth=SCHEDULE_GROWTH,
+                             max_ns=100_000.0, quantum_ns=1000.0)
     command, _ = render_on_schedule(identity_model(), schedule)
     window_fine = max(WINDOWS_NS)
-    span = 2.0*X90_NS+window_fine
-    delays = probe_delays(command, schedule, span_ns=span)
+    span = PROBE_INSET_NS+2.0*X90_NS+window_fine+READOUT_SPAN_NS
+    delays = probe_delays(command, schedule, span_ns=span, inset_ns=PROBE_INSET_NS)
     ideal = np.where(delays < HOLD_NS, amplitude, 0.0)
     probe_ghz = float(frequency(PARK+amplitude*(TARGET-PARK)))
     seen = plant_response(command, delays, np.asarray(TAUS_US)*1000.0, TRUE_PLANT,
@@ -171,3 +176,30 @@ def test_fitter_refuses_a_cross_device_summary(tmp_path):
     built = build_measurement(tmp_path, name="q5_d")
     with pytest.raises(schema.SchemaError, match="device"):
         fitter.load_traces([built["summary"]], device="q3")
+
+
+def test_delay_grid_is_dense_on_both_sides_of_the_return(tmp_path):
+    built = build_measurement(tmp_path, name="q5_grid")
+    delays = built["delays"]
+    assert np.count_nonzero(delays < HOLD_NS) >= 10
+    assert np.count_nonzero(delays > HOLD_NS) >= 10
+    early = delays[delays < 40_000.0]
+    assert early.size >= 6
+    after = delays[delays > HOLD_NS]
+    assert float(np.min(after)-HOLD_NS) <= 5_000.0
+
+
+def test_every_probe_sits_in_a_constant_segment_with_room_for_the_readout(tmp_path):
+    from fluxpred.core import probe_fits_constant_segment
+
+    built = build_measurement(tmp_path, name="q5_span")
+    span = PROBE_INSET_NS+2.0*X90_NS+max(WINDOWS_NS)+READOUT_SPAN_NS
+    for delay in built["delays"]:
+        assert probe_fits_constant_segment(built["command"], delay, span)
+
+
+def test_every_probe_delay_is_a_playable_opx_wait(tmp_path):
+    built = build_measurement(tmp_path, name="q5_wait")
+    for delay in built["delays"]:
+        assert delay >= 16.0
+        assert abs(round(float(delay)/4.0)*4.0-float(delay)) < 1e-9

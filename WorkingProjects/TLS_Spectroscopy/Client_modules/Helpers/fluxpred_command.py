@@ -23,6 +23,19 @@ def fabric_clock_ns(soccfg, channel):
     return 1000.0 / fabric_mhz
 
 
+def qubit_pulse_ns(soccfg, *, channel, sigma_us, envelope_sigmas=4):
+    fabric_mhz = float(soccfg["gens"][int(channel)]["f_fabric"])
+    if not np.isfinite(fabric_mhz) or fabric_mhz <= 0:
+        raise ValueError(f"soccfg reports an invalid fabric clock for generator {channel}")
+    sigma_cycles = max(int(round(float(sigma_us)*fabric_mhz)), 1)
+    return int(envelope_sigmas)*sigma_cycles/fabric_mhz*1000.0
+
+
+def round_up_to_clock(value_ns, clock_ns, *, minimum_cycles=3):
+    cycles = max(int(np.ceil(float(value_ns)/float(clock_ns)-1e-9)), int(minimum_cycles))
+    return cycles*float(clock_ns)
+
+
 def identity_model(taus_ns=(8_000.0, 24_000.0, 64_000.0, 192_000.0), resolution_ns=1000.0):
     taus = np.asarray(taus_ns, dtype=float)
     return Filter(taus, [1.0], [np.zeros(taus.size)], resolution_ns=resolution_ns)

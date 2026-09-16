@@ -30,11 +30,11 @@ DEFAULTS = {
     "rounds": 2,
     "finest_window_ns": 500.0,
     "ladder_ratio": 5.0,
-    "schedule_first_us": 2.0,
-    "schedule_growth": 1.35,
+    "schedule_first_us": 4.0,
+    "schedule_growth": 1.2,
     "schedule_max_us": 100.0,
-    "probe_inset_ns": 8.0,
-    "max_delays": 34,
+    "probe_inset_ns": 16.0,
+    "max_delays": 40,
     "amplitude_safety": 0.8,
     "coarsest_window_ns": 20.0,
     "assumed_overshoot": 0.20,
@@ -146,8 +146,22 @@ def main():
     clock_ns = fpc.fabric_clock_ns(soccfg, tls.BaseConfig["ff_ch"])
     quantum_ns = max(1000.0, 8.0*clock_ns)
     command, schedule, _ = build_command(settings, quantum_ns=quantum_ns)
-    x90_ns = 4.0*float(tls.BaseConfig["sigma"])*1000.0
-    span = 2.0*x90_ns+max(settings["windows_ns"])
+    x90_ns = fpc.qubit_pulse_ns(soccfg, channel=tls.BaseConfig["qubit_ch"],
+                                sigma_us=float(tls.BaseConfig["sigma"]))
+    x90_ns = fpc.round_up_to_clock(x90_ns, clock_ns)
+    readout_span_ns = (float(tls.BaseConfig["read_length"])
+                       + float(tls.BaseConfig.get("adc_trig_offset", 0.0))
+                       + float(tls.BaseConfig.get("cryoscope_readout_margin_us", 1.0)))*1000.0
+    span = settings["probe_inset_ns"]+2.0*x90_ns+max(settings["windows_ns"])+readout_span_ns
+    print(f"[ramsey] probe span {span/1000.0:.2f} us "
+          f"(inset {settings['probe_inset_ns']:.0f} ns + 2 x {x90_ns:.0f} ns pulse + "
+          f"{max(settings['windows_ns']):.0f} ns window + {readout_span_ns/1000.0:.2f} us readout)")
+    if span > settings["schedule_first_ns"]+1e-9:
+        raise RuntimeError(
+            f"the {span/1000.0:.2f} us probe span does not fit the "
+            f"{settings['schedule_first_ns']/1000.0:.2f} us first emission segment, so the early "
+            f"delays that carry the fast pole would be silently dropped; raise "
+            f"Q3_CRYO_SCHEDULE_FIRST_US above {span/1000.0:.2f} or shorten the readout")
     delays = probe_delays(command, schedule, span_ns=span,
                           inset_ns=settings["probe_inset_ns"],
                           max_points=settings["max_delays"])
@@ -176,7 +190,8 @@ def main():
         windows_ns=settings["windows_ns"], probe_freq_ghz=probe_ghz,
         scale_gain=settings["target"]-settings["park"], shots=settings["shots"],
         rounds=settings["rounds"], calib_params=calib_params, pulse_ns=x90_ns,
-        hold_ns=settings["hold_ns"], recovery_ns=settings["recovery_ns"], save=True)
+        hold_ns=settings["hold_ns"], recovery_ns=settings["recovery_ns"],
+        readout_span_ns=readout_span_ns, save=True)
     data = experiment.acquire(progress=True)
 
     labels = ("g", "e")+measurement.quadrature_labels(len(settings["windows_ns"]))

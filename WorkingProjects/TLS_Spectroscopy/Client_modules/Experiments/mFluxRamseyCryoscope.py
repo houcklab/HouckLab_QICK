@@ -14,7 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import pro
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, readout_thermalization_us, set_readout_pulse,
 )
-from fluxpred.core import probe_fits_constant_segment
+from fluxpred.core import Command, probe_fits_constant_segment
 
 ARMS = ("g", "e", "i", "q")
 QUADRATURE_ARMS = ("i", "q")
@@ -76,6 +76,14 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
         cfg = self.cfg
         command = cfg["cryoscope_command"]
         pulse_ns = float(cfg["cryoscope_pulse_ns"])
+        actual_ns = fpc.qubit_pulse_ns(self.soccfg, channel=cfg["qubit_ch"],
+                                       sigma_us=float(cfg["sigma"]))
+        if actual_ns > pulse_ns+1e-9:
+            raise ValueError(
+                f"the compiled qubit envelope is {actual_ns:.3f} ns but the flux timeline "
+                f"reserved only {pulse_ns:.3f} ns for it; the alignment would stretch the flux "
+                f"history. Rebuild the delay grid with pulse_ns >= {actual_ns:.3f}")
+        self.qubit_pulse_ns = actual_ns
         parts = fpc.split_for_probe(
             command, probe_start_ns=float(cfg["cryoscope_delay_ns"]),
             probe_window_ns=float(cfg["cryoscope_window_ns"]), pulse_ns=pulse_ns)
@@ -83,7 +91,7 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
         self.probe_start_ns = parts["probe_start_ns"]
         self.probe_end_ns = parts["probe_end_ns"]
         self.flux_plans = {}
-        for name in ("before", "first_pulse", "probe", "second_pulse", "after"):
+        for name in ("before", "first_pulse", "probe", "second_pulse"):
             part = parts[name]
             if part is None:
                 self.flux_plans[name] = None
@@ -94,9 +102,13 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
                 part, self, channel=cfg["ff_ch"], park_gain=cfg["ff_park_gain"],
                 scale_gain=cfg["cryoscope_scale_gain"],
                 max_instructions=int(cfg.get("cryoscope_max_instructions", 4096)))
+        park_return = Command([0.0, float(cfg.get("cryoscope_park_return_us", 4.0))*1000.0], [0.0])
+        self.flux_plans["park_return"] = fpc.compile_for_program(
+            park_return, self, channel=cfg["ff_ch"], park_gain=cfg["ff_park_gain"],
+            scale_gain=cfg["cryoscope_scale_gain"],
+            max_instructions=int(cfg.get("cryoscope_max_instructions", 4096)))
         self.flux_report = {
-            name: fpc.plan_report(plan, parts[name] if name != "probe"
-                                  else fpc.freeze_probe_segment(parts["probe"]))
+            name: fpc.plan_report(plan, plan.normalized_command)
             for name, plan in self.flux_plans.items() if plan is not None}
 
     def _play(self, name):
@@ -144,12 +156,11 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
             self.pulse(ch=cfg["qubit_ch"])
         self._play("second_pulse")
         self.sync_all(0)
-        self._play("after")
-        self.sync_all(self.us2cycles(float(cfg.get("cryoscope_readout_settle_us", 0.5))))
         self.measure(
             pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
             wait=True, syncdelay=self.us2cycles(0.01))
+        self._play("park_return")
         self.sync_all(self.us2cycles(
             cfg.get("active_reset_post_measure_delay_us", readout_thermalization_us(cfg))
             if active_reset.uses_feedback(cfg) else cfg["relax_delay"]))
@@ -180,7 +191,8 @@ class FluxRamseyCryoscope(ExperimentClass):
     def __init__(self, *args, command=None, delays_ns=None, windows_ns=(40.0, 400.0),
                  probe_freq_ghz=None, scale_gain=None, shots=60, rounds=2, calib_params=None,
                  pulse_ns=None, hold_ns=None, recovery_ns=None, heartbeat_s=5.0,
-                 min_reference_contrast=0.05, reverse_delays=False, save=True, **kw):
+                 min_reference_contrast=0.05, reverse_delays=False, readout_span_ns=None,
+                 save=True, **kw):
         cfg = dict(kw.get("cfg") or {})
         if command is None:
             raise ValueError("command is required; build it with fluxpred_command.build_timeline")
@@ -217,11 +229,14 @@ class FluxRamseyCryoscope(ExperimentClass):
         self.heartbeat_s = float(heartbeat_s)
         self.min_reference_contrast = float(min_reference_contrast)
         self.reverse_delays = bool(reverse_delays)
+        self.readout_span_ns = (float(readout_span_ns) if readout_span_ns is not None
+                                else float(cfg["read_length"])*1000.0
+                                + float(cfg.get("adc_trig_offset", 0.0))*1000.0)
         self.save = bool(save)
         self._validate_probe_placement()
 
     def _validate_probe_placement(self):
-        span = 2.0*self.pulse_ns+max(self.windows_ns)
+        span = (2.0*self.pulse_ns+max(self.windows_ns)+self.readout_span_ns)
         horizon = float(self.command.edges_ns[-1])
         bad = [float(delay) for delay in self.delays_ns
                if not probe_fits_constant_segment(self.command, delay, span)]

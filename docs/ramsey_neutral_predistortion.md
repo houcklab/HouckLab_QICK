@@ -35,6 +35,38 @@ X and Y are measured as separate arms, with `g` and `e` as the assignment refere
 and the arm visit order is permuted per delay so drift cannot masquerade as
 structure.
 
+### Readout happens immediately after the probe
+
+Reading out only after the whole 800 µs flux timeline would let T1 destroy the
+reference contrast — `p_e` would decay to `p_g` and the Bloch inversion would fail.
+The readout is therefore issued as soon as the second π/2 pulse ends.
+
+q3 plays the flux prefix up to the probe and stops; `stdysel="last"` holds that
+level through the readout, then an explicit park segment restores the line. q5 plays
+only the emission segments before the probe's segment, sets that segment's voltage,
+and reads out on the resonator while the level is held, then restores park. In both
+cases the readout happens at a known, constant flux level.
+
+Because the measured phase depends only on the flux history *before* the probe,
+truncating after the probe is exactly equivalent for identification, and the
+analysis uses the full command. This also cuts the per-shot sequence time from the
+full 800 µs timeline to roughly the delay itself.
+
+The readout resonator is pulled by the held flux level, but `g` and `e` are measured
+at the same delay under the same flux, so the contrast normalization absorbs it.
+That is why the reference arms are re-measured at every delay rather than once.
+
+### Probe span and the emission grid
+
+Each probe needs `inset + 2 × π/2 pulse + window + readout` of *constant* commanded
+flux. The runners compute that span, print it, and abort if it does not fit the first
+emission segment rather than silently dropping the early delays that carry the fast
+pole. Defaults: first segment 4 µs, growth 1.2, cap 100 µs, inset 16 ns (four OPX
+clocks, so every delay is a playable wait).
+
+That grid gives about 33 delays for a 200 µs hold and 600 µs recovery, with roughly
+seven points below 40 µs on each side of the return edge.
+
 ### The measurement must include the return
 
 This is not optional. With a hold-only trace, contiguous-time-block cross-validation
@@ -103,8 +135,14 @@ Both restore the flux line to park, QUA in a `finally` block.
 `Q3_`/`Q5_` prefixed: `CRYO_AMPLITUDE`, `CRYO_HOLD_US` (200), `CRYO_RECOVERY_US`
 (600), `CRYO_SHOTS` (300), `CRYO_WINDOWS_NS` (explicit ladder, comma separated),
 `CRYO_COARSEST_WINDOW_NS` (20), `CRYO_FINEST_WINDOW_NS` (500), `CRYO_LADDER_RATIO`
-(5), `CRYO_MAX_DELAYS` (34), `CRYO_ASSUMED_OVERSHOOT` (0.20),
-`CRYO_BASE_MODEL_JSON`, `CRYO_NOTE`.
+(5), `CRYO_MAX_DELAYS` (40), `CRYO_ASSUMED_OVERSHOOT` (0.20),
+`CRYO_SCHEDULE_FIRST_US` (4), `CRYO_SCHEDULE_GROWTH` (1.2), `CRYO_SCHEDULE_MAX_US`
+(100), `CRYO_PROBE_INSET_NS` (16), `CRYO_BASE_MODEL_JSON`, `CRYO_NOTE`.
+
+Expected duration: roughly 33 delays × 6 arm/window conditions × 300 shots, with a
+mean sequence length near the mean delay (~220 µs) plus reset. On q5 that is a few
+minutes of sequence time plus compilation; q3 adds per-program overhead because each
+arm is a separate `AveragerProgram`. Both print an estimate before acquiring.
 
 ## Step 2 — fit a candidate (on the Mac, off the NAS)
 
