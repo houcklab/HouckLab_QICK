@@ -228,6 +228,15 @@ def build_command(settings, *, quantum_ns=1000.0):
     return command, schedule, model
 
 
+def acquisition_config(base_config, calib_params, settings):
+    """Bind the normalized identification command to its physical DAC origin."""
+    cfg = dict(base_config)
+    cfg["calib_params"] = dict(calib_params)
+    cfg["flux_fit_params"] = list(settings["flux_fit_params"])
+    cfg["cryoscope_park_gain"] = float(settings["park"])
+    return cfg
+
+
 def main():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mFluxRamseyCryoscope import (
         FluxRamseyCryoscope,
@@ -289,9 +298,9 @@ def main():
           f"expect roughly {acquisitions*settings['shots']*per_shot_s/60.0:.1f} min of sequence time")
 
     calib_params = tls.run_step5_single_shot_cal(tls.outerFolder, soc, soccfg)
-    cfg = dict(tls.BaseConfig)
-    cfg["calib_params"] = calib_params
-    cfg["flux_fit_params"] = settings["flux_fit_params"]
+    cfg = acquisition_config(tls.BaseConfig, calib_params, settings)
+    print(f"[ramsey] emitted waveform anchor={cfg['cryoscope_park_gain']:+.1f} DAC; "
+          f"production-coordinate park={settings['production_park']:+.1f} DAC")
     experiment = FluxRamseyCryoscope(
         soc=soc, soccfg=soccfg, path=tls.QUBIT, outerFolder=tls.outerFolder,
         suffix="Flux_Ramsey_Cryoscope", cfg=cfg, command=command, delays_ns=delays,

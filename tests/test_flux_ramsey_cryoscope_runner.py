@@ -197,6 +197,19 @@ def test_explicit_low_sensitivity_q3_interval_is_still_rejected():
         )
 
 
+@pytest.mark.skipif(DEVICE != "q3", reason="q3 production-coordinate regression")
+def test_acquisition_config_anchors_the_waveform_at_the_identification_park():
+    base = {"ff_park_gain": -25146.0, "other": 7}
+    settings = {"park": -23066.8, "flux_fit_params": Q3_PRODUCTION_FLUX_FIT}
+
+    configured = RUNNER.acquisition_config(base, {"threshold": 1.0}, settings)
+
+    assert configured["ff_park_gain"] == -25146.0
+    assert configured["cryoscope_park_gain"] == -23066.8
+    assert configured["flux_fit_params"] == Q3_PRODUCTION_FLUX_FIT
+    assert configured["calib_params"] == {"threshold": 1.0}
+
+
 def test_plan_reports_an_amplitude_within_its_ceiling():
     settings = plan()
     assert 0.0 < settings["amplitude"] <= settings["amplitude_ceiling"]+1e-12

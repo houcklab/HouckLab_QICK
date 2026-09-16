@@ -74,6 +74,11 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
 
     def _build_flux_plans(self):
         cfg = self.cfg
+        if "cryoscope_park_gain" not in cfg:
+            raise ValueError(
+                "cryoscope_park_gain is required: the normalized Ramsey command must be "
+                "anchored at the physical identification bias, not the production sweet spot")
+        cryoscope_park_gain = float(cfg["cryoscope_park_gain"])
         command = cfg["cryoscope_command"]
         pulse_ns = float(cfg["cryoscope_pulse_ns"])
         actual_ns = fpc.qubit_pulse_ns(self.soccfg, channel=cfg["qubit_ch"],
@@ -99,12 +104,12 @@ class FluxRamseyCryoscopeProgram(AveragerProgram):
             if name == "probe":
                 part = fpc.freeze_probe_segment(part)
             self.flux_plans[name] = fpc.compile_for_program(
-                part, self, channel=cfg["ff_ch"], park_gain=cfg["ff_park_gain"],
+                part, self, channel=cfg["ff_ch"], park_gain=cryoscope_park_gain,
                 scale_gain=cfg["cryoscope_scale_gain"],
                 max_instructions=int(cfg.get("cryoscope_max_instructions", 4096)))
         park_return = Command([0.0, float(cfg.get("cryoscope_park_return_us", 4.0))*1000.0], [0.0])
         self.flux_plans["park_return"] = fpc.compile_for_program(
-            park_return, self, channel=cfg["ff_ch"], park_gain=cfg["ff_park_gain"],
+            park_return, self, channel=cfg["ff_ch"], park_gain=cryoscope_park_gain,
             scale_gain=cfg["cryoscope_scale_gain"],
             max_instructions=int(cfg.get("cryoscope_max_instructions", 4096)))
         self.flux_report = {
