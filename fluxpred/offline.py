@@ -60,12 +60,13 @@ def select_plant_bank(traces, banks_ns, *, regularizations=DEFAULT_REGULARIZATIO
                 score = blocked_plant_score(traces, taus, regularization=regularization, folds=folds)
             except (ValueError, np.linalg.LinAlgError) as error:
                 table.append({"taus_ns": taus.tolist(), "regularization": float(regularization),
-                              "held_out_rms": float("inf"), "order": int(taus.size),
+                              "held_out_rms": None, "order": int(taus.size),
                               "rejected": str(error)})
                 continue
             table.append({"taus_ns": taus.tolist(), "regularization": float(regularization),
                           "held_out_rms": float(score), "order": int(taus.size), "rejected": None})
-    usable = [row for row in table if row["rejected"] is None and np.isfinite(row["held_out_rms"])]
+    usable = [row for row in table if row["rejected"] is None
+              and row["held_out_rms"] is not None and np.isfinite(row["held_out_rms"])]
     if not usable:
         raise ValueError("no candidate pole bank produced a finite held-out score")
     best = min(usable, key=lambda row: row["held_out_rms"])

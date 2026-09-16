@@ -180,3 +180,79 @@ def geometric_schedule(level, total_ns, *, first_ns, growth=1.35, max_ns=None, q
     if quantum_ns is not None and len(widths) > 1 and widths[-1] < quantum_ns:
         widths[-2] += widths.pop()
     return [(float(level), float(w)) for w in widths]
+
+
+def slice_command(command, start_ns, stop_ns):
+    start_ns, stop_ns = float(start_ns), float(stop_ns)
+    horizon = float(command.edges_ns[-1])
+    if not np.isfinite(start_ns) or not np.isfinite(stop_ns) or stop_ns <= start_ns:
+        raise ValueError("slice needs a positive finite interval")
+    if start_ns < -1e-9 or stop_ns > horizon+1e-9:
+        raise ValueError("slice interval lies outside the command horizon")
+    start_ns = max(start_ns, 0.0)
+    stop_ns = min(stop_ns, horizon)
+    interior = command.edges_ns[(command.edges_ns > start_ns+1e-9) & (command.edges_ns < stop_ns-1e-9)]
+    edges = np.r_[start_ns, interior, stop_ns]
+    mid = (edges[1:]+edges[:-1])/2
+    index = np.minimum(np.searchsorted(command.edges_ns, mid, side="right")-1, len(command.values)-1)
+    return Command(edges-start_ns, command.values[index])
+
+
+def split_command(command, boundaries_ns):
+    bounds = np.unique(np.r_[0.0, np.asarray(boundaries_ns, dtype=float), command.edges_ns[-1]])
+    if np.any(bounds < -1e-9) or np.any(bounds > command.edges_ns[-1]+1e-9):
+        raise ValueError("split boundaries lie outside the command horizon")
+    return [slice_command(command, low, high) for low, high in zip(bounds[:-1], bounds[1:])]
+
+
+def schedule_start_times(schedule):
+    widths = np.asarray([float(duration) for _, duration in schedule], dtype=float)
+    if widths.ndim != 1 or not widths.size or np.any(widths <= 0) or not np.all(np.isfinite(widths)):
+        raise ValueError("schedule needs positive finite durations")
+    return np.r_[0.0, np.cumsum(widths)[:-1]]
+
+
+def constant_span(command, time_ns):
+    time_ns = float(time_ns)
+    edges = np.asarray(command.edges_ns, dtype=float)
+    values = np.asarray(command.values, dtype=float)
+    if not np.isfinite(time_ns) or time_ns < 0 or time_ns >= edges[-1]:
+        raise ValueError("time lies outside the command horizon")
+    index = int(np.searchsorted(edges, time_ns, side="right"))-1
+    index = min(max(index, 0), values.size-1)
+    low = index
+    while low > 0 and values[low-1] == values[index]:
+        low -= 1
+    high = index
+    while high < values.size-1 and values[high+1] == values[index]:
+        high += 1
+    return float(edges[low]), float(edges[high+1]), float(values[index])
+
+
+def probe_fits_constant_segment(command, start_ns, span_ns):
+    try:
+        low, high, _ = constant_span(command, start_ns)
+    except ValueError:
+        return False
+    return bool(start_ns >= low-1e-9 and float(start_ns)+float(span_ns) <= high+1e-9)
+
+
+def probe_delays(command, schedule, *, span_ns, inset_ns=4.0, max_points=None, skip_first=0):
+    span_ns = float(span_ns)
+    inset_ns = float(inset_ns)
+    if not np.isfinite(span_ns) or span_ns <= 0:
+        raise ValueError("span_ns must be positive and finite")
+    if not np.isfinite(inset_ns) or inset_ns < 0:
+        raise ValueError("inset_ns must be nonnegative and finite")
+    starts = schedule_start_times(schedule)
+    usable = [float(value)+inset_ns for value in starts
+              if probe_fits_constant_segment(command, float(value)+inset_ns, span_ns)]
+    usable = usable[int(skip_first):]
+    if not usable:
+        raise ValueError(
+            f"no emission segment is long enough to hold a {span_ns:g} ns probe inset by "
+            f"{inset_ns:g} ns; increase the schedule's first segment or shorten the probe window")
+    if max_points is not None and len(usable) > int(max_points):
+        index = np.unique(np.rint(np.linspace(0, len(usable)-1, int(max_points))).astype(int))
+        usable = [usable[position] for position in index]
+    return np.asarray(usable, dtype=float)

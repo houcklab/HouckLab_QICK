@@ -255,3 +255,75 @@ def drift_report(repeats, *, mask=None):
             "between_repeat_range": float(np.max(means) - np.min(means)),
             "within_repeat_rms": float(np.sqrt(np.mean(spread ** 2))),
             "supported_samples": int(np.count_nonzero(mask))}
+
+
+def plan_window_ladder(max_detuning_mhz, *, finest_ns, ratio=5.0, max_rungs=6):
+    max_detuning_mhz = float(max_detuning_mhz)
+    finest_ns = float(finest_ns)
+    ratio = float(ratio)
+    if not np.isfinite(max_detuning_mhz) or max_detuning_mhz <= 0:
+        raise ValueError("max_detuning_mhz must be positive and finite")
+    if not np.isfinite(finest_ns) or finest_ns <= 0:
+        raise ValueError("finest_ns must be positive and finite")
+    if not np.isfinite(ratio) or ratio <= 1.0:
+        raise ValueError("ratio between adjacent probe windows must exceed one")
+    windows = [finest_ns]
+    for _ in range(int(max_rungs)-1):
+        if window_unambiguous_range_mhz(windows[0]) >= max_detuning_mhz:
+            break
+        windows.insert(0, windows[0]/ratio)
+    if window_unambiguous_range_mhz(windows[0]) < max_detuning_mhz:
+        raise ValueError(
+            f"a {len(windows)}-rung ladder down to {windows[0]:.3g} ns still only resolves "
+            f"+-{window_unambiguous_range_mhz(windows[0]):.3g} MHz, but the expected excursion is "
+            f"{max_detuning_mhz:.3g} MHz; reduce the identification amplitude, start from an "
+            f"existing correction, or shorten the finest window")
+    return tuple(float(value) for value in windows)
+
+
+def max_identification_amplitude(*, sensitivity_mhz_per_unit, overshoot, coarsest_window_ns,
+                                 safety=0.8):
+    sensitivity = abs(float(sensitivity_mhz_per_unit))
+    overshoot = abs(float(overshoot))
+    if sensitivity <= 0 or overshoot <= 0:
+        raise ValueError("sensitivity and overshoot must be positive")
+    budget = float(safety)*window_unambiguous_range_mhz(coarsest_window_ns)
+    return float(budget/(sensitivity*overshoot))
+
+
+def resolve_ladder(phases_rad, windows_ns, *, mask=None, safety=0.5):
+    windows = [float(value) for value in windows_ns]
+    if len(windows) < 2:
+        raise ValueError("a ladder needs at least two probe windows")
+    if any(value <= 0 for value in windows):
+        raise ValueError("probe windows must be positive")
+    order = np.argsort(windows)
+    windows = [windows[index] for index in order]
+    stack = [np.asarray(phases_rad, dtype=float)[index] for index in order]
+    if any(entry.shape != stack[0].shape for entry in stack):
+        raise ValueError("every rung must have the same number of delays")
+    estimate = detuning_from_window(stack[0], windows[0])
+    rungs = [{"window_ns": windows[0], "detuning_mhz": estimate.copy(),
+              "branch": np.zeros_like(estimate), "slip_mhz": np.zeros_like(estimate),
+              "ambiguous": np.zeros(estimate.shape, dtype=bool)}]
+    ambiguous = np.zeros(estimate.shape, dtype=bool)
+    resolved_phase = stack[0]
+    for window, phase in zip(windows[1:], stack[1:]):
+        branch = np.rint((estimate*2.0*np.pi*window/1000.0-phase)/(2.0*np.pi))
+        resolved_phase = phase+2.0*np.pi*branch
+        refined = detuning_from_window(resolved_phase, window)
+        slip = np.abs(refined-estimate)
+        tolerance = float(safety)*window_unambiguous_range_mhz(window)
+        step_ambiguous = ~np.isfinite(slip) | (slip > tolerance)
+        ambiguous = ambiguous | step_ambiguous
+        rungs.append({"window_ns": window, "detuning_mhz": refined.copy(), "branch": branch,
+                      "slip_mhz": slip, "ambiguous": step_ambiguous,
+                      "tolerance_mhz": tolerance})
+        estimate = refined
+    if mask is not None:
+        ambiguous = ambiguous & np.asarray(mask, dtype=bool)
+    return {"detuning_mhz": estimate, "resolved_phase_rad": resolved_phase,
+            "windows_ns": tuple(windows), "rungs": rungs, "ambiguous": ambiguous,
+            "ambiguous_count": int(np.count_nonzero(ambiguous)),
+            "finest_window_ns": windows[-1],
+            "branch_tolerance_mhz": float(safety*window_unambiguous_range_mhz(windows[-1]))}

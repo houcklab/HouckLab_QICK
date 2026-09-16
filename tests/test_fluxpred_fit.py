@@ -134,7 +134,7 @@ def test_bank_selection_records_a_rejected_candidate_instead_of_using_it():
     rejected = [row for row in chosen["table"] if row["rejected"] is not None]
     assert len(rejected) == 1
     assert rejected[0]["taus_ns"] == unstable.tolist()
-    assert not np.isfinite(rejected[0]["held_out_rms"])
+    assert rejected[0]["held_out_rms"] is None
     assert chosen["taus_ns"].tolist() == TAUS_NS.tolist()
 
 
