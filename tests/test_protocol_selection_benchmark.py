@@ -1,10 +1,344 @@
 from dataclasses import replace
 import csv
+import importlib
+import json
 from pathlib import Path
 import sys
 
 import numpy as np
 import pytest
+
+
+@pytest.fixture
+def qick_runner():
+    return importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ProtocolSelectionBenchmark"
+    )
+
+
+class FakeBenchmarkBackend:
+    device = "q3"
+    controller = "qick"
+    code_commit = "test-commit"
+    model_provenance = {"sha256": "accepted-model", "coordinate": {"park": -25146}}
+
+    def __init__(self, tmp_path, fail_on_pass=None):
+        self.calibration_path = tmp_path / "calibration.json"
+        self.calibration_calls = 0
+        self.load_calls = 0
+        self.restore_park_calls = 0
+        self.close_calls = 0
+        self.calls = []
+        self.fail_on_pass = fail_on_pass
+
+    def calibrate(self):
+        self.calibration_calls += 1
+        benchmark.atomic_write_json(self.calibration_path, {"calibration": "fixed"})
+        self.calibration_id = benchmark.sha256_file(self.calibration_path)
+        self.calibration_provenance = {
+            "path": str(self.calibration_path.resolve()), "sha256": self.calibration_id,
+            "method_frequency_mhz": 4200.0,
+        }
+
+    def load_calibration(self, manifest):
+        self.load_calls += 1
+        self.calibration_provenance = manifest["calibration"]
+        self.calibration_id = benchmark.sha256_file(self.calibration_provenance["path"])
+
+    def acquire_pass(self, item, progress):
+        from types import SimpleNamespace
+        self.calls.append(item)
+        if item.index == self.fail_on_pass:
+            raise RuntimeError("synthetic acquisition failure")
+        rows = synthetic_rows()
+        for row in rows:
+            row.update(pass_index=item.index, pass_id=item.pass_id, protocol=item.protocol,
+                       predistortion=item.predistortion, shots_per_condition=item.shots_per_condition,
+                       condition_count=item.condition_count)
+        return SimpleNamespace(rows=rows, metadata={"protocol": item.protocol})
+
+    def restore_park(self):
+        self.restore_park_calls += 1
+
+    def close(self):
+        self.close_calls += 1
+
+
+def test_qick_orchestrator_calibrates_once_and_checkpoints_all_passes(tmp_path, qick_runner):
+    backend = FakeBenchmarkBackend(tmp_path)
+    result = qick_runner.run_benchmark(backend=backend, plan=benchmark.smoke_plan(),
+                                      output_dir=tmp_path, stem="q3_smoke")
+    assert backend.calibration_calls == 1
+    assert [(item.protocol, item.predistortion) for item in backend.calls] == [
+        ("3pt_ts100", "off"), ("3pt_ts100", "on"), ("5pt", "off"),
+        ("5pt", "on"), ("7pt", "off"), ("7pt", "on"),
+    ]
+    assert backend.restore_park_calls == 6
+    assert backend.close_calls == 1
+    assert result["status"] == "complete"
+    assert all(entry["duration_s"] >= 0 for entry in result["passes"])
+    assert (tmp_path / "q3_smoke_summary.csv").is_file()
+    assert (tmp_path / "q3_smoke_comparison.png").is_file()
+    rows = list(csv.DictReader((tmp_path / "q3_smoke_p00_3pt_ts100_4_off_raw.csv").open()))
+    assert rows[0]["pass_started_at"] and rows[0]["pass_ended_at"]
+
+
+def test_qick_failure_records_and_resume_reuses_single_calibration(tmp_path, qick_runner):
+    backend = FakeBenchmarkBackend(tmp_path, fail_on_pass=2)
+    with pytest.raises(RuntimeError, match="synthetic acquisition failure"):
+        qick_runner.run_benchmark(backend=backend, plan=benchmark.smoke_plan(),
+                                 output_dir=tmp_path, stem="q3_smoke")
+    assert backend.restore_park_calls == 3
+    assert backend.close_calls == 1
+    manifest_path = tmp_path / "q3_smoke_manifest.json"
+    saved = json.loads(manifest_path.read_text())
+    assert saved["passes"][2]["status"] == "failed"
+    assert "RuntimeError" in saved["passes"][2]["error"]["traceback"]
+    resumed = FakeBenchmarkBackend(tmp_path)
+    result = qick_runner.run_benchmark(backend=resumed, plan=benchmark.smoke_plan(),
+                                      output_dir=tmp_path, stem="ignored", resume_manifest=manifest_path)
+    assert backend.calibration_calls + resumed.calibration_calls == 1
+    assert resumed.load_calls == 1
+    assert [item.index for item in resumed.calls] == [2, 3, 4, 5]
+    assert result["status"] == "complete"
+
+
+def test_qick_resume_refuses_modified_calibration_before_acquisition(tmp_path, qick_runner):
+    backend = FakeBenchmarkBackend(tmp_path, fail_on_pass=0)
+    with pytest.raises(RuntimeError):
+        qick_runner.run_benchmark(backend=backend, plan=benchmark.smoke_plan(), output_dir=tmp_path, stem="run")
+    backend.calibration_path.write_text("modified")
+    resumed = FakeBenchmarkBackend(tmp_path)
+    with pytest.raises(ValueError, match="calibration.*(checksum|mismatch)"):
+        qick_runner.run_benchmark(backend=resumed, plan=benchmark.smoke_plan(), output_dir=tmp_path,
+                                 stem="run", resume_manifest=tmp_path / "run_manifest.json")
+    assert resumed.calibration_calls == 0
+    assert resumed.calls == []
+    assert resumed.close_calls == 1
+
+
+def test_qick_off_retains_timing_source_metadata_and_does_not_mutate_on(qick_runner):
+    on = {"segment_edges_ns": [0.0, 4000.0, 40000.0], "multipliers": [1.03, 1.01, 1.0],
+          "model_sha256": "accepted", "nested": {"arbitrary": [1]}}
+    off = qick_runner.unity_timing_table(on)
+    assert off["segment_edges_ns"] == on["segment_edges_ns"]
+    assert off["multipliers"] == [1.0, 1.0, 1.0]
+    assert off["source_model_sha256"] == "accepted"
+    assert off["benchmark_predistortion_mode"] == "timing_matched_unity"
+    off["nested"]["arbitrary"].append(2)
+    assert on["nested"] == {"arbitrary": [1]}
+    assert on["multipliers"] == [1.03, 1.01, 1.0]
+
+
+def test_qick_runtime_settings_and_offline_import(qick_runner):
+    import ast
+    import subprocess
+    assert qick_runner.runtime_settings({}) == {"mode": "full", "resume_manifest": None}
+    assert qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "smoke",
+        "Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST": "Z:/resume.json"}) == {
+            "mode": "smoke", "resume_manifest": Path("Z:/resume.json")}
+    with pytest.raises(ValueError, match="MODE"):
+        qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "bad"})
+    source = Path(qick_runner.__file__).read_text()
+    tree = ast.parse(source)
+    top_imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    assert not any("qick" in ast.unparse(node).lower() or "TLSSpectroscopy" in ast.unparse(node)
+                   for node in top_imports)
+    code = '''
+import builtins
+original = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if any(part in name.lower() for part in ("pyro", "pynq", "qick", "tlsspectroscopy", "fivepointapplestoapples")):
+        raise AssertionError("hardware import: " + name)
+    return original(name, *args, **kwargs)
+builtins.__import__ = guarded
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import ProtocolSelectionBenchmark as runner
+backend = runner.QickBenchmarkBackend(plan=runner.benchmark.smoke_plan(), environ={})
+assert backend.soc is None
+'''
+    completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.fixture
+def fake_qick_hardware(tmp_path, monkeypatch, qick_runner):
+    from types import SimpleNamespace
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import calibration, production
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.analysis import json_safe
+    classifier = dict(schema_version=1, context="payload", theta_rad=0.0, shift=1,
+                      c_int=1, s_int=0, ground_threshold=0, excited_threshold=1,
+                      max_abs_raw=100, holdout={})
+    bundle = calibration.CalibrationBundle.from_dict({
+        "schema_version": 1, "payload": classifier, "loop": {**classifier, "context": "loop"},
+        "reference_axis": dict(ground_i=0., ground_q=0., delta_i=1., delta_q=0., denominator=1.),
+        "metadata": {"qubit": "q3", "purpose": "ProtocolSelectionBenchmark", "method_frequency_mhz": 4200.},
+    })
+    calibration.save_calibration(tmp_path / "calibration.json", bundle)
+    state = SimpleNamespace(events=[], experiments=[], bundle=bundle, calibration_path=tmp_path / "calibration.json")
+    state.tls = SimpleNamespace(BaseConfig={"ff_park_gain": -25146, "ff_ch": 4}, QUBIT="q3",
+                               outerFolder=str(tmp_path), FLUX_FIT_PARAMS=[1, 2, 3],
+                               _baseline_dc_offset=lambda: -25146,
+                               _set_yoko_if_requested=lambda: state.events.append("yoko"),
+                               makeProxy=lambda: (SimpleNamespace(_pyroRelease=lambda: state.events.append("release")), object()))
+    def prepare(mode, **kwargs):
+        assert mode == "active"
+        assert kwargs["purpose"] == "ProtocolSelectionBenchmark"
+        state.events.append("calibrate")
+        return production.ProductionResetSession.active(bundle.to_dict(), 4200., tmp_path)
+    def selection(tls, environ):
+        state.events.append("select")
+        return {"mode": "neutral", "model_sha256": "accepted", "document": {"acceptance": {
+            "software": True, "scientific": True, "hardware": True}}}
+    def render(choice, params):
+        assert max(params["decay_delays_us"]) == 200.
+        assert params["flux_settle_us"] == .5
+        assert params["flux_predistortion_recovery_us"] == 40.
+        return {"multipliers": [1.03, 1.01, 1.], "segment_edges_ns": [0., 4000., 240500.],
+                "model_sha256": "accepted"}
+    class Experiment:
+        protocol_path = "n_point"
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.data = {}
+            state.experiments.append(self)
+        def acquire(self, progress):
+            assert progress is True
+            count = len(self.kwargs["dc_vec"])
+            conditions = 3 if self.protocol_path == "three_point" else 2 + len(self.kwargs["decay_delays_us"])
+            self.data.update({"P0": np.zeros(count), "P1": np.ones(count),
+                              f"inv_T1_{conditions}pt_per_us": np.full(count, .01)})
+    class ThreePoint(Experiment):
+        protocol_path = "three_point"
+    def load(path):
+        state.events.append("load")
+        return calibration.load_calibration(path)
+    state.dependencies = SimpleNamespace(
+        tls=state.tls,
+        five=SimpleNamespace(install_scan_calibration=lambda tls: state.events.append("install"),
+            resolve_neutral_selection=selection, render_neutral_scan_compensation=render,
+            apply_verified_feedback_timing=lambda cfg: cfg.update(opx_feedback_read_timing="official_wait_all")),
+        grid=SimpleNamespace(_target_frequency_grid_ghz=lambda p: np.linspace(p["freq_max_ghz"], p["freq_min_ghz"], 11),
+            _integer_dc_grid=lambda p, target, tls_module: (np.arange(len(target)) - 20000, target - .00001)),
+        prepare_reset_session=prepare, ProductionResetSession=production.ProductionResetSession,
+        load_calibration=load, T13PointVsFlux=ThreePoint, T15PointVsFlux=Experiment,
+        provenance=lambda choice, **kwargs: {"model_sha256": choice["model_sha256"], "coordinate": {"park": -25146}},
+        json_safe=json_safe,
+    )
+    monkeypatch.setattr(qick_runner, "_load_hardware", lambda: state.dependencies, raising=False)
+    return state
+
+
+def test_qick_backend_dispatches_true_protocols_and_same_timing(tmp_path, qick_runner, fake_qick_hardware):
+    backend = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={"Q3_CODE_COMMIT": "abc"})
+    assert fake_qick_hardware.events == []
+    backend.calibrate()
+    assert fake_qick_hardware.events.count("calibrate") == 1
+    results = [backend.acquire_pass(item, progress=True) for item in benchmark.smoke_plan().passes]
+    experiments = fake_qick_hardware.experiments
+    assert [exp.protocol_path for exp in experiments] == ["three_point"] * 2 + ["n_point"] * 4
+    assert experiments[0].kwargs["Ts_ns"] == 100000
+    assert experiments[4].kwargs["decay_delays_us"] == (40., 80., 120., 160., 200.)
+    for exp in experiments:
+        assert exp.kwargs["shots"] == 4
+        assert exp.kwargs["write_outputs"] is False
+        cfg = exp.kwargs["cfg"]
+        assert cfg["reset_mode"] == "opx_unbounded"
+        assert cfg["opx_reset_calibration"] == fake_qick_hardware.bundle.to_dict()
+        assert cfg["apply_flux_tail_compensation"] is True
+        assert cfg["flux_predistortion_round_trip_mode"] == "stateful"
+        assert cfg["flux_predistortion_recovery_us"] == 40.
+        assert cfg["flux_settle_time_us"] == .5
+        assert cfg["opx_t1_3pt_gain_lookup"] is True
+        assert cfg["opx_feedback_read_timing"] == "official_wait_all"
+        assert exp.data["code_commit"] == "abc"
+        assert exp.data["calibration_id"] == benchmark.sha256_file(fake_qick_hardware.calibration_path)
+    off, on = [exp.kwargs["flux_tail_compensation"] for exp in experiments[:2]]
+    assert off["segment_edges_ns"] == on["segment_edges_ns"]
+    assert off["multipliers"] == [1., 1., 1.]
+    assert on["multipliers"] == [1.03, 1.01, 1.]
+    assert results[4].rows[0]["gamma1_per_us"] == .01
+    assert results[4].metadata["protocol_path"] == "n_point"
+    json.dumps(results[4].metadata, allow_nan=False)
+    with pytest.raises(RuntimeError, match="already"):
+        backend.calibrate()
+
+
+def test_qick_backend_resume_loads_exact_saved_bundle(tmp_path, qick_runner, fake_qick_hardware):
+    first = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={"Q3_CODE_COMMIT": "abc"})
+    first.calibrate()
+    manifest = benchmark.new_manifest(benchmark.smoke_plan(), device="q3", controller="qick", code_commit="abc",
+        model_provenance=first.model_provenance, calibration_id=first.calibration_id)
+    manifest["calibration"] = first.calibration_provenance
+    resumed = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={"Q3_CODE_COMMIT": "abc"})
+    resumed.load_calibration(manifest)
+    assert fake_qick_hardware.events.count("calibrate") == 1
+    assert fake_qick_hardware.events.count("load") == 1
+    assert resumed.base["opx_reset_calibration"] == first.base["opx_reset_calibration"]
+    assert resumed.base["reset_pi_freq"] == 4200.
+    manifest["calibration"]["method_frequency_mhz"] = 4100.
+    invalid = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={"Q3_CODE_COMMIT": "abc"})
+    with pytest.raises(ValueError, match="calibration.*provenance"):
+        invalid.load_calibration(manifest)
+
+
+def test_qick_cli_selects_smoke_and_propagates_failures(monkeypatch, qick_runner):
+    calls = []
+    monkeypatch.setenv("Q3_PROTOCOL_BENCHMARK_MODE", "smoke")
+    monkeypatch.delenv("Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST", raising=False)
+    def run(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeError("acquisition failed")
+    monkeypatch.setattr(qick_runner, "run_benchmark", run)
+    with pytest.raises(RuntimeError, match="acquisition failed"):
+        qick_runner.main()
+    assert calls[0]["plan"].mode == "smoke"
+    assert calls[0]["resume_manifest"] is None
+
+
+def test_qick_cleanup_stops_running_readout_before_restoring_nonzero_park(monkeypatch, qick_runner):
+    from types import SimpleNamespace
+    events = []
+    backend = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={})
+    backend.soc = SimpleNamespace(
+        streamer=SimpleNamespace(readout_running=lambda: True, stop_readout=lambda: events.append("stop")),
+        _pyroRelease=lambda: events.append("release"),
+    )
+    backend.soccfg = object()
+    backend.base = {"ff_park_gain": -25146}
+    def park(soc, soccfg, cfg):
+        assert cfg["ff_park_gain"] == -25146
+        events.append("park")
+    monkeypatch.setattr(qick_runner, "_restore_park", park)
+    backend.restore_park()
+    assert events == ["stop", "park"]
+    backend.close()
+    assert events[-1] == "release"
+    assert backend.soc is None
+
+
+def test_qick_cleanup_failure_preserves_acquisition_failure(tmp_path, qick_runner):
+    backend = FakeBenchmarkBackend(tmp_path, fail_on_pass=0)
+    def restore():
+        raise ValueError("restore failed")
+    backend.restore_park = restore
+    with pytest.raises(RuntimeError, match="synthetic acquisition failure"):
+        qick_runner.run_benchmark(backend=backend, plan=benchmark.smoke_plan(), output_dir=tmp_path, stem="run")
+    saved = json.loads((tmp_path / "run_manifest.json").read_text())
+    assert saved["passes"][0]["error"]["type"] == "RuntimeError"
+    assert "restore failed" in saved["passes"][0]["error"]["traceback"]
+    assert backend.close_calls == 1
+
+
+def test_qick_checkpoint_start_failure_still_restores_park(tmp_path, monkeypatch, qick_runner):
+    backend = FakeBenchmarkBackend(tmp_path)
+    def fail(*args, **kwargs):
+        raise OSError("checkpoint unavailable")
+    monkeypatch.setattr(benchmark, "record_pass_started", fail)
+    with pytest.raises(OSError, match="checkpoint unavailable"):
+        qick_runner.run_benchmark(backend=backend, plan=benchmark.smoke_plan(), output_dir=tmp_path, stem="run")
+    assert backend.calls == []
+    assert backend.restore_park_calls == 1
+    assert backend.close_calls == 1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
