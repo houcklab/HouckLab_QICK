@@ -28,7 +28,14 @@ def runtime_settings(environ=None):
             "Q3_PROTOCOL_BENCHMARK_MODE must be full, smoke, or five_point_ab"
         )
     resume = str(environ.get("Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST", "")).strip()
-    return {"mode": mode, "resume_manifest": Path(resume) if resume else None}
+    wait_for_return = str(
+        environ.get("Q3_PROTOCOL_BENCHMARK_WAIT_FOR_RETURN", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    return {
+        "mode": mode,
+        "resume_manifest": Path(resume) if resume else None,
+        "overlap_payload_readout": not wait_for_return,
+    }
 
 
 def unity_timing_table(on):
@@ -252,12 +259,16 @@ class QickBenchmarkBackend:
         self.soc, self.soccfg = tls.makeProxy()
 
     def _apply_session(self):
+        wait_for_return = str(
+            self.environ.get("Q3_PROTOCOL_BENCHMARK_WAIT_FOR_RETURN", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
         self.base.update({
             "ff_gain_vec": self.dc_vec, "flux_fit_params": self.hw.tls.FLUX_FIT_PARAMS,
             "qubit_pulse_style": "arb", "apply_flux_tail_compensation": True,
             "flux_predistortion_round_trip_mode": "stateful", "flux_predistortion_recovery_us": 40.,
             "flux_settle_time_us": .5, "readout_thermalization_us": 10.,
             "opx_t1_3pt_gain_lookup": True, "opx_reverse_survival_order": False,
+            "flux_predistortion_overlap_payload_readout": not wait_for_return,
         })
         self.base = self.session.apply(self.base)
         self.hw.five.apply_verified_feedback_timing(self.base)

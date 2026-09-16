@@ -133,13 +133,21 @@ def test_qick_off_retains_timing_source_metadata_and_does_not_mutate_on(qick_run
 def test_qick_runtime_settings_and_offline_import(qick_runner):
     import ast
     import subprocess
-    assert qick_runner.runtime_settings({}) == {"mode": "full", "resume_manifest": None}
+    assert qick_runner.runtime_settings({}) == {
+        "mode": "full", "resume_manifest": None,
+        "overlap_payload_readout": True,
+    }
     assert qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "smoke",
         "Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST": "Z:/resume.json"}) == {
-            "mode": "smoke", "resume_manifest": Path("Z:/resume.json")}
+            "mode": "smoke", "resume_manifest": Path("Z:/resume.json"),
+            "overlap_payload_readout": True}
     assert qick_runner.runtime_settings({
-        "Q3_PROTOCOL_BENCHMARK_MODE": "five_point_ab"
-    }) == {"mode": "five_point_ab", "resume_manifest": None}
+        "Q3_PROTOCOL_BENCHMARK_MODE": "five_point_ab",
+        "Q3_PROTOCOL_BENCHMARK_WAIT_FOR_RETURN": "1",
+    }) == {
+        "mode": "five_point_ab", "resume_manifest": None,
+        "overlap_payload_readout": False,
+    }
     with pytest.raises(ValueError, match="MODE"):
         qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "bad"})
     source = Path(qick_runner.__file__).read_text()
@@ -232,7 +240,10 @@ def fake_qick_hardware(tmp_path, monkeypatch, qick_runner):
 
 
 def test_qick_backend_dispatches_true_protocols_and_same_timing(tmp_path, qick_runner, fake_qick_hardware):
-    backend = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={"Q3_CODE_COMMIT": "abc"})
+    backend = qick_runner.QickBenchmarkBackend(plan=benchmark.smoke_plan(), environ={
+        "Q3_CODE_COMMIT": "abc",
+        "Q3_PROTOCOL_BENCHMARK_WAIT_FOR_RETURN": "1",
+    })
     assert fake_qick_hardware.events == []
     backend.calibrate()
     assert fake_qick_hardware.events.count("calibrate") == 1
@@ -250,6 +261,7 @@ def test_qick_backend_dispatches_true_protocols_and_same_timing(tmp_path, qick_r
         assert cfg["apply_flux_tail_compensation"] is True
         assert cfg["flux_predistortion_round_trip_mode"] == "stateful"
         assert cfg["flux_predistortion_recovery_us"] == 40.
+        assert cfg["flux_predistortion_overlap_payload_readout"] is False
         assert cfg["flux_settle_time_us"] == .5
         assert cfg["opx_t1_3pt_gain_lookup"] is True
         assert cfg["opx_feedback_read_timing"] == "official_wait_all"
