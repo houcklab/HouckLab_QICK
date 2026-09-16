@@ -41,6 +41,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
     save_wall_clock_repeat_full_outputs,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import five_point_output_metadata
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.protocol_crossover import (
+    apply_phase as apply_crossover_phase,
+    annotate_metadata as annotate_crossover_metadata,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
     AUTOMATIC_RECALIBRATION_MIN,
     PASSIVE_T1_RESET_US,
@@ -79,6 +83,15 @@ P6_5PT_APPLES_TO_APPLES = {
     "max_fit_t1_us": 3000.0,
     "reverse_survival_order": False,
 }
+
+
+def runtime_parameters(environ=None):
+    """Build this process's parameters, including an optional crossover arm."""
+    return apply_crossover_phase(
+        P6_5PT_APPLES_TO_APPLES,
+        expected="current_on",
+        environ=environ,
+    )
 
 
 APPLE_FLUX_FIT_PARAMS = [
@@ -361,7 +374,7 @@ def main():
     gc.collect()
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
-    p = dict(P6_5PT_APPLES_TO_APPLES)
+    p = runtime_parameters()
     if execution_test_mode:
         p["reset_mode"] = execution_test_mode
     target = _target_frequency_grid_ghz(p)
@@ -444,12 +457,16 @@ def main():
         )
 
     def factory(repeat_metadata):
+        repeat_metadata.update(annotate_crossover_metadata({}, p))
         exp = T15PointVsFlux(
             soc=soc,
             soccfg=soccfg,
             path=tls.QUBIT,
             outerFolder=tls.outerFolder,
-            suffix=f"TLS_{2 + len(p['decay_delays_us'])}pt_Apples_to_Apples",
+            suffix=p.get(
+                "output_suffix",
+                f"TLS_{2 + len(p['decay_delays_us'])}pt_Apples_to_Apples",
+            ),
             cfg=dict(base),
             dc_vec=dc_vec,
             decay_delays_us=p["decay_delays_us"],
