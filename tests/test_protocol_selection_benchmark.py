@@ -137,6 +137,9 @@ def test_qick_runtime_settings_and_offline_import(qick_runner):
     assert qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "smoke",
         "Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST": "Z:/resume.json"}) == {
             "mode": "smoke", "resume_manifest": Path("Z:/resume.json")}
+    assert qick_runner.runtime_settings({
+        "Q3_PROTOCOL_BENCHMARK_MODE": "five_point_ab"
+    }) == {"mode": "five_point_ab", "resume_manifest": None}
     with pytest.raises(ValueError, match="MODE"):
         qick_runner.runtime_settings({"Q3_PROTOCOL_BENCHMARK_MODE": "bad"})
     source = Path(qick_runner.__file__).read_text()
@@ -428,6 +431,21 @@ def test_smoke_plan_exercises_every_protocol_and_mode_without_matching_full_hash
     assert benchmark.plan_fingerprint(smoke) != benchmark.plan_fingerprint(
         benchmark.full_plan()
     )
+
+
+def test_five_point_ab_plan_is_the_focused_counterbalanced_matrix():
+    plan = benchmark.five_point_ab_plan()
+    assert plan.mode == "five_point_ab"
+    assert plan.frequency_count == 801
+    assert [(item.protocol, item.shots_per_condition, item.predistortion)
+            for item in plan.passes] == [
+        ("5pt", 180, "off"),
+        ("5pt", 180, "on"),
+        ("5pt", 300, "on"),
+        ("5pt", 300, "off"),
+    ]
+    assert all(item.delays_us == (40.0, 80.0, 200.0) for item in plan.passes)
+    assert all(item.condition_count == 5 for item in plan.passes)
 
 
 @pytest.mark.parametrize(

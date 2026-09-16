@@ -23,8 +23,10 @@ from . import protocol_selection_benchmark as benchmark
 def runtime_settings(environ=None):
     environ = os.environ if environ is None else environ
     mode = str(environ.get("Q3_PROTOCOL_BENCHMARK_MODE", "full")).strip().lower()
-    if mode not in {"full", "smoke"}:
-        raise ValueError("Q3_PROTOCOL_BENCHMARK_MODE must be full or smoke")
+    if mode not in {"full", "smoke", "five_point_ab"}:
+        raise ValueError(
+            "Q3_PROTOCOL_BENCHMARK_MODE must be full, smoke, or five_point_ab"
+        )
     resume = str(environ.get("Q3_PROTOCOL_BENCHMARK_RESUME_MANIFEST", "")).strip()
     return {"mode": mode, "resume_manifest": Path(resume) if resume else None}
 
@@ -393,7 +395,11 @@ def _restore_park(soc, soccfg, cfg):
 
 def main():
     settings = runtime_settings()
-    plan = benchmark.smoke_plan() if settings["mode"] == "smoke" else benchmark.full_plan()
+    plan = {
+        "full": benchmark.full_plan,
+        "smoke": benchmark.smoke_plan,
+        "five_point_ab": benchmark.five_point_ab_plan,
+    }[settings["mode"]]()
     backend = QickBenchmarkBackend(plan=plan)
     return run_benchmark(backend=backend, plan=plan, output_dir=None,
                          stem=benchmark.session_stem("q3", plan), resume_manifest=settings["resume_manifest"])

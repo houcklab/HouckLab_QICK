@@ -161,6 +161,27 @@ def smoke_plan() -> BenchmarkPlan:
     )
 
 
+def five_point_ab_plan() -> BenchmarkPlan:
+    """Return the focused, counterbalanced 5-point ON/OFF comparison."""
+    return BenchmarkPlan(
+        schema=_SCHEMA,
+        frequency_start_ghz=4.3,
+        frequency_stop_ghz=3.9,
+        frequency_step_mhz=0.5,
+        frequency_count=801,
+        reset_mode="active",
+        readout_location="park",
+        calibration_policy="once",
+        passes=(
+            _pass(0, "5pt", 180, "off"),
+            _pass(1, "5pt", 180, "on"),
+            _pass(2, "5pt", 300, "on"),
+            _pass(3, "5pt", 300, "off"),
+        ),
+        mode="five_point_ab",
+    )
+
+
 def _decimal(value: float) -> Decimal:
     try:
         return Decimal(str(value))
