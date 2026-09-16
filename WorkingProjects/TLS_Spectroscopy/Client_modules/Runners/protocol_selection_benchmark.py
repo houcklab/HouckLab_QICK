@@ -4,20 +4,44 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+import csv
+from datetime import datetime
 import hashlib
 import json
 import math
+import os
+from pathlib import Path
+import tempfile
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
 
 _SCHEMA = "houcklab.protocol-selection-benchmark.v1"
+_MANIFEST_SCHEMA = "houcklab.protocol-selection-benchmark.manifest.v1"
 _PROTOCOL_DELAYS_US = {
     "3pt_ts50": (50.0,),
     "3pt_ts100": (100.0,),
     "5pt": (40.0, 80.0, 200.0),
     "7pt": (40.0, 80.0, 120.0, 160.0, 200.0),
 }
+
+PASS_ROW_COLUMNS = (
+    "pass_index", "pass_id", "protocol", "predistortion",
+    "shots_per_condition", "condition_count", "target_frequency_ghz",
+    "realized_frequency_ghz", "flux_coordinate", "gamma1_per_us",
+    "gamma1_err_per_us", "t1_us", "t1_err_us", "valid",
+    "reference_contrast", "fit_success", "fit_deviance",
+    "scan_direction_delta",
+)
+SUMMARY_COLUMNS = (
+    "pass_index", "pass_id", "protocol", "predistortion",
+    "shots_per_condition", "condition_count", "valid_fraction",
+    "longest_invalid_run", "median_reference_contrast",
+    "median_gamma1_err_per_us", "p90_gamma1_err_per_us",
+    "median_abs_direction_delta", "median_fit_deviance",
+    "median_local_roughness", "duration_s",
+)
 
 
 @dataclass(frozen=True)
@@ -267,3 +291,525 @@ def frequency_grid_ghz(plan: BenchmarkPlan) -> np.ndarray:
         num=plan.frequency_count,
         dtype=float,
     )
+
+
+def session_stem(
+    device: str, plan: BenchmarkPlan, started_at: datetime | str | None = None
+) -> str:
+    """Return a readable session stem without introducing hardware dependencies."""
+    _validate_plan(plan)
+    if started_at is None:
+        timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
+    elif isinstance(started_at, datetime):
+        timestamp = started_at.strftime("%Y%m%dT%H%M%S%z")
+    else:
+        timestamp = "".join(character for character in str(started_at) if character.isalnum())
+    safe_device = "".join(character for character in str(device) if character.isalnum() or character in "-_")
+    if not safe_device or not timestamp:
+        raise ValueError("device and started_at must produce non-empty artifact names")
+    return f"{safe_device}_protocol_selection_{plan.mode}_{timestamp}"
+
+
+def artifact_paths(
+    output_dir: str | Path, stem: str, item: BenchmarkPass
+) -> tuple[Path, Path]:
+    """Return the deterministic raw-data and metadata paths for one pass."""
+    base = Path(output_dir) / f"{stem}_{item.pass_id}"
+    return (
+        base.with_name(base.name + "_raw.csv"),
+        base.with_name(base.name + "_metadata.json"),
+    )
+
+
+def sha256_file(path: str | Path) -> str:
+    """Return the SHA-256 digest of an artifact without loading it into memory."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def atomic_write_json(path: str | Path, document: Mapping[str, Any]) -> Path:
+    """Atomically replace a JSON document after syncing its complete contents."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=destination.parent,
+            prefix=f".{destination.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary_name = stream.name
+            json.dump(document, stream, sort_keys=True, indent=2, allow_nan=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_name, destination)
+    finally:
+        if temporary_name is not None and os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return destination
+
+
+def _new_pass_entry(item: BenchmarkPass) -> dict[str, Any]:
+    return {
+        "index": item.index,
+        "pass_id": item.pass_id,
+        "status": "pending",
+        "artifacts": {},
+    }
+
+
+def new_manifest(
+    plan: BenchmarkPlan, *, device: str, controller: str, code_commit: str,
+    model_provenance: Mapping[str, Any], calibration_id: str,
+) -> dict[str, Any]:
+    """Create the canonical checkpoint manifest for a benchmark session."""
+    _validate_plan(plan)
+    model = dict(model_provenance)
+    if not model.get("sha256"):
+        raise ValueError("model provenance must include a sha256")
+    if not all(isinstance(value, str) and value for value in (device, controller, calibration_id)):
+        raise ValueError("device, controller, and calibration_id must be non-empty strings")
+    return {
+        "schema": _MANIFEST_SCHEMA,
+        "plan_fingerprint": plan_fingerprint(plan),
+        "device": device,
+        "controller": controller,
+        "code_commit": code_commit,
+        "model_provenance": model,
+        "calibration_id": calibration_id,
+        "status": "running",
+        "passes": [_new_pass_entry(item) for item in plan.passes],
+    }
+
+
+def _read_manifest(path: str | Path) -> dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as stream:
+        manifest = json.load(stream)
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest must be a JSON object")
+    return manifest
+
+
+def _pass_entry(manifest: dict[str, Any], pass_index: int) -> dict[str, Any]:
+    entries = manifest.get("passes")
+    if not isinstance(entries, list):
+        raise ValueError("manifest passes must be a list")
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("index") == pass_index:
+            return entry
+    raise ValueError(f"manifest has no pass {pass_index}")
+
+
+def _write_manifest(path: str | Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    atomic_write_json(path, manifest)
+    return manifest
+
+
+def record_pass_started(
+    manifest_path: str | Path, pass_index: int, *, started_at: str
+) -> dict[str, Any]:
+    """Mark a canonical pass as running before the hardware acquisition starts."""
+    manifest = _read_manifest(manifest_path)
+    entry = _pass_entry(manifest, pass_index)
+    entry.update({"status": "running", "started_at": started_at})
+    entry.pop("error", None)
+    return _write_manifest(manifest_path, manifest)
+
+
+def _artifact_record(path: str | Path) -> dict[str, str]:
+    artifact_path = Path(path)
+    if not artifact_path.is_file():
+        raise FileNotFoundError("both pass artifacts must exist before completion")
+    return {"path": str(artifact_path.resolve()), "sha256": sha256_file(artifact_path)}
+
+
+def record_pass_complete(
+    manifest_path: str | Path, pass_index: int, *, raw_path: str | Path,
+    metadata_path: str | Path, ended_at: str, duration_s: float,
+) -> dict[str, Any]:
+    """Checkpoint a completed pass only after both output artifacts are durable."""
+    if not math.isfinite(duration_s) or duration_s < 0:
+        raise ValueError("duration_s must be finite and non-negative")
+    artifacts = {
+        "raw_csv": _artifact_record(raw_path),
+        "metadata_json": _artifact_record(metadata_path),
+    }
+    manifest = _read_manifest(manifest_path)
+    entry = _pass_entry(manifest, pass_index)
+    entry.update({
+        "status": "complete",
+        "ended_at": ended_at,
+        "duration_s": float(duration_s),
+        "artifacts": artifacts,
+    })
+    entry.pop("error", None)
+    return _write_manifest(manifest_path, manifest)
+
+
+def record_pass_failed(
+    manifest_path: str | Path, pass_index: int, *, error_type: str,
+    error_message: str, traceback_text: str, failed_at: str,
+) -> dict[str, Any]:
+    """Record a failed attempt without falsely treating its pass as complete."""
+    manifest = _read_manifest(manifest_path)
+    entry = _pass_entry(manifest, pass_index)
+    entry.update({
+        "status": "failed",
+        "failed_at": failed_at,
+        "error": {
+            "type": error_type,
+            "message": error_message,
+            "traceback": traceback_text,
+        },
+    })
+    return _write_manifest(manifest_path, manifest)
+
+
+def _require_manifest_match(manifest: Mapping[str, Any], field: str, expected: Any) -> None:
+    if manifest.get(field) != expected:
+        raise ValueError(f"resume {field.replace('_', ' ')} mismatch")
+
+
+def _verify_completed_artifacts(manifest: Mapping[str, Any]) -> None:
+    entries = manifest.get("passes")
+    if not isinstance(entries, list):
+        raise ValueError("manifest passes must be a list")
+    for entry in entries:
+        if not isinstance(entry, Mapping) or entry.get("status") != "complete":
+            continue
+        artifacts = entry.get("artifacts")
+        if not isinstance(artifacts, Mapping):
+            raise ValueError("completed pass artifacts are missing")
+        for artifact_name in ("raw_csv", "metadata_json"):
+            artifact = artifacts.get(artifact_name)
+            if not isinstance(artifact, Mapping):
+                raise ValueError("completed pass artifacts are missing")
+            path = artifact.get("path")
+            checksum = artifact.get("sha256")
+            if not isinstance(path, str) or not isinstance(checksum, str):
+                raise ValueError("completed pass artifacts are malformed")
+            try:
+                actual_checksum = sha256_file(path)
+            except OSError as exc:
+                raise ValueError("completed pass artifact is missing") from exc
+            if actual_checksum != checksum:
+                raise ValueError("completed pass artifact checksum mismatch")
+
+
+def load_resume_manifest(
+    manifest_path: str | Path, plan: BenchmarkPlan, *, device: str, controller: str,
+    model_sha256: str, calibration_id: str,
+) -> dict[str, Any]:
+    """Load a resumable manifest after strict provenance and artifact validation."""
+    _validate_plan(plan)
+    manifest = _read_manifest(manifest_path)
+    _require_manifest_match(manifest, "schema", _MANIFEST_SCHEMA)
+    _require_manifest_match(manifest, "plan_fingerprint", plan_fingerprint(plan))
+    _require_manifest_match(manifest, "device", device)
+    _require_manifest_match(manifest, "controller", controller)
+    model = manifest.get("model_provenance")
+    if not isinstance(model, Mapping) or model.get("sha256") != model_sha256:
+        raise ValueError("resume model mismatch")
+    _require_manifest_match(manifest, "calibration_id", calibration_id)
+    entries = manifest.get("passes")
+    if not isinstance(entries, list) or len(entries) != len(plan.passes):
+        raise ValueError("resume pass list mismatch")
+    for item, entry in zip(plan.passes, entries):
+        if not isinstance(entry, Mapping) or entry.get("index") != item.index or entry.get("pass_id") != item.pass_id:
+            raise ValueError("resume pass list mismatch")
+        if entry.get("status") not in {"pending", "running", "complete", "failed"}:
+            raise ValueError("resume pass status mismatch")
+    _verify_completed_artifacts(manifest)
+    return manifest
+
+
+def pending_passes(manifest: Mapping[str, Any], plan: BenchmarkPlan) -> tuple[BenchmarkPass, ...]:
+    """Return canonical passes not backed by verified completion records."""
+    entries = manifest.get("passes")
+    if not isinstance(entries, list) or len(entries) != len(plan.passes):
+        raise ValueError("manifest pass list does not match plan")
+    statuses = {entry.get("index"): entry.get("status") for entry in entries if isinstance(entry, Mapping)}
+    return tuple(item for item in plan.passes if statuses.get(item.index) != "complete")
+
+
+def _as_vector(data: Mapping[str, Any], key: str, count: int, default: Any) -> np.ndarray:
+    if key not in data:
+        return np.full(count, default)
+    vector = np.asarray(data[key])
+    if vector.ndim != 1 or len(vector) != count:
+        raise ValueError(f"{key} must be a one-dimensional array with {count} values")
+    return vector
+
+
+def _scalar(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _metric_prefix(item: BenchmarkPass) -> str:
+    return "T1_3pt" if item.protocol.startswith("3pt") else f"T1_{item.condition_count}pt"
+
+
+def normalize_experiment_data(
+    item: BenchmarkPass, data: Mapping[str, Any], *, target_frequency_ghz: Sequence[float],
+    realized_frequency_ghz: Sequence[float], flux_coordinate: Sequence[float],
+) -> list[dict[str, Any]]:
+    """Convert existing 3-point or n-point fit outputs to portable row records."""
+    count = len(target_frequency_ghz)
+    target = _as_vector({"target": target_frequency_ghz}, "target", count, np.nan).astype(float)
+    realized = _as_vector({"realized": realized_frequency_ghz}, "realized", count, np.nan).astype(float)
+    flux = _as_vector({"flux": flux_coordinate}, "flux", count, np.nan)
+    prefix = _metric_prefix(item)
+    gamma = _as_vector(data, f"inv_{prefix}_per_us", count, np.nan).astype(float)
+    gamma_error = _as_vector(data, f"inv_{prefix}_err_per_us", count, np.nan).astype(float)
+    t1 = _as_vector(data, f"{prefix}_us", count, np.nan).astype(float)
+    t1_error = _as_vector(data, f"{prefix}_err_us", count, np.nan).astype(float)
+    valid_source = _as_vector(data, f"{prefix}_valid_mask", count, True).astype(bool)
+    fit_success = _as_vector(data, f"{prefix}_fit_success", count, valid_source).astype(bool)
+    fit_deviance = _as_vector(data, f"{prefix}_fit_deviance", count, np.nan).astype(float)
+    direction_delta = _as_vector(
+        data, f"inv_{prefix}_per_us_scan_direction_delta", count, np.nan
+    ).astype(float)
+    p0 = _as_vector(data, "P0", count, np.nan).astype(float)
+    p1 = _as_vector(data, "P1", count, np.nan).astype(float)
+    contrast = _as_vector(data, f"ref_contrast_{prefix.removeprefix('T1_')}", count, np.nan).astype(float)
+    missing_contrast = ~np.isfinite(contrast)
+    contrast[missing_contrast] = np.abs(p1[missing_contrast] - p0[missing_contrast])
+    valid = valid_source & np.isfinite(gamma)
+    raw_keys = []
+    for key, value in data.items():
+        array = np.asarray(value)
+        if array.ndim == 1 and len(array) == count and (
+            key.startswith(("P0", "P1", "Ps")) or "_scan_" in key
+        ):
+            raw_keys.append(key)
+    raw_keys.sort(key=lambda key: (not key.startswith("P"), key))
+    raw_vectors = {key: _as_vector(data, key, count, np.nan) for key in raw_keys}
+    rows: list[dict[str, Any]] = []
+    for index in range(count):
+        row = {
+            "pass_index": item.index,
+            "pass_id": item.pass_id,
+            "protocol": item.protocol,
+            "predistortion": item.predistortion,
+            "shots_per_condition": item.shots_per_condition,
+            "condition_count": item.condition_count,
+            "target_frequency_ghz": float(target[index]),
+            "realized_frequency_ghz": float(realized[index]),
+            "flux_coordinate": _scalar(flux[index]),
+            "gamma1_per_us": float(gamma[index]),
+            "gamma1_err_per_us": float(gamma_error[index]),
+            "t1_us": float(t1[index]),
+            "t1_err_us": float(t1_error[index]),
+            "valid": bool(valid[index]),
+            "reference_contrast": float(contrast[index]),
+            "fit_success": bool(fit_success[index]),
+            "fit_deviance": float(fit_deviance[index]),
+            "scan_direction_delta": float(direction_delta[index]),
+        }
+        row.update({key: _scalar(vector[index]) for key, vector in raw_vectors.items()})
+        rows.append(row)
+    return rows
+
+
+def _finite_values(rows: Sequence[Mapping[str, Any]], key: str) -> np.ndarray:
+    values = np.asarray([row.get(key, np.nan) for row in rows], dtype=float)
+    return values[np.isfinite(values)]
+
+
+def _nanmedian(values: np.ndarray) -> float:
+    return float(np.median(values)) if len(values) else float("nan")
+
+
+def _longest_invalid_run(valid: np.ndarray) -> int:
+    longest = current = 0
+    for value in valid:
+        if value:
+            current = 0
+        else:
+            current += 1
+            longest = max(longest, current)
+    return longest
+
+
+def summarize_pass(rows: Sequence[Mapping[str, Any]], *, duration_s: float | None = None) -> dict[str, Any]:
+    """Compute robust protocol-comparison metrics from normalized pass rows."""
+    if not rows:
+        raise ValueError("cannot summarize an empty pass")
+    gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
+    declared_valid = np.asarray([bool(row.get("valid", False)) for row in rows])
+    valid = declared_valid & np.isfinite(gamma)
+    p0 = np.asarray([row.get("P0", np.nan) for row in rows], dtype=float)
+    p1 = np.asarray([row.get("P1", np.nan) for row in rows], dtype=float)
+    roughness = np.abs(np.diff(gamma, n=2))
+    first = rows[0]
+    summary = {key: first.get(key) for key in SUMMARY_COLUMNS[:6]}
+    summary.update({
+        "valid_fraction": float(np.count_nonzero(valid) / len(rows)),
+        "longest_invalid_run": _longest_invalid_run(valid),
+        "median_reference_contrast": _nanmedian(np.abs(p1 - p0)[np.isfinite(p0) & np.isfinite(p1)]),
+        "median_gamma1_err_per_us": _nanmedian(_finite_values(rows, "gamma1_err_per_us")),
+        "p90_gamma1_err_per_us": float(np.percentile(_finite_values(rows, "gamma1_err_per_us"), 90)) if len(_finite_values(rows, "gamma1_err_per_us")) else float("nan"),
+        "median_abs_direction_delta": _nanmedian(np.abs(_finite_values(rows, "scan_direction_delta"))),
+        "median_fit_deviance": _nanmedian(_finite_values(rows, "fit_deviance")),
+        "median_local_roughness": _nanmedian(roughness[np.isfinite(roughness)]),
+        "duration_s": float(duration_s) if duration_s is not None else float("nan"),
+    })
+    return summary
+
+
+def compare_sentinels(
+    opening_rows: Sequence[Mapping[str, Any]], closing_rows: Sequence[Mapping[str, Any]]
+) -> dict[str, float | int]:
+    """Measure opening-to-closing Gamma1 drift in absolute and sigma units."""
+    count = min(len(opening_rows), len(closing_rows))
+    opening = np.asarray([row.get("gamma1_per_us", np.nan) for row in opening_rows[:count]], dtype=float)
+    closing = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing_rows[:count]], dtype=float)
+    opening_error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in opening_rows[:count]], dtype=float)
+    closing_error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in closing_rows[:count]], dtype=float)
+    delta = closing - opening
+    finite_delta = np.abs(delta[np.isfinite(delta)])
+    sigma = np.sqrt(opening_error**2 + closing_error**2)
+    sigma_units = np.abs(delta) / sigma
+    return {
+        "median_abs_delta_per_us": _nanmedian(finite_delta),
+        "median_abs_delta_sigma": _nanmedian(sigma_units[np.isfinite(sigma_units)]),
+        "finite_count": int(len(finite_delta)),
+    }
+
+
+def _column_order(rows: Sequence[Mapping[str, Any]], preferred: Sequence[str]) -> list[str]:
+    all_columns = {key for row in rows for key in row}
+    extras = sorted(all_columns.difference(preferred))
+    return [key for key in preferred if key in all_columns] + extras
+
+
+def _csv_value(value: Any) -> Any:
+    if value is None or (isinstance(value, float) and not math.isfinite(value)):
+        return ""
+    return _scalar(value)
+
+
+def _write_csv(path: str | Path, rows: Sequence[Mapping[str, Any]], columns: Sequence[str]) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: _csv_value(row.get(key)) for key in columns})
+    return destination
+
+
+def write_pass_csv(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> Path:
+    """Write normalized pass rows with stable common columns and retained raw data."""
+    return _write_csv(path, rows, _column_order(rows, PASS_ROW_COLUMNS))
+
+
+def write_summary_csv(path: str | Path, summaries: Sequence[Mapping[str, Any]]) -> Path:
+    """Write one stable metrics row for each benchmark pass."""
+    return _write_csv(path, summaries, _column_order(summaries, SUMMARY_COLUMNS))
+
+
+def _session_rows(session: Any) -> dict[int, Sequence[Mapping[str, Any]]]:
+    if isinstance(session, Mapping):
+        passes = session.get("passes", session)
+    else:
+        passes = session
+    if isinstance(passes, Mapping):
+        return {int(index): rows for index, rows in passes.items() if isinstance(rows, Sequence)}
+    result: dict[int, Sequence[Mapping[str, Any]]] = {}
+    for entry in passes:
+        if not isinstance(entry, Mapping) or "rows" not in entry:
+            continue
+        index = entry.get("index", entry.get("pass_index"))
+        if index is not None:
+            result[int(index)] = entry["rows"]
+    return result
+
+
+def _plot_linecut(axis: Any, rows: Sequence[Mapping[str, Any]], title: str) -> None:
+    frequency = np.asarray([row.get("realized_frequency_ghz", row.get("target_frequency_ghz", np.nan)) for row in rows], dtype=float)
+    gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
+    valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
+    axis.plot(frequency[valid], gamma[valid], color="C0", linewidth=1.0)
+    invalid_count = int(np.count_nonzero(~valid))
+    if invalid_count:
+        finite_gamma = gamma[valid]
+        marker_y = float(np.min(finite_gamma)) if len(finite_gamma) else 0.0
+        axis.scatter(frequency[~valid], np.full(invalid_count, marker_y), marker="x", color="crimson", s=16, label="masked")
+    axis.set_title(f"{title}\ninvalid {invalid_count}/{len(rows)}", fontsize=8)
+    axis.set_xlabel("frequency (GHz)", fontsize=7)
+    axis.set_ylabel("Gamma1 (1/us)", fontsize=7)
+    axis.tick_params(labelsize=7)
+
+
+def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str, int]:
+    """Render 16 primary Gamma1 linecuts plus drift and matched-budget diagnostics."""
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    rows_by_index = _session_rows(session)
+    figure = plt.figure(figsize=(18, 18), constrained_layout=True)
+    grid = figure.add_gridspec(5, 4)
+    for index in range(16):
+        axis = figure.add_subplot(grid[index // 4, index % 4])
+        rows = rows_by_index.get(index, ())
+        if rows:
+            _plot_linecut(axis, rows, f"pass {index:02d}")
+        else:
+            axis.text(0.5, 0.5, "missing pass", ha="center", va="center")
+            axis.set_title(f"pass {index:02d}\ninvalid 0/0", fontsize=8)
+    sentinel_axis = figure.add_subplot(grid[4, 0])
+    opening, closing = rows_by_index.get(0, ()), rows_by_index.get(16, ())
+    if opening and closing:
+        count = min(len(opening), len(closing))
+        frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in opening[:count]], dtype=float)
+        delta = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing[:count]], dtype=float) - np.asarray([row.get("gamma1_per_us", np.nan) for row in opening[:count]], dtype=float)
+        sentinel_axis.plot(frequency, delta, color="C3")
+        sentinel_axis.set_title("opening / closing sentinel difference")
+    else:
+        sentinel_axis.text(0.5, 0.5, "sentinel unavailable", ha="center", va="center")
+    sentinel_axis.set_xlabel("frequency (GHz)")
+    sentinel_axis.set_ylabel("delta Gamma1 (1/us)")
+
+    overlay_axis = figure.add_subplot(grid[4, 1:3])
+    pairs: dict[tuple[Any, ...], dict[str, Sequence[Mapping[str, Any]]]] = {}
+    for index, rows in rows_by_index.items():
+        if index >= 16 or not rows:
+            continue
+        first = rows[0]
+        key = (first.get("protocol"), first.get("shots_per_condition"), first.get("condition_count"))
+        pairs.setdefault(key, {})[str(first.get("predistortion"))] = rows
+    for pair_number, mode_rows in enumerate(pairs.values()):
+        for mode, rows in mode_rows.items():
+            frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in rows], dtype=float)
+            gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
+            error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in rows], dtype=float)
+            color = f"C{(pair_number * 2 + (mode == 'on')) % 10}"
+            overlay_axis.plot(frequency, gamma, label=f"pair {pair_number + 1} {mode}", color=color)
+            finite_error = np.where(np.isfinite(error), error, 0.0)
+            overlay_axis.fill_between(frequency, gamma - finite_error, gamma + finite_error, color=color, alpha=0.15)
+    overlay_axis.set_title("matched-budget Gamma1 comparisons")
+    overlay_axis.set_xlabel("frequency (GHz)")
+    overlay_axis.set_ylabel("Gamma1 (1/us)")
+    if pairs:
+        overlay_axis.legend(fontsize=6, ncol=2)
+
+    table_axis = figure.add_subplot(grid[4, 3])
+    table_axis.axis("off")
+    metrics = [summarize_pass(rows) for index, rows in sorted(rows_by_index.items()) if index < 16 and rows]
+    table_data = [[str(metric.get("pass_index", "")), f"{metric['valid_fraction']:.2f}", f"{metric['median_gamma1_err_per_us']:.3g}"] for metric in metrics]
+    table_axis.table(cellText=table_data, colLabels=["pass", "valid", "median err"], loc="center", cellLoc="center")
+    table_axis.set_title("pass metrics")
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(destination, dpi=150)
+    plt.close(figure)
+    return {"primary_map_panels": 16, "sentinel_panels": int(bool(opening and closing))}
