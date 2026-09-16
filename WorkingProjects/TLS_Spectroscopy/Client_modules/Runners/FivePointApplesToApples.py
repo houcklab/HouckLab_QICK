@@ -267,10 +267,15 @@ def resolve_neutral_selection(tls, environ=None, execution_test_mode=""):
     for line in fluxpred_production.describe(choice):
         print(line)
     if choice["mode"] == "neutral" and not execution_test_mode:
-        raise RuntimeError(
-            "Q3_FLUXPRED_MODE=neutral is currently limited to a single-round execution test. "
-            "Set Q3_5PT_EXECUTION_TEST=active (or passive) to collect the full-band hardware "
-            "acceptance map; the synchronized long series remains blocked until that map passes.")
+        acceptance = choice.get("document", {}).get("acceptance", {})
+        required = ("software", "scientific", "hardware")
+        missing = [gate for gate in required if acceptance.get(gate) is not True]
+        if missing:
+            raise RuntimeError(
+                "Q3_FLUXPRED_MODE=neutral is currently limited to a single-round execution test "
+                f"because the model is missing acceptance gate(s): {', '.join(missing)}. "
+                "Set Q3_5PT_EXECUTION_TEST=active (or passive) to collect the full-band hardware "
+                "acceptance map; the synchronized long series remains blocked until that map passes.")
     return choice
 
 

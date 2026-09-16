@@ -1438,7 +1438,7 @@ def test_qick_neutral_execution_test_renders_shared_stateful_step_table(monkeypa
     assert source["multipliers"][-1] == 1.0
 
 
-def test_qick_neutral_model_is_limited_to_one_round_until_hardware_acceptance(monkeypatch):
+def test_qick_unaccepted_neutral_model_is_limited_to_one_round(monkeypatch):
     load_experiments(monkeypatch)
     runner = importlib.import_module(
         f"{PREFIX}.Runners.FivePointApplesToApples"
@@ -1464,6 +1464,36 @@ def test_qick_neutral_model_is_limited_to_one_round_until_hardware_acceptance(mo
         runner.resolve_neutral_selection(
             tls, environ={}, execution_test_mode=""
         )
+
+
+def test_qick_accepted_neutral_model_can_enter_long_series(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(
+        f"{PREFIX}.Runners.FivePointApplesToApples"
+    )
+    choice = {
+        "mode": "neutral",
+        "diagnostic_override": False,
+        "document": {
+            "acceptance": {
+                "software": True,
+                "scientific": True,
+                "hardware": True,
+            }
+        },
+    }
+    monkeypatch.setattr(
+        runner.fluxpred_production, "selection", lambda *args, **kwargs: choice
+    )
+    monkeypatch.setattr(runner.fluxpred_production, "describe", lambda value: [])
+    tls = types.SimpleNamespace(
+        _baseline_dc_offset=lambda: -25146.0,
+        TARGET_DC_OFFSET=-14750.0,
+    )
+
+    assert runner.resolve_neutral_selection(
+        tls, environ={}, execution_test_mode=""
+    ) is choice
 
 
 def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatch, tmp_path):
