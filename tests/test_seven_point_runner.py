@@ -18,5 +18,5 @@ def test_q3_seven_condition_runner_contract():
     assert cfg["shots_per_condition"] == 180
     assert cfg["freq_min_ghz"] == 3.9
     assert cfg["freq_max_ghz"] == 4.3
-    assert cfg["sync_slot_s"] == 180.0
+    assert cfg["sync_slot_s"] == 210.0
     assert cfg["sync_session"] == "q3_q5_7pt_apples_20260915_v1"

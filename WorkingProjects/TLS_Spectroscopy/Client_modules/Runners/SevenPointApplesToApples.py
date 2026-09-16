@@ -15,7 +15,7 @@ P6_7PT_APPLES_TO_APPLES = {
     "shots_per_condition": 180,
     "reverse_survival_order": True,
     "sync_session": "q3_q5_7pt_apples_20260915_v1",
-    "sync_slot_s": 180.0,
+    "sync_slot_s": 210.0,
 }
 
 
