@@ -32,13 +32,17 @@ PASS_ROW_COLUMNS = (
     "realized_frequency_ghz", "flux_coordinate", "gamma1_per_us",
     "gamma1_err_per_us", "t1_us", "t1_err_us", "valid",
     "reference_contrast", "fit_success", "fit_deviance",
-    "scan_direction_delta",
+    "scan_direction_delta", "requested_flux_coordinate",
+    "realized_flux_coordinate", "delays_us", "pass_started_at",
+    "pass_ended_at", "normalization_denominator", "residual_deviance",
+    "non_exponential_diagnostic",
 )
 SUMMARY_COLUMNS = (
     "pass_index", "pass_id", "protocol", "predistortion",
     "shots_per_condition", "condition_count", "valid_fraction",
     "longest_invalid_run", "median_reference_contrast",
-    "median_gamma1_err_per_us", "p90_gamma1_err_per_us",
+    "uncertainty_available_fraction", "median_gamma1_err_per_us",
+    "p90_gamma1_err_per_us",
     "median_abs_direction_delta", "median_fit_deviance",
     "median_local_roughness", "duration_s",
 )
@@ -374,6 +378,7 @@ def new_manifest(
         raise ValueError("device, controller, and calibration_id must be non-empty strings")
     return {
         "schema": _MANIFEST_SCHEMA,
+        "plan": canonical_document(plan),
         "plan_fingerprint": plan_fingerprint(plan),
         "device": device,
         "controller": controller,
@@ -507,6 +512,7 @@ def load_resume_manifest(
     _validate_plan(plan)
     manifest = _read_manifest(manifest_path)
     _require_manifest_match(manifest, "schema", _MANIFEST_SCHEMA)
+    _require_manifest_match(manifest, "plan", canonical_document(plan))
     _require_manifest_match(manifest, "plan_fingerprint", plan_fingerprint(plan))
     _require_manifest_match(manifest, "device", device)
     _require_manifest_match(manifest, "controller", controller)
@@ -531,6 +537,7 @@ def pending_passes(manifest: Mapping[str, Any], plan: BenchmarkPlan) -> tuple[Be
     entries = manifest.get("passes")
     if not isinstance(entries, list) or len(entries) != len(plan.passes):
         raise ValueError("manifest pass list does not match plan")
+    _verify_completed_artifacts(manifest)
     statuses = {entry.get("index"): entry.get("status") for entry in entries if isinstance(entry, Mapping)}
     return tuple(item for item in plan.passes if statuses.get(item.index) != "complete")
 
@@ -541,6 +548,18 @@ def _as_vector(data: Mapping[str, Any], key: str, count: int, default: Any) -> n
     vector = np.asarray(data[key])
     if vector.ndim != 1 or len(vector) != count:
         raise ValueError(f"{key} must be a one-dimensional array with {count} values")
+    return vector
+
+
+def _optional_vector(value: Any, count: int, field: str) -> np.ndarray:
+    """Return an explicitly supplied scalar/vector, preserving absent values as NaN."""
+    if value is None:
+        return np.full(count, np.nan)
+    vector = np.asarray(value)
+    if vector.ndim == 0:
+        return np.full(count, vector.item())
+    if vector.ndim != 1 or len(vector) != count:
+        raise ValueError(f"{field} must be a scalar or one-dimensional array with {count} values")
     return vector
 
 
@@ -556,13 +575,26 @@ def _metric_prefix(item: BenchmarkPass) -> str:
 
 def normalize_experiment_data(
     item: BenchmarkPass, data: Mapping[str, Any], *, target_frequency_ghz: Sequence[float],
-    realized_frequency_ghz: Sequence[float], flux_coordinate: Sequence[float],
+    realized_frequency_ghz: Sequence[float], flux_coordinate: Sequence[float] | None = None,
+    requested_flux_coordinate: Sequence[float] | None = None,
+    realized_flux_coordinate: Sequence[float] | None = None,
+    delays_us: Sequence[float] | None = None, pass_started_at: str | None = None,
+    pass_ended_at: str | None = None, normalization_denominator: Any = None,
+    residual_deviance: Any = None, non_exponential_diagnostic: Any = None,
 ) -> list[dict[str, Any]]:
     """Convert existing 3-point or n-point fit outputs to portable row records."""
     count = len(target_frequency_ghz)
     target = _as_vector({"target": target_frequency_ghz}, "target", count, np.nan).astype(float)
     realized = _as_vector({"realized": realized_frequency_ghz}, "realized", count, np.nan).astype(float)
-    flux = _as_vector({"flux": flux_coordinate}, "flux", count, np.nan)
+    flux = _optional_vector(flux_coordinate, count, "flux_coordinate")
+    requested_flux = _optional_vector(
+        requested_flux_coordinate if requested_flux_coordinate is not None else data.get("requested_flux_coordinate"),
+        count, "requested_flux_coordinate",
+    )
+    realized_flux = _optional_vector(
+        realized_flux_coordinate if realized_flux_coordinate is not None else data.get("realized_flux_coordinate"),
+        count, "realized_flux_coordinate",
+    )
     prefix = _metric_prefix(item)
     gamma = _as_vector(data, f"inv_{prefix}_per_us", count, np.nan).astype(float)
     gamma_error = _as_vector(data, f"inv_{prefix}_err_per_us", count, np.nan).astype(float)
@@ -574,6 +606,18 @@ def normalize_experiment_data(
     direction_delta = _as_vector(
         data, f"inv_{prefix}_per_us_scan_direction_delta", count, np.nan
     ).astype(float)
+    denominator = _optional_vector(
+        normalization_denominator if normalization_denominator is not None else data.get("normalization_denominator"),
+        count, "normalization_denominator",
+    )
+    residual = _optional_vector(
+        residual_deviance if residual_deviance is not None else data.get(f"{prefix}_residual_deviance"),
+        count, "residual_deviance",
+    )
+    non_exponential = _optional_vector(
+        non_exponential_diagnostic if non_exponential_diagnostic is not None else data.get(f"{prefix}_non_exponential_diagnostic"),
+        count, "non_exponential_diagnostic",
+    )
     p0 = _as_vector(data, "P0", count, np.nan).astype(float)
     p1 = _as_vector(data, "P1", count, np.nan).astype(float)
     contrast = _as_vector(data, f"ref_contrast_{prefix.removeprefix('T1_')}", count, np.nan).astype(float)
@@ -589,6 +633,11 @@ def normalize_experiment_data(
             raw_keys.append(key)
     raw_keys.sort(key=lambda key: (not key.startswith("P"), key))
     raw_vectors = {key: _as_vector(data, key, count, np.nan) for key in raw_keys}
+    actual_delays = list(item.delays_us if delays_us is None else delays_us)
+    if not actual_delays or not all(math.isfinite(delay) for delay in actual_delays):
+        raise ValueError("delays_us must contain finite values")
+    started_at = pass_started_at if pass_started_at is not None else data.get("pass_started_at")
+    ended_at = pass_ended_at if pass_ended_at is not None else data.get("pass_ended_at")
     rows: list[dict[str, Any]] = []
     for index in range(count):
         row = {
@@ -610,6 +659,14 @@ def normalize_experiment_data(
             "fit_success": bool(fit_success[index]),
             "fit_deviance": float(fit_deviance[index]),
             "scan_direction_delta": float(direction_delta[index]),
+            "requested_flux_coordinate": _scalar(requested_flux[index]),
+            "realized_flux_coordinate": _scalar(realized_flux[index]),
+            "delays_us": actual_delays,
+            "pass_started_at": started_at,
+            "pass_ended_at": ended_at,
+            "normalization_denominator": _scalar(denominator[index]),
+            "residual_deviance": _scalar(residual[index]),
+            "non_exponential_diagnostic": _scalar(non_exponential[index]),
         }
         row.update({key: _scalar(vector[index]) for key, vector in raw_vectors.items()})
         rows.append(row)
@@ -641,6 +698,7 @@ def summarize_pass(rows: Sequence[Mapping[str, Any]], *, duration_s: float | Non
     if not rows:
         raise ValueError("cannot summarize an empty pass")
     gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
+    gamma_error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in rows], dtype=float)
     declared_valid = np.asarray([bool(row.get("valid", False)) for row in rows])
     valid = declared_valid & np.isfinite(gamma)
     p0 = np.asarray([row.get("P0", np.nan) for row in rows], dtype=float)
@@ -652,6 +710,7 @@ def summarize_pass(rows: Sequence[Mapping[str, Any]], *, duration_s: float | Non
         "valid_fraction": float(np.count_nonzero(valid) / len(rows)),
         "longest_invalid_run": _longest_invalid_run(valid),
         "median_reference_contrast": _nanmedian(np.abs(p1 - p0)[np.isfinite(p0) & np.isfinite(p1)]),
+        "uncertainty_available_fraction": float(np.count_nonzero(valid & np.isfinite(gamma_error) & (gamma_error > 0)) / len(rows)),
         "median_gamma1_err_per_us": _nanmedian(_finite_values(rows, "gamma1_err_per_us")),
         "p90_gamma1_err_per_us": float(np.percentile(_finite_values(rows, "gamma1_err_per_us"), 90)) if len(_finite_values(rows, "gamma1_err_per_us")) else float("nan"),
         "median_abs_direction_delta": _nanmedian(np.abs(_finite_values(rows, "scan_direction_delta"))),
@@ -666,19 +725,37 @@ def compare_sentinels(
     opening_rows: Sequence[Mapping[str, Any]], closing_rows: Sequence[Mapping[str, Any]]
 ) -> dict[str, float | int]:
     """Measure opening-to-closing Gamma1 drift in absolute and sigma units."""
-    count = min(len(opening_rows), len(closing_rows))
+    if len(opening_rows) != len(closing_rows):
+        raise ValueError("sentinel frequency coordinate lengths do not align")
+    count = len(opening_rows)
+    for coordinate in ("target_frequency_ghz", "realized_frequency_ghz"):
+        opening_coordinate = np.asarray(
+            [row.get(coordinate, np.nan) for row in opening_rows], dtype=float
+        )
+        closing_coordinate = np.asarray(
+            [row.get(coordinate, np.nan) for row in closing_rows], dtype=float
+        )
+        if not np.array_equal(opening_coordinate, closing_coordinate):
+            raise ValueError(
+                f"sentinel {coordinate.replace('_ghz', '').replace('_', ' ')} coordinates do not align"
+            )
     opening = np.asarray([row.get("gamma1_per_us", np.nan) for row in opening_rows[:count]], dtype=float)
     closing = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing_rows[:count]], dtype=float)
     opening_error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in opening_rows[:count]], dtype=float)
     closing_error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in closing_rows[:count]], dtype=float)
+    opening_valid = np.asarray([bool(row.get("valid", False)) for row in opening_rows[:count]])
+    closing_valid = np.asarray([bool(row.get("valid", False)) for row in closing_rows[:count]])
     delta = closing - opening
-    finite_delta = np.abs(delta[np.isfinite(delta)])
+    valid_delta = opening_valid & closing_valid & np.isfinite(delta)
+    finite_delta = np.abs(delta[valid_delta])
     sigma = np.sqrt(opening_error**2 + closing_error**2)
-    sigma_units = np.abs(delta) / sigma
+    valid_sigma = valid_delta & np.isfinite(opening_error) & np.isfinite(closing_error) & (opening_error > 0) & (closing_error > 0)
+    sigma_units = np.abs(delta[valid_sigma]) / sigma[valid_sigma]
     return {
         "median_abs_delta_per_us": _nanmedian(finite_delta),
         "median_abs_delta_sigma": _nanmedian(sigma_units[np.isfinite(sigma_units)]),
         "finite_count": int(len(finite_delta)),
+        "sigma_finite_count": int(np.count_nonzero(np.isfinite(sigma_units))),
     }
 
 
@@ -749,14 +826,33 @@ def _plot_linecut(axis: Any, rows: Sequence[Mapping[str, Any]], title: str) -> N
 
 
 def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str, int]:
-    """Render 16 primary Gamma1 linecuts plus drift and matched-budget diagnostics."""
+    """Render primary linecuts, full sentinel context, and matched-budget metrics."""
     import matplotlib
 
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
     rows_by_index = _session_rows(session)
-    figure = plt.figure(figsize=(18, 18), constrained_layout=True)
+    durations: dict[int, float] = {}
+    plan_hash = None
+    model_hash = None
+    if isinstance(session, Mapping):
+        plan_hash = session.get("plan_fingerprint")
+        model = session.get("model_provenance")
+        model_hash = model.get("sha256") if isinstance(model, Mapping) else session.get("model_sha256")
+        passes = session.get("passes")
+        if isinstance(passes, Sequence):
+            for entry in passes:
+                if isinstance(entry, Mapping) and entry.get("index") is not None:
+                    duration = entry.get("duration_s")
+                    if isinstance(duration, (int, float)) and math.isfinite(duration):
+                        durations[int(entry["index"])] = float(duration)
+    figure = plt.figure(figsize=(22, 18), constrained_layout=True)
+    figure.suptitle(
+        "Protocol-selection benchmark — "
+        f"plan: {plan_hash or 'unavailable'} | model: {model_hash or 'unavailable'}",
+        fontsize=11,
+    )
     grid = figure.add_gridspec(5, 4)
     for index in range(16):
         axis = figure.add_subplot(grid[index // 4, index % 4])
@@ -766,20 +862,34 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
         else:
             axis.text(0.5, 0.5, "missing pass", ha="center", va="center")
             axis.set_title(f"pass {index:02d}\ninvalid 0/0", fontsize=8)
-    sentinel_axis = figure.add_subplot(grid[4, 0])
+    bottom = grid[4, :].subgridspec(1, 5, width_ratios=(1, 1, 1, 1.8, 1.5))
     opening, closing = rows_by_index.get(0, ()), rows_by_index.get(16, ())
+    opening_axis = figure.add_subplot(bottom[0, 0])
+    closing_axis = figure.add_subplot(bottom[0, 1])
+    sentinel_axis = figure.add_subplot(bottom[0, 2])
     if opening and closing:
-        count = min(len(opening), len(closing))
-        frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in opening[:count]], dtype=float)
-        delta = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing[:count]], dtype=float) - np.asarray([row.get("gamma1_per_us", np.nan) for row in opening[:count]], dtype=float)
-        sentinel_axis.plot(frequency, delta, color="C3")
+        _plot_linecut(opening_axis, opening, "opening sentinel")
+        _plot_linecut(closing_axis, closing, "terminal sentinel")
+        compare_sentinels(opening, closing)
+        frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in opening], dtype=float)
+        opening_gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in opening], dtype=float)
+        closing_gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in closing], dtype=float)
+        valid = (
+            np.asarray([bool(row.get("valid", False)) for row in opening])
+            & np.asarray([bool(row.get("valid", False)) for row in closing])
+            & np.isfinite(opening_gamma)
+            & np.isfinite(closing_gamma)
+        )
+        sentinel_axis.plot(frequency[valid], (closing_gamma - opening_gamma)[valid], color="C3")
         sentinel_axis.set_title("opening / closing sentinel difference")
     else:
+        opening_axis.text(0.5, 0.5, "opening unavailable", ha="center", va="center")
+        closing_axis.text(0.5, 0.5, "terminal unavailable", ha="center", va="center")
         sentinel_axis.text(0.5, 0.5, "sentinel unavailable", ha="center", va="center")
     sentinel_axis.set_xlabel("frequency (GHz)")
     sentinel_axis.set_ylabel("delta Gamma1 (1/us)")
 
-    overlay_axis = figure.add_subplot(grid[4, 1:3])
+    overlay_axis = figure.add_subplot(bottom[0, 3])
     pairs: dict[tuple[Any, ...], dict[str, Sequence[Mapping[str, Any]]]] = {}
     for index, rows in rows_by_index.items():
         if index >= 16 or not rows:
@@ -787,29 +897,74 @@ def render_comparison_figure(session: Any, output_path: str | Path) -> dict[str,
         first = rows[0]
         key = (first.get("protocol"), first.get("shots_per_condition"), first.get("condition_count"))
         pairs.setdefault(key, {})[str(first.get("predistortion"))] = rows
+    uncertainty_band_series = 0
+    uncertainty_unavailable_series = 0
     for pair_number, mode_rows in enumerate(pairs.values()):
         for mode, rows in mode_rows.items():
             frequency = np.asarray([row.get("target_frequency_ghz", np.nan) for row in rows], dtype=float)
             gamma = np.asarray([row.get("gamma1_per_us", np.nan) for row in rows], dtype=float)
             error = np.asarray([row.get("gamma1_err_per_us", np.nan) for row in rows], dtype=float)
+            valid = np.asarray([bool(row.get("valid", False)) for row in rows]) & np.isfinite(gamma)
+            uncertain = valid & np.isfinite(error) & (error > 0)
             color = f"C{(pair_number * 2 + (mode == 'on')) % 10}"
-            overlay_axis.plot(frequency, gamma, label=f"pair {pair_number + 1} {mode}", color=color)
-            finite_error = np.where(np.isfinite(error), error, 0.0)
-            overlay_axis.fill_between(frequency, gamma - finite_error, gamma + finite_error, color=color, alpha=0.15)
+            label = f"pair {pair_number + 1} {mode}"
+            if not np.any(uncertain):
+                label += " (uncertainty unavailable)"
+                uncertainty_unavailable_series += 1
+            elif not np.all(uncertain[valid]):
+                label += " (uncertainty partial)"
+            overlay_axis.plot(frequency[valid], gamma[valid], label=label, color=color)
+            if np.any(uncertain):
+                overlay_axis.fill_between(
+                    frequency, gamma - error, gamma + error, where=uncertain,
+                    color=color, alpha=0.15,
+                )
+                uncertainty_band_series += 1
     overlay_axis.set_title("matched-budget Gamma1 comparisons")
     overlay_axis.set_xlabel("frequency (GHz)")
     overlay_axis.set_ylabel("Gamma1 (1/us)")
     if pairs:
         overlay_axis.legend(fontsize=6, ncol=2)
+    if uncertainty_unavailable_series:
+        overlay_axis.text(
+            0.01, 0.01,
+            f"{uncertainty_unavailable_series} series: uncertainty unavailable",
+            transform=overlay_axis.transAxes, fontsize=7, va="bottom",
+        )
 
-    table_axis = figure.add_subplot(grid[4, 3])
+    table_axis = figure.add_subplot(bottom[0, 4])
     table_axis.axis("off")
-    metrics = [summarize_pass(rows) for index, rows in sorted(rows_by_index.items()) if index < 16 and rows]
-    table_data = [[str(metric.get("pass_index", "")), f"{metric['valid_fraction']:.2f}", f"{metric['median_gamma1_err_per_us']:.3g}"] for metric in metrics]
-    table_axis.table(cellText=table_data, colLabels=["pass", "valid", "median err"], loc="center", cellLoc="center")
+    metrics = [
+        summarize_pass(rows, duration_s=durations.get(index))
+        for index, rows in sorted(rows_by_index.items()) if index < 16 and rows
+    ]
+    def metric_value(value: Any, formatter: str) -> str:
+        return format(value, formatter) if isinstance(value, (int, float)) and math.isfinite(value) else "unavailable"
+    table_columns = ["pass", "valid", "uncertainty", "direction", "runtime", "contrast"]
+    table_data = [
+        [
+            str(metric.get("pass_index", "")),
+            metric_value(metric["valid_fraction"], ".2f"),
+            f"{metric_value(metric['uncertainty_available_fraction'], '.0%')} / {metric_value(metric['median_gamma1_err_per_us'], '.3g')}",
+            metric_value(metric["median_abs_direction_delta"], ".3g"),
+            metric_value(metric["duration_s"], ".2f"),
+            metric_value(metric["median_reference_contrast"], ".3g"),
+        ]
+        for metric in metrics
+    ]
+    table_axis.table(cellText=table_data, colLabels=table_columns, loc="center", cellLoc="center")
     table_axis.set_title("pass metrics")
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(destination, dpi=150)
     plt.close(figure)
-    return {"primary_map_panels": 16, "sentinel_panels": int(bool(opening and closing))}
+    return {
+        "primary_map_panels": 16,
+        "sentinel_panels": 3 if opening and closing else 0,
+        "sentinel_linecut_panels": 2 if opening and closing else 0,
+        "uncertainty_band_series": uncertainty_band_series,
+        "uncertainty_unavailable_series": uncertainty_unavailable_series,
+        "metrics_table_columns": table_columns,
+        "plan_fingerprint": plan_hash,
+        "model_sha256": model_hash,
+    }

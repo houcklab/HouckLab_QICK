@@ -269,6 +269,7 @@ def test_pass_is_complete_only_after_both_artifacts_and_checksums_exist(tmp_path
     )
     assert completed["passes"][0]["status"] == "complete"
     assert completed["passes"][0]["artifacts"]["raw_csv"]["sha256"]
+    assert completed["plan"] == benchmark.canonical_document(plan)
     assert benchmark.pending_passes(completed, plan) == plan.passes[1:]
 
 
@@ -338,6 +339,18 @@ def test_failed_pass_is_recorded_but_remains_pending(tmp_path):
     assert benchmark.pending_passes(failed, plan)[0].index == 0
 
 
+def test_pending_passes_rejects_a_forged_complete_entry_without_artifacts():
+    plan = benchmark.smoke_plan()
+    manifest = benchmark.new_manifest(
+        plan, device="q3", controller="qick", code_commit="abc",
+        model_provenance={"sha256": "1" * 64}, calibration_id="cal-1",
+    )
+    manifest["passes"][0]["status"] = "complete"
+
+    with pytest.raises(ValueError, match="artifacts"):
+        benchmark.pending_passes(manifest, plan)
+
+
 def test_normalization_preserves_raw_populations_and_directional_diagnostics():
     spec = benchmark.full_plan().passes[8]
     data = fake_five_point_data(points=801)
@@ -347,12 +360,62 @@ def test_normalization_preserves_raw_populations_and_directional_diagnostics():
         target_frequency_ghz=np.linspace(4.3, 3.9, 801),
         realized_frequency_ghz=np.linspace(4.3, 3.9, 801),
         flux_coordinate=np.arange(801),
+        requested_flux_coordinate=np.arange(801) + 10,
+        realized_flux_coordinate=np.arange(801) + 10.25,
+        delays_us=(40.0, 80.0, 200.0),
+        pass_started_at="2026-09-16T12:00:00-04:00",
+        pass_ended_at="2026-09-16T12:02:00-04:00",
+        normalization_denominator=np.full(801, 0.8),
+        residual_deviance=np.full(801, 0.02),
+        non_exponential_diagnostic=np.full(801, 0.03),
     )
     assert len(rows) == 801
     assert {"P0", "P1", "Ps_40us", "Ps_80us", "Ps_200us", "P0_scan_up"} <= rows[0].keys()
     assert {"gamma1_per_us", "gamma1_err_per_us", "valid", "fit_deviance", "scan_direction_delta"} <= rows[0].keys()
     assert rows[0]["gamma1_per_us"] == pytest.approx(0.01)
     assert rows[0]["scan_direction_delta"] == pytest.approx(0.001)
+    assert rows[0]["flux_coordinate"] == 0
+    assert rows[0]["requested_flux_coordinate"] == 10
+    assert rows[0]["realized_flux_coordinate"] == pytest.approx(10.25)
+    assert rows[0]["delays_us"] == [40.0, 80.0, 200.0]
+    assert rows[0]["pass_started_at"] == "2026-09-16T12:00:00-04:00"
+    assert rows[0]["pass_ended_at"] == "2026-09-16T12:02:00-04:00"
+    assert rows[0]["normalization_denominator"] == pytest.approx(0.8)
+    assert rows[0]["residual_deviance"] == pytest.approx(0.02)
+    assert rows[0]["non_exponential_diagnostic"] == pytest.approx(0.03)
+    assert {
+        "requested_flux_coordinate", "realized_flux_coordinate", "delays_us",
+        "pass_started_at", "pass_ended_at", "normalization_denominator",
+        "residual_deviance", "non_exponential_diagnostic",
+    } <= set(benchmark.PASS_ROW_COLUMNS)
+
+
+def test_three_point_normalization_keeps_unknown_uncertainty_unavailable(tmp_path):
+    item = benchmark.full_plan().passes[0]
+    points = 3
+    rows = benchmark.normalize_experiment_data(
+        item,
+        {
+            "P0": np.full(points, 0.1),
+            "P1": np.full(points, 0.9),
+            "Ps": np.full(points, 0.5),
+            "inv_T1_3pt_per_us": np.full(points, 0.01),
+            "T1_3pt_us": np.full(points, 100.0),
+            "T1_3pt_valid_mask": np.ones(points, dtype=bool),
+        },
+        target_frequency_ghz=np.linspace(4.3, 4.2, points),
+        realized_frequency_ghz=np.linspace(4.3, 4.2, points),
+        flux_coordinate=np.arange(points),
+    )
+    assert all(np.isnan(row["gamma1_err_per_us"]) for row in rows)
+    output = tmp_path / "three_point.png"
+    result = benchmark.render_comparison_figure(
+        {"passes": [{"index": 0, "rows": rows}, {"index": 16, "rows": rows}]},
+        output,
+    )
+    assert output.exists()
+    assert result["uncertainty_band_series"] == 0
+    assert result["uncertainty_unavailable_series"] >= 1
 
 
 def test_summary_flags_nan_region_direction_shift_and_linewidth_shift():
@@ -376,6 +439,27 @@ def test_opening_and_closing_sentinels_report_drift_in_sigma_units():
     assert result["median_abs_delta_sigma"] > 2.0
 
 
+def test_sentinel_comparison_rejects_misaligned_frequency_coordinates():
+    opening = synthetic_rows()
+    closing = synthetic_rows(gamma_offset=0.004)
+    closing[2]["realized_frequency_ghz"] -= 0.001
+
+    with pytest.raises(ValueError, match="realized frequency"):
+        benchmark.compare_sentinels(opening, closing)
+
+
+def test_sentinel_comparison_excludes_invalid_values_and_unknown_uncertainty():
+    opening = synthetic_rows(gamma_error=np.nan)
+    closing = synthetic_rows(gamma_offset=0.004, gamma_error=np.nan)
+    for row in opening + closing:
+        row["valid"] = False
+    result = benchmark.compare_sentinels(opening, closing)
+    assert result["finite_count"] == 0
+    assert result["sigma_finite_count"] == 0
+    assert np.isnan(result["median_abs_delta_per_us"])
+    assert np.isnan(result["median_abs_delta_sigma"])
+
+
 def test_csv_summary_and_linecut_figure_artifacts_are_written(tmp_path):
     rows = synthetic_rows()
     raw_path = tmp_path / "pass_raw.csv"
@@ -389,9 +473,19 @@ def test_csv_summary_and_linecut_figure_artifacts_are_written(tmp_path):
     assert "median_local_roughness" in summary_path.read_text()
 
     primary = {index: [dict(row, pass_index=index, pass_id=f"p{index:02d}") for row in rows] for index in range(16)}
-    session = {"passes": [{"index": index, "rows": pass_rows} for index, pass_rows in primary.items()]}
+    session = {
+        "plan_fingerprint": "f" * 64,
+        "model_provenance": {"sha256": "a" * 64},
+        "passes": [{"index": index, "rows": pass_rows} for index, pass_rows in primary.items()],
+    }
     session["passes"].append({"index": 16, "rows": synthetic_rows(gamma_offset=0.002)})
     metadata = benchmark.render_comparison_figure(session, figure_path)
     assert figure_path.exists() and figure_path.stat().st_size > 2_000
     assert metadata["primary_map_panels"] == 16
     assert metadata["sentinel_panels"] >= 1
+    assert metadata["sentinel_linecut_panels"] == 2
+    assert metadata["plan_fingerprint"] == "f" * 64
+    assert metadata["model_sha256"] == "a" * 64
+    assert metadata["metrics_table_columns"] == [
+        "pass", "valid", "uncertainty", "direction", "runtime", "contrast"
+    ]
