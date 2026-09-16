@@ -293,22 +293,23 @@ def resolve_neutral_selection(tls, environ=None, execution_test_mode=""):
 
 
 def render_neutral_scan_compensation(choice, params):
-    """Render the shared model for QICK's existing stateful round trip."""
-    maximum_hold_ns = 1000.0 * (
-        float(params["flux_settle_us"])
-        + max(
-            float(params["reference_hold_us"]),
-            *[float(value) for value in params["decay_delays_us"]],
+    """Render the shared model at every exact production hold."""
+    settle_us = float(params["flux_settle_us"])
+    holds_ns = tuple(dict.fromkeys(
+        1000.0 * (settle_us + float(value))
+        for value in (
+            params["reference_hold_us"],
+            *params["decay_delays_us"],
         )
-    )
-    return fluxpred_production.neutral_step_table(
+    ))
+    return fluxpred_production.neutral_lifecycle_table(
         choice,
-        max_hold_ns=maximum_hold_ns,
+        holds_ns=holds_ns,
         recovery_ns=1000.0 * float(params["flux_predistortion_recovery_us"]),
-        schedule_first_ns=4_000.0,
+        schedule_first_ns=500.0,
         schedule_growth=1.2,
         schedule_max_ns=100_000.0,
-        quantum_ns=1_000.0,
+        quantum_ns=4.0,
     )
 
 

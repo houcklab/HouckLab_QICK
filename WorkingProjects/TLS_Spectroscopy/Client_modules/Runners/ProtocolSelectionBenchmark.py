@@ -18,6 +18,7 @@ from time import monotonic
 import traceback
 
 from . import protocol_selection_benchmark as benchmark
+from fluxpred import production as fluxpred_production
 
 
 def runtime_settings(environ=None):
@@ -40,8 +41,7 @@ def runtime_settings(environ=None):
 
 def unity_timing_table(on):
     """Disable correction while retaining the exact stateful timing schedule."""
-    off = deepcopy(on)
-    off["multipliers"] = [1.0] * len(on["multipliers"])
+    off = fluxpred_production.timing_matched_unity(on)
     off["benchmark_predistortion_mode"] = "timing_matched_unity"
     off["source_model_sha256"] = on.get("model_sha256")
     return off

@@ -1238,6 +1238,47 @@ def test_stateful_return_tail_can_finish_before_payload_readout(monkeypatch):
     assert telemetry["flux_predistortion_tail_overlaps_payload_readout"] is False
 
 
+def test_qick_round_trip_prefers_exact_hold_specific_lifecycle_command():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+    compensation = {
+        "segment_edges_ns": [0.0, 42_500.0],
+        "multipliers": [1.0, 1.0],
+        "lifecycle_conditions": [{
+            "hold_ns": 2_500.0,
+            "edges_ns": [0.0, 500.0, 2_500.0, 3_000.0, 42_500.0],
+            "values": [1.20, 1.10, -0.30, -0.10],
+            "terminal_tail_bound": 0.02,
+        }],
+        "preserve_timing_segments": True,
+    }
+
+    outbound, recovery = ff_pulse.compensation_round_trip_segments(
+        compensation, hold_us=2.5, recovery_us=40.0)
+
+    np.testing.assert_allclose(outbound, [(1.20, 0.5), (1.10, 2.0)])
+    np.testing.assert_allclose(recovery, [(-0.30, 0.5), (-0.10, 39.5)])
+
+
+def test_qick_lifecycle_lookup_fails_closed_for_an_unrendered_hold():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+    compensation = {
+        "segment_edges_ns": [0.0, 42_500.0],
+        "multipliers": [1.0, 1.0],
+        "lifecycle_conditions": [{
+            "hold_ns": 2_500.0,
+            "edges_ns": [0.0, 2_500.0, 42_500.0],
+            "values": [1.0, 0.0],
+            "terminal_tail_bound": 0.0,
+        }],
+    }
+
+    with pytest.raises(ValueError, match="no lifecycle command"):
+        ff_pulse.compensation_round_trip_segments(
+            compensation, hold_us=40.5, recovery_us=40.0)
+
+
 def test_post_return_reference_prepares_excited_state_after_flux_lifecycle(monkeypatch):
     """The diagnostic P1 pulse must not experience the target or return wait."""
     module, cls = program_type()
@@ -1451,7 +1492,7 @@ def test_blank_q3_correction_override_preserves_automatic_discovery(monkeypatch)
     assert mode == "distortion-corrected"
 
 
-def test_qick_neutral_execution_test_renders_shared_stateful_step_table(monkeypatch):
+def test_qick_neutral_execution_test_renders_hold_specific_lifecycles(monkeypatch):
     load_experiments(monkeypatch)
     runner = importlib.import_module(
         f"{PREFIX}.Runners.FivePointApplesToApples"
@@ -1478,9 +1519,15 @@ def test_qick_neutral_execution_test_renders_shared_stateful_step_table(monkeypa
 
     source = runner.render_neutral_scan_compensation(choice, params)
 
-    assert source["method"] == "neutral_parallel_highpass_inverse_v1"
+    assert source["method"] == "neutral_condition_lifecycle_v1"
     assert source["segment_edges_ns"][-1] == pytest.approx(240_500.0)
     assert source["multipliers"][-1] == 1.0
+    assert [entry["hold_ns"] for entry in source["lifecycle_conditions"]] == [
+        2_500.0, 40_500.0, 80_500.0, 200_500.0,
+    ]
+    for entry in source["lifecycle_conditions"]:
+        return_index = entry["edges_ns"].index(entry["hold_ns"])
+        assert entry["edges_ns"][return_index + 1] - entry["hold_ns"] == 500.0
 
 
 def test_qick_unaccepted_neutral_model_is_limited_to_one_round(monkeypatch):

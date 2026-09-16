@@ -145,6 +145,38 @@ def test_neutral_step_table_drives_the_existing_stateful_round_trip(tmp_path):
     assert table["multipliers"][0] != pytest.approx(1.0)
 
 
+def test_neutral_lifecycle_table_has_exact_hold_specific_half_us_return_bins(tmp_path):
+    path = model_file(tmp_path, "q3", Q3["park"], Q3["scale"], accepted=True)
+    choice = production.selection(
+        "q3", park=Q3["park"], scale=Q3["scale"],
+        environ={"Q3_FLUXPRED_MODE": "neutral", "Q3_FLUXPRED_MODEL_JSON": str(path)})
+
+    table = production.neutral_lifecycle_table(
+        choice,
+        holds_ns=(2_500.0, 40_500.0, 80_500.0, 200_500.0),
+        recovery_ns=40_000.0,
+        schedule_first_ns=500.0,
+        schedule_growth=1.2,
+        schedule_max_ns=100_000.0,
+        quantum_ns=4.0,
+    )
+
+    assert table["method"] == "neutral_condition_lifecycle_v1"
+    assert table["preserve_timing_segments"] is True
+    assert len(table["lifecycle_conditions"]) == 4
+    assert len(table["segment_edges_ns"]) == len(table["multipliers"])
+    for condition, hold_ns in zip(table["lifecycle_conditions"],
+                                  (2_500.0, 40_500.0, 80_500.0, 200_500.0)):
+        assert condition["hold_ns"] == hold_ns
+        assert condition["edges_ns"][-1] == pytest.approx(hold_ns + 40_000.0)
+        assert len(condition["edges_ns"]) == len(condition["values"]) + 1
+        return_index = condition["edges_ns"].index(hold_ns)
+        assert condition["edges_ns"][return_index + 1] - hold_ns == pytest.approx(500.0)
+        assert condition["values"][return_index] != pytest.approx(0.0)
+        assert condition["terminal_tail_bound"] > 0.0
+    json.dumps(table, allow_nan=False)
+
+
 def test_provenance_is_json_serializable(tmp_path):
     path = model_file(tmp_path, "q5", Q5["park"], Q5["scale"], accepted=True)
     choice = production.selection(

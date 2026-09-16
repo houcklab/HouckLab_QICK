@@ -1,14 +1,30 @@
 import os
+import copy
 from pathlib import Path
 
 import numpy as np
 
 from . import report, schema
-from .core import Command, geometric_schedule, render_on_schedule
+from .core import Command, geometric_schedule, render_on_schedule, tail_bound
 from .validation import shot_schedule
 
 MODES = ("off", "neutral")
 ENV_PREFIX = {"q3": "Q3_FLUXPRED", "q5": "Q5_FLUXPRED"}
+
+
+def timing_matched_unity(compensation):
+    """Remove correction amplitude while preserving every lifecycle edge."""
+    result = copy.deepcopy(compensation)
+    result["multipliers"] = [1.0] * len(result.get("multipliers", ()))
+    for condition in result.get("lifecycle_conditions", ()):
+        hold_ns = float(condition["hold_ns"])
+        edges = [float(value) for value in condition["edges_ns"]]
+        condition["values"] = [
+            1.0 if start < hold_ns - 1e-9 else 0.0
+            for start in edges[:-1]
+        ]
+        condition["terminal_tail_bound"] = 0.0
+    return result
 
 
 def _env(device, name, environ):
@@ -122,6 +138,44 @@ def neutral_step_table(choice, *, max_hold_ns, recovery_ns, schedule_first_ns,
         "model_sha256": str(choice["model_sha256"]),
         "segment_edges_ns": [*command.edges_ns[:-1].tolist(), command.edges_ns[-1]],
         "multipliers": [*command.values.tolist(), 1.0],
+    }
+
+
+def neutral_lifecycle_table(choice, *, holds_ns, recovery_ns, schedule_first_ns,
+                            schedule_growth, schedule_max_ns, quantum_ns):
+    """Render an exact finite-horizon command for every production hold."""
+    if choice.get("mode") != "neutral" or choice.get("model") is None:
+        raise ValueError("neutral_lifecycle_table requires a selected neutral model")
+    holds = tuple(float(value) for value in holds_ns)
+    recovery_ns = float(recovery_ns)
+    if not holds or any(not np.isfinite(value) or value <= 0.0 for value in holds):
+        raise ValueError("holds_ns must contain positive finite durations")
+    if not np.isfinite(recovery_ns) or recovery_ns <= 0.0:
+        raise ValueError("recovery_ns must be finite and positive")
+    fallback = neutral_step_table(
+        choice, max_hold_ns=max(holds), recovery_ns=recovery_ns,
+        schedule_first_ns=schedule_first_ns, schedule_growth=schedule_growth,
+        schedule_max_ns=schedule_max_ns, quantum_ns=quantum_ns)
+    conditions = []
+    for hold_ns in holds:
+        schedule = shot_schedule(
+            amplitude=1.0, hold_ns=hold_ns, recovery_ns=recovery_ns,
+            first_ns=schedule_first_ns, growth=schedule_growth,
+            max_ns=schedule_max_ns, quantum_ns=quantum_ns)
+        command, state = render_on_schedule(choice["model"], schedule)
+        conditions.append({
+            "hold_ns": hold_ns,
+            "edges_ns": command.edges_ns.tolist(),
+            "values": command.values.tolist(),
+            "terminal_tail_bound": tail_bound(state),
+        })
+    return {
+        **fallback,
+        "method": "neutral_condition_lifecycle_v1",
+        "preserve_timing_segments": True,
+        "recovery_ns": recovery_ns,
+        "schedule_first_ns": float(schedule_first_ns),
+        "lifecycle_conditions": conditions,
     }
 
 

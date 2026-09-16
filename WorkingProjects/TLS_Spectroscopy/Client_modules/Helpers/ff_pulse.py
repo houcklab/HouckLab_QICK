@@ -142,6 +142,59 @@ def _merge_adjacent_segments(segments, atol=1e-12, trim_trailing_zero=False):
     return merged
 
 
+def _lifecycle_round_trip_segments(compensation, hold_us, recovery_us):
+    conditions = compensation.get("lifecycle_conditions")
+    if conditions is None:
+        return None
+    hold_ns = 1e3 * float(hold_us)
+    matches = [
+        condition for condition in conditions
+        if abs(float(condition.get("hold_ns", np.nan)) - hold_ns) <= 1e-6
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"no lifecycle command was rendered for hold {hold_us:g} us"
+        )
+    condition = matches[0]
+    edges_us = np.asarray(condition.get("edges_ns", ()), dtype=float) / 1e3
+    values = np.asarray(condition.get("values", ()), dtype=float)
+    if (
+        edges_us.ndim != 1
+        or values.ndim != 1
+        or len(edges_us) != len(values) + 1
+        or len(values) == 0
+        or abs(float(edges_us[0])) > 1e-12
+        or np.any(np.diff(edges_us) <= 0.0)
+        or not np.all(np.isfinite(edges_us))
+        or not np.all(np.isfinite(values))
+    ):
+        raise ValueError("invalid lifecycle command")
+    stop_us = float(edges_us[-1])
+    if recovery_us is not None:
+        stop_us = min(stop_us, float(hold_us) + float(recovery_us))
+    if stop_us < float(hold_us) - 1e-9:
+        raise ValueError("lifecycle command ends before its return edge")
+    bounds = np.unique(np.r_[0.0, edges_us, float(hold_us), stop_us])
+    bounds = bounds[(bounds >= -1e-12) & (bounds <= stop_us + 1e-12)]
+    segments = []
+    for start, stop in zip(bounds[:-1], bounds[1:]):
+        if stop <= start + 1e-12:
+            continue
+        midpoint = 0.5 * (start + stop)
+        index = min(
+            max(int(np.searchsorted(edges_us, midpoint, side="right") - 1), 0),
+            len(values) - 1,
+        )
+        segments.append((float(values[index]), float(stop - start)))
+    outbound = [segment for segment, start in zip(
+        segments, bounds[:-1]
+    ) if start < float(hold_us) - 1e-12]
+    recovery = [segment for segment, start in zip(
+        segments, bounds[:-1]
+    ) if start >= float(hold_us) - 1e-12]
+    return outbound, recovery
+
+
 def compensation_round_trip_segments(compensation, hold_us, recovery_us=None):
     """Return normalized commands for a compensated park-target-park trip.
 
@@ -156,6 +209,11 @@ def compensation_round_trip_segments(compensation, hold_us, recovery_us=None):
         return [], []
     if compensation is None:
         return [(1.0, hold_us)], []
+    lifecycle = _lifecycle_round_trip_segments(
+        compensation, hold_us, recovery_us
+    )
+    if lifecycle is not None:
+        return lifecycle
     edges_us, multipliers = _compensation_arrays(compensation)
     target = compensation_hold_segments(compensation, hold_us)
     horizon_us = float(edges_us[-1])

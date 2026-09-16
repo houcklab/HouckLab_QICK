@@ -441,8 +441,9 @@ def return_readout_contract_plan(environ=None):
 
 def unity_timing_table(compensation):
     """Keep every segment boundary while removing correction amplitude."""
-    result = copy.deepcopy(compensation)
-    result["multipliers"] = [1.0] * len(result["multipliers"])
+    from fluxpred import production as fluxpred_production
+
+    result = fluxpred_production.timing_matched_unity(compensation)
     result["diagnostic_predistortion_mode"] = "timing_matched_unity"
     return result
 
@@ -1138,16 +1139,19 @@ def run_return_readout_contract():
     )
     for line in fluxpred_production.describe(choice):
         print(line)
-    compensation = fluxpred_production.neutral_step_table(
+    compensation = fluxpred_production.neutral_lifecycle_table(
         choice,
-        max_hold_ns=1000.0 * (
-            float(params["flux_settle_us"]) + max(plan["hold_times_us"])
+        holds_ns=tuple(
+            1000.0 * (
+                float(params["flux_settle_us"]) + float(hold_us)
+            )
+            for hold_us in plan["hold_times_us"]
         ),
         recovery_ns=1000.0 * float(plan["recovery_us"]),
-        schedule_first_ns=4_000.0,
+        schedule_first_ns=500.0,
         schedule_growth=1.2,
         schedule_max_ns=100_000.0,
-        quantum_ns=1_000.0,
+        quantum_ns=4.0,
     )
     unity = unity_timing_table(compensation)
     print(

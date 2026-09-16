@@ -119,15 +119,21 @@ def test_qick_resume_refuses_modified_calibration_before_acquisition(tmp_path, q
 
 def test_qick_off_retains_timing_source_metadata_and_does_not_mutate_on(qick_runner):
     on = {"segment_edges_ns": [0.0, 4000.0, 40000.0], "multipliers": [1.03, 1.01, 1.0],
+          "lifecycle_conditions": [{"hold_ns": 2500.0,
+              "edges_ns": [0.0, 500.0, 2500.0, 3000.0, 42500.0],
+              "values": [1.2, 1.1, -0.3, -0.1], "terminal_tail_bound": 0.02}],
           "model_sha256": "accepted", "nested": {"arbitrary": [1]}}
     off = qick_runner.unity_timing_table(on)
     assert off["segment_edges_ns"] == on["segment_edges_ns"]
     assert off["multipliers"] == [1.0, 1.0, 1.0]
+    assert off["lifecycle_conditions"][0]["values"] == [1.0, 1.0, 0.0, 0.0]
+    assert off["lifecycle_conditions"][0]["terminal_tail_bound"] == 0.0
     assert off["source_model_sha256"] == "accepted"
     assert off["benchmark_predistortion_mode"] == "timing_matched_unity"
     off["nested"]["arbitrary"].append(2)
     assert on["nested"] == {"arbitrary": [1]}
     assert on["multipliers"] == [1.03, 1.01, 1.0]
+    assert on["lifecycle_conditions"][0]["values"] == [1.2, 1.1, -0.3, -0.1]
 
 
 def test_qick_runtime_settings_and_offline_import(qick_runner):
