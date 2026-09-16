@@ -165,14 +165,18 @@ def main():
     delays = probe_delays(command, schedule, span_ns=span,
                           inset_ns=settings["probe_inset_ns"],
                           max_points=settings["max_delays"])
-    probe_ghz = fx.estimate_fit_frequency_ghz(
-        settings["flux_fit_params"],
-        settings["park"]+settings["amplitude"]*(settings["target"]-settings["park"]))
+    ideal = np.where(delays < settings["hold_ns"], settings["amplitude"], 0.0)
+    probe_ghz = cryoscope.probe_frequencies(
+        ideal,
+        lambda coordinate: fx.estimate_fit_frequency_ghz_array(
+            settings["flux_fit_params"], coordinate),
+        park=settings["park"], target=settings["target"])
 
     print(f"[ramsey] device={DEVICE} park={settings['park']:+.1f} target={settings['target']:+.1f} "
           f"DAC_gain  amplitude={settings['amplitude']:.4f} (ceiling {settings['amplitude_ceiling']:.4f})")
     print(f"[ramsey] windows={list(settings['windows_ns'])} ns  delays={len(delays)}  "
-          f"shots={settings['shots']}  probe={probe_ghz:.6f} GHz")
+          f"shots={settings['shots']}  probe={float(probe_ghz.min()):.6f}.."
+          f"{float(probe_ghz.max()):.6f} GHz")
     print(f"[ramsey] flux timeline {float(command.edges_ns[-1])/1000.0:.1f} us in "
           f"{len(schedule)} emissions, fabric clock {clock_ns:.4f} ns")
     acquisitions = len(delays)*(2+2*len(settings["windows_ns"]))
@@ -202,17 +206,17 @@ def main():
     base = Path(experiment.dname)
     raw_path = measurement.write_raw_csv(
         base.with_name(base.name+"_raw.csv"), delays_ns=delays, populations=populations,
-        keep_fractions=keeps, window_count=len(settings["windows_ns"]))
+        keep_fractions=keeps, window_count=len(settings["windows_ns"]),
+        probe_frequency_ghz=probe_ghz)
     command_path = measurement.write_command_json(
         base.with_name(base.name+"_command.json"), command)
     static = flux_fit_dict(settings["flux_fit_params"])
-    static["probe_frequency_ghz"] = float(probe_ghz)
+    static["probe_frequency_ghz"] = float(probe_ghz[0])
     raw = measurement.read_raw_csv(raw_path)
-    ideal = np.where(delays < settings["hold_ns"], settings["amplitude"], 0.0)
     analysis = measurement.analyze(
         delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
         quadratures=measurement.quadratures_from_raw(raw, len(settings["windows_ns"])),
-        windows_ns=settings["windows_ns"], probe_frequency_ghz=probe_ghz,
+        windows_ns=settings["windows_ns"], probe_frequency_ghz=raw["probe_freq_ghz"],
         frequency_of_coordinate=lambda coordinate: fx.estimate_fit_frequency_ghz_array(
             settings["flux_fit_params"], coordinate),
         park=settings["park"], target=settings["target"], shots=settings["shots"],

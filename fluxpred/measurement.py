@@ -17,7 +17,7 @@ def quadrature_labels(window_count):
 
 def raw_columns(window_count):
     labels = ARM_LABELS+quadrature_labels(window_count)
-    return ("delay_ns",)+tuple(f"p_{name}" for name in labels)+tuple(
+    return ("delay_ns", "probe_freq_ghz")+tuple(f"p_{name}" for name in labels)+tuple(
         f"keep_{name}" for name in labels)
 
 
@@ -66,14 +66,17 @@ def analyze(*, delays_ns, p_ground, p_excited, quadratures, windows_ns, probe_fr
     return trace
 
 
-def write_raw_csv(path, *, delays_ns, populations, keep_fractions, window_count):
+def write_raw_csv(path, *, delays_ns, populations, keep_fractions, window_count,
+                  probe_frequency_ghz):
     path = Path(path)
     labels = ARM_LABELS+quadrature_labels(window_count)
+    probe = np.broadcast_to(np.asarray(probe_frequency_ghz, dtype=float),
+                            np.asarray(delays_ns, dtype=float).shape)
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(raw_columns(window_count))
         for index, delay in enumerate(np.asarray(delays_ns, dtype=float)):
-            row = [float(delay)]
+            row = [float(delay), float(probe[index])]
             row.extend(float(populations[name][index]) for name in labels)
             row.extend(float(keep_fractions[name][index]) for name in labels)
             writer.writerow(row)
@@ -169,10 +172,12 @@ def read_summary(path, *, device=None, verify_hashes=False, hash_root=None):
     return document
 
 
-def trace_from_summary(document, raw, *, frequency_of_coordinate, probe_frequency_ghz,
+def trace_from_summary(document, raw, *, frequency_of_coordinate, probe_frequency_ghz=None,
                        ideal_amplitude=None):
     sequence = document["sequence"]
     windows = sequence["probe_windows_ns"]
+    if probe_frequency_ghz is None:
+        probe_frequency_ghz = raw["probe_freq_ghz"]
     return analyze(
         delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
         quadratures=quadratures_from_raw(raw, len(windows)), windows_ns=windows,

@@ -207,7 +207,7 @@ class FluxRamseyCryoscope(ExperimentClass):
         if calib_params is None:
             raise ValueError("calib_params is required")
         cfg["shots"] = cfg["reps"] = int(shots)
-        cfg["cryoscope_probe_freq"] = float(probe_freq_ghz)*1000.0
+        cfg["cryoscope_probe_freq"] = float(np.ravel(probe_freq_ghz)[0])*1000.0
         cfg["cryoscope_scale_gain"] = float(scale_gain)
         kw["cfg"] = cfg
         super().__init__(*args, **kw)
@@ -216,7 +216,8 @@ class FluxRamseyCryoscope(ExperimentClass):
         self.windows_ns = tuple(float(value) for value in windows_ns)
         if len(self.windows_ns) != 2 or self.windows_ns[0] >= self.windows_ns[1]:
             raise ValueError("windows_ns must be a (coarse, fine) pair with coarse < fine")
-        self.probe_freq_ghz = float(probe_freq_ghz)
+        self.probe_freq_ghz = np.broadcast_to(
+            np.asarray(probe_freq_ghz, dtype=float), self.delays_ns.shape).astype(float)
         self.scale_gain = float(scale_gain)
         self.shots = int(shots)
         self.rounds = max(1, min(int(rounds), self.shots))
@@ -249,8 +250,9 @@ class FluxRamseyCryoscope(ExperimentClass):
             raise ValueError(
                 f"{len(overrun)} probe delay(s) run past the {horizon/1000.0:g} us flux timeline")
 
-    def _point(self, delay_ns, window_ns, arm, reps):
+    def _point(self, delay_index, delay_ns, window_ns, arm, reps):
         cfg = dict(self.cfg)
+        cfg["cryoscope_probe_freq"] = float(self.probe_freq_ghz[delay_index])*1000.0
         cfg["cryoscope_command"] = self.command
         cfg["cryoscope_delay_ns"] = float(delay_ns)
         cfg["cryoscope_window_ns"] = float(window_ns)
@@ -288,7 +290,7 @@ class FluxRamseyCryoscope(ExperimentClass):
         flux_report = None
         print(f"[cryoscope] {len(self.delays_ns)} delays x {len(self.windows_ns)} windows, "
               f"{self.shots} shots/arm, {total} acquisitions, "
-              f"probe {self.probe_freq_ghz:.6f} GHz, scan "
+              f"probe {float(self.probe_freq_ghz[0]):.6f}..{float(self.probe_freq_ghz[-1]):.6f} GHz, scan "
               f"{'reversed' if self.reverse_delays else 'forward'}")
         for delay_index, delay_ns, point, order in tasks:
             populations = {}
@@ -299,7 +301,8 @@ class FluxRamseyCryoscope(ExperimentClass):
                 for reps in split_reps(self.shots, self.rounds):
                     if reps <= 0:
                         continue
-                    prog, hi, hq, si, sq = self._point(delay_ns, window_ns, arm, reps)
+                    prog, hi, hq, si, sq = self._point(
+                        delay_index, delay_ns, window_ns, arm, reps)
                     if flux_report is None:
                         flux_report = prog.flux_report
                     pieces["herald_i"].append(np.asarray(hi, dtype=float))

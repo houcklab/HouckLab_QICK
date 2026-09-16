@@ -56,6 +56,25 @@ The readout resonator is pulled by the held flux level, but `g` and `e` are meas
 at the same delay under the same flux, so the contrast normalization absorbs it.
 That is why the reference arms are re-measured at every delay rather than once.
 
+### The drive frequency follows the nominal level
+
+A single fixed drive frequency would be roughly 100 MHz off resonance during the
+recovery, so every post-return delay would have zero contrast — losing exactly the
+data that makes the fit identifiable. The probe frequency is therefore computed per
+delay from the static model at that delay's *nominal* commanded level: the
+identification target during the hold, park after the return.
+
+The measured phase is then the residual relative to the local nominal, which is what
+`nominal_detuning_mhz` subtracts. The per-delay probe frequency is written as a
+`probe_freq_ghz` column in the raw CSV, so the conversion is auditable and the fitter
+never has to guess it. q5 retunes with `update_frequency` from a QUA array and
+refuses a probe needing more than ±400 MHz of intermediate frequency; q3 sets the
+frequency per program.
+
+The π/2 gain is calibrated at park and is not re-tuned per flux point. A wrong
+rotation angle shortens the Bloch vector but does not bias its phase, and the
+contrast mask drops points where it degrades too far.
+
 ### Probe span and the emission grid
 
 Each probe needs `inset + 2 × π/2 pulse + window + readout` of *constant* commanded

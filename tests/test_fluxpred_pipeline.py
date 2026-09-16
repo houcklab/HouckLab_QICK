@@ -50,7 +50,8 @@ def build_measurement(tmp_path, *, seed=0, noise_shots=SHOTS, name="q5_center",
     span = PROBE_INSET_NS+2.0*X90_NS+window_fine+READOUT_SPAN_NS
     delays = probe_delays(command, schedule, span_ns=span, inset_ns=PROBE_INSET_NS)
     ideal = np.where(delays < HOLD_NS, amplitude, 0.0)
-    probe_ghz = float(frequency(PARK+amplitude*(TARGET-PARK)))
+    from fluxpred import cryoscope as _cryoscope
+    probe_ghz = _cryoscope.probe_frequencies(ideal, frequency, park=PARK, target=TARGET)
     seen = plant_response(command, delays, np.asarray(TAUS_US)*1000.0, TRUE_PLANT,
                           probe_ns=window_fine)
     coordinate = PARK+seen*(TARGET-PARK)
@@ -76,15 +77,15 @@ def build_measurement(tmp_path, *, seed=0, noise_shots=SHOTS, name="q5_center",
 
     raw_path = measurement.write_raw_csv(
         tmp_path/f"{name}_raw.csv", delays_ns=delays, populations=populations,
-        keep_fractions=keeps, window_count=len(WINDOWS_NS))
+        keep_fractions=keeps, window_count=len(WINDOWS_NS), probe_frequency_ghz=probe_ghz)
     command_path = measurement.write_command_json(tmp_path/f"{name}_command.json", command)
     static = dict(STATIC_MODEL)
-    static["probe_frequency_ghz"] = probe_ghz
+    static["probe_frequency_ghz"] = float(probe_ghz[0])
     raw = measurement.read_raw_csv(raw_path)
     analysis = measurement.analyze(
         delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
         quadratures=measurement.quadratures_from_raw(raw, len(WINDOWS_NS)),
-        windows_ns=WINDOWS_NS, probe_frequency_ghz=probe_ghz,
+        windows_ns=WINDOWS_NS, probe_frequency_ghz=raw["probe_freq_ghz"],
         frequency_of_coordinate=frequency, park=PARK, target=TARGET, shots=noise_shots,
         ideal_amplitude=ideal)
     document = measurement.build_summary(
@@ -98,7 +99,8 @@ def build_measurement(tmp_path, *, seed=0, noise_shots=SHOTS, name="q5_center",
                                           "command_json": measurement.describe_file(command_path)})
     summary_path = measurement.write_summary(tmp_path/f"{name}_summary.json", document)
     return {"summary": summary_path, "raw": raw_path, "command": command,
-            "analysis": analysis, "delays": delays, "truth": seen, "probe_ghz": probe_ghz}
+            "analysis": analysis, "delays": delays, "truth": seen, "probe_ghz": probe_ghz,
+            "residual_mhz": residual_mhz}
 
 
 def test_synthetic_measurement_recovers_the_commanded_amplitude(tmp_path):
@@ -203,3 +205,22 @@ def test_every_probe_delay_is_a_playable_opx_wait(tmp_path):
     for delay in built["delays"]:
         assert delay >= 16.0
         assert abs(round(float(delay)/4.0)*4.0-float(delay)) < 1e-9
+
+
+def test_probe_frequency_tracks_the_nominal_level_on_each_side_of_the_return(tmp_path):
+    built = build_measurement(tmp_path, name="q5_probe")
+    probe = np.asarray(built["probe_ghz"])
+    delays = built["delays"]
+    during = probe[delays < HOLD_NS]
+    after = probe[delays > HOLD_NS]
+    assert np.allclose(during, during[0])
+    assert np.allclose(after, after[0])
+    assert abs(float(after[0]-during[0]))*1000.0 > 10.0
+
+
+def test_residual_detuning_stays_inside_the_coarsest_rung_range(tmp_path):
+    from fluxpred import cryoscope
+
+    built = build_measurement(tmp_path, name="q5_residual")
+    limit = cryoscope.window_unambiguous_range_mhz(min(WINDOWS_NS))
+    assert float(np.max(np.abs(built["residual_mhz"]))) < limit

@@ -192,13 +192,28 @@ def normalized_amplitude(frequency_ghz, frequency_of_coordinate, *, park, target
     return (coordinate - float(park)) / (float(target) - float(park)), outside
 
 
-def nominal_detuning_mhz(ideal_amplitude, frequency_of_coordinate, *, park, target, probe_frequency_ghz):
+def nominal_detuning_mhz(ideal_amplitude, frequency_of_coordinate, *, park, target,
+                         probe_frequency_ghz):
     ideal = np.asarray(ideal_amplitude, dtype=float)
+    probe = np.asarray(probe_frequency_ghz, dtype=float)
+    if probe.ndim not in (0, 1) or (probe.ndim == 1 and probe.shape != ideal.shape):
+        raise ValueError("probe_frequency_ghz must be a scalar or match the delay grid")
+    if not np.all(np.isfinite(probe)):
+        raise ValueError("probe_frequency_ghz must be finite")
     coordinate = float(park) + ideal * (float(target) - float(park))
     frequency = np.asarray(frequency_of_coordinate(coordinate), dtype=float)
     if frequency.shape != ideal.shape or not np.all(np.isfinite(frequency)):
         raise ValueError("the static flux model must give a finite nominal frequency at every sample")
-    return (frequency - float(probe_frequency_ghz)) * 1000.0
+    return (frequency - probe) * 1000.0
+
+
+def probe_frequencies(ideal_amplitude, frequency_of_coordinate, *, park, target):
+    ideal = np.asarray(ideal_amplitude, dtype=float)
+    coordinate = float(park) + ideal * (float(target) - float(park))
+    frequency = np.asarray(frequency_of_coordinate(coordinate), dtype=float)
+    if frequency.shape != ideal.shape or not np.all(np.isfinite(frequency)):
+        raise ValueError("the static flux model must give a finite probe frequency at every delay")
+    return frequency
 
 
 def trace_from_measurement(*, delays_ns, phase_rad, mask, probe_window_ns, probe_frequency_ghz,
@@ -222,7 +237,7 @@ def trace_from_measurement(*, delays_ns, phase_rad, mask, probe_window_ns, probe
         ideal, frequency_of_coordinate, park=park, target=target,
         probe_frequency_ghz=probe_frequency_ghz)
     measured_mhz = nominal_mhz + residual_mhz
-    frequency_ghz = float(probe_frequency_ghz) + measured_mhz / 1000.0
+    frequency_ghz = np.asarray(probe_frequency_ghz, dtype=float) + measured_mhz / 1000.0
     amplitude, outside = normalized_amplitude(
         frequency_ghz, frequency_of_coordinate, park=park, target=target)
     support = mask & np.isfinite(amplitude) & ~outside
@@ -231,6 +246,7 @@ def trace_from_measurement(*, delays_ns, phase_rad, mask, probe_window_ns, probe
               "frequency_ghz": frequency_ghz, "normalized_amplitude": amplitude,
               "outside_static_model": outside, "support": support,
               "probe_window_ns": float(probe_window_ns),
+              "probe_frequency_ghz": np.asarray(probe_frequency_ghz, dtype=float),
               "supported_fraction": float(np.mean(support))}
     if sigma_phase_rad is not None:
         sigma_phase_rad = _vector(sigma_phase_rad, "sigma_phase_rad")
