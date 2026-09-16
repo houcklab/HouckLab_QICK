@@ -109,22 +109,23 @@ def diagnostic_figure(path, *, analyses, traces, plant, model, cancellation, rou
                             np.asarray(analysis["phases_rad"][-1])[~support], "rx",
                             label="masked" if index == 0 else None)
         axes[1, 0].plot(delays_us, analysis["residual_detuning_mhz"], ".-", label=f"trace {index}")
-        axes[1, 1].plot(delays_us[support], np.asarray(analysis["normalized_amplitude"])[support],
-                        ".", label=f"measured {index}")
     for index, trace in enumerate(traces):
+        support = np.asarray(trace.support, dtype=bool)
         predicted = plant_response(trace.command, trace.time_ns, taus_ns, plant["coefficients"],
                                    probe_ns=trace.probe_ns)+plant["offsets"][index]
+        axes[1, 1].plot(trace.time_ns[support]/1000.0, trace.response[support], ".",
+                        label=f"measured {index}")
         axes[1, 1].plot(trace.time_ns/1000.0, predicted, "-", label=f"plant fit {index}")
-    axes[2, 0].plot(np.asarray(cancellation["time_ns"])/1000.0, cancellation["uncorrected"],
-                    label="uncorrected")
-    axes[2, 0].plot(np.asarray(cancellation["time_ns"])/1000.0, cancellation["corrected"],
-                    label="inverse forecast")
+        axes[2, 0].plot(trace.time_ns[support]/1000.0,
+                        (trace.response[support]-predicted[support])*1e3, ".",
+                        label=f"residual {index} [1e-3]")
+    axes[2, 0].axhline(0.0, color="k", linewidth=0.8)
     axes[2, 1].plot(np.asarray(round_trip["time_ns"])/1000.0, round_trip["response"],
                     label="round-trip forecast")
     axes[2, 1].plot(np.asarray(round_trip["time_ns"])/1000.0, round_trip["ideal"], "k--",
                     label="ideal")
     titles = ("X/Y contrast", "unwrapped phase [rad]", "residual detuning [MHz]",
-              "normalized amplitude", "inverse cancellation", "return to park")
+              "unit-normalized amplitude", "plant fit residual [1e-3]", "return to park")
     for axis, title in zip(axes.ravel(), titles):
         axis.set_title(title)
         axis.set_xlabel("delay [us]")
