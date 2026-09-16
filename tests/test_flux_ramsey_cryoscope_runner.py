@@ -36,8 +36,13 @@ PARAMS = FLUX_FIT[DEVICE]
 PREFIX = {"q3": "Q3", "q5": "Q5"}[DEVICE]
 
 
+PULSE_NS = 400.0
+READOUT_SPAN_NS = 3000.0
+
+
 def plan(environ=None):
-    return RUNNER.plan(park=PARK, target=TARGET, flux_fit_params=PARAMS,
+    return RUNNER.plan(park=PARK, target=TARGET, flux_fit_params=PARAMS, pulse_ns=PULSE_NS,
+                       readout_span_ns=READOUT_SPAN_NS,
                        environ={} if environ is None else environ)
 
 
@@ -62,11 +67,10 @@ def test_sensitivity_is_nonzero_between_park_and_target():
     assert abs(settings["sensitivity_mhz_per_unit"]) > 100.0
 
 
-def test_window_ladder_covers_the_coarsest_rung_range():
-    windows = cryoscope.plan_window_ladder(
-        cryoscope.window_unambiguous_range_mhz(20.0), finest_ns=500.0, ratio=5.0)
-    assert windows == (20.0, 100.0, 500.0)
-    assert cryoscope.window_unambiguous_range_mhz(windows[0]) >= 25.0
+def test_window_ladder_covers_the_requested_range():
+    windows = cryoscope.plan_window_ladder(25.0, finest_ns=500.0, ratio=5.0)
+    assert cryoscope.window_unambiguous_range_mhz(min(windows)) >= 25.0
+    assert max(windows) == 500.0
 
 
 def test_an_unreachable_excursion_is_refused_with_an_actionable_message():
@@ -74,29 +78,65 @@ def test_an_unreachable_excursion_is_refused_with_an_actionable_message():
         cryoscope.plan_window_ladder(470.0, finest_ns=500.0, ratio=5.0, max_rungs=3)
 
 
-def test_amplitude_ceiling_shrinks_with_a_longer_coarsest_window():
-    wide = cryoscope.max_identification_amplitude(
-        sensitivity_mhz_per_unit=3000.0, overshoot=0.2, coarsest_window_ns=20.0)
-    narrow = cryoscope.max_identification_amplitude(
-        sensitivity_mhz_per_unit=3000.0, overshoot=0.2, coarsest_window_ns=100.0)
-    assert narrow < wide
+def test_ladder_pruning_drops_a_redundant_rung_but_keeps_the_ends():
+    assert cryoscope.prune_ladder([416.0, 500.0, 2000.0]) == [416.0, 2000.0]
+    assert cryoscope.prune_ladder([100.0, 400.0, 1600.0, 6400.0]) == [100.0, 400.0, 1600.0, 6400.0]
+
+
+def test_effective_window_is_center_to_center():
+    assert cryoscope.effective_window_ns(500.0, 400.0) == 900.0
+    assert cryoscope.idle_window_ns(900.0, 400.0) == 500.0
+
+
+def test_an_effective_window_shorter_than_the_pulse_is_refused():
+    with pytest.raises(ValueError, match="not reachable"):
+        cryoscope.idle_window_ns(300.0, 400.0)
+
+
+def test_played_idle_windows_are_the_effective_windows_minus_the_pulse():
+    settings = plan()
+    for effective, idle in zip(settings["effective_windows_ns"], settings["windows_ns"]):
+        assert effective-idle == pytest.approx(PULSE_NS)
+
+
+def test_first_emission_segment_always_covers_the_probe_span():
+    settings = plan()
+    assert settings["schedule_first_ns"] >= settings["probe_span_ns"]
+
+
+def test_expected_excursion_fits_the_coarsest_rung():
+    settings = plan()
+    assert settings["expected_excursion_mhz"] <= settings["coarsest_range_mhz"]
+
+
+def test_a_longer_pulse_lowers_the_permitted_amplitude():
+    short = RUNNER.plan(park=PARK, target=TARGET, flux_fit_params=PARAMS, pulse_ns=40.0,
+                        readout_span_ns=READOUT_SPAN_NS, environ={})
+    long = RUNNER.plan(park=PARK, target=TARGET, flux_fit_params=PARAMS, pulse_ns=2000.0,
+                       readout_span_ns=READOUT_SPAN_NS, environ={})
+    assert long["amplitude_ceiling"] < short["amplitude_ceiling"]
 
 
 def test_plan_refuses_an_amplitude_above_the_ceiling():
     ceiling = plan()["amplitude_ceiling"]
-    with pytest.raises(RuntimeError, match="exceeds the"):
+    with pytest.raises(ValueError, match="exceeds the"):
         plan({f"{PREFIX}_CRYO_AMPLITUDE": repr(ceiling*2.0)})
 
 
-def test_a_longer_coarsest_window_lowers_the_permitted_amplitude():
-    wide = plan({f"{PREFIX}_CRYO_COARSEST_WINDOW_NS": "20"})["amplitude_ceiling"]
-    narrow = plan({f"{PREFIX}_CRYO_COARSEST_WINDOW_NS": "100"})["amplitude_ceiling"]
+def test_a_longer_minimum_idle_lowers_the_permitted_amplitude():
+    wide = plan({f"{PREFIX}_CRYO_MIN_IDLE_NS": "16"})["amplitude_ceiling"]
+    narrow = plan({f"{PREFIX}_CRYO_MIN_IDLE_NS": "2000"})["amplitude_ceiling"]
     assert narrow < wide
 
 
 def test_plan_accepts_an_explicit_window_ladder():
-    settings = plan({f"{PREFIX}_CRYO_WINDOWS_NS": "500,100,20"})
-    assert settings["windows_ns"] == (20.0, 100.0, 500.0)
+    settings = plan({f"{PREFIX}_CRYO_WINDOWS_NS": "2000,416"})
+    assert settings["effective_windows_ns"] == (416.0, 2000.0)
+
+
+def test_plan_refuses_an_effective_window_shorter_than_the_pulse():
+    with pytest.raises(ValueError, match="shorter than"):
+        plan({f"{PREFIX}_CRYO_WINDOWS_NS": "2000,100"})
 
 
 def test_plan_reports_an_amplitude_within_its_ceiling():

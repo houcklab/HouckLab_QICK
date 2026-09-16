@@ -28,16 +28,17 @@ DEFAULTS = {
     "recovery_us": 600.0,
     "shots": 300,
     "rounds": 2,
-    "finest_window_ns": 500.0,
-    "ladder_ratio": 5.0,
-    "schedule_first_us": 4.0,
+    "finest_window_ns": 2000.0,
+    "ladder_ratio": 4.0,
+    "schedule_first_us": 0.0,
     "schedule_growth": 1.2,
     "schedule_max_us": 100.0,
     "probe_inset_ns": 16.0,
     "max_delays": 40,
     "amplitude_safety": 0.8,
-    "coarsest_window_ns": 20.0,
+    "min_idle_ns": 16.0,
     "assumed_overshoot": 0.20,
+    "emission_quantum_ns": 1000.0,
 }
 
 
@@ -67,53 +68,51 @@ def sensitivity_mhz_per_unit(params, park, target):
     return (high-low)/(2.0*step)*1000.0*(target-park)
 
 
-def plan(*, park, target, flux_fit_params, environ=None):
+def plan(*, park, target, flux_fit_params, pulse_ns, readout_span_ns, environ=None):
     environ = os.environ if environ is None else environ
     if flux_fit_params is None:
         raise RuntimeError(
             "FLUX_FIT_PARAMS is required: the cryoscope converts measured detuning to a flux "
             "coordinate through the static model")
-    park = float(park)
-    target = float(target)
-    params = flux_fit_params
-    sensitivity = sensitivity_mhz_per_unit(params, park, target)
-    finest = _env_float("Q3_CRYO_FINEST_WINDOW_NS", DEFAULTS["finest_window_ns"], environ)
-    ratio = _env_float("Q3_CRYO_LADDER_RATIO", DEFAULTS["ladder_ratio"], environ)
-    overshoot = _env_float("Q3_CRYO_ASSUMED_OVERSHOOT", DEFAULTS["assumed_overshoot"], environ)
-    coarsest = _env_float("Q3_CRYO_COARSEST_WINDOW_NS", DEFAULTS["coarsest_window_ns"], environ)
+    model = flux_fit_dict(flux_fit_params)
+    frequency = lambda coordinate: fx.estimate_fit_frequency_ghz_array(flux_fit_params, coordinate)
     explicit = environ.get("Q3_CRYO_WINDOWS_NS", "").strip()
-    if explicit:
-        windows = tuple(sorted(float(value) for value in explicit.split(",")))
-    else:
-        windows = cryoscope.plan_window_ladder(
-            cryoscope.window_unambiguous_range_mhz(coarsest), finest_ns=finest, ratio=ratio)
-    ceiling = cryoscope.max_identification_amplitude(
-        sensitivity_mhz_per_unit=sensitivity, overshoot=overshoot,
-        coarsest_window_ns=min(windows), safety=DEFAULTS["amplitude_safety"])
-    amplitude = _env_float("Q3_CRYO_AMPLITUDE", min(ceiling, 1.0), environ)
-    if amplitude > ceiling+1e-12:
-        raise RuntimeError(
-            f"Q3_CRYO_AMPLITUDE={amplitude:g} exceeds the {ceiling:.4f} the {min(windows):g} ns "
-            f"coarsest rung can unwrap for an assumed {overshoot:.0%} overshoot at "
-            f"{sensitivity:.0f} MHz per unit amplitude; lower the amplitude, shorten the coarsest "
-            f"window, or start from an existing correction")
-    return {"park": park, "target": target, "flux_fit_params": params,
-            "static_flux_model": flux_fit_dict(params),
-            "sensitivity_mhz_per_unit": sensitivity, "windows_ns": windows,
-            "amplitude": amplitude, "amplitude_ceiling": ceiling, "overshoot": overshoot,
-            "hold_ns": _env_float("Q3_CRYO_HOLD_US", DEFAULTS["hold_us"], environ)*1000.0,
-            "recovery_ns": _env_float("Q3_CRYO_RECOVERY_US", DEFAULTS["recovery_us"], environ)*1000.0,
-            "shots": _env_int("Q3_CRYO_SHOTS", DEFAULTS["shots"], environ),
-            "rounds": _env_int("Q3_CRYO_ROUNDS", DEFAULTS["rounds"], environ),
-            "schedule_first_ns": _env_float("Q3_CRYO_SCHEDULE_FIRST_US",
-                                            DEFAULTS["schedule_first_us"], environ)*1000.0,
-            "schedule_growth": _env_float("Q3_CRYO_SCHEDULE_GROWTH", DEFAULTS["schedule_growth"], environ),
-            "schedule_max_ns": _env_float("Q3_CRYO_SCHEDULE_MAX_US",
-                                          DEFAULTS["schedule_max_us"], environ)*1000.0,
-            "probe_inset_ns": _env_float("Q3_CRYO_PROBE_INSET_NS", DEFAULTS["probe_inset_ns"], environ),
-            "max_delays": _env_int("Q3_CRYO_MAX_DELAYS", DEFAULTS["max_delays"], environ),
-            "model_json": environ.get("Q3_CRYO_BASE_MODEL_JSON", "").strip(),
-            "note": environ.get("Q3_CRYO_NOTE", "center identification").strip()}
+    requested_windows = ([float(value) for value in explicit.split(",")] if explicit else None)
+    requested_amplitude = environ.get("Q3_CRYO_AMPLITUDE", "").strip()
+    probe = cryoscope.plan_probe(
+        frequency, park=float(park), target=float(target), pulse_ns=float(pulse_ns),
+        readout_span_ns=float(readout_span_ns),
+        min_idle_ns=_env_float("Q3_CRYO_MIN_IDLE_NS", DEFAULTS["min_idle_ns"], environ),
+        finest_effective_ns=_env_float("Q3_CRYO_FINEST_WINDOW_NS",
+                                       DEFAULTS["finest_window_ns"], environ),
+        ratio=_env_float("Q3_CRYO_LADDER_RATIO", DEFAULTS["ladder_ratio"], environ),
+        overshoot=_env_float("Q3_CRYO_ASSUMED_OVERSHOOT", DEFAULTS["assumed_overshoot"], environ),
+        inset_ns=_env_float("Q3_CRYO_PROBE_INSET_NS", DEFAULTS["probe_inset_ns"], environ),
+        requested_amplitude=float(requested_amplitude) if requested_amplitude else None,
+        requested_effective_windows_ns=requested_windows,
+        emission_quantum_ns=DEFAULTS["emission_quantum_ns"],
+        requested_first_ns=_env_float("Q3_CRYO_SCHEDULE_FIRST_US",
+                                      DEFAULTS["schedule_first_us"], environ)*1000.0)
+    settings = {"park": float(park), "target": float(target), "flux_fit_params": flux_fit_params,
+                "static_flux_model": model,
+                "sensitivity_mhz_per_unit": sensitivity_mhz_per_unit(
+                    flux_fit_params, float(park), float(target)),
+                "windows_ns": probe["idle_windows_ns"],
+                "effective_windows_ns": probe["effective_windows_ns"],
+                "hold_ns": _env_float("Q3_CRYO_HOLD_US", DEFAULTS["hold_us"], environ)*1000.0,
+                "recovery_ns": _env_float("Q3_CRYO_RECOVERY_US", DEFAULTS["recovery_us"], environ)*1000.0,
+                "shots": _env_int("Q3_CRYO_SHOTS", DEFAULTS["shots"], environ),
+                "rounds": _env_int("Q3_CRYO_ROUNDS", DEFAULTS["rounds"], environ),
+                "schedule_growth": _env_float("Q3_CRYO_SCHEDULE_GROWTH",
+                                              DEFAULTS["schedule_growth"], environ),
+                "schedule_max_ns": _env_float("Q3_CRYO_SCHEDULE_MAX_US",
+                                              DEFAULTS["schedule_max_us"], environ)*1000.0,
+                "max_delays": _env_int("Q3_CRYO_MAX_DELAYS", DEFAULTS["max_delays"], environ),
+                "model_json": environ.get("Q3_CRYO_BASE_MODEL_JSON", "").strip(),
+                "note": environ.get("Q3_CRYO_NOTE", "center identification").strip()}
+    settings.update(probe)
+    settings["probe_inset_ns"] = probe["inset_ns"]
+    return settings
 
 
 def build_command(settings, *, quantum_ns=1000.0):
@@ -139,29 +138,25 @@ def main():
     )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
 
-    settings = plan(park=tls._baseline_dc_offset(), target=tls.TARGET_DC_OFFSET,
-                    flux_fit_params=tls.FLUX_FIT_PARAMS)
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
     clock_ns = fpc.fabric_clock_ns(soccfg, tls.BaseConfig["ff_ch"])
-    quantum_ns = max(1000.0, 8.0*clock_ns)
-    command, schedule, _ = build_command(settings, quantum_ns=quantum_ns)
     x90_ns = fpc.qubit_pulse_ns(soccfg, channel=tls.BaseConfig["qubit_ch"],
                                 sigma_us=float(tls.BaseConfig["sigma"]))
     x90_ns = fpc.round_up_to_clock(x90_ns, clock_ns)
     readout_span_ns = (float(tls.BaseConfig["read_length"])
                        + float(tls.BaseConfig.get("adc_trig_offset", 0.0))
                        + float(tls.BaseConfig.get("cryoscope_readout_margin_us", 1.0)))*1000.0
-    span = settings["probe_inset_ns"]+2.0*x90_ns+max(settings["windows_ns"])+readout_span_ns
+    settings = plan(park=tls._baseline_dc_offset(), target=tls.TARGET_DC_OFFSET,
+                    flux_fit_params=tls.FLUX_FIT_PARAMS, pulse_ns=x90_ns,
+                    readout_span_ns=readout_span_ns)
+    quantum_ns = max(DEFAULTS["emission_quantum_ns"], 8.0*clock_ns)
+    command, schedule, _ = build_command(settings, quantum_ns=quantum_ns)
+    span = settings["probe_span_ns"]
     print(f"[ramsey] probe span {span/1000.0:.2f} us "
           f"(inset {settings['probe_inset_ns']:.0f} ns + 2 x {x90_ns:.0f} ns pulse + "
-          f"{max(settings['windows_ns']):.0f} ns window + {readout_span_ns/1000.0:.2f} us readout)")
-    if span > settings["schedule_first_ns"]+1e-9:
-        raise RuntimeError(
-            f"the {span/1000.0:.2f} us probe span does not fit the "
-            f"{settings['schedule_first_ns']/1000.0:.2f} us first emission segment, so the early "
-            f"delays that carry the fast pole would be silently dropped; raise "
-            f"Q3_CRYO_SCHEDULE_FIRST_US above {span/1000.0:.2f} or shorten the readout")
+          f"{max(settings['windows_ns']):.0f} ns idle + {readout_span_ns/1000.0:.2f} us readout); "
+          f"first emission segment {settings['schedule_first_ns']/1000.0:.1f} us")
     delays = probe_delays(command, schedule, span_ns=span,
                           inset_ns=settings["probe_inset_ns"],
                           max_points=settings["max_delays"])
@@ -174,7 +169,12 @@ def main():
 
     print(f"[ramsey] device={DEVICE} park={settings['park']:+.1f} target={settings['target']:+.1f} "
           f"DAC_gain  amplitude={settings['amplitude']:.4f} (ceiling {settings['amplitude_ceiling']:.4f})")
-    print(f"[ramsey] windows={list(settings['windows_ns'])} ns  delays={len(delays)}  "
+    print(f"[ramsey] effective windows={[round(v) for v in settings['effective_windows_ns']]} ns "
+          f"(idle {[round(v) for v in settings['windows_ns']]} ns), resolving "
+          f"+-{settings['coarsest_range_mhz']:.3f} MHz down to "
+          f"+-{settings['finest_range_mhz']:.3f} MHz; expected excursion "
+          f"{settings['expected_excursion_mhz']:.3f} MHz")
+    print(f"[ramsey] delays={len(delays)}  "
           f"shots={settings['shots']}  probe={float(probe_ghz.min()):.6f}.."
           f"{float(probe_ghz.max()):.6f} GHz")
     print(f"[ramsey] flux timeline {float(command.edges_ns[-1])/1000.0:.1f} us in "
@@ -216,7 +216,7 @@ def main():
     analysis = measurement.analyze(
         delays_ns=raw["delay_ns"], p_ground=raw["p_g"], p_excited=raw["p_e"],
         quadratures=measurement.quadratures_from_raw(raw, len(settings["windows_ns"])),
-        windows_ns=settings["windows_ns"], probe_frequency_ghz=raw["probe_freq_ghz"],
+        windows_ns=settings["effective_windows_ns"], probe_frequency_ghz=raw["probe_freq_ghz"],
         frequency_of_coordinate=lambda coordinate: fx.estimate_fit_frequency_ghz_array(
             settings["flux_fit_params"], coordinate),
         park=settings["park"], target=settings["target"], shots=settings["shots"],
@@ -225,10 +225,15 @@ def main():
         device=DEVICE, park=settings["park"], scale=settings["target"]-settings["park"],
         park_coordinate=settings["park"], target_coordinate=settings["target"],
         normalized_amplitude=settings["amplitude"], delays_ns=delays,
-        windows_ns=settings["windows_ns"], shots=settings["shots"], rounds=settings["rounds"],
+        windows_ns=settings["effective_windows_ns"], shots=settings["shots"],
+        rounds=settings["rounds"],
         recovery_ns=settings["recovery_ns"], command=command, trace=analysis,
         static_flux_model=static,
-        differentiator={"method": "fixed_window", "window_ns": float(max(settings["windows_ns"]))},
+        differentiator={"method": "fixed_window",
+                        "effective_window_ns": float(max(settings["effective_windows_ns"])),
+                        "idle_windows_ns": [float(v) for v in settings["windows_ns"]],
+                        "pulse_ns": float(x90_ns),
+                        "convention": "center_to_center"},
         timestamp=datetime.now().isoformat(timespec="seconds"),
         controller_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"),
         code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"),

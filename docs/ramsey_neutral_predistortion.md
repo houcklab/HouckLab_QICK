@@ -95,6 +95,25 @@ the correct bank scores at the noise floor (9.8e-5) while wrong banks score
 1.9e-3–4.7e-3, a 19–48× separation. The delay grid therefore spans hold **and**
 recovery, and is dense on both sides of the return edge.
 
+### The accumulation window is center-to-center, not the idle time
+
+A finite pi/2 pulse acts, to first order in the detuning, as an instantaneous rotation
+at the *centre* of the pulse. The phase therefore accumulates over
+
+```
+w_eff = idle + pulse
+```
+
+not over the idle time alone. On q5 the pi/2 is 400 ns, so using the idle time would
+overstate the window by up to 2x and return a plant roughly 2x too large. Everything
+downstream — the ladder, the branch resolution, the detuning conversion, and the
+`probe_ns` the plant features are averaged over — uses `w_eff`. The runners plan the
+ladder in effective-window space and play `idle = w_eff - pulse`; the summary records
+both, plus `convention: center_to_center`.
+
+The shortest reachable effective window is therefore `pulse + one clock`. On q5 that
+is 416 ns, or +-1.20 MHz, and that is what caps the identification amplitude.
+
 ### Phase wrapping sets the identification amplitude
 
 A fixed window `w` is unambiguous only over `±500/w` MHz. The q5 flux line runs about
@@ -108,6 +127,19 @@ a geometric ladder (default 20 → 100 → 500 ns, ratio 5) and
 unwrap. For q5 with a 20 ns coarsest rung and an assumed 20% overshoot that is about
 5% of full amplitude. Both runners compute this, print it, and refuse a larger
 `*_CRYO_AMPLITUDE` with an actionable message.
+
+The amplitude is solved numerically against the real static model rather than from a
+linear sensitivity, which matters because q5 parks essentially on the sweet spot: the
+local sensitivity is 0 MHz per unit at park, 18 at 1% amplitude and 91 at 5%. A
+linearised estimate from the park-to-target midpoint (-926 MHz per unit) would have
+forced an amplitude about ten times too small. With the real model the q5 ceiling is
+about 4.9%.
+
+The same curvature means the measurement is intrinsically weak just after the return,
+where the qubit is back near the sweet spot and a given flux error produces very
+little frequency shift. The analysis inverts the static model exactly rather than
+assuming linearity, and reports a per-point detuning uncertainty, so check the audit
+plot's post-return points before trusting the return transient.
 
 The alternative, if a larger amplitude is wanted: pass an existing correction as
 `*_CRYO_BASE_MODEL_JSON` and identify the *residual* on top of it, which is much
@@ -153,10 +185,16 @@ Both restore the flux line to park, QUA in a `finally` block.
 
 `Q3_`/`Q5_` prefixed: `CRYO_AMPLITUDE`, `CRYO_HOLD_US` (200), `CRYO_RECOVERY_US`
 (600), `CRYO_SHOTS` (300), `CRYO_WINDOWS_NS` (explicit ladder, comma separated),
-`CRYO_COARSEST_WINDOW_NS` (20), `CRYO_FINEST_WINDOW_NS` (500), `CRYO_LADDER_RATIO`
-(5), `CRYO_MAX_DELAYS` (40), `CRYO_ASSUMED_OVERSHOOT` (0.20),
-`CRYO_SCHEDULE_FIRST_US` (4), `CRYO_SCHEDULE_GROWTH` (1.2), `CRYO_SCHEDULE_MAX_US`
-(100), `CRYO_PROBE_INSET_NS` (16), `CRYO_BASE_MODEL_JSON`, `CRYO_NOTE`.
+`CRYO_WINDOWS_NS` is an explicit *effective* ladder. `CRYO_MIN_IDLE_NS` (16),
+`CRYO_FINEST_WINDOW_NS` (2000, effective), `CRYO_LADDER_RATIO` (4),
+`CRYO_MAX_DELAYS` (40), `CRYO_ASSUMED_OVERSHOOT` (0.20), `CRYO_SCHEDULE_FIRST_US`
+(0 = auto-size to the probe span), `CRYO_SCHEDULE_GROWTH` (1.2),
+`CRYO_SCHEDULE_MAX_US` (100), `CRYO_PROBE_INSET_NS` (16), `CRYO_BASE_MODEL_JSON`,
+`CRYO_NOTE`.
+
+The first emission segment is sized automatically to cover the probe span, so the
+early delays that carry the fast pole are never silently dropped. Near-identical
+ladder rungs are pruned, which saves two arms per delay.
 
 Expected duration: roughly 33 delays × 6 arm/window conditions × 300 shots, with a
 mean sequence length near the mean delay (~220 µs) plus reset. On q5 that is a few

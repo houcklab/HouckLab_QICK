@@ -273,7 +273,80 @@ def drift_report(repeats, *, mask=None):
             "supported_samples": int(np.count_nonzero(mask))}
 
 
-def plan_window_ladder(max_detuning_mhz, *, finest_ns, ratio=5.0, max_rungs=6):
+def effective_window_ns(idle_ns, pulse_ns):
+    idle_ns = float(idle_ns)
+    pulse_ns = float(pulse_ns)
+    if not np.isfinite(idle_ns) or idle_ns <= 0 or not np.isfinite(pulse_ns) or pulse_ns < 0:
+        raise ValueError("idle window must be positive and the pulse length nonnegative")
+    return idle_ns+pulse_ns
+
+
+def idle_window_ns(effective_ns, pulse_ns):
+    idle = float(effective_ns)-float(pulse_ns)
+    if idle <= 0:
+        raise ValueError(
+            f"an effective window of {float(effective_ns):g} ns is not reachable with "
+            f"{float(pulse_ns):g} ns pi/2 pulses; the shortest effective window is the pulse "
+            f"length plus one clock")
+    return idle
+
+
+def excursion_mhz(frequency_of_coordinate, *, park, target, amplitude, overshoot):
+    park = float(park)
+    target = float(target)
+    span = target-park
+    amplitude = float(amplitude)
+    overshoot = abs(float(overshoot))
+    grid = np.array([park+amplitude*span, park+amplitude*(1.0+overshoot)*span,
+                     park, park+amplitude*overshoot*span])
+    values = np.asarray(frequency_of_coordinate(grid), dtype=float)
+    return float(max(abs(values[1]-values[0]), abs(values[3]-values[2]))*1000.0)
+
+
+def solve_identification_amplitude(frequency_of_coordinate, *, park, target, overshoot,
+                                   coarsest_window_ns, safety=0.8, max_amplitude=1.0,
+                                   points=4001):
+    park = float(park)
+    target = float(target)
+    overshoot = abs(float(overshoot))
+    if overshoot <= 0:
+        raise ValueError("overshoot must be positive")
+    budget = float(safety)*window_unambiguous_range_mhz(coarsest_window_ns)
+    amplitudes = np.linspace(0.0, float(max_amplitude), int(points))[1:]
+    span = target-park
+    nominal = np.asarray(frequency_of_coordinate(park+amplitudes*span), dtype=float)
+    overshot = np.asarray(frequency_of_coordinate(park+amplitudes*(1.0+overshoot)*span),
+                          dtype=float)
+    at_park = float(np.asarray(frequency_of_coordinate(np.array([park])), dtype=float)[0])
+    returned = np.asarray(frequency_of_coordinate(park+amplitudes*overshoot*span), dtype=float)
+    excursion = np.maximum(np.abs(overshot-nominal), np.abs(returned-at_park))*1000.0
+    ok = np.isfinite(excursion) & (excursion <= budget)
+    if not ok.any() or not ok[0]:
+        raise ValueError(
+            f"even the smallest tested amplitude produces a {float(excursion[0]):.3g} MHz "
+            f"excursion, above the {budget:.3g} MHz a {float(coarsest_window_ns):g} ns window can "
+            f"unwrap; shorten the coarsest window or start from an existing correction")
+    first_bad = int(np.argmin(ok)) if not ok.all() else amplitudes.size
+    return float(amplitudes[first_bad-1])
+
+
+def prune_ladder(windows, *, min_step_ratio=1.5, max_step_ratio=6.0):
+    windows = [float(value) for value in sorted(windows)]
+    if len(windows) < 3:
+        return windows
+    kept = [windows[0]]
+    for index, value in enumerate(windows[1:], start=1):
+        if index == len(windows)-1:
+            kept.append(value)
+            continue
+        following = windows[index+1]
+        if value/kept[-1] < min_step_ratio and following/kept[-1] <= max_step_ratio:
+            continue
+        kept.append(value)
+    return kept
+
+
+def plan_window_ladder(max_detuning_mhz, *, finest_ns, ratio=5.0, max_rungs=6, min_ns=None):
     max_detuning_mhz = float(max_detuning_mhz)
     finest_ns = float(finest_ns)
     ratio = float(ratio)
@@ -283,11 +356,20 @@ def plan_window_ladder(max_detuning_mhz, *, finest_ns, ratio=5.0, max_rungs=6):
         raise ValueError("finest_ns must be positive and finite")
     if not np.isfinite(ratio) or ratio <= 1.0:
         raise ValueError("ratio between adjacent probe windows must exceed one")
+    floor = 0.0 if min_ns is None else float(min_ns)
+    if floor > 0 and finest_ns < floor:
+        raise ValueError(
+            f"the finest window {finest_ns:g} ns is below the {floor:g} ns the pulses allow")
     windows = [finest_ns]
     for _ in range(int(max_rungs)-1):
         if window_unambiguous_range_mhz(windows[0]) >= max_detuning_mhz:
             break
-        windows.insert(0, windows[0]/ratio)
+        candidate = windows[0]/ratio
+        if floor > 0 and candidate < floor:
+            windows.insert(0, floor)
+            break
+        windows.insert(0, candidate)
+    windows = prune_ladder(sorted(set(windows)))
     if window_unambiguous_range_mhz(windows[0]) < max_detuning_mhz:
         raise ValueError(
             f"a {len(windows)}-rung ladder down to {windows[0]:.3g} ns still only resolves "
@@ -343,3 +425,52 @@ def resolve_ladder(phases_rad, windows_ns, *, mask=None, safety=0.5):
             "ambiguous_count": int(np.count_nonzero(ambiguous)),
             "finest_window_ns": windows[-1],
             "branch_tolerance_mhz": float(safety*window_unambiguous_range_mhz(windows[-1]))}
+
+
+def plan_probe(frequency_of_coordinate, *, park, target, pulse_ns, readout_span_ns,
+               min_idle_ns=16.0, finest_effective_ns=2000.0, ratio=4.0, overshoot=0.2,
+               safety=0.8, inset_ns=16.0, requested_amplitude=None,
+               requested_effective_windows_ns=None, emission_quantum_ns=1000.0,
+               requested_first_ns=0.0, max_amplitude=1.0):
+    pulse_ns = float(pulse_ns)
+    min_idle_ns = float(min_idle_ns)
+    floor = pulse_ns+min_idle_ns
+    ceiling = solve_identification_amplitude(
+        frequency_of_coordinate, park=park, target=target, overshoot=overshoot,
+        coarsest_window_ns=floor, safety=safety, max_amplitude=max_amplitude)
+    amplitude = ceiling if requested_amplitude is None else float(requested_amplitude)
+    if amplitude > ceiling+1e-12:
+        raise ValueError(
+            f"a normalized amplitude of {amplitude:g} exceeds the {ceiling:.4f} that the "
+            f"{floor:g} ns shortest reachable effective window can unwrap for an assumed "
+            f"{overshoot:.0%} overshoot; lower the amplitude, shorten the pi/2 pulse, or start "
+            f"from an existing correction")
+    expected = excursion_mhz(frequency_of_coordinate, park=park, target=target,
+                             amplitude=amplitude, overshoot=overshoot)
+    if requested_effective_windows_ns:
+        windows = tuple(sorted(float(value) for value in requested_effective_windows_ns))
+        if windows[0] < floor-1e-9:
+            raise ValueError(
+                f"the coarsest requested effective window {windows[0]:g} ns is shorter than the "
+                f"{floor:g} ns that {pulse_ns:g} ns pi/2 pulses plus a {min_idle_ns:g} ns idle "
+                f"allow")
+        if window_unambiguous_range_mhz(windows[0]) < expected:
+            raise ValueError(
+                f"the coarsest requested effective window {windows[0]:g} ns resolves only "
+                f"+-{window_unambiguous_range_mhz(windows[0]):.3g} MHz, but the expected excursion "
+                f"at amplitude {amplitude:g} is {expected:.3g} MHz")
+    else:
+        finest = max(float(finest_effective_ns), floor*float(ratio))
+        windows = plan_window_ladder(
+            expected/max(float(safety), 1e-9), finest_ns=finest, ratio=float(ratio), min_ns=floor)
+    idle = tuple(idle_window_ns(value, pulse_ns) for value in windows)
+    span = float(inset_ns)+2.0*pulse_ns+max(idle)+float(readout_span_ns)
+    quantum = float(emission_quantum_ns)
+    first = max(float(requested_first_ns), np.ceil(span/quantum)*quantum)
+    return {"effective_windows_ns": windows, "idle_windows_ns": idle, "pulse_ns": pulse_ns,
+            "amplitude": amplitude, "amplitude_ceiling": ceiling, "overshoot": float(overshoot),
+            "expected_excursion_mhz": expected, "probe_span_ns": span,
+            "schedule_first_ns": float(first), "inset_ns": float(inset_ns),
+            "readout_span_ns": float(readout_span_ns),
+            "coarsest_range_mhz": window_unambiguous_range_mhz(min(windows)),
+            "finest_range_mhz": window_unambiguous_range_mhz(max(windows))}
