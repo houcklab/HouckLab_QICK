@@ -1439,6 +1439,8 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     ) + 1 == 801
     assert cfg["dc_min"] == -20550
     assert cfg["dc_max"] == -11800
+    assert cfg["flux_settle_us"] == 24.0
+    assert cfg["flux_predistortion_recovery_scale"] == 0.25
     assert cfg["sync_session"] == "q3_q5_5pt_apples_20260914_v1"
     assert cfg["sync_directory"] == "Z:/FluxTeam/Data/.qick_qua_sync"
     assert cfg["sync_slot_s"] == 150
@@ -1598,21 +1600,24 @@ def test_qick_neutral_execution_test_renders_hold_specific_lifecycles(monkeypatc
     params = {
         "decay_delays_us": [40.0, 80.0, 200.0],
         "reference_hold_us": 2.0,
-        "flux_settle_us": 0.5,
+        "flux_settle_us": 24.0,
         "flux_predistortion_recovery_us": 40.0,
+        "flux_predistortion_recovery_scale": 0.25,
     }
 
     source = runner.render_neutral_scan_compensation(choice, params)
 
     assert source["method"] == "neutral_condition_lifecycle_v1"
-    assert source["segment_edges_ns"][-1] == pytest.approx(240_500.0)
+    assert source["segment_edges_ns"][-1] == pytest.approx(264_000.0)
     assert source["multipliers"][-1] == 1.0
+    assert source["recovery_scale"] == pytest.approx(0.25)
     assert [entry["hold_ns"] for entry in source["lifecycle_conditions"]] == [
-        2_500.0, 40_500.0, 80_500.0, 200_500.0,
+        26_000.0, 64_000.0, 104_000.0, 224_000.0,
     ]
     for entry in source["lifecycle_conditions"]:
         return_index = entry["edges_ns"].index(entry["hold_ns"])
         assert entry["edges_ns"][return_index + 1] - entry["hold_ns"] == 500.0
+        assert entry["recovery_scale"] == pytest.approx(0.25)
 
 
 def test_qick_unaccepted_neutral_model_is_limited_to_one_round(monkeypatch):

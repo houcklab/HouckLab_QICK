@@ -62,8 +62,11 @@ P6_5PT_APPLES_TO_APPLES = {
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
-    "flux_settle_us": 0.5,
+    # Measured q3 return/readout contract: 24 us is the shortest tested
+    # interval statistically equivalent to a fully waited readout.
+    "flux_settle_us": 24.0,
     "flux_predistortion_recovery_us": 40.0,
+    "flux_predistortion_recovery_scale": 0.25,
     "readout_thermalization_us": 10.0,
     "apply_flux_tail_compensation": True,
     "reset_mode": "active",
@@ -302,7 +305,7 @@ def render_neutral_scan_compensation(choice, params):
             *params["decay_delays_us"],
         )
     ))
-    return fluxpred_production.neutral_lifecycle_table(
+    source = fluxpred_production.neutral_lifecycle_table(
         choice,
         holds_ns=holds_ns,
         recovery_ns=1000.0 * float(params["flux_predistortion_recovery_us"]),
@@ -310,6 +313,10 @@ def render_neutral_scan_compensation(choice, params):
         schedule_growth=1.2,
         schedule_max_ns=100_000.0,
         quantum_ns=4.0,
+    )
+    return fluxpred_production.scale_lifecycle_recovery(
+        source,
+        float(params["flux_predistortion_recovery_scale"]),
     )
 
 
@@ -391,7 +398,9 @@ def main():
         print(
             "[predistortion] rendered controller-neutral model for the exact "
             f"production lifecycle: {len(compensation['multipliers'])} segments, "
-            f"recovery={p['flux_predistortion_recovery_us']:g} us"
+            f"recovery={p['flux_predistortion_recovery_us']:g} us, "
+            f"return scale={p['flux_predistortion_recovery_scale']:g}, "
+            f"settle={p['flux_settle_us']:g} us"
         )
     else:
         correction_json, compensation, correction_mode = resolve_production_correction(
@@ -403,6 +412,10 @@ def main():
     neutral_record = fluxpred_production.provenance(
         neutral, backend="qick",
         code_commit=os.environ.get("Q3_CODE_COMMIT", "unknown"))
+    neutral_record["recovery_scale"] = float(
+        p["flux_predistortion_recovery_scale"]
+    )
+    neutral_record["settle_us"] = float(p["flux_settle_us"])
     reset_session = prepare_reset_session(
         p["reset_mode"],
         outer_folder=tls.outerFolder,
