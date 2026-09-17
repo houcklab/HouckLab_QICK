@@ -399,6 +399,9 @@ def return_readout_contract_plan(environ=None):
     recovery_scale_text = str(
         environ.get("Q3_RETURN_CONTRACT_RECOVERY_SCALES", "")
     ).strip()
+    scale_timing_ab = str(
+        environ.get("Q3_RETURN_CONTRACT_SCALE_TIMING_AB", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     if (
         not frequencies
         or not np.all(np.isfinite(frequencies))
@@ -444,8 +447,18 @@ def return_readout_contract_plan(environ=None):
             )
         for scale in scales:
             label = f"{scale:g}".replace(".", "p")
-            recovery_scale_by_mode[f"return_x{label}"] = float(scale)
-        modes = (*recovery_scale_by_mode, "on_waited")
+            if scale_timing_ab:
+                recovery_scale_by_mode[
+                    f"return_x{label}_overlap"
+                ] = float(scale)
+                recovery_scale_by_mode[
+                    f"return_x{label}_waited"
+                ] = float(scale)
+            else:
+                recovery_scale_by_mode[f"return_x{label}"] = float(scale)
+        modes = tuple(recovery_scale_by_mode)
+        if not scale_timing_ab:
+            modes = (*modes, "on_waited")
     else:
         modes = (
             "on_overlap", "off_overlap", "on_waited", "off_waited",
@@ -461,6 +474,7 @@ def return_readout_contract_plan(environ=None):
         ),
         "modes": modes,
         "recovery_scale_by_mode": recovery_scale_by_mode,
+        "scale_timing_ab": scale_timing_ab,
         "min_contrast": float(
             environ.get("Q3_RETURN_CONTRACT_MIN_CONTRAST", "0.5")
         ),
@@ -492,7 +506,7 @@ def return_contract_mode_settings(mode, plan, correction):
             fluxpred_production.scale_lifecycle_recovery(
                 correction, scale_by_mode[mode]
             ),
-            True,
+            not str(mode).endswith("_waited"),
         )
     if str(mode).startswith("on"):
         return correction, not str(mode).endswith("_waited")
@@ -1213,11 +1227,17 @@ def run_return_readout_contract():
         quantum_ns=4.0,
     )
     if plan["recovery_scale_by_mode"]:
-        print(
-            "[return contract] q3 recovery-gain sweep: outbound correction "
-            "stays ON; only the post-return command is scaled; on_waited is "
-            "the settled reference"
-        )
+        if plan.get("scale_timing_ab", False):
+            print(
+                "[return contract] q3 matched recovery timing A/B: every "
+                "gain is acquired with overlapping and waited readout"
+            )
+        else:
+            print(
+                "[return contract] q3 recovery-gain sweep: outbound correction "
+                "stays ON; only the post-return command is scaled; on_waited is "
+                "the settled reference"
+            )
     else:
         print(
             "[return contract] q3 four-way test: correction ON/OFF x "

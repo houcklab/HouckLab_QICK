@@ -1350,6 +1350,39 @@ def test_qick_return_contract_plan_can_extend_only_the_pre_readout_settle():
     assert plan["hold_times_us"] == [2.0, 42.0, 82.0, 202.0]
 
 
+def test_qick_recovery_sweep_can_pair_each_gain_with_its_waited_control():
+    """Timing A/B must not compare a scaled return with a full-gain control."""
+    plan = diagnostic().return_readout_contract_plan({
+        "Q3_RETURN_CONTRACT_RECOVERY_SCALES": "0.25,0.5",
+        "Q3_RETURN_CONTRACT_SCALE_TIMING_AB": "1",
+    })
+
+    assert plan["modes"] == (
+        "return_x0p25_overlap", "return_x0p25_waited",
+        "return_x0p5_overlap", "return_x0p5_waited",
+    )
+    assert plan["recovery_scale_by_mode"] == {
+        "return_x0p25_overlap": 0.25,
+        "return_x0p25_waited": 0.25,
+        "return_x0p5_overlap": 0.5,
+        "return_x0p5_waited": 0.5,
+    }
+
+    correction = {
+        "multipliers": [1.2, 1.0],
+        "lifecycle_conditions": [{
+            "hold_ns": 1000.0,
+            "edges_ns": [0.0, 1000.0, 1500.0],
+            "values": [1.2, -0.2],
+            "terminal_tail_bound": 0.01,
+        }],
+    }
+    _, overlap = diagnostic().return_contract_mode_settings(
+        "return_x0p5_waited", plan, correction,
+    )
+    assert overlap is False
+
+
 def test_qick_recovery_sweep_keeps_outbound_on_and_overlaps_readout():
     module = diagnostic()
     correction = {
