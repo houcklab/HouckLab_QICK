@@ -209,7 +209,9 @@ def fake_qick_hardware(tmp_path, monkeypatch, qick_runner):
     def render(choice, params):
         assert max(params["decay_delays_us"]) == 200.
         assert params["flux_settle_us"] == .5
+        assert params["flux_predistortion_return_prefix_us"] == 24.
         assert params["flux_predistortion_recovery_us"] == 40.
+        assert params["flux_predistortion_recovery_scale"] == .25
         return {"multipliers": [1.03, 1.01, 1.], "segment_edges_ns": [0., 4000., 240500.],
                 "model_sha256": "accepted"}
     class Experiment:
@@ -267,6 +269,7 @@ def test_qick_backend_dispatches_true_protocols_and_same_timing(tmp_path, qick_r
         assert cfg["apply_flux_tail_compensation"] is True
         assert cfg["flux_predistortion_round_trip_mode"] == "stateful"
         assert cfg["flux_predistortion_recovery_us"] == 40.
+        assert cfg["flux_predistortion_return_prefix_us"] == 24.
         assert cfg["flux_predistortion_overlap_payload_readout"] is False
         assert cfg["flux_settle_time_us"] == .5
         assert cfg["opx_t1_3pt_gain_lookup"] is True

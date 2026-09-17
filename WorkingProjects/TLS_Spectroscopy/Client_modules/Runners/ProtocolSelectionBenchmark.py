@@ -241,7 +241,10 @@ class QickBenchmarkBackend:
             "freq_min_ghz": self.plan.frequency_stop_ghz, "freq_max_ghz": self.plan.frequency_start_ghz,
             "freq_step_mhz": self.plan.frequency_step_mhz, "dc_min": -20550, "dc_max": -11800,
             "decay_delays_us": [40., 80., 120., 160., 200.], "reference_hold_us": 2.,
-            "flux_settle_us": .5, "flux_predistortion_recovery_us": 40.,
+            "flux_settle_us": .5,
+            "flux_predistortion_return_prefix_us": 24.,
+            "flux_predistortion_recovery_us": 40.,
+            "flux_predistortion_recovery_scale": .25,
         }
         selection_env = dict(self.environ)
         selection_env.setdefault("Q3_FLUXPRED_MODE", "neutral")
@@ -266,6 +269,7 @@ class QickBenchmarkBackend:
             "ff_gain_vec": self.dc_vec, "flux_fit_params": self.hw.tls.FLUX_FIT_PARAMS,
             "qubit_pulse_style": "arb", "apply_flux_tail_compensation": True,
             "flux_predistortion_round_trip_mode": "stateful", "flux_predistortion_recovery_us": 40.,
+            "flux_predistortion_return_prefix_us": 24.,
             "flux_settle_time_us": .5, "readout_thermalization_us": 10.,
             "opx_t1_3pt_gain_lookup": True, "opx_reverse_survival_order": False,
             "flux_predistortion_overlap_payload_readout": not wait_for_return,
@@ -340,6 +344,8 @@ class QickBenchmarkBackend:
             "model_provenance": self.model_provenance, "fluxpred_provenance": self.model_provenance,
             "calibration_id": self.calibration_id, "calibration": self.calibration_provenance,
             "code_commit": self.code_commit, "config": cfg,
+            "flux_predistortion_recovery_scale": .25,
+            "flux_predistortion_return_prefix_us": 24.,
         }
         exp.data.update(metadata)
         rows = benchmark.normalize_experiment_data(
