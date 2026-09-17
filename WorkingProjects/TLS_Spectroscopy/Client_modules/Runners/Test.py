@@ -393,6 +393,9 @@ def return_readout_contract_plan(environ=None):
     reset_mode = str(
         environ.get("Q3_RETURN_CONTRACT_RESET_MODE", "active")
     ).strip().lower()
+    settle_us = float(
+        environ.get("Q3_RETURN_CONTRACT_SETTLE_US", "0.5")
+    )
     recovery_scale_text = str(
         environ.get("Q3_RETURN_CONTRACT_RECOVERY_SCALES", "")
     ).strip()
@@ -418,6 +421,10 @@ def return_readout_contract_plan(environ=None):
     if reset_mode not in ("active", "passive"):
         raise ValueError(
             "Q3_RETURN_CONTRACT_RESET_MODE must be active or passive"
+        )
+    if not np.isfinite(settle_us) or settle_us <= 0.0:
+        raise ValueError(
+            "Q3_RETURN_CONTRACT_SETTLE_US must be finite and positive"
         )
     recovery_scale_by_mode = {}
     if recovery_scale_text:
@@ -448,6 +455,7 @@ def return_readout_contract_plan(environ=None):
         "hold_times_us": holds,
         "shots": shots,
         "reset_mode": reset_mode,
+        "settle_us": settle_us,
         "recovery_us": float(
             environ.get("Q3_RETURN_CONTRACT_RECOVERY_US", "40")
         ),
@@ -1194,7 +1202,7 @@ def run_return_readout_contract():
         choice,
         holds_ns=tuple(
             1000.0 * (
-                float(params["flux_settle_us"]) + float(hold_us)
+                float(plan["settle_us"]) + float(hold_us)
             )
             for hold_us in plan["hold_times_us"]
         ),
@@ -1219,6 +1227,10 @@ def run_return_readout_contract():
         "[return contract] the qubit remains in |g> throughout the flux "
         "excursion; P1 is prepared only after the selected return timing"
     )
+    print(
+        "[return contract] pre-readout return settle="
+        f"{plan['settle_us']:g} us"
+    )
     print("[return contract] acquiring one shared DMem-native classifier")
     classifier_session = prepare_reset_session(
         "active",
@@ -1236,7 +1248,7 @@ def run_return_readout_contract():
         "flux_fit_params": tls.FLUX_FIT_PARAMS,
         "relax_delay": PASSIVE_T1_RESET_US,
         "qubit_pulse_style": "arb",
-        "flux_settle_time_us": float(params["flux_settle_us"]),
+        "flux_settle_time_us": float(plan["settle_us"]),
         "readout_thermalization_us": float(params["readout_thermalization_us"]),
         "opx_t1_3pt_gain_lookup": True,
         "opx_diagnostic_condition_tags": True,

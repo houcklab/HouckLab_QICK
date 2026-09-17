@@ -1340,6 +1340,16 @@ def test_qick_return_contract_plan_can_sweep_recovery_gain_only():
     }
 
 
+def test_qick_return_contract_plan_can_extend_only_the_pre_readout_settle():
+    """The timing probe must expose the short wait without changing holds."""
+    plan = diagnostic().return_readout_contract_plan({
+        "Q3_RETURN_CONTRACT_SETTLE_US": "4",
+    })
+
+    assert plan["settle_us"] == pytest.approx(4.0)
+    assert plan["hold_times_us"] == [2.0, 42.0, 82.0, 202.0]
+
+
 def test_qick_recovery_sweep_keeps_outbound_on_and_overlaps_readout():
     module = diagnostic()
     correction = {
