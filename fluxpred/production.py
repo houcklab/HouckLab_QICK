@@ -27,6 +27,32 @@ def timing_matched_unity(compensation):
     return result
 
 
+def scale_lifecycle_recovery(compensation, scale):
+    """Scale only the post-return portion of exact lifecycle commands."""
+    scale = float(scale)
+    if not np.isfinite(scale) or not 0.0 <= scale <= 1.0:
+        raise ValueError("recovery scale must be finite and between zero and one")
+    result = copy.deepcopy(compensation)
+    conditions = result.get("lifecycle_conditions")
+    if not conditions:
+        raise ValueError("recovery scaling requires exact lifecycle conditions")
+    for condition in conditions:
+        hold_ns = float(condition["hold_ns"])
+        edges = [float(value) for value in condition["edges_ns"]]
+        if not any(abs(edge - hold_ns) <= 1e-9 for edge in edges):
+            raise ValueError("lifecycle condition does not contain its return edge")
+        condition["values"] = [
+            float(value) if start < hold_ns - 1e-9 else scale * float(value)
+            for start, value in zip(edges[:-1], condition["values"])
+        ]
+        condition["terminal_tail_bound"] = (
+            scale * float(condition.get("terminal_tail_bound", 0.0))
+        )
+        condition["recovery_scale"] = scale
+    result["recovery_scale"] = scale
+    return result
+
+
 def _env(device, name, environ):
     return str(environ.get(f"{ENV_PREFIX[device]}_{name}", "")).strip()
 

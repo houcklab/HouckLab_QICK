@@ -1324,6 +1324,48 @@ def test_qick_return_contract_plan_crosses_correction_with_overlap():
     )
 
 
+def test_qick_return_contract_plan_can_sweep_recovery_gain_only():
+    """The diagnostic must vary return gain without changing outbound ON."""
+    plan = diagnostic().return_readout_contract_plan({
+        "Q3_RETURN_CONTRACT_RECOVERY_SCALES": "0,0.5,1",
+    })
+
+    assert plan["modes"] == (
+        "return_x0", "return_x0p5", "return_x1", "on_waited",
+    )
+    assert plan["recovery_scale_by_mode"] == {
+        "return_x0": 0.0,
+        "return_x0p5": 0.5,
+        "return_x1": 1.0,
+    }
+
+
+def test_qick_recovery_sweep_keeps_outbound_on_and_overlaps_readout():
+    module = diagnostic()
+    correction = {
+        "multipliers": [1.2, 1.0],
+        "lifecycle_conditions": [{
+            "hold_ns": 1000.0,
+            "edges_ns": [0.0, 1000.0, 1500.0],
+            "values": [1.2, -0.2],
+            "terminal_tail_bound": 0.01,
+        }],
+    }
+    plan = {
+        "recovery_scale_by_mode": {"return_x0p5": 0.5},
+    }
+
+    selected, overlap = module.return_contract_mode_settings(
+        "return_x0p5", plan, correction,
+    )
+
+    assert overlap is True
+    assert selected["lifecycle_conditions"][0]["values"] == pytest.approx(
+        [1.2, -0.1]
+    )
+    assert correction["lifecycle_conditions"][0]["values"] == [1.2, -0.2]
+
+
 def load_experiments(monkeypatch):
     # QICK and the single-shot experiment require hardware-only dependencies.
     monkeypatch.setitem(sys.modules, "qick", types.SimpleNamespace(AveragerProgram=object))

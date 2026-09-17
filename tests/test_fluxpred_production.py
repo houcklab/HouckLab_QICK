@@ -177,6 +177,50 @@ def test_neutral_lifecycle_table_has_exact_hold_specific_half_us_return_bins(tmp
     json.dumps(table, allow_nan=False)
 
 
+def test_scale_lifecycle_recovery_preserves_outbound_and_scales_only_return(tmp_path):
+    """A recovery-gain sweep must not change the calibrated outbound pulse."""
+    path = model_file(tmp_path, "q5", Q5["park"], Q5["scale"], accepted=True)
+    choice = production.selection(
+        "q5", park=Q5["park"], scale=Q5["scale"],
+        environ={"Q5_FLUXPRED_MODE": "neutral", "Q5_FLUXPRED_MODEL_JSON": str(path)})
+    table = production.neutral_lifecycle_table(
+        choice,
+        holds_ns=(42_500.0,),
+        recovery_ns=40_000.0,
+        schedule_first_ns=500.0,
+        schedule_growth=1.2,
+        schedule_max_ns=100_000.0,
+        quantum_ns=4.0,
+    )
+
+    scaled = production.scale_lifecycle_recovery(table, 0.25)
+
+    source = table["lifecycle_conditions"][0]
+    result = scaled["lifecycle_conditions"][0]
+    return_index = source["edges_ns"].index(source["hold_ns"])
+    assert result["values"][:return_index] == source["values"][:return_index]
+    assert result["values"][return_index:] == pytest.approx(
+        np.asarray(source["values"][return_index:]) * 0.25
+    )
+    assert result["recovery_scale"] == pytest.approx(0.25)
+    assert scaled["recovery_scale"] == pytest.approx(0.25)
+    assert table["lifecycle_conditions"][0]["values"] == source["values"]
+
+
+def test_scale_lifecycle_recovery_rejects_invalid_scale(tmp_path):
+    path = model_file(tmp_path, "q3", Q3["park"], Q3["scale"], accepted=True)
+    choice = production.selection(
+        "q3", park=Q3["park"], scale=Q3["scale"],
+        environ={"Q3_FLUXPRED_MODE": "neutral", "Q3_FLUXPRED_MODEL_JSON": str(path)})
+    table = production.neutral_lifecycle_table(
+        choice, holds_ns=(42_500.0,), recovery_ns=40_000.0,
+        schedule_first_ns=500.0, schedule_growth=1.2,
+        schedule_max_ns=100_000.0, quantum_ns=4.0)
+
+    with pytest.raises(ValueError, match="recovery scale"):
+        production.scale_lifecycle_recovery(table, -0.01)
+
+
 def test_provenance_is_json_serializable(tmp_path):
     path = model_file(tmp_path, "q5", Q5["park"], Q5["scale"], accepted=True)
     choice = production.selection(

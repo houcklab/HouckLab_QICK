@@ -393,6 +393,9 @@ def return_readout_contract_plan(environ=None):
     reset_mode = str(
         environ.get("Q3_RETURN_CONTRACT_RESET_MODE", "active")
     ).strip().lower()
+    recovery_scale_text = str(
+        environ.get("Q3_RETURN_CONTRACT_RECOVERY_SCALES", "")
+    ).strip()
     if (
         not frequencies
         or not np.all(np.isfinite(frequencies))
@@ -416,6 +419,30 @@ def return_readout_contract_plan(environ=None):
         raise ValueError(
             "Q3_RETURN_CONTRACT_RESET_MODE must be active or passive"
         )
+    recovery_scale_by_mode = {}
+    if recovery_scale_text:
+        scales = [
+            float(value) for value in recovery_scale_text.split(",")
+        ]
+        if (
+            not scales
+            or not np.all(np.isfinite(scales))
+            or np.any(np.asarray(scales) < 0.0)
+            or np.any(np.asarray(scales) > 1.0)
+            or len(set(scales)) != len(scales)
+        ):
+            raise ValueError(
+                "Q3_RETURN_CONTRACT_RECOVERY_SCALES needs unique finite "
+                "values between zero and one"
+            )
+        for scale in scales:
+            label = f"{scale:g}".replace(".", "p")
+            recovery_scale_by_mode[f"return_x{label}"] = float(scale)
+        modes = (*recovery_scale_by_mode, "on_waited")
+    else:
+        modes = (
+            "on_overlap", "off_overlap", "on_waited", "off_waited",
+        )
     return {
         "target_frequencies_ghz": frequencies,
         "hold_times_us": holds,
@@ -424,9 +451,8 @@ def return_readout_contract_plan(environ=None):
         "recovery_us": float(
             environ.get("Q3_RETURN_CONTRACT_RECOVERY_US", "40")
         ),
-        "modes": (
-            "on_overlap", "off_overlap", "on_waited", "off_waited",
-        ),
+        "modes": modes,
+        "recovery_scale_by_mode": recovery_scale_by_mode,
         "min_contrast": float(
             environ.get("Q3_RETURN_CONTRACT_MIN_CONTRAST", "0.5")
         ),
@@ -446,6 +472,25 @@ def unity_timing_table(compensation):
     result = fluxpred_production.timing_matched_unity(compensation)
     result["diagnostic_predistortion_mode"] = "timing_matched_unity"
     return result
+
+
+def return_contract_mode_settings(mode, plan, correction):
+    """Resolve one return diagnostic mode without changing outbound ON."""
+    from fluxpred import production as fluxpred_production
+
+    scale_by_mode = dict(plan.get("recovery_scale_by_mode", {}))
+    if mode in scale_by_mode:
+        return (
+            fluxpred_production.scale_lifecycle_recovery(
+                correction, scale_by_mode[mode]
+            ),
+            True,
+        )
+    if str(mode).startswith("on"):
+        return correction, not str(mode).endswith("_waited")
+    if str(mode).startswith("off"):
+        return unity_timing_table(correction), not str(mode).endswith("_waited")
+    raise ValueError(f"unsupported return/readout diagnostic mode: {mode}")
 
 
 def predistortion_causality_plan(environ=None):
@@ -1042,6 +1087,12 @@ def save_return_readout_contract_outputs(
         "on_overlap": "#2457a6", "off_overlap": "#d97706",
         "on_waited": "#3b9e77", "off_waited": "#cc79a7",
     }
+    sweep_colors = plt.get_cmap("viridis")
+    for index, mode in enumerate(plan["modes"]):
+        colors.setdefault(
+            mode,
+            sweep_colors(index / max(len(plan["modes"]) - 1, 1)),
+        )
     holds = np.asarray(plan["hold_times_us"], dtype=float)
     for frequency_index, frequency in enumerate(target_frequency_ghz):
         axis = axes[frequency_index, 0]
@@ -1153,11 +1204,17 @@ def run_return_readout_contract():
         schedule_max_ns=100_000.0,
         quantum_ns=4.0,
     )
-    unity = unity_timing_table(compensation)
-    print(
-        "[return contract] q3 four-way test: correction ON/OFF x "
-        "overlap/waited; OFF retains the exact segmented timing schedule"
-    )
+    if plan["recovery_scale_by_mode"]:
+        print(
+            "[return contract] q3 recovery-gain sweep: outbound correction "
+            "stays ON; only the post-return command is scaled; on_waited is "
+            "the settled reference"
+        )
+    else:
+        print(
+            "[return contract] q3 four-way test: correction ON/OFF x "
+            "overlap/waited; OFF retains the exact segmented timing schedule"
+        )
     print(
         "[return contract] the qubit remains in |g> throughout the flux "
         "excursion; P1 is prepared only after the selected return timing"
@@ -1223,14 +1280,15 @@ def run_return_readout_contract():
         )
         for mode in mode_order:
             acquisition_index += 1
+            mode_correction, overlap_payload_readout = (
+                return_contract_mode_settings(mode, plan, compensation)
+            )
             cfg = dict(common_cfg)
             cfg.update({
                 "apply_flux_tail_compensation": True,
-                "flux_tail_compensation": (
-                    compensation if mode.startswith("on") else unity
-                ),
-                "flux_predistortion_overlap_payload_readout": mode.endswith(
-                    "_overlap"
+                "flux_tail_compensation": mode_correction,
+                "flux_predistortion_overlap_payload_readout": (
+                    overlap_payload_readout
                 ),
             })
             print(
