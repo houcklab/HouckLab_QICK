@@ -1608,11 +1608,11 @@ def test_qick_neutral_execution_test_renders_hold_specific_lifecycles(monkeypatc
     source = runner.render_neutral_scan_compensation(choice, params)
 
     assert source["method"] == "neutral_condition_lifecycle_v1"
-    assert source["segment_edges_ns"][-1] == pytest.approx(264_000.0)
+    assert source["segment_edges_ns"][-1] == pytest.approx(266_000.0)
     assert source["multipliers"][-1] == 1.0
     assert source["recovery_scale"] == pytest.approx(0.25)
     assert [entry["hold_ns"] for entry in source["lifecycle_conditions"]] == [
-        26_000.0, 64_000.0, 104_000.0, 224_000.0,
+        26_000.0, 66_000.0, 106_000.0, 226_000.0,
     ]
     for entry in source["lifecycle_conditions"]:
         return_index = entry["edges_ns"].index(entry["hold_ns"])

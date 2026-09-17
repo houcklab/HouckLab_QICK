@@ -298,11 +298,13 @@ def resolve_neutral_selection(tls, environ=None, execution_test_mode=""):
 def render_neutral_scan_compensation(choice, params):
     """Render the shared model at every exact production hold."""
     settle_us = float(params["flux_settle_us"])
+    reference_us = float(params["reference_hold_us"])
     holds_ns = tuple(dict.fromkeys(
-        1000.0 * (settle_us + float(value))
+        1000.0 * (settle_us + value)
         for value in (
-            params["reference_hold_us"],
-            *params["decay_delays_us"],
+            reference_us,
+            *(reference_us + float(delay)
+              for delay in params["decay_delays_us"]),
         )
     ))
     source = fluxpred_production.neutral_lifecycle_table(
