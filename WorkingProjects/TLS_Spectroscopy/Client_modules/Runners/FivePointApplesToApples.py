@@ -62,9 +62,11 @@ P6_5PT_APPLES_TO_APPLES = {
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
-    # Measured q3 return/readout contract: 24 us is the shortest tested
-    # interval statistically equivalent to a fully waited readout.
-    "flux_settle_us": 24.0,
+    # The target only needs the common 0.5 us settling interval.  The q3
+    # return/readout contract is separate: 24 us is the shortest tested
+    # interval statistically equivalent to a fully waited park readout.
+    "flux_settle_us": 0.5,
+    "flux_predistortion_return_prefix_us": 24.0,
     "flux_predistortion_recovery_us": 40.0,
     "flux_predistortion_recovery_scale": 0.25,
     "readout_thermalization_us": 10.0,
@@ -402,7 +404,8 @@ def main():
             f"production lifecycle: {len(compensation['multipliers'])} segments, "
             f"recovery={p['flux_predistortion_recovery_us']:g} us, "
             f"return scale={p['flux_predistortion_recovery_scale']:g}, "
-            f"settle={p['flux_settle_us']:g} us"
+            f"target settle={p['flux_settle_us']:g} us, "
+            f"return prefix={p['flux_predistortion_return_prefix_us']:g} us"
         )
     else:
         correction_json, compensation, correction_mode = resolve_production_correction(
@@ -418,6 +421,9 @@ def main():
         p["flux_predistortion_recovery_scale"]
     )
     neutral_record["settle_us"] = float(p["flux_settle_us"])
+    neutral_record["return_prefix_us"] = float(
+        p["flux_predistortion_return_prefix_us"]
+    )
     reset_session = prepare_reset_session(
         p["reset_mode"],
         outer_folder=tls.outerFolder,
@@ -438,6 +444,9 @@ def main():
         "relax_delay": PASSIVE_T1_RESET_US,
         "qubit_pulse_style": "arb",
         "flux_settle_time_us": float(p["flux_settle_us"]),
+        "flux_predistortion_return_prefix_us": float(
+            p["flux_predistortion_return_prefix_us"]
+        ),
         "flux_predistortion_recovery_us": float(
             p["flux_predistortion_recovery_us"]
         ),

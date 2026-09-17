@@ -770,6 +770,10 @@ class _T1VsFluxBase(ExperimentClass):
                                     if flux_settle_time_us is not None
                                     else ff_pulse.flux_settle_us(cfg))
         cfg["flux_settle_time_us"] = self.flux_settle_time_us
+        self.flux_predistortion_return_prefix_us = float(cfg.get(
+            "flux_predistortion_return_prefix_us",
+            self.flux_settle_time_us,
+        ))
         self.reset_mode = reset_mode
         cfg["reset_mode"] = reset_mode
         self.repeat_metadata = dict(repeat_metadata or {})
@@ -783,6 +787,8 @@ class _T1VsFluxBase(ExperimentClass):
         self.data = {"qubit": self.element, "dc_vec": self.dc_vec, "shots": self.shots,
                      "park_voltage": self.park_voltage,
                      "flux_settle_time_us": self.flux_settle_time_us,
+                     "flux_predistortion_return_prefix_us":
+                         self.flux_predistortion_return_prefix_us,
                      "flux_tail_compensation": cfg.get("flux_tail_compensation"),
                      "meta_dict": dict(cfg), "calib_params": calib_params,
                      "reset_mode": reset_mode,

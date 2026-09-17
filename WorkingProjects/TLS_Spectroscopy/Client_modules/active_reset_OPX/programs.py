@@ -1364,6 +1364,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
         self._t1_ff_segments = None
         self._t1_ff_compensation = None
         self._t1_ff_settle_us = 0.0
+        self._t1_ff_return_prefix_us = 0.0
         self._t1_ff_predistortion_mode = "none"
         self._t1_ff_predistortion_tail_us = 0.0
         self._t1_ff_predistortion_recovery_us = 0.0
@@ -1371,6 +1372,18 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             if not getattr(self, "do_park_hold", False):
                 ff_pulse.declare_ff(self)
             self._t1_ff_settle_us = ff_pulse.flux_settle_us(cfg)
+            self._t1_ff_return_prefix_us = float(cfg.get(
+                "flux_predistortion_return_prefix_us",
+                self._t1_ff_settle_us,
+            ))
+            if (
+                not np.isfinite(self._t1_ff_return_prefix_us)
+                or self._t1_ff_return_prefix_us < 0.0
+            ):
+                raise ValueError(
+                    "flux_predistortion_return_prefix_us must be finite and "
+                    "non-negative"
+                )
             self._t1_ff_compensation = ff_pulse.load_compensation(cfg)
             if self._t1_ff_compensation is not None:
                 self._t1_ff_predistortion_mode = (
@@ -1422,13 +1435,13 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                         )
                         prefix, tail = ff_pulse.split_compensation_segments(
                             recovery,
-                            self._t1_ff_settle_us,
+                            self._t1_ff_return_prefix_us,
                         )
                         prefix_duration = sum(duration for _, duration in prefix)
-                        if prefix_duration < self._t1_ff_settle_us - 1e-12:
+                        if prefix_duration < self._t1_ff_return_prefix_us - 1e-12:
                             prefix.append((
                                 0.0,
-                                self._t1_ff_settle_us - prefix_duration,
+                                self._t1_ff_return_prefix_us - prefix_duration,
                             ))
                         ff_pulse.play_relative_compensation_segments(
                             self,
@@ -1479,7 +1492,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                         self,
                         target_gain,
                         park_gain,
-                        self._t1_ff_settle_us,
+                        self._t1_ff_return_prefix_us,
                         self._t1_ff_compensation,
                     )
                     self.sync_all(0)
@@ -1795,13 +1808,13 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             )
             prefix, tail = ff_pulse.split_compensation_segments(
                 recovery,
-                self._t1_ff_settle_us,
+                self._t1_ff_return_prefix_us,
             )
             prefix_duration = sum(duration for _, duration in prefix)
-            if prefix_duration < self._t1_ff_settle_us - 1e-12:
+            if prefix_duration < self._t1_ff_return_prefix_us - 1e-12:
                 prefix.append((
                     0.0,
-                    self._t1_ff_settle_us - prefix_duration,
+                    self._t1_ff_return_prefix_us - prefix_duration,
                 ))
             for coefficient, duration in target:
                 self._play_dynamic_relative_segment(
@@ -1847,7 +1860,7 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
         ):
             self._play_dynamic_compensation_segment(multiplier, duration)
         for multiplier, duration in ff_pulse.compensation_hold_segments(
-            self._t1_ff_compensation, self._t1_ff_settle_us
+            self._t1_ff_compensation, self._t1_ff_return_prefix_us
         ):
             self._play_dynamic_compensation_segment(
                 multiplier, duration, returning=True

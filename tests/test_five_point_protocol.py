@@ -1208,6 +1208,7 @@ def test_stateful_return_tail_can_finish_before_payload_readout(monkeypatch):
         "flux_predistortion_overlap_payload_readout": False,
     }
     prog._t1_ff_settle_us = 0.5
+    prog._t1_ff_return_prefix_us = 0.5
     prog._t1_ff_predistortion_mode = "stateful"
     prog._t1_ff_predistortion_recovery_us = 40.0
     prog._t1_ff_compensation = {
@@ -1314,6 +1315,57 @@ def test_post_return_reference_prepares_excited_state_after_flux_lifecycle(monke
     prog._emit_three_point_payload("P1", True, True, 42.0)
 
     assert events == [("wait", 42.0, True), "prepare"]
+
+
+def test_stateful_round_trip_separates_target_settle_from_return_prefix(monkeypatch):
+    """The safe park-readout wait must not become extra target T1 dwell."""
+    module, cls = program_type()
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+    prog = object.__new__(cls)
+    prog.cfg = {
+        "ff_ch": 0,
+        "ff_park_gain": -100,
+        "flux_predistortion_overlap_payload_readout": True,
+    }
+    prog._t1_ff_settle_us = 0.5
+    prog._t1_ff_return_prefix_us = 24.0
+    prog._t1_ff_predistortion_mode = "stateful"
+    prog._t1_ff_predistortion_recovery_us = 40.0
+    prog._t1_ff_compensation = {"test": True}
+    observed = {}
+    events = []
+
+    def round_trip(_compensation, hold_us, recovery_us=None):
+        observed["hold_us"] = hold_us
+        observed["recovery_us"] = recovery_us
+        return [(1.0, hold_us)], [(0.0, 40.0)]
+
+    def split(recovery, split_us):
+        observed["split_us"] = split_us
+        assert recovery == [(0.0, 40.0)]
+        return [(0.0, split_us)], [(0.0, 40.0 - split_us)]
+
+    monkeypatch.setattr(ff_pulse, "compensation_round_trip_segments", round_trip)
+    monkeypatch.setattr(ff_pulse, "split_compensation_segments", split)
+    monkeypatch.setattr(
+        ff_pulse,
+        "play_hard_step",
+        lambda _prog, gain: events.append(("hard_step", gain)),
+    )
+    prog.sync_all = lambda cycles: events.append(("sync", cycles))
+    prog._play_dynamic_relative_segment = (
+        lambda coefficient, duration, anchor: events.append(
+            ("segment", anchor, coefficient, duration)
+        )
+    )
+
+    module.OPXResetT1FluxSweepProgram._play_dynamic_compensated_hold(prog, 40.0)
+
+    assert observed["hold_us"] == pytest.approx(40.5)
+    assert observed["recovery_us"] == pytest.approx(40.0)
+    assert observed["split_us"] == pytest.approx(24.0)
+    assert ("segment", "park", 0.0, 24.0) in events
 
 
 def test_qick_return_contract_plan_crosses_correction_with_overlap():
@@ -1439,7 +1491,8 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     ) + 1 == 801
     assert cfg["dc_min"] == -20550
     assert cfg["dc_max"] == -11800
-    assert cfg["flux_settle_us"] == 24.0
+    assert cfg["flux_settle_us"] == 0.5
+    assert cfg["flux_predistortion_return_prefix_us"] == 24.0
     assert cfg["flux_predistortion_recovery_scale"] == 0.25
     assert cfg["sync_session"] == "q3_q5_5pt_apples_20260914_v1"
     assert cfg["sync_directory"] == "Z:/FluxTeam/Data/.qick_qua_sync"
@@ -1600,7 +1653,8 @@ def test_qick_neutral_execution_test_renders_hold_specific_lifecycles(monkeypatc
     params = {
         "decay_delays_us": [40.0, 80.0, 200.0],
         "reference_hold_us": 2.0,
-        "flux_settle_us": 24.0,
+        "flux_settle_us": 0.5,
+        "flux_predistortion_return_prefix_us": 24.0,
         "flux_predistortion_recovery_us": 40.0,
         "flux_predistortion_recovery_scale": 0.25,
     }
@@ -1608,11 +1662,11 @@ def test_qick_neutral_execution_test_renders_hold_specific_lifecycles(monkeypatc
     source = runner.render_neutral_scan_compensation(choice, params)
 
     assert source["method"] == "neutral_condition_lifecycle_v1"
-    assert source["segment_edges_ns"][-1] == pytest.approx(266_000.0)
+    assert source["segment_edges_ns"][-1] == pytest.approx(242_500.0)
     assert source["multipliers"][-1] == 1.0
     assert source["recovery_scale"] == pytest.approx(0.25)
     assert [entry["hold_ns"] for entry in source["lifecycle_conditions"]] == [
-        26_000.0, 66_000.0, 106_000.0, 226_000.0,
+        2_500.0, 42_500.0, 82_500.0, 202_500.0,
     ]
     for entry in source["lifecycle_conditions"]:
         return_index = entry["edges_ns"].index(entry["hold_ns"])
