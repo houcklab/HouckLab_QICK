@@ -23,6 +23,8 @@ def build_params():
     p["run_fit"] = True
     p["run_correct"] = False
     p["fit_residual_composition"] = False
+    p["correction_fit_start_us"] = _f("Q3_STEP3A_FIT_START_US",
+                                      p.get("correction_fit_start_us", 100.0))
     p["t_min_us"] = _f("Q3_STEP3A_DELAY_MIN_US", 1.0)
     p["t_max_us"] = _f("Q3_STEP3A_DELAY_MAX_US", 201.0)
     p["t_step_us"] = _f("Q3_STEP3A_DELAY_STEP_US", 1.0)
@@ -58,6 +60,9 @@ def build_params():
     return p
 
 
+FIT = _flag("Q3_STEP3A_FIT", "0")
+
+
 def main():
     p = build_params()
     n_delays = int(np.floor((p["t_max_us"] - p["t_min_us"]) / p["t_step_us"]))
@@ -86,21 +91,32 @@ def main():
         print(f"  read gain override  : {p['read_gain']}")
     if "read_freq_mhz" in p:
         print(f"  read freq override  : {p['read_freq_mhz']:.4f} MHz")
-    print(f"  correction          : OFF (nothing applied, nothing composed)")
+    print(f"  correction          : OFF (nothing applied)")
+    print(f"  fit a correction    : {'YES' if FIT else 'no'}"
+          + (f"  (fit starts at {p['correction_fit_start_us']:g} us)" if FIT else ""))
     print("======================================================")
     print("")
 
     soc, soccfg = tls.makeProxy()
     tls._set_yoko_if_requested()
     exp = tls._run_step3_experiment(
-        p, soc, soccfg, tls.outerFolder, suffix="Qubit_Flux_Step_Response_Clean3A",
-        flux_tail_compensation=None, fit_rise_decay_bump_dc_correction=False,
+        p, soc, soccfg, tls.outerFolder,
+        suffix="Qubit_Flux_Step_Response_Clean3A",
+        flux_tail_compensation=None, fit_rise_decay_bump_dc_correction=FIT,
         live_plot=bool(p.get("live_plot", True)) and tls.LIVE_PLOTS,
     )
     print("")
     print("=========== done ===========")
-    print("  no correction was fitted or saved; trace the raw sweep offline with")
-    print("  tools/trace_step_response.py on the QUA side, or its QICK equivalent")
+    if FIT:
+        js = exp.data.get("rise_decay_bump_dc_compensation_json")
+        if js:
+            print(f"  correction JSON: {js}")
+            print("  validate it against an independent trace before applying it")
+        else:
+            print("  the fit did NOT emit a correction JSON; the confidence gate")
+            print("  rejected it. Inspect the raw map before lowering any threshold.")
+    else:
+        print("  no correction was fitted or saved")
     print("============================")
     print("")
     return exp
