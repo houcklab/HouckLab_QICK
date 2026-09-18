@@ -65,6 +65,19 @@ CORRECTION_JSON = environ.get("Q3_STEP3A_CORRECTION_JSON", "").strip() or None
 
 
 def main():
+    requested_target = environ.get("Q3_STEP3A_TARGET_DC")
+    if requested_target is not None and str(requested_target).strip() != "":
+        new_target = float(requested_target)
+        if not np.isfinite(new_target):
+            raise ValueError("Q3_STEP3A_TARGET_DC must be finite")
+        park = tls._baseline_dc_offset()
+        old_step = abs(float(tls.TARGET_DC_OFFSET) - park)
+        new_step = abs(new_target - park)
+        print(f"[target] TARGET_DC_OFFSET {tls.TARGET_DC_OFFSET:+.0f} -> {new_target:+.0f} DAC "
+              "(Q3_STEP3A_TARGET_DC)")
+        print(f"[target] step from park {old_step:.0f} -> {new_step:.0f} DAC "
+              f"({new_step / old_step:.3f}x the step the correction was fitted at)")
+        tls.TARGET_DC_OFFSET = new_target
     p = build_params()
     n_delays = int(np.floor((p["t_max_us"] - p["t_min_us"]) / p["t_step_us"]))
     park = tls._baseline_dc_offset()
