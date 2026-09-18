@@ -117,6 +117,28 @@ def apply_series_overrides(params, environ=None):
             print("[scan] PREDISTORTION OFF arm: the qubit drifts during every "
                   "measurement, so this arm is expected to be physically wrong, not a "
                   "reference to match")
+    delays = environ.get("Q3_5PT_DELAYS_US")
+    if delays is not None and str(delays).strip() != "":
+        vals = [float(v) for v in str(delays).replace(",", " ").split()]
+        if len(vals) < 1:
+            raise ValueError("Q3_5PT_DELAYS_US must list at least one delay")
+        if any(not (v > 0.0) or v != v for v in vals):
+            raise ValueError("Q3_5PT_DELAYS_US entries must be finite and positive")
+        if sorted(vals) != vals:
+            raise ValueError("Q3_5PT_DELAYS_US must be in increasing order")
+        out["decay_delays_us"] = vals
+        print(f"[scan] decay delays {params['decay_delays_us']} -> {vals} us "
+              "(Q3_5PT_DELAYS_US)")
+    for key, env in (("freq_min_ghz", "Q3_5PT_FREQ_MIN_GHZ"),
+                     ("freq_max_ghz", "Q3_5PT_FREQ_MAX_GHZ"),
+                     ("freq_step_mhz", "Q3_5PT_FREQ_STEP_MHZ")):
+        raw = environ.get(env)
+        if raw is not None and str(raw).strip() != "":
+            val = float(raw)
+            if not (val > 0.0) or val != val:
+                raise ValueError(f"{env} must be finite and positive")
+            out[key] = val
+            print(f"[scan] {key} {params[key]} -> {val} ({env})")
     sync = environ.get("Q3_5PT_SYNC")
     if sync is not None and str(sync).strip() != "":
         wanted = str(sync).strip().lower()
