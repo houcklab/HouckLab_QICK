@@ -117,6 +117,14 @@ def apply_series_overrides(params, environ=None):
             print("[scan] PREDISTORTION OFF arm: the qubit drifts during every "
                   "measurement, so this arm is expected to be physically wrong, not a "
                   "reference to match")
+    hold = environ.get("Q3_5PT_REFERENCE_HOLD_US")
+    if hold is not None and str(hold).strip() != "":
+        val = float(hold)
+        if not (val > 0.0) or val != val:
+            raise ValueError("Q3_5PT_REFERENCE_HOLD_US must be finite and positive")
+        out["reference_hold_us"] = val
+        print(f"[scan] reference_hold_us {params['reference_hold_us']} -> {val} us "
+              "(Q3_5PT_REFERENCE_HOLD_US)")
     delays = environ.get("Q3_5PT_DELAYS_US")
     if delays is not None and str(delays).strip() != "":
         vals = [float(v) for v in str(delays).replace(",", " ").split()]
