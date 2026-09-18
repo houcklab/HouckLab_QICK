@@ -61,6 +61,7 @@ def build_params():
 
 
 FIT = _flag("Q3_STEP3A_FIT", "0")
+CORRECTION_JSON = environ.get("Q3_STEP3A_CORRECTION_JSON", "").strip() or None
 
 
 def main():
@@ -91,18 +92,36 @@ def main():
         print(f"  read gain override  : {p['read_gain']}")
     if "read_freq_mhz" in p:
         print(f"  read freq override  : {p['read_freq_mhz']:.4f} MHz")
-    print(f"  correction          : OFF (nothing applied)")
+    if CORRECTION_JSON:
+        print(f"  correction APPLIED  : {CORRECTION_JSON}")
+    else:
+        print(f"  correction          : OFF (nothing applied)")
     print(f"  fit a correction    : {'YES' if FIT else 'no'}"
           + (f"  (fit starts at {p['correction_fit_start_us']:g} us)" if FIT else ""))
     print("======================================================")
     print("")
 
+    requested_gain = environ.get("Q3_FLUX_TAIL_GAIN")
+    if requested_gain is not None and str(requested_gain).strip() != "":
+        gain = float(requested_gain)
+        if not (gain > 0.0) or gain != gain:
+            raise ValueError("Q3_FLUX_TAIL_GAIN must be finite and positive")
+        if gain != tls.FLUX_TAIL_COMPENSATION_GAIN:
+            print(f"  flux tail gain      : {tls.FLUX_TAIL_COMPENSATION_GAIN} -> {gain} "
+                  "for this run only")
+        tls.FLUX_TAIL_COMPENSATION_GAIN = gain
+
     soc, soccfg = tls.makeProxy()
     tls._set_yoko_if_requested()
+    compensation = None
+    if CORRECTION_JSON:
+        compensation = tls._load_correction(CORRECTION_JSON, tls.outerFolder)
+    suffix = ("Qubit_Flux_Step_Response_Clean3B" if CORRECTION_JSON
+              else "Qubit_Flux_Step_Response_Clean3A")
     exp = tls._run_step3_experiment(
         p, soc, soccfg, tls.outerFolder,
-        suffix="Qubit_Flux_Step_Response_Clean3A",
-        flux_tail_compensation=None, fit_rise_decay_bump_dc_correction=FIT,
+        suffix=suffix,
+        flux_tail_compensation=compensation, fit_rise_decay_bump_dc_correction=FIT,
         live_plot=bool(p.get("live_plot", True)) and tls.LIVE_PLOTS,
     )
     print("")
