@@ -90,11 +90,53 @@ P6_5PT_APPLES_TO_APPLES = {
 }
 
 
+def apply_series_overrides(params, environ=None):
+    environ = os.environ if environ is None else environ
+    out = dict(params)
+    duration = environ.get("Q3_5PT_DURATION_MIN")
+    if duration is not None and str(duration).strip() != "":
+        minutes = float(duration)
+        if not (minutes > 0.0) or minutes != minutes:
+            raise ValueError("Q3_5PT_DURATION_MIN must be finite and positive")
+        out["wall_clock_duration_min"] = minutes
+        print(f"[scan] wall-clock duration {params['wall_clock_duration_min']:g} -> "
+              f"{minutes:g} min (Q3_5PT_DURATION_MIN)")
+    predist = environ.get("Q3_5PT_PREDISTORTION")
+    if predist is not None and str(predist).strip() != "":
+        wanted = str(predist).strip().lower()
+        if wanted not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
+            raise ValueError("Q3_5PT_PREDISTORTION must be on or off")
+        applied = wanted in {"on", "1", "true", "yes"}
+        out["apply_flux_tail_compensation"] = applied
+        out["predistortion_arm"] = "on" if applied else "off"
+        if applied != bool(params.get("apply_flux_tail_compensation", True)):
+            print(f"[scan] apply_flux_tail_compensation "
+                  f"{bool(params.get('apply_flux_tail_compensation'))} -> {applied} "
+                  "(Q3_5PT_PREDISTORTION)")
+        if not applied:
+            print("[scan] PREDISTORTION OFF arm: the qubit drifts during every "
+                  "measurement, so this arm is expected to be physically wrong, not a "
+                  "reference to match")
+    sync = environ.get("Q3_5PT_SYNC")
+    if sync is not None and str(sync).strip() != "":
+        wanted = str(sync).strip().lower()
+        if wanted not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
+            raise ValueError("Q3_5PT_SYNC must be on or off")
+        enabled = wanted in {"on", "1", "true", "yes"}
+        out["sync_enabled"] = enabled
+        if enabled != bool(params.get("sync_enabled", False)):
+            print(f"[scan] sync_enabled {bool(params.get('sync_enabled'))} -> {enabled} "
+                  "(Q3_5PT_SYNC)")
+    return out
+
+
 def runtime_parameters(environ=None):
-    """Build this process's parameters, including an optional crossover arm."""
-    return apply_crossover_phase(
-        P6_5PT_APPLES_TO_APPLES,
-        expected="current_on",
+    return apply_series_overrides(
+        apply_crossover_phase(
+            P6_5PT_APPLES_TO_APPLES,
+            expected="current_on",
+            environ=environ,
+        ),
         environ=environ,
     )
 
@@ -134,6 +176,15 @@ def install_scan_calibration(tls):
     # so legacy experiments retain their existing defaults.
     tls.BaseConfig["dt_pulseplay"] = APPLE_DT_PULSEPLAY_US
     tls.BaseConfig["dt_pulsedef"] = APPLE_DT_PULSEDEF_US
+    requested_gain = os.environ.get("Q3_FLUX_TAIL_GAIN")
+    if requested_gain is not None and str(requested_gain).strip() != "":
+        gain = float(requested_gain)
+        if not (gain > 0.0) or gain != gain:
+            raise ValueError("Q3_FLUX_TAIL_GAIN must be finite and positive")
+        if gain != tls.FLUX_TAIL_COMPENSATION_GAIN:
+            print(f"[predistortion] flux tail gain "
+                  f"{tls.FLUX_TAIL_COMPENSATION_GAIN} -> {gain} (Q3_FLUX_TAIL_GAIN)")
+        tls.FLUX_TAIL_COMPENSATION_GAIN = gain
 
 
 def resolve_production_correction(params, resolve, environ=None):
@@ -424,6 +475,12 @@ def main():
     neutral_record["return_prefix_us"] = float(
         p["flux_predistortion_return_prefix_us"]
     )
+    predistortion_on = bool(p.get("apply_flux_tail_compensation", True))
+    if not predistortion_on:
+        compensation = None
+        correction_mode = "uncorrected"
+        print("[predistortion] OFF arm: no flux tail compensation will be applied")
+
     reset_session = prepare_reset_session(
         p["reset_mode"],
         outer_folder=tls.outerFolder,
@@ -438,7 +495,7 @@ def main():
     base.update({
         "shots": int(p["shots_per_condition"]),
         "ff_gain_vec": dc_vec,
-        "apply_flux_tail_compensation": True,
+        "apply_flux_tail_compensation": predistortion_on,
         "flux_tail_compensation": compensation,
         "flux_fit_params": tls.FLUX_FIT_PARAMS,
         "relax_delay": PASSIVE_T1_RESET_US,
@@ -490,7 +547,9 @@ def main():
             outerFolder=tls.outerFolder,
             suffix=p.get(
                 "output_suffix",
-                f"TLS_{2 + len(p['decay_delays_us'])}pt_Apples_to_Apples",
+                f"TLS_{2 + len(p['decay_delays_us'])}pt_Apples_to_Apples"
+                + ("" if "predistortion_arm" not in p
+                   else f"_pred_{p['predistortion_arm']}"),
             ),
             cfg=dict(base),
             dc_vec=dc_vec,
