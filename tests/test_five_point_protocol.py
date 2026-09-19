@@ -1506,7 +1506,11 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert cfg["dc_min"] == -20550
     assert cfg["dc_max"] == -11800
     assert cfg["flux_settle_us"] == 0.5
-    assert cfg["flux_predistortion_return_prefix_us"] == 24.0
+    # The shared q3/q5 return contract must wait for the entire 40-us tail
+    # before performing the park readout.  A 0.5-us prefix preserves the
+    # common timing grid; the no-overlap flag supplies the actual barrier.
+    assert cfg["flux_predistortion_return_prefix_us"] == 0.5
+    assert cfg["flux_predistortion_overlap_payload_readout"] is False
     assert cfg["flux_predistortion_recovery_scale"] == 0.25
     assert cfg["sync_session"] == "q3_q5_5pt_apples_20260914_v1"
     assert cfg["sync_directory"] == "Z:/FluxTeam/Data/.qick_qua_sync"

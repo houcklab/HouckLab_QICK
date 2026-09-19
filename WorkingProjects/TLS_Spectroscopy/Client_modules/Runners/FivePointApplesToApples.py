@@ -62,13 +62,14 @@ P6_5PT_APPLES_TO_APPLES = {
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
-    # The target only needs the common 0.5 us settling interval.  The q3
-    # return/readout contract is separate: 24 us is the shortest tested
-    # interval statistically equivalent to a fully waited park readout.
+    # The q3 return/readout contract showed that any remaining flux-tail
+    # overlap corrupts the park readout.  Use the shared 0.5-us prefix, then
+    # explicitly wait the rest of the 40-us recovery on both controllers.
     "flux_settle_us": 0.5,
-    "flux_predistortion_return_prefix_us": 24.0,
+    "flux_predistortion_return_prefix_us": 0.5,
     "flux_predistortion_recovery_us": 40.0,
     "flux_predistortion_recovery_scale": 0.25,
+    "flux_predistortion_overlap_payload_readout": False,
     "readout_thermalization_us": 10.0,
     "apply_flux_tail_compensation": True,
     "reset_mode": "active",
@@ -536,6 +537,9 @@ def main():
         ),
         "flux_predistortion_recovery_us": float(
             p["flux_predistortion_recovery_us"]
+        ),
+        "flux_predistortion_overlap_payload_readout": bool(
+            p["flux_predistortion_overlap_payload_readout"]
         ),
         "readout_thermalization_us": float(
             p["readout_thermalization_us"]
