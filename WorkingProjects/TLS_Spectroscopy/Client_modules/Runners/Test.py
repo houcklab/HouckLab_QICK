@@ -586,6 +586,9 @@ def predistortion_causality_plan(environ=None):
     block_modes = str(
         environ.get("Q3_CAUSALITY_BLOCK_MODES", "off")
     ).strip().lower()
+    compact_value = str(
+        environ.get("Q3_CAUSALITY_COMPACT", "off")
+    ).strip().lower()
     modes = tuple(
         value.strip().lower()
         for value in str(
@@ -621,6 +624,8 @@ def predistortion_causality_plan(environ=None):
         raise ValueError("Q3_CAUSALITY_OVERLAP_READOUT must be on or off")
     if block_modes not in ("on", "off"):
         raise ValueError("Q3_CAUSALITY_BLOCK_MODES must be on or off")
+    if compact_value not in ("on", "off"):
+        raise ValueError("Q3_CAUSALITY_COMPACT must be on or off")
     if len(modes) != 2 or set(modes) != {"on", "off"}:
         raise ValueError(
             "Q3_CAUSALITY_MODE_ORDER must contain on and off exactly once"
@@ -634,6 +639,7 @@ def predistortion_causality_plan(environ=None):
         "reset_mode": reset_mode,
         "overlap_payload_readout": overlap_value == "on",
         "block_modes": block_modes == "on",
+        "compact_delay_loop": compact_value == "on",
         "modes": modes,
     }
 
@@ -1880,7 +1886,12 @@ def run_predistortion_causality():
             params, correction_override, tls.outerFolder
         )
         correction_label = correction_override
-    delay_chunks = partition_delay_triplets(plan["delays_us"])
+    compact_delay_loop = bool(plan["compact_delay_loop"])
+    delay_chunks = (
+        (tuple(plan["delays_us"]),)
+        if compact_delay_loop
+        else partition_delay_triplets(plan["delays_us"])
+    )
     print(
         "[causality] q3 A/B: "
         f"{len(target_frequency_ghz)} frequencies x "
@@ -1890,10 +1901,17 @@ def run_predistortion_causality():
         f"overlap-readout={plan['overlap_payload_readout']}; "
         "no handshake"
     )
-    print(
-        f"[causality] the {len(plan['delays_us'])}-delay dataset will be assembled from "
-        f"{len(delay_chunks)} hardware-safe three-delay resident programs per mode"
-    )
+    if compact_delay_loop:
+        print(
+            f"[causality] COMPACT experimental path: all {len(plan['delays_us'])} "
+            "delays are interleaved in one resident program per mode; the "
+            "established chunked path remains available with Q3_CAUSALITY_COMPACT=off"
+        )
+    else:
+        print(
+            f"[causality] the {len(plan['delays_us'])}-delay dataset will be assembled from "
+            f"{len(delay_chunks)} hardware-safe three-delay resident programs per mode"
+        )
     print(f"[causality] ON uses {correction_label}")
     print("[causality] OFF uses no flux-tail correction")
     print("[causality] acquiring one shared DMem-native classifier calibration")
@@ -1970,6 +1988,7 @@ def run_predistortion_causality():
         cfg.update({
             "apply_flux_tail_compensation": mode == "on",
             "flux_tail_compensation": compensation if mode == "on" else None,
+            "opx_t1_compact_delay_loop": compact_delay_loop,
         })
         chunk_names = (
             "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
@@ -2095,6 +2114,9 @@ def run_predistortion_causality():
             ),
             "correction_multipliers": list(compensation.get("multipliers", [])),
             "sequence_implementation": (
+                "one OPXResetT1CompactNPointProgram per mode; shared classifier; "
+                "P0/P1 once per shot-frequency block; no T1 fit"
+                if compact_delay_loop else
                 "seven temporary OPXResetT15PointProgram chunks; shared classifier; "
                 "P0/P1 repeated per chunk; no T1 fit"
             ),

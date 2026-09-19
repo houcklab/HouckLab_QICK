@@ -19,6 +19,7 @@ from .programs import (
     OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
     OPXResetT15PointProgram,
+    OPXResetT1CompactNPointProgram,
     OPXResetT1NPointProgram,
     OPXResetT1FluxSweepProgram,
     OPXResetT1Program,
@@ -370,7 +371,8 @@ def acquire_t1_5pt_iq(
     reset_scheme = str(reset_scheme).strip().lower()
     if reset_scheme not in ("opx_unbounded", "none"):
         raise ValueError("reset_scheme must be 'opx_unbounded' or 'none'")
-    if _allow_chunking and delays.size > 3:
+    compact_delay_loop = bool(cfg.get("opx_t1_compact_delay_loop", False))
+    if _allow_chunking and delays.size > 3 and not compact_delay_loop:
         delay_chunks = tuple(
             delays[index:index + 3]
             for index in range(0, delays.size, 3)
@@ -452,9 +454,12 @@ def acquire_t1_5pt_iq(
         "t1_wait_us": reference_hold_us + float(delays[-1]),
         "opx_resident_dmem_stream": True,
     })
-    program_type = (
-        OPXResetT15PointProgram if delays.size == 3 else OPXResetT1NPointProgram
-    )
+    if compact_delay_loop:
+        program_type = OPXResetT1CompactNPointProgram
+    else:
+        program_type = (
+            OPXResetT15PointProgram if delays.size == 3 else OPXResetT1NPointProgram
+        )
     program = program_type(
         soccfg,
         run_cfg,
@@ -524,11 +529,15 @@ def acquire_t1_5pt_iq(
         "records": int(len(block)),
         "records_per_dc": records_per_dc,
         "blocks": 1,
+        "program_chunks": 1,
         "resident_stream": True,
         "order": (
-            "shot_alternating_dc_and_survival_P0_P1_Ps"
-            if bool(run_cfg.get("opx_reverse_survival_order", False))
-            else "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"
+            "shot_alternating_dc_P0_P1_then_all_survivals"
+            if compact_delay_loop else (
+                "shot_alternating_dc_and_survival_P0_P1_Ps"
+                if bool(run_cfg.get("opx_reverse_survival_order", False))
+                else "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"
+            )
         ),
         "condition_names": (
             *(("P0", "P1") if include_references else ()),

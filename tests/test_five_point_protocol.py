@@ -191,6 +191,7 @@ def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
         "reset_mode": "active",
         "overlap_payload_readout": False,
         "block_modes": False,
+        "compact_delay_loop": False,
         "modes": ("on", "off"),
     }
 
@@ -1063,6 +1064,62 @@ def test_qick_seven_condition_acquisition_uses_two_pmem_safe_chunks(monkeypatch)
     assert telemetry["condition_names"] == (
         "P0", "P1", "Ps_40us", "Ps_80us", "Ps_120us", "Ps_160us", "Ps_200us",
     )
+
+
+def test_qick_compact_delay_mode_uses_one_program_for_twenty_one_delays(monkeypatch):
+    """The opt-in compact path keeps all survival points in one shot block."""
+    module = importlib.import_module(f"{PREFIX}.active_reset_OPX.integration")
+    constructed = []
+
+    class CompactProgram:
+        def __init__(self, _board, cfg, *_args):
+            self.cfg = dict(cfg)
+            constructed.append(self.cfg)
+
+        def us2cycles(self, *_args, **_kwargs):
+            return 1
+
+    monkeypatch.setattr(module, "OPXResetT1CompactNPointProgram", CompactProgram)
+
+    def acquire(_soc, _program, _timeout, cfg, **_kwargs):
+        tags = list(range(23)) * 2
+        return [
+            types.SimpleNamespace(final_i=float(tag), final_q=-float(tag),
+                                  condition_tag=tag)
+            for tag in tags
+        ]
+
+    monkeypatch.setattr(module, "_run_program", acquire)
+    delays = np.linspace(25.0, 200.0, 21)
+    i, q, telemetry = module.acquire_t1_5pt_iq(
+        None, None,
+        {
+            "reset_mode": "passive", "read_length": 1, "ro_chs": [0],
+            "opx_diagnostic_condition_tags": True,
+            "opx_t1_compact_delay_loop": True,
+        },
+        dc_gains=[-100], delays_us=delays, reference_hold_us=2.0,
+        shots=2, reset_scheme="none",
+    )
+
+    assert len(constructed) == 1
+    assert constructed[0]["opx_t1_compact_delay_loop"] is True
+    assert i.shape == (23, 1, 2)
+    np.testing.assert_equal(i[:, 0, 0], np.arange(23))
+    np.testing.assert_equal(q, -i)
+    assert telemetry["program_chunks"] == 1
+    assert telemetry["order"] == "shot_alternating_dc_P0_P1_then_all_survivals"
+
+
+def test_qick_causality_compact_mode_is_opt_in():
+    plan = diagnostic().predistortion_causality_plan({
+        "Q3_CAUSALITY_COMPACT": "on",
+    })
+
+    assert plan["compact_delay_loop"] is True
+    assert diagnostic().predistortion_causality_plan({})[
+        "compact_delay_loop"
+    ] is False
 
 
 def test_uninformative_or_nonphysical_populations_are_marked_invalid():

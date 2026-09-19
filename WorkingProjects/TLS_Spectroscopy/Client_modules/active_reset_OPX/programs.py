@@ -2619,6 +2619,301 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
         )
 
 
+class OPXResetT1CompactNPointProgram(OPXResetT1NPointProgram):
+    """One-reset-body matched T1 program with a runtime-selected delay.
+
+    The normal N-point class emits a complete reset state machine for every
+    survival delay.  That is harmless for three delays but exceeds the q3
+    tProc program memory at 21.  This version emits the expensive reset and
+    readout body once, then lets a small tProc loop select the exact existing
+    flux lifecycle for each delay.  The selected lifecycle is not approximated:
+    it calls the same stateful compensation routine as the legacy program.
+    """
+
+    _COMPACT_FIXED_POINT = 1 << 16
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        """Render a DMem table for the stateful return, before assembly."""
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        run_cfg = dict(cfg)
+        delays = np.asarray(run_cfg["opx_t1_5pt_delays_us"], dtype=float)
+        reference = float(run_cfg["opx_t1_5pt_reference_hold_us"])
+        compensation = run_cfg.get("flux_tail_compensation")
+        self._compact_return_bounds_us = ()
+        self._compact_return_factor_table = np.empty((delays.size, 0), dtype=np.int64)
+        if compensation is not None:
+            if ff_pulse.predistortion_round_trip_mode(run_cfg) != "stateful":
+                raise ValueError(
+                    "compact N-point T1 requires stateful flux predistortion; "
+                    "rerun with Q3_CAUSALITY_COMPACT=off for legacy mode"
+                )
+            edges_us, multipliers = ff_pulse._compensation_arrays(compensation)
+            recovery_us = ff_pulse.predistortion_recovery_us(run_cfg, compensation)
+            holds_us = reference + delays + ff_pulse.flux_settle_us(run_cfg)
+            bounds = {0.0, float(recovery_us)}
+            bounds.update(
+                float(edge) for edge in edges_us if 0.0 < edge < recovery_us
+            )
+            for hold_us in holds_us:
+                bounds.update(
+                    float(edge - hold_us)
+                    for edge in edges_us
+                    if 0.0 < edge - hold_us < recovery_us
+                )
+            self._compact_return_bounds_us = tuple(sorted(bounds))
+            starts = np.asarray(self._compact_return_bounds_us[:-1], dtype=float)
+            stops = np.asarray(self._compact_return_bounds_us[1:], dtype=float)
+            midpoints = 0.5 * (starts + stops)
+            rows = []
+            for hold_us in holds_us:
+                post = np.asarray([
+                    ff_pulse._compensation_multiplier_at(
+                        edges_us, multipliers, float(hold_us + point)
+                    ) for point in midpoints
+                ])
+                pre = np.asarray([
+                    ff_pulse._compensation_multiplier_at(
+                        edges_us, multipliers, float(point)
+                    ) for point in midpoints
+                ])
+                rows.append(np.rint((post - pre) * self._COMPACT_FIXED_POINT))
+            self._compact_return_factor_table = np.asarray(rows, dtype=np.int64)
+
+        gain_count = len(np.asarray(run_cfg["opx_t1_3pt_dc_gains"]).reshape(-1))
+        gain_end = (
+            int(run_cfg.get("opx_t1_3pt_gain_lut_base", 4)) + gain_count
+            if bool(run_cfg.get("opx_t1_3pt_gain_lookup", False)) else 4
+        )
+        self._compact_return_table_base = max(16, ((gain_end + 15) // 16) * 16)
+        table_words = self._compact_return_factor_table.reshape(-1).astype(np.int64)
+        table_end = self._compact_return_table_base + int(table_words.size)
+        run_cfg["opx_record_base"] = max(
+            int(run_cfg.get("opx_record_base", 32)),
+            ((table_end + 15) // 16) * 16,
+        )
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+        inherited_loads = tuple(getattr(self, "dmem_loads", ()))
+        self.dmem_loads = inherited_loads + (
+            ((self._compact_return_table_base, table_words.tolist()),)
+            if table_words.size else ()
+        )
+
+    def _compact_registers(self, controls):
+        if hasattr(self, "_t1_compact_regs"):
+            return self._t1_compact_regs
+        page = self._t1_3pt_ff_page
+        reserved = set(self._t1_3pt_regs.values())
+        if page == 0:
+            reserved.update(controls.values())
+        if page == self.reset_page:
+            reserved.update(self.reset_regs.values())
+        self._t1_compact_regs = allocate_named_registers(
+            self,
+            page,
+            (
+                "survival_loop", "survival_index", "survival_target",
+                "hold_cycles", "boundary_cycles", "return_address", "factor",
+            ),
+            reserved=reserved,
+        )
+        return self._t1_compact_regs
+
+    def _play_compact_relative_factor(self, compact):
+        """Play ``park + direction * delta * factor`` from a Q16 register."""
+        page, regs = self._t1_3pt_ff_page, self._t1_3pt_regs
+        self.math(page, regs["command"], regs["dc_delta"], "*", compact["factor"])
+        self.bitwi(page, regs["command"], regs["command"], ">>", 16)
+        self.math(
+            page,
+            regs["command"],
+            regs["park_gain"],
+            "+" if self._t1_flux_direction > 0 else "-",
+            regs["command"],
+        )
+        self.set_pulse_registers(
+            ch=self.cfg["ff_ch"], freq=0, style="const", phase=0,
+            stdysel="last", gain=0, length=3,
+        )
+        write_dynamic_const_gain(
+            self, page=page, channel=self.cfg["ff_ch"],
+            value_register=regs["command"], scratch_register=regs["command"],
+        )
+        self.pulse(ch=self.cfg["ff_ch"])
+
+    def _load_compact_hold(self, compact, label_prefix, reference_us):
+        page = self._t1_3pt_ff_page
+        selected = f"{label_prefix}_HOLD_SELECTED"
+        for index, delay_us in enumerate(self.cfg["opx_t1_5pt_delays_us"]):
+            label = f"{label_prefix}_HOLD_{index}"
+            self.safe_regwi(page, compact["survival_target"], index)
+            self.condj(
+                page, compact["survival_index"], "==",
+                compact["survival_target"], label,
+            )
+        self.condj(
+            page, compact["survival_index"], "==",
+            compact["survival_index"], selected,
+        )
+        for index, delay_us in enumerate(self.cfg["opx_t1_5pt_delays_us"]):
+            self.label(f"{label_prefix}_HOLD_{index}")
+            cycles = self.us2cycles(
+                float(reference_us) + float(delay_us) + self._t1_ff_settle_us
+            )
+            self.safe_regwi(page, compact["hold_cycles"], max(int(cycles), 1))
+            self.condj(
+                page, compact["survival_index"], "==",
+                compact["survival_index"], selected,
+            )
+        self.label(selected)
+
+    def _play_compact_stateful_hold(self, compact, label_prefix, reference_us):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+        page = self._t1_3pt_ff_page
+        self._load_compact_hold(compact, label_prefix, reference_us)
+        if self._t1_ff_compensation is None:
+            self.safe_regwi(page, compact["factor"], self._COMPACT_FIXED_POINT)
+            self._play_compact_relative_factor(compact)
+            self.sync(page, compact["hold_cycles"])
+            ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+            self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+            return
+
+        edges_us, multipliers = ff_pulse._compensation_arrays(
+            self._t1_ff_compensation
+        )
+        max_hold_us = float(
+            reference_us + max(self.cfg["opx_t1_5pt_delays_us"]) + self._t1_ff_settle_us
+        )
+        bounds = sorted(set(
+            [0.0, max_hold_us]
+            + [float(edge) for edge in edges_us if 0.0 < edge < max_hold_us]
+        ))
+        return_label = f"{label_prefix}_RETURN"
+        for index, (start_us, stop_us) in enumerate(zip(bounds[:-1], bounds[1:])):
+            full = f"{label_prefix}_OUT_FULL_{index}"
+            partial = f"{label_prefix}_OUT_PARTIAL_{index}"
+            self.safe_regwi(page, compact["boundary_cycles"], self.us2cycles(stop_us))
+            self.condj(page, compact["hold_cycles"], ">", compact["boundary_cycles"], full)
+            self.safe_regwi(page, compact["boundary_cycles"], self.us2cycles(start_us))
+            self.condj(page, compact["hold_cycles"], ">", compact["boundary_cycles"], partial)
+            self.condj(page, compact["survival_index"], "==", compact["survival_index"], return_label)
+            self.label(partial)
+            coefficient = ff_pulse._compensation_multiplier_at(
+                edges_us, multipliers, 0.5 * (start_us + stop_us)
+            )
+            self.safe_regwi(page, compact["factor"], int(round(coefficient * self._COMPACT_FIXED_POINT)))
+            self._play_compact_relative_factor(compact)
+            self.math(page, compact["boundary_cycles"], compact["hold_cycles"], "-", compact["boundary_cycles"])
+            self.sync(page, compact["boundary_cycles"])
+            self.condj(page, compact["survival_index"], "==", compact["survival_index"], return_label)
+            self.label(full)
+            self.safe_regwi(page, compact["factor"], int(round(coefficient * self._COMPACT_FIXED_POINT)))
+            self._play_compact_relative_factor(compact)
+            self.sync_all(self.us2cycles(stop_us - start_us))
+
+        self.label(return_label)
+        factor_count = self._compact_return_factor_table.shape[1]
+        for index, (start_us, stop_us) in enumerate(zip(
+            self._compact_return_bounds_us[:-1], self._compact_return_bounds_us[1:]
+        )):
+            self.mathi(page, compact["return_address"], compact["survival_index"], "*", factor_count)
+            self.mathi(page, compact["return_address"], compact["return_address"], "+", self._compact_return_table_base + index)
+            self.memr(page, compact["factor"], compact["return_address"])
+            self._play_compact_relative_factor(compact)
+            self.sync_all(self.us2cycles(stop_us - start_us))
+        ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
+        self.sync_all(0)
+
+    def _emit_compact_survival(self, compact, label_prefix, reference_us):
+        """Emit one reset/readout body and dynamically select its delay."""
+        park_up, park_down = self._shot_park_callbacks()
+
+        def emit_payload():
+            prepare_after_return = bool(self.cfg.get(
+                "opx_t1_prepare_excited_after_return", False
+            ))
+            if not prepare_after_return:
+                self._prepare_excited()
+            self._play_compact_stateful_hold(compact, label_prefix, reference_us)
+            if prepare_after_return:
+                self._prepare_excited()
+
+        emit_payload_reset_shot(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            reset_scheme=self.cfg.get("opx_reset_scheme", "opx_unbounded"),
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            park_up=park_up,
+            park_down=park_down,
+            emit_payload=emit_payload,
+            measure_project=self._measure_project,
+            prepare_reset=self._set_reset_pulse,
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix=f"{label_prefix}_RESET",
+            wait_reset_ringdown=self._wait_reset_ringdown,
+        )
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+        if bool(self.cfg.get("opx_diagnostic_condition_tags", False)):
+            done = f"{label_prefix}_TAG_DONE"
+            for index in range(len(self.cfg["opx_t1_5pt_delays_us"])):
+                label = f"{label_prefix}_TAG_{index}"
+                self.safe_regwi(
+                    self._t1_3pt_ff_page, compact["survival_target"], index
+                )
+                self.condj(
+                    self._t1_3pt_ff_page, compact["survival_index"], "==",
+                    compact["survival_target"], label,
+                )
+            self.condj(
+                self._t1_3pt_ff_page, compact["survival_index"], "==",
+                compact["survival_index"], done,
+            )
+            for index in range(len(self.cfg["opx_t1_5pt_delays_us"])):
+                self.label(f"{label_prefix}_TAG_{index}")
+                self.regwi(self.reset_page, self.reset_regs["q"], index + 2)
+                self.memw(self.reset_page, self.reset_regs["q"], self.reset_regs["address"])
+                self.mathi(self.reset_page, self.reset_regs["address"], self.reset_regs["address"], "+", 1)
+                self.condj(self._t1_3pt_ff_page, compact["survival_index"], "==", compact["survival_index"], done)
+            self.label(done)
+
+    def _emit_t1_conditions(self, controls, label_prefix):
+        reference = float(self.cfg["opx_t1_5pt_reference_hold_us"])
+        if bool(self.cfg.get("opx_t1_include_references", True)):
+            self._emit_tagged_condition(
+                f"{label_prefix}_P0", False, True, reference, 0
+            )
+            self._emit_tagged_condition(
+                f"{label_prefix}_P1", True, True, reference, 1
+            )
+        compact = self._compact_registers(controls)
+        delays = self.cfg["opx_t1_5pt_delays_us"]
+        reverse = bool(self.cfg.get("opx_reverse_survival_order", False)) and str(
+            label_prefix
+        ).endswith("_DOWN")
+        start = len(delays) - 1 if reverse else 0
+        step = -1 if reverse else 1
+        page = self._t1_3pt_ff_page
+        self.safe_regwi(page, compact["survival_index"], start)
+        self.regwi(page, compact["survival_loop"], len(delays) - 1)
+        loop_label = f"{label_prefix}_SURVIVAL_LOOP"
+        self.label(loop_label)
+        self._emit_compact_survival(compact, label_prefix, reference)
+        self.mathi(
+            page,
+            compact["survival_index"],
+            compact["survival_index"],
+            "+",
+            step,
+        )
+        self.loopnz(
+            page, compact["survival_loop"], loop_label
+        )
+
+
 class OPXResetT15PointProgram(OPXResetT1NPointProgram):
     """Backward-compatible five-condition specialization."""
 
