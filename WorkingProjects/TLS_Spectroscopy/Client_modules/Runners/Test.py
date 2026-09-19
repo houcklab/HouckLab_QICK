@@ -1547,6 +1547,17 @@ def summarize_causality_chunks(chunks, *, delays_us, shots):
     }
 
 
+def causality_plot_indices(target_frequency_ghz):
+    """Keep full-band diagnostic plots compact and representative."""
+    frequencies = np.asarray(target_frequency_ghz, dtype=float).reshape(-1)
+    if frequencies.size <= 12:
+        return np.arange(frequencies.size, dtype=int)
+    return np.unique([
+        int(np.abs(frequencies - target).argmin())
+        for target in (3.9, 4.05, 4.3)
+    ])
+
+
 def save_predistortion_causality_outputs(
     output_base,
     *,
@@ -1685,17 +1696,22 @@ def save_predistortion_causality_outputs(
 
     import matplotlib.pyplot as plt
 
+    # A full 801-frequency audit must not create an 801-row PNG.  Preserve
+    # per-frequency raw data in CSV/NPZ, while the diagnostic figure shows
+    # representative low/mid/high frequency decay curves.
+    plot_indices = causality_plot_indices(target_frequency_ghz)
     fig, axes = plt.subplots(
-        len(target_frequency_ghz),
+        len(plot_indices),
         2,
-        figsize=(11.0, 3.2 * len(target_frequency_ghz)),
+        figsize=(11.0, 3.2 * len(plot_indices)),
         squeeze=False,
         constrained_layout=True,
     )
     colors = {"on": "#2457a6", "off": "#d97706"}
     delays = np.asarray(plan["delays_us"], dtype=float)
-    for frequency_index, frequency in enumerate(target_frequency_ghz):
-        raw_ax, normalized_ax = axes[frequency_index]
+    for axis_index, frequency_index in enumerate(plot_indices):
+        frequency = target_frequency_ghz[frequency_index]
+        raw_ax, normalized_ax = axes[axis_index]
         for mode in plan["modes"]:
             summary = mode_results[mode]["summary"]
             survival = summary["survival"][frequency_index]
@@ -1749,7 +1765,8 @@ def save_predistortion_causality_outputs(
             axis.legend(frameon=False)
     fig.suptitle(
         f"q3 {len(delays)}-delay predistortion test: "
-        "PMem-safe chunks, correction on/off"
+        f"PMem-safe chunks, correction on/off; showing {len(plot_indices)}/"
+        f"{len(target_frequency_ghz)} frequencies"
     )
     fig.savefig(png_path, dpi=200, bbox_inches="tight")
     plt.close(fig)

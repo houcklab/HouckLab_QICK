@@ -238,6 +238,14 @@ def test_qick_causality_plan_supports_full_production_grid_and_blocked_modes():
     assert plan["block_modes"] is True
 
 
+def test_qick_full_band_causality_plot_uses_three_representative_linecuts():
+    indices = diagnostic().causality_plot_indices(
+        np.linspace(4.3, 3.9, 801)
+    )
+
+    assert indices.tolist() == [0, 500, 800]
+
+
 def test_qick_causality_plan_supports_single_frequency_71_delay_decay():
     plan = diagnostic().predistortion_causality_plan({
         "Q3_CAUSALITY_FREQUENCIES_GHZ": "4.050",
