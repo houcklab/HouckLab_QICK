@@ -518,12 +518,40 @@ def return_contract_mode_settings(mode, plan, correction):
 def predistortion_causality_plan(environ=None):
     """Return the independent dense q3 predistortion A/B contract."""
     environ = os.environ if environ is None else environ
-    frequencies = [
-        float(value)
-        for value in str(
-            environ.get("Q3_CAUSALITY_FREQUENCIES_GHZ", "3.900,4.050,4.300")
-        ).split(",")
-    ]
+    grid_keys = (
+        "Q3_CAUSALITY_FREQ_MIN_GHZ",
+        "Q3_CAUSALITY_FREQ_MAX_GHZ",
+        "Q3_CAUSALITY_FREQ_STEP_MHZ",
+    )
+    requested_grid = [str(environ.get(key, "")).strip() for key in grid_keys]
+    if any(requested_grid):
+        if not all(requested_grid):
+            raise ValueError(
+                "Set Q3_CAUSALITY_FREQ_MIN_GHZ, Q3_CAUSALITY_FREQ_MAX_GHZ, "
+                "and Q3_CAUSALITY_FREQ_STEP_MHZ together"
+            )
+        low, high, step_mhz = (float(value) for value in requested_grid)
+        step = step_mhz / 1e3
+        if not np.isfinite(low) or not np.isfinite(high) or not np.isfinite(step):
+            raise ValueError("Q3_CAUSALITY frequency-grid values must be finite")
+        if high <= low or step <= 0.0:
+            raise ValueError(
+                "Q3_CAUSALITY_FREQ_MAX_GHZ must exceed minimum and step must be positive"
+            )
+        count = int(round((high - low) / step)) + 1
+        frequencies = (high - step * np.arange(count, dtype=float)).tolist()
+        if abs(float(frequencies[-1]) - low) > 1e-9:
+            raise ValueError(
+                "Q3_CAUSALITY frequency range must be divisible by the requested step"
+            )
+        frequencies[-1] = low
+    else:
+        frequencies = [
+            float(value)
+            for value in str(
+                environ.get("Q3_CAUSALITY_FREQUENCIES_GHZ", "3.900,4.050,4.300")
+            ).split(",")
+        ]
     delay_points_text = str(
         environ.get("Q3_CAUSALITY_DELAY_POINTS", "")
     ).strip()
@@ -547,13 +575,16 @@ def predistortion_causality_plan(environ=None):
     shots = int(environ.get("Q3_CAUSALITY_SHOTS", "300"))
     recovery_us = float(environ.get("Q3_CAUSALITY_RECOVERY_US", "40"))
     return_prefix_us = float(environ.get(
-        "Q3_CAUSALITY_RETURN_PREFIX_US", "24"
+        "Q3_CAUSALITY_RETURN_PREFIX_US", "0.5"
     ))
     reset_mode = str(
         environ.get("Q3_CAUSALITY_RESET_MODE", "active")
     ).strip().lower()
     overlap_value = str(
-        environ.get("Q3_CAUSALITY_OVERLAP_READOUT", "on")
+        environ.get("Q3_CAUSALITY_OVERLAP_READOUT", "off")
+    ).strip().lower()
+    block_modes = str(
+        environ.get("Q3_CAUSALITY_BLOCK_MODES", "off")
     ).strip().lower()
     modes = tuple(
         value.strip().lower()
@@ -588,6 +619,8 @@ def predistortion_causality_plan(environ=None):
         raise ValueError("Q3_CAUSALITY_RESET_MODE must be active or passive")
     if overlap_value not in ("on", "off"):
         raise ValueError("Q3_CAUSALITY_OVERLAP_READOUT must be on or off")
+    if block_modes not in ("on", "off"):
+        raise ValueError("Q3_CAUSALITY_BLOCK_MODES must be on or off")
     if len(modes) != 2 or set(modes) != {"on", "off"}:
         raise ValueError(
             "Q3_CAUSALITY_MODE_ORDER must contain on and off exactly once"
@@ -600,6 +633,7 @@ def predistortion_causality_plan(environ=None):
         "return_prefix_us": return_prefix_us,
         "reset_mode": reset_mode,
         "overlap_payload_readout": overlap_value == "on",
+        "block_modes": block_modes == "on",
         "modes": modes,
     }
 
@@ -1897,80 +1931,88 @@ def run_predistortion_causality():
     mode_chunks = {mode: [] for mode in plan["modes"]}
     total_acquisitions = len(delay_chunks) * len(plan["modes"])
     acquisition_index = 0
-    for chunk_index, delays in enumerate(delay_chunks):
-        # Reverse mode order on alternating chunks so slow drift cannot always
-        # favor the same correction state.
-        mode_order = (
-            tuple(plan["modes"])
-            if chunk_index % 2 == 0
-            else tuple(reversed(plan["modes"]))
+    if plan["block_modes"]:
+        acquisition_schedule = [
+            (mode, chunk_index, delays)
+            for mode in plan["modes"]
+            for chunk_index, delays in enumerate(delay_chunks)
+        ]
+    else:
+        acquisition_schedule = [
+            (mode, chunk_index, delays)
+            for chunk_index, delays in enumerate(delay_chunks)
+            for mode in (
+                tuple(plan["modes"])
+                if chunk_index % 2 == 0
+                else tuple(reversed(plan["modes"]))
+            )
+        ]
+    for mode, chunk_index, delays in acquisition_schedule:
+        acquisition_index += 1
+        cfg = dict(common_cfg)
+        cfg.update({
+            "apply_flux_tail_compensation": mode == "on",
+            "flux_tail_compensation": compensation if mode == "on" else None,
+        })
+        chunk_names = (
+            "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
         )
-        for mode in mode_order:
-            acquisition_index += 1
-            cfg = dict(common_cfg)
-            cfg.update({
-                "apply_flux_tail_compensation": mode == "on",
-                "flux_tail_compensation": compensation if mode == "on" else None,
-            })
-            chunk_names = (
-                "P0", "P1", *(f"Ps_{delay:g}us" for delay in delays)
+        records = plan["shots"] * len(dc_vec) * len(chunk_names)
+        print(
+            f"[{mode} chunk {chunk_index + 1}/{len(delay_chunks)}; "
+            f"acquisition {acquisition_index}/{total_acquisitions}] "
+            f"delays={list(delays)} us; {records} records"
+        )
+        elapsed_started = time.monotonic()
+        progress_started = time.time()
+        i_values, q_values, telemetry = acquire_t1_5pt_iq(
+            soc,
+            soccfg,
+            cfg,
+            dc_gains=dc_vec,
+            delays_us=delays,
+            reference_hold_us=float(params["reference_hold_us"]),
+            shots=plan["shots"],
+            reset_scheme=reset_scheme,
+            progress=lambda done, total, _mode=mode, _chunk=chunk_index: progress_counter(
+                done - 1,
+                total,
+                start_time=progress_started,
+                label=f"q3 {_mode} chunk {_chunk + 1}/{len(delay_chunks)}",
+            ),
+        )
+        states = classify_payload_iq(
+            cfg, i_values, q_values, telemetry["read_length_cycles"]
+        )
+        chunk_condition_names = tuple(telemetry["condition_names"])
+        if chunk_condition_names != chunk_names:
+            raise RuntimeError(
+                f"{mode} chunk {chunk_index + 1} condition axis mismatch: "
+                f"{chunk_condition_names} != {chunk_names}"
             )
-            records = plan["shots"] * len(dc_vec) * len(chunk_names)
-            print(
-                f"[{mode} chunk {chunk_index + 1}/{len(delay_chunks)}; "
-                f"acquisition {acquisition_index}/{total_acquisitions}] "
-                f"delays={list(delays)} us; {records} records"
+        if telemetry.get("condition_tag_mismatches", 0) != 0:
+            raise RuntimeError(
+                f"{mode} chunk {chunk_index + 1} condition tags do not "
+                "match the decoded condition axis"
             )
-            elapsed_started = time.monotonic()
-            progress_started = time.time()
-            i_values, q_values, telemetry = acquire_t1_5pt_iq(
-                soc,
-                soccfg,
-                cfg,
-                dc_gains=dc_vec,
-                delays_us=delays,
-                reference_hold_us=float(params["reference_hold_us"]),
-                shots=plan["shots"],
-                reset_scheme=reset_scheme,
-                progress=lambda done, total, _mode=mode, _chunk=chunk_index: progress_counter(
-                    done - 1,
-                    total,
-                    start_time=progress_started,
-                    label=f"q3 {_mode} chunk {_chunk + 1}/{len(delay_chunks)}",
-                ),
-            )
-            states = classify_payload_iq(
-                cfg, i_values, q_values, telemetry["read_length_cycles"]
-            )
-            chunk_condition_names = tuple(telemetry["condition_names"])
-            if chunk_condition_names != chunk_names:
-                raise RuntimeError(
-                    f"{mode} chunk {chunk_index + 1} condition axis mismatch: "
-                    f"{chunk_condition_names} != {chunk_names}"
-                )
-            if telemetry.get("condition_tag_mismatches", 0) != 0:
-                raise RuntimeError(
-                    f"{mode} chunk {chunk_index + 1} condition tags do not "
-                    "match the decoded condition axis"
-                )
-            directional = reduce_bidirectional_condition_states(
-                states, chunk_names, canonical_dc_axis=True
-            )
-            mode_chunks[mode].append({
-                "chunk_index": chunk_index,
-                "delays_us": delays,
-                "I": i_values,
-                "Q": q_values,
-                "states": states,
-                "condition_names": chunk_names,
-                "directional": directional,
-                "telemetry": telemetry,
-            })
-            print(
-                f"[{mode} chunk {chunk_index + 1}] complete in "
-                f"{time.monotonic() - elapsed_started:.2f} s; "
-                f"condition-tag mismatches={telemetry.get('condition_tag_mismatches')}"
-            )
+        directional = reduce_bidirectional_condition_states(
+            states, chunk_names, canonical_dc_axis=True
+        )
+        mode_chunks[mode].append({
+            "chunk_index": chunk_index,
+            "delays_us": delays,
+            "I": i_values,
+            "Q": q_values,
+            "states": states,
+            "condition_names": chunk_names,
+            "directional": directional,
+            "telemetry": telemetry,
+        })
+        print(
+            f"[{mode} chunk {chunk_index + 1}] complete in "
+            f"{time.monotonic() - elapsed_started:.2f} s; "
+            f"condition-tag mismatches={telemetry.get('condition_tag_mismatches')}"
+        )
 
     mode_results = {}
     for mode in plan["modes"]:

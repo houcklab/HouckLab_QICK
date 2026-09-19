@@ -187,9 +187,10 @@ def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
         ],
         "shots": 300,
         "recovery_us": 40.0,
-        "return_prefix_us": 24.0,
+        "return_prefix_us": 0.5,
         "reset_mode": "active",
-        "overlap_payload_readout": True,
+        "overlap_payload_readout": False,
+        "block_modes": False,
         "modes": ("on", "off"),
     }
 
@@ -211,7 +212,7 @@ def test_qick_causality_plan_defaults_to_the_production_return_prefix():
         "Q3_CAUSALITY_RETURN_PREFIX_US": "12.5",
     })
 
-    assert default["return_prefix_us"] == pytest.approx(24.0)
+    assert default["return_prefix_us"] == pytest.approx(0.5)
     assert overridden["return_prefix_us"] == pytest.approx(12.5)
 
 
@@ -221,6 +222,20 @@ def test_qick_causality_plan_can_wait_for_return_tail_before_readout():
     })
 
     assert plan["overlap_payload_readout"] is False
+
+
+def test_qick_causality_plan_supports_full_production_grid_and_blocked_modes():
+    plan = diagnostic().predistortion_causality_plan({
+        "Q3_CAUSALITY_FREQ_MIN_GHZ": "3.900",
+        "Q3_CAUSALITY_FREQ_MAX_GHZ": "4.300",
+        "Q3_CAUSALITY_FREQ_STEP_MHZ": "0.5",
+        "Q3_CAUSALITY_BLOCK_MODES": "on",
+    })
+
+    assert len(plan["target_frequencies_ghz"]) == 801
+    assert plan["target_frequencies_ghz"][0] == pytest.approx(4.3)
+    assert plan["target_frequencies_ghz"][-1] == pytest.approx(3.9)
+    assert plan["block_modes"] is True
 
 
 def test_qick_causality_plan_supports_single_frequency_71_delay_decay():
