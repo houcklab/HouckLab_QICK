@@ -187,6 +187,7 @@ def test_qick_causality_plan_is_one_combined_21_delay_dataset_per_mode():
         ],
         "shots": 300,
         "recovery_us": 40.0,
+        "return_prefix_us": 24.0,
         "reset_mode": "active",
         "overlap_payload_readout": True,
         "modes": ("on", "off"),
@@ -199,6 +200,19 @@ def test_qick_causality_plan_accepts_neutral_recovery_override():
     })
 
     assert plan["recovery_us"] == 3000.0
+
+
+def test_qick_causality_plan_defaults_to_the_production_return_prefix():
+    """The audit must exercise the same return/readout prefix as production."""
+    module = diagnostic()
+
+    default = module.predistortion_causality_plan({})
+    overridden = module.predistortion_causality_plan({
+        "Q3_CAUSALITY_RETURN_PREFIX_US": "12.5",
+    })
+
+    assert default["return_prefix_us"] == pytest.approx(24.0)
+    assert overridden["return_prefix_us"] == pytest.approx(12.5)
 
 
 def test_qick_causality_plan_can_wait_for_return_tail_before_readout():
