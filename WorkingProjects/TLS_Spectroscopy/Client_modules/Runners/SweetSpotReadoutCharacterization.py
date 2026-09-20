@@ -43,11 +43,12 @@ def runtime_settings(environ=None):
         "ef_step_mhz": float(env.get("Q3_STEP1B_EF_STEP_MHZ", "0.2")),
         "ef_length_us": float(env.get("Q3_STEP1B_EF_LENGTH_US", "4.0")),
         "ef_shots": int(env.get("Q3_STEP1B_EF_SHOTS", "3000")),
-        "rabi_amp_min": int(env.get("Q3_STEP1B_RABI_AMP_MIN", "500")),
-        "rabi_amp_max": int(env.get("Q3_STEP1B_RABI_AMP_MAX", "30000")),
+        "rabi_amp_min": int(env.get("Q3_STEP1B_RABI_AMP_MIN", "2000")),
+        "rabi_amp_max": int(env.get("Q3_STEP1B_RABI_AMP_MAX", "28000")),
         "rabi_amp_points": int(env.get("Q3_STEP1B_RABI_AMP_POINTS", "41")),
         "rabi_sigma_us": float(env.get("Q3_STEP1B_RABI_SIGMA_US", "0.2")),
-        "rabi_shots": int(env.get("Q3_STEP1B_RABI_SHOTS", "400")),
+        "rabi_shots": int(env.get("Q3_STEP1B_RABI_SHOTS", "1000")),
+        "ss_cal_shots": int(env.get("Q3_STEP1B_SS_CAL_SHOTS", "1000")),
         "readout_gain_dac": int(env.get("Q3_STEP1B_READOUT_GAIN_DAC", "472")),
         "readout_shots": int(env.get("Q3_STEP1B_READOUT_SHOTS", "1000")),
         "resonator_centre_mhz": float(env.get("Q3_STEP1B_RESONATOR_CENTRE_MHZ", "6933.3")),
@@ -298,37 +299,41 @@ def main():
                 print("[step1b] two-photon series gave no usable anharmonicity; f_ef stays null")
 
         set_bias(working_gain)
-        gcal.P_RABI_CHEVRON_IQ.update({
+        gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
+        gcal.P_SS_CAL.update({"run": True, "shots": int(settings["ss_cal_shots"])})
+        calib_params = gcal.run_ss_cal(outerFolder, soc, soccfg)
+        gcal.P_RABI_CHEVRON_SS.update({
             "run": True, "shots": int(settings["rabi_shots"]), "num_pi": 1,
             "pulse_type": "X180", "a_min": int(settings["rabi_amp_min"]),
             "a_max": int(settings["rabi_amp_max"]),
             "a_points": int(settings["rabi_amp_points"]),
-            "readout_gain": int(settings["readout_gain_dac"]),
-            "sigma_us": float(settings["rabi_sigma_us"]), "freq_span_mhz": 0.0,
-            "relax_delay_us": float(settings["relax_delay_us"]),
+            "freq_span_mhz": 0.0, "freq_points": 1,
         })
-        gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
-        rabi = gcal.run_rabi_chevron_iq(outerFolder, soc, soccfg)
+        rabi = gcal.run_rabi_chevron_ss(outerFolder, soc, soccfg, calib_params)
         source_experiments["rabi_amplitude"] = {"pickle": rabi.pname, "png": rabi.iname}
         gains = np.asarray(rabi.data["gain_vec"], float)
-        iq = np.sqrt(np.asarray(rabi.data["I"], float) ** 2
-                     + np.asarray(rabi.data["Q"], float) ** 2)
-        response = iq[0] if iq.ndim == 2 else iq
-        record("rabi_amplitude", working_gain, gains, response, "DAC", "abs_IQ")
+        pop = np.asarray(rabi.data["ss_data"], float)
+        response = pop[0] if pop.ndim == 2 else pop
+        record("rabi_amplitude", working_gain, gains, response, "DAC", "excited_population")
         try:
             pi_calibration = characterisation.fit_rabi_amplitude(gains, response)
             pi_calibration["method"] = (
-                f"GateCalibration run_rabi_chevron_iq, single detuning at {fq_mhz:.4f} MHz, "
-                f"X180 sigma {settings['rabi_sigma_us']:g} us, {settings['rabi_shots']} shots")
+                f"GateCalibration run_ss_cal then run_rabi_chevron_ss, single detuning at "
+                f"{fq_mhz:.4f} MHz, X180, {settings['rabi_shots']} shots; cosine fit to the "
+                "discriminated excited population")
         except Exception as exc:
             pi_calibration = {"rabi_pi_amplitude": None, "error": str(exc)}
         pi_calibration["best_gain_argmax_DAC"] = float(rabi.data.get("best_gain", np.nan))
+        pi_calibration["single_shot_calib_params"] = {
+            k: float(v) for k, v in dict(calib_params).items()
+            if isinstance(v, (int, float, np.floating))}
         pi_amp = pi_calibration.get("rabi_pi_amplitude")
         if pi_amp is None or not pi_calibration.get("inside_swept_range", False):
             pi_amp = float(rabi.data.get("best_gain", gcal.BaseConfig["qubit_pi_gain"]))
             pi_calibration["fallback_used"] = True
         pi_calibration["amplitude_used_for_excited_trace"] = float(pi_amp)
-        print(f"[step1b] pi amplitude = {pi_amp:.0f} DAC")
+        print(f"[step1b] pi amplitude = {pi_amp:.0f} DAC "
+              f"(configured {gcal.BaseConfig['qubit_pi_gain']})")
 
         low_gain = max(1, int(round(settings["readout_gain_dac"] * 10.0 ** (-6.0 / 20.0))))
         ground = transmission("resonator_ground", bias=working_gain,
