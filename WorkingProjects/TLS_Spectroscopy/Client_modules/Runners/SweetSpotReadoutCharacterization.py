@@ -53,10 +53,12 @@ def runtime_settings(environ=None):
         "resonator_centre_mhz": float(env.get("Q3_STEP1B_RESONATOR_CENTRE_MHZ", "6933.3")),
         "resonator_span_mhz": float(env.get("Q3_STEP1B_RESONATOR_SPAN_MHZ", "4.0")),
         "resonator_points": int(env.get("Q3_STEP1B_RESONATOR_POINTS", "161")),
-        "resonator_length_us": float(env.get("Q3_STEP1B_RESONATOR_LENGTH_US", "10.0")),
+        "resonator_length_us": (None if str(env.get("Q3_STEP1B_RESONATOR_LENGTH_US", "")).strip() == ""
+                                else float(env["Q3_STEP1B_RESONATOR_LENGTH_US"])),
         "spec_relax_delay_us": float(env.get("Q3_STEP1B_SPEC_RELAX_DELAY_US", "150.0")),
         "relax_delay_us": float(env.get("Q3_STEP1B_RELAX_DELAY_US", "500.0")),
         "ef_only": _bool(env, "Q3_STEP1B_EF_ONLY", False),
+        "skip_sweep": _bool(env, "Q3_STEP1B_SKIP_SWEEP", False),
         "fq_override_mhz": (None if not str(env.get("Q3_STEP1B_FQ_MHZ", "")).strip()
                             else float(env["Q3_STEP1B_FQ_MHZ"])),
     }
@@ -147,7 +149,9 @@ def main():
             "freq_start_mhz": settings["resonator_centre_mhz"] - settings["resonator_span_mhz"],
             "freq_stop_mhz": settings["resonator_centre_mhz"] + settings["resonator_span_mhz"],
             "freq_points": int(settings["resonator_points"]),
-            "spec_amp": int(gain), "spec_len_us": float(settings["resonator_length_us"]),
+            "spec_amp": int(gain),
+            "spec_len_us": (None if settings["resonator_length_us"] is None
+                            else float(settings["resonator_length_us"])),
             "relax_delay_us": float(settings["relax_delay_us"]),
             "prepare_excited": bool(prepare_excited),
             "qubit_pi_freq_mhz": None if pi_freq is None else float(pi_freq),
@@ -221,6 +225,12 @@ def main():
             return payload
 
         evidence = []
+        if settings["skip_sweep"]:
+            if settings["fq_override_mhz"] is None:
+                raise ValueError("Q3_STEP1B_SKIP_SWEEP requires Q3_STEP1B_FQ_MHZ")
+            print(f"[step1b] sweet-spot sweep skipped; using f_q "
+                  f"{settings['fq_override_mhz']:.4f} MHz at {centre_gain:+d} DAC")
+            biases = []
         for bias in biases:
             label = f"sweet_spot_scan_{bias:+d}"
             try:
@@ -245,11 +255,20 @@ def main():
                 working_gain = int(observed)
                 print(f"[step1b] centre is NOT the extremum; continuing at {working_gain:+d} DAC")
 
-        fq_mhz, _, _ = qubit_spec(
-            "qubit_spec", bias=working_gain, centre_mhz=settings["qubit_spec_centre_mhz"],
-            span_mhz=settings["qubit_spec_span_mhz"], points=settings["qubit_spec_points"],
-            shots=settings["qubit_spec_shots"], gain_dac=settings["qubit_spec_gain_dac"],
-            length_us=settings["qubit_spec_length_us"])
+        if settings["skip_sweep"]:
+            working_gain = centre_gain
+            fq_mhz = float(settings["fq_override_mhz"])
+            check = {"is_extremum": None, "reason": "sweep skipped by Q3_STEP1B_SKIP_SWEEP"}
+            evidence = [{"bias": int(centre_gain), "f_q_GHz": fq_mhz / 1e3,
+                         "note": "supplied via Q3_STEP1B_FQ_MHZ, not measured in this run"}]
+        else:
+            fq_mhz, _, _ = qubit_spec(
+                "qubit_spec", bias=working_gain, centre_mhz=settings["qubit_spec_centre_mhz"],
+                span_mhz=settings["qubit_spec_span_mhz"],
+                points=settings["qubit_spec_points"],
+                shots=settings["qubit_spec_shots"],
+                gain_dac=settings["qubit_spec_gain_dac"],
+                length_us=settings["qubit_spec_length_us"])
         print(f"[step1b] f_q = {fq_mhz / 1e3:.6f} GHz")
 
         f_ef_ghz = two_photon_ghz = ef_candidates = ef_power_series = None
@@ -284,8 +303,9 @@ def main():
             "pulse_type": "X180", "a_min": int(settings["rabi_amp_min"]),
             "a_max": int(settings["rabi_amp_max"]),
             "a_points": int(settings["rabi_amp_points"]),
+            "readout_gain": int(settings["readout_gain_dac"]),
             "sigma_us": float(settings["rabi_sigma_us"]), "freq_span_mhz": 0.0,
-            "freq_points": 1, "relax_delay_us": float(settings["relax_delay_us"]),
+            "relax_delay_us": float(settings["relax_delay_us"]),
         })
         gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
         rabi = gcal.run_rabi_chevron_iq(outerFolder, soc, soccfg)

@@ -104,6 +104,7 @@ P_SS_CAL = {
 
 P_RABI_CHEVRON_IQ = {
     "run": False,
+    "readout_gain": None,
     "shots": 50,
     "num_pi": 1,
     "pulse_type": "X180",
@@ -372,6 +373,8 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
         "relax_delay": p.get("relax_delay_us", 1000.0),
         "qua_passive_pre_point_delay_us": p.get("relax_delay_us", 1000.0),
     }, active=False)
+    if p.get("readout_gain") is not None:
+        cfg["read_pulse_gain"] = int(p["readout_gain"])
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
                         num_pi_pulses=p["num_pi"], pulse_type=p["pulse_type"],
