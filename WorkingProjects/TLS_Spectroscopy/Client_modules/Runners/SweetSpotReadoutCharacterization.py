@@ -31,10 +31,12 @@ def runtime_settings(environ=None):
         "qubit_spec_shots": int(env.get("Q3_STEP1B_QUBIT_SPEC_SHOTS", "3000")),
         "sweep_shots": int(env.get("Q3_STEP1B_SWEEP_SHOTS", "800")),
         "ef_mode": str(env.get("Q3_STEP1B_EF_MODE", "two_photon")).strip().lower(),
-        "ef_low_offset_mhz": float(env.get("Q3_STEP1B_EF_LOW_OFFSET_MHZ", "400")),
-        "ef_high_offset_mhz": float(env.get("Q3_STEP1B_EF_HIGH_OFFSET_MHZ", "40")),
-        "ef_points": int(env.get("Q3_STEP1B_EF_POINTS", "361")),
-        "ef_gain_dac": int(env.get("Q3_STEP1B_EF_GAIN_DAC", "20000")),
+        "ef_gains_dac": [int(round(float(v))) for v in
+                         str(env.get("Q3_STEP1B_EF_GAINS_DAC", "15000,20000,25000")
+                             ).replace(",", " ").split()],
+        "ef_centre_mhz": float(env.get("Q3_STEP1B_EF_CENTRE_MHZ", "4278.3")),
+        "ef_halfspan_mhz": float(env.get("Q3_STEP1B_EF_HALFSPAN_MHZ", "10.0")),
+        "ef_step_mhz": float(env.get("Q3_STEP1B_EF_STEP_MHZ", "0.25")),
         "ef_length_us": float(env.get("Q3_STEP1B_EF_LENGTH_US", "4.0")),
         "ef_shots": int(env.get("Q3_STEP1B_EF_SHOTS", "3000")),
         "rabi_amp_min": int(env.get("Q3_STEP1B_RABI_AMP_MIN", "500")),
@@ -237,6 +239,10 @@ def main():
         print(f"RAW_TRACE_CSV={csv_path}")
         return payload
 
+    fixed_read_freq_mhz = predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS)
+    print(f"[step1b] sweet-spot sweep uses one fixed readout frequency "
+          f"{fixed_read_freq_mhz:.4f} MHz at every bias")
+
     evidence = []
     for bias in biases:
         label = f"sweet_spot_scan_{bias:+d}"
@@ -248,7 +254,7 @@ def main():
                 points=settings["qubit_spec_points"], shots=settings["sweep_shots"],
                 gain_dac=settings["qubit_spec_gain_dac"],
                 length_us=settings["qubit_spec_length_us"],
-                read_freq_mhz=float(np.median(resonator_axis_seed)))
+                read_freq_mhz=float(fixed_read_freq_mhz))
             evidence.append({"bias": int(bias), "f_q_GHz": round(fq_mhz / 1e3, 9)})
             print(f"[step1b] bias {bias:+d} DAC -> f_q {fq_mhz/1e3:.6f} GHz")
         except Exception as exc:
@@ -280,28 +286,60 @@ def main():
     two_photon_ghz = None
     ef_candidates = None
     fef_mode = "unmeasured"
+    ef_power_series = None
     if settings["ef_mode"] == "two_photon":
-        lo = fq_mhz - settings["ef_low_offset_mhz"]
-        hi = fq_mhz - settings["ef_high_offset_mhz"]
-        _, ef_f, ef_mag = qubit_spec(
-            "ef_two_photon", bias_dac=working_gain, centre_mhz=0.5 * (lo + hi),
-            span_mhz=(hi - lo), points=settings["ef_points"], shots=settings["ef_shots"],
-            gain_dac=settings["ef_gain_dac"], length_us=settings["ef_length_us"],
-            read_freq_mhz=float(predicted_r_mhz))
-        ef_candidates = ef_candidate_peaks(ef_f, ef_mag, fq_mhz)
-        chosen, inside = select_two_photon(ef_candidates)
-        if chosen is not None:
-            two_photon_ghz = chosen["frequency_MHz"] / 1e3
-            f_ef_ghz = (2.0 * chosen["frequency_MHz"] - fq_mhz) / 1e3
+        npts = int(round(2.0 * settings["ef_halfspan_mhz"] / settings["ef_step_mhz"])) + 1
+        rows_fq, rows_2p = [], []
+        for gain in settings["ef_gains_dac"]:
+            fq_g, _, _ = qubit_spec(
+                f"ef_power_fq_{gain}", bias_dac=working_gain, centre_mhz=fq_mhz,
+                span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
+                shots=settings["ef_shots"], gain_dac=gain,
+                length_us=settings["ef_length_us"], read_freq_mhz=float(predicted_r_mhz))
+            _, f2_f, f2_mag = qubit_spec(
+                f"ef_power_two_photon_{gain}", bias_dac=working_gain,
+                centre_mhz=settings["ef_centre_mhz"],
+                span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
+                shots=settings["ef_shots"], gain_dac=gain,
+                length_us=settings["ef_length_us"], read_freq_mhz=float(predicted_r_mhz))
+            cands = ef_candidate_peaks(f2_f, f2_mag, fq_mhz)
+            best = max(cands, key=lambda c: c["prominence_sigma"]) if cands else None
+            rows_fq.append((gain, fq_g))
+            rows_2p.append((gain, None if best is None else best["frequency_MHz"],
+                            None if best is None else best["prominence_sigma"]))
+            print(f"[step1b] gain {gain:6d}: f_q {fq_g:9.3f} MHz   two-photon "
+                  + ("not found" if best is None
+                     else f"{best['frequency_MHz']:9.3f} MHz ({best['prominence_sigma']:.1f} sigma)"))
+        fq_ex = characterisation.extrapolate_zero_power(
+            [g for g, _ in rows_fq], [c for _, c in rows_fq])
+        tp_ex = characterisation.extrapolate_zero_power(
+            [g for g, c, _ in rows_2p if c is not None],
+            [c for _, c, _ in rows_2p if c is not None])
+        derived = characterisation.two_photon_anharmonicity(
+            fq_ex["zero_power_MHz"], tp_ex["zero_power_MHz"])
+        ef_power_series = {
+            "f_q_vs_power": [{"gain_DAC": g, "centre_MHz": c} for g, c in rows_fq],
+            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c,
+                                     "prominence_sigma": s_} for g, c, s_ in rows_2p],
+            "f_q_zero_power": fq_ex, "two_photon_zero_power": tp_ex,
+            "anharmonicity_MHz": derived["anharmonicity_MHz"],
+        }
+        ef_candidates = [{"frequency_MHz": c, "offset_from_fq_MHz": c - fq_mhz,
+                          "prominence_sigma": s_, "gain_DAC": g}
+                         for g, c, s_ in rows_2p if c is not None]
+        if tp_ex["zero_power_MHz"] is not None and derived["anharmonicity_MHz"] is not None \
+                and -400.0 < derived["anharmonicity_MHz"] < -100.0:
+            two_photon_ghz = tp_ex["zero_power_MHz"] / 1e3
+            f_ef_ghz = derived["f_ef_GHz"]
             fef_mode = "two_photon"
-            print(f"[step1b] two-photon 0-2 at {chosen['frequency_MHz']/1e3:.6f} GHz "
-                  f"({chosen['offset_from_fq_MHz']:+.1f} MHz, "
-                  f"{chosen['prominence_sigma']:.1f} sigma) -> f_ef "
-                  f"{f_ef_ghz:.6f} GHz")
+            print(f"[step1b] zero-power f_q {fq_ex['zero_power_MHz']:.3f} MHz, "
+                  f"two-photon {tp_ex['zero_power_MHz']:.3f} MHz")
+            print(f"[step1b] f_ef = {f_ef_ghz:.6f} GHz, "
+                  f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
         else:
             fef_mode = "two_photon_inconclusive"
-            print(f"[step1b] two-photon scan did not yield a unique candidate in "
-                  f"-200..-60 MHz; found {len(inside)}. f_ef stays null.")
+            print("[step1b] two-photon power series did not give a usable anharmonicity; "
+                  "f_ef stays null")
 
     rabi_cfg = base_cfg(working_gain)
     rabi_cfg.update({
@@ -423,6 +461,7 @@ def main():
         pi_calibration=pi_calibration, two_photon_ghz=two_photon_ghz,
         ef_candidates=ef_candidates,
     )
+    report["ef_power_series"] = ef_power_series
     report["resonator_fit_ground"] = ground
     report["resonator_fit_excited"] = excited
     report["resonator_fit_ground_minus_6dB"] = lower

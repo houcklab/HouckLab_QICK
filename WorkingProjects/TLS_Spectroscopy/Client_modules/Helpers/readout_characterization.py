@@ -149,3 +149,39 @@ def step1b_report(*, base_report, f_ef_ghz, fef_mode, sweet_spot_evidence,
     report["pi_calibration"] = pi_calibration
     report["excited_population_estimate"] = excited_population_estimate
     return report
+
+
+def extrapolate_zero_power(gains, centres_mhz):
+    import numpy as np
+
+    g = np.asarray(gains, dtype=float)
+    c = np.asarray(centres_mhz, dtype=float)
+    good = np.isfinite(g) & np.isfinite(c)
+    g, c = g[good], c[good]
+    if g.size == 0:
+        return {"zero_power_MHz": None, "slope_MHz_per_DAC2": None, "n": 0}
+    if g.size == 1:
+        return {"zero_power_MHz": float(c[0]), "slope_MHz_per_DAC2": None, "n": 1,
+                "note": "single power; no Stark extrapolation possible"}
+    x = g ** 2
+    slope, intercept = np.polyfit(x, c, 1)
+    resid = float(np.sqrt(np.mean((c - (slope * x + intercept)) ** 2)))
+    return {
+        "zero_power_MHz": float(intercept),
+        "slope_MHz_per_DAC2": float(slope),
+        "stark_shift_at_max_gain_MHz": float(slope * x.max()),
+        "rms_residual_MHz": resid,
+        "n": int(g.size),
+        "gains": [float(v) for v in g],
+        "centres_MHz": [float(v) for v in c],
+    }
+
+
+def two_photon_anharmonicity(f_q_zero_mhz, f_two_photon_zero_mhz):
+    if f_q_zero_mhz is None or f_two_photon_zero_mhz is None:
+        return {"f_ef_GHz": None, "anharmonicity_MHz": None}
+    f_ef = 2.0 * float(f_two_photon_zero_mhz) - float(f_q_zero_mhz)
+    return {
+        "f_ef_GHz": round(f_ef / 1e3, 9),
+        "anharmonicity_MHz": float(f_ef - float(f_q_zero_mhz)),
+    }
