@@ -155,6 +155,17 @@ def apply_series_overrides(params, environ=None):
         out["decay_delays_us"] = vals
         print(f"[scan] decay delays {params['decay_delays_us']} -> {vals} us "
               "(Q3_5PT_DELAYS_US)")
+    for key, env in (("dc_min", "Q3_5PT_DC_MIN"),
+                     ("dc_max", "Q3_5PT_DC_MAX")):
+        raw = environ.get(env)
+        if raw is not None and str(raw).strip() != "":
+            value = float(raw)
+            if not np.isfinite(value):
+                raise ValueError(f"{env} must be finite")
+            out[key] = value
+            print(f"[scan] {key} {params[key]:g} -> {value:g} ({env})")
+    if {"dc_min", "dc_max"}.issubset(out) and float(out["dc_max"]) <= float(out["dc_min"]):
+        raise ValueError("Q3 five-point inversion requires dc_max > dc_min")
     for key, env in (("freq_min_ghz", "Q3_5PT_FREQ_MIN_GHZ"),
                      ("freq_max_ghz", "Q3_5PT_FREQ_MAX_GHZ"),
                      ("freq_step_mhz", "Q3_5PT_FREQ_STEP_MHZ")):

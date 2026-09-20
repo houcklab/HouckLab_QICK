@@ -1983,6 +1983,21 @@ def test_series_override_accepts_explicit_q3_five_point_shot_count(monkeypatch):
     assert params["shots_per_condition"] == 300
 
 
+def test_series_override_accepts_explicit_q3_inversion_bounds(monkeypatch):
+    """A deliberate wide-band scan can select its calibrated DAC branch."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    params = runner.apply_series_overrides(
+        {"dc_min": -20550, "dc_max": -11800},
+        {"Q3_5PT_DC_MIN": "-20550", "Q3_5PT_DC_MAX": "-6500"},
+    )
+
+    assert params["dc_min"] == -20550
+    assert params["dc_max"] == -6500
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()
