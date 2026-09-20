@@ -69,6 +69,22 @@ def predistortion_recovery_us(cfg, compensation):
     return min(value, horizon_us)
 
 
+def uncompensated_return_wait_us(cfg):
+    """Extra park dwell which makes an OFF return match the ON time budget.
+
+    This is deliberately opt-in.  Historical uncorrected experiments retain
+    their legacy timing unless a comparison runner explicitly requests a
+    matched 40-us park-readout contract.
+    """
+    if not bool(cfg.get("flux_predistortion_timing_matched_off", False)):
+        return 0.0
+    recovery_us = float(cfg.get("flux_predistortion_recovery_us", 0.0))
+    prefix_us = float(cfg.get("flux_predistortion_return_prefix_us", 0.0))
+    if not np.isfinite(recovery_us) or not np.isfinite(prefix_us):
+        raise ValueError("uncompensated return timing must be finite")
+    return max(recovery_us - prefix_us, 0.0)
+
+
 def compensation_hold_segments(compensation, hold_us):
     hold_us = max(float(hold_us), 0.0)
     if hold_us <= 0:

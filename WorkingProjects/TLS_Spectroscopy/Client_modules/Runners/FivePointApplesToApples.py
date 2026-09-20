@@ -541,6 +541,10 @@ def main():
         "flux_predistortion_overlap_payload_readout": bool(
             p["flux_predistortion_overlap_payload_readout"]
         ),
+        # OFF returns immediately to park, then idles there for the remaining
+        # recovery window.  This compares only the corrective waveform, not
+        # the readout timing.
+        "flux_predistortion_timing_matched_off": not predistortion_on,
         "readout_thermalization_us": float(
             p["readout_thermalization_us"]
         ),

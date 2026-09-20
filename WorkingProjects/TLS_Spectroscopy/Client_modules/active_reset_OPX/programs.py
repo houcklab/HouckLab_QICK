@@ -1502,6 +1502,11 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                 self.sync_all(self.us2cycles(max(hold_us, 0.01)))
                 ff_pulse.play_hard_step(self, self.cfg.get("ff_park_gain", 0))
                 self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+                extra_return_wait_us = ff_pulse.uncompensated_return_wait_us(
+                    self.cfg
+                )
+                if extra_return_wait_us > 0.0:
+                    self.sync_all(self.us2cycles(extra_return_wait_us))
                 return
             ff_pulse.play_ramp_up_hold(
                 self,
@@ -1511,6 +1516,11 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             self.sync_all(self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self._t1_ff_segments)
             self.sync_all(self.us2cycles(self._t1_ff_settle_us))
+            extra_return_wait_us = ff_pulse.uncompensated_return_wait_us(
+                self.cfg
+            )
+            if extra_return_wait_us > 0.0:
+                self.sync_all(self.us2cycles(extra_return_wait_us))
         else:
             self.sync_all(
                 self.us2cycles(max(hold_us, 0.01))

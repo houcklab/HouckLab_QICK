@@ -20,6 +20,22 @@ def analysis():
     return importlib.import_module(spec.name)
 
 
+def test_qick_uncompensated_return_wait_preserves_full_recovery_window():
+    """The OFF path must idle after its immediate park return."""
+    pulse = importlib.import_module(f"{PREFIX}.Helpers.ff_pulse")
+
+    assert pulse.uncompensated_return_wait_us({
+        "flux_predistortion_timing_matched_off": True,
+        "flux_predistortion_recovery_us": 40.0,
+        "flux_predistortion_return_prefix_us": 0.5,
+    }) == pytest.approx(39.5)
+    assert pulse.uncompensated_return_wait_us({
+        "flux_predistortion_timing_matched_off": False,
+        "flux_predistortion_recovery_us": 40.0,
+        "flux_predistortion_return_prefix_us": 0.5,
+    }) == pytest.approx(0.0)
+
+
 def diagnostic():
     spec = importlib.util.find_spec(f"{PREFIX}.Runners.Test")
     assert spec is not None, "measurement-first QICK diagnostic is missing"
