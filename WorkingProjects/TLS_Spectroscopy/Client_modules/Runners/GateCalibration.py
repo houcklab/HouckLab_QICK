@@ -46,6 +46,9 @@ _RESET_SESSION = ProductionResetSession.passive()
 
 P_TRANSMISSION = {
     "run": False,
+    "prepare_excited": False,
+    "qubit_pi_freq_mhz": None,
+    "qubit_pi_gain": None,
     "shots": 1000,
     "freq_start_mhz": 6929.0,
     "freq_stop_mhz": 6935.0,
@@ -202,9 +205,15 @@ def run_transmission(outer_folder, soc, soccfg):
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
     f_vec = np.linspace(float(start), float(stop), int(p["freq_points"]))
     cfg = _base_cfg(p, active=False)
-    cfg["relax_delay"] = 50
+    cfg["relax_delay"] = float(p.get("relax_delay_us", 50))
     _apply_spec_probe(cfg, p)
-    print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
+    if p.get("prepare_excited"):
+        cfg["prepare_excited"] = True
+        cfg["qubit_pi_freq"] = float(p["qubit_pi_freq_mhz"])
+        cfg["qubit_pi_gain"] = int(p["qubit_pi_gain"])
+        cfg["excited_pi_to_readout_us"] = float(p.get("excited_pi_to_readout_us", 0.05))
+    print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}"
+          + ("  (qubit prepared in |e>)" if p.get("prepare_excited") else ""))
     exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                        suffix="GateCal_Transmission", cfg=cfg, f_vec=f_vec)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)

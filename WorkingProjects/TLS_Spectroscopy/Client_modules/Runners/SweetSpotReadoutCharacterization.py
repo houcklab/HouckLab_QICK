@@ -11,11 +11,14 @@ import numpy as np
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (
     readout_characterization as characterisation,
 )
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ReadoutCharacterization import (
-    _axis, _bool, _fit_trace, predicted_resonator_mhz,
-)
 
 QUBIT = "q3"
+
+
+def _bool(environ, key, default=False):
+    return str(environ.get(key, str(int(default)))).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 
 def runtime_settings(environ=None):
@@ -28,6 +31,7 @@ def runtime_settings(environ=None):
         "qubit_spec_length_us": float(env.get("Q3_STEP1B_QUBIT_SPEC_LENGTH_US", "4.0")),
         "qubit_spec_points": int(env.get("Q3_STEP1B_QUBIT_SPEC_POINTS", "321")),
         "qubit_spec_span_mhz": float(env.get("Q3_STEP1B_QUBIT_SPEC_SPAN_MHZ", "15")),
+        "qubit_spec_centre_mhz": float(env.get("Q3_STEP1B_QUBIT_SPEC_CENTRE_MHZ", "4367.5")),
         "qubit_spec_shots": int(env.get("Q3_STEP1B_QUBIT_SPEC_SHOTS", "3000")),
         "sweep_shots": int(env.get("Q3_STEP1B_SWEEP_SHOTS", "800")),
         "ef_mode": str(env.get("Q3_STEP1B_EF_MODE", "two_photon")).strip().lower(),
@@ -35,8 +39,8 @@ def runtime_settings(environ=None):
                          str(env.get("Q3_STEP1B_EF_GAINS_DAC", "15000,20000,25000")
                              ).replace(",", " ").split()],
         "ef_centre_mhz": float(env.get("Q3_STEP1B_EF_CENTRE_MHZ", "4278.3")),
-        "ef_halfspan_mhz": float(env.get("Q3_STEP1B_EF_HALFSPAN_MHZ", "10.0")),
-        "ef_step_mhz": float(env.get("Q3_STEP1B_EF_STEP_MHZ", "0.25")),
+        "ef_halfspan_mhz": float(env.get("Q3_STEP1B_EF_HALFSPAN_MHZ", "25.0")),
+        "ef_step_mhz": float(env.get("Q3_STEP1B_EF_STEP_MHZ", "0.2")),
         "ef_length_us": float(env.get("Q3_STEP1B_EF_LENGTH_US", "4.0")),
         "ef_shots": int(env.get("Q3_STEP1B_EF_SHOTS", "3000")),
         "rabi_amp_min": int(env.get("Q3_STEP1B_RABI_AMP_MIN", "500")),
@@ -45,16 +49,16 @@ def runtime_settings(environ=None):
         "rabi_sigma_us": float(env.get("Q3_STEP1B_RABI_SIGMA_US", "0.2")),
         "rabi_shots": int(env.get("Q3_STEP1B_RABI_SHOTS", "400")),
         "readout_gain_dac": int(env.get("Q3_STEP1B_READOUT_GAIN_DAC", "472")),
-        "readout_shots": int(env.get("Q3_STEP1B_READOUT_SHOTS", "300")),
+        "readout_shots": int(env.get("Q3_STEP1B_READOUT_SHOTS", "1000")),
+        "resonator_centre_mhz": float(env.get("Q3_STEP1B_RESONATOR_CENTRE_MHZ", "6933.3")),
         "resonator_span_mhz": float(env.get("Q3_STEP1B_RESONATOR_SPAN_MHZ", "4.0")),
-        "resonator_step_mhz": float(env.get("Q3_STEP1B_RESONATOR_STEP_MHZ", "0.05")),
-        "relax_delay_us": float(env.get("Q3_STEP1B_RELAX_DELAY_US", "500.0")),
+        "resonator_points": int(env.get("Q3_STEP1B_RESONATOR_POINTS", "161")),
+        "resonator_length_us": float(env.get("Q3_STEP1B_RESONATOR_LENGTH_US", "10.0")),
         "spec_relax_delay_us": float(env.get("Q3_STEP1B_SPEC_RELAX_DELAY_US", "150.0")),
+        "relax_delay_us": float(env.get("Q3_STEP1B_RELAX_DELAY_US", "500.0")),
         "ef_only": _bool(env, "Q3_STEP1B_EF_ONLY", False),
         "fq_override_mhz": (None if not str(env.get("Q3_STEP1B_FQ_MHZ", "")).strip()
                             else float(env["Q3_STEP1B_FQ_MHZ"])),
-        "read_offset_mhz": float(env.get("Q3_STEP1B_READ_OFFSET_MHZ", "-0.25")),
-        "plot": _bool(env, "Q3_STEP1B_PLOT", False),
     }
 
 
@@ -81,41 +85,25 @@ def _write_outputs(*, outer_folder, settings, report, rows, source_experiments):
 
 
 def main():
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import (
-        BaseConfig, outerFolder,
-    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import outerFolder
     from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import (
-        Transmission,
-    )
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
-        RabiChevronIQ,
-    )
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as fits
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
-        ProductionResetSession,
-    )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import GateCalibration as gcal
 
     settings = runtime_settings()
+    gcal.LIVE_PLOTS = False
     centre_gain = int(settings["sweet_spot_gain_dac"])
     biases = [centre_gain + d for d in settings["bias_offsets_dac"]]
-    predicted_q_mhz = 1e3 * fx.estimate_fit_frequency_ghz(tls.FLUX_FIT_PARAMS, centre_gain)
-    low_gain = max(1, int(round(settings["readout_gain_dac"] * 10.0 ** (-6.0 / 20.0))))
 
     print("")
     print("=========== q3 Step 1b: sweet-spot readout characterisation ===========")
-    print(f"  nominal sweet spot   : {centre_gain:+d} DAC  (model f_q {predicted_q_mhz/1e3:.6f} GHz)")
+    print("  every scan runs through GateCalibration's own run_qubit_spec /")
+    print("  run_transmission / run_rabi_chevron_iq; no separate config path")
+    print(f"  nominal sweet spot   : {centre_gain:+d} DAC")
     print(f"  sweet-spot biases    : {biases}")
     print(f"  qubit spectroscopy   : const {settings['qubit_spec_gain_dac']} DAC, "
-          f"{settings['qubit_spec_length_us']:g} us, {settings['qubit_spec_points']} pts over "
-          f"{settings['qubit_spec_span_mhz']:g} MHz")
-    print(f"  readout gain         : {settings['readout_gain_dac']} DAC, -6 dB = {low_gain}")
-    print(f"  relax delay          : {settings['spec_relax_delay_us']:g} us for spectroscopy, "
-          f"{settings['relax_delay_us']:g} us for Rabi and the resonator traces")
-    print(f"  e-f mode             : {settings['ef_mode']}")
+          f"{settings['qubit_spec_length_us']:g} us, {settings['qubit_spec_points']} pts")
+    print(f"  readout gain         : {settings['readout_gain_dac']} DAC")
     print("  raw frequencies only: no chi, no g, no anharmonicity, no Purcell")
     print("=======================================================================")
     print("")
@@ -123,101 +111,75 @@ def main():
     soc, soccfg = makeProxy()
     source_experiments = {}
     trace_rows = []
+    baseline_park = int(gcal.BaseConfig["ff_park_gain"])
 
-    def base_cfg(gain_dac):
-        cfg = dict(BaseConfig)
-        cfg.update({
-            "ff_park_gain": int(gain_dac),
-            "ff_gain": 0, "ff_hold_gain": 0,
-            "readout_after_park": True,
-            "baseline_rearm_us": 0.5,
-            "shots": int(settings["readout_shots"]), "reps": int(settings["readout_shots"]),
-            "relax_delay": float(settings["relax_delay_us"]),
+    def set_bias(gain_dac):
+        gcal.BaseConfig["ff_park_gain"] = int(gain_dac)
+
+    def record(label, bias, x, y, x_units, y_units, state="g"):
+        for a, b in zip(x, y):
+            trace_rows.append({"scan": label, "state": state, "bias_dac": int(bias),
+                               "x": float(a), "x_units": x_units,
+                               "y": float(b), "y_units": y_units})
+
+    def qubit_spec(label, *, bias, centre_mhz, span_mhz, points, shots, gain_dac, length_us):
+        set_bias(bias)
+        gcal.P_QUBIT_SPEC.update({
+            "run": True, "readout_gain": int(settings["readout_gain_dac"]),
+            "shots": int(shots),
+            "freq_start_mhz": float(centre_mhz) - 0.5 * float(span_mhz),
+            "freq_stop_mhz": float(centre_mhz) + 0.5 * float(span_mhz),
+            "freq_points": int(points), "spec_gain": int(gain_dac),
+            "spec_length_us": float(length_us),
+            "relax_delay_us": float(settings["spec_relax_delay_us"]),
         })
-        cfg = ProductionResetSession.passive().apply(cfg)
-        cfg["opx_inter_shot_delay_us"] = float(settings["relax_delay_us"])
-        return cfg
+        exp = gcal.run_qubit_spec(outerFolder, soc, soccfg)
+        source_experiments[label] = {"pickle": exp.pname, "png": exp.iname}
+        d = exp.data
+        record(label, bias, d["fpts"], d["magnitude"], "MHz", "abs_IQ")
+        return (float(d["qubit_freq_mhz"]), np.asarray(d["fpts"], float),
+                np.asarray(d["magnitude"], float))
 
-    def qubit_spec(label, *, bias_dac, centre_mhz, span_mhz, points, shots,
-                   gain_dac, length_us, read_freq_mhz):
-        cfg = base_cfg(bias_dac)
-        cfg.update({
-            "shots": int(shots), "reps": int(shots),
-            "relax_delay": float(settings["spec_relax_delay_us"]),
-            "opx_inter_shot_delay_us": float(settings["spec_relax_delay_us"]),
-            "read_pulse_gain": int(settings["readout_gain_dac"]),
-            "read_pulse_freq": float(read_freq_mhz),
-            "qubit_freq_start": float(centre_mhz) - 0.5 * float(span_mhz),
-            "qubit_freq_stop": float(centre_mhz) + 0.5 * float(span_mhz),
-            "qubit_freq_expts": int(points),
-            "qubit_pulse_style": "const",
-            "qubit_gain": int(gain_dac),
-            "qubit_length": float(length_us),
+    def transmission(label, *, bias, gain, prepare_excited=False, pi_freq=None, pi_gain=None):
+        set_bias(bias)
+        gcal.P_TRANSMISSION.update({
+            "run": True, "shots": int(settings["readout_shots"]),
+            "freq_start_mhz": settings["resonator_centre_mhz"] - settings["resonator_span_mhz"],
+            "freq_stop_mhz": settings["resonator_centre_mhz"] + settings["resonator_span_mhz"],
+            "freq_points": int(settings["resonator_points"]),
+            "spec_amp": int(gain), "spec_len_us": float(settings["resonator_length_us"]),
+            "relax_delay_us": float(settings["relax_delay_us"]),
+            "prepare_excited": bool(prepare_excited),
+            "qubit_pi_freq_mhz": None if pi_freq is None else float(pi_freq),
+            "qubit_pi_gain": None if pi_gain is None else int(round(pi_gain)),
         })
-        exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                        suffix=f"Step1b_{label}", cfg=cfg, save=True)
-        result = exp.acquire(progress=True, plotDisp=settings["plot"])
+        exp = gcal.run_transmission(outerFolder, soc, soccfg)
         source_experiments[label] = {"pickle": exp.pname, "png": exp.iname}
-        data = result["data"]
-        for f, m in zip(data["fpts"], data["magnitude"]):
-            trace_rows.append({"scan": label, "state": "g", "bias_dac": int(bias_dac),
-                               "x": float(f), "x_units": "MHz",
-                               "y": float(m), "y_units": "magnitude"})
-        return float(data["qubit_freq_mhz"]), np.asarray(data["fpts"], dtype=float), \
-            np.asarray(data["magnitude"], dtype=float)
+        d = exp.data
+        f = np.asarray(d["f_vec"], float)
+        m = np.asarray(d["IQ_magnitude_dBm"], float)
+        record(label, bias, f, m, "MHz", "dBm", state="e" if prepare_excited else "g")
+        fit, errors = fits.fit_resonator_dip(f, m)
+        if fit is None:
+            raise RuntimeError(f"{label}: resonator fit returned no result")
+        return {"centre_MHz": float(fit["fr"]), "fwhm_MHz": abs(float(fit["fwhm"])),
+                "fit_errors": None if errors is None else {k: float(v) for k, v in errors.items()},
+                "inside_scan_window": bool(f.min() < fit["fr"] < f.max())}
 
-    def transmission_locate(axis, label="locate"):
-        cfg = base_cfg(centre_gain)
-        cfg["read_pulse_gain"] = int(settings["readout_gain_dac"])
-        cfg["read_pulse_freq"] = float(np.median(axis))
-        cfg["prepare_excited"] = False
-        exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                           suffix=f"Step1b_{label}", cfg=cfg, f_vec=axis,
-                           plot=False, save=True)
-        out = exp.acquire(progress=True, plotDisp=False)
-        source_experiments[label] = {"pickle": exp.pname, "png": exp.iname}
-        data = out["data"]
-        for fr, m in zip(data["f_vec"], data["IQ_magnitude_dBm"]):
-            trace_rows.append({"scan": label, "state": "g", "bias_dac": int(centre_gain),
-                               "x": float(fr), "x_units": "MHz", "y": float(m),
-                               "y_units": "dBm"})
-        try:
-            fit = _fit_trace(data["f_vec"], data["IQ_magnitude_dBm"], fits.fit_resonator_dip)
-        except Exception:
-            return None
-        return fit["centre_MHz"] if fit.get("inside_scan_window") else None
-
-    resonator_axis_seed = _axis(predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS),
-                                settings["resonator_span_mhz"], settings["resonator_step_mhz"])
-
-    located = transmission_locate(resonator_axis_seed, "resonator_locate")
-    dip_mhz = (located if located is not None
-               else predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS))
-    fixed_read_freq_mhz = dip_mhz + float(settings["read_offset_mhz"])
-    print(f"[step1b] resonator dip {dip_mhz:.4f} MHz "
-          + ("(measured)" if located is not None else "(model prediction; locate failed)"))
-    print(f"[step1b] spectroscopy readout at {fixed_read_freq_mhz:.4f} MHz "
-          f"({settings['read_offset_mhz']:+.3f} MHz off the dip, on the flank where the "
-          "magnitude response to a small dispersive shift is first order)")
-
-    if settings["ef_only"]:
-        if settings["fq_override_mhz"] is None:
-            raise ValueError("Q3_STEP1B_EF_ONLY requires Q3_STEP1B_FQ_MHZ")
-        fq_mhz = float(settings["fq_override_mhz"])
+    def two_photon_series(fq_mhz, bias):
         npts = int(round(2.0 * settings["ef_halfspan_mhz"] / settings["ef_step_mhz"])) + 1
         rows = []
         for gain in settings["ef_gains_dac"]:
-            _, f2_f, f2_mag = qubit_spec(
-                f"ef_power_two_photon_{gain}", bias_dac=centre_gain,
-                centre_mhz=settings["ef_centre_mhz"],
+            _, f2, m2 = qubit_spec(
+                f"ef_two_photon_{gain}", bias=bias, centre_mhz=settings["ef_centre_mhz"],
                 span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
                 shots=settings["ef_shots"], gain_dac=gain,
-                length_us=settings["ef_length_us"],
-                read_freq_mhz=float(fixed_read_freq_mhz))
+                length_us=settings["ef_length_us"])
             fit = characterisation.fit_dip_in_window(
-                f2_f, f2_mag, expected_mhz=settings["ef_centre_mhz"], max_offset_mhz=6.0)
+                f2, m2, expected_mhz=settings["ef_centre_mhz"], max_offset_mhz=6.0)
             ok = bool(fit and fit["snr"] is not None and fit["snr"] >= 4.0
-                      and fit["inside_window"])
+                      and fit["inside_window"]
+                      and fit["hwhm_MHz"] > 2.0 * settings["ef_step_mhz"])
             rows.append((gain, fit["centre_MHz"] if ok else None,
                          fit["snr"] if fit else None, fit["hwhm_MHz"] if fit else None))
             print(f"[step1b] gain {gain:6d}: two-photon "
@@ -228,271 +190,188 @@ def main():
             [g for g, c, _, _ in rows if c is not None],
             [c for _, c, _, _ in rows if c is not None])
         derived = characterisation.two_photon_anharmonicity(fq_mhz, tp["zero_power_MHz"])
-        payload = {
-            "mode": "ef_only", "bias_dac": int(centre_gain), "f_q_GHz": fq_mhz / 1e3,
-            "readout_frequency_MHz": float(fixed_read_freq_mhz),
-            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
-                                     "hwhm_MHz": w} for g, c, s_, w in rows],
-            "two_photon_zero_power": tp,
-            "f_two_photon_02_GHz": (None if tp["zero_power_MHz"] is None
-                                    else tp["zero_power_MHz"] / 1e3),
-            "f_ef_GHz": derived["f_ef_GHz"],
-            "anharmonicity_MHz": derived["anharmonicity_MHz"],
-            "fef_mode": ("two_photon" if derived["f_ef_GHz"] is not None
-                         else "two_photon_inconclusive"),
-        }
-        if derived["anharmonicity_MHz"] is not None:
-            print(f"[step1b] f_ef = {derived['f_ef_GHz']:.6f} GHz, "
-                  f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
-        json_path, csv_path = _write_outputs(
-            outer_folder=outerFolder, settings=settings, report=payload,
-            rows=trace_rows, source_experiments=source_experiments)
-        print(f"STEP1B_EF_JSON={json_path}")
-        print(f"RAW_TRACE_CSV={csv_path}")
-        return payload
+        return rows, tp, derived
 
-    evidence = []
-    for bias in biases:
-        label = f"sweet_spot_scan_{bias:+d}"
-        centre = 1e3 * fx.estimate_fit_frequency_ghz(tls.FLUX_FIT_PARAMS, bias)
-        try:
-            fq_mhz, _, _ = qubit_spec(
-                label, bias_dac=bias, centre_mhz=centre,
-                span_mhz=settings["qubit_spec_span_mhz"],
-                points=settings["qubit_spec_points"], shots=settings["sweep_shots"],
-                gain_dac=settings["qubit_spec_gain_dac"],
-                length_us=settings["qubit_spec_length_us"],
-                read_freq_mhz=float(fixed_read_freq_mhz))
-            evidence.append({"bias": int(bias), "f_q_GHz": round(fq_mhz / 1e3, 9)})
-            print(f"[step1b] bias {bias:+d} DAC -> f_q {fq_mhz/1e3:.6f} GHz")
-        except Exception as exc:
-            evidence.append({"bias": int(bias), "f_q_GHz": None, "error": str(exc)})
-            print(f"[step1b] bias {bias:+d} DAC FAILED: {exc}")
-
-    check = characterisation.sweet_spot_verdict(evidence, centre_gain)
-    print(f"[step1b] sweet-spot check: {check['reason']}")
-    working_gain = centre_gain
-    if not check.get("is_extremum", False):
-        observed = check.get("extremum_bias_observed")
-        if observed is not None and np.isfinite(observed):
-            working_gain = int(observed)
-            print(f"[step1b] centre is NOT the extremum; continuing at observed "
-                  f"extremum {working_gain:+d} DAC")
-
-    predicted_r_mhz = predicted_resonator_mhz(working_gain, tls.RESONATOR_FIT_PARAMS)
-    resonator_axis = _axis(predicted_r_mhz, settings["resonator_span_mhz"],
-                           settings["resonator_step_mhz"])
-    read_freq_mhz = float(fixed_read_freq_mhz)
-
-    fq_mhz, _, _ = qubit_spec(
-        "qubit_spec", bias_dac=working_gain, centre_mhz=predicted_q_mhz,
-        span_mhz=settings["qubit_spec_span_mhz"], points=settings["qubit_spec_points"],
-        shots=settings["qubit_spec_shots"], gain_dac=settings["qubit_spec_gain_dac"],
-        length_us=settings["qubit_spec_length_us"], read_freq_mhz=float(read_freq_mhz))
-    print(f"[step1b] f_q = {fq_mhz/1e3:.6f} GHz")
-
-    f_ef_ghz = None
-    two_photon_ghz = None
-    ef_candidates = None
-    fef_mode = "unmeasured"
-    ef_power_series = None
-    if settings["ef_mode"] == "two_photon":
-        npts = int(round(2.0 * settings["ef_halfspan_mhz"] / settings["ef_step_mhz"])) + 1
-        rows_2p = []
-        for gain in settings["ef_gains_dac"]:
-            _, f2_f, f2_mag = qubit_spec(
-                f"ef_power_two_photon_{gain}", bias_dac=working_gain,
-                centre_mhz=settings["ef_centre_mhz"],
-                span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
-                shots=settings["ef_shots"], gain_dac=gain,
-                length_us=settings["ef_length_us"], read_freq_mhz=float(read_freq_mhz))
-            fit = characterisation.fit_dip_in_window(
-                f2_f, f2_mag, expected_mhz=settings["ef_centre_mhz"], max_offset_mhz=6.0)
-            ok = bool(fit and fit["snr"] is not None and fit["snr"] >= 4.0
-                      and fit["inside_window"])
-            rows_2p.append((gain, fit["centre_MHz"] if ok else None,
-                            fit["snr"] if fit else None,
-                            fit["hwhm_MHz"] if fit else None))
-            print(f"[step1b] gain {gain:6d}: two-photon "
-                  + ("not detected" if not ok else
-                     f"{fit['centre_MHz']:9.3f} MHz  HWHM {fit['hwhm_MHz']:.2f}  "
-                     f"SNR {fit['snr']:.1f}"))
-        tp_ex = characterisation.extrapolate_zero_power(
-            [g for g, c, _, _ in rows_2p if c is not None],
-            [c for _, c, _, _ in rows_2p if c is not None])
-        derived = characterisation.two_photon_anharmonicity(
-            fq_mhz, tp_ex["zero_power_MHz"])
-        ef_power_series = {
-            "f_q_low_power_MHz": float(fq_mhz),
-            "f_q_low_power_drive_DAC": int(settings["qubit_spec_gain_dac"]),
-            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
-                                     "hwhm_MHz": w} for g, c, s_, w in rows_2p],
-            "two_photon_zero_power": tp_ex,
-            "anharmonicity_MHz": derived["anharmonicity_MHz"],
-        }
-        ef_candidates = [{"frequency_MHz": c, "offset_from_fq_MHz": c - fq_mhz,
-                          "snr": s_, "gain_DAC": g}
-                         for g, c, s_, _ in rows_2p if c is not None]
-        if tp_ex["zero_power_MHz"] is not None and derived["anharmonicity_MHz"] is not None \
-                and -400.0 < derived["anharmonicity_MHz"] < -100.0:
-            two_photon_ghz = tp_ex["zero_power_MHz"] / 1e3
-            f_ef_ghz = derived["f_ef_GHz"]
-            fef_mode = "two_photon"
-            print(f"[step1b] zero-power two-photon {tp_ex['zero_power_MHz']:.3f} MHz "
-                  f"(from {tp_ex['n']} powers), low-power f_q {fq_mhz:.3f} MHz")
-            print(f"[step1b] f_ef = {f_ef_ghz:.6f} GHz, "
-                  f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
-        else:
-            fef_mode = "two_photon_inconclusive"
-            print("[step1b] two-photon power series did not give a usable anharmonicity; "
-                  "f_ef stays null")
-
-    rabi_cfg = base_cfg(working_gain)
-    rabi_cfg.update({
-        "shots": int(settings["rabi_shots"]), "reps": int(settings["rabi_shots"]),
-        "read_pulse_gain": int(settings["readout_gain_dac"]),
-        "read_pulse_freq": float(predicted_r_mhz),
-        "qubit_pi_freq": float(fq_mhz), "qubit_freq": float(fq_mhz),
-        "rabi_drive_freq": float(fq_mhz),
-        "amp_start": int(settings["rabi_amp_min"]), "amp_stop": int(settings["rabi_amp_max"]),
-        "amp_expts": int(settings["rabi_amp_points"]),
-        "freq_span": 0.0, "freq_points": 1,
-        "qubit_pulse_style": "arb", "sigma": float(settings["rabi_sigma_us"]),
-        "relax_delay": float(settings["relax_delay_us"]),
-        "qua_passive_pre_point_delay_us": float(settings["relax_delay_us"]),
-    })
-    rabi = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                         suffix="Step1b_Rabi_Amplitude", cfg=rabi_cfg,
-                         num_pi_pulses=1, pulse_type="X180", live_plot=settings["plot"])
-    rabi_result = rabi.acquire(progress=True, plotDisp=settings["plot"])
-    source_experiments["rabi_amplitude"] = {"pickle": rabi.pname, "png": rabi.iname}
-    rabi_data = rabi_result["data"]
-    gains = np.asarray(rabi_data["gain_vec"], dtype=float)
-    iq = np.sqrt(np.asarray(rabi_data["I"], dtype=float) ** 2
-                 + np.asarray(rabi_data["Q"], dtype=float) ** 2)
-    response = iq[0] if iq.ndim == 2 else iq
-    for g, v in zip(gains, response):
-        trace_rows.append({"scan": "rabi_amplitude", "state": "g", "bias_dac": int(working_gain),
-                           "x": float(g), "x_units": "DAC", "y": float(v),
-                           "y_units": "abs_IQ"})
     try:
-        pi_calibration = characterisation.fit_rabi_amplitude(gains, response)
-        pi_calibration["method"] = (
-            f"RabiChevronIQ amplitude sweep at fixed drive {fq_mhz:.4f} MHz, "
-            f"X180 gaussian sigma {settings['rabi_sigma_us']:g} us, "
-            f"{settings['rabi_shots']} shots; cosine fit to |IQ| vs gain")
-        pi_calibration["best_gain_argmax_DAC"] = float(rabi_data.get("best_gain", np.nan))
-    except Exception as exc:
-        pi_calibration = {"rabi_pi_amplitude": None, "error": str(exc),
-                          "best_gain_argmax_DAC": float(rabi_data.get("best_gain", np.nan)),
-                          "method": "fit failed; argmax reported instead"}
-    pi_amp = pi_calibration.get("rabi_pi_amplitude")
-    if pi_amp is None or not pi_calibration.get("inside_swept_range", False):
-        pi_amp = float(rabi_data.get("best_gain", BaseConfig["qubit_pi_gain"]))
-        pi_calibration["fallback_used"] = True
-    pi_calibration["amplitude_used_for_excited_trace"] = float(pi_amp)
-    print(f"[step1b] pi amplitude = {pi_amp:.0f} DAC "
-          f"(argmax {rabi_data.get('best_gain')}, "
-          f"contrast {pi_calibration.get('rabi_fit_contrast')})")
+        if settings["ef_only"]:
+            if settings["fq_override_mhz"] is None:
+                raise ValueError("Q3_STEP1B_EF_ONLY requires Q3_STEP1B_FQ_MHZ")
+            fq_mhz = float(settings["fq_override_mhz"])
+            rows, tp, derived = two_photon_series(fq_mhz, centre_gain)
+            payload = {
+                "mode": "ef_only", "bias_dac": int(centre_gain), "f_q_GHz": fq_mhz / 1e3,
+                "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
+                                         "hwhm_MHz": w} for g, c, s_, w in rows],
+                "two_photon_zero_power": tp,
+                "f_two_photon_02_GHz": (None if tp["zero_power_MHz"] is None
+                                        else tp["zero_power_MHz"] / 1e3),
+                "f_ef_GHz": derived["f_ef_GHz"],
+                "anharmonicity_MHz": derived["anharmonicity_MHz"],
+                "fef_mode": ("two_photon" if derived["f_ef_GHz"] is not None
+                             else "two_photon_inconclusive"),
+            }
+            if derived["anharmonicity_MHz"] is not None:
+                print(f"[step1b] f_ef = {derived['f_ef_GHz']:.6f} GHz, "
+                      f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
+            json_path, csv_path = _write_outputs(
+                outer_folder=outerFolder, settings=settings, report=payload,
+                rows=trace_rows, source_experiments=source_experiments)
+            print(f"STEP1B_EF_JSON={json_path}")
+            print(f"RAW_TRACE_CSV={csv_path}")
+            return payload
 
-    def transmission(scan, *, gain, prepare_excited=False):
-        cfg = base_cfg(working_gain)
-        cfg["read_pulse_gain"] = int(gain)
-        cfg["read_pulse_freq"] = float(predicted_r_mhz)
-        cfg["prepare_excited"] = bool(prepare_excited)
-        if prepare_excited:
-            cfg["qubit_pi_freq"] = float(fq_mhz)
-            cfg["qubit_pi_gain"] = int(round(pi_amp))
-            cfg["excited_pi_to_readout_us"] = 0.05
-        exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                           suffix=f"Step1b_{scan}", cfg=cfg, f_vec=resonator_axis,
-                           plot=settings["plot"], save=True)
-        result = exp.acquire(progress=True, plotDisp=settings["plot"])
-        data = result["data"]
-        source_experiments[scan] = {"pickle": exp.pname, "png": exp.iname}
-        for f, m in zip(data["f_vec"], data["IQ_magnitude_dBm"]):
-            trace_rows.append({"scan": scan, "state": "e" if prepare_excited else "g",
-                               "bias_dac": int(working_gain), "x": float(f), "x_units": "MHz",
-                               "y": float(m), "y_units": "dBm"})
-        return _fit_trace(data["f_vec"], data["IQ_magnitude_dBm"], fits.fit_resonator_dip)
+        evidence = []
+        for bias in biases:
+            label = f"sweet_spot_scan_{bias:+d}"
+            try:
+                fq, _, _ = qubit_spec(
+                    label, bias=bias, centre_mhz=settings["qubit_spec_centre_mhz"],
+                    span_mhz=settings["qubit_spec_span_mhz"],
+                    points=settings["qubit_spec_points"], shots=settings["sweep_shots"],
+                    gain_dac=settings["qubit_spec_gain_dac"],
+                    length_us=settings["qubit_spec_length_us"])
+                evidence.append({"bias": int(bias), "f_q_GHz": round(fq / 1e3, 9)})
+                print(f"[step1b] bias {bias:+d} DAC -> f_q {fq / 1e3:.6f} GHz")
+            except Exception as exc:
+                evidence.append({"bias": int(bias), "f_q_GHz": None, "error": str(exc)})
+                print(f"[step1b] bias {bias:+d} DAC FAILED: {exc}")
 
-    ground = transmission("resonator_ground", gain=settings["readout_gain_dac"])
-    lower = transmission("resonator_ground_minus_6dB", gain=low_gain)
-    excited = transmission("resonator_excited", gain=settings["readout_gain_dac"],
-                           prepare_excited=True)
+        check = characterisation.sweet_spot_verdict(evidence, centre_gain)
+        print(f"[step1b] sweet-spot check: {check['reason']}")
+        working_gain = centre_gain
+        if not check.get("is_extremum", False):
+            observed = check.get("extremum_bias_observed")
+            if observed is not None and np.isfinite(observed):
+                working_gain = int(observed)
+                print(f"[step1b] centre is NOT the extremum; continuing at {working_gain:+d} DAC")
 
-    notes_parts = [
-        "Step 1b: every item taken at one fixed sweet-spot flux bias; the flux was changed "
-        "only for the sweet-spot confirmation sweep, which ran first.",
-        "dc_bias_V is null because q3 flux is calibrated in FF DAC gain with no validated "
-        "DAC-to-volts conversion in this repository.",
-        "readout_power_dBm and readout_attenuation_dB are null because the source-chain "
-        "calibration is not in this repository.",
-        "kappa_external/internal are null: the dip fit does not separate them.",
-    ]
-    if fef_mode == "two_photon":
-        notes_parts.append(
-            "f_ef_GHz was not measured by direct e-to-f spectroscopy. It is computed from the "
-            "measured two-photon 0-2 drive frequency via the exact relation "
-            "f_ef = 2*f_two_photon - f_q. The measured two-photon frequency is reported "
-            "separately as f_two_photon_02_GHz.")
-    elif fef_mode == "two_photon_inconclusive":
-        notes_parts.append(
-            "The two-photon 0-2 scan did not produce a unique candidate peak in the expected "
-            "-200..-60 MHz window; f_ef_GHz is null and all detected candidates are listed in "
-            "ef_candidate_peaks.")
-    if not check.get("is_extremum", False):
-        notes_parts.append(
-            f"The nominal sweet spot {centre_gain:+d} DAC did not test as the extremum; "
-            f"items 1-7 were taken at {working_gain:+d} DAC instead.")
-    if pi_calibration.get("fallback_used"):
-        notes_parts.append(
-            "The Rabi cosine fit did not place the pi amplitude inside the swept range; the "
-            "argmax gain was used for the excited-state trace and is reported as "
-            "amplitude_used_for_excited_trace.")
-    notes_parts.append(
-        f"Fit windows inside scan: ground={ground['inside_scan_window']}, "
-        f"lower_power={lower['inside_scan_window']}, excited={excited['inside_scan_window']}.")
+        fq_mhz, _, _ = qubit_spec(
+            "qubit_spec", bias=working_gain, centre_mhz=settings["qubit_spec_centre_mhz"],
+            span_mhz=settings["qubit_spec_span_mhz"], points=settings["qubit_spec_points"],
+            shots=settings["qubit_spec_shots"], gain_dac=settings["qubit_spec_gain_dac"],
+            length_us=settings["qubit_spec_length_us"])
+        print(f"[step1b] f_q = {fq_mhz / 1e3:.6f} GHz")
 
-    base_report = characterisation.step1_report(
-        fr_ground_mhz=ground["centre_MHz"], fr_excited_mhz=excited["centre_MHz"],
-        kappa_total_mhz=ground["fwhm_MHz"], fq_mhz=fq_mhz,
-        dc_coordinate=working_gain, readout_gain_dac=settings["readout_gain_dac"],
-        lower_power_gain_dac=low_gain, fr_lower_power_mhz=lower["centre_MHz"],
-        source="q3 Step-1b sweet-spot measurement", notes=" ".join(notes_parts),
-    )
-    report = characterisation.step1b_report(
-        base_report=base_report, f_ef_ghz=f_ef_ghz, fef_mode=fef_mode,
-        sweet_spot_evidence=evidence, sweet_spot_check=check,
-        pi_calibration=pi_calibration, two_photon_ghz=two_photon_ghz,
-        ef_candidates=ef_candidates,
-    )
-    report["ef_power_series"] = ef_power_series
-    report["resonator_fit_ground"] = ground
-    report["resonator_fit_excited"] = excited
-    report["resonator_fit_ground_minus_6dB"] = lower
+        f_ef_ghz = two_photon_ghz = ef_candidates = ef_power_series = None
+        fef_mode = "unmeasured"
+        if settings["ef_mode"] == "two_photon":
+            rows, tp, derived = two_photon_series(fq_mhz, working_gain)
+            ef_power_series = {
+                "f_q_low_power_MHz": float(fq_mhz),
+                "f_q_low_power_drive_DAC": int(settings["qubit_spec_gain_dac"]),
+                "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
+                                         "hwhm_MHz": w} for g, c, s_, w in rows],
+                "two_photon_zero_power": tp,
+                "anharmonicity_MHz": derived["anharmonicity_MHz"],
+            }
+            ef_candidates = [{"frequency_MHz": c, "offset_from_fq_MHz": c - fq_mhz,
+                              "snr": s_, "gain_DAC": g}
+                             for g, c, s_, _ in rows if c is not None]
+            if derived["anharmonicity_MHz"] is not None \
+                    and -400.0 < derived["anharmonicity_MHz"] < -100.0:
+                two_photon_ghz = tp["zero_power_MHz"] / 1e3
+                f_ef_ghz = derived["f_ef_GHz"]
+                fef_mode = "two_photon"
+                print(f"[step1b] f_ef = {f_ef_ghz:.6f} GHz, "
+                      f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
+            else:
+                fef_mode = "two_photon_inconclusive"
+                print("[step1b] two-photon series gave no usable anharmonicity; f_ef stays null")
 
-    json_path, csv_path = _write_outputs(
-        outer_folder=outerFolder,
-        settings={**settings, "working_gain_dac": int(working_gain),
-                  "predicted_fq_GHz": float(predicted_q_mhz / 1e3),
-                  "predicted_fr_MHz": float(predicted_r_mhz),
-                  "resonator_dip_MHz": float(dip_mhz),
-                  "spectroscopy_read_freq_MHz": float(fixed_read_freq_mhz)},
-        report=report, rows=trace_rows, source_experiments=source_experiments)
+        set_bias(working_gain)
+        gcal.P_RABI_CHEVRON_IQ.update({
+            "run": True, "shots": int(settings["rabi_shots"]), "num_pi": 1,
+            "pulse_type": "X180", "a_min": int(settings["rabi_amp_min"]),
+            "a_max": int(settings["rabi_amp_max"]),
+            "a_points": int(settings["rabi_amp_points"]),
+            "sigma_us": float(settings["rabi_sigma_us"]), "freq_span_mhz": 0.0,
+            "freq_points": 1, "relax_delay_us": float(settings["relax_delay_us"]),
+        })
+        gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
+        rabi = gcal.run_rabi_chevron_iq(outerFolder, soc, soccfg)
+        source_experiments["rabi_amplitude"] = {"pickle": rabi.pname, "png": rabi.iname}
+        gains = np.asarray(rabi.data["gain_vec"], float)
+        iq = np.sqrt(np.asarray(rabi.data["I"], float) ** 2
+                     + np.asarray(rabi.data["Q"], float) ** 2)
+        response = iq[0] if iq.ndim == 2 else iq
+        record("rabi_amplitude", working_gain, gains, response, "DAC", "abs_IQ")
+        try:
+            pi_calibration = characterisation.fit_rabi_amplitude(gains, response)
+            pi_calibration["method"] = (
+                f"GateCalibration run_rabi_chevron_iq, single detuning at {fq_mhz:.4f} MHz, "
+                f"X180 sigma {settings['rabi_sigma_us']:g} us, {settings['rabi_shots']} shots")
+        except Exception as exc:
+            pi_calibration = {"rabi_pi_amplitude": None, "error": str(exc)}
+        pi_calibration["best_gain_argmax_DAC"] = float(rabi.data.get("best_gain", np.nan))
+        pi_amp = pi_calibration.get("rabi_pi_amplitude")
+        if pi_amp is None or not pi_calibration.get("inside_swept_range", False):
+            pi_amp = float(rabi.data.get("best_gain", gcal.BaseConfig["qubit_pi_gain"]))
+            pi_calibration["fallback_used"] = True
+        pi_calibration["amplitude_used_for_excited_trace"] = float(pi_amp)
+        print(f"[step1b] pi amplitude = {pi_amp:.0f} DAC")
 
-    shift = 1e3 * (report["f_r_excited_GHz"] - report["f_r_ground_GHz"])
-    print("")
-    print("[step1b] RESULTS")
-    print(json.dumps({QUBIT + "_AlOx": report}, indent=2, sort_keys=True, default=float))
-    print(f"[step1b] f_r_excited - f_r_ground = {shift:+.6f} MHz "
-          f"(band point gave +0.0097 MHz, park gave -0.4712 MHz)")
-    if report["f_q_GHz"] > 6.0:
-        print("[step1b] NOTE: sweet-spot f_q is above 6 GHz; tell the analysis team, the "
-              "simple dispersive expression may not apply.")
-    print(f"STEP1B_JSON={json_path}")
-    print(f"RAW_TRACE_CSV={csv_path}")
-    return report
+        low_gain = max(1, int(round(settings["readout_gain_dac"] * 10.0 ** (-6.0 / 20.0))))
+        ground = transmission("resonator_ground", bias=working_gain,
+                              gain=settings["readout_gain_dac"])
+        lower = transmission("resonator_ground_minus_6dB", bias=working_gain, gain=low_gain)
+        excited = transmission("resonator_excited", bias=working_gain,
+                               gain=settings["readout_gain_dac"], prepare_excited=True,
+                               pi_freq=fq_mhz, pi_gain=pi_amp)
+
+        notes = [
+            "Every scan ran through GateCalibration's run_qubit_spec, run_transmission and "
+            "run_rabi_chevron_iq, so the flux/park lifecycle and acquisition path match the "
+            "standard gate-calibration measurements.",
+            "dc_bias_V is null: q3 flux is calibrated in FF DAC gain with no validated "
+            "DAC-to-volts conversion in this repository.",
+            "readout_power_dBm and readout_attenuation_dB are null: the source-chain "
+            "calibration is not in this repository.",
+            "kappa_external/internal are null: the dip fit does not separate them.",
+        ]
+        if fef_mode == "two_photon":
+            notes.append(
+                "f_ef_GHz is not a direct e-to-f measurement. It comes from the two-photon "
+                "0-2 drive frequency extrapolated to zero drive power, via the exact relation "
+                "f_ef = 2*f_two_photon - f_q, with f_q from the low-power scan.")
+        elif fef_mode == "two_photon_inconclusive":
+            notes.append("The two-photon 0-2 series gave no usable line; f_ef_GHz is null.")
+        if not check.get("is_extremum", False):
+            notes.append(f"The nominal sweet spot {centre_gain:+d} DAC did not test as the "
+                         f"extremum; items 1-7 were taken at {working_gain:+d} DAC.")
+        if pi_calibration.get("fallback_used"):
+            notes.append("The Rabi fit did not place the pi amplitude inside the swept range; "
+                         "the argmax gain was used for the excited-state trace.")
+
+        base_report = characterisation.step1_report(
+            fr_ground_mhz=ground["centre_MHz"], fr_excited_mhz=excited["centre_MHz"],
+            kappa_total_mhz=ground["fwhm_MHz"], fq_mhz=fq_mhz,
+            dc_coordinate=working_gain, readout_gain_dac=settings["readout_gain_dac"],
+            lower_power_gain_dac=low_gain, fr_lower_power_mhz=lower["centre_MHz"],
+            source="q3 Step-1b sweet-spot measurement", notes=" ".join(notes))
+        report = characterisation.step1b_report(
+            base_report=base_report, f_ef_ghz=f_ef_ghz, fef_mode=fef_mode,
+            sweet_spot_evidence=evidence, sweet_spot_check=check,
+            pi_calibration=pi_calibration, two_photon_ghz=two_photon_ghz,
+            ef_candidates=ef_candidates)
+        report["ef_power_series"] = ef_power_series
+        report["resonator_fit_ground"] = ground
+        report["resonator_fit_excited"] = excited
+        report["resonator_fit_ground_minus_6dB"] = lower
+
+        json_path, csv_path = _write_outputs(
+            outer_folder=outerFolder,
+            settings={**settings, "working_gain_dac": int(working_gain)},
+            report=report, rows=trace_rows, source_experiments=source_experiments)
+        shift = 1e3 * (report["f_r_excited_GHz"] - report["f_r_ground_GHz"])
+        print("")
+        print("[step1b] RESULTS")
+        print(json.dumps({QUBIT + "_AlOx": report}, indent=2, sort_keys=True, default=float))
+        print(f"[step1b] f_r_excited - f_r_ground = {shift:+.6f} MHz")
+        print(f"STEP1B_JSON={json_path}")
+        print(f"RAW_TRACE_CSV={csv_path}")
+        return report
+    finally:
+        gcal.BaseConfig["ff_park_gain"] = baseline_park
 
 
 if __name__ == "__main__":
