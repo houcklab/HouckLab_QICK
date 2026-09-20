@@ -68,6 +68,7 @@ P_TRANSMISSION_SWEEP = {
 
 P_QUBIT_SPEC = {
     "run": False,
+    "readout_gain": None,
     "shots": 100,
     "freq_start_mhz": 4300,
     "freq_stop_mhz": 4400,
@@ -298,6 +299,8 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_freq_expts": int(p["freq_points"]),
         "qua_passive_pre_point_delay_us": 0.0,
     }, active=False)
+    if p.get("readout_gain") is not None:
+        cfg["read_pulse_gain"] = int(p["readout_gain"])
     print(f"[qubit spec] two-tone: {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz, "
           f"spec gain {p['spec_gain']} DAC")
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
