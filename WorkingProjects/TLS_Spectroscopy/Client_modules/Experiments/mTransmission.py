@@ -8,7 +8,10 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian,
+    set_readout_pulse,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import (
     acquire_passive_readout_grid,
@@ -23,6 +26,16 @@ class TransReadProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.ff_segs = None
+        self.prepare_excited = bool(cfg.get("prepare_excited", False))
+        if self.prepare_excited:
+            self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+            add_qubit_gaussian(self, name="readout_characterization_pi")
+            pi_freq = self.freq2reg(float(cfg["qubit_pi_freq"]), gen_ch=cfg["qubit_ch"])
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb", freq=pi_freq,
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+                gain=int(cfg["qubit_pi_gain"]), waveform="readout_characterization_pi",
+            )
         ff_pulse.declare_park_hold(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
@@ -43,6 +56,9 @@ class TransReadProgram(AveragerProgram):
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
             return
         ff_pulse.enter_park_for_shot(self, self.ff_segs)
+        if self.prepare_excited:
+            self.pulse(ch=cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(float(cfg.get("excited_pi_to_readout_us", 0.05))))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
