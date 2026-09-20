@@ -1587,7 +1587,7 @@ def test_runner_defaults_enforce_the_production_comparison_budget(monkeypatch):
     assert spec is not None, "production five-point runner missing"
     runner = importlib.import_module(spec.name)
     cfg = runner.P6_5PT_APPLES_TO_APPLES
-    assert cfg["decay_delays_us"] == [40, 80, 200]
+    assert cfg["decay_delays_us"] == [25, 60, 100]
     assert cfg["reference_hold_us"] == 2.0
     assert cfg["shots_per_condition"] == 180
     assert cfg["reset_mode"] == "active"
