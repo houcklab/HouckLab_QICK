@@ -29,7 +29,7 @@ def runtime_settings(environ=None):
         "qubit_spec_points": int(env.get("Q3_STEP1B_QUBIT_SPEC_POINTS", "321")),
         "qubit_spec_span_mhz": float(env.get("Q3_STEP1B_QUBIT_SPEC_SPAN_MHZ", "15")),
         "qubit_spec_shots": int(env.get("Q3_STEP1B_QUBIT_SPEC_SHOTS", "3000")),
-        "sweep_shots": int(env.get("Q3_STEP1B_SWEEP_SHOTS", "1500")),
+        "sweep_shots": int(env.get("Q3_STEP1B_SWEEP_SHOTS", "800")),
         "ef_mode": str(env.get("Q3_STEP1B_EF_MODE", "two_photon")).strip().lower(),
         "ef_low_offset_mhz": float(env.get("Q3_STEP1B_EF_LOW_OFFSET_MHZ", "400")),
         "ef_high_offset_mhz": float(env.get("Q3_STEP1B_EF_HIGH_OFFSET_MHZ", "40")),
@@ -47,6 +47,7 @@ def runtime_settings(environ=None):
         "resonator_span_mhz": float(env.get("Q3_STEP1B_RESONATOR_SPAN_MHZ", "4.0")),
         "resonator_step_mhz": float(env.get("Q3_STEP1B_RESONATOR_STEP_MHZ", "0.05")),
         "relax_delay_us": float(env.get("Q3_STEP1B_RELAX_DELAY_US", "500.0")),
+        "spec_relax_delay_us": float(env.get("Q3_STEP1B_SPEC_RELAX_DELAY_US", "150.0")),
         "plot": _bool(env, "Q3_STEP1B_PLOT", False),
     }
 
@@ -143,6 +144,8 @@ def main():
           f"{settings['qubit_spec_length_us']:g} us, {settings['qubit_spec_points']} pts over "
           f"{settings['qubit_spec_span_mhz']:g} MHz")
     print(f"  readout gain         : {settings['readout_gain_dac']} DAC, -6 dB = {low_gain}")
+    print(f"  relax delay          : {settings['spec_relax_delay_us']:g} us for spectroscopy, "
+          f"{settings['relax_delay_us']:g} us for Rabi and the resonator traces")
     print(f"  e-f mode             : {settings['ef_mode']}")
     print("  raw frequencies only: no chi, no g, no anharmonicity, no Purcell")
     print("=======================================================================")
@@ -166,6 +169,7 @@ def main():
         cfg = base_cfg(bias_dac)
         cfg.update({
             "shots": int(shots), "reps": int(shots),
+            "relax_delay": float(settings["spec_relax_delay_us"]),
             "read_pulse_gain": int(settings["readout_gain_dac"]),
             "read_pulse_freq": float(read_freq_mhz),
             "qubit_freq_start": float(centre_mhz) - 0.5 * float(span_mhz),
