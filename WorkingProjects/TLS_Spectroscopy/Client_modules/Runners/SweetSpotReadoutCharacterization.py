@@ -180,6 +180,13 @@ def main():
     resonator_axis_seed = _axis(predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS),
                                 settings["resonator_span_mhz"], settings["resonator_step_mhz"])
 
+    located = transmission_locate(resonator_axis_seed, "resonator_locate")
+    fixed_read_freq_mhz = (located if located is not None
+                           else predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS))
+    print(f"[step1b] one fixed spectroscopy readout frequency for every scan: "
+          f"{fixed_read_freq_mhz:.4f} MHz "
+          + ("(measured dip)" if located is not None else "(model prediction; locate failed)"))
+
     if settings["ef_only"]:
         if settings["fq_override_mhz"] is None:
             raise ValueError("Q3_STEP1B_EF_ONLY requires Q3_STEP1B_FQ_MHZ")
