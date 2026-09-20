@@ -1998,6 +1998,20 @@ def test_series_override_accepts_explicit_q3_inversion_bounds(monkeypatch):
     assert params["dc_max"] == -6500
 
 
+def test_series_override_accepts_explicit_q3_sync_cadence(monkeypatch):
+    """A long paired run can select a cadence without editing production defaults."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    params = runner.apply_series_overrides(
+        {"sync_slot_s": 150.0},
+        {"Q3_5PT_SYNC_SLOT_S": "250"},
+    )
+
+    assert params["sync_slot_s"] == 250.0
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()

@@ -176,6 +176,14 @@ def apply_series_overrides(params, environ=None):
                 raise ValueError(f"{env} must be finite and positive")
             out[key] = val
             print(f"[scan] {key} {params[key]} -> {val} ({env})")
+    slot = environ.get("Q3_5PT_SYNC_SLOT_S")
+    if slot is not None and str(slot).strip() != "":
+        value = float(slot)
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError("Q3_5PT_SYNC_SLOT_S must be finite and positive")
+        out["sync_slot_s"] = value
+        print(f"[scan] sync_slot_s {params['sync_slot_s']:g} -> {value:g} s "
+              "(Q3_5PT_SYNC_SLOT_S)")
     sync = environ.get("Q3_5PT_SYNC")
     if sync is not None and str(sync).strip() != "":
         wanted = str(sync).strip().lower()
