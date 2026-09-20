@@ -95,6 +95,9 @@ def main():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as fits
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+        ProductionResetSession,
+    )
 
     settings = runtime_settings()
     centre_gain = int(settings["sweet_spot_gain_dac"])
@@ -124,10 +127,15 @@ def main():
     def base_cfg(gain_dac):
         cfg = dict(BaseConfig)
         cfg.update({
-            "ff_park_gain": int(gain_dac), "ff_hold_gain": 0,
+            "ff_park_gain": int(gain_dac),
+            "ff_gain": 0, "ff_hold_gain": 0,
+            "readout_after_park": True,
+            "baseline_rearm_us": 0.5,
             "shots": int(settings["readout_shots"]), "reps": int(settings["readout_shots"]),
-            "relax_delay": float(settings["relax_delay_us"]), "qua_shot_order": False,
+            "relax_delay": float(settings["relax_delay_us"]),
         })
+        cfg = ProductionResetSession.passive().apply(cfg)
+        cfg["opx_inter_shot_delay_us"] = float(settings["relax_delay_us"])
         return cfg
 
     def qubit_spec(label, *, bias_dac, centre_mhz, span_mhz, points, shots,
@@ -136,6 +144,7 @@ def main():
         cfg.update({
             "shots": int(shots), "reps": int(shots),
             "relax_delay": float(settings["spec_relax_delay_us"]),
+            "opx_inter_shot_delay_us": float(settings["spec_relax_delay_us"]),
             "read_pulse_gain": int(settings["readout_gain_dac"]),
             "read_pulse_freq": float(read_freq_mhz),
             "qubit_freq_start": float(centre_mhz) - 0.5 * float(span_mhz),
