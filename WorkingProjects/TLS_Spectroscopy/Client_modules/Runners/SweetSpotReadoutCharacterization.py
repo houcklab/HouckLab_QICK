@@ -57,46 +57,6 @@ def runtime_settings(environ=None):
     }
 
 
-def ef_candidate_peaks(freq_mhz, magnitude, fq_mhz, max_peaks=4):
-    f = np.asarray(freq_mhz, dtype=float)
-    y = np.asarray(magnitude, dtype=float)
-    good = np.isfinite(f) & np.isfinite(y)
-    f, y = f[good], y[good]
-    if f.size < 9:
-        return []
-    width = max(5, f.size // 40)
-    kernel = np.ones(width) / width
-    baseline = np.convolve(y, kernel, mode="same")
-    excess = y - baseline
-    noise = float(np.std(np.diff(excess)) / np.sqrt(2.0))
-    out = []
-    work = excess.copy()
-    work[:width] = -np.inf
-    work[-width:] = -np.inf
-    for _ in range(int(max_peaks)):
-        k = int(np.nanargmax(work))
-        prominence = float(work[k])
-        if noise <= 0 or prominence < 4.0 * noise:
-            break
-        out.append({
-            "frequency_MHz": float(f[k]),
-            "offset_from_fq_MHz": float(f[k] - float(fq_mhz)),
-            "prominence": prominence,
-            "prominence_sigma": prominence / noise,
-        })
-        mask = np.abs(f - f[k]) < 8.0
-        work[mask] = -np.inf
-    return out
-
-
-def select_two_photon(candidates, low_mhz=-200.0, high_mhz=-60.0):
-    inside = [c for c in candidates
-              if low_mhz <= c["offset_from_fq_MHz"] <= high_mhz]
-    if len(inside) != 1:
-        return None, inside
-    return inside[0], inside
-
-
 def _write_outputs(*, outer_folder, settings, report, rows, source_experiments):
     now = dt.datetime.now()
     data_dir = Path(outer_folder) / QUBIT / f"{QUBIT}_{now:%Y_%m_%d}"
@@ -196,6 +156,27 @@ def main():
         return float(data["qubit_freq_mhz"]), np.asarray(data["fpts"], dtype=float), \
             np.asarray(data["magnitude"], dtype=float)
 
+    def transmission_locate(axis, label="locate"):
+        cfg = base_cfg(centre_gain)
+        cfg["read_pulse_gain"] = int(settings["readout_gain_dac"])
+        cfg["read_pulse_freq"] = float(np.median(axis))
+        cfg["prepare_excited"] = False
+        exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
+                           suffix=f"Step1b_{label}", cfg=cfg, f_vec=axis,
+                           plot=False, save=True)
+        out = exp.acquire(progress=True, plotDisp=False)
+        source_experiments[label] = {"pickle": exp.pname, "png": exp.iname}
+        data = out["data"]
+        for fr, m in zip(data["f_vec"], data["IQ_magnitude_dBm"]):
+            trace_rows.append({"scan": label, "state": "g", "bias_dac": int(centre_gain),
+                               "x": float(fr), "x_units": "MHz", "y": float(m),
+                               "y_units": "dBm"})
+        try:
+            fit = _fit_trace(data["f_vec"], data["IQ_magnitude_dBm"], fits.fit_resonator_dip)
+        except Exception:
+            return None
+        return fit["centre_MHz"] if fit.get("inside_scan_window") else None
+
     resonator_axis_seed = _axis(predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS),
                                 settings["resonator_span_mhz"], settings["resonator_step_mhz"])
 
@@ -203,45 +184,52 @@ def main():
         if settings["fq_override_mhz"] is None:
             raise ValueError("Q3_STEP1B_EF_ONLY requires Q3_STEP1B_FQ_MHZ")
         fq_mhz = float(settings["fq_override_mhz"])
-        predicted_r_mhz = predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS)
-        lo = fq_mhz - settings["ef_low_offset_mhz"]
-        hi = fq_mhz - settings["ef_high_offset_mhz"]
-        print(f"[step1b] e-f only: bias {centre_gain:+d} DAC, f_q {fq_mhz/1e3:.6f} GHz, "
-              f"window {lo/1e3:.4f}..{hi/1e3:.4f} GHz, gain {settings['ef_gain_dac']} DAC, "
-              f"{settings['ef_length_us']:g} us, {settings['ef_shots']} shots")
-        _, ef_f, ef_mag = qubit_spec(
-            "ef_two_photon", bias_dac=centre_gain, centre_mhz=0.5 * (lo + hi),
-            span_mhz=(hi - lo), points=settings["ef_points"], shots=settings["ef_shots"],
-            gain_dac=settings["ef_gain_dac"], length_us=settings["ef_length_us"],
-            read_freq_mhz=float(predicted_r_mhz))
-        candidates = ef_candidate_peaks(ef_f, ef_mag, fq_mhz)
-        chosen, inside = select_two_photon(candidates)
+        npts = int(round(2.0 * settings["ef_halfspan_mhz"] / settings["ef_step_mhz"])) + 1
+        rows = []
+        for gain in settings["ef_gains_dac"]:
+            _, f2_f, f2_mag = qubit_spec(
+                f"ef_power_two_photon_{gain}", bias_dac=centre_gain,
+                centre_mhz=settings["ef_centre_mhz"],
+                span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
+                shots=settings["ef_shots"], gain_dac=gain,
+                length_us=settings["ef_length_us"],
+                read_freq_mhz=float(fixed_read_freq_mhz))
+            fit = characterisation.fit_dip_in_window(
+                f2_f, f2_mag, expected_mhz=settings["ef_centre_mhz"], max_offset_mhz=6.0)
+            ok = bool(fit and fit["snr"] is not None and fit["snr"] >= 4.0
+                      and fit["inside_window"])
+            rows.append((gain, fit["centre_MHz"] if ok else None,
+                         fit["snr"] if fit else None, fit["hwhm_MHz"] if fit else None))
+            print(f"[step1b] gain {gain:6d}: two-photon "
+                  + ("not detected" if not ok else
+                     f"{fit['centre_MHz']:9.3f} MHz  HWHM {fit['hwhm_MHz']:.2f}  "
+                     f"SNR {fit['snr']:.1f}"))
+        tp = characterisation.extrapolate_zero_power(
+            [g for g, c, _, _ in rows if c is not None],
+            [c for _, c, _, _ in rows if c is not None])
+        derived = characterisation.two_photon_anharmonicity(fq_mhz, tp["zero_power_MHz"])
         payload = {
             "mode": "ef_only", "bias_dac": int(centre_gain), "f_q_GHz": fq_mhz / 1e3,
-            "ef_candidate_peaks": candidates,
-            "f_two_photon_02_GHz": None if chosen is None else chosen["frequency_MHz"] / 1e3,
-            "f_ef_GHz": (None if chosen is None
-                         else (2.0 * chosen["frequency_MHz"] - fq_mhz) / 1e3),
-            "fef_mode": "two_photon" if chosen is not None else "two_photon_inconclusive",
+            "readout_frequency_MHz": float(fixed_read_freq_mhz),
+            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
+                                     "hwhm_MHz": w} for g, c, s_, w in rows],
+            "two_photon_zero_power": tp,
+            "f_two_photon_02_GHz": (None if tp["zero_power_MHz"] is None
+                                    else tp["zero_power_MHz"] / 1e3),
+            "f_ef_GHz": derived["f_ef_GHz"],
+            "anharmonicity_MHz": derived["anharmonicity_MHz"],
+            "fef_mode": ("two_photon" if derived["f_ef_GHz"] is not None
+                         else "two_photon_inconclusive"),
         }
-        for c in candidates:
-            print(f"[step1b]   candidate {c['frequency_MHz']:.2f} MHz "
-                  f"({c['offset_from_fq_MHz']:+.1f}), {c['prominence_sigma']:.1f} sigma")
-        if chosen is None:
-            print("[step1b] no unique two-photon candidate; f_ef stays null")
-        else:
-            print(f"[step1b] f_ef = {payload['f_ef_GHz']:.6f} GHz "
-                  f"(f_ef - f_q = {1e3*payload['f_ef_GHz'] - fq_mhz:+.1f} MHz)")
+        if derived["anharmonicity_MHz"] is not None:
+            print(f"[step1b] f_ef = {derived['f_ef_GHz']:.6f} GHz, "
+                  f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
         json_path, csv_path = _write_outputs(
             outer_folder=outerFolder, settings=settings, report=payload,
             rows=trace_rows, source_experiments=source_experiments)
         print(f"STEP1B_EF_JSON={json_path}")
         print(f"RAW_TRACE_CSV={csv_path}")
         return payload
-
-    fixed_read_freq_mhz = predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS)
-    print(f"[step1b] sweet-spot sweep uses one fixed readout frequency "
-          f"{fixed_read_freq_mhz:.4f} MHz at every bias")
 
     evidence = []
     for bias in biases:
@@ -274,12 +262,13 @@ def main():
     predicted_r_mhz = predicted_resonator_mhz(working_gain, tls.RESONATOR_FIT_PARAMS)
     resonator_axis = _axis(predicted_r_mhz, settings["resonator_span_mhz"],
                            settings["resonator_step_mhz"])
+    read_freq_mhz = float(fixed_read_freq_mhz)
 
     fq_mhz, _, _ = qubit_spec(
         "qubit_spec", bias_dac=working_gain, centre_mhz=predicted_q_mhz,
         span_mhz=settings["qubit_spec_span_mhz"], points=settings["qubit_spec_points"],
         shots=settings["qubit_spec_shots"], gain_dac=settings["qubit_spec_gain_dac"],
-        length_us=settings["qubit_spec_length_us"], read_freq_mhz=float(predicted_r_mhz))
+        length_us=settings["qubit_spec_length_us"], read_freq_mhz=float(read_freq_mhz))
     print(f"[step1b] f_q = {fq_mhz/1e3:.6f} GHz")
 
     f_ef_ghz = None
@@ -289,51 +278,48 @@ def main():
     ef_power_series = None
     if settings["ef_mode"] == "two_photon":
         npts = int(round(2.0 * settings["ef_halfspan_mhz"] / settings["ef_step_mhz"])) + 1
-        rows_fq, rows_2p = [], []
+        rows_2p = []
         for gain in settings["ef_gains_dac"]:
-            fq_g, _, _ = qubit_spec(
-                f"ef_power_fq_{gain}", bias_dac=working_gain, centre_mhz=fq_mhz,
-                span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
-                shots=settings["ef_shots"], gain_dac=gain,
-                length_us=settings["ef_length_us"], read_freq_mhz=float(predicted_r_mhz))
             _, f2_f, f2_mag = qubit_spec(
                 f"ef_power_two_photon_{gain}", bias_dac=working_gain,
                 centre_mhz=settings["ef_centre_mhz"],
                 span_mhz=2.0 * settings["ef_halfspan_mhz"], points=npts,
                 shots=settings["ef_shots"], gain_dac=gain,
-                length_us=settings["ef_length_us"], read_freq_mhz=float(predicted_r_mhz))
-            cands = ef_candidate_peaks(f2_f, f2_mag, fq_mhz)
-            best = max(cands, key=lambda c: c["prominence_sigma"]) if cands else None
-            rows_fq.append((gain, fq_g))
-            rows_2p.append((gain, None if best is None else best["frequency_MHz"],
-                            None if best is None else best["prominence_sigma"]))
-            print(f"[step1b] gain {gain:6d}: f_q {fq_g:9.3f} MHz   two-photon "
-                  + ("not found" if best is None
-                     else f"{best['frequency_MHz']:9.3f} MHz ({best['prominence_sigma']:.1f} sigma)"))
-        fq_ex = characterisation.extrapolate_zero_power(
-            [g for g, _ in rows_fq], [c for _, c in rows_fq])
+                length_us=settings["ef_length_us"], read_freq_mhz=float(read_freq_mhz))
+            fit = characterisation.fit_dip_in_window(
+                f2_f, f2_mag, expected_mhz=settings["ef_centre_mhz"], max_offset_mhz=6.0)
+            ok = bool(fit and fit["snr"] is not None and fit["snr"] >= 4.0
+                      and fit["inside_window"])
+            rows_2p.append((gain, fit["centre_MHz"] if ok else None,
+                            fit["snr"] if fit else None,
+                            fit["hwhm_MHz"] if fit else None))
+            print(f"[step1b] gain {gain:6d}: two-photon "
+                  + ("not detected" if not ok else
+                     f"{fit['centre_MHz']:9.3f} MHz  HWHM {fit['hwhm_MHz']:.2f}  "
+                     f"SNR {fit['snr']:.1f}"))
         tp_ex = characterisation.extrapolate_zero_power(
-            [g for g, c, _ in rows_2p if c is not None],
-            [c for _, c, _ in rows_2p if c is not None])
+            [g for g, c, _, _ in rows_2p if c is not None],
+            [c for _, c, _, _ in rows_2p if c is not None])
         derived = characterisation.two_photon_anharmonicity(
-            fq_ex["zero_power_MHz"], tp_ex["zero_power_MHz"])
+            fq_mhz, tp_ex["zero_power_MHz"])
         ef_power_series = {
-            "f_q_vs_power": [{"gain_DAC": g, "centre_MHz": c} for g, c in rows_fq],
-            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c,
-                                     "prominence_sigma": s_} for g, c, s_ in rows_2p],
-            "f_q_zero_power": fq_ex, "two_photon_zero_power": tp_ex,
+            "f_q_low_power_MHz": float(fq_mhz),
+            "f_q_low_power_drive_DAC": int(settings["qubit_spec_gain_dac"]),
+            "two_photon_vs_power": [{"gain_DAC": g, "centre_MHz": c, "snr": s_,
+                                     "hwhm_MHz": w} for g, c, s_, w in rows_2p],
+            "two_photon_zero_power": tp_ex,
             "anharmonicity_MHz": derived["anharmonicity_MHz"],
         }
         ef_candidates = [{"frequency_MHz": c, "offset_from_fq_MHz": c - fq_mhz,
-                          "prominence_sigma": s_, "gain_DAC": g}
-                         for g, c, s_ in rows_2p if c is not None]
+                          "snr": s_, "gain_DAC": g}
+                         for g, c, s_, _ in rows_2p if c is not None]
         if tp_ex["zero_power_MHz"] is not None and derived["anharmonicity_MHz"] is not None \
                 and -400.0 < derived["anharmonicity_MHz"] < -100.0:
             two_photon_ghz = tp_ex["zero_power_MHz"] / 1e3
             f_ef_ghz = derived["f_ef_GHz"]
             fef_mode = "two_photon"
-            print(f"[step1b] zero-power f_q {fq_ex['zero_power_MHz']:.3f} MHz, "
-                  f"two-photon {tp_ex['zero_power_MHz']:.3f} MHz")
+            print(f"[step1b] zero-power two-photon {tp_ex['zero_power_MHz']:.3f} MHz "
+                  f"(from {tp_ex['n']} powers), low-power f_q {fq_mhz:.3f} MHz")
             print(f"[step1b] f_ef = {f_ef_ghz:.6f} GHz, "
                   f"anharmonicity {derived['anharmonicity_MHz']:+.2f} MHz")
         else:

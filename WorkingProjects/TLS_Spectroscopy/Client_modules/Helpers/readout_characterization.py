@@ -185,3 +185,60 @@ def two_photon_anharmonicity(f_q_zero_mhz, f_two_photon_zero_mhz):
         "f_ef_GHz": round(f_ef / 1e3, 9),
         "anharmonicity_MHz": float(f_ef - float(f_q_zero_mhz)),
     }
+
+
+def fit_dip_in_window(freq_mhz, magnitude, expected_mhz=None, max_offset_mhz=6.0):
+    import numpy as np
+    from scipy.optimize import curve_fit
+
+    f = np.asarray(freq_mhz, dtype=float)
+    y = np.asarray(magnitude, dtype=float)
+    good = np.isfinite(f) & np.isfinite(y)
+    f, y = f[good], y[good]
+    if f.size < 12:
+        return None
+    keep = np.ones(f.size, dtype=bool)
+    for _ in range(4):
+        coef = np.polyfit(f[keep], y[keep], 1)
+        resid = y - np.polyval(coef, f)
+        sigma = float(np.std(resid[keep]))
+        if sigma <= 0:
+            break
+        keep = resid > -2.0 * sigma
+        if keep.sum() < 8:
+            break
+    baseline = np.polyval(coef, f)
+    resid = y - baseline
+    noise = float(np.std(resid[keep])) if keep.sum() > 4 else float(np.std(resid))
+    k = int(np.argmin(resid))
+    if expected_mhz is not None and abs(f[k] - float(expected_mhz)) > float(max_offset_mhz):
+        window = np.abs(f - float(expected_mhz)) <= float(max_offset_mhz)
+        if window.sum() < 5:
+            return None
+        k = int(np.arange(f.size)[window][np.argmin(resid[window])])
+
+    def model(x, centre, hwhm, depth, slope, offset):
+        return offset + slope * (x - centre) - depth / (1.0 + ((x - centre) / hwhm) ** 2)
+
+    try:
+        p, cov = curve_fit(
+            model, f, y,
+            p0=[f[k], 1.0, abs(resid[k]), float(coef[0]), float(np.median(y))],
+            bounds=([f.min(), max(0.05, 2.0 * float(np.median(np.diff(np.sort(f))))), 0.0, -np.inf, -np.inf],
+                    [f.max(), 0.5 * (f.max() - f.min()), np.inf, np.inf, np.inf]),
+            maxfev=40000,
+        )
+    except Exception:
+        return None
+    err = float(np.sqrt(abs(cov[0, 0]))) if cov is not None and np.all(np.isfinite(cov)) else None
+    rms = float(np.sqrt(np.mean((y - model(f, *p)) ** 2)))
+    return {
+        "centre_MHz": float(p[0]),
+        "centre_error_MHz": err,
+        "hwhm_MHz": float(abs(p[1])),
+        "depth": float(p[2]),
+        "noise": noise,
+        "snr": float(p[2] / noise) if noise > 0 else None,
+        "rms_residual": rms,
+        "inside_window": bool(f.min() < p[0] < f.max()),
+    }

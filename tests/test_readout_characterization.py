@@ -112,21 +112,39 @@ def test_step1b_report_keeps_unmeasured_fields_null():
     assert report["passes_linear_regime_check"] is True
 
 
-def test_ef_candidate_peaks_ignores_window_edges():
+def test_fit_dip_in_window_finds_a_narrow_line_in_a_narrow_window():
     import numpy as np
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
-        SweetSpotReadoutCharacterization as step1b,
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (
+        readout_characterization as rc,
     )
 
-    fq = 4366.958
-    freq = np.arange(fq - 400.0, fq - 40.0, 1.0)
-    mag = 0.02 + np.random.default_rng(1).normal(0, 0.0006, freq.size)
-    mag += 0.020 * np.exp(-0.5 * ((freq - (fq - 103.0)) / 2.0) ** 2)
-    candidates = step1b.ef_candidate_peaks(freq, mag, fq)
-    assert len(candidates) == 1
-    chosen, _ = step1b.select_two_photon(candidates)
-    assert chosen is not None
-    assert abs(chosen["offset_from_fq_MHz"] + 103.0) < 2.0
+    freq = np.arange(4268.3, 4288.3 + 0.25, 0.25)
+    rng = np.random.default_rng(3)
+    y = 1.40 + 0.0004 * (freq - 4278.3) + rng.normal(0, 0.010, freq.size)
+    y -= 0.090 / (1.0 + ((freq - 4278.30) / 0.85) ** 2)
+    fit = rc.fit_dip_in_window(freq, y, expected_mhz=4278.3)
+    assert fit is not None
+    assert abs(fit["centre_MHz"] - 4278.30) < 0.15
+    assert fit["snr"] > 4.0
+    assert fit["hwhm_MHz"] > 0.5
+    assert fit["inside_window"] is True
 
-    flat = 0.02 + np.random.default_rng(2).normal(0, 0.0006, freq.size)
-    assert step1b.ef_candidate_peaks(freq, flat, fq) == []
+    flat = 1.40 + rng.normal(0, 0.010, freq.size)
+    weak = rc.fit_dip_in_window(flat, flat, expected_mhz=4278.3)
+    assert weak is None or weak["snr"] < 4.0
+
+
+def test_extrapolate_zero_power_removes_a_stark_shift():
+    import numpy as np
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (
+        readout_characterization as rc,
+    )
+
+    gains = np.array([15000.0, 20000.0, 25000.0])
+    centres = 4279.50 - 2.0e-9 * gains ** 2
+    out = rc.extrapolate_zero_power(gains, centres)
+    assert abs(out["zero_power_MHz"] - 4279.50) < 0.01
+    assert out["n"] == 3
+    single = rc.extrapolate_zero_power([25000.0], [4278.3])
+    assert single["zero_power_MHz"] == 4278.3
+    assert "note" in single
