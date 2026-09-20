@@ -14,6 +14,11 @@ def test_q3_step1_runner_defaults_to_a_4p1ghz_operating_point():
     assert settings["readout_shots"] == 300
     assert settings["qubit_spec_points"] == 161
     assert settings["fef_mode"] == "unmeasured"
+    assert runner.qubit_spec_drive_config(settings) == {
+        "qubit_pulse_style": "const",
+        "qubit_gain": 10000,
+        "qubit_length": 1.0,
+    }
 
 
 def test_step1_report_keeps_unmeasured_quantities_explicitly_null():

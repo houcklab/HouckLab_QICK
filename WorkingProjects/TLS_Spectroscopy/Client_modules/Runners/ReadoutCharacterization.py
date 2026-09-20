@@ -41,12 +41,23 @@ def runtime_settings(environ=None):
         "qubit_spec_shots": int(env.get("Q3_STEP1_QUBIT_SPEC_SHOTS", "300")),
         "qubit_spec_points": int(env.get("Q3_STEP1_QUBIT_SPEC_POINTS", "161")),
         "qubit_spec_span_mhz": float(env.get("Q3_STEP1_QUBIT_SPEC_SPAN_MHZ", "80")),
+        "qubit_spec_gain_dac": int(env.get("Q3_STEP1_QUBIT_SPEC_GAIN_DAC", "10000")),
+        "qubit_spec_length_us": float(env.get("Q3_STEP1_QUBIT_SPEC_LENGTH_US", "1.0")),
         "resonator_span_mhz": float(env.get("Q3_STEP1_RESONATOR_SPAN_MHZ", "4.0")),
         "resonator_step_mhz": float(env.get("Q3_STEP1_RESONATOR_STEP_MHZ", "0.05")),
         "readout_gain_dac": int(env.get("Q3_STEP1_READOUT_GAIN_DAC", "1880")),
         "relax_delay_us": float(env.get("Q3_STEP1_RELAX_DELAY_US", "100.0")),
         "fef_mode": "unmeasured",
         "plot": _bool(env, "Q3_STEP1_PLOT", False),
+    }
+
+
+def qubit_spec_drive_config(settings):
+    """Match the established q3 GateCalibration spectroscopy drive, not a pi pulse."""
+    return {
+        "qubit_pulse_style": "const",
+        "qubit_gain": int(settings["qubit_spec_gain_dac"]),
+        "qubit_length": float(settings["qubit_spec_length_us"]),
     }
 
 
@@ -182,7 +193,7 @@ def main():
         "qubit_freq_start": predicted_q_mhz - 0.5 * settings["qubit_spec_span_mhz"],
         "qubit_freq_stop": predicted_q_mhz + 0.5 * settings["qubit_spec_span_mhz"],
         "qubit_freq_expts": int(settings["qubit_spec_points"]),
-        "qubit_gain": int(BaseConfig.get("qubit_gain", 25_000)),
+        **qubit_spec_drive_config(settings),
     })
     spec = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
                      suffix="Step1_Qubit_Spec", cfg=spec_cfg, save=True)
