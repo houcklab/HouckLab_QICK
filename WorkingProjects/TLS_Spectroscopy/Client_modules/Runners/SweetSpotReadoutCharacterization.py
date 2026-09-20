@@ -48,6 +48,9 @@ def runtime_settings(environ=None):
         "resonator_step_mhz": float(env.get("Q3_STEP1B_RESONATOR_STEP_MHZ", "0.05")),
         "relax_delay_us": float(env.get("Q3_STEP1B_RELAX_DELAY_US", "500.0")),
         "spec_relax_delay_us": float(env.get("Q3_STEP1B_SPEC_RELAX_DELAY_US", "150.0")),
+        "ef_only": _bool(env, "Q3_STEP1B_EF_ONLY", False),
+        "fq_override_mhz": (None if not str(env.get("Q3_STEP1B_FQ_MHZ", "")).strip()
+                            else float(env["Q3_STEP1B_FQ_MHZ"])),
         "plot": _bool(env, "Q3_STEP1B_PLOT", False),
     }
 
@@ -193,6 +196,46 @@ def main():
 
     resonator_axis_seed = _axis(predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS),
                                 settings["resonator_span_mhz"], settings["resonator_step_mhz"])
+
+    if settings["ef_only"]:
+        if settings["fq_override_mhz"] is None:
+            raise ValueError("Q3_STEP1B_EF_ONLY requires Q3_STEP1B_FQ_MHZ")
+        fq_mhz = float(settings["fq_override_mhz"])
+        predicted_r_mhz = predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS)
+        lo = fq_mhz - settings["ef_low_offset_mhz"]
+        hi = fq_mhz - settings["ef_high_offset_mhz"]
+        print(f"[step1b] e-f only: bias {centre_gain:+d} DAC, f_q {fq_mhz/1e3:.6f} GHz, "
+              f"window {lo/1e3:.4f}..{hi/1e3:.4f} GHz, gain {settings['ef_gain_dac']} DAC, "
+              f"{settings['ef_length_us']:g} us, {settings['ef_shots']} shots")
+        _, ef_f, ef_mag = qubit_spec(
+            "ef_two_photon", bias_dac=centre_gain, centre_mhz=0.5 * (lo + hi),
+            span_mhz=(hi - lo), points=settings["ef_points"], shots=settings["ef_shots"],
+            gain_dac=settings["ef_gain_dac"], length_us=settings["ef_length_us"],
+            read_freq_mhz=float(predicted_r_mhz))
+        candidates = ef_candidate_peaks(ef_f, ef_mag, fq_mhz)
+        chosen, inside = select_two_photon(candidates)
+        payload = {
+            "mode": "ef_only", "bias_dac": int(centre_gain), "f_q_GHz": fq_mhz / 1e3,
+            "ef_candidate_peaks": candidates,
+            "f_two_photon_02_GHz": None if chosen is None else chosen["frequency_MHz"] / 1e3,
+            "f_ef_GHz": (None if chosen is None
+                         else (2.0 * chosen["frequency_MHz"] - fq_mhz) / 1e3),
+            "fef_mode": "two_photon" if chosen is not None else "two_photon_inconclusive",
+        }
+        for c in candidates:
+            print(f"[step1b]   candidate {c['frequency_MHz']:.2f} MHz "
+                  f"({c['offset_from_fq_MHz']:+.1f}), {c['prominence_sigma']:.1f} sigma")
+        if chosen is None:
+            print("[step1b] no unique two-photon candidate; f_ef stays null")
+        else:
+            print(f"[step1b] f_ef = {payload['f_ef_GHz']:.6f} GHz "
+                  f"(f_ef - f_q = {1e3*payload['f_ef_GHz'] - fq_mhz:+.1f} MHz)")
+        json_path, csv_path = _write_outputs(
+            outer_folder=outerFolder, settings=settings, report=payload,
+            rows=trace_rows, source_experiments=source_experiments)
+        print(f"STEP1B_EF_JSON={json_path}")
+        print(f"RAW_TRACE_CSV={csv_path}")
+        return payload
 
     evidence = []
     for bias in biases:
