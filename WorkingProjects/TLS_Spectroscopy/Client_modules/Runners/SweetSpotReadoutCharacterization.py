@@ -150,6 +150,7 @@ def main():
             "freq_start_mhz": settings["resonator_centre_mhz"] - settings["resonator_span_mhz"],
             "freq_stop_mhz": settings["resonator_centre_mhz"] + settings["resonator_span_mhz"],
             "freq_points": int(settings["resonator_points"]),
+            "qua_shot_order": False,
             "spec_amp": int(gain),
             "spec_len_us": (None if settings["resonator_length_us"] is None
                             else float(settings["resonator_length_us"])),

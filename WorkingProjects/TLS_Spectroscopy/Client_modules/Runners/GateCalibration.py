@@ -46,6 +46,7 @@ _RESET_SESSION = ProductionResetSession.passive()
 
 P_TRANSMISSION = {
     "run": False,
+    "qua_shot_order": None,
     "prepare_excited": False,
     "qubit_pi_freq_mhz": None,
     "qubit_pi_gain": None,
@@ -207,7 +208,13 @@ def run_transmission(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, active=False)
     cfg["relax_delay"] = float(p.get("relax_delay_us", 50))
     _apply_spec_probe(cfg, p)
+    if p.get("qua_shot_order") is not None:
+        cfg["qua_shot_order"] = bool(p["qua_shot_order"])
     if p.get("prepare_excited"):
+        if cfg.get("qua_shot_order"):
+            print("[transmission] prepare_excited needs the per-point program path; "
+                  "forcing qua_shot_order=False (the grid path drops the pi pulse)")
+            cfg["qua_shot_order"] = False
         cfg["prepare_excited"] = True
         cfg["qubit_pi_freq"] = float(p["qubit_pi_freq_mhz"])
         cfg["qubit_pi_gain"] = int(p["qubit_pi_gain"])
