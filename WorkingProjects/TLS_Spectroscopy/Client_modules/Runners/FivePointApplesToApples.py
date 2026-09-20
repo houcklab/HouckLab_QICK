@@ -118,6 +118,15 @@ def apply_series_overrides(params, environ=None):
             print("[scan] PREDISTORTION OFF arm: the qubit drifts during every "
                   "measurement, so this arm is expected to be physically wrong, not a "
                   "reference to match")
+    recovery = environ.get("Q3_5PT_RECOVERY_US")
+    if recovery is not None and str(recovery).strip() != "":
+        value = float(recovery)
+        if not (value > 0.0) or value != value or value == float("inf"):
+            raise ValueError("Q3_5PT_RECOVERY_US must be finite and positive")
+        out["flux_predistortion_recovery_us"] = value
+        print(f"[scan] flux_predistortion_recovery_us "
+              f"{params['flux_predistortion_recovery_us']:g} -> {value:g} us "
+              "(Q3_5PT_RECOVERY_US)")
     hold = environ.get("Q3_5PT_REFERENCE_HOLD_US")
     if hold is not None and str(hold).strip() != "":
         val = float(hold)

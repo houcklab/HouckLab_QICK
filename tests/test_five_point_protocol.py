@@ -1955,6 +1955,20 @@ def test_unsynchronized_series_obeys_duration_without_sync_timestamps(monkeypatc
     assert 0 < len(runs) < 4
 
 
+def test_series_override_accepts_explicit_recovery_duration(monkeypatch):
+    """A timing audit can vary recovery without editing production defaults."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    params = runner.apply_series_overrides(
+        {"flux_predistortion_recovery_us": 40.0},
+        {"Q3_5PT_RECOVERY_US": "10"},
+    )
+
+    assert params["flux_predistortion_recovery_us"] == 10.0
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()
