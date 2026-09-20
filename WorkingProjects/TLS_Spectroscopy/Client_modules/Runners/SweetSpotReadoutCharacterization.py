@@ -47,7 +47,7 @@ def runtime_settings(environ=None):
         "rabi_amp_max": int(env.get("Q3_STEP1B_RABI_AMP_MAX", "28000")),
         "rabi_amp_points": int(env.get("Q3_STEP1B_RABI_AMP_POINTS", "41")),
         "rabi_sigma_us": float(env.get("Q3_STEP1B_RABI_SIGMA_US", "0.2")),
-        "rabi_shots": int(env.get("Q3_STEP1B_RABI_SHOTS", "1000")),
+        "rabi_shots": int(env.get("Q3_STEP1B_RABI_SHOTS", "500")),
         "ss_cal_shots": int(env.get("Q3_STEP1B_SS_CAL_SHOTS", "1000")),
         "readout_gain_dac": int(env.get("Q3_STEP1B_READOUT_GAIN_DAC", "472")),
         "readout_shots": int(env.get("Q3_STEP1B_READOUT_SHOTS", "1000")),
@@ -302,18 +302,16 @@ def main():
         gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
         gcal.P_SS_CAL.update({"run": True, "shots": int(settings["ss_cal_shots"])})
         calib_params = gcal.run_ss_cal(outerFolder, soc, soccfg)
-        gcal.P_RABI_CHEVRON_SS.update({
-            "run": True, "shots": int(settings["rabi_shots"]), "num_pi": 1,
-            "pulse_type": "X180", "a_min": int(settings["rabi_amp_min"]),
-            "a_max": int(settings["rabi_amp_max"]),
-            "a_points": int(settings["rabi_amp_points"]),
-            "freq_span_mhz": 0.0, "freq_points": 1,
-        })
+        gcal.P_RABI_CHEVRON_SS.update({"run": True, "shots": int(settings["rabi_shots"])})
         rabi = gcal.run_rabi_chevron_ss(outerFolder, soc, soccfg, calib_params)
         source_experiments["rabi_amplitude"] = {"pickle": rabi.pname, "png": rabi.iname}
         gains = np.asarray(rabi.data["gain_vec"], float)
+        detunings = np.asarray(rabi.data["detuning_vec_mhz"], float)
         pop = np.asarray(rabi.data["ss_data"], float)
-        response = pop[0] if pop.ndim == 2 else pop
+        row = int(np.argmin(np.abs(detunings))) if pop.ndim == 2 else 0
+        response = pop[row] if pop.ndim == 2 else pop
+        print(f"[step1b] Rabi chevron {pop.shape}, using the row at "
+              f"{detunings[row]:+.3f} MHz detuning")
         record("rabi_amplitude", working_gain, gains, response, "DAC", "excited_population")
         try:
             pi_calibration = characterisation.fit_rabi_amplitude(gains, response)
