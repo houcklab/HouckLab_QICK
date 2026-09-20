@@ -53,6 +53,7 @@ def runtime_settings(environ=None):
         "ef_only": _bool(env, "Q3_STEP1B_EF_ONLY", False),
         "fq_override_mhz": (None if not str(env.get("Q3_STEP1B_FQ_MHZ", "")).strip()
                             else float(env["Q3_STEP1B_FQ_MHZ"])),
+        "read_offset_mhz": float(env.get("Q3_STEP1B_READ_OFFSET_MHZ", "-0.25")),
         "plot": _bool(env, "Q3_STEP1B_PLOT", False),
     }
 
@@ -181,11 +182,14 @@ def main():
                                 settings["resonator_span_mhz"], settings["resonator_step_mhz"])
 
     located = transmission_locate(resonator_axis_seed, "resonator_locate")
-    fixed_read_freq_mhz = (located if located is not None
-                           else predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS))
-    print(f"[step1b] one fixed spectroscopy readout frequency for every scan: "
-          f"{fixed_read_freq_mhz:.4f} MHz "
-          + ("(measured dip)" if located is not None else "(model prediction; locate failed)"))
+    dip_mhz = (located if located is not None
+               else predicted_resonator_mhz(centre_gain, tls.RESONATOR_FIT_PARAMS))
+    fixed_read_freq_mhz = dip_mhz + float(settings["read_offset_mhz"])
+    print(f"[step1b] resonator dip {dip_mhz:.4f} MHz "
+          + ("(measured)" if located is not None else "(model prediction; locate failed)"))
+    print(f"[step1b] spectroscopy readout at {fixed_read_freq_mhz:.4f} MHz "
+          f"({settings['read_offset_mhz']:+.3f} MHz off the dip, on the flank where the "
+          "magnitude response to a small dispersive shift is first order)")
 
     if settings["ef_only"]:
         if settings["fq_override_mhz"] is None:
@@ -463,7 +467,9 @@ def main():
         outer_folder=outerFolder,
         settings={**settings, "working_gain_dac": int(working_gain),
                   "predicted_fq_GHz": float(predicted_q_mhz / 1e3),
-                  "predicted_fr_MHz": float(predicted_r_mhz)},
+                  "predicted_fr_MHz": float(predicted_r_mhz),
+                  "resonator_dip_MHz": float(dip_mhz),
+                  "spectroscopy_read_freq_MHz": float(fixed_read_freq_mhz)},
         report=report, rows=trace_rows, source_experiments=source_experiments)
 
     shift = 1e3 * (report["f_r_excited_GHz"] - report["f_r_ground_GHz"])
