@@ -302,6 +302,16 @@ def main():
         gcal.BaseConfig["qubit_pi_freq"] = float(fq_mhz)
         gcal.P_SS_CAL.update({"run": True, "shots": int(settings["ss_cal_shots"])})
         calib_params = gcal.run_ss_cal(outerFolder, soc, soccfg)
+        if gcal.normalize_reset_mode(gcal.RESET_MODE) == "opx_unbounded":
+            gcal._RESET_SESSION = gcal.prepare_reset_session(
+                gcal.RESET_MODE, outer_folder=outerFolder, qubit=gcal.QUBIT,
+                base_cfg=gcal.BaseConfig, soc=soc, soccfg=soccfg,
+                purpose="Step1b_SweetSpot_Readout")
+            print(f"[step1b] active reset calibrated: "
+                  f"{gcal._RESET_SESSION.calibration_output}")
+        else:
+            print(f"[step1b] RESET_MODE is {gcal.RESET_MODE}; the Rabi chevron will run "
+                  "with the passive session, which is not how GateCalibration runs it")
         gcal.P_RABI_CHEVRON_SS.update({"run": True, "shots": int(settings["rabi_shots"])})
         rabi = gcal.run_rabi_chevron_ss(outerFolder, soc, soccfg, calib_params)
         source_experiments["rabi_amplitude"] = {"pickle": rabi.pname, "png": rabi.iname}
