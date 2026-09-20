@@ -1969,6 +1969,20 @@ def test_series_override_accepts_explicit_recovery_duration(monkeypatch):
     assert params["flux_predistortion_recovery_us"] == 10.0
 
 
+def test_series_override_accepts_explicit_q3_five_point_shot_count(monkeypatch):
+    """A single production scan can request a documented shot count."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    params = runner.apply_series_overrides(
+        {"shots_per_condition": 180},
+        {"Q3_5PT_SHOTS": "300"},
+    )
+
+    assert params["shots_per_condition"] == 300
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()

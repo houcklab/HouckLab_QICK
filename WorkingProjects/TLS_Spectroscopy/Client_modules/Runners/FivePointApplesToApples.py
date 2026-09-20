@@ -127,6 +127,14 @@ def apply_series_overrides(params, environ=None):
         print(f"[scan] flux_predistortion_recovery_us "
               f"{params['flux_predistortion_recovery_us']:g} -> {value:g} us "
               "(Q3_5PT_RECOVERY_US)")
+    shots = environ.get("Q3_5PT_SHOTS")
+    if shots is not None and str(shots).strip() != "":
+        value = float(shots)
+        if not np.isfinite(value) or value <= 0 or int(value) != value:
+            raise ValueError("Q3_5PT_SHOTS must be a positive integer")
+        out["shots_per_condition"] = int(value)
+        print(f"[scan] shots_per_condition {params['shots_per_condition']} -> "
+              f"{int(value)} (Q3_5PT_SHOTS)")
     hold = environ.get("Q3_5PT_REFERENCE_HOLD_US")
     if hold is not None and str(hold).strip() != "":
         val = float(hold)
