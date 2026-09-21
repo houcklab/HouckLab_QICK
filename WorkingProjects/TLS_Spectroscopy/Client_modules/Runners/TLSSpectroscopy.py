@@ -786,6 +786,8 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         # default.
         "dt_pulseplay": float(p.get("dt_pulseplay_us", 0.5)),
         "dt_pulsedef": float(p.get("dt_pulsedef_us", 0.002)),
+        "opx_hard_flux_steps": bool(p.get("opx_hard_flux_steps", False)),
+        "flux_settle_time_us": float(p.get("flux_settle_time_us", 0.5)),
     })
     exp = QubitLongTimeSpecVsFlux(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,

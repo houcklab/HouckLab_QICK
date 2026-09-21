@@ -44,14 +44,12 @@ def apply_overrides(environ=None):
     p["shots"] = _int("Q3_P4_SHOTS", p["shots"])
     p["spec_amp"] = _int("Q3_P4_SPEC_AMP", 25000)
     p["spec_len_us"] = _float("Q3_P4_SPEC_LEN_US", 0.5)
-    # This contains q3's entire current 4.3 -> 3.9 GHz branch.  The raw
-    # window deliberately has margin so the trace does not ride a scan edge.
-    p["freq_min"] = _float("Q3_P4_FREQ_MIN_MHZ", 3700.0)
-    p["freq_max"] = _float("Q3_P4_FREQ_MAX_MHZ", 4600.0)
-    # A 0.5-MHz, 901-MHz-wide resident QICK program exceeds the controller's
-    # 16k instruction store.  One MHz still resolves the broad P4 qubit ridge
-    # and stays below that hard hardware limit.  An explicit narrower window
-    # may use 0.5 MHz through Q3_P4_FREQ_STEP_MHZ.
+    # Exact q3_08_54_58 P4 grid authority.  The only physics change from that
+    # run is the 5 -> 25 us target hold requested for the production audit.
+    p["freq_min"] = _float("Q3_P4_FREQ_MIN_MHZ", 3800.0)
+    p["freq_max"] = _float("Q3_P4_FREQ_MAX_MHZ", 4500.0)
+    # This is the reference P4's 1-MHz grid (700 points, stop-exclusive in
+    # the underlying experiment), safely below QICK program memory.
     p["freq_step"] = _float("Q3_P4_FREQ_STEP_MHZ", 1.0)
     p["dc_min"] = _int("Q3_P4_DC_MIN", -30000)
     p["dc_max"] = _int("Q3_P4_DC_MAX", -12500)
@@ -62,6 +60,8 @@ def apply_overrides(environ=None):
     p["long_time_us"] = _float("Q3_P4_HOLD_US", 25.0)
     p["dt_pulseplay_us"] = _float("Q3_P4_DT_PULSEPLAY_US", 0.5)
     p["dt_pulsedef_us"] = _float("Q3_P4_DT_PULSEDEF_US", 0.002)
+    p["opx_hard_flux_steps"] = True
+    p["flux_settle_time_us"] = 0.5
     p["average_window_us"] = 0.0
     p["live_plot"] = str(environ.get("Q3_P4_LIVE_PLOT", "1")).strip().lower() in {
         "1", "true", "yes", "on"}
@@ -79,7 +79,7 @@ def main():
         tls.FLUX_TAIL_COMPENSATION_GAIN = value
 
     n_dc = int(round((p["dc_max"] - p["dc_min"]) / p["dc_step"])) + 1
-    n_freq = int(round((p["freq_max"] - p["freq_min"]) / p["freq_step"])) + 1
+    n_freq = int(np.arange(p["freq_min"], p["freq_max"], p["freq_step"]).size)
     print("\n=========== q3 P4 at production timing ===========")
     print(f"  hold                : {p['long_time_us']:g} us")
     print(f"  dc                  : {p['dc_min']:.0f} .. {p['dc_max']:.0f} DAC "
