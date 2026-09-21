@@ -22,6 +22,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectrosc
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
     acquire_tls_saturation_iq,
     classify_payload_iq,
+    quantize_signed_dac_gain,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
     prepare_reset_session,
@@ -597,6 +598,9 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
     gains = pump_gains(p)
     recoveries = recovery_times_us(p)
     targets, fit_park, anchor_shift = target_table(p)
+    for target in targets:
+        target["dc_gain_model"] = float(target["dc_gain"])
+        target["dc_gain"] = quantize_signed_dac_gain(target["dc_gain"])
     requested_correction = p.get("correction_json")
     correction = TLS._load_correction(
         None if requested_correction is None else str(requested_correction),

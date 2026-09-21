@@ -176,6 +176,17 @@ def _run_program(soc, program, timeout_s, cfg, *, total_shots, progress=None):
     return records
 
 
+def quantize_signed_dac_gain(value):
+    """Map a continuous inverse-model coordinate onto the hardware DAC grid."""
+    gain = float(value)
+    if not np.isfinite(gain):
+        raise ValueError("TLS saturation flux gain must be finite")
+    rounded = int(np.rint(gain))
+    if not -32768 <= rounded <= 32767:
+        raise ValueError("TLS saturation flux gain exceeds the signed DAC range")
+    return rounded
+
+
 def acquire_t1_iq(soc, soccfg, cfg, shots=None):
     bundle = runtime_bundle(cfg)
     total = int(cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots)
@@ -677,11 +688,7 @@ def acquire_tls_saturation_iq(
     )
     if total_shots <= 0:
         raise ValueError("TLS saturation shots must be positive")
-    rounded_gain = int(round(float(ff_gain)))
-    if not np.isclose(float(ff_gain), rounded_gain, rtol=0.0, atol=1e-9):
-        raise ValueError("TLS saturation flux gain must be an integer DAC value")
-    if not -32768 <= rounded_gain <= 32767:
-        raise ValueError("TLS saturation flux gain exceeds the signed DAC range")
+    rounded_gain = quantize_signed_dac_gain(ff_gain)
     arm = str(arm).strip().lower()
     if arm not in ("pump", "no_pump"):
         raise ValueError("TLS saturation arm must be 'pump' or 'no_pump'")

@@ -2049,6 +2049,13 @@ def test_q3_tls_pump_probe_uses_the_native_active_reset_acquisition_path():
     assert "acquire_tls_saturation_iq" in source
 
 
+def test_native_tls_saturation_quantizes_inverse_model_coordinates_to_dac_samples():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import integration
+
+    assert integration.quantize_signed_dac_gain(-16588.909) == -16589
+    assert integration.quantize_signed_dac_gain(-16442.134) == -16442
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()
