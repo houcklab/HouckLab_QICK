@@ -2039,6 +2039,16 @@ def test_q3_tls_pump_probe_runner_is_explicitly_bound_to_q3_dac_branch():
     assert '"Q3_TLS_PUMP_CENTER_GHZ", 4.150' in source
 
 
+def test_q3_tls_pump_probe_uses_the_native_active_reset_acquisition_path():
+    path = Path(
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/"
+        "TLSSaturationRecovery.py"
+    )
+    source = path.read_text()
+
+    assert "acquire_tls_saturation_iq" in source
+
+
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
     """Execute emitted tProc loop control; only RF/stream I/O is simulated."""
     module, cls = program_type()

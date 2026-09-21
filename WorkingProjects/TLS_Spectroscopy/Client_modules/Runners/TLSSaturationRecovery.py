@@ -4,6 +4,7 @@ import gc
 import json
 import os
 import time
+from types import SimpleNamespace
 
 import h5py
 import matplotlib
@@ -14,10 +15,17 @@ import numpy as np
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q, discriminate_shots
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTLSSaturation import SATURATION_ARMS, TLSSaturationProbe
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, tee_log
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTLSSaturation import SATURATION_ARMS
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import tee_log
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSMemoryAudit as MemoryAudit
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as TLS
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
+    acquire_tls_saturation_iq,
+    classify_payload_iq,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+    prepare_reset_session,
+)
 
 
 P = {
@@ -123,7 +131,7 @@ def stage_schedule(targets, values, repeats, stage, selected_gain=None, p=P):
     return schedule
 
 
-def base_cfg(p, correction, target_dcs, reset_record):
+def base_cfg(p, correction, target_dcs, reset_session):
     cfg = dict(BaseConfig)
     cfg.update({
         "shots": int(p["shots"]),
@@ -136,12 +144,7 @@ def base_cfg(p, correction, target_dcs, reset_record):
         "point_order_seed": int(p["order_seed"]),
         "saturation_reset_thermalization_us": float(p["reset_thermalization_us"]),
     })
-    cfg.update(active_reset.feedback_runtime_from_probe(
-        reset_record, max_iters=int(p["reset_max_iters"]),
-        thermalization_us=float(p["reset_thermalization_us"]),
-        post_measure_delay_us=0.05))
-    cfg["relax_delay"] = float(p["passive_reset_us"])
-    return cfg
+    return reset_session.apply(cfg)
 
 
 def output_base(outer_folder):
@@ -180,29 +183,46 @@ def run_park_calibration(soc, soccfg, p, outer_folder):
 
 def run_reset_calibration(soc, soccfg, p, outer_folder):
     started = time.time()
-    record = active_reset.probe_reset_params(
-        soc, soccfg, BaseConfig, path=TLS.QUBIT, outer_folder=outer_folder,
-        shots=int(p["reset_probe_shots"]), validate=True,
-        reset_max_iters=int(p["reset_max_iters"]))
-    if not active_reset.rotated_probe_record(record):
-        raise RuntimeError("a validated rotated feedback reset is required")
+    session = prepare_reset_session(
+        "active", outer_folder=outer_folder, qubit=TLS.QUBIT,
+        base_cfg=BaseConfig, soc=soc, soccfg=soccfg,
+        purpose="TLSSaturationRecovery",
+    )
     plt.close("all")
-    return record, time.time() - started
+    return session, time.time() - started
 
 
 def run_point(soc, soccfg, cfg, p, outer_folder, target, item,
               calib_params, assignment):
     started = time.time()
-    exp = TLSSaturationProbe(
-        soc=soc, soccfg=soccfg, path=TLS.QUBIT, outerFolder=outer_folder,
-        suffix="TLSSaturationRecovery_Point", cfg=dict(cfg),
-        ff_gain=float(target["dc_gain"]),
-        target_freq_mhz=float(target["park_anchored_freq_ghz"]) * 1e3,
+    i_values, q_values, telemetry = acquire_tls_saturation_iq(
+        soc, soccfg, cfg, ff_gain=float(target["dc_gain"]),
+        pump_frequency_mhz=float(target["park_anchored_freq_ghz"]) * 1e3,
         pump_gain=int(item["pump_gain"]), pump_us=float(p["pump_us"]),
-        probe_us=float(p["probe_us"]), recovery_us=float(item["recovery_us"]),
-        arm=item["arm"], shots=int(p["shots"]),
-        calib_params=calib_params, assignment_reference=assignment)
-    exp.acquire(progress=False, plotDisp=False)
+        probe_us=float(p["probe_us"]), arm=item["arm"],
+        recovery_us=float(item["recovery_us"]), shots=int(p["shots"]),
+    )
+    final = classify_payload_iq(cfg, i_values, q_values,
+                                telemetry["read_length_cycles"])
+    probability = float(np.mean(final))
+    contrast = float(assignment["contrast"])
+    corrected = ((probability - float(assignment["P_g"])) / contrast
+                 if np.isfinite(contrast) and contrast > 0.0 else np.nan)
+    reset_iters = int(p["reset_max_iters"])
+    exp = SimpleNamespace(
+        raw={
+            "i": i_values,
+            "q": q_values,
+            "reset_i": np.full((len(i_values), reset_iters), np.nan),
+            "reset_q": np.full((len(i_values), reset_iters), np.nan),
+        },
+        metrics={
+            "P_excited": probability,
+            "population_corrected": float(corrected),
+            "reset_last_P_excited": np.nan,
+        },
+        opx_reset_telemetry=telemetry,
+    )
     theta = float(calib_params["read_theta"])
     rotated = np.exp(-1j * theta) * (
         np.asarray(exp.raw["i"]) + 1j * np.asarray(exp.raw["q"]))
@@ -618,14 +638,18 @@ def run(soc, soccfg, outer_folder=outerFolder, settings=None):
         soc, soccfg, p, outer_folder)
     print(f"park SS fidelity {park_ss.max_F:.3f}, assignment contrast "
           f"{assignment['contrast']:.3f}, {hms(park_elapsed)}")
-    reset_record, reset_elapsed = run_reset_calibration(
+    reset_session, reset_elapsed = run_reset_calibration(
         soc, soccfg, p, outer_folder)
-    print(f"rotated reset validated, threshold {int(reset_record['threshold_raw'])}, "
+    print("native production reset calibrated at "
+          f"{float(reset_session.method_frequency_mhz):.6f} MHz, "
           f"{hms(reset_elapsed)}")
     cfg = base_cfg(
-        p, correction, [target["dc_gain"] for target in targets], reset_record)
+        p, correction, [target["dc_gain"] for target in targets], reset_session)
     create_h5(
-        h5_path, p, cfg, targets, park_ss, assignment, reset_record,
+        h5_path, p, cfg, targets, park_ss, assignment,
+        {"runtime_mode": reset_session.runtime_mode,
+         "calibration_output": str(reset_session.calibration_output),
+         "method_frequency_mhz": reset_session.method_frequency_mhz},
         fit_park, anchor_shift, dose_schedule)
     confirmation = None
     with h5py.File(h5_path, "r+") as handle:

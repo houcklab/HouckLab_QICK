@@ -16,6 +16,7 @@ from .classifier import ClassifierCalibration
 from .programs import (
     OPXResetPulseGridProgram,
     OPXResetPulseSweepProgram,
+    OPXResetTLSSaturationProgram,
     OPXResetTLSMemoryProgram,
     OPXResetT13PointProgram,
     OPXResetT15PointProgram,
@@ -652,6 +653,81 @@ def acquire_tls_memory_iq(
         "warmup_shots": int(total_warmup_shots),
         "read_length_cycles": int(read_cycles),
         **flux_predistortion_telemetry(last_program),
+    }
+
+
+def acquire_tls_saturation_iq(
+    soc,
+    soccfg,
+    cfg,
+    *,
+    ff_gain,
+    pump_frequency_mhz,
+    pump_gain,
+    pump_us,
+    probe_us,
+    arm,
+    recovery_us=0.0,
+    shots=None,
+):
+    """Acquire one native-reset pump--reset--probe arm at one TLS target."""
+    bundle = runtime_bundle(cfg)
+    total_shots = int(
+        cfg.get("shots", cfg.get("reps", 1)) if shots is None else shots
+    )
+    if total_shots <= 0:
+        raise ValueError("TLS saturation shots must be positive")
+    rounded_gain = int(round(float(ff_gain)))
+    if not np.isclose(float(ff_gain), rounded_gain, rtol=0.0, atol=1e-9):
+        raise ValueError("TLS saturation flux gain must be an integer DAC value")
+    if not -32768 <= rounded_gain <= 32767:
+        raise ValueError("TLS saturation flux gain exceeds the signed DAC range")
+    arm = str(arm).strip().lower()
+    if arm not in ("pump", "no_pump"):
+        raise ValueError("TLS saturation arm must be 'pump' or 'no_pump'")
+    values = np.asarray(
+        [pump_frequency_mhz, pump_gain, pump_us, probe_us, recovery_us], dtype=float
+    )
+    if (not np.all(np.isfinite(values)) or pump_gain <= 0 or pump_us <= 0
+            or probe_us <= 0 or recovery_us < 0):
+        raise ValueError("TLS saturation drive and hold parameters must be positive")
+    run_cfg = dict(cfg)
+    run_cfg.update({
+        "opx_reset_scheme": "opx_unbounded",
+        "opx_saturation_shots": total_shots,
+        "opx_saturation_arm": arm,
+        "opx_saturation_pump_freq_mhz": float(pump_frequency_mhz),
+        "opx_saturation_pump_gain": int(round(float(pump_gain))),
+        "opx_saturation_pump_us": float(pump_us),
+        "opx_saturation_probe_us": float(probe_us),
+        "opx_saturation_recovery_us": float(recovery_us),
+        "ff_gain": rounded_gain,
+        "ff_hold": max(float(pump_us), float(probe_us)),
+        "do_ff": True,
+        "opx_resident_dmem_stream": True,
+    })
+    program = OPXResetTLSSaturationProgram(
+        soccfg, run_cfg, bundle.payload, bundle.loop
+    )
+    records = _run_program(
+        soc,
+        program,
+        _block_timeout_s(run_cfg, total_shots),
+        run_cfg,
+        total_shots=total_shots,
+    )
+    read_cycles = program.us2cycles(
+        cfg["read_length"], ro_ch=cfg["ro_chs"][0]
+    )
+    i_values = np.asarray([record.final_i for record in records], dtype=float)
+    q_values = np.asarray([record.final_q for record in records], dtype=float)
+    return i_values / int(read_cycles), q_values / int(read_cycles), {
+        "shots": int(total_shots),
+        "records": int(len(records)),
+        "resident_stream": True,
+        "order": "shot_arm",
+        "read_length_cycles": int(read_cycles),
+        **flux_predistortion_telemetry(program),
     }
 
 

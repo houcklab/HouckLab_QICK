@@ -1435,13 +1435,22 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                         )
                         prefix, tail = ff_pulse.split_compensation_segments(
                             recovery,
-                            self._t1_ff_return_prefix_us,
+                            getattr(
+                                self,
+                                "_t1_ff_return_prefix_us",
+                                self._t1_ff_settle_us,
+                            ),
+                        )
+                        return_prefix_us = getattr(
+                            self,
+                            "_t1_ff_return_prefix_us",
+                            self._t1_ff_settle_us,
                         )
                         prefix_duration = sum(duration for _, duration in prefix)
-                        if prefix_duration < self._t1_ff_return_prefix_us - 1e-12:
+                        if prefix_duration < return_prefix_us - 1e-12:
                             prefix.append((
                                 0.0,
-                                self._t1_ff_return_prefix_us - prefix_duration,
+                                return_prefix_us - prefix_duration,
                             ))
                         ff_pulse.play_relative_compensation_segments(
                             self,
@@ -1818,13 +1827,22 @@ class OPXResetT1FluxSweepProgram(OPXResetT1Program):
             )
             prefix, tail = ff_pulse.split_compensation_segments(
                 recovery,
-                self._t1_ff_return_prefix_us,
+                getattr(
+                    self,
+                    "_t1_ff_return_prefix_us",
+                    self._t1_ff_settle_us,
+                ),
+            )
+            return_prefix_us = getattr(
+                self,
+                "_t1_ff_return_prefix_us",
+                self._t1_ff_settle_us,
             )
             prefix_duration = sum(duration for _, duration in prefix)
-            if prefix_duration < self._t1_ff_return_prefix_us - 1e-12:
+            if prefix_duration < return_prefix_us - 1e-12:
                 prefix.append((
                     0.0,
-                    self._t1_ff_return_prefix_us - prefix_duration,
+                    return_prefix_us - prefix_duration,
                 ))
             for coefficient, duration in target:
                 self._play_dynamic_relative_segment(
@@ -3114,6 +3132,134 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
         self._finish_stream()
         self._end_park_lifecycle()
         self.end()
+
+
+class OPXResetTLSSaturationProgram(OPXResetT1Program):
+    """Native-reset TLS saturation followed by a separately measured probe.
+
+    The pump and probe each make the identical production flux excursion.  A
+    production ``opx_unbounded`` reset runs at park between them, so a failed
+    legacy quadrature-reset calibration cannot silently turn this into a long
+    passive wait that erases the putative TLS saturation.
+    """
+
+    record_words = PAYLOAD_RECORD_WORDS
+    decode_dmem_records = staticmethod(decode_payload_records)
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        run_cfg = dict(cfg)
+        arm = str(run_cfg.get("opx_saturation_arm", "")).strip().lower()
+        if arm not in ("pump", "no_pump"):
+            raise ValueError("opx_saturation_arm must be 'pump' or 'no_pump'")
+        for key in ("opx_saturation_pump_us", "opx_saturation_probe_us"):
+            value = float(run_cfg.get(key, 0.0))
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{key} must be finite and positive")
+        recovery_us = float(run_cfg.get("opx_saturation_recovery_us", 0.0))
+        if not np.isfinite(recovery_us) or recovery_us < 0.0:
+            raise ValueError("opx_saturation_recovery_us must be finite and non-negative")
+        if int(run_cfg.get("opx_saturation_pump_gain", 0)) <= 0:
+            raise ValueError("opx_saturation_pump_gain must be positive")
+        if not np.isfinite(float(run_cfg.get("opx_saturation_pump_freq_mhz", np.nan))):
+            raise ValueError("opx_saturation_pump_freq_mhz must be finite")
+        if str(run_cfg.get("opx_reset_scheme", "")).strip().lower() != "opx_unbounded":
+            raise ValueError("native TLS saturation requires opx_unbounded reset")
+        run_cfg["reps"] = int(run_cfg.get("opx_saturation_shots", run_cfg.get("shots", 0)))
+        if run_cfg["reps"] <= 0:
+            raise ValueError("opx_saturation_shots must be positive")
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _declare_experiment(self):
+        super()._declare_experiment()
+        self._saturation_arm = str(self.cfg["opx_saturation_arm"]).lower()
+        self._saturation_pump_us = float(self.cfg["opx_saturation_pump_us"])
+        self._saturation_probe_us = float(self.cfg["opx_saturation_probe_us"])
+        self._saturation_recovery_us = float(
+            self.cfg.get("opx_saturation_recovery_us", 0.0)
+        )
+
+    def _set_saturation_pump(self):
+        arm = str(getattr(
+            self, "_saturation_arm",
+            self.cfg.get("opx_saturation_arm", self.cfg.get("saturation_arm", "")),
+        )).lower()
+        gain_value = self.cfg.get(
+            "opx_saturation_pump_gain", self.cfg.get("saturation_pump_gain")
+        )
+        frequency = self.cfg.get(
+            "opx_saturation_pump_freq_mhz",
+            self.cfg.get("saturation_pump_freq_mhz"),
+        )
+        duration = float(getattr(
+            self, "_saturation_pump_us",
+            self.cfg.get("opx_saturation_pump_us", self.cfg.get("saturation_pump_us")),
+        ))
+        # Start the tone before the outbound flux command so that its stated
+        # duration is available at the target, rather than being consumed by
+        # the target-arrival prefix.
+        duration += float(getattr(self, "_t1_ff_settle_us", 0.0))
+        duration += float(self.cfg.get("ff_ramp_length", 0.0))
+        gain = (
+            int(gain_value) if arm == "pump" else 0
+        )
+        self.set_pulse_registers(
+            ch=self.cfg["qubit_ch"],
+            style="const",
+            freq=self.freq2reg(
+                float(frequency),
+                gen_ch=self.cfg["qubit_ch"],
+            ),
+            phase=self.deg2reg(0.0, gen_ch=self.cfg["qubit_ch"]),
+            gain=gain,
+            length=self.us2cycles(duration, gen_ch=self.cfg["qubit_ch"]),
+        )
+
+    def _emit_saturation_pump(self):
+        self._set_saturation_pump()
+        self.pulse(ch=self.cfg["qubit_ch"])
+        self._wait_t1_payload(self._saturation_pump_us)
+
+    def _emit_body(self):
+        park_up, park_down = self._shot_park_callbacks()
+        park_up()
+        self._emit_saturation_pump()
+
+        # The pump may leave the qubit excited.  Reset it at park with the
+        # same native, unbounded reset used by the production T1 programs.
+        self._set_reset_pulse()
+        self._measure_project(self.payload_calibration, "payload")
+        emit_unbounded_reset_state_machine(
+            self,
+            page=self.reset_page,
+            regs=self.reset_regs,
+            payload_calibration=self.payload_calibration,
+            loop_calibration=self.loop_calibration,
+            measure_next=lambda: self._measure_project(
+                self.loop_calibration, "loop"
+            ),
+            play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
+            label_prefix="OPX_TLS_SATURATION_RESET",
+            wait_reset_ringdown=self._wait_reset_ringdown,
+        )
+        self.sync_all(self.us2cycles(self._saturation_recovery_us))
+
+        # The probe begins from a reset park state and is the only payload
+        # measurement written to DMem.
+        self._prepare_excited()
+        self._wait_t1_payload(self._saturation_probe_us)
+        self._measure_project(self.payload_calibration, "payload")
+        self.memw(self.reset_page, self.reset_regs["i"], self.reset_regs["address"])
+        self.mathi(
+            self.reset_page, self.reset_regs["address"],
+            self.reset_regs["address"], "+", 1,
+        )
+        self.memw(self.reset_page, self.reset_regs["q"], self.reset_regs["address"])
+        self.mathi(
+            self.reset_page, self.reset_regs["address"],
+            self.reset_regs["address"], "+", 1,
+        )
+        park_down()
+        self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 
 
 class OPXResetPulseSweepProgram(OPXResetBenchmarkProgram):
