@@ -62,6 +62,9 @@ P6_5PT_APPLES_TO_APPLES = {
     "freq_max_ghz": 4.3,
     "freq_step_mhz": 0.5,
     "wall_clock_duration_min": 10080,
+    # Optional finite-series cap for a local diagnostic.  The production
+    # cadence remains duration-controlled when this is None.
+    "max_runs": None,
     # The q3 return/readout contract showed that any remaining flux-tail
     # overlap corrupts the park readout.  Use the shared 0.5-us prefix, then
     # explicitly wait the rest of the 40-us recovery on both controllers.
@@ -102,6 +105,14 @@ def apply_series_overrides(params, environ=None):
         out["wall_clock_duration_min"] = minutes
         print(f"[scan] wall-clock duration {params['wall_clock_duration_min']:g} -> "
               f"{minutes:g} min (Q3_5PT_DURATION_MIN)")
+    max_runs = environ.get("Q3_5PT_MAX_RUNS")
+    if max_runs is not None and str(max_runs).strip() != "":
+        value = float(max_runs)
+        if not np.isfinite(value) or value <= 0 or int(value) != value:
+            raise ValueError("Q3_5PT_MAX_RUNS must be a positive integer")
+        out["max_runs"] = int(value)
+        print(f"[scan] stopping after {int(value)} completed runs "
+              "(Q3_5PT_MAX_RUNS)")
     predist = environ.get("Q3_5PT_PREDISTORTION")
     if predist is not None and str(predist).strip() != "":
         wanted = str(predist).strip().lower()
@@ -273,6 +284,7 @@ def _run_series(
     synchronizer,
     recalibrate,
     recalibration_min=AUTOMATIC_RECALIBRATION_MIN,
+    max_runs=None,
 ):
     series_start = None
     base_path = None
@@ -283,6 +295,9 @@ def _run_series(
     last_cal = datetime.now()
     unsynchronized_start = None
     while True:
+        if max_runs is not None and completed >= int(max_runs):
+            print(f"[scan] completed requested finite series ({completed} run(s))")
+            break
         if not synchronizer.enabled:
             now = synchronizer.corrected_clock()
             if unsynchronized_start is None:
@@ -673,6 +688,7 @@ def main():
         synchronizer,
         recalibrate,
         recalibration_min=float(p["reset_recalibration_min"]),
+        max_runs=p.get("max_runs"),
     )
     print(
         f"apples-to-apples {2 + len(p['decay_delays_us'])}-condition "

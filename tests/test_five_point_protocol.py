@@ -1983,6 +1983,20 @@ def test_series_override_accepts_explicit_q3_five_point_shot_count(monkeypatch):
     assert params["shots_per_condition"] == 300
 
 
+def test_series_override_accepts_an_exact_finite_q3_locator_series(monkeypatch):
+    """A local TLS locator can request exactly three saved repeats."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    params = runner.apply_series_overrides(
+        {"max_runs": None},
+        {"Q3_5PT_MAX_RUNS": "3"},
+    )
+
+    assert params["max_runs"] == 3
+
+
 def test_series_override_accepts_explicit_q3_inversion_bounds(monkeypatch):
     """A deliberate wide-band scan can select its calibrated DAC branch."""
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
@@ -2010,6 +2024,19 @@ def test_series_override_accepts_explicit_q3_sync_cadence(monkeypatch):
     )
 
     assert params["sync_slot_s"] == 250.0
+
+
+def test_q3_tls_pump_probe_runner_is_explicitly_bound_to_q3_dac_branch():
+    """The direct-TLS runner must never inherit its positive-DAC defaults."""
+    path = Path(
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/"
+        "TLS4p15PumpProbe.py"
+    )
+    source = path.read_text()
+
+    assert '"dc_search_min": _float("Q3_TLS_PUMP_DC_MIN", -20550.0, environ)' in source
+    assert '"dc_search_max": _float("Q3_TLS_PUMP_DC_MAX", -11800.0, environ)' in source
+    assert '"Q3_TLS_PUMP_CENTER_GHZ", 4.150' in source
 
 
 def test_complete_resident_loop_traverses_all_frequencies_each_shot(monkeypatch):
