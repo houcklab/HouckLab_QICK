@@ -44,15 +44,16 @@ def apply_overrides(environ=None):
     p["shots"] = _int("Q3_P4_SHOTS", p["shots"])
     p["spec_amp"] = _int("Q3_P4_SPEC_AMP", 25000)
     p["spec_len_us"] = _float("Q3_P4_SPEC_LEN_US", 0.5)
-    # Exact q3_08_54_58 P4 grid authority.  The only physics change from that
-    # run is the 5 -> 25 us target hold requested for the production audit.
+    # The production q3 TLS branch.  The historical P4 began at -30000 DAC,
+    # outside this branch; using it would spend the first block on irrelevant
+    # flux targets rather than calibrating the actual long-scan trajectory.
     p["freq_min"] = _float("Q3_P4_FREQ_MIN_MHZ", 3800.0)
     p["freq_max"] = _float("Q3_P4_FREQ_MAX_MHZ", 4500.0)
     # This is the reference P4's 1-MHz grid (700 points, stop-exclusive in
     # the underlying experiment), safely below QICK program memory.
     p["freq_step"] = _float("Q3_P4_FREQ_STEP_MHZ", 1.0)
-    p["dc_min"] = _int("Q3_P4_DC_MIN", -30000)
-    p["dc_max"] = _int("Q3_P4_DC_MAX", -12500)
+    p["dc_min"] = _int("Q3_P4_DC_MIN", -20550)
+    p["dc_max"] = _int("Q3_P4_DC_MAX", -11800)
     p["dc_step"] = _int("Q3_P4_DC_STEP", 250)
     p["dc_chunk_points"] = _int("Q3_P4_DC_CHUNK_POINTS", 16)
     if p["dc_chunk_points"] < 1:
