@@ -43,11 +43,17 @@ def apply_overrides(environ=None):
     # window deliberately has margin so the trace does not ride a scan edge.
     p["freq_min"] = _float("Q3_P4_FREQ_MIN_MHZ", 3700.0)
     p["freq_max"] = _float("Q3_P4_FREQ_MAX_MHZ", 4600.0)
-    p["freq_step"] = _float("Q3_P4_FREQ_STEP_MHZ", 0.5)
+    # A 0.5-MHz, 901-MHz-wide resident QICK program exceeds the controller's
+    # 16k instruction store.  One MHz still resolves the broad P4 qubit ridge
+    # and stays below that hard hardware limit.  An explicit narrower window
+    # may use 0.5 MHz through Q3_P4_FREQ_STEP_MHZ.
+    p["freq_step"] = _float("Q3_P4_FREQ_STEP_MHZ", 1.0)
     p["dc_min"] = _int("Q3_P4_DC_MIN", -30000)
     p["dc_max"] = _int("Q3_P4_DC_MAX", -12500)
     p["dc_step"] = _int("Q3_P4_DC_STEP", 250)
     p["long_time_us"] = _float("Q3_P4_HOLD_US", 25.0)
+    p["dt_pulseplay_us"] = _float("Q3_P4_DT_PULSEPLAY_US", 0.5)
+    p["dt_pulsedef_us"] = _float("Q3_P4_DT_PULSEDEF_US", 0.002)
     p["average_window_us"] = 0.0
     p["live_plot"] = str(environ.get("Q3_P4_LIVE_PLOT", "1")).strip().lower() in {
         "1", "true", "yes", "on"}
@@ -72,7 +78,8 @@ def main():
           f"step {p['dc_step']:.0f} ({n_dc} points)")
     print(f"  qubit spec window   : {p['freq_min']/1e3:.4f} .. {p['freq_max']/1e3:.4f} GHz "
           f"step {p['freq_step']:g} MHz ({n_freq} points)")
-    print(f"  spec                : amp {p['spec_amp']}, len {p['spec_len_us']:g} us")
+    print(f"  spec                : amp {p['spec_amp']}, len {p['spec_len_us']:g} us; "
+          f"waveform grid {p['dt_pulseplay_us']:g} us")
     print(f"  shots               : {p['shots']}")
     print(f"  correction          : {correction_json or 'none'}")
     print("  raw-sweep CSV is always saved; no automatic flux-fit overwrite")

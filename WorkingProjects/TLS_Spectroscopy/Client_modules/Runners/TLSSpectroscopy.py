@@ -780,6 +780,12 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
         "qubit_freq_step": p["freq_step"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
+        # P4 is a production-timing diagnostic.  Explicitly carry the same
+        # 0.5-us waveform rendering grid as the production correction rather
+        # than falling through to FFStepResponseSpecProgram's historical 5-us
+        # default.
+        "dt_pulseplay": float(p.get("dt_pulseplay_us", 0.5)),
+        "dt_pulsedef": float(p.get("dt_pulsedef_us", 0.002)),
     })
     exp = QubitLongTimeSpecVsFlux(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
@@ -797,6 +803,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
     )
     data = exp.acquire(progress=True)
     print(f"[4] Done. raw_sweep CSV (fit offline): {data['data'].get('raw_sweep_csv')}")
+    return data
 
 
 def run_step5_single_shot_cal(outer_folder, soc, soccfg):
