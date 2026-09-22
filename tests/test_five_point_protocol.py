@@ -1926,7 +1926,8 @@ def test_series_appends_completed_rows_through_failure_and_overrun(monkeypatch, 
         assert row["reference_mode"] == "matched_frequency_resolved"
         assert float(row["correction_gain"]) == 1.0
         assert json.loads(row["condition_order_json"]) == ["P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us"]
-        assert json.loads(row["correction_provenance_json"]) == compensation
+        assert "correction_provenance_json" not in row
+        assert row["correction_coefficients_sha256"] == analysis().correction_sha256(compensation)
         assert float(row["sync_scan_duration_s"]) == 350
         assert float(row["sync_scan_overrun_s"]) == 50
 
@@ -2145,6 +2146,9 @@ def test_common_provenance_preserves_an_explicit_zero_correction_gain():
         "correction_gain": 0., "multipliers": [1.], "segment_edges_ns": [0.],
     }}, ("P0", "P1", "Ps_10us", "Ps_50us", "Ps_200us"))
     assert result["correction_gain"] == 0.
+    assert result["correction_coefficients_sha256"] == analysis().correction_sha256(
+        {"correction_gain": 0., "multipliers": [1.], "segment_edges_ns": [0.]}
+    )
 
 
 @pytest.mark.parametrize("shots", [180.5, 0, 1, np.nan, np.inf])

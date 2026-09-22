@@ -1,8 +1,18 @@
 """Shared analysis primitives for matched-reference five-point T1 scans."""
 
+import hashlib
 import json
 
 import numpy as np
+
+
+def correction_sha256(correction):
+    """Stable identifier for an applied correction without embedding it per row."""
+    payload = json.dumps(
+        correction, sort_keys=True, separators=(",", ":"),
+        default=lambda value: np.asarray(value).tolist(),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def five_point_output_metadata(data, condition_names):
@@ -33,7 +43,7 @@ def five_point_output_metadata(data, condition_names):
         "correction_source": (correction or {}).get("source", ""),
         "correction_method": (correction or {}).get("method", ""),
         "correction_gain": (float(correction["correction_gain"] if correction.get("correction_gain") is not None else 1.0) if correction else 0.0),
-        "correction_provenance_json": json.dumps(correction, sort_keys=True, default=lambda x: np.asarray(x).tolist()),
+        "correction_coefficients_sha256": correction_sha256(correction),
     }
 
 
