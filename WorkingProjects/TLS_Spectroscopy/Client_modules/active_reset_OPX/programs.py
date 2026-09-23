@@ -1308,6 +1308,20 @@ class OPXResetBenchmarkProgram(QickProgram):
 class OPXResetT1Program(OPXResetBenchmarkProgram):
     def _set_payload_pulse(self):
         cfg = self.cfg
+        spectroscopy_freq = cfg.get("opx_t1_post_return_spec_freq_mhz")
+        if spectroscopy_freq is not None:
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"],
+                style="const",
+                freq=self.freq2reg(float(spectroscopy_freq), gen_ch=cfg["qubit_ch"]),
+                phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+                gain=int(cfg["opx_t1_post_return_spec_gain"]),
+                length=self.us2cycles(
+                    float(cfg["opx_t1_post_return_spec_length_us"]),
+                    gen_ch=cfg["qubit_ch"],
+                ),
+            )
+            return
         frequency = cfg.get("qubit_pi_freq")
         if frequency is None:
             frequency = cfg["qubit_freq"]
@@ -1341,6 +1355,23 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
 
     def _prepare_excited(self):
         self._set_payload_pulse()
+        _pulse_pi_and_align(self)
+
+    def _prepare_ground_spectroscopy_reference(self):
+        """Consume the same qubit-generator time without driving the qubit."""
+        cfg = self.cfg
+        spectroscopy_freq = cfg["opx_t1_post_return_spec_freq_mhz"]
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="const",
+            freq=self.freq2reg(float(spectroscopy_freq), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+            gain=0,
+            length=self.us2cycles(
+                float(cfg["opx_t1_post_return_spec_length_us"]),
+                gen_ch=cfg["qubit_ch"],
+            ),
+        )
         _pulse_pi_and_align(self)
 
     def _declare_experiment(self):
@@ -2175,6 +2206,10 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             self._wait_three_point_payload(hold_us, do_ff)
             if bool(do_pi) and prepare_after_return:
                 self._prepare_excited()
+            elif prepare_after_return and self.cfg.get(
+                "opx_t1_post_return_spec_freq_mhz"
+            ) is not None:
+                self._prepare_ground_spectroscopy_reference()
 
         emit_payload_reset_shot(
             self,

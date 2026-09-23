@@ -410,6 +410,37 @@ def test_qick_npoint_program_emits_all_21_delays_in_one_dc_visit():
     assert emitted[-1] == ("POINT_PS20", True, True, 202.0, 22)
 
 
+def test_post_return_spectroscopy_uses_const_probe_and_time_matched_ground():
+    """A park pi cannot stand in for a swept-frequency spectroscopy pulse."""
+    programs = importlib.import_module(
+        f"{PREFIX}.active_reset_OPX.programs"
+    )
+    pulse_settings = []
+    emitted = []
+    program = object.__new__(programs.OPXResetT1Program)
+    program.cfg = {
+        "qubit_ch": 2, "qubit_freq": 5030.0, "qubit_pi_gain": 1000,
+        "opx_t1_post_return_spec_freq_mhz": 5034.0,
+        "opx_t1_post_return_spec_gain": 1200,
+        "opx_t1_post_return_spec_length_us": 0.5,
+    }
+    program.freq2reg = lambda frequency, **_kwargs: frequency
+    program.deg2reg = lambda phase, **_kwargs: phase
+    program.us2cycles = lambda duration, **_kwargs: round(duration * 1000)
+    program.set_pulse_registers = lambda **kwargs: pulse_settings.append(kwargs)
+    program.pulse = lambda **kwargs: emitted.append(kwargs)
+    program.sync_all = lambda _cycles: None
+
+    program._prepare_excited()
+    program._prepare_ground_spectroscopy_reference()
+
+    assert [setting["style"] for setting in pulse_settings] == ["const", "const"]
+    assert [setting["gain"] for setting in pulse_settings] == [1200, 0]
+    assert [setting["freq"] for setting in pulse_settings] == [5034.0, 5034.0]
+    assert [setting["length"] for setting in pulse_settings] == [500, 500]
+    assert len(emitted) == 2
+
+
 def test_qick_npoint_program_sizes_the_resident_stream_during_construction(monkeypatch):
     """The dynamic condition count must exist before the parent sizes DMem."""
     module = diagnostic()
