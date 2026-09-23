@@ -1877,6 +1877,31 @@ def test_directional_uncertainty_diagnostics_and_provenance_reach_csv(monkeypatc
     assert "Ps_10us" in spec["scalar_columns"]
 
 
+def test_diagnostic_iq_centroids_are_saved_per_condition(monkeypatch):
+    module = load_experiments(monkeypatch)
+    exp = object.__new__(module.T15PointVsFlux)
+    exp.cfg = {"qua_shot_order": True, "diagnostic_iq_summary": True}
+    exp.soc = exp.soccfg = exp.calib_params = None
+    exp.dc_vec = np.array([-100.0])
+    exp.decay_delays_us = np.array([25.0, 60.0, 100.0])
+    exp.CONDITION_NAMES = ("P0", "P1", "Ps_25us", "Ps_60us", "Ps_100us")
+    exp.reference_hold_us, exp.shots = 2.0, 4
+    exp.min_ref_contrast, exp.max_relative_error, exp.max_fit_t1_us = .05, 1., 3000.
+    exp.reset_mode, exp.element = "passive", "q3"
+    exp.acquisition_telemetry, exp.opx_reset_telemetry = [], []
+    exp.data, exp.write_outputs = {}, False
+    i = np.array([[[0., 0., 0., 0.]], [[1., 2., 3., 4.]],
+                  [[.8, .8, .8, .8]], [[.6, .6, .6, .6]], [[.4, .4, .4, .4]]])
+    q = i * -2
+    telemetry = {"read_length_cycles": 2, "order": "shot_alternating_dc_P0_P1_Ps0_Ps1_Ps2"}
+    monkeypatch.setattr(module, "acquire_t1_5pt_iq", lambda *a, **k: (i, q, telemetry))
+    exp.acquire()
+    spec = module.get_wall_clock_repeat_full_spec(exp)["scalar_columns"]
+    assert exp.data["iq_I_P1"][0] == pytest.approx(2.5)
+    assert exp.data["iq_Q_P1"][0] == pytest.approx(-5.0)
+    assert spec["iq_I_P1"][0] == pytest.approx(2.5)
+
+
 def test_series_appends_completed_rows_through_failure_and_overrun(monkeypatch, tmp_path):
     experiment_module = load_experiments(monkeypatch)
     runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")

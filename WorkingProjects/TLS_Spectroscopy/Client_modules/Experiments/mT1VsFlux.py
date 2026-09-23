@@ -422,6 +422,12 @@ def get_wall_clock_repeat_full_spec(exp):
         ):
             if key in data:
                 scalar_columns[key] = data[key]
+        for quadrature in ("I", "Q"):
+            for condition in exp.CONDITION_NAMES:
+                for suffix in ("", "_scan_up", "_scan_down"):
+                    key = f"iq_{quadrature}_{condition}{suffix}"
+                    if key in data:
+                        scalar_columns[key] = data[key]
         return {"axes": {}, "scalar_columns": scalar_columns, "array_columns": {}}
     if isinstance(exp, T1FullCurveVsFlux):
         scalar_columns = {}
@@ -1029,6 +1035,16 @@ class T15PointVsFlux(_T1VsFluxBase):
             self.CONDITION_NAMES,
             canonical_dc_axis=True,
         )
+        if bool(self.cfg.get("diagnostic_iq_summary", False)):
+            for quadrature, samples in (("I", i_values), ("Q", q_values)):
+                centroids = reduce_bidirectional_condition_states(
+                    samples, self.CONDITION_NAMES, canonical_dc_axis=True,
+                )
+                for name in self.CONDITION_NAMES:
+                    for suffix in ("", "_scan_up", "_scan_down"):
+                        self.data[f"iq_{quadrature}_{name}{suffix}"] = centroids[
+                            f"{name}{suffix}"
+                        ]
         self.acquisition_telemetry.append(dict(telemetry))
         self.data.update({
             "acquisition_order": str(telemetry["order"]),
