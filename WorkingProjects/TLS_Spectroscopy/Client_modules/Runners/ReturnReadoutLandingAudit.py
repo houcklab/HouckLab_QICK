@@ -78,22 +78,26 @@ def landing_arms():
     return [validate_arm(arm) for arm in arms]
 
 
-def contrast_wait_arms():
+def contrast_wait_arms(*, repeats=3, include_controls=True):
     """Repeat production-shaped scans while truncating one 40 us return."""
+    if repeats < 1:
+        raise ValueError("contrast repeats must be at least one")
     control = AuditArm("contrast_control", 25.0, 25.0, False)
-    arms = [replace(control, name="contrast_control_start")]
-    for repeat, waits in ((1, CONTRAST_WAIT_US),
-                          (2, tuple(reversed(CONTRAST_WAIT_US))),
-                          (3, CONTRAST_WAIT_US)):
+    arms = ([replace(control, name="contrast_control_start")]
+            if include_controls else [])
+    for repeat in range(1, repeats + 1):
+        waits = (CONTRAST_WAIT_US if repeat % 2 else
+                 tuple(reversed(CONTRAST_WAIT_US)))
         for wait_us in waits:
             label = f"{wait_us:g}".replace(".", "p")
             arms.append(AuditArm(
                 f"contrast_stop_{label}us_r{repeat}",
                 wait_us, wait_us, False,
             ))
-        if repeat < 3:
+        if include_controls and repeat < repeats:
             arms.append(replace(control, name=f"contrast_control_mid{repeat}"))
-    arms.append(replace(control, name="contrast_control_end"))
+    if include_controls:
+        arms.append(replace(control, name="contrast_control_end"))
     return [validate_arm(arm) for arm in arms]
 
 
@@ -156,7 +160,8 @@ def write_contrast_outputs(session_dir, manifest):
     from matplotlib import pyplot as plt
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    for repeat in ("1", "2", "3"):
+    for repeat in sorted({row["repeat"] for row in rows
+                          if row["repeat"] != "control"}, key=int):
         points = sorted((row for row in rows if row["repeat"] == repeat),
                         key=lambda row: row["return_stop_us"])
         if points:
@@ -180,6 +185,107 @@ def write_contrast_outputs(session_dir, manifest):
     fig.savefig(png_path, dpi=180)
     plt.close(fig)
     return csv_path, png_path
+
+
+def write_averaged_outputs(session_dir, manifest):
+    """Checkpoint mean contrast and valid-cell Γ1(f) across completed repeats."""
+    session_dir = Path(session_dir)
+    completed = [arm for arm in manifest["arms"]
+                 if arm["status"] == "complete"
+                 and arm["name"].startswith("contrast_stop_")]
+    suffix = f"{len(completed):02d}_of_{len(manifest['arms']):02d}"
+    contrasts = {}
+    gammas = {}
+    for arm in completed:
+        wait = float(arm["recovery_us"])
+        summary = arm.get("contrast_summary") or summarize_contrast_csv(
+            arm["full_csv"])
+        contrasts.setdefault(wait, []).append(
+            float(summary["median_p1_minus_p0"]))
+        with Path(arm["full_csv"]).open(newline="", encoding="utf-8") as stream:
+            for row in csv.DictReader(stream):
+                if (float(row["T1_5pt_valid_mask"]) != 1.0 or
+                        float(row["T1_5pt_fit_success"]) != 1.0):
+                    continue
+                gamma = float(row["inv_T1_5pt_per_us"])
+                if math.isfinite(gamma):
+                    freq = float(row["target_frequency_ghz"])
+                    gammas.setdefault((wait, freq), []).append(gamma)
+
+    contrast_rows = [{
+        "return_stop_us": wait, "repeat_count": len(values),
+        "mean_median_p1_minus_p0": statistics.mean(values),
+        "sd_median_p1_minus_p0": statistics.stdev(values)
+        if len(values) > 1 else 0.0,
+    } for wait, values in sorted(contrasts.items())]
+    gamma_rows = [{
+        "return_stop_us": wait, "frequency_ghz": freq,
+        "repeat_count": len(values),
+        "mean_gamma_per_us": statistics.mean(values),
+        "sd_gamma_per_us": statistics.stdev(values)
+        if len(values) > 1 else 0.0,
+    } for (wait, freq), values in sorted(gammas.items())]
+
+    def write_csv(name, fieldnames, rows):
+        path = session_dir / f"{name}_{suffix}.csv"
+        pending = path.with_suffix(".pending")
+        with pending.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(pending, path)
+        return path
+
+    contrast_csv = write_csv(
+        "mean_contrast_vs_wait",
+        ("return_stop_us", "repeat_count", "mean_median_p1_minus_p0",
+         "sd_median_p1_minus_p0"), contrast_rows)
+    gamma_csv = write_csv(
+        "mean_gamma_vs_frequency_by_wait",
+        ("return_stop_us", "frequency_ghz", "repeat_count",
+         "mean_gamma_per_us", "sd_gamma_per_us"), gamma_rows)
+
+    import matplotlib
+    matplotlib.use("Agg", force=True)
+    from matplotlib import pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    if contrast_rows:
+        ax.errorbar(
+            [row["return_stop_us"] for row in contrast_rows],
+            [row["mean_median_p1_minus_p0"] for row in contrast_rows],
+            yerr=[row["sd_median_p1_minus_p0"] for row in contrast_rows],
+            marker="o", capsize=3, color="#b61e71",
+        )
+    ax.set(xlabel="Return to readout (µs)",
+           ylabel="Mean run-median P1 − P0",
+           title="q3 return/readout reference contrast")
+    ax.set_xticks(CONTRAST_WAIT_US)
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    contrast_png = session_dir / f"mean_contrast_vs_wait_{suffix}.png"
+    fig.savefig(contrast_png, dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    for wait in sorted(contrasts):
+        points = [row for row in gamma_rows if row["return_stop_us"] == wait]
+        if points:
+            ax.plot([row["frequency_ghz"] for row in points],
+                    [row["mean_gamma_per_us"] for row in points],
+                    linewidth=1.25, label=f"{wait:g} µs")
+    ax.set(xlabel="Qubit frequency (GHz)",
+           ylabel="Mean Γ₁ (µs⁻¹)",
+           title="q3 Γ₁(f) by return/readout time")
+    ax.grid(alpha=0.2)
+    if ax.has_data():
+        ax.legend(title="Return to readout")
+    fig.tight_layout()
+    gamma_png = session_dir / f"mean_gamma_vs_frequency_by_wait_{suffix}.png"
+    fig.savefig(gamma_png, dpi=180)
+    plt.close(fig)
+    return {"contrast_csv": contrast_csv, "contrast_png": contrast_png,
+            "gamma_csv": gamma_csv, "gamma_png": gamma_png}
 
 
 def arm_config(base, arm):
@@ -242,7 +348,8 @@ def _assert_prefix_matched(compensation, holds_us, prefix_us):
 
 
 def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
-        acknowledged_scans_stopped=False, contrast_wait=False):
+        acknowledged_scans_stopped=False, contrast_wait=False,
+        contrast_repeats=3, contrast_controls=True):
     if not acknowledged_scans_stopped:
         raise RuntimeError("confirm the QICK production scan has stopped")
     if str(os.environ.get("SET_YOKO", "")).strip().lower() in {"1", "true", "yes", "on"}:
@@ -279,7 +386,9 @@ def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
     if float(tls.FLUX_TAIL_COMPENSATION_GAIN) != 1.0:
         raise RuntimeError("audit requires effective correction gain 1.0")
     holds_us = (2.5, 27.5, 62.5, 102.5)
-    arms = contrast_wait_arms() if contrast_wait else landing_arms()
+    arms = (contrast_wait_arms(repeats=contrast_repeats,
+                              include_controls=contrast_controls)
+            if contrast_wait else landing_arms())
     for prefix in sorted({arm.prefix_us for arm in arms}):
         _assert_prefix_matched(compensation, holds_us, prefix)
 
@@ -366,6 +475,10 @@ def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
                 )
                 manifest["contrast_summary_csv"] = str(summary_csv)
                 manifest["contrast_plot_png"] = str(summary_png)
+                averages = write_averaged_outputs(session_dir, manifest)
+                manifest["averaged_outputs"] = {
+                    key: str(path) for key, path in averages.items()
+                }
                 _checkpoint(manifest_path, manifest)
             print(f"[landing] saved {arm.name}: {full_csv}", flush=True)
         except BaseException as exc:
@@ -388,9 +501,14 @@ def main(argv=None):
     parser.add_argument("--step-mhz", type=float, default=STEP_MHZ)
     parser.add_argument("--contrast-wait", action="store_true",
                         help="2.5/5/10/20/40 us return-stop contrast sweep")
+    parser.add_argument("--contrast-repeats", type=int, default=3)
+    parser.add_argument("--no-contrast-controls", action="store_true",
+                        help="omit all 25 us return/readout controls")
     parser.add_argument("--confirm-scans-stopped", action="store_true")
     args = parser.parse_args(argv)
-    arms = contrast_wait_arms() if args.contrast_wait else landing_arms()
+    arms = (contrast_wait_arms(repeats=args.contrast_repeats,
+                              include_controls=not args.no_contrast_controls)
+            if args.contrast_wait else landing_arms())
     if args.plan:
         print(json.dumps({
             "hardware_access": False, "shots": args.shots,
@@ -408,7 +526,9 @@ def main(argv=None):
     print(run(correction_json=args.correction_json, shots=args.shots,
               step_mhz=args.step_mhz,
               acknowledged_scans_stopped=True,
-              contrast_wait=args.contrast_wait))
+              contrast_wait=args.contrast_wait,
+              contrast_repeats=args.contrast_repeats,
+              contrast_controls=not args.no_contrast_controls))
     return 0
 
 

@@ -94,6 +94,64 @@ def test_contrast_wait_plan_lists_only_nonoverlap_arms(capsys):
     assert any(arm["recovery_us"] == 20.0 for arm in arms)
 
 
+def test_five_repeat_contrast_plan_has_no_25us_return_controls(capsys):
+    assert audit().main([
+        "--plan", "--contrast-wait", "--contrast-repeats", "5",
+        "--no-contrast-controls",
+    ]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    arms = plan["arms"]
+    assert len(arms) == 25
+    assert [arm["recovery_us"] for arm in arms] == [
+        2.5, 5.0, 10.0, 20.0, 40.0,
+        40.0, 20.0, 10.0, 5.0, 2.5,
+        2.5, 5.0, 10.0, 20.0, 40.0,
+        40.0, 20.0, 10.0, 5.0, 2.5,
+        2.5, 5.0, 10.0, 20.0, 40.0,
+    ]
+    assert all(arm["prefix_us"] == arm["recovery_us"] for arm in arms)
+    assert all(not arm["overlap_readout"] for arm in arms)
+    assert not any(arm["recovery_us"] == 25.0 for arm in arms)
+
+
+def test_averaged_outputs_use_run_medians_and_valid_gamma_cells(tmp_path):
+    columns = (
+        "target_frequency_ghz,P0,P1,T1_5pt_valid_mask,"
+        "T1_5pt_fit_success,inv_T1_5pt_per_us\n"
+    )
+    first = tmp_path / "r1.csv"
+    first.write_text(columns +
+                     "4.0,0.1,0.7,1,1,0.01\n"
+                     "4.1,0.1,0.5,0,0,0.99\n", encoding="utf-8")
+    second = tmp_path / "r2.csv"
+    second.write_text(columns +
+                      "4.0,0.1,0.5,1,1,0.03\n"
+                      "4.1,0.1,0.7,1,1,0.04\n", encoding="utf-8")
+    manifest = {"arms": [
+        {"name": "contrast_stop_5us_r1", "recovery_us": 5.0,
+         "status": "complete", "full_csv": str(first),
+         "contrast_summary": {"median_p1_minus_p0": 0.5}},
+        {"name": "contrast_stop_5us_r2", "recovery_us": 5.0,
+         "status": "complete", "full_csv": str(second),
+         "contrast_summary": {"median_p1_minus_p0": 0.5}},
+    ]}
+    outputs = audit().write_averaged_outputs(tmp_path, manifest)
+    assert all(path.is_file() for path in outputs.values())
+    import csv
+    with outputs["contrast_csv"].open(newline="", encoding="utf-8") as stream:
+        contrast = list(csv.DictReader(stream))
+    with outputs["gamma_csv"].open(newline="", encoding="utf-8") as stream:
+        gamma = list(csv.DictReader(stream))
+    assert len(contrast) == 1
+    assert float(contrast[0]["mean_median_p1_minus_p0"]) == pytest.approx(0.5)
+    assert int(contrast[0]["repeat_count"]) == 2
+    assert [(float(row["frequency_ghz"]), int(row["repeat_count"]))
+            for row in gamma] == [(4.0, 2), (4.1, 1)]
+    assert [float(row["mean_gamma_per_us"]) for row in gamma] == pytest.approx(
+        [0.02, 0.04]
+    )
+
+
 def test_contrast_outputs_checkpoint_summary_and_png(tmp_path):
     path = tmp_path / "arm.csv"
     path.write_text(
