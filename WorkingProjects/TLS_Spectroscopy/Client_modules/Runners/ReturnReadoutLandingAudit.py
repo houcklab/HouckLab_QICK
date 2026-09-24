@@ -9,6 +9,7 @@ correction JSON.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import math
@@ -16,6 +17,7 @@ import os
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+import statistics
 import subprocess
 import uuid
 
@@ -24,6 +26,7 @@ DELAYS_US = (25.0, 60.0, 100.0)
 SHOTS = 300
 STEP_MHZ = 1.0
 FULL_RETURN_US = 40.0
+CONTRAST_WAIT_US = (2.5, 5.0, 10.0, 20.0, 40.0)
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,110 @@ def landing_arms():
                 arms.append(replace(control, name=f"landing_control_l{repeat}_{index + 1}"))
     arms.append(replace(control, name="landing_control_end"))
     return [validate_arm(arm) for arm in arms]
+
+
+def contrast_wait_arms():
+    """Repeat production-shaped scans while truncating one 40 us return."""
+    control = AuditArm("contrast_control", 25.0, 25.0, False)
+    arms = [replace(control, name="contrast_control_start")]
+    for repeat, waits in ((1, CONTRAST_WAIT_US),
+                          (2, tuple(reversed(CONTRAST_WAIT_US))),
+                          (3, CONTRAST_WAIT_US)):
+        for wait_us in waits:
+            label = f"{wait_us:g}".replace(".", "p")
+            arms.append(AuditArm(
+                f"contrast_stop_{label}us_r{repeat}",
+                wait_us, wait_us, False,
+            ))
+        if repeat < 3:
+            arms.append(replace(control, name=f"contrast_control_mid{repeat}"))
+    arms.append(replace(control, name="contrast_control_end"))
+    return [validate_arm(arm) for arm in arms]
+
+
+def summarize_contrast_csv(path):
+    """Summarize production P0/P1 references without fit-based filtering."""
+    with Path(path).open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if not rows:
+        raise ValueError(f"no reference records in {path}")
+    pairs = []
+    valid = 0
+    for row in rows:
+        p0, p1 = float(row["P0"]), float(row["P1"])
+        if not (math.isfinite(p0) and math.isfinite(p1)):
+            raise ValueError(f"nonfinite reference population in {path}")
+        pairs.append((p0, p1))
+        valid += (float(row["T1_5pt_valid_mask"]) == 1.0
+                  and float(row["T1_5pt_fit_success"]) == 1.0)
+    return {
+        "frequency_count": len(pairs),
+        "median_p0": statistics.median(pair[0] for pair in pairs),
+        "median_p1": statistics.median(pair[1] for pair in pairs),
+        "median_p1_minus_p0": statistics.median(p1 - p0 for p0, p1 in pairs),
+        "valid_fit_fraction": valid / len(pairs),
+    }
+
+
+def write_contrast_outputs(session_dir, manifest):
+    """Checkpoint a compact table and headless plot after each finished arm."""
+    session_dir = Path(session_dir)
+    rows = []
+    for arm in manifest["arms"]:
+        if arm["status"] != "complete":
+            continue
+        summary = arm.get("contrast_summary") or summarize_contrast_csv(
+            arm["full_csv"]
+        )
+        rows.append({
+            "arm": arm["name"],
+            "return_stop_us": float(arm["recovery_us"]),
+            "repeat": (arm["name"].rsplit("_r", 1)[-1]
+                       if "_r" in arm["name"] else "control"),
+            **summary,
+        })
+    suffix = f"{len(rows):02d}_of_{len(manifest['arms']):02d}"
+    csv_path = session_dir / f"contrast_vs_wait_{suffix}.csv"
+    pending = csv_path.with_suffix(".pending")
+    with pending.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=(
+            "arm", "return_stop_us", "repeat", "frequency_count",
+            "median_p0", "median_p1", "median_p1_minus_p0",
+            "valid_fit_fraction",
+        ))
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(pending, csv_path)
+
+    import matplotlib
+    matplotlib.use("Agg", force=True)
+    from matplotlib import pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for repeat in ("1", "2", "3"):
+        points = sorted((row for row in rows if row["repeat"] == repeat),
+                        key=lambda row: row["return_stop_us"])
+        if points:
+            ax.plot([row["return_stop_us"] for row in points],
+                    [row["median_p1_minus_p0"] for row in points],
+                    marker="o", linewidth=1.2, alpha=0.7,
+                    label=f"repeat {repeat}")
+    controls = [row for row in rows if row["repeat"] == "control"]
+    if controls:
+        ax.scatter([25.0] * len(controls),
+                   [row["median_p1_minus_p0"] for row in controls],
+                   color="0.35", marker="x", label="25 µs drift controls")
+    ax.set(xlabel="Correction stop and readout time after return starts (µs)",
+           ylabel="Median P1 − P0 across 3.9–4.3 GHz",
+           title="q3 production-style return/readout contrast")
+    ax.grid(alpha=0.25)
+    if ax.has_data():
+        ax.legend()
+    fig.tight_layout()
+    png_path = session_dir / f"contrast_vs_wait_{suffix}.png"
+    fig.savefig(png_path, dpi=180)
+    plt.close(fig)
+    return csv_path, png_path
 
 
 def arm_config(base, arm):
@@ -135,7 +242,7 @@ def _assert_prefix_matched(compensation, holds_us, prefix_us):
 
 
 def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
-        acknowledged_scans_stopped=False):
+        acknowledged_scans_stopped=False, contrast_wait=False):
     if not acknowledged_scans_stopped:
         raise RuntimeError("confirm the QICK production scan has stopped")
     if str(os.environ.get("SET_YOKO", "")).strip().lower() in {"1", "true", "yes", "on"}:
@@ -172,23 +279,26 @@ def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
     if float(tls.FLUX_TAIL_COMPENSATION_GAIN) != 1.0:
         raise RuntimeError("audit requires effective correction gain 1.0")
     holds_us = (2.5, 27.5, 62.5, 102.5)
-    for prefix in (1.0, 5.0, 10.0, 15.0, 25.0):
+    arms = contrast_wait_arms() if contrast_wait else landing_arms()
+    for prefix in sorted({arm.prefix_us for arm in arms}):
         _assert_prefix_matched(compensation, holds_us, prefix)
 
-    session_id = "q3_readout_landing_" + datetime.now(timezone.utc).strftime(
+    session_id = ("q3_return_contrast_" if contrast_wait else "q3_readout_landing_") + datetime.now(timezone.utc).strftime(
         "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
     session_dir = Path(tls.outerFolder) / tls.QUBIT / session_id
     session_dir.mkdir(parents=True, exist_ok=False)
     manifest_path = session_dir / "manifest.json"
-    arms = landing_arms()
     manifest = {
-        "schema": "q3.return-readout-landing.v1", "session_id": session_id,
+        "schema": ("q3.return-contrast.v1" if contrast_wait
+                   else "q3.return-readout-landing.v1"),
+        "session_id": session_id,
         "status": "calibrating", "created_at": datetime.now(timezone.utc).isoformat(),
         "code_commit": _git_commit(), "correction_json": str(correction_json),
         "correction_sha256": _sha256(correction_json),
         "shots": int(shots), "frequency_grid_ghz": target.tolist(),
         "realized_frequency_ghz": realized.tolist(), "dc_vec": dc_vec.tolist(),
         "delays_us": list(DELAYS_US), "step_mhz": float(step_mhz),
+        "return_template_us": FULL_RETURN_US,
         "arms": [{**asdict(arm), "status": "pending"} for arm in arms],
     }
     _checkpoint(manifest_path, manifest)
@@ -247,7 +357,16 @@ def run(*, correction_json, shots=SHOTS, step_mhz=STEP_MHZ,
             entry.update(status="complete", full_csv=str(full_csv),
                          pickle=str(exp.pname),
                          completed_at=datetime.now(timezone.utc).isoformat())
+            if contrast_wait:
+                entry["contrast_summary"] = summarize_contrast_csv(full_csv)
             _checkpoint(manifest_path, manifest)
+            if contrast_wait:
+                summary_csv, summary_png = write_contrast_outputs(
+                    session_dir, manifest
+                )
+                manifest["contrast_summary_csv"] = str(summary_csv)
+                manifest["contrast_plot_png"] = str(summary_png)
+                _checkpoint(manifest_path, manifest)
             print(f"[landing] saved {arm.name}: {full_csv}", flush=True)
         except BaseException as exc:
             entry.update(status="failed", error=f"{type(exc).__name__}: {exc}")
@@ -267,15 +386,19 @@ def main(argv=None):
     parser.add_argument("--correction-json")
     parser.add_argument("--shots", type=int, default=SHOTS)
     parser.add_argument("--step-mhz", type=float, default=STEP_MHZ)
+    parser.add_argument("--contrast-wait", action="store_true",
+                        help="2.5/5/10/20/40 us return-stop contrast sweep")
     parser.add_argument("--confirm-scans-stopped", action="store_true")
     args = parser.parse_args(argv)
+    arms = contrast_wait_arms() if args.contrast_wait else landing_arms()
     if args.plan:
         print(json.dumps({
             "hardware_access": False, "shots": args.shots,
             "step_mhz": args.step_mhz, "frequency_count":
             int(round(400 / args.step_mhz)) + 1,
             "delays_us": DELAYS_US,
-            "arms": [asdict(arm) for arm in landing_arms()],
+            "return_template_us": FULL_RETURN_US,
+            "arms": [asdict(arm) for arm in arms],
         }, indent=2))
         return 0
     if not args.confirm_scans_stopped:
@@ -284,7 +407,8 @@ def main(argv=None):
         parser.error("--run requires --correction-json")
     print(run(correction_json=args.correction_json, shots=args.shots,
               step_mhz=args.step_mhz,
-              acknowledged_scans_stopped=True))
+              acknowledged_scans_stopped=True,
+              contrast_wait=args.contrast_wait))
     return 0
 
 

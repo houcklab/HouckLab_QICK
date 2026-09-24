@@ -1,6 +1,7 @@
 """Hardware-free contracts for the independent q3 return/readout audit."""
 
 import importlib
+import json
 
 import pytest
 
@@ -48,3 +49,76 @@ def test_invalid_timing_arm_rejected_before_hardware_access():
     module = audit()
     with pytest.raises(ValueError, match="prefix"):
         module.validate_arm(module.AuditArm("bad", 5, 10, True))
+
+
+def test_contrast_wait_matrix_stops_each_return_before_readout():
+    arms = audit().contrast_wait_arms()
+    waits = (2.5, 5.0, 10.0, 20.0, 40.0)
+    assert arms[0].name == "contrast_control_start"
+    assert arms[-1].name == "contrast_control_end"
+    for repeat in (1, 2, 3):
+        batch = [arm for arm in arms if arm.name.endswith(f"_r{repeat}")]
+        assert tuple(arm.recovery_us for arm in batch) == (
+            waits if repeat != 2 else tuple(reversed(waits))
+        )
+        assert all(arm.prefix_us == arm.recovery_us for arm in batch)
+        assert all(arm.overlap_readout is False for arm in batch)
+        assert all(arm.reset_mode == "active" for arm in batch)
+
+
+def test_contrast_csv_summary_uses_recorded_p0_and_p1(tmp_path):
+    path = tmp_path / "arm.csv"
+    path.write_text(
+        "P0,P1,ref_contrast_5pt,T1_5pt_valid_mask,T1_5pt_fit_success\n"
+        "0.10,0.70,0.60,1.0,1.0\n"
+        "0.20,0.60,0.40,1.0,1.0\n"
+        "0.30,0.50,0.20,0.0,0.0\n",
+        encoding="utf-8",
+    )
+    summary = audit().summarize_contrast_csv(path)
+    assert summary["frequency_count"] == 3
+    assert summary["median_p0"] == pytest.approx(0.20)
+    assert summary["median_p1"] == pytest.approx(0.60)
+    assert summary["median_p1_minus_p0"] == pytest.approx(0.40)
+    assert summary["valid_fit_fraction"] == pytest.approx(2 / 3)
+
+
+def test_contrast_wait_plan_lists_only_nonoverlap_arms(capsys):
+    assert audit().main(["--plan", "--contrast-wait"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    arms = plan["arms"]
+    assert plan["hardware_access"] is False
+    assert len(arms) == 19
+    assert all(not arm["overlap_readout"] for arm in arms)
+    assert any(arm["recovery_us"] == 2.5 for arm in arms)
+    assert any(arm["recovery_us"] == 20.0 for arm in arms)
+
+
+def test_contrast_outputs_checkpoint_summary_and_png(tmp_path):
+    path = tmp_path / "arm.csv"
+    path.write_text(
+        "P0,P1,ref_contrast_5pt,T1_5pt_valid_mask,T1_5pt_fit_success\n"
+        "0.10,0.70,0.60,1.0,1.0\n"
+        "0.20,0.60,0.40,1.0,1.0\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "arms": [
+            {"name": "contrast_stop_5us_r1", "recovery_us": 5.0,
+             "status": "complete", "full_csv": str(path)},
+            {"name": "contrast_stop_10us_r1", "recovery_us": 10.0,
+             "status": "pending"},
+        ]
+    }
+    csv_path, png_path = audit().write_contrast_outputs(tmp_path, manifest)
+    assert png_path.is_file()
+    lines = csv_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert "contrast_stop_5us_r1" in lines[1]
+    assert "contrast_stop_10us_r1" not in lines[1]
+    manifest["arms"][1].update(status="complete", full_csv=str(path))
+    next_csv, next_png = audit().write_contrast_outputs(tmp_path, manifest)
+    assert next_csv != csv_path
+    assert next_png != png_path
+    assert csv_path.is_file() and png_path.is_file()
+    assert len(next_csv.read_text(encoding="utf-8").splitlines()) == 3
