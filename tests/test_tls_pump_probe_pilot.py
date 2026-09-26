@@ -54,6 +54,38 @@ def test_pilot_checkpoints_results_and_stops_after_failure(tmp_path):
     assert [e["status"] for e in saved["points"]] == ["complete", "failed", "pending"]
 
 
+def test_frequency_check_brackets_every_pump_sweep_with_sham_measurements():
+    module = pilot()
+    p = module.parameters(frequency_check=True)
+    points = module.schedule(p)
+    assert len(points) == 960
+    assert p["pump_gain"] == 3000 and p["pump_us"] == 15.0
+    assert p["target_frequency_ghz"] == [4.098, 4.104, 4.106, 4.110]
+    # Each contiguous 15-point group holds frequency, preparation and hold fixed.
+    for start in range(0, len(points), 15):
+        block = points[start:start + 15]
+        assert len({(e["repeat"], e["target_index"], e["probe_state"], e["probe_us"])
+                    for e in block}) == 1
+        assert block[0]["pump_mode"] == block[-1]["pump_mode"] == "sham"
+        assert block[0]["control_position"] == "before"
+        assert block[-1]["control_position"] == "after"
+        assert all(e["pump_mode"] != "sham" for e in block[1:-1])
+        assert sorted(e["pump_detuning_mhz"] for e in block[1:-1]) == [
+            -20, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 20]
+    assert len({e["name"] for e in points}) == 960
+
+
+def test_frequency_plan_is_available_without_hardware_or_nas():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan", "--frequency-check"],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False
+    assert plan["acquisition_blocks"] == 960
+    assert plan["parameters"]["shots"] == 400
+    assert plan["parameters"]["repeats"] == 4
+
+
 @pytest.mark.parametrize("state,gain", [("g", 0), ("e", 13500)])
 def test_native_probe_preparation_matches_timing_with_zero_gain_for_ground(state, gain):
     module = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")

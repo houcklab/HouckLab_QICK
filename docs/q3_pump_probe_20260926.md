@@ -98,3 +98,51 @@ Evaluate excited survival together with ground-probe excitation, reference
 contrast, both detuned controls, repeat consistency, and raw IQ changes. Any
 effect remains a pump-dependent response until follow-up controls establish its
 origin. A persistent-spectrum test needs a separate pump-once/observe protocol.
+
+## Completed pilot and pump-frequency follow-up
+
+Session `q3_pump_probe_pilot_20260926T204545Z_4de3530d` completed all 336
+blocks at commit `6731141`, from 20:45:50 to 20:48:00 UTC. The summary has
+67,200 probe shots and every manifest block reports 200 records, a 40-us complete
+return, and a 20-us reset reference guard. Each condition pools three independent
+acquisition blocks of 200 shots.
+
+The strongest 10-us loss lies at model coordinates 4.104 and 4.106 GHz. There
+is no convincing selective survival improvement from the nominally resonant
+pump at this dose:
+
+| Target (GHz) | Excited-prepared P10: sham | near | −20 MHz | +20 MHz |
+| --- | ---: | ---: | ---: | ---: |
+| 4.100 | .4333 | .5117 | .4983 | .5183 |
+| 4.104 | .3650 | .3933 | .3800 | .3567 |
+| 4.106 | .2917 | .3250 | .3283 | .3467 |
+
+At 4.104/4.106 GHz the near-minus-sham differences are +.0283 ± .0280 and
++.0333 ± .0266 (one binomial standard error). At 4.100 GHz, the apparent
+improvement also occurs with detuned pumps, so it is not selective evidence.
+
+At 4.098 GHz, ground-prepared P10 is .2483 near versus .1817 sham: +.0667
+± .0236, with repeat differences +.035, +.075, +.090. The six raw IQ blocks
+were reclassified using the saved payload calibration and exactly reproduce
+the stored counts. This is a candidate extra-excitation signal, not a confirmed
+upward-transition rate: short-reference P_g also differs, several conditions
+were inspected, and drift is not included in these errors. Across frequencies,
+the mean near-minus-sham ground P10 difference grows from −.0071 to +.0043 to
++.0707 over the three repeats. Reference signals also drift, so pooling shots
+alone overstates precision for physical conclusions.
+
+The follow-up keeps gain 3000 and 15-us duration and maps pump frequency:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --frequency-check
+```
+
+Probe targets are 4.098 (candidate extra excitation), 4.104/4.106 (strong loss),
+and 4.110 GHz (flank). For every target/state/hold, a sham precedes and follows
+a randomized sweep of pump detunings −20, −10, −8, −6, −4, −2, 0, +2, +4,
++6, +8, +10, +20 MHz. The two shams provide a check on drift during the sweep.
+There are four repeats of 400 shots per block, 960 blocks total. Preparation,
+holds, return timing, resets and idle timing remain those of the pilot.
+Outputs use `q3/q3_pump_probe_frequency_check_<UTC>_<id>/`; `control_position`
+identifies the bracketing references in the CSV and manifest. Check these
+references and repeat consistency before interpreting any narrow response.
