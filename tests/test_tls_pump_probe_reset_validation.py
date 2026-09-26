@@ -60,7 +60,7 @@ def test_incomplete_records_are_saved_before_rejection(tmp_path):
         assert raw['reset_attempts'].tolist() == [2]
 
 
-@pytest.mark.parametrize("outcome", ["complete", "rejected_initial", "timeout"])
+@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "rejected_initial", "timeout"])
 def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_path, monkeypatch, outcome):
     from contextlib import nullcontext
     from types import SimpleNamespace
@@ -113,7 +113,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             raise AcquisitionTimeout('simulated watchdog', completed_shots=3, partial_records=records[:3])
         return records
     monkeypatch.setattr(integration, '_run_program', acquire)
-    if outcome != 'complete':
+    if outcome not in ('complete', 'complete_delay'):
         with pytest.raises((ValueError, RuntimeError), match='confident|simulated watchdog'):
             m.run(data_root=tmp_path)
         path = next((tmp_path/'q3').glob('*/manifest.json'))
@@ -135,13 +135,17 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
                 assert data['reset_attempts'].tolist() == [2, 2, 2]
             assert 'AcquisitionTimeout: simulated watchdog' in manifest['error']
         return
-    path = m.run(data_root=tmp_path)
+    delay_check = outcome == 'complete_delay'
+    path = m.run(data_root=tmp_path, delay_check=delay_check)
+    expected_blocks = 144 if delay_check else 48
     manifest = json.loads(path.read_text())
-    assert manifest['status'] == 'complete' and len(manifest['points']) == 49
-    assert len(configs) == 48 and len(references) == 2
+    assert manifest['status'] == 'complete' and len(manifest['points']) == expected_blocks + 1
+    assert len(configs) == expected_blocks and len(references) == 2
     assert references[0] == references[1]
     assert references[0]['opx_loop_recovery_us'] == 20
-    assert all(c['opx_loop_recovery_us'] == 20 and c['opx_verification_delay_us'] == 20 for c in configs)
+    assert all(c['opx_loop_recovery_us'] == 20 for c in configs)
+    assert {c['opx_verification_delay_us'] for c in configs} == ({20.,100.,500.} if delay_check else {20.})
+    assert all(c['opx_verification_delay_us'] == e['verification_delay_us'] for c,e in zip(configs, manifest['points'][:-1]))
     assert all(c['opx_reset_calibration'] == bundle.to_dict() for c in configs)
     for entry in manifest['points'][:-1]:
         assert entry['status'] == 'complete' and 'acquisition_started_at' in entry
@@ -151,3 +155,24 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
     for stage in ['initial_reference', 'final_reference']:
         assert (path.parent/stage/'calibration.json').is_file()
         assert (path.parent/stage/'calibration_raw.npz').is_file()
+
+
+def test_delay_plan_balances_all_conditions_without_changing_reset_settings():
+    from collections import Counter
+    p = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--delay-check'],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    plan = json.loads(p.stdout)
+    assert plan['hardware_access'] is False and plan['delay_check'] is True
+    assert plan['benchmark_shots'] == 57600 and plan['reference_shots'] == 16000
+    assert len(plan['points']) == 144
+    expected = {(scheme, prep, delay) for scheme in ['opx_unbounded','none']
+                for prep in ['g','e'] for delay in [20.,100.,500.]}
+    positions = [Counter() for _ in range(12)]
+    for repeat in range(12):
+        es = plan['points'][12*repeat:12*(repeat+1)]
+        assert {e['not_before_offset_s'] for e in es} == {30*repeat}
+        conditions = [(e['reset_scheme'],e['preparation'],e['verification_delay_us']) for e in es]
+        assert set(conditions) == expected
+        for pos, condition in enumerate(conditions):positions[pos][condition] += 1
+    assert all(set(c.values()) == {1} and set(c) == expected for c in positions)

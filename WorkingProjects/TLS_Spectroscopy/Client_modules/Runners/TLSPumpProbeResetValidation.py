@@ -12,6 +12,11 @@ No-feedback and active arms have different elapsed times and measurement counts.
 Verification fractions are uncorrected classifier observables, not reset fidelity.
 This operational check does not validate the full pump-probe sequence or change
 production defaults. Rejected starting calibration stops before feedback runs.
+
+--delay-check repeats the same benchmark at verification delays 20, 100, and
+500 us. Only the delay before the final verification readout changes; the reset
+decision timing, calibration profile, and thresholds remain fixed. This tests
+starting-state dependence versus elapsed time, not a TLS or reset lifetime fit.
 """
 
 import argparse
@@ -31,16 +36,20 @@ PROFILE = 'official_guard20'
 SHOTS = 400
 
 
-def plan():
-    conditions = [('opx_unbounded', 'g'), ('opx_unbounded', 'e'), ('none', 'g'), ('none', 'e')]
+def plan(*, delay_check=False):
+    delays = [20., 100., 500.] if delay_check else [20.]
+    conditions = [(scheme, prep, delay) for delay in delays
+                  for scheme, prep in [('opx_unbounded', 'g'), ('opx_unbounded', 'e'), ('none', 'g'), ('none', 'e')]]
     points = []
     for repeat in range(12):
-        order = conditions[repeat % 4:] + conditions[:repeat % 4]
-        for scheme, preparation in order:
+        offset = repeat % len(conditions)
+        order = conditions[offset:] + conditions[:offset]
+        for scheme, preparation, delay in order:
             points.append(dict(name=f'point_{len(points):04d}', repeat=repeat,
                                reset_scheme=scheme, preparation=preparation,
+                               verification_delay_us=delay,
                                not_before_offset_s=repeat * 30.))
-    return dict(hardware_access=False, profile=PROFILE, shots_per_block=SHOTS,
+    return dict(hardware_access=False, profile=PROFILE, delay_check=bool(delay_check), shots_per_block=SHOTS,
                 benchmark_shots=len(points) * SHOTS, reference_shots=2 * 4 * reference.SHOTS,
                 points=points, note=__doc__)
 
@@ -81,7 +90,8 @@ def save_and_summarize(path, records, bundle):
     return result
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=False):
+    run_plan = plan(delay_check=delay_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -100,14 +110,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         five.install_scan_calibration(tls)
         frequency = next(float(tls.BaseConfig[k]) for k in ('reset_pi_freq', 'qubit_pi_freq', 'qubit_freq') if tls.BaseConfig.get(k) is not None)
         cal_cfg = reference.profile_config(build_calibration_config(tls.BaseConfig, frequency), PROFILE)
-        session_id = 'q3_pump_probe_reset_validation_' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
+        prefix = 'q3_pump_probe_reset_delay_check_' if delay_check else 'q3_pump_probe_reset_validation_'
+        session_id = prefix + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
         folder = data_root / 'q3' / session_id
         folder.mkdir(parents=True, exist_ok=False)
         path = folder / 'manifest.json'
         manifest = dict(schema='q3.pump-probe-reset-validation.v1', session_id=session_id,
                         created_at=datetime.now(timezone.utc).isoformat(), status='calibrating',
-                        code_commit=os.environ['Q3_CODE_COMMIT'], parameters=plan(),
-                        points=[dict(p, status='pending') for p in plan()['points']])
+                        code_commit=os.environ['Q3_CODE_COMMIT'], parameters=run_plan,
+                        points=[dict(p, status='pending') for p in run_plan['points']])
         # Final references are part of collection, so complete means they were saved too.
         manifest['points'].append(dict(name='final_reference', kind='reference', status='pending'))
         protocol.checkpoint(path, manifest)
@@ -143,7 +154,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 reference.wait_for_reference_slot(start, entry['not_before_offset_s'])
                 entry['acquisition_started_at'] = datetime.now(timezone.utc).isoformat()
                 entry['acquisition_start_offset_s'] = time.monotonic() - start
-                run_cfg = dict(cfg, opx_reset_scheme=entry['reset_scheme'], prep_excited=entry['preparation'] == 'e')
+                run_cfg = dict(cfg, opx_reset_scheme=entry['reset_scheme'], prep_excited=entry['preparation'] == 'e',
+                               opx_verification_delay_us=entry['verification_delay_us'])
                 program = OPXResetBenchmarkProgram(soccfg, run_cfg, bundle.payload, bundle.loop)
                 try:
                     records = _run_program(soc, program, _block_timeout_s(run_cfg, SHOTS), run_cfg, total_shots=SHOTS)
@@ -158,6 +170,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 if entry['reset_scheme'] == 'opx_unbounded' and result['confirmed_ground_records'] != SHOTS:
                     raise RuntimeError('Active benchmark returned non-ground terminal records; raw data saved')
                 print(f"[reset-validation] {entry['name']} {entry['reset_scheme']} {entry['preparation']} "
+                      f"delay={entry['verification_delay_us']:g} us "
                       f"verification={result['verification_excited_fraction_loop']:.3f} "
                       f"attempts={result['mean_reset_attempts']:.2f}", flush=True)
                 return result
@@ -176,13 +189,15 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--plan', action='store_true')
     mode.add_argument('--run', action='store_true')
+    parser.add_argument('--delay-check', action='store_true',
+                        help='compare verification delays of 20, 100, and 500 us')
     parser.add_argument('--data-root', type=Path, default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json', type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(delay_check=args.delay_check), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json, delay_check=args.delay_check)
     return 0
 
 

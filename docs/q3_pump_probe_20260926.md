@@ -801,3 +801,67 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 
 Normal duration is about six minutes. Output prefix:
 `q3/q3_pump_probe_reset_validation_<UTC>_<id>/`.
+
+## Operational reset result: termination does not erase preparation dependence
+
+Session `q3_pump_probe_reset_validation_20260926T234722Z_791c9c1e`, commit
+`af5cc460`, completed 48 benchmark blocks and both reference sets. All 19,200
+benchmark shots and 16,000 reference shots were independently checked. Saved
+verification fractions, attempt/pi counts, preparation and terminal labels
+agree with raw records; all four reference classifiers refit exactly. The
+runtime classifier equals the initial saved bundle and stays fixed throughout.
+
+Both reference bundles passed. Initial payload/loop training peak scores were
+0.7515/0.7195; final scores were 0.7425/0.7065. Using the original loop classifier
+on held-out initial/final reference shots gives balanced scores 0.7090/0.7165,
+ground false-positive fractions 0.329/0.310, and pi-positive fractions
+0.747/0.743. There is no large endpoint degradation in these metrics; they do
+not exclude intervening drift or a calibration-versus-benchmark context mismatch.
+
+Mean verification fractions labeled excited by the fixed loop classifier:
+
+| Nominal preparation | Active feedback | No feedback |
+| --- | ---: | ---: |
+| No pi (g label) | 0.2346 | 0.2898 |
+| Pi (e label) | 0.3054 | 0.4458 |
+
+Paired active-minus-no-feedback differences are -5.52 percentage points
+[-8.40, -2.64] for g and -14.04 [-18.16, -9.92] for e. Within the active arm,
+e-minus-g remains +7.08 points [2.75, 11.42]. The payload classifier gives the
+same qualitative result (+6.73 [2.45, 11.01]). These are unadjusted 95% t
+intervals across twelve rounds. Active/control durations differ, so the lower
+active signal is not a clean causal estimate of feedback benefit. Fractions
+are not corrected excited populations or reset fidelities; do not invert the
+reference confusion matrix across these different sequence contexts.
+
+All 9600 active shots report `CONFIRMED_GROUND`, with no watchdog failures.
+Mean reset attempts are 1.024 (g) and 2.734 (e); pooled 99th percentiles are
+14 and 18, and maxima 37 and 38. Mean pi counts are 0.732 and 2.338. Zero
+feedback attempts occur in 68.7% of g and 17.7% of e shots. These conditional
+fractions select different shot populations and should not be used to infer
+which pathway causes the residual signal. Operationally, a terminal ground
+decision has not removed dependence on nominal initial preparation in the
+separate verification observable. This supports continuing pump-off checks.
+
+Next: `--delay-check` repeats this same benchmark with verification delays of
+20, 100, and 500 us. Keep reset-loop recovery at 20 us, the reference profile,
+drive/readout settings, and fit/acceptance policies unchanged. Only the wait
+before the additional verification readout changes. Twelve rounds contain all
+twelve reset/preparation/delay combinations; each occupies each ordinal
+position once. There are 144 blocks / 57,600 benchmark shots plus 16,000
+pre/post reference shots. Earliest round starts remain 30 seconds apart; actual
+starts are saved and the typical run remains about six minutes.
+
+Primary comparison: e-minus-g verification contrast within the active arm at
+each delay, and its paired change from 20 us; retain the no-feedback comparisons,
+both classifiers, null result possibilities, and pre/post references. This
+tests whether longer waits reduce the preparation dependence. It does not
+identify its microscopic source, establish absolute reset fidelity, or justify
+a lifetime fit. Longer waits may also erase a desired pump-induced response;
+do not promote them into pump-probe defaults without inspecting the result.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --delay-check
+```
+
+Output prefix: `q3/q3_pump_probe_reset_delay_check_<UTC>_<id>/`.
