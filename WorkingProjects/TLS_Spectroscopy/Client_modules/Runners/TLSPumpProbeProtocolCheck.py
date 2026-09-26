@@ -9,6 +9,14 @@ survival condition. It tests reproducibility/protocol dependence before pumping.
 Run only after the other q3 acquisition has stopped. All arms retain the
 2-us reference, 40-us return, native correction, and park readout. Each result
 is checkpointed, including IQ centroids; any acquisition error stops the series.
+
+Use --history-check for the follow-up after the A-B-A result: compare both
+protocols at 10 and 500 us of park idle after payload readout AND feedback reset.
+The eight arms repeat the four combinations in reverse order, using one shared
+calibration. The 40-us pre-readout return stays fixed. This tests dependence on
+measurement history/duty cycle; it cannot by itself identify flux memory versus
+bath dynamics, and the longer post-reset idle can change preparation fidelity.
+Use the saved P0/P1 and IQ references to assess that change.
 """
 
 import argparse
@@ -23,12 +31,33 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def arms():
+def arms(*, history_check=False):
+    if history_check:
+        combinations = [
+            ("A", [25.0, 60.0, 100.0], 10.0),
+            ("B", [4.0, 8.0, 25.0], 10.0),
+            ("A", [25.0, 60.0, 100.0], 500.0),
+            ("B", [4.0, 8.0, 25.0], 500.0),
+        ]
+        return [
+            {"name": f"{i + 1:02d}_{name}_idle{idle:g}us",
+             "delays_us": list(delays), "inter_shot_delay_us": idle}
+            for i, (name, delays, idle) in enumerate(
+                combinations + list(reversed(combinations)))
+        ]
     return [
         {"name": "A_before", "delays_us": [25.0, 60.0, 100.0]},
         {"name": "B_short", "delays_us": [4.0, 8.0, 25.0]},
         {"name": "A_after", "delays_us": [25.0, 60.0, 100.0]},
     ]
+
+
+def arm_config(base, entry):
+    """Apply park-idle timing after reset calibration defaults, per arm."""
+    cfg = dict(base)
+    if "inter_shot_delay_us" in entry:
+        cfg["opx_inter_shot_delay_us"] = float(entry["inter_shot_delay_us"])
+    return cfg
 
 
 def parameters():
@@ -63,7 +92,7 @@ def collect_arms(manifest, path, acquire):
     checkpoint(path, manifest)
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, history_check=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -87,19 +116,21 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         frequencies = _target_frequency_grid_ghz(p)
         dc_vec, realized = _integer_dc_grid(p, frequencies)
         compensation = tls._load_correction(str(correction), str(data_root))
-        session_id = "q3_pump_probe_protocol_check_" + datetime.now(timezone.utc).strftime(
+        kind = "history" if history_check else "protocol"
+        session_id = f"q3_pump_probe_{kind}_check_" + datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
         session_dir = data_root / "q3" / session_id
         session_dir.mkdir(parents=True, exist_ok=False)
         manifest_path = session_dir / "manifest.json"
         manifest = {
             "schema": "q3.pump-probe-protocol-check.v1", "session_id": session_id,
+            "history_check": history_check,
             "status": "calibrating", "created_at": datetime.now(timezone.utc).isoformat(),
             "code_commit": os.environ["Q3_CODE_COMMIT"],
             "correction_json": str(correction), "correction_sha256": localizer.CORRECTION_SHA256,
             "parameters": p, "target_frequency_ghz": frequencies.tolist(),
             "realized_frequency_ghz": realized.tolist(), "dc_vec": dc_vec.tolist(),
-            "arms": [dict(arm, status="pending") for arm in arms()],
+            "arms": [dict(arm, status="pending") for arm in arms(history_check=history_check)],
         }
         checkpoint(manifest_path, manifest)
         print(f"[protocol-check] manifest={manifest_path}", flush=True)
@@ -130,11 +161,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             checkpoint(manifest_path, manifest)
 
             def acquire(entry):
-                print(f"[protocol-check] {entry['name']} delays={entry['delays_us']} us", flush=True)
+                cfg = arm_config(base, entry)
+                entry["inter_shot_delay_us"] = float(cfg["opx_inter_shot_delay_us"])
+                checkpoint(manifest_path, manifest)
+                print(f"[protocol-check] {entry['name']} delays={entry['delays_us']} us; "
+                      f"post-reset park idle={entry['inter_shot_delay_us']:g} us", flush=True)
                 exp = T15PointVsFlux(
                     soc=soc, soccfg=soccfg, path="q3", outerFolder=str(data_root),
                     suffix=f"TLS_PumpProbe_ProtocolCheck_{session_id}_{entry['name']}",
-                    cfg=dict(base), dc_vec=dc_vec, decay_delays_us=entry["delays_us"],
+                    cfg=cfg, dc_vec=dc_vec, decay_delays_us=entry["delays_us"],
                     reference_hold_us=2.0, shots=p["shots_per_condition"], calib_params=None,
                     park_voltage=base["ff_park_gain"], min_ref_contrast=0.05,
                     max_relative_error=0.5, max_fit_t1_us=3000.0,
@@ -166,6 +201,8 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--history-check", action="store_true",
+                        help="compare A/B at 10/500 us post-reset park idle in eight arms")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
@@ -177,10 +214,13 @@ def main(argv=None):
             "frequency_range_ghz": [p["freq_min_ghz"], p["freq_max_ghz"]],
             "shots_per_condition": p["shots_per_condition"], "reset_calibrations": 1,
             "reference_hold_us": 2.0, "return_us": 40.0,
-            "programs_per_arm": 1, "arms": arms(),
+            "programs_per_arm": 1, "history_check": args.history_check,
+            "idle_location": "after payload readout and feedback reset, at park",
+            "arms": arms(history_check=args.history_check),
         }, indent=2))
     else:
-        print(run(data_root=args.data_root, correction_json=args.correction_json))
+        print(run(data_root=args.data_root, correction_json=args.correction_json,
+                  history_check=args.history_check))
     return 0
 
 

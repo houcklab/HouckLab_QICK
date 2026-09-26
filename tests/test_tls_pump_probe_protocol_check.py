@@ -64,3 +64,35 @@ def test_successful_execution_saves_distinct_outputs_in_planned_order(tmp_path):
     assert saved["status"] == "complete"
     assert len({a["full_csv"] for a in saved["arms"]}) == 3
     assert all(a["status"] == "complete" for a in saved["arms"])
+
+
+def test_history_plan_brackets_both_protocols_and_pauses_without_hardware():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan", "--history-check"],
+                            cwd=Path(__file__).resolve().parents[1],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False
+    assert plan["reset_calibrations"] == 1
+    assert plan["return_us"] == 40.0
+    entries = plan["arms"]
+    assert len(entries) == len({a["name"] for a in entries}) == 8
+    conditions = [(a["delays_us"], a["inter_shot_delay_us"]) for a in entries]
+    assert conditions[:4] == [
+        ([25.0, 60.0, 100.0], 10.0), ([4.0, 8.0, 25.0], 10.0),
+        ([25.0, 60.0, 100.0], 500.0), ([4.0, 8.0, 25.0], 500.0),
+    ]
+    assert conditions[4:] == conditions[:4][::-1]
+
+
+def test_arm_pause_override_preserves_readout_timing_and_shared_base():
+    module = check()
+    base = {"opx_inter_shot_delay_us": 10.0, "readout_thermalization_us": 10.0,
+            "flux_predistortion_recovery_us": 40.0, "opx_read_delay_us": 10.0,
+            "opx_reset_calibration": {"test_calibration": True}}
+    paused = module.arm_config(base, {"inter_shot_delay_us": 500.0})
+    assert paused["opx_inter_shot_delay_us"] == 500.0
+    assert base["opx_inter_shot_delay_us"] == 10.0
+    assert {k: v for k, v in paused.items() if k != "opx_inter_shot_delay_us"} == {
+        k: v for k, v in base.items() if k != "opx_inter_shot_delay_us"}
+    assert module.arm_config(base, {}) == base
