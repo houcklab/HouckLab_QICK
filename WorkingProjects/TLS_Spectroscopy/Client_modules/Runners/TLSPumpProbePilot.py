@@ -2,12 +2,12 @@
 
 Run on the measurement PC after stopping other acquisitions. This tests a
 per-shot pump response, NOT persistent TLS displacement. All controls use the
-same flux excursions; only the pump microwave gain/frequency changes. Pump and
+same flux excursions; pump gain/frequency and an optional park wait vary. Pump and
 probe visit the same DAC target. The nominal resonant tone uses the frozen flux
 model, so it is not an independent calibration of the actual TLS frequency.
 
 The 500-us park idle is after the probe readout; a native reset precedes the
-next pump and another follows the pump. Additional recovery is zero, but actual
+next pump and another follows the pump. Additional recovery defaults to zero; actual
 pump-to-probe latency includes the 40-us flux return, readout, variable feedback
 reset and a timing guard after the final reset readout (20 us for this config,
 including the 10-us feedback wait). Only probe IQ is recorded; total reset
@@ -29,6 +29,13 @@ a drift/noise check. All three blocks share comparison_id and test_condition.
 --dose-check holds the probe at 4.110 GHz and tests +8/-20 MHz pumps at gains
 1500/3000, plus the zero-gain null, with twelve repeats of 400 shots. Each test
 is locally bracketed as above. Pump duration stays 15 us; no gain exceeds 3000.
+
+--recovery-check holds the probe at 4.110 GHz and tests +8/-20 MHz at gain 3000
+and a zero-gain null. Additional park waits of 0/100/500 us follow the post-pump
+reset and its guard, before probe preparation. Eight repeats of 400 shots retain
+both preparations and both probe holds. This tests sequence memory, not a direct
+TLS lifetime: reset latency is unmeasured and the extra wait can change the qubit
+state at park. Each test and its local shams use the same additional wait.
 """
 
 import argparse
@@ -46,8 +53,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters(*, frequency_check=False, confirmation_check=False, dose_check=False):
-    if sum((frequency_check, confirmation_check, dose_check)) > 1:
+def parameters(*, frequency_check=False, confirmation_check=False, dose_check=False,
+               recovery_check=False):
+    if sum((frequency_check, confirmation_check, dose_check, recovery_check)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage.")
     p = {
         "target_frequency_ghz": [4.094, 4.098, 4.100, 4.102, 4.104, 4.106, 4.110],
@@ -81,6 +89,13 @@ def parameters(*, frequency_check=False, confirmation_check=False, dose_check=Fa
             "pump_detunings_mhz": [8.0, -20.0], "pump_gains": [1500, 3000],
             "bracket_each": True,
         })
+    if recovery_check:
+        p.update({
+            "target_frequency_ghz": [4.110],
+            "shots": 400, "repeats": 8, "order_seed": 20260930,
+            "pump_detunings_mhz": [8.0, -20.0], "bracket_each": True,
+            "additional_recovery_values_us": [0.0, 100.0, 500.0],
+        })
     return p
 
 
@@ -97,9 +112,11 @@ def schedule(p):
         rng.shuffle(targets)
         for target in targets:
             # Keep each state/hold's microwave controls adjacent in time.
-            probes = [(state, hold) for state in ("g", "e") for hold in p["probe_holds_us"]]
+            recoveries = p.get("additional_recovery_values_us", [p["additional_recovery_us"]])
+            probes = [(state, hold, recovery) for state in ("g", "e")
+                      for hold in p["probe_holds_us"] for recovery in recoveries]
             rng.shuffle(probes)
-            for state, hold in probes:
+            for state, hold, recovery in probes:
                 if p["bracket_each"]:
                     gains = p.get("pump_gains", [p["pump_gain"]])
                     tests = [(mode, d, f"{mode}_gain{gain}" if len(gains) > 1 else mode, gain)
@@ -126,6 +143,7 @@ def schedule(p):
                         "pump_detuning_mhz": detuning, "probe_state": state,
                         "pump_gain": gain,
                         "probe_us": float(hold),
+                        "additional_recovery_us": float(recovery),
                         "control_position": position,
                         "test_condition": condition,
                         "comparison_id": f"comparison_{len(points) // 3:04d}" if p["bracket_each"] else "",
@@ -134,12 +152,13 @@ def schedule(p):
 
 
 def drive_settings(entry, p):
-    """Map physical gain to the acquisition API's positive nominal-gain contract."""
+    """Map each block's gain and park wait to the acquisition API."""
     sham = entry["pump_mode"] == "sham"
     # no_pump sets the waveform gain to zero inside the backend; its nominal
     # gain argument must still be positive, including for the zero-drive null.
     return {"arm": "no_pump" if sham else "pump",
-            "pump_gain": p["pump_gain"] if sham else entry["pump_gain"]}
+            "pump_gain": p["pump_gain"] if sham else entry["pump_gain"],
+            "recovery_us": entry.get("additional_recovery_us", p["additional_recovery_us"])}
 
 
 def collect_points(manifest, path, acquire):
@@ -169,9 +188,9 @@ def json_default(value):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=False,
-        confirmation_check=False, dose_check=False):
+        confirmation_check=False, dose_check=False, recovery_check=False):
     p = parameters(frequency_check=frequency_check, confirmation_check=confirmation_check,
-                   dose_check=dose_check)
+                   dose_check=dose_check, recovery_check=recovery_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -195,7 +214,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
         indices = [int(np.argmin(abs(full_grid - f))) for f in p["target_frequency_ghz"]]
         dc_vec, realized = all_dc[indices], all_realized[indices]
         compensation = tls._load_correction(str(correction), str(data_root))
-        kind = ("dose_check" if dose_check else "confirmation_check" if confirmation_check
+        kind = ("recovery_check" if recovery_check else "dose_check" if dose_check
+                else "confirmation_check" if confirmation_check
                 else "frequency_check" if frequency_check else "pilot")
         session_id = f"q3_pump_probe_{kind}_" + datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
@@ -207,6 +227,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
             "frequency_check": frequency_check,
             "confirmation_check": confirmation_check,
             "dose_check": dose_check,
+            "recovery_check": recovery_check,
             "status": "calibrating", "code_commit": os.environ["Q3_CODE_COMMIT"],
             "created_at": datetime.now(timezone.utc).isoformat(), "parameters": p,
             "correction_json": str(correction), "correction_sha256": localizer.CORRECTION_SHA256,
@@ -253,7 +274,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                         pump_frequency_mhz=pump_freq,
                         pump_us=p["pump_us"], probe_us=entry["probe_us"],
                         **drive_settings(entry, p),
-                        recovery_us=p["additional_recovery_us"], shots=p["shots"],
+                        shots=p["shots"],
                     )
                     raw_path = folder / f"{entry['name']}.npz"
                     # Save even an incomplete returned block before rejecting it.
@@ -273,6 +294,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                     }
                     row = {k: entry[k] for k in ("name", "repeat", "target_index", "pump_mode",
                                                 "pump_detuning_mhz", "probe_state", "probe_us",
+                                                "additional_recovery_us",
                                                 "control_position", "test_condition", "comparison_id", "started_at")}
                     row.update(result)
                     if writer is None:
@@ -284,6 +306,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                     print(f"[pump-probe] {entry['name']} {result['target_frequency_ghz']:.3f} GHz "
                           f"{entry['pump_mode']} gain={result['effective_pump_gain']} "
                           f"{entry['probe_state']} {entry['probe_us']:g} us "
+                          f"extra_wait={entry['additional_recovery_us']:g} us "
                           f"P={result['P_excited']:.3f}", flush=True)
                     return result
 
@@ -308,12 +331,14 @@ def main(argv=None):
                        help="bracket each candidate tone and a zero-gain null test")
     stage.add_argument("--dose-check", action="store_true",
                        help="test gains 1500/3000 at +8/-20 MHz with local shams and a null")
+    stage.add_argument("--recovery-check", action="store_true",
+                       help="test additional post-reset park waits of 0/100/500 us")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
         p = parameters(frequency_check=args.frequency_check, confirmation_check=args.confirmation_check,
-                       dose_check=args.dose_check)
+                       dose_check=args.dose_check, recovery_check=args.recovery_check)
         print(json.dumps({"hardware_access": False, "parameters": p,
                           "acquisition_blocks": len(schedule(p)), "reset_calibrations": 1,
                           "pump_modes": sorted({e["pump_mode"] for e in schedule(p)}),
@@ -321,7 +346,7 @@ def main(argv=None):
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             frequency_check=args.frequency_check, confirmation_check=args.confirmation_check,
-            dose_check=args.dose_check)
+            dose_check=args.dose_check, recovery_check=args.recovery_check)
     return 0
 
 

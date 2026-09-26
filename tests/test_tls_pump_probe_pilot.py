@@ -129,7 +129,8 @@ def test_hard_step_pump_tone_does_not_include_legacy_ramp_time():
     assert pulses[-1]["length"] == 19.5
 
 
-def test_native_pilot_resets_on_both_sides_of_pump_before_recording_probe(monkeypatch):
+@pytest.mark.parametrize("recovery_us", [0, 100, 500])
+def test_native_pilot_resets_on_both_sides_of_pump_before_recording_probe(monkeypatch, recovery_us):
     module = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")
     prog = object.__new__(module.OPXResetTLSSaturationProgram)
     prog.cfg = {"qubit_ch": 1, "opx_saturation_reset_before_pump": True}
@@ -137,7 +138,7 @@ def test_native_pilot_resets_on_both_sides_of_pump_before_recording_probe(monkey
     prog.payload_calibration, prog.loop_calibration = "payload_cal", "loop_cal"
     prog.reset_config = SimpleNamespace(inter_shot_delay_us=500, read_delay_us=10,
                                         loop_recovery_us=10, feedback_syncdelay_us=8)
-    prog._saturation_recovery_us, prog._saturation_probe_us = 0, 10
+    prog._saturation_recovery_us, prog._saturation_probe_us = recovery_us, 10
     events = []
     prog._shot_park_callbacks = lambda: (lambda: events.append("park_up"), lambda: events.append("park_down"))
     prog._emit_saturation_pump = lambda: events.append("pump")
@@ -158,7 +159,7 @@ def test_native_pilot_resets_on_both_sides_of_pump_before_recording_probe(monkey
     assert events == ["park_up", "reset_pulse_setup", ("measure", "payload_cal", "payload"),
                       ("reset", "OPX_TLS_SATURATION_PRE_RESET"), ("wait", 20), "pump", "reset_pulse_setup",
                       ("measure", "payload_cal", "payload"), ("reset", "OPX_TLS_SATURATION_RESET"),
-                      ("wait", 20), ("wait", 0), "probe_prepare", ("probe", 10),
+                      ("wait", 20), ("wait", recovery_us), "probe_prepare", ("probe", 10),
                       ("measure", "payload_cal", "payload"), "record", "record", "park_down", ("wait", 500)]
 
 
@@ -327,3 +328,65 @@ def test_scheduled_drive_settings_pass_real_backend_validation_for_pump_and_sham
                 pump_frequency_mhz=4118., pump_us=15., probe_us=2., shots=400,
                 **settings)
         assert reached[-1] == expected
+
+
+def test_recovery_scan_matches_delay_within_every_local_control_triplet():
+    module = pilot()
+    points = module.schedule(module.parameters(recovery_check=True))
+    assert len(points) == 864
+    from collections import Counter
+    centers = []
+    for start in range(0, len(points), 3):
+        before, test, after = points[start:start + 3]
+        assert [e['control_position'] for e in (before, test, after)] == ['before', 'test', 'after']
+        assert before['pump_gain'] == after['pump_gain'] == 0
+        assert len({(e['comparison_id'], e['repeat'], e['target_index'], e['probe_state'],
+                     e['probe_us'], e['additional_recovery_us'], e['test_condition'], e['pump_detuning_mhz'])
+                    for e in (before, test, after)}) == 1
+        assert test['pump_gain'] == (0 if test['test_condition'] == 'null' else 3000)
+        centers.append(test)
+    assert Counter((e['additional_recovery_us'], e['test_condition']) for e in centers) == {
+        (delay, condition): 32 for delay in [0., 100., 500.] for condition in ['plus8', 'minus20', 'null']}
+    assert len({(e['repeat'], e['probe_state'], e['probe_us'], e['additional_recovery_us'],
+                 e['test_condition']) for e in centers}) == 288
+    assert len({e['comparison_id'] for e in centers}) == 288
+    for kwargs in [{}, {'frequency_check': True}, {'confirmation_check': True}, {'dose_check': True}]:
+        assert all(e['additional_recovery_us'] == 0 for e in module.schedule(module.parameters(**kwargs)))
+
+
+def test_recovery_plan_and_exclusive_stages():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--recovery-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan['hardware_access'] is False and plan['acquisition_blocks'] == 864
+    assert plan['parameters']['additional_recovery_values_us'] == [0., 100., 500.]
+    assert plan['parameters']['target_frequency_ghz'] == [4.110]
+    for other in ['--frequency-check', '--confirmation-check', '--dose-check']:
+        result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--recovery-check', other],
+                                text=True, capture_output=True)
+        assert result.returncode != 0
+    with pytest.raises(ValueError):
+        pilot().parameters(recovery_check=True, dose_check=True)
+
+
+@pytest.mark.parametrize('delay', [0., 100., 500.])
+def test_scheduled_recovery_reaches_backend_configuration(monkeypatch, delay):
+    module = pilot()
+    integration = importlib.import_module(f'{PREFIX}.active_reset_OPX.integration')
+    p = module.parameters(recovery_check=True)
+    captured = []
+    class ProgramBoundaryReached(Exception):
+        pass
+    def stop_before_hardware(soccfg, cfg, payload, loop):
+        captured.append(cfg['opx_saturation_recovery_us'])
+        raise ProgramBoundaryReached
+    monkeypatch.setattr(integration, 'OPXResetTLSSaturationProgram', stop_before_hardware)
+    for mode, gain in [('plus8', 3000), ('sham', 0)]:
+        entry = {'pump_mode': mode, 'pump_gain': gain, 'additional_recovery_us': delay}
+        with pytest.raises(ProgramBoundaryReached):
+            integration.acquire_tls_saturation_iq(
+                None, None, {'reset_mode': 'passive'}, ff_gain=-16151,
+                pump_frequency_mhz=4118., pump_us=15., probe_us=2., shots=400,
+                **module.drive_settings(entry, p))
+        assert captured[-1] == delay

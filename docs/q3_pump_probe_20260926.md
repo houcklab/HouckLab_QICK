@@ -267,3 +267,65 @@ settings remain fixed, and no pump gain exceeds the already tested 3000.
 Outputs use `q3/q3_pump_probe_dose_check_<UTC>_<id>/`. Look for repeatable
 amplitude dependence at +8 MHz relative to both null and −20 MHz, and inspect
 short-reference and hold-dependent changes before assigning a relaxation model.
+
+## Amplitude results and added park-wait scan
+
+Session `q3_pump_probe_dose_check_20260926T213400Z_b5d62447` completed all
+720 blocks (288,000 shots) at commit `3811248`, from 21:34:10 to 21:40:56 UTC.
+CSV counts/populations match the manifest; all blocks report 400 records.
+Effective gain counts are 528 zero, 96 at 1500, and 96 at 3000. Median sham
+separation is 1.14 seconds and median absolute before/after change is 0.035.
+The same start-time interpolation and repeat-paired analysis as above was used.
+
+At 4.110 GHz, ground preparation and 2-us hold:
+
+| Test | Mean test minus local sham |
+| --- | ---: |
+| +8 MHz, gain 1500 | +0.0190 |
+| +8 MHz, gain 3000 | +0.0510 |
+| −20 MHz, gain 1500 | −0.0163 |
+| −20 MHz, gain 3000 | −0.0182 |
+| Zero-gain null | +0.0192 |
+
+The +8-MHz gain-3000 contrast repeats the preceding run's +0.0504 average,
+although only 10/12 local contrasts are positive in this run. Relative to the
+same-gain −20-MHz control it is +0.0692, with unadjusted repeat-based 95% t
+interval [+0.0271, +0.1112]. Relative to the null it is +0.0317 with interval
+[−0.0148, +0.0782]. The gain-3000 minus gain-1500 contrast at +8 MHz is
++0.0320 with interval [−0.0143, +0.0783]. Thus the higher mean at larger gain
+is suggestive but does not establish amplitude dependence. The corresponding
+frequency-by-amplitude interaction also includes zero: +0.0339, interval
+[−0.0223, +0.0900]. These intervals assume independent repeat contrasts and
+are not adjusted for multiple comparisons.
+
+All 36 raw IQ files for the +8-MHz gain-3000 ground/2-us triplets reproduce the
+saved counts. Their mean unthresholded IQ-axis contrast is also positive.
+Excited-prepared 10-us changes are similar for +8 and −20 MHz; there is still
+no selective relaxation improvement established. Neither this experiment nor
+the preceding ones establish TLS suppression or a calibrated excitation rate.
+
+The next stage asks whether the pump-dependent contrast changes with an added
+wait at park, using the existing backend's recovery interval:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --recovery-check
+```
+
+At 4.110 GHz, use +8 and −20 MHz at gain 3000, plus the zero-gain null.
+Randomize ground/excited preparation, 2/10-us hold, and additional park waits
+of 0, 100, or 500 us within each repeat. Each test retains its own matched
+sham-before/test/sham-after triplet, including the same additional wait. Eight
+repeats of 400 shots produce 864 blocks (192 driven, 672 zero), 345,600 shots.
+The 15-us pump, native flux correction/return, reset settings and final 500-us
+idle remain fixed. `additional_recovery_us` is saved per point and in the CSV;
+the acquisition API receives it as `recovery_us`. Outputs use
+`q3/q3_pump_probe_recovery_check_<UTC>_<id>/`.
+
+The additional wait occurs **after the post-pump reset and its reference-time
+guard, before probe preparation**. Zero remains a nonzero total pump-to-probe
+latency because the return, readout and variable reset intervene. Longer waits
+also permit qubit-state evolution at park and lengthen the shot period; no
+extra reset follows this added interval. Accordingly this is a controlled
+sequence-memory test, not a direct TLS lifetime measurement. Compare pump,
+detuned and null contrasts separately at each wait and inspect both short
+references and hold dependence before fitting any decay model.
