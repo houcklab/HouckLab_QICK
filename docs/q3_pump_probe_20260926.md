@@ -569,3 +569,47 @@ The planned run remains 864 measurement blocks, comparing target and park
 probes after identical target pumping. If fresh calibration fails again,
 inspect that failure rather than weakening the acceptance policy or repeatedly
 retrying until a marginal calibration passes.
+
+## Completed location comparison
+
+Session `q3_pump_probe_location_check_20260926T224556Z_2aba0564`, commit
+`ed0ba6a`, completed all 864 blocks / 345,600 shots from 22:46:01 to
+22:55:17 UTC. Payload and loop peak calibration fitting scores were 0.7110
+and 0.7290; loop held-out ground acceptance was 0.559. These scores do not
+measure reset fidelity. The payload classifier's held-out false-positive
+fraction was 0.192, so classified excited fractions are not corrected physical
+populations.
+
+For each triplet, subtract a time-interpolated before/after sham. The following
+are ground-prepared +8-MHz responses, in percentage points; intervals are
+unadjusted 95% Student-t intervals across twelve repeats:
+
+| Hold | Target response | Park response | Target minus park |
+| --- | --- | --- | --- |
+| 0.1 us | +0.97 [-3.22, +5.15] | +2.12 [-3.31, +7.56] | -1.16 [-8.12, +5.81] |
+| 10 us | +3.01 [-0.67, +6.70] | +3.81 [-0.27, +7.89] | -0.80 [-7.60, +6.00] |
+
+All location interactions after additionally subtracting the null or -20-MHz
+control include zero, for both preparations and both holds. No target-specific
+response or equivalence between locations is established. At park, the g/10-us
++8-minus-null contrast is +5.72 points [0.14, 11.30]; the g/0.1-us
++8-minus-minus20 contrast is +8.44 [2.45, 14.42]. These are exploratory,
+unadjusted comparisons among multiple endpoints. The latter includes a negative
+-20-MHz response, not a resolved positive +8-MHz response alone. Neither
+establishes TLS excitation, cooling, or improved lifetime.
+
+Median absolute before/after sham change is 3.375 points (maximum 24 points),
+over a median 1.244-second triplet span. Repeat scatter substantially limits
+precision. All 864 manifest/summary rows, shot counts, probe DAC labels and
+effective pump gains agree. Raw IQ reclassification reproduces 144 blocks
+(57,600 shots): g/10-us, both locations, +8 and null triplets. Discarding the
+first 50 or 200 shots retains a similar park contrast but widens its interval
+to include zero; this sensitivity check is not a replacement primary analysis.
+
+Next: one independent repeat of the unchanged `--location-check` experiment,
+with a new production calibration and the same quality guards. Retain this
+first run regardless of the repeat outcome. Assess repeatability of the
+predefined location contrasts and null controls across both sessions; do not
+select whichever hold, control, or session happens to look significant. If
+large fluctuations persist without a reproducible contrast, prioritize
+readout/reset stability diagnostics over further pump-parameter scans.
