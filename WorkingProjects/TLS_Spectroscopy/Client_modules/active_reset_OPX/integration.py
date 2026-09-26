@@ -734,6 +734,7 @@ def acquire_tls_saturation_iq(
         "resident_stream": True,
         "order": "shot_arm",
         "read_length_cycles": int(read_cycles),
+        "reset_reference_guard_us": float(program._saturation_reset_guard_us),
         **flux_predistortion_telemetry(program),
     }
 

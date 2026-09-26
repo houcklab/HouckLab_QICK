@@ -1306,7 +1306,7 @@ class OPXResetBenchmarkProgram(QickProgram):
 
 
 class OPXResetT1Program(OPXResetBenchmarkProgram):
-    def _set_payload_pulse(self):
+    def _set_payload_pulse(self, *, gain=None):
         cfg = self.cfg
         spectroscopy_freq = cfg.get("opx_t1_post_return_spec_freq_mhz")
         if spectroscopy_freq is not None:
@@ -1315,7 +1315,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
                 style="const",
                 freq=self.freq2reg(float(spectroscopy_freq), gen_ch=cfg["qubit_ch"]),
                 phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
-                gain=int(cfg["opx_t1_post_return_spec_gain"]),
+                gain=int(cfg["opx_t1_post_return_spec_gain"] if gain is None else gain),
                 length=self.us2cycles(
                     float(cfg["opx_t1_post_return_spec_length_us"]),
                     gen_ch=cfg["qubit_ch"],
@@ -1330,7 +1330,7 @@ class OPXResetT1Program(OPXResetBenchmarkProgram):
             style="arb",
             freq=self.freq2reg(float(frequency), gen_ch=cfg["qubit_ch"]),
             phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
-            gain=int(cfg["qubit_pi_gain"]),
+            gain=int(cfg["qubit_pi_gain"] if gain is None else gain),
             waveform="qubit",
         )
 
@@ -3186,6 +3186,10 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
         arm = str(run_cfg.get("opx_saturation_arm", "")).strip().lower()
         if arm not in ("pump", "no_pump"):
             raise ValueError("opx_saturation_arm must be 'pump' or 'no_pump'")
+        probe_state = str(run_cfg.get("opx_saturation_probe_state", "e")).strip().lower()
+        if probe_state not in ("g", "e"):
+            raise ValueError("opx_saturation_probe_state must be 'g' or 'e'")
+        run_cfg["opx_saturation_probe_state"] = probe_state
         for key in ("opx_saturation_pump_us", "opx_saturation_probe_us"):
             value = float(run_cfg.get(key, 0.0))
             if not np.isfinite(value) or value <= 0.0:
@@ -3233,7 +3237,8 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
         # duration is available at the target, rather than being consumed by
         # the target-arrival prefix.
         duration += float(getattr(self, "_t1_ff_settle_us", 0.0))
-        duration += float(self.cfg.get("ff_ramp_length", 0.0))
+        if not getattr(getattr(self, "reset_config", None), "hard_flux_steps", False):
+            duration += float(self.cfg.get("ff_ramp_length", 0.0))
         gain = (
             int(gain_value) if arm == "pump" else 0
         )
@@ -3254,13 +3259,7 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
         self.pulse(ch=self.cfg["qubit_ch"])
         self._wait_t1_payload(self._saturation_pump_us)
 
-    def _emit_body(self):
-        park_up, park_down = self._shot_park_callbacks()
-        park_up()
-        self._emit_saturation_pump()
-
-        # The pump may leave the qubit excited.  Reset it at park with the
-        # same native, unbounded reset used by the production T1 programs.
+    def _reset_saturation_qubit(self, label):
         self._set_reset_pulse()
         self._measure_project(self.payload_calibration, "payload")
         emit_unbounded_reset_state_machine(
@@ -3273,14 +3272,40 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
                 self.loop_calibration, "loop"
             ),
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
-            label_prefix="OPX_TLS_SATURATION_RESET",
+            label_prefix=label,
             wait_reset_ringdown=self._wait_reset_ringdown,
         )
+        # wait_all(read_delay) advances the processor, not its pulse reference.
+        # Rebase after the final readout on EVERY reset exit, leaving 10 us of
+        # instruction headroom beyond the accumulator wait. sync_all(0) alone
+        # would still put the next automatic pulse in the processor's past.
+        self._saturation_reset_guard_us = max(
+            float(self.reset_config.read_delay_us) + 10.0,
+            float(self.reset_config.loop_recovery_us),
+            float(self.reset_config.feedback_syncdelay_us),
+        )
+        self.sync_all(self.us2cycles(self._saturation_reset_guard_us))
+
+    def _prepare_saturation_probe(self):
+        # A zero-gain pulse consumes the same generator time as the park pi.
+        self._set_payload_pulse(
+            gain=0 if self.cfg.get("opx_saturation_probe_state", "e") == "g" else None)
+        _pulse_pi_and_align(self)
+
+    def _emit_body(self):
+        park_up, park_down = self._shot_park_callbacks()
+        park_up()
+        if bool(self.cfg.get("opx_saturation_reset_before_pump", False)):
+            self._reset_saturation_qubit("OPX_TLS_SATURATION_PRE_RESET")
+        self._emit_saturation_pump()
+
+        # Remove qubit excitation after pumping, before preparing either probe.
+        self._reset_saturation_qubit("OPX_TLS_SATURATION_RESET")
         self.sync_all(self.us2cycles(self._saturation_recovery_us))
 
         # The probe begins from a reset park state and is the only payload
         # measurement written to DMem.
-        self._prepare_excited()
+        self._prepare_saturation_probe()
         self._wait_t1_payload(self._saturation_probe_us)
         self._measure_project(self.payload_calibration, "payload")
         self.memw(self.reset_page, self.reset_regs["i"], self.reset_regs["address"])
