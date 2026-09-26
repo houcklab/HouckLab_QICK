@@ -530,3 +530,42 @@ run, and no fitted calibration is installed automatically. Output prefix:
 Compare repeated profiles, raw distributions, and both contexts before choosing
 a repair. Even improved scores under official timing would not alone establish
 root cause or validate equivalence to the full active acquisition sequence.
+
+## Reset timing diagnostic result and location retry
+
+Session `q3_pump_probe_reset_check_20260926T223505Z_7adae581`, commit
+`0b27e6d`, completed all six profiles between 22:35:05 and 22:35:28 UTC.
+All 48,000 reference shots were saved. Offline refitting of both contexts in
+every profile exactly reproduces the saved classifiers and manifest metrics;
+all six bundles pass the unchanged 20% confident-assignment guard. Saved config
+digests also reproduce exactly, including the unchanged legacy baseline hash.
+
+| Profile, acquisition order | Payload peak fit score | Loop peak fit score | Loop held-out ground acceptance |
+| --- | ---: | ---: | ---: |
+| Legacy, first | 0.7375 | 0.7545 | 0.528 |
+| Official, first | 0.7765 | 0.7470 | 0.549 |
+| Official + 20-us recovery, first | 0.7625 | 0.7740 | 0.515 |
+| Official + 20-us recovery, second | 0.7695 | 0.7925 | 0.505 |
+| Official, second | 0.7545 | 0.7480 | 0.571 |
+| Legacy, second | 0.7450 | 0.7570 | 0.556 |
+
+The original calibration settings now pass at both ends of the comparison.
+Official timing alone does not improve the loop peak score in these repeats.
+The 20-us profiles have higher peak scores, but two adjacent repetitions do not
+establish a robust improvement, explain the prior rejection, or measure active
+reset fidelity. The earlier failure was not reproduced; its physical cause
+remains unresolved. Do not describe this as a confirmed timing repair.
+
+Next step: retry the existing location check without changing calibration or
+acquisition settings. It acquires and validates a fresh production calibration;
+none of the diagnostic fits is reused. This preserves comparability with prior
+pump-probe stages and retains the existing rejection guard.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --location-check
+```
+
+The planned run remains 864 measurement blocks, comparing target and park
+probes after identical target pumping. If fresh calibration fails again,
+inspect that failure rather than weakening the acceptance policy or repeatedly
+retrying until a marginal calibration passes.
