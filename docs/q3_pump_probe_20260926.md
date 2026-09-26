@@ -613,3 +613,65 @@ predefined location contrasts and null controls across both sessions; do not
 select whichever hold, control, or session happens to look significant. If
 large fluctuations persist without a reproducible contrast, prioritize
 readout/reset stability diagnostics over further pump-parameter scans.
+
+## Independent location repeat and reference-stability next step
+
+Session `q3_pump_probe_location_check_20260926T230016Z_fa6209b8`, commit
+`e5ccf98`, completed 864 blocks / 345,600 shots from 23:00:21 to 23:09:52 UTC.
+Payload/loop peak calibration fit scores were 0.7250/0.7245, and loop held-out
+ground acceptance was 0.646. All manifest/summary counts and probe DAC/pump-gain
+labels agree. Raw IQ independently reproduces the g/10-us +8/null triplets at
+both locations (144 blocks / 57,600 shots).
+
+The short-hold park +8/null triplets were also checked directly from raw IQ
+in both sessions: 72 blocks / 28,800 shots per session. Reclassification exactly
+reproduces their counts and the +4.79/+5.02-point null-corrected contrasts.
+
+The planned repeat retains an interesting park response but does not establish
+TLS-specific probe dynamics. Ground-prepared short-hold park contrasts were:
+
+| Contrast, percentage points | First location run | Repeat |
+| --- | ---: | ---: |
+| +8 MHz minus its local sham | +2.12 | +4.94 |
+| Above contrast minus null contrast | +4.79 | +5.02 |
+| Above contrast minus -20-MHz contrast | +8.44 | +4.31 |
+
+Equal-session averages give short-hold park +8-minus-null +4.90 points
+[+0.33, +9.47] and +8-minus-minus20 +6.37 [+2.88, +9.87]. These are exploratory,
+unadjusted 95% intervals using within-session repeat variances and a
+Welch-Satterthwaite degrees-of-freedom approximation. They are conditional on
+these two sessions; two sessions do not provide a reliable estimate of
+between-session reproducibility. The two runs use the same randomized schedule.
+
+All target-minus-park interactions after null or -20-MHz subtraction still
+include zero, for both preparations and holds. A few unadjusted contrasts with
+local sham alone exclude zero (including excited-prepared location differences),
+but these are not robust across the additional control corrections. The first
+run's g/10-us park +8-minus-null contrast was +5.72 points; the repeat is -0.12.
+Thus no clear target-specific effect or lifetime improvement is established,
+and the earlier 10-us park endpoint did not reproduce. Do not interpret an
+unresolved difference as proof that locations are equivalent.
+
+Median absolute local sham change remains 3.5 points (maximum 26), over median
+1.354-second triplets. Follow the prior decision to investigate reference
+stability before further pump-parameter scans. Extend the existing calibration
+diagnostic with `--stability-check`: twelve identical legacy profiles with
+scheduled starts 30 seconds apart, each containing 2000 shots for ground/pi in
+payload/loop contexts (96,000 total). Starts are monotonic deadlines and actual
+acquisition start times are recorded separately from scheduling waits; late
+slots are acquired without dropping data. The last scheduled start is at
+330 seconds, so normal runtime is about six minutes.
+
+Keep drive, readout, timing, reference flux protocol, and 0.7/0.2 policies fixed.
+Save rejected fits and all raw references; install none. Offline analysis will
+compare IQ centers/separation, original versus freshly fitted classifiers, and
+quality metrics over time. This is an unpumped reference test with per-shot
+park ramps and sequential ground/pi acquisitions, not a direct measurement of
+active-reset fidelity or a full reproduction of the pump sequence. A stable
+result would not rule out pump-induced or feedback-specific effects.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetCheck --run --stability-check
+```
+
+Output prefix: `q3/q3_pump_probe_reference_stability_<UTC>_<id>/`.

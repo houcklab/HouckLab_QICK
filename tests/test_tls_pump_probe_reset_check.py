@@ -51,3 +51,32 @@ def test_calibration_report_records_rejection_without_weakening_the_guard():
     assert result['loop']['peak_fidelity'] == .6755
     bundle.loop.holdout['ground_accept'] = .5
     assert m.calibration_report(bundle)['accepted'] is True
+
+
+def test_stability_plan_repeats_only_original_settings_over_several_minutes():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--stability-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    p = json.loads(result.stdout)
+    assert p['hardware_access'] is False
+    assert p['stability_check'] is True
+    assert p['total_reference_shots'] == 96000
+    assert len(p['points']) == 12
+    assert {e['profile'] for e in p['points']} == {'legacy'}
+    assert [e['not_before_offset_s'] for e in p['points']] == list(range(0, 360, 30))
+    assert len({e['name'] for e in p['points']}) == 12
+
+
+def test_reference_schedule_waits_to_deadline_and_does_not_wait_if_late():
+    m = runner()
+    now = [105.]
+    waits = []
+    def sleep(seconds):
+        waits.append(seconds)
+        now[0] += seconds
+    m.wait_for_reference_slot(100., 30., clock=lambda: now[0], sleep=sleep)
+    assert now[0] == 130.
+    assert sum(waits) == 25.
+    waits.clear()
+    m.wait_for_reference_slot(100., 20., clock=lambda: now[0], sleep=sleep)
+    assert waits == []
