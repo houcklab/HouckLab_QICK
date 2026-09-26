@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import time
 import uuid
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -67,10 +68,24 @@ def parameters():
 
 
 def checkpoint(path, document):
+    """Publish atomically, tolerating brief Windows/NAS replacement conflicts.
+
+    Retry only the rename, never acquisition. A persistent denial still stops
+    the run and leaves the old manifest plus the new .pending JSON intact.
+    """
     path = Path(path)
     pending = path.with_suffix(".pending")
     pending.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    os.replace(pending, path)
+    for delay in (0.05, 0.1, 0.2, 0.4, 0.8, 1.0, 1.0, None):
+        try:
+            os.replace(pending, path)
+            return
+        except PermissionError:
+            if delay is None:
+                raise
+            print(f"[checkpoint] Access conflict replacing {path.name}; "
+                  f"retrying in {delay:g} s", flush=True)
+            time.sleep(delay)
 
 
 def collect_arms(manifest, path, acquire):

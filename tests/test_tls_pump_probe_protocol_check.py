@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -96,3 +97,50 @@ def test_arm_pause_override_preserves_readout_timing_and_shared_base():
     assert {k: v for k, v in paused.items() if k != "opx_inter_shot_delay_us"} == {
         k: v for k, v in base.items() if k != "opx_inter_shot_delay_us"}
     assert module.arm_config(base, {}) == base
+
+
+def test_checkpoint_retries_access_conflicts_without_losing_previous_json(tmp_path):
+    module = check()
+    path = tmp_path / "manifest.json"
+    path.write_text('{"version": 1}')
+    original_replace = module.os.replace
+    attempts = []
+    def replace(source, destination):
+        attempts.append(1)
+        assert json.loads(path.read_text()) == {"version": 1}
+        if len(attempts) < 3:
+            raise PermissionError(13, "simulated Windows NAS access conflict")
+        original_replace(source, destination)
+    # Keep real serialization/filesystem replacement; only inject the OS error.
+    with patch.object(module.os, "replace", replace), patch("time.sleep"):
+        module.checkpoint(path, {"version": 2})
+    assert json.loads(path.read_text()) == {"version": 2}
+    assert not path.with_suffix(".pending").exists()
+
+
+def test_checkpoint_stops_retrying_and_retains_both_versions_on_persistent_denial(tmp_path):
+    module = check()
+    path = tmp_path / "manifest.json"
+    path.write_text('{"version": 1}')
+    attempts = []
+    def denied(*_):
+        attempts.append(1)
+        raise PermissionError(13, "persistent denial")
+    with patch.object(module.os, "replace", denied), patch("time.sleep"):
+        with pytest.raises(PermissionError, match="persistent denial"):
+            module.checkpoint(path, {"version": 2})
+    assert 1 < len(attempts) <= 10
+    assert json.loads(path.read_text()) == {"version": 1}
+    assert json.loads(path.with_suffix(".pending").read_text()) == {"version": 2}
+
+
+def test_checkpoint_does_not_retry_other_io_errors(tmp_path):
+    module = check()
+    attempts = []
+    def full(*_):
+        attempts.append(1)
+        raise OSError(28, "no space left")
+    with patch.object(module.os, "replace", full), patch("time.sleep"):
+        with pytest.raises(OSError, match="no space left"):
+            module.checkpoint(tmp_path / "manifest.json", {"version": 2})
+    assert len(attempts) == 1

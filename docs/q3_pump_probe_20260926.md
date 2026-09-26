@@ -85,6 +85,15 @@ Outputs are under `q3/q3_pump_probe_pilot_<UTC>_<id>/`: `manifest.json`,
 checkpointed and acquisition stops on error. Do not resume a partial session
 by mixing a new calibration into it.
 
+The first pilot session, `q3_pump_probe_pilot_20260926T203812Z_94120f74`,
+stopped before block 8 after a Windows `WinError 5` during manifest replacement.
+Blocks 0–7 have intact 200-shot raw IQ files and CSV rows. The subsequent error
+checkpoint succeeded, indicating the denial was intermittent. Checkpoint
+replacement now retries access conflicts up to eight attempts over 3.55 seconds;
+it does not repeat acquisition or fall back to truncating the manifest. A
+persistent denial still stops the run and retains `.pending` for recovery.
+Restart this short partial pilot as a fresh session and calibration.
+
 Evaluate excited survival together with ground-probe excitation, reference
 contrast, both detuned controls, repeat consistency, and raw IQ changes. Any
 effect remains a pump-dependent response until follow-up controls establish its
