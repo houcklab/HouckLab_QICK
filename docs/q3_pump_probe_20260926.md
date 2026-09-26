@@ -146,3 +146,67 @@ holds, return timing, resets and idle timing remain those of the pilot.
 Outputs use `q3/q3_pump_probe_frequency_check_<UTC>_<id>/`; `control_position`
 identifies the bracketing references in the CSV and manifest. Check these
 references and repeat consistency before interpreting any narrow response.
+
+## Frequency-check results and locally bracketed confirmation
+
+Session `q3_pump_probe_frequency_check_20260926T205654Z_d0b21866` completed
+all 960 blocks (384,000 shots) at commit `267986e`, from 20:56:58 to 21:06:44
+UTC. CSV populations/counts match the manifest; every block reports 400 records.
+The pulse/reset telemetry retains the 40-us return and 20-us reset guard.
+
+For each target/repeat/preparation/hold, interpolate the two sham populations
+linearly in acquisition start time and subtract that estimate from each pump
+population. This removes an assumed linear trend, not arbitrary fluctuations
+or pump carryover. The 64 sweeps span a median 8.52 seconds between their sham
+starts (maximum 10.83 seconds). The median absolute before/after sham change is
+0.045; the maximum is 0.220. Consequently binomial shot errors alone substantially
+understate uncertainty in a repeatable physical effect. All detunings within a
+sweep share the same references and their errors are correlated.
+
+Selected exploratory contrasts (classified population, not calibrated thermal
+population):
+
+| Probe target | Pump detuning | Preparation / hold | Mean pump minus interpolated sham | Individual repeats |
+| --- | ---: | --- | ---: | --- |
+| 4.098 GHz | +8 MHz | g / 10 us | +0.0764 | +0.0206, +0.1167, +0.1596, +0.0086 |
+| 4.098 GHz | +8 MHz | g / 2 us | +0.0445 | −0.0223, +0.0936, +0.0423, +0.0643 |
+| 4.110 GHz | +8 MHz | g / 2 us | +0.0564 | +0.0489, +0.0210, +0.0092, +0.1466 |
+| 4.110 GHz | +8 MHz | e / 2 us | −0.0646 | −0.0367, −0.0113, −0.0689, −0.1416 |
+
+For the first row the binomial standard error of the mean is 0.0135, while the
+standard error estimated from four repeat contrasts is 0.0368. These exploratory
+comparisons were selected after examining many conditions; they are not a
+confirmatory significance test. At 4.098 GHz the near-pump ground/10-us contrast
+is only +0.0129, with repeat standard error 0.0418, so the earlier near-pump
+candidate did not reproduce as a stable effect. There is still no clear,
+repeatable selective improvement of excited survival at 4.104/4.106 GHz.
+
+All twelve raw IQ files for the 4.098-GHz ground/10-us +8-MHz pump and its
+bracketing shams were reclassified with this run's saved payload classifier;
+they reproduce the CSV counts exactly. Unthresholded IQ projections also show
+large repeat variation. At 4.110 GHz, the +8-MHz short-reference contrast change
+warns against interpreting the signal as relaxation alone. No TLS suppression,
+frequency displacement, or upward-transition rate is established.
+
+The next stage concentrates on these candidates and measures a zero-drive null:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --confirmation-check
+```
+
+At each of 4.098 and 4.110 GHz, collect ground/excited preparations and 2/10-us
+holds. Randomize four tests: pump at 0, +8, or −20 MHz detuning, and a zero-gain
+null at +8 MHz. **Every individual test** gets its own three-block sequence:
+sham-before, test, sham-after. All three use the same programmed tone frequency,
+flux, preparation, and hold. The null test and both surrounding shams all take
+the existing `no_pump` path. `test_condition` identifies the candidate/null and
+`comparison_id` identifies its triplet in both CSV and manifest.
+
+Eight repeats of 400 shots produce 768 blocks: 192 driven, 576 zero-gain,
+307,200 total probe shots. Gain 3000, 15-us pump duration, idle, reset and pulse
+timing remain unchanged. This reduces the separation of each test from its
+references and exposes false contrasts from drift/noise; it does not eliminate
+rapid fluctuations or distinguish persistent carryover by itself. Outputs use
+`q3/q3_pump_probe_confirmation_check_<UTC>_<id>/`. Evaluate each candidate against
+its local references, the null distribution, repeat consistency, and the short
+reference/IQ changes before deciding on a dose or delay scan.

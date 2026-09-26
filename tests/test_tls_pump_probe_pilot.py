@@ -206,3 +206,47 @@ def test_reset_rebases_pump_after_cpu_feedback_wait_on_ground_and_loop_paths(mon
     assert len(starts) == 2
     assert starts[0] == starts[1]  # pump and flux share the rebased origin
     assert min(starts) >= clock["cpu"] + 1.0
+
+
+def test_confirmation_brackets_each_tone_and_null_with_matching_zero_gain_controls():
+    module = pilot()
+    points = module.schedule(module.parameters(confirmation_check=True))
+    assert len(points) == 768
+    from collections import Counter
+    centers = []
+    for start in range(0, len(points), 3):
+        before, test, after = points[start:start + 3]
+        assert [p['control_position'] for p in (before, test, after)] == ['before', 'test', 'after']
+        assert before['pump_mode'] == after['pump_mode'] == 'sham'
+        assert len({(p['repeat'], p['target_index'], p['probe_state'], p['probe_us'],
+                     p['pump_detuning_mhz'], p['comparison_id'], p['test_condition'])
+                    for p in (before, test, after)}) == 1
+        if test['test_condition'] == 'null':
+            assert test['pump_mode'] == 'sham'
+            assert test['pump_detuning_mhz'] == 8
+        else:
+            assert test['pump_mode'] == test['test_condition']
+            assert test['pump_detuning_mhz'] == {'near': 0, 'plus8': 8, 'minus20': -20}[test['pump_mode']]
+        centers.append(test)
+    assert Counter(p['test_condition'] for p in centers) == {'near': 64, 'plus8': 64, 'minus20': 64, 'null': 64}
+    assert len({p['comparison_id'] for p in centers}) == 256
+    assert len({p['name'] for p in points}) == 768
+    assert len({(p['repeat'], p['target_index'], p['probe_state'], p['probe_us'], p['test_condition'])
+                for p in centers}) == 256
+
+
+def test_confirmation_plan_and_exclusive_stage_selection():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--confirmation-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan['hardware_access'] is False
+    assert plan['acquisition_blocks'] == 768
+    assert plan['parameters']['target_frequency_ghz'] == [4.098, 4.110]
+    assert plan['parameters']['shots'] == 400
+    assert plan['parameters']['repeats'] == 8
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--confirmation-check', '--frequency-check'],
+                            text=True, capture_output=True)
+    assert result.returncode != 0
+    with pytest.raises(ValueError):
+        pilot().parameters(frequency_check=True, confirmation_check=True)
