@@ -12,10 +12,14 @@ unchanged; no result is automatically installed as an experiment calibration.
 with scheduled starts 30 seconds apart. All raw references are retained for
 offline comparison using fixed and refitted classifiers. This tests reference
 stability without a pump; it does not directly measure active-reset fidelity.
+Adding --compare-timing acquires all three timing profiles in each of those
+twelve slots, cycling through all six profile orders twice. This compares
+timing within short groups while tracking changes over several minutes.
 """
 
 import argparse
 from datetime import datetime, timezone
+from itertools import permutations
 import json
 import os
 from pathlib import Path
@@ -32,16 +36,27 @@ SHOTS = 2000
 PROFILES = ("legacy", "official", "official_guard20")
 
 
-def plan(*, stability_check=False):
+def plan(*, stability_check=False, compare_timing=False):
+    if compare_timing and not stability_check:
+        raise ValueError('--compare-timing requires --stability-check')
     profiles = ('legacy',) * 12 if stability_check else (*PROFILES, *reversed(PROFILES))
     points = [{"name": f"point_{i:04d}_{profile}", "profile": profile}
               for i, profile in enumerate(profiles)]
     if stability_check:
         for i, point in enumerate(points):
             point['not_before_offset_s'] = i * 30.0
+    if compare_timing:
+        points = []
+        orders = tuple(permutations(PROFILES))
+        for group in range(12):
+            for profile in orders[group % len(orders)]:
+                points.append({'name': f'point_{len(points):04d}_{profile}',
+                               'profile': profile, 'comparison_round': group,
+                               'not_before_offset_s': group * 30.0})
     return {
         "hardware_access": False,
         "stability_check": bool(stability_check),
+        "compare_timing": bool(compare_timing),
         "shots_per_state_per_context": SHOTS,
         "total_reference_shots": len(points) * 4 * SHOTS,
         "points": points,
@@ -89,8 +104,9 @@ def calibration_report(bundle):
             "payload": dict(bundle.payload.holdout), "loop": dict(bundle.loop.holdout)}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None, stability_check=False):
-    run_plan = plan(stability_check=stability_check)
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, stability_check=False,
+        compare_timing=False):
+    run_plan = plan(stability_check=stability_check, compare_timing=compare_timing)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -115,6 +131,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, stability_check=
                          if tls.BaseConfig.get(k) is not None)
         baseline = build_calibration_config(tls.BaseConfig, frequency)
         prefix = 'q3_pump_probe_reference_stability_' if stability_check else 'q3_pump_probe_reset_check_'
+        if compare_timing:
+            prefix = 'q3_pump_probe_timing_stability_'
         session_id = prefix + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
         folder = data_root / 'q3' / session_id
         folder.mkdir(parents=True, exist_ok=False)
@@ -124,6 +142,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, stability_check=
             'status': 'starting', 'created_at': datetime.now(timezone.utc).isoformat(),
             'code_commit': os.environ['Q3_CODE_COMMIT'], 'shots_per_state_per_context': SHOTS,
             'stability_check': bool(stability_check),
+            'compare_timing': bool(compare_timing),
             'total_reference_shots': run_plan['total_reference_shots'],
             'method_frequency_mhz': frequency, 'baseline_config_sha256': _config_digest(baseline),
             'calibration_options': q3_benchmark_settings().calibration_options(),
@@ -180,14 +199,19 @@ def main(argv=None):
     mode.add_argument('--run', action='store_true')
     parser.add_argument('--stability-check', action='store_true',
                         help='repeat the original reference calibration 12 times, 30 seconds apart')
+    parser.add_argument('--compare-timing', action='store_true',
+                        help='with --stability-check, compare all three timing profiles in each slot')
     parser.add_argument('--data-root', type=Path, default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json', type=Path)
     args = parser.parse_args(argv)
+    if args.compare_timing and not args.stability_check:
+        parser.error('--compare-timing requires --stability-check')
     if args.plan:
-        print(json.dumps(plan(stability_check=args.stability_check), indent=2))
+        print(json.dumps(plan(stability_check=args.stability_check,
+                              compare_timing=args.compare_timing), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            stability_check=args.stability_check)
+            stability_check=args.stability_check, compare_timing=args.compare_timing)
     return 0
 
 

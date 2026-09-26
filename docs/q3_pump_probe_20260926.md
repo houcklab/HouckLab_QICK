@@ -675,3 +675,62 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 ```
 
 Output prefix: `q3/q3_pump_probe_reference_stability_<UTC>_<id>/`.
+
+## Reference-stability result: failure reproduced without pumping
+
+Session `q3_pump_probe_reference_stability_20260926T231759Z_361196be`,
+commit `7f2fcd9`, completed all twelve references / 96,000 shots. Actual starts
+were within 0.047 seconds of scheduled offsets 0 through 330 seconds. All
+twelve config hashes equal the original legacy baseline. All 24 independently
+refitted classifiers exactly reproduce the saved classifiers and manifest
+metrics; every raw array has 2000 finite records.
+
+Only five bundles passed: indices 0 and 8–11. Indices 1–7 failed because the
+loop training peak did not exceed 0.7. Loop peak scores in time order were
+0.7010, 0.6935, 0.6750, 0.6835, 0.7000, 0.6985, 0.6890, 0.6975, 0.7065,
+0.7130, 0.7310, 0.7390. The exactly 0.7000 score also fails the strict `>`
+criterion. One payload fit (index 7, peak 0.6905) likewise fell below the
+fitting criterion. Rejected loop ground acceptance was 0–0.004 because of the
+existing fallback threshold, not a measured disappearance of ground population.
+
+Offline application of the *first* classifier to odd-index held-out shots in
+each later reference provides a comparison unaffected by threshold refitting:
+
+| Metric range across twelve references | Payload | Loop |
+| --- | ---: | ---: |
+| Fresh fit held-out balanced score | 0.6970–0.7365 | 0.6645–0.7280 |
+| First classifier held-out balanced score | 0.6965–0.7385 | 0.6645–0.7280 |
+| First ground-threshold acceptance | 0.703–0.765 | 0.665–0.786 |
+| First excited-threshold false-positive fraction | 0.108–0.158 | 0.214–0.335 |
+
+The abrupt near-zero acceptance is a fitting-policy discontinuity. Holding
+thresholds fixed removes that discontinuity but does not recover high
+classification quality; refitting provides no consistent benefit on held-out
+shots. These ranges are descriptive, not simultaneous confidence intervals.
+They do not establish a specific hardware fault, isolate readout from state
+preparation, or measure active-reset fidelity. The pump is not necessary to
+produce the calibration rejection. This also does not prove that prior pump
+contrasts were entirely caused by calibration variation. No stale fit is
+installed and no threshold is weakened.
+
+Next, compare all three already-tested timing profiles repeatedly within the
+same run, while this marginal regime is relevant. Add `--compare-timing` to
+`--stability-check`: each of twelve 30-second slots contains legacy, official,
+and official_guard20 references. All six profile orders occur twice, balancing
+each profile's position within the group; `comparison_round` identifies matched
+groups. There are 36 fits / 288,000 reference shots. All drive/readout settings
+and fitting/acceptance criteria stay fixed; only the documented timing-profile
+fields differ. This remains an unpumped, non-feedback reference diagnostic.
+
+Compare within-round held-out separation, error/acceptance rates, and quality
+rejection rates, keeping both contexts and all rounds. An alternative passing
+more frequently is useful evidence but is not itself validation of the full
+active acquisition. Groups are sequential, with actual timestamps retained;
+counterbalancing reduces rather than eliminates history and drift confounding.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetCheck --run --stability-check --compare-timing
+```
+
+Normal runtime is about six minutes; output prefix is
+`q3/q3_pump_probe_timing_stability_<UTC>_<id>/`.

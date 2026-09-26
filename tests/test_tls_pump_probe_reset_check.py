@@ -80,3 +80,31 @@ def test_reference_schedule_waits_to_deadline_and_does_not_wait_if_late():
     waits.clear()
     m.wait_for_reference_slot(100., 20., clock=lambda: now[0], sleep=sleep)
     assert waits == []
+
+
+def test_timing_stability_plan_balances_order_within_each_time_slot():
+    from collections import Counter
+    from itertools import permutations
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--stability-check',
+                             '--compare-timing'], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    p = json.loads(result.stdout)
+    assert p['hardware_access'] is False and p['compare_timing'] is True
+    assert p['total_reference_shots'] == 288000
+    points = p['points']
+    assert len(points) == len({e['name'] for e in points}) == 36
+    orders = []
+    for group in range(12):
+        entries = points[group * 3:(group + 1) * 3]
+        assert {e['comparison_round'] for e in entries} == {group}
+        assert {e['not_before_offset_s'] for e in entries} == {group * 30.}
+        orders.append(tuple(e['profile'] for e in entries))
+    assert Counter(orders) == Counter({order: 2 for order in permutations(runner().PROFILES)})
+
+
+def test_compare_timing_requires_stability_mode_before_any_hardware_access():
+    for mode in ['--plan', '--run']:
+        result = subprocess.run([sys.executable, '-m', MODULE, mode, '--compare-timing'],
+                                text=True, capture_output=True)
+        assert result.returncode == 2
+        assert '--compare-timing requires --stability-check' in result.stderr
