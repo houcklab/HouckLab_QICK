@@ -396,3 +396,71 @@ holds: target windows 0.6/2.5/10.5/30.5 us followed by the same 40-us complete
 return. This was checked without hardware. No pulse backend changes are made.
 An offset at the earliest point versus growth during the hold will guide a
 subsequent location/reset control; neither outcome alone identifies a TLS.
+
+## Probe-hold results and probe-location control
+
+Session `q3_pump_probe_probe_time_check_20260926T220924Z_3cad5178` completed
+864 blocks (345,600 shots) at commit `29ad774`, from 22:09:38 to 22:18:19 UTC.
+CSV counts/populations match the manifest; all blocks report 400 records.
+Median absolute before/after sham change is 0.03625, with median separation
+1.18 seconds. Contrasts use the same local interpolation and repeat pairing.
+
+| Programmed probe hold | +8-MHz ground-prepared test minus local sham | +8-MHz excited-prepared test minus local sham |
+| ---: | ---: | ---: |
+| 0.1 us | +0.0490 | +0.0173 |
+| 2 us | +0.0401 | +0.0165 |
+| 10 us | +0.0142 | +0.0200 |
+| 30 us | +0.0210 | +0.0334 |
+
+The extra ground signal is already present at the earliest programmed hold.
+That point still includes the 0.5-us arrival and 40-us return, so this does not
+locate the effect before the entire probe excursion. At 0.1 us the local
+contrast has an unadjusted repeat-based 95% t interval [+0.0115, +0.0865], but
+subtracting the null gives +0.0451 with interval [−0.0253, +0.1154], and
+subtracting the −20-MHz control gives +0.0292 with interval [−0.0137, +0.0721].
+Null fluctuations include one +0.241 contrast; they materially limit inference.
+
+None of the ground-prepared pump-control changes between 0.1 us and the later
+holds excludes zero with these repeat-based intervals. Excited/10-us +8-minus-20
+is +0.0310, interval [+0.0048, +0.0572], but its increase relative to 0.1 us
+includes zero, [−0.0342, +0.0524]. Thus the data do not establish an extra
+excitation rate during the hold or selective relaxation suppression. These
+are unadjusted intervals over twelve repeats, not multiplicity-corrected claims.
+A check of 72 raw blocks (ground/0.1-us +8 and null triplets) reproduced all
+saved classified counts. Unthresholded IQ also has a positive early +8 offset.
+
+Next, test whether the probe excursion to 4.110 GHz is required:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --location-check
+```
+
+Pump at the same 4.110-GHz flux target in every block, with +8/−20-MHz tones
+at gain 3000 for 15 us, plus the zero-gain null. Randomize probe location
+(`target` or `park`), ground/excited preparation, and 0.1/10-us hold. Twelve
+repeats of 400 shots give 864 blocks (192 driven, 672 zero), 345,600 shots.
+Every test has its own matched-location, matched-hold sham-before/test/sham-after
+triplet. Additional recovery stays zero; reset and final idle settings are fixed.
+
+The park probe remains at DAC −25146 (configured park frequency about 4.367 GHz)
+while the target probe visits DAC −16151 (model frequency 4.110021 GHz). Both
+use the same native compensated segment durations, generator pulse lengths,
+and synchronization barriers. For park, every segment's displacement from park
+is zero; compensation and stepping stay enabled to preserve timing. The pump's
+configured target is restored after emitting the probe. Park mode rejects
+unsupported non-native/ramp/overlapping-return settings rather than silently
+using a differently timed path. Preparation pulses and readout remain at park.
+
+The real flux-command emission path was checked with both synthetic and this
+run's saved native correction: for 0.1/10-us holds, target/park instruction
+sequences match apart from flux gain, and every park gain equals −25146.
+This is software verification, not a measurement of physical flux settling.
+
+Outputs use `q3/q3_pump_probe_location_check_<UTC>_<id>/`. `probe_location` and
+`probe_dc_gain` identify the probe; the existing `target_frequency_ghz`,
+`realized_frequency_ghz`, and `dc_gain` continue to identify the pump target.
+Compare pump-control contrasts within each location, then their difference.
+A response that also appears at park would implicate effects not requiring the
+probe's loss-region excursion. A difference between locations would still not
+by itself identify a microscopic TLS, because relaxation and flux histories
+differ between the two locations.

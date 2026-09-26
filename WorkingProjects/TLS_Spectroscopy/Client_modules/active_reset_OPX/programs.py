@@ -3172,8 +3172,9 @@ class OPXResetTLSMemoryProgram(OPXResetT1Program):
 class OPXResetTLSSaturationProgram(OPXResetT1Program):
     """Native-reset TLS saturation followed by a separately measured probe.
 
-    The pump and probe each make the identical production flux excursion.  A
-    production ``opx_unbounded`` reset runs at park between them, so a failed
+    The pump and target probe make the identical production flux excursion.
+    An optional park probe retains the command timing with zero flux displacement.
+    A production ``opx_unbounded`` reset runs at park between them, so a failed
     legacy quadrature-reset calibration cannot silently turn this into a long
     passive wait that erases the putative TLS saturation.
     """
@@ -3190,6 +3191,19 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
         if probe_state not in ("g", "e"):
             raise ValueError("opx_saturation_probe_state must be 'g' or 'e'")
         run_cfg["opx_saturation_probe_state"] = probe_state
+        probe_location = str(run_cfg.get("opx_saturation_probe_location", "target")).strip().lower()
+        if probe_location not in ("target", "park"):
+            raise ValueError("opx_saturation_probe_location must be 'target' or 'park'")
+        run_cfg["opx_saturation_probe_location"] = probe_location
+        if probe_location == "park" and not (
+            bool(run_cfg.get("opx_hard_flux_steps", False))
+            and bool(run_cfg.get("apply_flux_tail_compensation", False))
+            and run_cfg.get("flux_tail_compensation") is not None
+            and run_cfg.get("flux_predistortion_round_trip_mode", "stateful") == "stateful"
+            and not bool(run_cfg.get("flux_predistortion_overlap_payload_readout", True))
+            and run_cfg.get("ff_park_gain") is not None
+        ):
+            raise ValueError("park probe requires compensated stateful hard steps with a complete pre-readout return")
         for key in ("opx_saturation_pump_us", "opx_saturation_probe_us"):
             value = float(run_cfg.get(key, 0.0))
             if not np.isfinite(value) or value <= 0.0:
@@ -3292,6 +3306,20 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
             gain=0 if self.cfg.get("opx_saturation_probe_state", "e") == "g" else None)
         _pulse_pi_and_align(self)
 
+    def _wait_saturation_probe(self):
+        if self.cfg.get("opx_saturation_probe_location", "target") == "target":
+            self._wait_t1_payload(self._saturation_probe_us)
+            return
+        # Generate exactly the same segmented command lengths/barriers as a
+        # target probe, but with zero displacement from park. Keep stepping and
+        # compensation enabled; disabling them would shorten the return window.
+        pump_target_gain = self.cfg["ff_gain"]
+        try:
+            self.cfg["ff_gain"] = self.cfg["ff_park_gain"]
+            self._wait_t1_payload(self._saturation_probe_us)
+        finally:
+            self.cfg["ff_gain"] = pump_target_gain
+
     def _emit_body(self):
         park_up, park_down = self._shot_park_callbacks()
         park_up()
@@ -3306,7 +3334,7 @@ class OPXResetTLSSaturationProgram(OPXResetT1Program):
         # The probe begins from a reset park state and is the only payload
         # measurement written to DMem.
         self._prepare_saturation_probe()
-        self._wait_t1_payload(self._saturation_probe_us)
+        self._wait_saturation_probe()
         self._measure_project(self.payload_calibration, "payload")
         self.memw(self.reset_page, self.reset_regs["i"], self.reset_regs["address"])
         self.mathi(

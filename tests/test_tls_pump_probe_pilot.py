@@ -428,3 +428,86 @@ def test_probe_time_plan_is_hardware_free_and_exclusive():
         assert result.returncode != 0
     with pytest.raises(ValueError):
         pilot().parameters(probe_time_check=True, recovery_check=True)
+
+
+def test_location_scan_keeps_pump_fixed_and_matches_probe_location_in_triplets():
+    module = pilot()
+    p = module.parameters(location_check=True)
+    points = module.schedule(p)
+    assert len(points) == 864 and p['target_frequency_ghz'] == [4.110]
+    centers = []
+    for start in range(0, len(points), 3):
+        before, test, after = points[start:start + 3]
+        assert before['pump_gain'] == after['pump_gain'] == 0
+        assert len({(e['comparison_id'], e['repeat'], e['probe_state'], e['probe_us'],
+                     e['probe_location'], e['test_condition'], e['pump_detuning_mhz'])
+                    for e in (before, test, after)}) == 1
+        centers.append(test)
+    assert Counter((e['probe_location'], e['probe_state'], e['probe_us'], e['test_condition'])
+                   for e in centers) == {
+        (loc, state, hold, condition): 12 for loc in ['target', 'park'] for state in ['g', 'e']
+        for hold in [.1, 10.] for condition in ['plus8', 'minus20', 'null']}
+    assert len({e['comparison_id'] for e in centers}) == 288
+
+
+def test_location_plan_is_exclusive_and_hardware_free():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--location-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan['hardware_access'] is False and plan['acquisition_blocks'] == 864
+    assert plan['parameters']['probe_locations'] == ['target', 'park']
+    for other in ['--frequency-check', '--confirmation-check', '--dose-check', '--recovery-check', '--probe-time-check']:
+        result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--location-check', other],
+                                text=True, capture_output=True)
+        assert result.returncode != 0
+    with pytest.raises(ValueError):
+        pilot().parameters(location_check=True, probe_time_check=True)
+
+
+@pytest.mark.parametrize('hold', [.1, 10.])
+def test_park_probe_has_identical_flux_command_timing_with_no_excursion(monkeypatch, hold):
+    module = importlib.import_module(f'{PREFIX}.active_reset_OPX.programs')
+    ff = importlib.import_module(f'{PREFIX}.Helpers.ff_pulse')
+    monkeypatch.setattr(ff.PulseFunctions, 'ff_maxv', lambda *_a, **_k: 32767)
+    prog = object.__new__(module.OPXResetTLSSaturationProgram)
+    prog.cfg = {'ff_ch': 3, 'ff_gain': -16151, 'ff_park_gain': -25146,
+                'flux_predistortion_overlap_payload_readout': False}
+    prog.reset_config = SimpleNamespace(hard_flux_steps=True)
+    prog._t1_stepping = True
+    prog._t1_ff_compensation = {'segment_edges_ns': [0, 1000, 40000], 'multipliers': [1.1, 1.05, 1.01]}
+    prog._t1_ff_predistortion_mode = 'stateful'
+    prog._t1_ff_predistortion_recovery_us = 40.
+    prog._t1_ff_settle_us = prog._t1_ff_return_prefix_us = .5
+    prog._saturation_probe_us = hold
+    prog.us2cycles = lambda us, **_: round(us * 1000)
+    events = []
+    prog.set_pulse_registers = lambda **kw: events.append(('registers', kw))
+    prog.pulse = lambda **kw: events.append(('pulse', kw))
+    prog.sync_all = lambda delay: events.append(('sync', delay))
+    captures = {}
+    for location in ['target', 'park']:
+        prog.cfg['opx_saturation_probe_location'] = location
+        events.clear()
+        prog._wait_saturation_probe()
+        captures[location] = list(events)
+        assert prog.cfg['ff_gain'] == -16151  # next shot's pump must keep its excursion
+    for a,b in zip(captures['target'], captures['park']):
+        assert a[0] == b[0]
+        if a[0] == 'registers':
+            assert {k:v for k,v in a[1].items() if k!='gain'} == {k:v for k,v in b[1].items() if k!='gain'}
+            assert b[1]['gain'] == -25146
+        else:
+            assert a == b
+    assert len(captures['target']) == len(captures['park'])
+    assert any(e[1]['gain'] != -25146 for e in captures['target'] if e[0]=='registers')
+
+
+def test_park_probe_rejects_unsupported_flux_modes_before_hardware():
+    module = importlib.import_module(f'{PREFIX}.active_reset_OPX.programs')
+    cfg = {'opx_saturation_arm': 'pump', 'opx_saturation_probe_location': 'park'}
+    with pytest.raises(ValueError, match='park probe requires'):
+        module.OPXResetTLSSaturationProgram(None, cfg, None, None)
+    cfg['opx_saturation_probe_location'] = 'wrong'
+    with pytest.raises(ValueError, match='probe_location'):
+        module.OPXResetTLSSaturationProgram(None, cfg, None, None)
