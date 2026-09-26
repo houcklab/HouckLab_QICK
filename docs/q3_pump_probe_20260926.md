@@ -734,3 +734,70 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 
 Normal runtime is about six minutes; output prefix is
 `q3/q3_pump_probe_timing_stability_<UTC>_<id>/`.
+
+## Repeated timing comparison result and operational reset check
+
+Session `q3_pump_probe_timing_stability_20260926T233203Z_7a30eeb3`, commit
+`eb352720`, completed all 36 calibrations / 288,000 reference shots. All 72
+classifiers refit exactly from raw arrays; all profile configs, hashes,
+acceptance decisions and manifest metrics agree. Final acquisition began at
+337.25 seconds. Each profile was measured once in every round.
+
+| Profile | Bundles passing guard | Mean payload held-out balanced score | Mean loop held-out balanced score |
+| --- | ---: | ---: | ---: |
+| Legacy | 10/12 | 0.7197 | 0.7106 |
+| Official | 11/12 | 0.7408 | 0.7448 |
+| Official + 20-us loop recovery | 12/12 | 0.7418 | 0.7498 |
+
+Within-round candidate-minus-legacy held-out score differences are +2.21
+percentage points [1.19, 3.23] for payload and +3.93 [2.95, 4.90] for loop.
+Intervals are unadjusted 95% t intervals across twelve paired rounds. Official
+alone improves loop score by +3.42 [2.18, 4.66]. The additional 20-us profile
+versus official alone gives +0.50 [-0.75, 1.75] on held-out loop score: its
+incremental improvement is unresolved. Candidate loop training peaks range
+0.7245–0.7780; ground acceptance is 0.453–0.611, with excited references
+falsely accepted as ground at 0.113–0.188. Thus passing the guard is not evidence
+of high reset fidelity, and 12/12 success does not establish a long-term failure
+rate. Still, the repeated reference results support testing candidate timing
+in an actual feedback sequence before using it for more pump-probe data.
+
+`TLSPumpProbeResetValidation` performs that bounded operational check. It
+acquires and saves one fresh candidate calibration, applies the unchanged
+quality guard, and stops before feedback if rejected. It then holds that
+classifier fixed for twelve rounds of four conditions: native unbounded reset
+or no feedback, each with nominal no-pi or pi preparation. Each block has 400
+shots, for 19,200 benchmark shots; pre/post reference sets add 16,000 shots.
+Each condition occupies each ordinal position three times. Round starts are
+scheduled at 30-second offsets through 330 seconds, with actual times saved.
+
+The existing `OPXResetBenchmarkProgram` stays at persistent park with hard-step
+initialization; it has no TLS pump or target excursion. After the initial
+decision measurement and optional feedback reset, an additional verification
+readout follows a 20-us synchronization delay. Inter-shot idle is 500 us.
+Candidate timing is applied after production session overrides, retaining the
+20-us loop recovery. Per-shot NPZs retain all eight record fields: preparation,
+initial decision projection, reset attempts, pi count, terminal status,
+verification I/Q, and final decision projection. The last projection is a reset
+decision, not the verification readout. Both payload- and loop-classifier
+verification fractions are reported as uncorrected observables.
+
+No-feedback and feedback arms have different elapsed times and readout counts;
+the no-feedback arm is not a duration-matched causal control. Nominal ground
+preparation means no pi pulse, not a certified ground state. This tests
+operational behavior and separate verification readouts, not absolute reset
+fidelity or equivalence to the full pump sequence. No calibration or timing
+default is changed globally. End references are saved and evaluated without
+updating the classifier; a rejected end reference is reported for analysis.
+
+An incomplete returned block is saved before rejection. A streaming timeout
+saves recovered shot records and completed/recovered counts before re-raising
+the original timeout; it never silently retries the acquisition. Mocked tests
+cover the full 48-block run and final references, rejected initial calibration
+preventing feedback, and saved partial records on watchdog failure.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run
+```
+
+Normal duration is about six minutes. Output prefix:
+`q3/q3_pump_probe_reset_validation_<UTC>_<id>/`.
