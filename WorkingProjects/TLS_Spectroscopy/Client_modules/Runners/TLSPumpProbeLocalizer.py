@@ -90,9 +90,8 @@ def scan_environment(correction):
         os.environ.update(previous)
 
 
-def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
-    """Run the baseline protocol, optionally with a follow-up runner's grid."""
-    p = {**parameters(), **(parameter_overrides or {})}
+def checked_correction(data_root, correction_json=None):
+    """Resolve and verify the shared, pinned NAS artifact before hardware imports."""
     data_root = Path(data_root)
     correction = Path(correction_json) if correction_json else data_root / CORRECTION_RELATIVE
     if not correction.is_file():
@@ -101,6 +100,14 @@ def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
         raise RuntimeError("Correction checksum differs from the September 24 audit.")
     if not data_root.is_dir():
         raise FileNotFoundError(f"NAS data directory unavailable: {data_root}")
+    return correction
+
+
+def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
+    """Run the baseline protocol, optionally with a follow-up runner's grid."""
+    p = {**parameters(), **(parameter_overrides or {})}
+    data_root = Path(data_root)
+    correction = checked_correction(data_root, correction_json)
 
     # Hardware-dependent imports occur only on the explicit --run path, after
     # checking the NAS artifact. Previewing the plan needs only the standard library.
