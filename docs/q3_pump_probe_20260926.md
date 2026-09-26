@@ -464,3 +464,69 @@ A response that also appears at park would implicate effects not requiring the
 probe's loss-region excursion. A difference between locations would still not
 by itself identify a microscopic TLS, because relaxation and flux histories
 differ between the two locations.
+
+## Location-stage calibration rejection and timing diagnostic
+
+Session `q3_pump_probe_location_check_20260926T222531Z_cbda4df8` failed during
+`prepare_reset_session` at commit `7414ec3`. All 864 measurement points remain
+pending; no park/target probe comparison was acquired. The `pynq` import notice
+was not the stopping error: the PC successfully connected to the remote QICK.
+
+The three saved attempts under `q3_2026_09_26/q3_18_25_39_...` show:
+
+| Attempt | Payload peak fit score | Loop peak fit score | Loop held-out ground acceptance |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.7225 | 0.6755 | 0.0010 |
+| 2 | 0.7345 | 0.6980 | 0.0000 |
+| 3 | 0.7215 | 0.6795 | 0.0000 |
+
+`qua_thresholds` searches for a training threshold with score greater than 0.7.
+When none exists, its fallback selects the first positive-score threshold near
+the minimum projection. That accepts essentially no ground shots. The separate
+20% confident-assignment guard then correctly rejects the calibration. These
+peak values are training fit scores, not measured reset fidelity. The prior
+successful loop calibration at 18:09:34 had peak score 0.7010 and ground
+acceptance 0.684: the fit was already close to the policy boundary. Payload IQ
+centers/separation remain broadly comparable, and all arrays contain 2000 records.
+
+All three failed attempts and the preceding success share config SHA256
+`df81b794e6baecad99e998f6515891d773be1158f9b6f6033476e4c3e9877588`.
+No changed calibration settings or executed location-probe code explain this
+failure. The overlapping loop reference distributions fail the current fitting
+criterion; why they became insufficiently separated is not yet established.
+
+Code inspection found a pre-existing timing mismatch: production calibration
+uses `build_calibration_config(tls.BaseConfig, ...)`, leaving the reference
+program's default legacy accumulator timing and 2-us read delay. The pump-probe
+runner applies `official_wait_all`, pre-measure synchronization, flush off, and
+10-us read delay only after calibration. Calibration also deliberately uses
+ramped per-shot park references, unlike persistent-park active acquisition.
+These differences justify a diagnostic, but do not prove the cause of this
+particular failure. Do not weaken thresholds or reuse a stale calibration.
+
+Run the new calibration-only diagnostic:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetCheck --run
+```
+
+It acquires profiles in forward/reverse order:
+legacy, official, official_guard20, official_guard20, official, legacy.
+Each profile collects 2000 ground and 2000 pi-prepared records in each of
+payload and loop contexts: 48,000 reference shots total. The legacy profile
+preserves the current production calibration config. Official changes only the
+four feedback timing fields used by the pump-probe runner. Official_guard20
+additionally increases loop recovery from 10 to 20 us. Drive frequencies,
+amplitudes, reference flux protocol and the 0.7/0.2 policy values stay fixed.
+
+Every profile saves `config.json`, `calibration.json`, and `calibration_raw.npz`
+in a distinct subfolder, including rejected fits. The manifest records the
+baseline config hash, profile results, acceptance/rejection reason and commit.
+Expected quality rejections do not stop this diagnostic; transport or unexpected
+acquisition failures do. No active feedback loop, TLS pump, or location scan is
+run, and no fitted calibration is installed automatically. Output prefix:
+`q3/q3_pump_probe_reset_check_<UTC>_<id>/`.
+
+Compare repeated profiles, raw distributions, and both contexts before choosing
+a repair. Even improved scores under official timing would not alone establish
+root cause or validate equivalence to the full active acquisition sequence.
