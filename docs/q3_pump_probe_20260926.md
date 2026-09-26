@@ -329,3 +329,70 @@ extra reset follows this added interval. Accordingly this is a controlled
 sequence-memory test, not a direct TLS lifetime measurement. Compare pump,
 detuned and null contrasts separately at each wait and inspect both short
 references and hold dependence before fitting any decay model.
+
+## Recovery results and probe-hold scan
+
+Session `q3_pump_probe_recovery_check_20260926T214935Z_f3398562` completed all
+864 blocks (345,600 shots) at commit `935b77c`, from 21:49:48 to 22:00:50 UTC.
+CSV counts/populations match the manifest and every block reports 400 records.
+Median absolute before/after sham change is 0.0225, with median separation
+1.42 seconds. The same local time interpolation and repeat-paired contrasts
+were used; intervals below are unadjusted 95% t intervals across eight repeats.
+
+Mean +8-MHz pump minus its local sham, ground preparation:
+
+| Additional post-reset wait | 2-us probe hold | 10-us probe hold |
+| ---: | ---: | ---: |
+| 0 us | +0.0412 | +0.0375 |
+| 100 us | +0.0312 | +0.0036 |
+| 500 us | −0.0013 | −0.0079 |
+
+At 500 us both ground-probe contrasts are consistent with zero. For the 10-us
+probe at zero added wait, the +8-minus-null contrast is +0.0383 with interval
+[+0.0086, +0.0679], and +8-minus-20 is +0.0374 with interval [+0.0035, +0.0713].
+The latter contrast changes by −0.0440 between 0 and 500 us, interval
+[−0.0829, −0.0051]. This is evidence consistent with a transient pump-dependent
+response, with multiplicity and the changing shot period still relevant.
+
+The explicit null matters: ground/2-us at zero added wait has a positive null
+contrast +0.0183 in all eight repeats (interval [+0.0107, +0.0259]). The
+corresponding +8-minus-null result is only +0.0229, interval [+0.0003, +0.0455].
+For that probe, the 500-minus-0-us change after null subtraction includes zero,
+[−0.0472, +0.0134]. Local shams therefore do not remove every systematic or
+history effect, and the ground/2-us curve alone does not establish a decay.
+
+Ground-state reference populations also fall with added wait: the local shams
+for +8-MHz ground/2-us change from about 0.135 at zero wait to 0.078 at 500 us.
+These are classified signals, not calibrated thermal populations. The wait
+changes preparation history as well as elapsed time, while the reset latency
+remains unmeasured. No TLS lifetime is fitted, and no TLS suppression or
+persistent frequency displacement is established. Excited-prepared probes do
+not show a consistent selective survival improvement.
+
+A raw-data check reclassified 120 blocks: all three zero-wait ground/2-us test
+conditions and their references, plus the +8 ground/10-us triplets at 0 and
+500 us. All counts match. The ground/2-us null offset remains in the final
+350 shots as well as the first 50; it is not explained by simply discarding
+the first 50 shots. Unthresholded IQ gives the same broad pattern of smaller
+ground-probe response at 500 us.
+
+Next, separate an early probe offset from changes with target hold time:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --probe-time-check
+```
+
+At 4.110 GHz, keep pump gain 3000 and duration 15 us, +8/−20-MHz controls,
+and the zero-gain null. Randomize ground/excited preparation and programmed
+probe holds 0.1, 2, 10, and 30 us, with no additional recovery wait. Every test
+retains its own matching sham-before/test/sham-after triplet. Twelve repeats
+of 400 shots produce 864 blocks (192 driven, 672 zero), 345,600 shots. Output
+prefix is `q3/q3_pump_probe_probe_time_check_<UTC>_<id>/`.
+
+The 0.1-us point still has a 0.5-us arrival and 40-us return; it is not zero
+interaction time or a readout immediately after reset. The pinned native
+correction generates finite positive-duration segments for all four requested
+holds: target windows 0.6/2.5/10.5/30.5 us followed by the same 40-us complete
+return. This was checked without hardware. No pulse backend changes are made.
+An offset at the earliest point versus growth during the hold will guide a
+subsequent location/reset control; neither outcome alone identifies a TLS.

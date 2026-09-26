@@ -390,3 +390,41 @@ def test_scheduled_recovery_reaches_backend_configuration(monkeypatch, delay):
                 pump_frequency_mhz=4118., pump_us=15., probe_us=2., shots=400,
                 **module.drive_settings(entry, p))
         assert captured[-1] == delay
+
+
+def test_probe_time_scan_matches_hold_for_all_pump_and_reference_blocks():
+    module = pilot()
+    points = module.schedule(module.parameters(probe_time_check=True))
+    assert len(points) == 864
+    from collections import Counter
+    centers = []
+    for start in range(0, len(points), 3):
+        before, test, after = points[start:start + 3]
+        assert before['pump_gain'] == after['pump_gain'] == 0
+        assert test['pump_gain'] == (0 if test['test_condition'] == 'null' else 3000)
+        assert len({(e['comparison_id'], e['repeat'], e['probe_state'], e['probe_us'],
+                     e['pump_detuning_mhz'], e['test_condition']) for e in (before, test, after)}) == 1
+        assert all(e['additional_recovery_us'] == 0 for e in (before, test, after))
+        centers.append(test)
+    assert Counter((e['probe_state'], e['probe_us'], e['test_condition']) for e in centers) == {
+        (state, hold, condition): 12 for state in ['g', 'e'] for hold in [.1, 2., 10., 30.]
+        for condition in ['plus8', 'minus20', 'null']}
+    assert len({e['comparison_id'] for e in centers}) == 288
+    assert len({e['name'] for e in points}) == 864
+
+
+def test_probe_time_plan_is_hardware_free_and_exclusive():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--probe-time-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan['hardware_access'] is False and plan['acquisition_blocks'] == 864
+    assert plan['parameters']['probe_holds_us'] == [.1, 2., 10., 30.]
+    assert plan['parameters']['target_frequency_ghz'] == [4.110]
+    assert plan['parameters']['pump_us'] == 15. and plan['parameters']['pump_gain'] == 3000
+    for other in ['--frequency-check', '--confirmation-check', '--dose-check', '--recovery-check']:
+        result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--probe-time-check', other],
+                                text=True, capture_output=True)
+        assert result.returncode != 0
+    with pytest.raises(ValueError):
+        pilot().parameters(probe_time_check=True, recovery_check=True)
