@@ -82,7 +82,14 @@ def test_missing_correction_is_rejected_before_importing_hardware(tmp_path):
         localizer().run(data_root=tmp_path)
 
 
-def test_run_delivers_full_band_contract_to_existing_acquisition(tmp_path, monkeypatch):
+@pytest.mark.parametrize("overrides, expected_grid, expected_delays", [
+    (None, (3.9, 4.3, 0.5), [25.0, 60.0, 100.0]),
+    ({"freq_min_ghz": 4.085, "freq_max_ghz": 4.112, "freq_step_mhz": 0.25,
+      "decay_delays_us": [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]},
+     (4.085, 4.112, 0.25), [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]),
+])
+def test_run_delivers_scan_contract_to_existing_acquisition(
+        tmp_path, monkeypatch, overrides, expected_grid, expected_delays):
     module = localizer()
     correction = tmp_path / "correction.json"
     correction.write_bytes(b"abc")
@@ -106,9 +113,10 @@ def test_run_delivers_full_band_contract_to_existing_acquisition(tmp_path, monke
         monkeypatch.setitem(sys.modules, f"{RUNNERS}.{name}", stub)
         monkeypatch.setattr(package, name, stub, raising=False)
     monkeypatch.setenv("Q3_5PT_MAX_RUNS", "1000")
-    module.run(data_root=tmp_path, correction_json=correction)
+    module.run(data_root=tmp_path, correction_json=correction, parameter_overrides=overrides)
     p = observed["parameters"]
-    assert (p["freq_min_ghz"], p["freq_max_ghz"], p["freq_step_mhz"]) == (3.9, 4.3, 0.5)
+    assert (p["freq_min_ghz"], p["freq_max_ghz"], p["freq_step_mhz"]) == expected_grid
+    assert p["decay_delays_us"] == expected_delays
     assert p["max_runs"] == 3 and p["wall_clock_duration_min"] == 30.0
     assert p["sync_enabled"] is False and p["reset_mode"] == "active"
     assert p["apply_flux_tail_compensation"] is True
@@ -119,3 +127,21 @@ def test_run_delivers_full_band_contract_to_existing_acquisition(tmp_path, monke
     assert observed["qubit"] == "q3" and observed["set_yoko"] is False
     assert observed["correction"] == str(correction)
     assert os.environ["Q3_5PT_MAX_RUNS"] == "1000"
+
+
+def test_target_check_plan_has_early_times_and_both_observed_quiet_flanks():
+    module = f"{RUNNERS}.TLSPumpProbeTargetCheck"
+    assert importlib.util.find_spec(module) is not None, "target-check runner is missing"
+    result = subprocess.run([sys.executable, "-m", module, "--plan"], cwd=ROOT,
+                            text=True, capture_output=True, check=True)
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False
+    assert plan["frequency_count"] == 109
+    p = plan["parameters"]
+    assert p["freq_min_ghz"] < 4.086 < 4.098 < 4.110 < p["freq_max_ghz"]
+    assert p["decay_delays_us"] == [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+    assert p["reference_hold_us"] == 2.0
+    assert p["shots_per_condition"] == 500
+    assert p["max_runs"] == 3
+    assert p["output_suffix"] == "TLS_PumpProbe_TargetCheck"
+    assert plan["condition_count"] == 10
