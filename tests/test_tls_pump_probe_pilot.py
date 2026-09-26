@@ -250,3 +250,80 @@ def test_confirmation_plan_and_exclusive_stage_selection():
     assert result.returncode != 0
     with pytest.raises(ValueError):
         pilot().parameters(frequency_check=True, confirmation_check=True)
+
+
+def test_dose_check_pairs_each_actual_gain_and_null_with_zero_gain_controls():
+    module = pilot()
+    p = module.parameters(dose_check=True)
+    points = module.schedule(p)
+    assert len(points) == 720
+    from collections import Counter
+    centers = []
+    for start in range(0, len(points), 3):
+        before, test, after = points[start:start + 3]
+        assert before['pump_gain'] == after['pump_gain'] == 0
+        assert before['pump_mode'] == after['pump_mode'] == 'sham'
+        assert len({(e['comparison_id'], e['test_condition'], e['target_index'],
+                     e['repeat'], e['probe_state'], e['probe_us'], e['pump_detuning_mhz'])
+                    for e in (before, test, after)}) == 1
+        if test['test_condition'] == 'null':
+            assert test['pump_gain'] == 0 and test['pump_mode'] == 'sham'
+        else:
+            assert (test['pump_mode'], test['pump_detuning_mhz']) in [('plus8', 8), ('minus20', -20)]
+            assert test['pump_gain'] in [1500, 3000]
+            assert test['test_condition'] == f"{test['pump_mode']}_gain{test['pump_gain']}"
+        centers.append(test)
+    assert Counter((e['pump_mode'], e['pump_gain']) for e in centers) == {
+        ('plus8', 1500): 48, ('plus8', 3000): 48,
+        ('minus20', 1500): 48, ('minus20', 3000): 48, ('sham', 0): 48}
+    assert len({e['comparison_id'] for e in centers}) == 240
+    # Existing stages must still emit the same effective physical gains.
+    for kwargs in [{}, {'frequency_check': True}, {'confirmation_check': True}]:
+        for e in module.schedule(module.parameters(**kwargs)):
+            assert e['pump_gain'] == (0 if e['pump_mode'] == 'sham' else 3000)
+
+
+def test_dose_plan_reports_bounded_amplitude_scan_and_rejects_other_stages():
+    result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--dose-check'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan['hardware_access'] is False
+    assert plan['acquisition_blocks'] == 720
+    assert plan['parameters']['target_frequency_ghz'] == [4.110]
+    assert plan['parameters']['pump_gains'] == [1500, 3000]
+    assert plan['parameters']['shots'] == 400 and plan['parameters']['repeats'] == 12
+    for other in ['--frequency-check', '--confirmation-check']:
+        result = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--dose-check', other],
+                                text=True, capture_output=True)
+        assert result.returncode != 0
+    with pytest.raises(ValueError):
+        pilot().parameters(dose_check=True, confirmation_check=True)
+
+
+def test_scheduled_drive_settings_pass_real_backend_validation_for_pump_and_sham(monkeypatch):
+    module = pilot()
+    integration = importlib.import_module(f'{PREFIX}.active_reset_OPX.integration')
+    p = module.parameters(dose_check=True)
+    reached = []
+
+    class ProgramBoundaryReached(Exception):
+        pass
+
+    def stop_before_hardware(soccfg, cfg, payload, loop):
+        reached.append((cfg['opx_saturation_arm'], cfg['opx_saturation_pump_gain']))
+        raise ProgramBoundaryReached
+
+    monkeypatch.setattr(integration, 'OPXResetTLSSaturationProgram', stop_before_hardware)
+    # Real backend validation must accept all three physical gains. Only the
+    # hardware program construction is replaced; no QICK connection is made.
+    for mode, gain, expected in [('plus8', 1500, ('pump', 1500)),
+                                  ('minus20', 3000, ('pump', 3000)),
+                                  ('sham', 0, ('no_pump', 3000))]:
+        settings = module.drive_settings({'pump_mode': mode, 'pump_gain': gain}, p)
+        with pytest.raises(ProgramBoundaryReached):
+            integration.acquire_tls_saturation_iq(
+                None, None, {'reset_mode': 'passive'}, ff_gain=-16151,
+                pump_frequency_mhz=4118., pump_us=15., probe_us=2., shots=400,
+                **settings)
+        assert reached[-1] == expected

@@ -210,3 +210,60 @@ rapid fluctuations or distinguish persistent carryover by itself. Outputs use
 `q3/q3_pump_probe_confirmation_check_<UTC>_<id>/`. Evaluate each candidate against
 its local references, the null distribution, repeat consistency, and the short
 reference/IQ changes before deciding on a dose or delay scan.
+
+## Confirmation results and amplitude dependence
+
+Session `q3_pump_probe_confirmation_check_20260926T211749Z_abb5ca0f` completed
+all 768 blocks (307,200 shots) at commit `c794ee5`, from 21:17:56 to 21:25:19
+UTC. CSV counts/populations match the manifest and all blocks report 400 records.
+The median before/after sham separation fell to 1.12 seconds (maximum 2.39),
+but the median absolute sham change is still 0.0325 and the maximum is 0.2275.
+
+Use each triplet's acquisition start times to interpolate its local sham, then
+form one test-minus-sham contrast per repeat. Report repeat scatter, not merely
+pooled binomial error. For comparison with the zero-drive null or detuned pump,
+subtract the corresponding contrast within the same repeat, target, preparation,
+and hold. Those triplets are nearby but not simultaneous. The intervals below
+are unadjusted 95% Student-t intervals across eight repeat contrasts; they assume
+independent repeats and do not account for the full set of inspected comparisons.
+
+The clearest candidate is **4.110 GHz, +8 MHz pump, ground preparation, 2-us
+hold**. Its local contrasts are +0.0688, +0.0601, +0.0428, +0.0405, +0.0803,
++0.0639, +0.0329, +0.0141: all eight positive, mean +0.0504. Relative to the
+−20-MHz control's local contrasts, the difference is +0.0634 with interval
+[+0.0404, +0.0864]. Relative to the noisier zero-drive null, it is +0.0326
+with interval [−0.0232, +0.0885]. Thus it is a repeatable candidate relative to
+its local references and detuned control, with uncertainty remaining in the
+explicit null comparison. All 24 raw IQ files for these eight triplets reproduce
+the saved classified counts. The unthresholded IQ-axis contrast has the same
+positive mean sign.
+
+The earlier 4.098-GHz ground/10-us +8-MHz candidate is +0.0348 relative to
+its local shams, while its null is +0.0337. Their difference is +0.0011 with
+interval [−0.0734, +0.0757]; it does not separate from this null check. At
+4.110 GHz, +8 MHz no longer gives a consistent excited-prepared short-reference
+decrease. There is no established relaxation improvement or TLS suppression.
+The positive ground/short-hold signal may involve excitation, preparation/reset,
+or another pump-dependent mechanism. Classified populations are not calibrated
+thermal populations, and the intervening feedback-reset latency is not recorded.
+
+The next stage tests amplitude dependence at fixed 15-us duration:
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePilot --run --dose-check
+```
+
+Probe only 4.110 GHz. For each ground/excited preparation and 2/10-us hold,
+randomize five tests: +8 and −20 MHz each at programmed gains 1500 and 3000,
+and the zero-gain null at +8 MHz. Every test retains its own matching-frequency
+sham-before/test/sham-after triplet. Gain is saved per manifest point and the
+effective waveform gain is recorded as `effective_pump_gain` in the CSV.
+`test_condition` includes gain for nonzero tests, and `comparison_id` pairs the
+three blocks. Gains are DAC settings, not a calibrated microwave power scale.
+
+Twelve repeats of 400 shots yield 720 blocks (192 driven, 528 zero-gain),
+288,000 recorded probe shots. All prior reset, flux, return, idle, and pulse
+settings remain fixed, and no pump gain exceeds the already tested 3000.
+Outputs use `q3/q3_pump_probe_dose_check_<UTC>_<id>/`. Look for repeatable
+amplitude dependence at +8 MHz relative to both null and −20 MHz, and inspect
+short-reference and hold-dependent changes before assigning a relaxation model.

@@ -25,6 +25,10 @@ power escalation or a claim of TLS suppression.
 of 400 shots. Every test has its own immediately adjacent zero-gain controls
 at the same tone frequency. A fourth test is itself zero-gain (null), providing
 a drift/noise check. All three blocks share comparison_id and test_condition.
+
+--dose-check holds the probe at 4.110 GHz and tests +8/-20 MHz pumps at gains
+1500/3000, plus the zero-gain null, with twelve repeats of 400 shots. Each test
+is locally bracketed as above. Pump duration stays 15 us; no gain exceeds 3000.
 """
 
 import argparse
@@ -42,8 +46,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters(*, frequency_check=False, confirmation_check=False):
-    if frequency_check and confirmation_check:
+def parameters(*, frequency_check=False, confirmation_check=False, dose_check=False):
+    if sum((frequency_check, confirmation_check, dose_check)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage.")
     p = {
         "target_frequency_ghz": [4.094, 4.098, 4.100, 4.102, 4.104, 4.106, 4.110],
@@ -70,6 +74,13 @@ def parameters(*, frequency_check=False, confirmation_check=False):
             "pump_detunings_mhz": [0.0, 8.0, -20.0],
             "bracket_each": True,
         })
+    if dose_check:
+        p.update({
+            "target_frequency_ghz": [4.110],
+            "shots": 400, "repeats": 12, "order_seed": 20260929,
+            "pump_detunings_mhz": [8.0, -20.0], "pump_gains": [1500, 3000],
+            "bracket_each": True,
+        })
     return p
 
 
@@ -90,32 +101,45 @@ def schedule(p):
             rng.shuffle(probes)
             for state, hold in probes:
                 if p["bracket_each"]:
-                    tests = [(mode, d, mode) for mode, d in modes] + [("sham", 8.0, "null")]
+                    gains = p.get("pump_gains", [p["pump_gain"]])
+                    tests = [(mode, d, f"{mode}_gain{gain}" if len(gains) > 1 else mode, gain)
+                             for mode, d in modes for gain in gains]
+                    tests.append(("sham", 8.0, "null", 0))
                     rng.shuffle(tests)
                     controls = []
-                    for mode, d, condition in tests:
-                        controls.extend([("sham", d, "before", condition),
-                                         (mode, d, "test", condition),
-                                         ("sham", d, "after", condition)])
+                    for mode, d, condition, gain in tests:
+                        controls.extend([("sham", d, "before", condition, 0),
+                                         (mode, d, "test", condition, gain),
+                                         ("sham", d, "after", condition, 0)])
                 elif p["bracket_sham"]:
-                    controls = [(mode, d, "sweep", "") for mode, d in modes]
+                    controls = [(mode, d, "sweep", "", p["pump_gain"]) for mode, d in modes]
                     rng.shuffle(controls)
-                    controls = [("sham", 0.0, "before", ""), *controls, ("sham", 0.0, "after", "")]
+                    controls = [("sham", 0.0, "before", "", 0), *controls, ("sham", 0.0, "after", "", 0)]
                 else:
-                    controls = [("sham", 0.0, "randomized", ""),
-                                *((mode, d, "randomized", "") for mode, d in modes)]
+                    controls = [("sham", 0.0, "randomized", "", 0),
+                                *((mode, d, "randomized", "", p["pump_gain"]) for mode, d in modes)]
                     rng.shuffle(controls)
-                for mode, detuning, position, condition in controls:
+                for mode, detuning, position, condition, gain in controls:
                     points.append({
                         "name": f"point_{len(points):04d}", "repeat": repeat,
                         "target_index": target, "pump_mode": mode,
                         "pump_detuning_mhz": detuning, "probe_state": state,
+                        "pump_gain": gain,
                         "probe_us": float(hold),
                         "control_position": position,
                         "test_condition": condition,
                         "comparison_id": f"comparison_{len(points) // 3:04d}" if p["bracket_each"] else "",
                     })
     return points
+
+
+def drive_settings(entry, p):
+    """Map physical gain to the acquisition API's positive nominal-gain contract."""
+    sham = entry["pump_mode"] == "sham"
+    # no_pump sets the waveform gain to zero inside the backend; its nominal
+    # gain argument must still be positive, including for the zero-drive null.
+    return {"arm": "no_pump" if sham else "pump",
+            "pump_gain": p["pump_gain"] if sham else entry["pump_gain"]}
 
 
 def collect_points(manifest, path, acquire):
@@ -145,8 +169,9 @@ def json_default(value):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=False,
-        confirmation_check=False):
-    p = parameters(frequency_check=frequency_check, confirmation_check=confirmation_check)
+        confirmation_check=False, dose_check=False):
+    p = parameters(frequency_check=frequency_check, confirmation_check=confirmation_check,
+                   dose_check=dose_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -170,7 +195,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
         indices = [int(np.argmin(abs(full_grid - f))) for f in p["target_frequency_ghz"]]
         dc_vec, realized = all_dc[indices], all_realized[indices]
         compensation = tls._load_correction(str(correction), str(data_root))
-        kind = "confirmation_check" if confirmation_check else "frequency_check" if frequency_check else "pilot"
+        kind = ("dose_check" if dose_check else "confirmation_check" if confirmation_check
+                else "frequency_check" if frequency_check else "pilot")
         session_id = f"q3_pump_probe_{kind}_" + datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
         folder = data_root / "q3" / session_id
@@ -180,6 +206,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
             "schema": "q3.pump-probe-pilot.v1", "session_id": session_id,
             "frequency_check": frequency_check,
             "confirmation_check": confirmation_check,
+            "dose_check": dose_check,
             "status": "calibrating", "code_commit": os.environ["Q3_CODE_COMMIT"],
             "created_at": datetime.now(timezone.utc).isoformat(), "parameters": p,
             "correction_json": str(correction), "correction_sha256": localizer.CORRECTION_SHA256,
@@ -223,9 +250,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                     point_cfg = {**cfg, "opx_saturation_probe_state": entry["probe_state"]}
                     i, q, telemetry = acquire_tls_saturation_iq(
                         soc, soccfg, point_cfg, ff_gain=int(dc_vec[target]),
-                        pump_frequency_mhz=pump_freq, pump_gain=p["pump_gain"],
+                        pump_frequency_mhz=pump_freq,
                         pump_us=p["pump_us"], probe_us=entry["probe_us"],
-                        arm="no_pump" if entry["pump_mode"] == "sham" else "pump",
+                        **drive_settings(entry, p),
                         recovery_us=p["additional_recovery_us"], shots=p["shots"],
                     )
                     raw_path = folder / f"{entry['name']}.npz"
@@ -242,7 +269,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                         "target_frequency_ghz": p["target_frequency_ghz"][target],
                         "realized_frequency_ghz": float(realized[target]), "dc_gain": int(dc_vec[target]),
                         "pump_frequency_mhz": pump_freq,
-                        "effective_pump_gain": 0 if entry["pump_mode"] == "sham" else p["pump_gain"],
+                        "effective_pump_gain": entry["pump_gain"],
                     }
                     row = {k: entry[k] for k in ("name", "repeat", "target_index", "pump_mode",
                                                 "pump_detuning_mhz", "probe_state", "probe_us",
@@ -255,7 +282,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, frequency_check=
                     stream.flush()
                     result["telemetry"] = telemetry
                     print(f"[pump-probe] {entry['name']} {result['target_frequency_ghz']:.3f} GHz "
-                          f"{entry['pump_mode']} {entry['probe_state']} {entry['probe_us']:g} us "
+                          f"{entry['pump_mode']} gain={result['effective_pump_gain']} "
+                          f"{entry['probe_state']} {entry['probe_us']:g} us "
                           f"P={result['P_excited']:.3f}", flush=True)
                     return result
 
@@ -278,18 +306,22 @@ def main(argv=None):
                        help="scan pump detuning with bracketing sham references")
     stage.add_argument("--confirmation-check", action="store_true",
                        help="bracket each candidate tone and a zero-gain null test")
+    stage.add_argument("--dose-check", action="store_true",
+                       help="test gains 1500/3000 at +8/-20 MHz with local shams and a null")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        p = parameters(frequency_check=args.frequency_check, confirmation_check=args.confirmation_check)
+        p = parameters(frequency_check=args.frequency_check, confirmation_check=args.confirmation_check,
+                       dose_check=args.dose_check)
         print(json.dumps({"hardware_access": False, "parameters": p,
                           "acquisition_blocks": len(schedule(p)), "reset_calibrations": 1,
                           "pump_modes": sorted({e["pump_mode"] for e in schedule(p)}),
                           "probe_states": ["g", "e"], "timing_note": __doc__}, indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            frequency_check=args.frequency_check, confirmation_check=args.confirmation_check)
+            frequency_check=args.frequency_check, confirmation_check=args.confirmation_check,
+            dose_check=args.dose_check)
     return 0
 
 
