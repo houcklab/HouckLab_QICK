@@ -285,6 +285,7 @@ def _run_series(
     recalibrate,
     recalibration_min=AUTOMATIC_RECALIBRATION_MIN,
     max_runs=None,
+    max_consecutive_failures=None,
 ):
     series_start = None
     base_path = None
@@ -342,6 +343,9 @@ def _run_series(
                     f"[sync] completion update failed "
                     f"({type(sync_exc).__name__}: {sync_exc}); continuing locally."
                 )
+            if (max_consecutive_failures is not None and
+                    consecutive_failures >= int(max_consecutive_failures)):
+                raise
             run_index += 1
             continue
         scan_finish = synchronizer.corrected_clock()
@@ -508,6 +512,15 @@ def save_execution_test_outputs(exp):
     )
 
 
+def passive_readout_calibration(params, tls, soc, soccfg):
+    """Opt-in single-shot calibration for passive experimental scans."""
+    if not params.get("calibrate_passive_readout", False):
+        return None
+    if params["reset_mode"] != "passive":
+        raise ValueError("calibrate_passive_readout requires passive reset")
+    return tls.run_step5_single_shot_cal(tls.outerFolder, soc, soccfg)
+
+
 def main():
     execution_test_mode, execution_test_save = execution_test_settings()
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
@@ -606,6 +619,7 @@ def main():
     })
     base = reset_session.apply(base)
     apply_verified_feedback_timing(base)
+    calib_params = passive_readout_calibration(p, tls, soc, soccfg)
     park_gain = base.get("ff_park_gain", tls._baseline_dc_offset())
     state = {"session": reset_session}
 
@@ -645,7 +659,7 @@ def main():
             decay_delays_us=p["decay_delays_us"],
             reference_hold_us=float(p["reference_hold_us"]),
             shots=int(p["shots_per_condition"]),
-            calib_params=None,
+            calib_params=calib_params,
             park_voltage=park_gain,
             min_ref_contrast=float(p["min_ref_contrast"]),
             max_relative_error=float(p["max_relative_error"]),
@@ -689,6 +703,7 @@ def main():
         recalibrate,
         recalibration_min=float(p["reset_recalibration_min"]),
         max_runs=p.get("max_runs"),
+        max_consecutive_failures=p.get("max_consecutive_failures"),
     )
     print(
         f"apples-to-apples {2 + len(p['decay_delays_us'])}-condition "

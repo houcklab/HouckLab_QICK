@@ -1723,8 +1723,20 @@ Passive and active-reset results should not be combined without a fresh
 protocol comparison. The runner uses one isolated pass and a distinct output
 suffix, without changing production scan defaults.
 
+The first wide-passive launch on September 27 failed before acquiring any
+frequency point: the shared five-point runner passed `calib_params=None` to a
+passive T1 experiment, which requires a preceding `SingleShot1Q` readout
+calibration. Its finite-run cap counted only successful passes, so the same
+setup error repeated until interrupted after more than 600 attempts. The
+wide-scan runner now opts into the existing step-5 single-shot calibration
+(1000 shots, minimum fidelity 0.60) and passes its discrimination parameters
+to the five-point experiment. It also stops after the first failed pass and
+reports the original exception. Both options are enabled only by this wide
+scan; the production five-point defaults remain unchanged.
+
 On the measurement PC after stopping other acquisitions:
 
 ```bash
+git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeWidePassiveScan --run
 ```

@@ -2012,6 +2012,48 @@ def test_unsynchronized_series_obeys_duration_without_sync_timestamps(monkeypatc
     assert 0 < len(runs) < 4
 
 
+def test_experimental_series_stops_after_first_failed_pass(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+
+    class Sync:
+        enabled = False
+        def corrected_clock(self):
+            return 0.0
+        def wait_for_start(self, *args):
+            return {}
+        def wait_for_end(self, *args, **kwargs):
+            return {}
+
+    attempts = []
+    def factory(metadata):
+        attempts.append(metadata)
+        raise ValueError("calib_params is required (run SingleShot1Q first).")
+
+    with pytest.raises(ValueError, match="calib_params is required"):
+        runner._run_series(factory, 120, Sync(), lambda: None,
+                           max_runs=1, max_consecutive_failures=1)
+    assert len(attempts) == 1
+
+
+def test_passive_readout_calibration_is_opt_in(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+    calls = []
+    calibration = {"angle": 1.25, "threshold": 0.4}
+    fake_tls = types.SimpleNamespace(
+        outerFolder="/nas", run_step5_single_shot_cal=lambda *args: (
+            calls.append(args), calibration)[1])
+
+    assert runner.passive_readout_calibration(
+        {"reset_mode": "passive"}, fake_tls, "soc", "soccfg") is None
+    assert calls == []
+    assert runner.passive_readout_calibration(
+        {"reset_mode": "passive", "calibrate_passive_readout": True},
+        fake_tls, "soc", "soccfg") is calibration
+    assert calls == [("/nas", "soc", "soccfg")]
+
+
 def test_series_override_accepts_explicit_recovery_duration(monkeypatch):
     """A timing audit can vary recovery without editing production defaults."""
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))

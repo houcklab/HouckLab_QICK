@@ -22,6 +22,8 @@ def test_plan_is_one_descending_pump_off_pass_without_active_reset():
     assert (p["freq_min_ghz"], p["freq_max_ghz"], p["freq_step_mhz"]) == (3.8, 4.3, 2.0)
     assert p["dc_min"] == -20550 and p["dc_max"] == -11800
     assert p["reset_mode"] == "passive" and p["max_runs"] == 1
+    assert p["calibrate_passive_readout"] is True
+    assert p["max_consecutive_failures"] == 1
     assert p["wall_clock_duration_min"] == 2.0
     assert p["sync_enabled"] is False
     assert p["reference_hold_us"] == 0.1
