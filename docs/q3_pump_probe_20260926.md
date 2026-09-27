@@ -1866,3 +1866,19 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeBandComparison --run
 ```
+
+The band comparison completed at 17:01–17:06. Both 81-point scouts selected
+4.138 GHz (pre depth 0.366, post depth 0.447). All three 41-point arms
+completed over 4.118–4.158 GHz with 350 shots per condition. Define normalized
+25-us survival at each frequency as `(Ps_25us-P0)/(P1-P0)`. With the outer
+4.118–4.125 and 4.151–4.158 GHz points as flanks and 4.133–4.143 GHz as the
+central loss region, the mean flank-minus-center dip depths were **0.4250,
+0.4248, 0.4294** for sham/pump/sham. Thus the 15-us, gain-3000 park-bias
+pump at 4.138 GHz did not measurably suppress the loss feature. The center
+coordinate was unchanged to the 1-MHz scout grid before and after the block.
+The pumped arm raised raw P0 and P1 somewhat over both shams across the band,
+so a single-frequency raw-population difference would be misleading. This is
+a null for this pump placement, duration, gain, and current device state; it
+does not rule out a qubit-mediated on-target pump or identify the loss as a TLS.
+Do not repeat the same park-pump protocol without a new physical control or
+changed preparation mechanism.
