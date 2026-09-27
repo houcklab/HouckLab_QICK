@@ -28,6 +28,12 @@ of the preceding readout drive on the later observable, not a specific mechanism
 at 20-us verification delay, with feedback off and normal final readout gain.
 Ten balanced rounds retain initial decision projections for a fixed-axis
 separation check; this is not a fully recalibrated readout optimization.
+
+--half-gain-reset-check freshly calibrates payload/loop decisions at half the
+normal amplitude, then repeats the active/none x no-pi/pi operational check.
+A separate normal-gain reference bundle classifies the normal-gain final readout.
+Both reference sets are repeated at the end; initial classifiers stay fixed.
+All starting bundles must pass the unchanged quality guard before benchmarking.
 """
 
 import argparse
@@ -47,8 +53,9 @@ PROFILE = 'official_guard20'
 SHOTS = 400
 
 
-def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=False):
-    if sum((delay_check, readout_memory_check, readout_gain_check)) > 1:
+def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=False,
+         half_gain_reset_check=False):
+    if sum((delay_check, readout_memory_check, readout_gain_check, half_gain_reset_check)) > 1:
         raise ValueError('Choose only one verification follow-up stage')
     delays = [20., 100., 500.] if delay_check or readout_memory_check else [20.]
     conditions = [(scheme, prep, delay, 'normal', 1.) for delay in delays
@@ -59,6 +66,9 @@ def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=Fa
     if readout_gain_check:
         conditions = [('none', prep, 20., f'amplitude_{fraction:g}', fraction)
                       for fraction in (0., .25, .5, .75, 1.) for prep in ('g', 'e')]
+    if half_gain_reset_check:
+        conditions = [(scheme, prep, delay, 'amplitude_0.5', .5)
+                      for scheme, prep, delay, _, _ in conditions]
     points = []
     for repeat in range(10 if readout_gain_check else 12):
         offset = repeat % len(conditions)
@@ -72,7 +82,8 @@ def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=Fa
                                not_before_offset_s=repeat * 30.))
     return dict(hardware_access=False, profile=PROFILE, delay_check=bool(delay_check),
                 readout_memory_check=bool(readout_memory_check), readout_gain_check=bool(readout_gain_check), shots_per_block=SHOTS,
-                benchmark_shots=len(points) * SHOTS, reference_shots=2 * 4 * reference.SHOTS,
+                half_gain_reset_check=bool(half_gain_reset_check),
+                benchmark_shots=len(points) * SHOTS, reference_shots=(4 if half_gain_reset_check else 2) * 4 * reference.SHOTS,
                 points=points, note=__doc__)
 
 
@@ -113,9 +124,9 @@ def save_and_summarize(path, records, bundle):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=False,
-        readout_memory_check=False, readout_gain_check=False):
+        readout_memory_check=False, readout_gain_check=False, half_gain_reset_check=False):
     run_plan = plan(delay_check=delay_check, readout_memory_check=readout_memory_check,
-                    readout_gain_check=readout_gain_check)
+                    readout_gain_check=readout_gain_check, half_gain_reset_check=half_gain_reset_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -126,7 +137,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
             acquire_calibration, save_calibration, save_raw_calibration, validate_confident_calibration,
         )
         from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import (
-            OPXResetBenchmarkProgram, OPXReadoutMemoryBenchmarkProgram,
+            OPXResetBenchmarkProgram, OPXReadoutMemoryBenchmarkProgram, OPXVerificationGainBenchmarkProgram,
         )
         from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import _run_program, _block_timeout_s
         from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import AcquisitionTimeout
@@ -135,12 +146,19 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = 'q3', False, str(data_root)
         five.install_scan_calibration(tls)
         frequency = next(float(tls.BaseConfig[k]) for k in ('reset_pi_freq', 'qubit_pi_freq', 'qubit_freq') if tls.BaseConfig.get(k) is not None)
-        cal_cfg = reference.profile_config(build_calibration_config(tls.BaseConfig, frequency), PROFILE)
+        normal_gain = int(tls.BaseConfig['read_pulse_gain'])
+        decision_base = dict(tls.BaseConfig)
+        if half_gain_reset_check:
+            decision_base['read_pulse_gain'] = int(round(normal_gain * .5))
+        cal_cfg = reference.profile_config(build_calibration_config(decision_base, frequency), PROFILE)
+        verification_cal_cfg = dict(cal_cfg, read_pulse_gain=normal_gain)
         prefix = 'q3_pump_probe_reset_delay_check_' if delay_check else 'q3_pump_probe_reset_validation_'
         if readout_memory_check:
             prefix = 'q3_pump_probe_readout_memory_check_'
         if readout_gain_check:
             prefix = 'q3_pump_probe_readout_gain_check_'
+        if half_gain_reset_check:
+            prefix = 'q3_pump_probe_half_gain_reset_check_'
         session_id = prefix + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
         folder = data_root / 'q3' / session_id
         folder.mkdir(parents=True, exist_ok=False)
@@ -151,27 +169,39 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                         points=[dict(p, status='pending') for p in run_plan['points']])
         # Final references are part of collection, so complete means they were saved too.
         manifest['points'].append(dict(name='final_reference', kind='reference', status='pending'))
+        if half_gain_reset_check:
+            manifest['points'].append(dict(name='final_verification_reference', kind='reference', status='pending'))
         protocol.checkpoint(path, manifest)
         print(f'[reset-validation] manifest={path}', flush=True)
         try:
             soc, soccfg = tls.makeProxy()
 
-            def acquire_reference(name):
+            def acquire_reference(name, ref_cfg):
                 out = folder / name
                 out.mkdir(exist_ok=False)
-                (out / 'config.json').write_text(json.dumps(cal_cfg, default=pilot.json_default, indent=2) + '\n')
-                bundle, raw = acquire_calibration(soc, soccfg, cal_cfg, shots=reference.SHOTS,
+                (out / 'config.json').write_text(json.dumps(ref_cfg, default=pilot.json_default, indent=2) + '\n')
+                bundle, raw = acquire_calibration(soc, soccfg, ref_cfg, shots=reference.SHOTS,
                     **q3_benchmark_settings().calibration_options(),
                     metadata={'purpose': 'TLSPumpProbeResetValidation', 'stage': name, 'session_id': session_id})
                 save_calibration(out / 'calibration.json', bundle)
                 save_raw_calibration(out / 'calibration_raw.npz', raw)
                 return bundle, dict(reference.calibration_report(bundle), output=str(out))
 
-            bundle, report = acquire_reference('initial_reference')
+            bundle, report = acquire_reference('initial_reference', cal_cfg)
             manifest['initial_reference'] = report
             protocol.checkpoint(path, manifest)
             validate_confident_calibration(bundle)  # Never retry a quality rejection here.
-            cfg = runtime_config(tls.BaseConfig, bundle.to_dict(), frequency)
+            verification_bundle = bundle
+            if half_gain_reset_check:
+                verification_bundle, verification_report = acquire_reference('initial_verification_reference', verification_cal_cfg)
+                manifest['verification_reference'] = verification_report
+                protocol.checkpoint(path, manifest)
+                validate_confident_calibration(verification_bundle)
+            cfg = runtime_config(decision_base, bundle.to_dict(), frequency)
+            if half_gain_reset_check:
+                cfg['opx_benchmark_verification_gain'] = normal_gain
+                manifest['classifier_sources'] = dict(decision='initial_reference/calibration.json',
+                                                      verification='initial_verification_reference/calibration.json')
             (folder / 'config.json').write_text(json.dumps(cfg, default=pilot.json_default, indent=2) + '\n')
             manifest['status'] = 'running'
             protocol.checkpoint(path, manifest)
@@ -179,7 +209,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
 
             def acquire(entry):
                 if entry.get('kind') == 'reference':
-                    _, final_report = acquire_reference('final_reference')
+                    ref_cfg = verification_cal_cfg if entry['name'] == 'final_verification_reference' else cal_cfg
+                    _, final_report = acquire_reference(entry['name'], ref_cfg)
                     return final_report
                 reference.wait_for_reference_slot(start, entry['not_before_offset_s'])
                 entry['acquisition_started_at'] = datetime.now(timezone.utc).isoformat()
@@ -193,6 +224,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                     entry['initial_readout_gain'] = run_cfg['opx_benchmark_initial_readout_gain']
                     entry['verification_readout_gain'] = int(cfg['read_pulse_gain'])
                     program_class = OPXReadoutMemoryBenchmarkProgram
+                if half_gain_reset_check:
+                    entry['initial_readout_gain'] = entry['decision_readout_gain'] = int(cfg['read_pulse_gain'])
+                    entry['verification_readout_gain'] = normal_gain
+                    program_class = OPXVerificationGainBenchmarkProgram
                 program = program_class(soccfg, run_cfg, bundle.payload, bundle.loop)
                 try:
                     records = _run_program(soc, program, _block_timeout_s(run_cfg, SHOTS), run_cfg, total_shots=SHOTS)
@@ -202,7 +237,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                     entry['partial_acquisition'] = dict(raw_npz=str(partial_path),
                         completed_shots=exc.completed_shots, recovered_records=len(exc.partial_records))
                     raise
-                result = save_and_summarize(folder / (entry['name'] + '.npz'), records, bundle)
+                result = save_and_summarize(folder / (entry['name'] + '.npz'), records, verification_bundle)
                 result['read_length_cycles'] = int(program.us2cycles(cfg['read_length'], ro_ch=cfg['ro_chs'][0]))
                 if entry['reset_scheme'] == 'opx_unbounded' and result['confirmed_ground_records'] != SHOTS:
                     raise RuntimeError('Active benchmark returned non-ground terminal records; raw data saved')
@@ -218,7 +253,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
             manifest.update(status='failed', error=f'{type(exc).__name__}: {exc}')
             protocol.checkpoint(path, manifest)
             raise
-        print(f"[reset-validation] complete; final reference accepted={manifest['points'][-1]['result']['accepted']}; no production defaults changed. {path}", flush=True)
+        final_accepted = all(e['result']['accepted'] for e in manifest['points'] if e.get('kind') == 'reference')
+        print(f"[reset-validation] complete; final references accepted={final_accepted}; no production defaults changed. {path}", flush=True)
         return path
 
 
@@ -234,15 +270,17 @@ def main(argv=None):
                        help='compare normal/zero first readout drive with feedback off at all delays')
     stage.add_argument('--readout-gain-check', action='store_true',
                        help='screen reduced first-readout amplitudes at 20-us verification delay')
+    stage.add_argument('--half-gain-reset-check', action='store_true',
+                       help='validate half-amplitude feedback with separately calibrated normal verification')
     parser.add_argument('--data-root', type=Path, default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json', type=Path)
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(delay_check=args.delay_check, readout_memory_check=args.readout_memory_check,
-                              readout_gain_check=args.readout_gain_check), indent=2))
+                              readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json, delay_check=args.delay_check,
-            readout_memory_check=args.readout_memory_check, readout_gain_check=args.readout_gain_check)
+            readout_memory_check=args.readout_memory_check, readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check)
     return 0
 
 

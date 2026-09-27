@@ -1305,6 +1305,30 @@ class OPXResetBenchmarkProgram(QickProgram):
         self.end()
 
 
+class OPXVerificationGainBenchmarkProgram(OPXResetBenchmarkProgram):
+    """Diagnostic benchmark with a separately calibrated verification gain.
+
+    Decision readouts use cfg's read_pulse_gain and the supplied decision
+    calibrations. The caller must classify final IQ with an independent
+    calibration acquired at opx_benchmark_verification_gain.
+    """
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        if bool(cfg.get("ro_mode_periodic", False)):
+            raise ValueError("verification gain benchmark requires pulsed readout")
+        gain = cfg.get("opx_benchmark_verification_gain")
+        if not isinstance(gain, (int, np.integer)) or not 1 <= gain <= 32767:
+            raise ValueError("verification gain must be a positive signed-16-bit integer")
+        super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
+
+    def _measure_verification(self):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+
+        set_readout_pulse(self, gain=int(self.cfg["opx_benchmark_verification_gain"]))
+        super()._measure_verification()
+        set_readout_pulse(self)
+
+
 class OPXReadoutMemoryBenchmarkProgram(OPXResetBenchmarkProgram):
     """No-feedback benchmark with matched first-readout timing at reduced gain."""
 

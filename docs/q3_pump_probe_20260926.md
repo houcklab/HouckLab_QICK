@@ -998,3 +998,71 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 ```
 
 Output prefix: `q3/q3_pump_probe_readout_gain_check_<UTC>_<id>/`.
+
+## Amplitude screen result and half-gain feedback validation
+
+Session `q3_pump_probe_readout_gain_check_20260927T024044Z_5e264892`, commit
+`ccad8c4c`, completed all 100 blocks and both references. All 40,000 benchmark
+shots and 16,000 reference shots were verified against the saved manifest;
+all four calibration fits refit exactly. Feedback was off throughout and the
+verification gain stayed 1880. Initial/final references both passed. The fixed
+initial classifier's held-out loop balanced score changed from 0.7510 to
+0.7775 (payload 0.7365 to 0.7715), so the session was not perfectly stationary.
+
+| First amplitude / normal | Final no-pi excited fraction | Final pi excited fraction | Initial held-out balanced score |
+| --- | ---: | ---: | ---: |
+| 0 | 0.0765 | 0.6090 | 0.5105 |
+| 0.25 | 0.0718 | 0.6138 | 0.6298 |
+| 0.50 | 0.0820 | 0.6040 | 0.7343 |
+| 0.75 | 0.0715 | 0.3370 | 0.7410 |
+| 1 | 0.1345 | 0.3818 | 0.8165 |
+
+Final fractions use the fixed loop classifier. Initial scores use the fixed
+payload projection axis, converting assembly sign to Python convention
+(`excited_above=False`, sign -1), fitting a one-dimensional threshold on even
+shots and evaluating odd shots separately in each round. They measure
+separation of nominal preparations, not physical readout or reset fidelity.
+Half-amplitude initial score has unadjusted 95% t interval [0.7210, 0.7475];
+normal [0.8030, 0.8300]. This analysis does not optimize the IQ angle at each
+amplitude or demonstrate stability of one installed threshold.
+
+At half amplitude, paired verification shifts relative to zero are +0.55
+percentage points [-1.55, 2.65] for no-pi and -0.50 [-2.59, 1.59] for pi.
+Neither is resolved; this does not establish zero disturbance. At 0.75
+amplitude the pi shift is -27.20 [-29.11, -25.29] points. At normal amplitude
+no-pi is +5.80 [1.95, 9.65] and pi -22.73 [-26.73, -18.72] points. Intervals
+are unadjusted 95% t intervals across ten paired rounds; the payload analysis
+agrees. The amplitude response is not monotonic. Half amplitude is a candidate
+for lower disturbance with usable separation; the underlying mechanism and
+any genuine TLS pump response remain unresolved.
+
+The next `--half-gain-reset-check` uses the existing operational benchmark,
+with fresh payload/loop calibrations at gain 940 and a separate fresh normal
+1880 bundle for classifying final verification IQ. Both starting bundles must
+pass the unchanged quality guard, with no retry or stale calibration fallback.
+All first and feedback-loop readouts use gain 940. Only the independent final
+readout uses 1880, after the same 20-us verification delay; a dedicated
+benchmark subclass restores gain 940 before the next shot. Global defaults
+and other stages are unchanged. The normal verification reference remains an
+uncorrected observable; its calibration context is not identical to every
+possible feedback history.
+
+Twelve rounds compare native unbounded feedback and no feedback from no-pi
+and pi preparation, 400 shots each: 48 blocks / 19,200 benchmark shots.
+Both reference bundles are repeated at the end without replacing either
+initial classifier, adding 32,000 reference shots total. Actual gains and
+classifier source paths are recorded. Both final reference entries must be
+saved before collection is complete, and the terminal report reflects their
+combined acceptance. Quality rejection stops before benchmarking and retains
+raw references; acquisition timeouts retain recovered partial shot records.
+The run takes about six minutes. The primary assessment is residual dependence
+on starting preparation after feedback, alongside no-feedback controls,
+reference drift, and reset latency/attempt telemetry. Active and no-feedback
+arms are not elapsed-time matched, and this test does not validate the full
+pump sequence or install production settings.
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --half-gain-reset-check
+```
+
+Output prefix: `q3/q3_pump_probe_half_gain_reset_check_<UTC>_<id>/`.
