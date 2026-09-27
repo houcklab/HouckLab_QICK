@@ -213,6 +213,7 @@ def validate_confident_calibration(bundle, min_confident_fraction=0.2):
     }
     for context, metrics_required in required.items():
         calibration = getattr(bundle, context)
+        calibration.assembly_plan()  # Statistical quality alone cannot validate hardware arithmetic.
         metrics = dict(calibration.holdout or {})
         for metric in metrics_required:
             value = float(metrics.get(metric, 0.0))

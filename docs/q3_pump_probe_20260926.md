@@ -1139,3 +1139,84 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 ```
 
 Output prefix: `q3/q3_pump_probe_half_gain_confirm_check_<UTC>_<id>/`.
+
+## Repeated half-gain run exposed signed-multiplier overflow
+
+Session `q3_pump_probe_half_gain_reset_check_20260927T032506Z_63856a40`, commit
+`ba720e95`, ran the ordinary `--half-gain-reset-check` again, not the requested
+confirmation stage: its manifest has `half_gain_reset_check=true`,
+`half_gain_confirm_check=false`, and zero required-loop blocks. It completed
+all 48 blocks and four reference sets. All 19,200 benchmark shots and 32,000
+reference shots were checked; original fits refit exactly under the pre-fix
+code and normal-gain verification fractions agree with raw IQ. This repeat is
+useful but does not test the confirmation intervention.
+
+The result deteriorated dramatically despite accepted reference reports:
+
+| Preparation | No-feedback loop verification | Ordinary reset loop verification |
+| --- | ---: | ---: |
+| No pi | 0.1196 | 0.2077 |
+| Pi | 0.6481 | 0.6502 |
+
+Paired active-minus-none was +8.81 percentage points [6.71, 10.91] for no-pi
+and +0.21 [-2.33, 2.75] for pi. Residual active pi-minus-no-pi was +44.25
+[41.76, 46.74] points. Intervals are unadjusted 95% t intervals over twelve
+rounds; payload-axis analysis agrees. Mean attempts increased to 3.5596
+(no-pi) and 13.2881 (pi), maxima 143/162. All active records still reported
+CONFIRMED_GROUND. This controller label cannot validate physical preparation.
+The ordinary runtime configuration matches the preceding half-gain run apart
+from freshly fitted calibrations; the new confirmation flag was false.
+
+The initial loop fit had `c_int=-32768`, `s_int=-61`. Our assembly emitted
+absolute coefficients, including **+32768**, into `mathi('*')`. Upstream
+tProc-v1 uses a 32-bit ALU, but its multiplier takes each operand's signed
+**lower 16 bits**. Thus the emitted +32768 becomes -32768. The original
+coefficient selection constrained 32-bit product overflow but missed this
+operand-width constraint. This is a deterministic arithmetic error, not a
+statistical quality rejection, and the existing Python fit scores could not
+catch it because Python used full-width multiplication.
+
+Source inspected at upstream QICK commit
+`4da51a5154e448fa3613257a967bfa6a58959a8b`:
+- [tProc width B=32](https://github.com/openquantumhardware/qick/blob/4da51a5154e448fa3613257a967bfa6a58959a8b/firmware/ip/axis_tproc64x32_x8_v1/src/tproc64x32_x8.v)
+- [ALU width propagation](https://github.com/openquantumhardware/qick/blob/4da51a5154e448fa3613257a967bfa6a58959a8b/firmware/ip/axis_tproc64x32_x8_v1/src/alu/alu.v)
+- [Signed low-half multiplier](https://github.com/openquantumhardware/qick/blob/4da51a5154e448fa3613257a967bfa6a58959a8b/firmware/ip/axis_tproc64x32_x8_v1/src/alu/math.vhd)
+
+Emulating this arithmetic on the saved initial loop references changes
+nominal-ground acceptance from the intended 51.65% to 0.10%, and labels 98.35%
+of those nominal-ground references excited. This predicts unnecessary pi
+pulses and long loops, consistent with the observed failure. The actual
+installed FPGA image was not read out in this analysis; hardware verification
+of the correction remains the next step. Final loop calibration also had
+`c_int=-32768` and `s_int=93`, but was never installed during the run. Among
+148 fits in the local pump-probe diagnostic archives checked, these were the
+only two with unsafe multiplier coefficients or raw magnitude metadata.
+Previously successful half-gain and amplitude-screen fits passed this audit.
+
+The fix reduces the fixed-point shift until **both absolute coefficients are
+at most 32767**, retaining the existing product-headroom calculation. It refits
+all thresholds in that new scale, without changing the 70% threshold-selection
+policy or confident-state quality requirements. `assembly_plan()` now rejects
+unsafe legacy coefficients and calibration raw-IQ magnitude metadata above
+32767, and the existing calibration guard checks that plan. The raw-IQ check
+is conservative at magnitude 32768 because stored metadata does not distinguish
+valid -32768 from invalid +32768. Historical calibrations remain loadable and
+projectable offline; they cannot silently be emitted for feedback. Reference
+artifacts are saved before the guard rejects them. This check covers observed
+reference range, not unforeseen runtime IQ excursions.
+
+Refitting the archived data changes initial loop coefficients to -16384/-30
+and final loop to -16384/47. The other six fits retain their coefficients.
+All 32,000 reference shots then have exact Python/emulated-tProc projection
+parity, and all four refitted bundles pass the unchanged statistical guards.
+Regression tests cover the original wrap, all projection quadrants, independent
+I/Q endpoint combinations, small-signal coefficient scaling, historical unsafe
+fit rejection, and the production quality guard. Offline replay establishes
+the arithmetic correction, not restored hardware reset performance.
+
+Next repeat the ordinary half-gain reset check with fresh corrected fits.
+Defer the required-loop policy experiment until this baseline is trustworthy:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --half-gain-reset-check
+```

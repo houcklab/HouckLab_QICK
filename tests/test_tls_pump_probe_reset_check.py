@@ -41,10 +41,13 @@ def test_timing_profiles_preserve_drive_and_only_change_requested_timing():
 
 
 def test_calibration_report_records_rejection_without_weakening_the_guard():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import ClassifierCalibration
     m = runner()
     bundle = SimpleNamespace(
-        payload=SimpleNamespace(holdout={'excited_fire': .6, 'peak_fidelity': .72}),
-        loop=SimpleNamespace(holdout={'ground_accept': .001, 'excited_fire': .67, 'peak_fidelity': .6755}))
+        payload=ClassifierCalibration(1, 'payload', 0., 0, 1, 0, -1, 1, 100,
+                                      {'excited_fire': .6, 'peak_fidelity': .72}),
+        loop=ClassifierCalibration(1, 'loop', 0., 0, 1, 0, -1, 1, 100,
+                                   {'ground_accept': .001, 'excited_fire': .67, 'peak_fidelity': .6755}))
     result = m.calibration_report(bundle)
     assert result['accepted'] is False
     assert 'loop.ground_accept=0.0010' in result['rejection_reason']

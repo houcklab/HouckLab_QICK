@@ -6,6 +6,7 @@ import numpy as np
 
 
 INT32_MAX = 2**31 - 1
+TPROC_MULTIPLIER_MAX = 2**15 - 1
 DEFAULT_HEADROOM = 4.0
 DEFAULT_MAX_SHIFT = 20
 
@@ -45,6 +46,15 @@ class ClassifierCalibration:
 
     def assembly_plan(self):
         c_int, s_int = int(self.c_int), int(self.s_int)
+        # tProc-v1 multiplies the signed low 16 bits of both operands.
+        # The emitted coefficients are absolute magnitudes, so even -32768
+        # in the Python projection would become an invalid +32768 operand.
+        if max(abs(c_int), abs(s_int)) > TPROC_MULTIPLIER_MAX:
+            raise ValueError("projection coefficients exceed the tProc signed 16-bit multiplier range; recalibrate")
+        # This metadata stores only an absolute maximum. Conservatively reject
+        # 32768 too: it could represent the invalid positive endpoint.
+        if int(self.max_abs_raw) > TPROC_MULTIPLIER_MAX:
+            raise ValueError("calibration IQ exceeds the tProc signed 16-bit multiplier range; reduce readout gain or integration length")
         same_sign = (c_int >= 0) == (s_int >= 0)
         return {
             "c_abs": abs(c_int),
@@ -84,8 +94,12 @@ def _fixed_point_coefficients(theta, max_abs_raw):
     gain = abs(math.cos(theta)) + abs(math.sin(theta))
     shift = int(math.floor(math.log2(INT32_MAX / (DEFAULT_HEADROOM * gain * max_abs))))
     shift = max(0, min(DEFAULT_MAX_SHIFT, shift))
-    c_int = int(round(math.cos(theta) * 2**shift))
-    s_int = int(round(math.sin(theta) * 2**shift))
+    while True:
+        c_int = int(round(math.cos(theta) * 2**shift))
+        s_int = int(round(math.sin(theta) * 2**shift))
+        if max(abs(c_int), abs(s_int)) <= TPROC_MULTIPLIER_MAX:
+            break
+        shift -= 1
     worst = max_abs * (abs(c_int) + abs(s_int))
     if worst > INT32_MAX:
         raise ValueError(f"fixed-point projection can overflow int32 ({worst:.3e})")
