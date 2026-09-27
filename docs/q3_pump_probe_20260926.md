@@ -1257,3 +1257,46 @@ and 16.51%. This reproduces the association between initial acceptance and
 residual preparation dependence, but the subsets are selected by a noisy
 measurement. The already pushed `--half-gain-confirm-check` is the direct
 interleaved comparison of ordinary reset with an arm requiring one loop readout.
+
+## Required-loop half-gain reset, first interleaved run
+
+Session `q3_pump_probe_half_gain_confirm_check_20260927T040710Z_2289752d`, commit
+`54d60bf1`, completed all 72 benchmark blocks and four reference sets. All
+28,800 benchmark shots and 32,000 reference shots were checked, including
+exact refits of all eight classifiers, raw verification fractions, decision and
+verification gains 940/1880, terminal statuses, and shot counters. All starting
+and ending reference bundles passed. No required-loop shot had zero attempts;
+ordinary reset zero-attempt decisions exactly matched the saved initial payload
+projection. The fixed initial full-gain loop classifier's held-out balanced
+score stayed near 0.7200 at the start and 0.7225 at the end, though both are
+modest. Original statistical guard thresholds were unchanged.
+
+| Nominal preparation | No feedback | Ordinary reset | Require one loop readout |
+| --- | ---: | ---: | ---: |
+| No pi | 0.1242 | 0.1094 | 0.1231 |
+| Pi | 0.5935 | 0.1783 | 0.1327 |
+| Pi minus no-pi | 0.4694 | 0.0690 | 0.0096 |
+
+These are uncorrected final fractions labeled excited by one fixed normal-gain
+loop classifier at 20-us verification delay. Across twelve paired rounds,
+required-minus-ordinary is +1.38 percentage points [-0.59, 3.34] for no-pi
+and -4.56 [-6.21, -2.91] for pi. The remaining preparation gap after the
+required-loop policy is +0.96 [-0.82, 2.74] points, unresolved from zero in
+this session. The change in that gap versus ordinary reset is -5.94
+[-8.35, -3.53] points. Independent payload-axis classification agrees: the
+required-loop gap is +0.88 [-0.49, 2.24] points and the gap change is -5.81
+[-7.85, -3.78]. All intervals are unadjusted 95% t intervals. The large
+no-feedback pi-minus-no-pi gap confirms the reference contrast remained
+observable; the active and no-feedback arms have different time histories.
+
+Ordinary reset used mean attempts 1.212/2.508 and mean pi pulses 0.758/1.700
+for no-pi/pi. Required-loop reset used mean attempts 2.853/2.959 and pi pulses
+1.240/1.883. Both required-loop maxima were 18; ordinary maxima were 27/21.
+Ordinary zero-attempt fractions were 64.48% no-pi and 15.96% pi. In the pi
+zero-attempt subset, the later excited fraction was 0.4739 (766 shots), versus
+0.1222 among shots entering feedback (4034 shots). These are selected subsets,
+not randomized proof of the mechanism. The required-loop arm adds measurement
+and elapsed time along with eliminating the initial stopping branch; it
+establishes an operational improvement in this session, not ground-state
+fidelity or a TLS pump response. Repeat it under a fresh calibration before
+using it as the basis for a new pump-probe sequence or any production policy.
