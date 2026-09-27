@@ -47,6 +47,30 @@ def test_reference_config_changes_only_park_pi_frequency_from_common_baseline():
             assert center.get(key) == shifted.get(key)
 
 
+def test_stability_plan_repeats_both_tracker_readout_gains_at_fixed_frequency():
+    m = importlib.import_module(MODULE)
+    plan = m.plan(stability_check=True)
+    assert plan["stability_check"] is True
+    assert plan["total_reference_shots"] == 48_000
+    assert len(plan["points"]) == 24
+    for slot in range(12):
+        pair = plan["points"][2 * slot:2 * slot + 2]
+        assert [p["readout_gain_dac"] for p in pair] == [940, 1880]
+        assert [p["not_before_offset_s"] for p in pair] == [slot * 20.0] * 2
+        assert [p["pi_frequency_mhz"] for p in pair] == [4367.292] * 2
+        assert [p["offset_mhz"] for p in pair] == [0.0] * 2
+
+
+def test_normal_gain_reference_matches_tracker_probe_configuration():
+    m = importlib.import_module(MODULE)
+    base = {"ff_park_gain": -25146, "read_pulse_gain": 1880,
+            "qubit_pi_freq": 4367.292, "reset_pi_freq": 4367.292,
+            "qubit_pi_gain": 13500, "read_pulse_freq": 6933.026}
+    decision = m.reference_config(base, 4367.292, readout_gain_dac=940)
+    probe = m.reference_config(base, 4367.292, readout_gain_dac=1880)
+    assert probe == dict(decision, read_pulse_gain=1880)
+
+
 def test_raw_iq_is_saved_and_degenerate_fit_is_recorded_without_stopping_sweep(tmp_path):
     m = importlib.import_module(MODULE)
     def raw(excited_i):

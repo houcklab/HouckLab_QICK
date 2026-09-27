@@ -1594,3 +1594,34 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeParkPiSweep --run
 ```
+
+## Park pi sweep result and time stability follow-up
+
+The 22-point park pi sweep `q3_pump_probe_park_pi_sweep_20260927T173742Z_53bfbd34`
+completed without a TLS pump or drift scan. Its first 4367.292 MHz reference
+failed the normal guard (loop peak fidelity 0.604; loop IQ centroid separation
+about 1,000 raw counts). The intervening ±2 through ±20 MHz references all
+failed and had still smaller loop separation. The final repeat at 4367.292 MHz,
+roughly 25 seconds after the first, passed (loop peak fidelity 0.752; loop
+centroid separation about 3,043 counts). Ground IQ medians stayed near the
+same location; the prepared-excited loop median moved much farther from ground
+at the final point. Frequency and time changed together, so these data do not
+establish a frequency optimum or explain why the nominal-frequency contrast
+changed. Payload-context median separation at the two center points was
+roughly 1,800 counts both times; the larger change was in the loop context,
+which measures after an initial readout and recovery. The final passing
+half-gain reference does not establish that the
+normal-gain probe reference would pass too.
+
+The follow-up `--stability-check` holds 4367.292 MHz fixed. At each of twelve
+20-second slots it captures the exact half-gain decision and normal-gain probe
+reference configurations used by the drift tracker, saving raw IQ before any
+fit and continuing past rejected references. It installs no calibration and
+does not run a TLS pump or flux scan. This tests whether both tracker references
+remain usable long enough to justify resuming drift tracking.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeParkPiSweep --run --stability-check
+```
