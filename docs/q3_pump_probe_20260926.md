@@ -1914,3 +1914,52 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHighGainBidirectional --run
 ```
+
+The higher-gain bidirectional run completed at 17:31–17:35 on September 27.
+Both 81-point scouts selected 4.140 GHz (pre/post dip depths 0.378/0.406).
+All eight 21-point arms completed. For each arm, the target region is
+4.136–4.144 GHz and the flanks are 4.120–4.128 plus 4.152–4.160 GHz. Define
+the target-localized raw ground excitation as center-minus-flank of
+`Ps_25us-P0`; its values for sham, gain 3000, gain 6000, final sham were
+**0.0037, 0.0040, 0.0000, 0.0077**. There is no gain-dependent upward
+transfer. The corresponding localized excited-qubit loss
+`P1-Ps_25us` was **0.0997, 0.0491, 0.0500, 0.0480**. The first sham was the
+outlier; gain 3000, gain 6000, and final sham agree. At the target center,
+the first-sham excited P1 was 0.319 versus 0.267/0.271/0.263 later, while
+the long-hold Ps stayed around 0.16–0.17. The apparent decrease in loss is
+thus driven substantially by a changing reference, not a reversible
+gain-dependent pump effect. The final ground-sham P1 also transiently rose
+to 0.504, then returned to 0.263 in the next excited-sham arm. These
+reference variations preclude a subtle saturation claim. The gain-6000
+park-tone test is negative at its present sensitivity; the loss feature
+itself remains reproducible.
+
+## Near-maximum park-tone frequency-control screen
+
+At the user's request, the next bounded screen tests a much stronger tone,
+up to DAC gain **30000** (below the program's 32767 limit). The selected
+loss coordinate comes from a fresh 81-point passive scout; the qubit remains
+parked near 4.367 GHz during each 15-us tone. The screen first measures
+zero-gain shams, then gain 12000 at the selected frequency, then another
+sham. It next uses equal gain 30000 at −40, 0, +40, and 0 MHz detuning, and
+ends with a sham and post-scout. Every arm contains ground and excited probe
+preparations on the same 21-point target-flux grid, with 2- and 25-us
+additional holds and 350 shots per condition. An arm stops the sequence if
+the frequency-median P0 exceeds 0.20 or P1−P0 falls below 0.15. This is a
+reference and gross-excitation guard, not a calibrated microwave power or
+component-temperature limit.
+
+The controls are essential because the earlier excited-loss change persisted
+in the final sham, and the first sham's reference was anomalous. A narrow,
+repeatable response at zero detuning that is absent at ±40 MHz and in shams
+would warrant a focused follow-up. Broad response, reference collapse, or a
+null at gain 30000 would argue against further escalation of this *park-tone*
+mechanism. This still does not drive the qubit at the loss flux coordinate;
+a negative result does not rule out qubit-mediated TLS pumping.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeNearMax --run
+```
