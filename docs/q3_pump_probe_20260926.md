@@ -1837,3 +1837,32 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeAdaptiveParkPump --run --drift-control
 ```
+
+The matched pump-off control completed at 16:51–16:54. Its 81-point pre-scout
+selected 4.137 GHz with depth 0.479, and the post-scout selected 4.140 GHz
+with depth 0.466. This 3-MHz shift in the *selected loss coordinate* happened
+with every pump gain set to zero; the broad dip does not establish that one
+microscopic TLS physically moved by exactly 3 MHz. At 4.137 GHz the seven
+sham arms had normalized 25-us survival
+0.363/0.265/0.322/0.531/0.323/0.275/0.440, a 0.266 span without microwave
+drive. P1 stayed roughly 0.63–0.70 in those arms, so the variation is not
+explained solely by a collapsing excited reference. The earlier driven-run
+resonant survival values (0.398 and 0.489 at 4.131 GHz) fall within this
+control's sham spread, though these are different runs at different selected
+coordinates. No selective pump saturation has been demonstrated.
+
+The next comparison measures the whole loss band in each arm instead of only
+three fixed probe coordinates. A fresh 81-point passive scout chooses a center,
+then 41-point scans cover center ±20 MHz with equal-duration sham/pump/sham
+arms (gain 0/3000/0, 15-us tone at park). A post-scout checks where the loss
+lies afterward. This 1-MHz band scan permits comparison of the loss profile
+and integrated dip even if the selected center shifts by a few MHz. It keeps
+the established correction and passive reset; a positive result would still
+require a frequency-selectivity check before calling it TLS saturation.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeBandComparison --run
+```
