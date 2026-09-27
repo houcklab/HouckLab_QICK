@@ -229,6 +229,44 @@ def test_direct_pump_plan_tests_on_target_tone_against_adjacent_shams():
         assert len({x["comparison_id"] for x in trio}) == 1
 
 
+def test_direct_pump_waits_for_accepted_pair_without_using_rejected_bundle():
+    m = runner()
+    seen = []
+    records = []
+    def acquire(name, cfg):
+        seen.append((name, cfg))
+        accepted = name in {"initial_decision_attempt_02",
+                            "initial_probe_attempt_02"}
+        return name, {"accepted": accepted, "output": name}
+    result = m.acquire_accepted_reference_pair(
+        acquire, "decision", "probe", attempts=3,
+        wait_for_attempt=lambda index: records.append(("wait", index)),
+        record_attempt=lambda item: records.append(item))
+    assert result[:2] == ("initial_decision_attempt_02", "initial_probe_attempt_02")
+    assert [x[0] for x in seen] == ["initial_decision_attempt_01",
+                                    "initial_decision_attempt_02",
+                                    "initial_probe_attempt_02"]
+    assert records[0] == ("wait", 0)
+    assert records[1]["decision"]["accepted"] is False
+    assert "probe" not in records[1]
+    assert records[2] == ("wait", 1)
+    assert records[3]["decision"]["accepted"] is True
+    assert records[3]["probe"]["accepted"] is True
+
+
+def test_direct_pump_stops_if_no_accepted_initial_reference_pair():
+    m = runner()
+    names = []
+    def reject(name, cfg):
+        names.append(name)
+        return name, {"accepted": False, "output": name}
+    with pytest.raises(RuntimeError, match="No accepted decision/probe reference pair"):
+        m.acquire_accepted_reference_pair(reject, "decision", "probe", attempts=2,
+                                          wait_for_attempt=lambda index: None,
+                                          record_attempt=lambda item: None)
+    assert names == ["initial_decision_attempt_01", "initial_decision_attempt_02"]
+
+
 def test_confirmed_program_requires_loop_and_restores_half_gain(monkeypatch):
     module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
     programs = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")

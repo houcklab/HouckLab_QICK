@@ -1681,3 +1681,25 @@ pump test instead of the guarded scout above**:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --direct-pump
 ```
+
+## Direct pump attempt stopped before the first driven block
+
+Session `q3_pump_probe_direct_pump_20260927T180212Z_4f14540c`, commit
+`a64a62f2`, rejected its initial half-gain decision reference with
+`loop.ground_accept=0.002` (required minimum 0.20), loop peak fidelity 0.613,
+and payload peak fidelity 0.601. All 96 pump/sham data blocks remained pending.
+This is a reference failure, not a negative TLS result.
+
+The direct-pump runner now waits for up to twelve fresh decision/probe
+reference attempts, starting them at 20-second intervals. It saves each
+attempt and starts the **same** on-target pump/sham comparison only after both
+references pass the unchanged guard. If no pair passes, it stops without a
+pump block. Checkpoint and ending reference failures still stop a running scan
+and retain its completed raw data. No rejected classifier is used for feedback
+or probe analysis.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --direct-pump
+```

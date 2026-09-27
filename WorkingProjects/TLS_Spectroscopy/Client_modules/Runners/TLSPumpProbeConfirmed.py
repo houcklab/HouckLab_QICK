@@ -49,6 +49,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import time
 import uuid
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -172,6 +173,27 @@ def direct_pump_schedule(p):
     return points
 
 
+def acquire_accepted_reference_pair(acquire, decision_cfg, probe_cfg, *,
+                                    attempts, wait_for_attempt, record_attempt):
+    """Save every attempt and return only a pair passing the unchanged guard."""
+    if attempts < 1:
+        raise ValueError("at least one calibration attempt is required")
+    for index in range(attempts):
+        wait_for_attempt(index)
+        name = f"initial_decision_attempt_{index + 1:02d}"
+        decision_bundle, decision_report = acquire(name, decision_cfg)
+        record = {"attempt": index + 1, "decision": decision_report}
+        if decision_report["accepted"]:
+            name = f"initial_probe_attempt_{index + 1:02d}"
+            probe_bundle, probe_report = acquire(name, probe_cfg)
+            record["probe"] = probe_report
+        record_attempt(record)
+        if decision_report["accepted"] and record.get("probe", {}).get("accepted"):
+            return decision_bundle, probe_bundle, decision_report, probe_report
+    raise RuntimeError("No accepted decision/probe reference pair after "
+                       f"{attempts} attempts")
+
+
 def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
          secondary_localize=False, drift_track=False, guarded_scout=False,
          direct_pump=False):
@@ -200,6 +222,9 @@ def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
         "pump_probe_shots": data_blocks * p["shots"],
         "checkpoint_references": checkpoint_refs,
         "reference_shots": (4 + checkpoint_refs) * 4 * reference.SHOTS,
+        "reference_shots_excludes_retries": bool(direct_pump),
+        "initial_reference_attempts_max": 12 if direct_pump else 1,
+        "initial_reference_spacing_s": 20.0 if direct_pump else None,
         "decision_readout_fraction": 0.5,
         "probe_readout_fraction": 1.0,
         "reset_policy": "required_loop_before_and_after_pump",
@@ -393,9 +418,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "realized_frequency_ghz": (realized_vec.tolist() if scan_mode
                                        else float(realized_vec[0])),
             "dc_gain": dc_vec.tolist() if scan_mode else int(dc_vec[0]),
-            "classifier_sources": {"decision": "initial_decision_reference/calibration.json",
-                                   "probe": "initial_probe_reference/calibration.json"},
+            "classifier_sources": ({"decision": None, "probe": None} if direct_pump else
+                                   {"decision": "initial_decision_reference/calibration.json",
+                                    "probe": "initial_probe_reference/calibration.json"}),
         }
+        if direct_pump:
+            manifest["initial_reference_attempts"] = []
         protocol.checkpoint(path, manifest)
         print(f"[pump-probe-confirmed] manifest={path}", flush=True)
         try:
@@ -416,16 +444,45 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 save_raw_calibration(out / "calibration_raw.npz", raw)
                 return bundle, dict(reference.calibration_report(bundle), output=str(out))
 
-            decision_bundle, decision_report = acquire_reference(
-                "initial_decision_reference", decision_cal_cfg)
-            manifest["initial_decision_reference"] = decision_report
-            protocol.checkpoint(path, manifest)
-            validate_confident_calibration(decision_bundle)
-            probe_bundle, probe_report = acquire_reference(
-                "initial_probe_reference", verification_cal_cfg)
-            manifest["initial_probe_reference"] = probe_report
-            protocol.checkpoint(path, manifest)
-            validate_confident_calibration(probe_bundle)
+            if direct_pump:
+                retry_start = time.monotonic()
+
+                def record_attempt(record):
+                    manifest["initial_reference_attempts"].append(record)
+                    protocol.checkpoint(path, manifest)
+                    print("[pump-probe-confirmed] initial reference attempt "
+                          f"{record['attempt']}: decision="
+                          f"{record['decision']['accepted']} probe="
+                          f"{record.get('probe', {}).get('accepted', 'skipped')}", flush=True)
+
+                decision_bundle, probe_bundle, decision_report, probe_report = (
+                    acquire_accepted_reference_pair(
+                        acquire_reference, decision_cal_cfg, verification_cal_cfg,
+                        attempts=12,
+                        wait_for_attempt=lambda index: reference.wait_for_reference_slot(
+                            retry_start, index * 20.0),
+                        record_attempt=record_attempt,
+                    ))
+                manifest["classifier_sources"] = {
+                    "decision": Path(decision_report["output"]).name + "/calibration.json",
+                    "probe": Path(probe_report["output"]).name + "/calibration.json",
+                }
+                manifest["initial_decision_reference"] = decision_report
+                manifest["initial_probe_reference"] = probe_report
+                protocol.checkpoint(path, manifest)
+                validate_confident_calibration(decision_bundle)
+                validate_confident_calibration(probe_bundle)
+            else:
+                decision_bundle, decision_report = acquire_reference(
+                    "initial_decision_reference", decision_cal_cfg)
+                manifest["initial_decision_reference"] = decision_report
+                protocol.checkpoint(path, manifest)
+                validate_confident_calibration(decision_bundle)
+                probe_bundle, probe_report = acquire_reference(
+                    "initial_probe_reference", verification_cal_cfg)
+                manifest["initial_probe_reference"] = probe_report
+                protocol.checkpoint(path, manifest)
+                validate_confident_calibration(probe_bundle)
 
             cfg = reset_validation.runtime_config(decision_base, decision_bundle.to_dict(), frequency)
             cfg.update({
