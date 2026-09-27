@@ -18,38 +18,44 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters():
+def parameters(*, center_ghz=4.140):
+    center_ghz = float(center_ghz)
     return {
         **wide.parameters(),
-        "freq_min_ghz": 4.138,
-        "freq_max_ghz": 4.142,
+        "freq_min_ghz": round(center_ghz - 0.002, 3),
+        "freq_max_ghz": round(center_ghz + 0.002, 3),
         "freq_step_mhz": 2.0,
         "shots_per_condition": 500,
-        "output_suffix": "TLS_PumpProbe_Passive_ParkPump_4p140",
+        "output_suffix": (
+            "TLS_PumpProbe_Passive_ParkPump_"
+            + f"{center_ghz:.3f}".replace(".", "p")
+        ),
     }
 
 
-def arms():
+def arms(*, center_ghz=4.140):
+    frequency = round(1000.0 * float(center_ghz), 3)
     return [
-        {"label": "sham", "frequency_mhz": 4140.0, "gain": 0},
-        {"label": "resonant", "frequency_mhz": 4140.0, "gain": 3000},
-        {"label": "minus20", "frequency_mhz": 4120.0, "gain": 3000},
-        {"label": "sham", "frequency_mhz": 4140.0, "gain": 0},
-        {"label": "plus20", "frequency_mhz": 4160.0, "gain": 3000},
-        {"label": "resonant", "frequency_mhz": 4140.0, "gain": 3000},
-        {"label": "sham", "frequency_mhz": 4140.0, "gain": 0},
+        {"label": "sham", "frequency_mhz": frequency, "gain": 0},
+        {"label": "resonant", "frequency_mhz": frequency, "gain": 3000},
+        {"label": "minus20", "frequency_mhz": frequency - 20.0, "gain": 3000},
+        {"label": "sham", "frequency_mhz": frequency, "gain": 0},
+        {"label": "plus20", "frequency_mhz": frequency + 20.0, "gain": 3000},
+        {"label": "resonant", "frequency_mhz": frequency, "gain": 3000},
+        {"label": "sham", "frequency_mhz": frequency, "gain": 0},
     ]
 
 
-def plan():
-    p = parameters()
+def plan(*, center_ghz=4.140):
+    p = parameters(center_ghz=center_ghz)
     return {
         "hardware_access": False,
         "microwave_pump_enabled": True,
         "pump_location": "q3 parked near 4.367 GHz",
-        "probe_frequency_ghz": [4.142, 4.140, 4.138],
+        "probe_frequency_ghz": [p["freq_max_ghz"], float(center_ghz),
+                                p["freq_min_ghz"]],
         "pump_us": 15.0,
-        "arms": arms(),
+        "arms": arms(center_ghz=center_ghz),
         "shots_per_condition": p["shots_per_condition"],
         "conditions": ["P0", "P1", "Ps_2us", "Ps_10us", "Ps_25us"],
         "parameters": p,
@@ -57,9 +63,12 @@ def plan():
     }
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
-    p = parameters()
-    for index, arm in enumerate(arms(), start=1):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        center_ghz=4.140):
+    p = parameters(center_ghz=center_ghz)
+    schedule = arms(center_ghz=center_ghz)
+    outputs = []
+    for index, arm in enumerate(schedule, start=1):
         overrides = {
             **p,
             "park_pump_frequency_mhz": arm["frequency_mhz"],
@@ -67,10 +76,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             "park_pump_us": 15.0,
             "output_suffix": f"{p['output_suffix']}_{index:02d}_{arm['label']}",
         }
-        print(f"[park-pump] arm {index}/{len(arms())}: {arm['label']} "
+        print(f"[park-pump] arm {index}/{len(schedule)}: {arm['label']} "
               f"{arm['frequency_mhz']:.1f} MHz gain={arm['gain']}", flush=True)
-        localizer.run(data_root=data_root, correction_json=correction_json,
-                      parameter_overrides=overrides)
+        outputs.append(localizer.run(
+            data_root=data_root, correction_json=correction_json,
+            parameter_overrides=overrides))
+    return outputs
 
 
 def main(argv=None):
@@ -80,11 +91,13 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--center-ghz", type=float, default=4.140)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(center_ghz=args.center_ghz), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            center_ghz=args.center_ghz)
     return 0
 
 

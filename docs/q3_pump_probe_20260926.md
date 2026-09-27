@@ -1778,3 +1778,34 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePassiveParkPump --run
 ```
+
+## First passive park-pump result and immediate localization follow-up
+
+The seven-arm park-pump test completed September 27 at 14:31–14:32. Each
+arm saved all three 4.138/4.140/4.142-GHz rows with 500 shots per condition.
+The seven single-shot calibrations passed, with fidelity 0.749–0.814, below
+the 0.862 calibration of the 14:16 wide scan. By the pump run, the 4.140-GHz
+sham T1 estimates were 69.3, 30.7, and 60.8 us, much longer and less stable
+than the 12.9-us wide-scan estimate. At 4.140 GHz, raw P0/P1-normalized
+25-us survival was 0.732/0.429/0.712 across shams, 0.560/0.689 across
+resonant-pump arms, and 0.554/0.514 across the −20/+20-MHz arms. The
+variation among the shams exceeds the apparent pump contrast, and no
+repeatable frequency-selective saturation is established. A 4.142-GHz sham
+fit was invalid; comparisons should use the raw populations there.
+
+The next experimental runner performs a passive 4.090–4.170-GHz pre-scout at
+1-MHz spacing and 350 shots per condition, chooses a three-point loss dip
+only when both flanks and scan directions show adequate contrast, then
+runs the same seven-arm park-pump comparison at that selected coordinate.
+A matching post-scout checks whether the dip moved or disappeared. The
+pre-scout and pump are in one PC command, avoiding the 15-minute gap that
+separated the first wide scan and pump test. If no localized dip passes the
+checks, it stops before pumping and retains the pre-scout CSV. The seven
+arm measurements and post-scout are also retained if a later stage fails.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeAdaptiveParkPump --run
+```

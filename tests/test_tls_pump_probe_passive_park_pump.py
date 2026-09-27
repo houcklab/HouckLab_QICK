@@ -41,3 +41,11 @@ def test_park_pump_run_passes_one_isolated_scan_per_arm(monkeypatch, tmp_path):
     assert [call["parameter_overrides"]["park_pump_gain"] for call in calls] == [
         0, 3000, 3000, 0, 3000, 3000, 0]
     assert len({call["parameter_overrides"]["output_suffix"] for call in calls}) == 7
+
+
+def test_park_pump_can_follow_a_newly_localized_center():
+    runner = importlib.import_module(MODULE)
+    p = runner.parameters(center_ghz=4.126)
+    assert (p["freq_min_ghz"], p["freq_max_ghz"]) == (4.124, 4.128)
+    assert [a["frequency_mhz"] for a in runner.arms(center_ghz=4.126)] == [
+        4126.0, 4126.0, 4106.0, 4126.0, 4146.0, 4126.0, 4126.0]

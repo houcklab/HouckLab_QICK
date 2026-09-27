@@ -106,6 +106,7 @@ def test_run_delivers_scan_contract_to_existing_acquisition(
                         data_root=tls.outerFolder, qubit=tls.QUBIT,
                         set_yoko=tls.SET_YOKO,
                         correction=os.environ["Q3_5PT_CORRECTION_JSON"])
+        return Path("/nas/one-stop.csv")
 
     runner.main = acquire
     package = importlib.import_module(RUNNERS)
@@ -113,7 +114,9 @@ def test_run_delivers_scan_contract_to_existing_acquisition(
         monkeypatch.setitem(sys.modules, f"{RUNNERS}.{name}", stub)
         monkeypatch.setattr(package, name, stub, raising=False)
     monkeypatch.setenv("Q3_5PT_MAX_RUNS", "1000")
-    module.run(data_root=tmp_path, correction_json=correction, parameter_overrides=overrides)
+    result = module.run(data_root=tmp_path, correction_json=correction,
+                        parameter_overrides=overrides)
+    assert result == Path("/nas/one-stop.csv")
     p = observed["parameters"]
     assert (p["freq_min_ghz"], p["freq_max_ghz"], p["freq_step_mhz"]) == expected_grid
     assert p["decay_delays_us"] == expected_delays

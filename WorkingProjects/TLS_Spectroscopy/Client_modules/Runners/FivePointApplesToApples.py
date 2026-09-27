@@ -711,7 +711,7 @@ def main():
             output_path = save_execution_test_outputs(exp)
             print(f"[execution-test] saved full-band output: {output_path}")
         print("[execution-test] PASS: the complete workload finished")
-        return
+        return output_path if execution_test_save else None
     synchronizer = GlobalSlotSynchronizer.from_config(p)
     synchronizer.prepare()
     csv_path = _run_series(
@@ -727,6 +727,7 @@ def main():
         f"apples-to-apples {2 + len(p['decay_delays_us'])}-condition "
         f"scan complete: {csv_path}"
     )
+    return csv_path
 
 
 if __name__ == "__main__":

@@ -132,7 +132,7 @@ def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
                   f"delays={p['decay_delays_us']} us.", flush=True)
             print(f"Native correction ON (SHA256 {CORRECTION_SHA256}); 40 us return.", flush=True)
             print(f"Output root: {data_root / 'q3'}", flush=True)
-            runner.main()
+            return runner.main()
         finally:
             runner.P6_5PT_APPLES_TO_APPLES = original
 
