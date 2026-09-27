@@ -2054,6 +2054,73 @@ def test_passive_readout_calibration_is_opt_in(monkeypatch):
     assert calls == [("/nas", "soc", "soccfg")]
 
 
+def test_experimental_park_pump_settings_are_opt_in(monkeypatch):
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+    base = {"reset_mode": "passive"}
+    assert runner.apply_park_pump_settings(base, {}) is base
+    assert "opx_t1_park_pump_us" not in base
+    p = {"park_pump_frequency_mhz": 4140.0,
+         "park_pump_gain": 3000, "park_pump_us": 15.0}
+    assert runner.apply_park_pump_settings(base, p) is base
+    assert base["opx_t1_park_pump_freq_mhz"] == 4140.0
+    assert base["opx_t1_park_pump_gain"] == 3000
+    assert base["opx_t1_park_pump_us"] == 15.0
+    with pytest.raises(ValueError, match="passive reset"):
+        runner.apply_park_pump_settings({"reset_mode": "opx_unbounded"}, p)
+    with pytest.raises(ValueError, match="requires frequency"):
+        runner.apply_park_pump_settings({"reset_mode": "passive"},
+                                        {"park_pump_gain": 3000})
+
+
+def test_passive_park_pump_precedes_pi_and_flux_without_reset(monkeypatch):
+    module, _cls = program_type()
+    prog = object.__new__(module.OPXResetT13PointProgram)
+    prog.cfg = {"opx_reset_scheme": "none", "qubit_ch": 1,
+                "opx_t1_park_pump_freq_mhz": 4140.0,
+                "opx_t1_park_pump_gain": 3000,
+                "opx_t1_park_pump_us": 15.0}
+    prog.reset_page, prog.reset_regs = 0, {}
+    prog.payload_calibration = prog.loop_calibration = object()
+    prog.reset_config = types.SimpleNamespace(inter_shot_delay_us=0)
+    events = []
+    prog._shot_park_callbacks = lambda: (
+        lambda: events.append("park_up"), lambda: events.append("park_down"))
+    prog.freq2reg = lambda freq, gen_ch: freq
+    prog.deg2reg = lambda deg, gen_ch: deg
+    prog.us2cycles = lambda us, gen_ch=None: us
+    prog.set_pulse_registers = lambda **kw: events.append(("registers", kw))
+    prog.pulse = lambda **kw: events.append(("pulse", kw))
+    prog.sync_all = lambda *_args: events.append("align")
+    prog._prepare_excited = lambda: events.append("pi")
+    prog._wait_three_point_payload = lambda hold, flux: events.append(("flux", hold, flux))
+    prog._measure_project = prog._set_reset_pulse = lambda *_args: None
+    monkeypatch.setattr(module, "emit_payload_reset_shot", lambda _prog, **kw: (
+        kw["park_up"](), kw["emit_payload"](), kw["park_down"]()))
+
+    prog._emit_three_point_payload("P1", True, True, 10.1)
+
+    assert events[0] == "park_up"
+    assert events[1][0] == "registers"
+    assert events[1][1]["gain"] == 3000
+    assert events[1][1]["length"] == 15.0
+    assert events[2][0] == "pulse"
+    assert events.index("pi") < events.index(("flux", 10.1, True))
+    assert events[-2:] == ["park_down", "align"]
+
+    # A sham occupies exactly the same microwave time with zero drive.
+    events.clear()
+    prog.cfg["opx_t1_park_pump_gain"] = 0
+    prog._emit_three_point_payload("P0", False, True, 0.1)
+    assert events[1][1]["gain"] == 0
+    assert events[1][1]["length"] == 15.0
+    assert "pi" not in events
+
+    prog.cfg["opx_reset_scheme"] = "opx_unbounded"
+    with pytest.raises(ValueError, match="passive reset"):
+        prog._emit_three_point_payload("P1", True, True, 10.1)
+
+
 def test_series_override_accepts_explicit_recovery_duration(monkeypatch):
     """A timing audit can vary recovery without editing production defaults."""
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))

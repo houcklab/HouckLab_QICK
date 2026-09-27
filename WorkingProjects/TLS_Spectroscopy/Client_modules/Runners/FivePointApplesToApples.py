@@ -521,6 +521,23 @@ def passive_readout_calibration(params, tls, soc, soccfg):
     return tls.run_step5_single_shot_cal(tls.outerFolder, soc, soccfg)
 
 
+def apply_park_pump_settings(base, params):
+    """Copy opt-in park-pump settings into the resident T1 program config."""
+    keys = ("park_pump_frequency_mhz", "park_pump_gain", "park_pump_us")
+    if not any(key in params for key in keys):
+        return base
+    if any(key not in params for key in keys):
+        raise ValueError("park pump requires frequency, gain and duration")
+    if base["reset_mode"] != "passive":
+        raise ValueError("park pump requires passive reset")
+    base.update({
+        "opx_t1_park_pump_freq_mhz": float(params["park_pump_frequency_mhz"]),
+        "opx_t1_park_pump_gain": int(params["park_pump_gain"]),
+        "opx_t1_park_pump_us": float(params["park_pump_us"]),
+    })
+    return base
+
+
 def main():
     execution_test_mode, execution_test_save = execution_test_settings()
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
@@ -619,6 +636,7 @@ def main():
     })
     base = reset_session.apply(base)
     apply_verified_feedback_timing(base)
+    apply_park_pump_settings(base, p)
     calib_params = passive_readout_calibration(p, tls, soc, soccfg)
     park_gain = base.get("ff_park_gain", tls._baseline_dc_offset())
     state = {"session": reset_session}

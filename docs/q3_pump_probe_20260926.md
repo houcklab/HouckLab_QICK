@@ -1740,3 +1740,41 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeWidePassiveScan --run
 ```
+
+## September 27 wide passive scan and first pump coordinate
+
+The repaired wide scan completed one 251-frequency pass from 4.300 to 3.800
+GHz in 144.5 s. The preceding single-shot calibration had fidelity 0.862.
+The output is
+`q3/q3_2026_09_27/q3_14_16_35_TLS_PumpProbe_Wide_Passive_3p8_4p3_T1_5pt_vs_wall_clock_full.csv`
+under the established RFSOC data root. Its most useful interior loss feature
+is centered around 4.140 GHz: fitted T1 is 9.8, 12.9, and 11.1 us at
+4.138, 4.140, and 4.142 GHz. At these three points, the mean 25-us survival
+population is 0.151, versus mean P0=0.111 and P1=0.361. The corresponding
+normalized 25-us survival is about 0.16, compared with about 0.77 at the
+4.122–4.128-GHz lower flank and 0.85 at the 4.158–4.164-GHz upper flank.
+Both scan directions show the dip. The previously followed 4.110-GHz region
+is weaker in this pass (roughly 39-us fitted T1 over 4.106–4.114 GHz).
+Another strong loss feature reaches the 3.800-GHz scan boundary, so its
+center cannot yet be assigned. These data identify loss at a *model qubit
+frequency*, not independently the microscopic TLS resonance.
+
+The first pump check therefore uses 4.140 GHz. It applies a 15-us microwave
+tone at the q3 park bias, where the calibrated qubit frequency is about
+4.367 GHz, before preparing the probe state and making the same compensated
+flux excursion used in the passive scan. A zero-gain arm plays the same
+15-us pulse length; +/−20-MHz pump detunings test frequency selectivity.
+Seven short scans are ordered sham/on/−20/sham/+20/on/sham, each with
+500 shots per condition at 4.142, 4.140, and 4.138 GHz. Each arm has its
+own single-shot readout calibration and fails after one acquisition error.
+Compare the raw P0, P1, and survival populations after the run; a pump
+response alone will not establish TLS identity. This opt-in pulse is inserted
+only when the experimental runner supplies park-pump settings, and requires
+passive reset. Production five-point defaults remain pump-free.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbePassiveParkPump --run
+```

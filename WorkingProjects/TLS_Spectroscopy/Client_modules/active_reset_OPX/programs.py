@@ -2252,6 +2252,7 @@ class OPXResetT13PointProgram(OPXResetT1Program):
         park_up, park_down = self._shot_park_callbacks()
 
         def emit_payload():
+            self._emit_park_pump()
             prepare_after_return = bool(self.cfg.get(
                 "opx_t1_prepare_excited_after_return", False
             ))
@@ -2282,6 +2283,29 @@ class OPXResetT13PointProgram(OPXResetT1Program):
             wait_reset_ringdown=self._wait_reset_ringdown,
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
+
+    def _emit_park_pump(self):
+        """Opt-in equal-duration microwave pump at park before a T1 payload."""
+        cfg = self.cfg
+        if "opx_t1_park_pump_us" not in cfg:
+            return
+        if cfg.get("opx_reset_scheme", "opx_unbounded") != "none":
+            raise ValueError("park pump requires passive reset")
+        frequency = float(cfg["opx_t1_park_pump_freq_mhz"])
+        duration = float(cfg["opx_t1_park_pump_us"])
+        gain = int(cfg["opx_t1_park_pump_gain"])
+        if (not np.isfinite(frequency) or not np.isfinite(duration)
+                or frequency <= 0.0 or duration <= 0.0 or not 0 <= gain <= 32767):
+            raise ValueError("invalid park pump frequency, duration or gain")
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"], style="const",
+            freq=self.freq2reg(frequency, gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(0.0, gen_ch=cfg["qubit_ch"]),
+            gain=gain,
+            length=self.us2cycles(duration, gen_ch=cfg["qubit_ch"]),
+        )
+        self.pulse(ch=cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(0.01))
 
     def _emit_placeholder_payload_record(self):
         self.regwi(self.reset_page, self.reset_regs["i"], 0)
