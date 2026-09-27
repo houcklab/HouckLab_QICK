@@ -1703,3 +1703,28 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --direct-pump
 ```
+
+## Wide passive-reset loss scan before choosing another pump target
+
+The next stage is a single, pump-off survey from **4.300 down to 3.800 GHz**
+at 2-MHz model-frequency spacing (251 points). It uses the existing q3
+five-condition TLS scan with passive reset, so the intermittently rejected
+active-reset classifier is not a prerequisite. Each frequency receives 250
+shots for a ground reference, excited reference, and excited survival after
+2, 10, and 25 us additional target hold beyond a 0.1-us reference hold
+(313,750 measurements). The same pinned native flux-tail correction and
+40-us completed return are retained. The established DAC inversion is
+monotonic across the requested range: local validation gives -20522 through
+-11830 DAC and at most 0.042 MHz nearest-DAC model error.
+
+This scan locates a current loss feature for a later pump/sham comparison;
+its flux-model coordinate is not by itself a TLS transition frequency.
+Passive and active-reset results should not be combined without a fresh
+protocol comparison. The runner uses one isolated pass and a distinct output
+suffix, without changing production scan defaults.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeWidePassiveScan --run
+```
