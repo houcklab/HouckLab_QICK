@@ -1444,3 +1444,44 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --relocalize
 ```
+
+## Broadband pump-off screen finds a new repeatable loss candidate
+
+Session `q3_pump_probe_relocalize_20260927T052905Z_ad01fe40`, commit
+`2f262b45`, completed all 1206 blocks (301,500 probe shots) and all four
+reference sets. The 201 model-frequency targets span 3.900–4.300 GHz in
+2-MHz steps; the second pass reversed order. All references passed. Initial
+and ending full-gain payload/loop held-out peak scores were 0.7495/0.7675
+and 0.7505/0.7745, respectively. The manifest and summary agree on all
+blocks; 102 selected raw files (25,500 shots) around the leading and
+secondary candidate windows reproject exactly to both saved classifier
+fractions and IQ means.
+
+The clearest localized feature is at model coordinates **4.044–4.046 GHz**.
+The adjacent excited 2-us and excited 10-us blocks give a larger loss
+increment there than on the nearby flanks. In the forward pass,
+`P_e(2 us)-P_e(10 us)` averages 0.190 across the two center bins, versus
+0.046 across 4.036/4.038/4.040 and 4.050/4.052/4.054 GHz. In the reverse
+pass the corresponding values are 0.242 versus 0.035. The center was visited
+about 8.5 minutes apart. Center ground/10-us fractions remain low in both
+passes. These differences were selected after inspecting the 201-point
+screen; they are descriptive evidence for a current loss feature, not a
+predeclared significance test or microscopic TLS identification. Structure
+around 4.114–4.118 GHz is a secondary, less isolated candidate. The earlier
+4.110-GHz pump target need not have coincided with the strongest current loss.
+
+The next stage is an **independent fine localization** of the 4.045-GHz
+candidate before any new pumping. `--fine-localize` screens 4.036–4.054 GHz
+at 0.5-MHz spacing (37 targets), with four alternating forward/reverse passes.
+At every target it locally shuffles the same pump-off excited 2-us,
+excited 10-us and ground 10-us probes, now with 400 shots each. That is 444
+blocks (177,600 probe shots), plus 32,000 reference shots. A candidate for
+later pump tests must recur in these new passes with identifiable low-loss
+flanks; the scan does not yet supply a full decay curve or an independently
+calibrated TLS resonance frequency. The production TLS pipeline is unchanged.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --fine-localize
+```
