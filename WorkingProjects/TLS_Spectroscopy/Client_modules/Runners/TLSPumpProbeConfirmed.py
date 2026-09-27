@@ -26,6 +26,10 @@ This resolves the candidate and both flanks before selecting a pump coordinate.
 --secondary-localize checks the other independent-pass broadband candidate
 near 4.114..4.118 GHz after the 4.045-GHz peak weakened in the fine scan.
 It uses the same pump-off protocol over 4.108..4.122 GHz at 0.5-MHz spacing.
+
+--drift-track revisits 4.094..4.122 GHz at 1-MHz spacing over twelve
+alternating-direction passes after the strongest loss shifted below 4.114 GHz.
+It establishes the passive position and time variation before a pump test.
 """
 
 import argparse
@@ -46,8 +50,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
-               secondary_localize=False):
-    if sum((transfer_check, relocalize, fine_localize, secondary_localize)) > 1:
+               secondary_localize=False, drift_track=False):
+    if sum((transfer_check, relocalize, fine_localize,
+            secondary_localize, drift_track)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage")
     p = pilot.parameters(location_check=True)
     p.update({
@@ -76,6 +81,12 @@ def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
     if secondary_localize:
         p.update(target_frequency_ghz=[round(4.108 + 0.0005 * i, 4) for i in range(29)],
                  freq_step_mhz=0.5, shots=400, repeats=4, order_seed=20261007,
+                 probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
+                 probe_locations=["target"], pump_detunings_mhz=[0.0],
+                 bracket_each=False)
+    if drift_track:
+        p.update(target_frequency_ghz=[round(4.094 + 0.001 * i, 3) for i in range(29)],
+                 freq_step_mhz=1.0, shots=250, repeats=12, order_seed=20261008,
                  probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
                  probe_locations=["target"], pump_detunings_mhz=[0.0],
                  bracket_each=False)
@@ -111,11 +122,12 @@ def scan_schedule(p):
 
 
 def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
-         secondary_localize=False):
+         secondary_localize=False, drift_track=False):
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
-                   secondary_localize=secondary_localize)
-    scan_mode = relocalize or fine_localize or secondary_localize
+                   secondary_localize=secondary_localize,
+                   drift_track=drift_track)
+    scan_mode = relocalize or fine_localize or secondary_localize or drift_track
     points = scan_schedule(p) if scan_mode else pilot.schedule(p)
     return {
         "hardware_access": False,
@@ -123,6 +135,7 @@ def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
         "relocalize": bool(relocalize),
         "fine_localize": bool(fine_localize),
         "secondary_localize": bool(secondary_localize),
+        "drift_track": bool(drift_track),
         "microwave_pump_enabled": not scan_mode,
         "parameters": p,
         "acquisition_blocks": len(points),
@@ -223,13 +236,14 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         transfer_check=False, relocalize=False, fine_localize=False,
-        secondary_localize=False):
+        secondary_localize=False, drift_track=False):
     import numpy as np
 
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
-                   secondary_localize=secondary_localize)
-    scan_mode = relocalize or fine_localize or secondary_localize
+                   secondary_localize=secondary_localize,
+                   drift_track=drift_track)
+    scan_mode = relocalize or fine_localize or secondary_localize or drift_track
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -275,7 +289,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        prefix = ("q3_pump_probe_secondary_localize_" if secondary_localize else
+        prefix = ("q3_pump_probe_drift_track_" if drift_track else
+                  "q3_pump_probe_secondary_localize_" if secondary_localize else
                   "q3_pump_probe_fine_localize_" if fine_localize else
                   "q3_pump_probe_relocalize_" if relocalize else
                   "q3_pump_probe_transfer_check_" if transfer_check else
@@ -297,9 +312,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "relocalize": bool(relocalize),
             "fine_localize": bool(fine_localize),
             "secondary_localize": bool(secondary_localize),
+            "drift_track": bool(drift_track),
             "parameters": plan(transfer_check=transfer_check, relocalize=relocalize,
                                fine_localize=fine_localize,
-                               secondary_localize=secondary_localize),
+                               secondary_localize=secondary_localize,
+                               drift_track=drift_track),
             "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
@@ -461,6 +478,8 @@ def main(argv=None):
                        help="resolve the 4.045-GHz candidate at 0.5-MHz spacing without pumping")
     stage.add_argument("--secondary-localize", action="store_true",
                        help="check the 4.114..4.118-GHz candidate at 0.5-MHz spacing without pumping")
+    stage.add_argument("--drift-track", action="store_true",
+                       help="track pump-off loss over 4.094..4.122 GHz across twelve passes")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
@@ -468,12 +487,14 @@ def main(argv=None):
         print(json.dumps(plan(transfer_check=args.transfer_check,
                               relocalize=args.relocalize,
                               fine_localize=args.fine_localize,
-                              secondary_localize=args.secondary_localize), indent=2))
+                              secondary_localize=args.secondary_localize,
+                              drift_track=args.drift_track), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             transfer_check=args.transfer_check, relocalize=args.relocalize,
             fine_localize=args.fine_localize,
-            secondary_localize=args.secondary_localize)
+            secondary_localize=args.secondary_localize,
+            drift_track=args.drift_track)
     return 0
 
 

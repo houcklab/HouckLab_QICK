@@ -1519,3 +1519,39 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --secondary-localize
 ```
+
+## Secondary scan finds a strong lower-frequency loss region
+
+Session `q3_pump_probe_secondary_localize_20260927T062230Z_77f08842`, commit
+`b5af3897`, completed all 348 pump-off blocks (139,200 probe shots) and its
+final references. All four initial/final references passed. The manifest and
+CSV agree on every block, and 108 selected raw blocks (43,200 shots) reproduce
+their saved payload/loop excited counts and IQ means. Reprojecting selected
+raw blocks through the broadband and secondary classifiers leaves the main
+frequency contrast largely unchanged.
+
+The strongest current loss is **4.109–4.111 GHz**, lower than the broadband
+4.114–4.118-GHz candidate. Mean excited 2-to-10-us loss contrast across the
+five 0.5-MHz center bins is 0.275/0.292/0.290/0.266 in the four passes,
+versus 0.031/0.050/0.035/0.027 over the 4.1145–4.1175-GHz upper low-loss
+window. The center excited 2-us population remains near the upper window;
+the center excited 10-us population is lower, consistent with stronger
+decay. Ground 10-us controls remain comparable across these windows. The
+center was revisited in both scan directions over about three minutes. Loss
+is already substantial at the 4.108-GHz lower boundary, so this scan does
+not locate the lower flank. These are model frequency coordinates; neither
+the same microscopic TLS nor its resonance motion has been established.
+
+`--drift-track` is a passive time baseline before assigning any microwave
+response: 4.094–4.122 GHz at 1-MHz spacing, 29 distinct integer-DAC targets,
+12 alternating forward/reverse passes. Each local triplet has 250-shot
+excited 2-us, excited 10-us, and ground 10-us blocks. This is 1044 blocks
+(261,000 probe shots) plus 32,000 calibration shots. It covers both flanks
+and tests whether the loss maximum jumps or moves during a single session.
+The production TLS pipeline is unchanged.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --drift-track
+```
