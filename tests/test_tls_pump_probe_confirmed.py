@@ -198,6 +198,37 @@ def test_guarded_scout_brackets_short_pump_off_scan_with_periodic_references():
     assert [x["target_index"] for x in data[::3]][29:] == list(reversed(range(29)))
 
 
+def test_direct_pump_plan_tests_on_target_tone_against_adjacent_shams():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan", "--direct-pump"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False and plan["direct_pump"]
+    assert plan["microwave_pump_enabled"] is True
+    assert plan["acquisition_blocks"] == 96
+    assert plan["pump_probe_shots"] == 38_400
+    assert plan["checkpoint_references"] == 2
+    assert plan["reference_shots"] == 48_000
+    p = plan["parameters"]
+    assert p["target_frequency_ghz"] == [4.110]
+    assert p["pump_detunings_mhz"] == [0.0]
+    assert p["pump_gain"] == 3000 and p["pump_us"] == 15.0
+    schedule = runner().direct_pump_schedule(p)
+    data = [x for x in schedule if x.get("kind") != "reference"]
+    checks = [x for x in schedule if x.get("kind") == "reference"]
+    assert [x["reference_type"] for x in checks] == ["decision", "probe"]
+    assert {x["pump_mode"] for x in data if x["control_position"] == "test"} == {
+        "near", "sham"}
+    assert {x["pump_detuning_mhz"] for x in data if x["pump_mode"] == "near"} == {0.0}
+    assert {x["probe_state"] for x in data} == {"g", "e"}
+    assert {x["probe_us"] for x in data} == {2.0, 10.0}
+    for i in range(0, 96, 3):
+        trio = data[i:i + 3]
+        assert [x["control_position"] for x in trio] == ["before", "test", "after"]
+        assert trio[0]["pump_mode"] == trio[2]["pump_mode"] == "sham"
+        assert len({x["comparison_id"] for x in trio}) == 1
+
+
 def test_confirmed_program_requires_loop_and_restores_half_gain(monkeypatch):
     module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
     programs = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")
@@ -257,7 +288,7 @@ def test_confirmed_program_rejects_invalid_gain_before_hardware(decision, probe,
 
 
 @pytest.mark.parametrize("ending_accepted", [True, False])
-@pytest.mark.parametrize("stage", ["short", "transfer", "relocalize", "fine", "secondary", "drift", "scout"])
+@pytest.mark.parametrize("stage", ["short", "transfer", "relocalize", "fine", "secondary", "drift", "scout", "direct"])
 def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
         tmp_path, monkeypatch, ending_accepted, stage):
     m = runner()
@@ -265,6 +296,7 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
         stage == "transfer", stage == "relocalize", stage == "fine",
         stage == "secondary", stage == "drift")
     guarded_scout = stage == "scout"
+    direct_pump = stage == "direct"
     scan_mode = relocalize or fine_localize or secondary_localize or drift_track or guarded_scout
     package = importlib.import_module(f"{PREFIX}.Runners")
     calibration = importlib.import_module(f"{PREFIX}.active_reset_OPX.calibration")
@@ -304,8 +336,9 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
     p = m.parameters(transfer_check=transfer_check, relocalize=relocalize,
                      fine_localize=fine_localize,
                      secondary_localize=secondary_localize,
-                     drift_track=drift_track, guarded_scout=guarded_scout)
-    p.update(repeats=2 if scan_mode else 1, shots=4)
+                     drift_track=drift_track, guarded_scout=guarded_scout,
+                     direct_pump=direct_pump)
+    p.update(repeats=2 if scan_mode or direct_pump else 1, shots=4)
     if scan_mode:
         p["target_frequency_ghz"] = [4.094, 4.096, 4.098]
     monkeypatch.setattr(m, "parameters", lambda **kwargs: p)
@@ -333,38 +366,41 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
         path = m.run(data_root=tmp_path, transfer_check=transfer_check,
                      relocalize=relocalize, fine_localize=fine_localize,
                      secondary_localize=secondary_localize,
-                     drift_track=drift_track, guarded_scout=guarded_scout)
+                     drift_track=drift_track, guarded_scout=guarded_scout,
+                     direct_pump=direct_pump)
     else:
-        with pytest.raises(RuntimeError, match=("Checkpoint" if guarded_scout else "Final") +
+        with pytest.raises(RuntimeError, match=("Checkpoint" if guarded_scout or direct_pump else "Final") +
                            " calibration reference rejected"):
             m.run(data_root=tmp_path, transfer_check=transfer_check,
                   relocalize=relocalize, fine_localize=fine_localize,
                   secondary_localize=secondary_localize,
-                  drift_track=drift_track, guarded_scout=guarded_scout)
+                  drift_track=drift_track, guarded_scout=guarded_scout,
+                  direct_pump=direct_pump)
         path = next((tmp_path / "q3").glob("*/manifest.json"))
     manifest = json.loads(path.read_text())
-    blocks = 36 if transfer_check else 18
+    blocks = 48 if direct_pump else 36 if transfer_check else 18
     assert manifest["transfer_check"] == transfer_check
     assert manifest["relocalize"] == relocalize
     assert manifest["fine_localize"] == fine_localize
     assert manifest["secondary_localize"] == secondary_localize
     assert manifest["drift_track"] == drift_track
     assert manifest["guarded_scout"] == guarded_scout
+    assert manifest["direct_pump"] == direct_pump
     assert manifest["status"] == ("complete" if ending_accepted else "failed")
-    if guarded_scout and not ending_accepted:
+    if (guarded_scout or direct_pump) and not ending_accepted:
         assert manifest["checkpoint_references_accepted"] is False
         assert "final_references_accepted" not in manifest
         assert references == [940, 1880, 940, 1880]
-        assert len(point_cfgs) == 9
+        assert len(point_cfgs) == (24 if direct_pump else 9)
     else:
         assert manifest["final_references_accepted"] == ending_accepted
-        assert references == ([940, 1880] * 3 if guarded_scout else
+        assert references == ([940, 1880] * 3 if guarded_scout or direct_pump else
                               [940, 1880, 940, 1880])
         assert len(point_cfgs) == blocks
     assert {c["opx_saturation_probe_state"] for c in point_cfgs} == (
-        {"g", "e"} if transfer_check or scan_mode else {"g"})
+        {"g", "e"} if transfer_check or scan_mode or direct_pump else {"g"})
     assert {c["opx_saturation_probe_us"] for c in point_cfgs} == (
-        {2.0, 10.0} if scan_mode else {2.0} if transfer_check else {0.1})
+        {2.0, 10.0} if scan_mode or direct_pump else {2.0} if transfer_check else {0.1})
     if scan_mode:
         assert {c["opx_saturation_arm"] for c in point_cfgs} == {"no_pump"}
         assert {c["ff_gain"] for c in point_cfgs} == {-16000, -15999, -15998}
@@ -374,19 +410,26 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
     assert all(c["opx_reset_calibration"] == {"label": "decision"} for c in point_cfgs)
     assert all(entry["result"]["P_excited"] == 0.5 for entry in manifest["points"]
                if entry.get("kind") != "reference" and entry["status"] == "complete")
-    if guarded_scout and not ending_accepted:
+    if (guarded_scout or direct_pump) and not ending_accepted:
+        before_checkpoint = 24 if direct_pump else 9
         assert [e["status"] for e in manifest["points"]] == (
-            ["complete"] * 10 + ["failed"] + ["pending"] * 11)
-        assert manifest["points"][10]["result"]["accepted"] is False
+            ["complete"] * (before_checkpoint + 1) + ["failed"] +
+            ["pending"] * (blocks - before_checkpoint + 2))
+        assert manifest["points"][before_checkpoint + 1]["result"]["accepted"] is False
     else:
         assert [entry["status"] for entry in manifest["points"]] == (
-            ["complete"] * (blocks + (4 if guarded_scout else 2)) if ending_accepted
+            ["complete"] * (blocks + (4 if guarded_scout or direct_pump else 2)) if ending_accepted
             else ["complete"] * (blocks + 1) + ["failed"])
-    if not ending_accepted and not guarded_scout:
+    if not ending_accepted and not (guarded_scout or direct_pump):
         assert manifest["points"][-1]["result"] == {"accepted": False,
                                                     "output": str(path.parent / "final_probe_reference")}
     assert sum(1 for _ in (path.parent / "summary.csv").open()) == (
-        10 if guarded_scout and not ending_accepted else blocks + 1)
+        (25 if direct_pump else 10) if (guarded_scout or direct_pump) and not ending_accepted
+        else blocks + 1)
+    if direct_pump:
+        assert {c["opx_saturation_arm"] for c in point_cfgs} == {"pump", "no_pump"}
+        assert {c["opx_saturation_pump_freq_mhz"] for c in point_cfgs
+                if c["opx_saturation_arm"] == "pump"} == {4110.0}
     with np.load(path.parent / "point_0000.npz") as raw:
         assert raw["i_raw"].tolist() == [-10, -10, 10, 10]
         assert raw["read_length_cycles"].item() == 10

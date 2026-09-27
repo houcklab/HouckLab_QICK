@@ -35,6 +35,12 @@ It establishes the passive position and time variation before a pump test.
 probe references after each ten target-frequency trios. A rejected reference
 stops the scout and retains all preceding raw IQ; this limits the chance that
 intermittent calibration contrast contaminates an entire long drift scan.
+
+--direct-pump makes the small on-target test at the latest 4.110-GHz loss
+candidate: an on-model-frequency 15-us microwave pump versus immediately
+adjacent same-frequency zero-drive shams. Ground/excited 2/10-us probes and a
+zero-drive null help distinguish survival from direct excitation and drift.
+Half- and normal-gain references bracket the run and its midpoint.
 """
 
 import argparse
@@ -55,9 +61,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
-               secondary_localize=False, drift_track=False, guarded_scout=False):
+               secondary_localize=False, drift_track=False, guarded_scout=False,
+               direct_pump=False):
     if sum((transfer_check, relocalize, fine_localize,
-            secondary_localize, drift_track, guarded_scout)) > 1:
+            secondary_localize, drift_track, guarded_scout, direct_pump)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage")
     p = pilot.parameters(location_check=True)
     p.update({
@@ -97,6 +104,12 @@ def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
                  probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
                  probe_locations=["target"], pump_detunings_mhz=[0.0],
                  bracket_each=False)
+    if direct_pump:
+        p.update(target_frequency_ghz=[4.110], shots=400, repeats=4,
+                 order_seed=20261010, probe_states=["g", "e"],
+                 probe_holds_us=[2.0, 10.0], probe_locations=["target"],
+                 pump_detunings_mhz=[0.0], pump_gain=3000, pump_us=15.0,
+                 bracket_each=True)
     return p
 
 
@@ -139,15 +152,37 @@ def scan_schedule(p, *, reference_interval_targets=None):
     return points
 
 
+def direct_pump_schedule(p):
+    """Keep pump/sham trios adjacent and verify both gains at the midpoint."""
+    if p["repeats"] < 2 or p["repeats"] % 2:
+        raise ValueError("direct pump requires an even number of rounds")
+    base = pilot.schedule(p)
+    midpoint = p["repeats"] // 2
+    points = []
+    for index, entry in enumerate(base):
+        points.append(entry)
+        if (entry["repeat"] == midpoint - 1
+                and (index == len(base) - 1 or base[index + 1]["repeat"] == midpoint)):
+            for role in ("decision", "probe"):
+                points.append({
+                    "name": f"checkpoint_direct_pump_{role}_reference",
+                    "kind": "reference", "reference_type": role,
+                    "after_rounds": midpoint,
+                })
+    return points
+
+
 def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
-         secondary_localize=False, drift_track=False, guarded_scout=False):
+         secondary_localize=False, drift_track=False, guarded_scout=False,
+         direct_pump=False):
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
                    secondary_localize=secondary_localize,
-                   drift_track=drift_track, guarded_scout=guarded_scout)
+                   drift_track=drift_track, guarded_scout=guarded_scout,
+                   direct_pump=direct_pump)
     scan_mode = relocalize or fine_localize or secondary_localize or drift_track or guarded_scout
     points = (scan_schedule(p, reference_interval_targets=10 if guarded_scout else None)
-              if scan_mode else pilot.schedule(p))
+              if scan_mode else direct_pump_schedule(p) if direct_pump else pilot.schedule(p))
     checkpoint_refs = sum(x.get("kind") == "reference" for x in points)
     data_blocks = len(points) - checkpoint_refs
     return {
@@ -158,6 +193,7 @@ def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
         "secondary_localize": bool(secondary_localize),
         "drift_track": bool(drift_track),
         "guarded_scout": bool(guarded_scout),
+        "direct_pump": bool(direct_pump),
         "microwave_pump_enabled": not scan_mode,
         "parameters": p,
         "acquisition_blocks": data_blocks,
@@ -259,13 +295,15 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         transfer_check=False, relocalize=False, fine_localize=False,
-        secondary_localize=False, drift_track=False, guarded_scout=False):
+        secondary_localize=False, drift_track=False, guarded_scout=False,
+        direct_pump=False):
     import numpy as np
 
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
                    secondary_localize=secondary_localize,
-                   drift_track=drift_track, guarded_scout=guarded_scout)
+                   drift_track=drift_track, guarded_scout=guarded_scout,
+                   direct_pump=direct_pump)
     scan_mode = relocalize or fine_localize or secondary_localize or drift_track or guarded_scout
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -312,7 +350,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        prefix = ("q3_pump_probe_guarded_scout_" if guarded_scout else
+        prefix = ("q3_pump_probe_direct_pump_" if direct_pump else
+                  "q3_pump_probe_guarded_scout_" if guarded_scout else
                   "q3_pump_probe_drift_track_" if drift_track else
                   "q3_pump_probe_secondary_localize_" if secondary_localize else
                   "q3_pump_probe_fine_localize_" if fine_localize else
@@ -325,7 +364,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         folder.mkdir(parents=True, exist_ok=False)
         path = folder / "manifest.json"
         schedule = (scan_schedule(p, reference_interval_targets=10 if guarded_scout else None)
-                    if scan_mode else pilot.schedule(p))
+                    if scan_mode else direct_pump_schedule(p) if direct_pump else pilot.schedule(p))
         points = [dict(entry, status="pending") for entry in schedule]
         points += [dict(name="final_decision_reference", kind="reference",
                         reference_type="decision", status="pending"),
@@ -341,11 +380,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "secondary_localize": bool(secondary_localize),
             "drift_track": bool(drift_track),
             "guarded_scout": bool(guarded_scout),
+            "direct_pump": bool(direct_pump),
             "parameters": plan(transfer_check=transfer_check, relocalize=relocalize,
                                fine_localize=fine_localize,
                                secondary_localize=secondary_localize,
                                drift_track=drift_track,
-                               guarded_scout=guarded_scout),
+                               guarded_scout=guarded_scout,
+                               direct_pump=direct_pump),
             "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
@@ -490,7 +531,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         manifest["final_references_accepted"] = all(
             entry["result"]["accepted"] for entry in manifest["points"]
             if entry["name"].startswith("final_") and entry.get("kind") == "reference")
-        if guarded_scout:
+        if guarded_scout or direct_pump:
             manifest["checkpoint_references_accepted"] = all(
                 entry["result"]["accepted"] for entry in manifest["points"]
                 if entry.get("kind") == "reference" and
@@ -519,6 +560,8 @@ def main(argv=None):
                        help="track pump-off loss over 4.094..4.122 GHz across twelve passes")
     stage.add_argument("--guarded-scout", action="store_true",
                        help="two-pass pump-off scout with periodic calibration references")
+    stage.add_argument("--direct-pump", action="store_true",
+                       help="compare on-target 4.110-GHz pump with adjacent zero-drive shams")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
@@ -528,14 +571,16 @@ def main(argv=None):
                               fine_localize=args.fine_localize,
                               secondary_localize=args.secondary_localize,
                               drift_track=args.drift_track,
-                              guarded_scout=args.guarded_scout), indent=2))
+                              guarded_scout=args.guarded_scout,
+                              direct_pump=args.direct_pump), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             transfer_check=args.transfer_check, relocalize=args.relocalize,
             fine_localize=args.fine_localize,
             secondary_localize=args.secondary_localize,
             drift_track=args.drift_track,
-            guarded_scout=args.guarded_scout)
+            guarded_scout=args.guarded_scout,
+            direct_pump=args.direct_pump)
     return 0
 
 

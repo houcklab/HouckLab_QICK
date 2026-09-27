@@ -1655,3 +1655,29 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --guarded-scout
 ```
+
+## Return to the direct on-target pump question
+
+The earlier clean pump tests at 4.110 GHz used +8 and -20 MHz drive detunings,
+and did not resolve a response. They preceded the later pump-off localization
+that found the strongest current loss around 4.109–4.111 GHz. Thus they do not
+answer whether an on-target microwave pump changes that newly localized loss.
+The guarded pump-off scout remains available, but the next run should test the
+mechanism directly rather than keep mapping passive drift.
+
+`TLSPumpProbeConfirmed --direct-pump` uses the model's 4.110-GHz target and
+zero pump detuning, with a 15-us, gain-3000 pump. Four randomized rounds compare
+each driven block with same-tone zero-drive blocks immediately before and after
+it. Excited and ground probes at 2 and 10 us distinguish a change in excited
+survival from direct ground excitation. A zero-drive null at +8 MHz checks for
+drift or selection effects. This is 96 data blocks (38,400 probe shots), with
+decision/probe reference pairs at the beginning, midpoint, and end. A rejected
+reference stops the run and preserves the preceding data. The drive coordinate
+is the flux-model qubit frequency, not an independently measured TLS transition.
+
+On the measurement PC after stopping other acquisitions, **run this direct
+pump test instead of the guarded scout above**:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --direct-pump
+```
