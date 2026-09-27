@@ -538,6 +538,17 @@ def apply_park_pump_settings(base, params):
     return base
 
 
+def apply_survival_probe_state(base, params):
+    """Opt into a ground-state long-hold probe while preserving P0/P1."""
+    if "survival_probe_state" not in params:
+        return base
+    state = str(params["survival_probe_state"]).strip().lower()
+    if state not in ("g", "e"):
+        raise ValueError("survival_probe_state must be 'g' or 'e'")
+    base["opx_t1_survival_probe_state"] = state
+    return base
+
+
 def main():
     execution_test_mode, execution_test_save = execution_test_settings()
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
@@ -637,6 +648,7 @@ def main():
     base = reset_session.apply(base)
     apply_verified_feedback_timing(base)
     apply_park_pump_settings(base, p)
+    apply_survival_probe_state(base, p)
     calib_params = passive_readout_calibration(p, tls, soc, soccfg)
     park_gain = base.get("ff_park_gain", tls._baseline_dc_offset())
     state = {"session": reset_session}

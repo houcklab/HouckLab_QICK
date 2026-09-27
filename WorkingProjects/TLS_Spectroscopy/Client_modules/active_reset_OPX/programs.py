@@ -2660,6 +2660,11 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
 
     def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
         run_cfg = dict(cfg)
+        probe_state = str(run_cfg.get("opx_t1_survival_probe_state", "e")).strip().lower()
+        if probe_state not in ("g", "e"):
+            raise ValueError("opx_t1_survival_probe_state must be 'g' or 'e'")
+        if "opx_t1_survival_probe_state" in run_cfg:
+            run_cfg["opx_t1_survival_probe_state"] = probe_state
         if bool(run_cfg.get("opx_diagnostic_condition_tags", False)):
             self.record_words = CONDITION_TAGGED_PAYLOAD_RECORD_WORDS
             self.decode_dmem_records = decode_condition_tagged_payload_records
@@ -2714,6 +2719,7 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
 
     def _emit_t1_conditions(self, controls, label_prefix):
         reference = float(self.cfg["opx_t1_5pt_reference_hold_us"])
+        survival_excited = self.cfg.get("opx_t1_survival_probe_state", "e") == "e"
         if bool(self.cfg.get("opx_t1_include_references", True)):
             self._emit_tagged_condition(
                 f"{label_prefix}_P0", False, True, reference, 0
@@ -2735,7 +2741,7 @@ class OPXResetT1NPointProgram(OPXResetT13PointProgram):
             delay = delays[index]
             self._emit_tagged_condition(
                 f"{label_prefix}_PS{index}",
-                True,
+                survival_excited,
                 True,
                 reference + float(delay),
                 survival_offset + index + 2,

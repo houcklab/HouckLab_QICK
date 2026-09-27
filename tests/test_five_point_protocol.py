@@ -1227,6 +1227,23 @@ def test_resident_condition_order_matches_references_and_resets_every_record(mon
                       "POINT_PS2", "pi", (202, True), "controller_reset"]
 
 
+def test_ground_survival_probe_keeps_excited_reference_but_omits_probe_pi():
+    _module, cls = program_type()
+    prog = object.__new__(cls)
+    prog.cfg = {"opx_t1_5pt_reference_hold_us": 0.1,
+                "opx_t1_5pt_delays_us": [25.0],
+                "opx_t1_survival_probe_state": "g"}
+    calls = []
+    prog._emit_tagged_condition = lambda label, pi, ff, hold, tag: calls.append(
+        (label, pi, ff, hold, tag))
+    prog._emit_t1_conditions({}, "POINT")
+    assert calls == [
+        ("POINT_P0", False, True, 0.1, 0),
+        ("POINT_P1", True, True, 0.1, 1),
+        ("POINT_PS0", False, True, 25.1, 2),
+    ]
+
+
 def test_five_point_diagnostic_writes_condition_tag_after_each_iq_record():
     _module, cls = program_type()
     prog = object.__new__(cls)
@@ -2071,6 +2088,78 @@ def test_experimental_park_pump_settings_are_opt_in(monkeypatch):
     with pytest.raises(ValueError, match="requires frequency"):
         runner.apply_park_pump_settings({"reset_mode": "passive"},
                                         {"park_pump_gain": 3000})
+
+
+def test_survival_probe_state_is_opt_in_and_validated(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    load_experiments(monkeypatch)
+    runner = importlib.import_module(f"{PREFIX}.Runners.FivePointApplesToApples")
+    base = {"reset_mode": "passive"}
+    assert runner.apply_survival_probe_state(base, {}) is base
+    assert "opx_t1_survival_probe_state" not in base
+    assert runner.apply_survival_probe_state(base, {"survival_probe_state": "g"}) is base
+    assert base["opx_t1_survival_probe_state"] == "g"
+    with pytest.raises(ValueError, match="survival_probe_state"):
+        runner.apply_survival_probe_state({}, {"survival_probe_state": "other"})
+
+
+def test_ground_probe_has_no_decay_fit_but_keeps_reference_contrast():
+    module = importlib.import_module(f"{PREFIX}.Experiments.five_point_t1")
+    result = module.ground_probe_placeholder_estimate(
+        np.array([0.1, 0.2]), np.array([0.5, 0.6]))
+    np.testing.assert_allclose(result["ref_contrast"], [0.4, 0.4])
+    np.testing.assert_array_equal(result["valid_mask"], [0, 0])
+    assert np.isnan(result["T1_us"]).all()
+    assert np.isnan(result["T1_us_raw"]).all()
+
+
+def test_ground_probe_csv_preserves_long_hold_population_and_marks_fit_invalid(
+        monkeypatch, tmp_path):
+    module = load_experiments(monkeypatch)
+    exp = object.__new__(module.T15PointVsFlux)
+    exp.cfg = {"qua_shot_order": True, "opx_t1_survival_probe_state": "g"}
+    exp.soc = exp.soccfg = exp.calib_params = None
+    exp.dc_vec = np.array([-100])
+    exp.decay_delays_us = np.array([25.0])
+    exp.CONDITION_NAMES = ("P0", "P1", "Ps_25us")
+    exp.reference_hold_us, exp.shots = 0.1, 20
+    exp.min_ref_contrast, exp.max_relative_error, exp.max_fit_t1_us = .05, 1, 3000
+    exp.reset_mode, exp.element = "passive", "q3"
+    exp.acquisition_telemetry, exp.opx_reset_telemetry = [], []
+    exp.data, exp.write_outputs = {"survival_probe_state": "g"}, False
+    states = np.array([[[int(s < p * 20) for s in range(20)]]
+                       for p in (0.1, 0.8, 0.3)])
+    telemetry = {"read_length_cycles": 2, "order": "shot_alternating_dc_P0_P1_Ps0"}
+    monkeypatch.setattr(module, "acquire_t1_5pt_iq", lambda *a, **k: (
+        states, states, telemetry))
+    exp.acquire()
+    assert exp.data["Ps_25us"][0] == pytest.approx(0.3)
+    assert exp.data["T1_3pt_valid_mask"][0] == 0
+    assert np.isnan(exp.data["T1_3pt_us"][0])
+    metadata = module.five_point_output_metadata(exp.data, exp.CONDITION_NAMES)
+    assert metadata["survival_probe_state"] == "g"
+    spec = module.get_wall_clock_repeat_spec(exp)
+    assert spec["file_tag"] == "GroundExcitation_25us"
+    assert spec["metric_values"][0] == pytest.approx(0.2)
+    full = module.get_wall_clock_repeat_full_spec(exp)
+    metadata.update({"wall_clock_run_index": 0,
+                     "wall_clock_run_started_at_iso": "2026-09-27T17:00:00",
+                     "wall_clock_series_started_at_iso": "2026-09-27T17:00:00",
+                     "wall_clock_elapsed_minutes_from_first_run": 0.0})
+    path = module.save_wall_clock_repeat_full_outputs(
+        tmp_path / "ground",
+        spec["file_tag"],
+        [{"run_metadata": metadata, "dc_vec": exp.dc_vec,
+          "metric_column_name": spec["metric_column_name"],
+          "metric_values": spec["metric_values"],
+          "extra_metric_matrices": spec["extra_metric_matrices"],
+          "axes": full["axes"], "scalar_columns": full["scalar_columns"],
+          "array_columns": full["array_columns"]}],
+    )
+    row = next(csv.DictReader(open(path, newline="")))
+    assert row["survival_probe_state"] == "g"
+    assert float(row["ground_excitation_25us"]) == pytest.approx(0.2)
+    assert float(row["T1_3pt_valid_mask"]) == 0.0
 
 
 def test_passive_park_pump_precedes_pi_and_flux_without_reset(monkeypatch):

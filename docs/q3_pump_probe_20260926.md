@@ -1882,3 +1882,35 @@ a null for this pump placement, duration, gain, and current device state; it
 does not rule out a qubit-mediated on-target pump or identify the loss as a TLS.
 Do not repeat the same park-pump protocol without a new physical control or
 changed preparation mechanism.
+
+## Higher-gain bidirectional park-pump screen
+
+The gain-3000 band comparison measured only excited-qubit loss. That observable
+alone cannot test whether a pumped TLS changes the balance of downward and
+upward transfer: equal changes in opposite directions can leave the normalized
+decay rate unchanged. The next bounded screen doubles the park-tone DAC gain
+to 6000 for the same 15-us pulse, and measures both probe preparations. It
+uses the pinned compensated flux excursion and passive reset; no active-reset
+classifier is involved. The experimental runner caps gain at 6000.
+
+An 81-point pump-off pre-scout selects the current localized loss. Eight 21-point
+scans over center ±20 MHz then run in the order sham-g/e, gain-3000-g/e,
+gain-6000-g/e, sham-g/e. This compares the new higher gain with the old gain
+in the same device state. Each frequency uses 350 shots for P0, P1, and a 25-us survival
+condition beyond the 0.1-us matched reference hold. The ground survival shot
+omits the park pi pulse; its `Ps_25us-P0` is saved as ground excitation and no
+T1 is fitted for it. The excited scan retains the original pi preparation and
+the same raw P0/P1/Ps measurements. A post-scout checks feature position.
+Pump-specific changes must be localized in frequency and exceed both bracket
+shams. Analyze the ground probe as `G=Ps_25us-P0` and the excited probe as
+`L=P1-Ps_25us`; subtract the mean flank value of each before comparing gains.
+A putative populated TLS would give more target-localized upward transfer `G`
+and less downward transfer `L` as gain rises. A suggestive result then needs a
+matched off-resonant pump control.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHighGainBidirectional --run
+```

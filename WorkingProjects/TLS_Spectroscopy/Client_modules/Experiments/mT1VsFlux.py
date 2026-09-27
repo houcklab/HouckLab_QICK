@@ -32,6 +32,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 i
     estimate_matched_t1,
     estimate_five_point_t1,
     five_point_output_metadata,
+    ground_probe_placeholder_estimate,
     reduce_bidirectional_condition_states,
     validate_matched_t1_delays,
     validate_five_point_delays,
@@ -333,6 +334,18 @@ def build_wall_clock_repeat_metadata(run_start_dt, series_start_dt, run_index):
 def get_wall_clock_repeat_spec(exp):
     data = exp.data
     if isinstance(exp, T15PointVsFlux):
+        if data.get("survival_probe_state") == "g":
+            delay = float(exp.decay_delays_us[-1])
+            name = exp.CONDITION_NAMES[-1]
+            tag = f"GroundExcitation_{delay:g}us"
+            return {
+                "metric_values": np.asarray(data[name]) - np.asarray(data["P0"]),
+                "metric_column_name": f"ground_excitation_{delay:g}us",
+                "extra_metric_matrices": {},
+                "colorbar_label": "Ground-probe excitation probability",
+                "plot_title": f"{exp.element} ground-probe excitation vs flux and wall clock",
+                "file_tag": tag,
+            }
         metric_prefix = f"T1_{len(exp.CONDITION_NAMES)}pt"
         return {
             "metric_values": data[f"inv_{metric_prefix}_per_us"],
@@ -985,6 +998,9 @@ class T15PointVsFlux(_T1VsFluxBase):
                 )
             ),
         })
+        if "opx_t1_survival_probe_state" in getattr(self, "cfg", {}):
+            self.data["survival_probe_state"] = self.cfg[
+                "opx_t1_survival_probe_state"]
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         if not bool(self.cfg.get("qua_shot_order", False)):
@@ -1068,15 +1084,16 @@ class T15PointVsFlux(_T1VsFluxBase):
         )
         metric_prefix = f"T1_{len(self.CONDITION_NAMES)}pt"
         contrast_key = f"ref_contrast_{len(self.CONDITION_NAMES)}pt"
-        estimate = estimate_matched_t1(
-            directional["P0"],
-            directional["P1"],
-            survival,
-            self.decay_delays_us,
-            shots_per_condition=self.shots,
-            min_ref_contrast=self.min_ref_contrast,
-            max_relative_error=self.max_relative_error,
-            max_t1_us=self.max_fit_t1_us,
+        ground_probe = self.cfg.get("opx_t1_survival_probe_state", "e") == "g"
+        estimate = (
+            ground_probe_placeholder_estimate(directional["P0"], directional["P1"])
+            if ground_probe else estimate_matched_t1(
+                directional["P0"], directional["P1"], survival,
+                self.decay_delays_us, shots_per_condition=self.shots,
+                min_ref_contrast=self.min_ref_contrast,
+                max_relative_error=self.max_relative_error,
+                max_t1_us=self.max_fit_t1_us,
+            )
         )
         inv, inv_err = _safe_inverse_t1_us(
             estimate["T1_us"],
@@ -1101,17 +1118,19 @@ class T15PointVsFlux(_T1VsFluxBase):
                 directional[f"{name}_{direction}"]
                 for name in self.CONDITION_NAMES[2:]
             ])
-            direction_estimate = estimate_matched_t1(
-                directional[f"P0_{direction}"],
-                directional[f"P1_{direction}"],
-                direction_survival,
-                self.decay_delays_us,
-                shots_per_condition=directional[
-                    f"dc_{direction}_shots"
-                ],
-                min_ref_contrast=self.min_ref_contrast,
-                max_relative_error=self.max_relative_error,
-                max_t1_us=self.max_fit_t1_us,
+            direction_estimate = (
+                ground_probe_placeholder_estimate(
+                    directional[f"P0_{direction}"],
+                    directional[f"P1_{direction}"],
+                ) if ground_probe else estimate_matched_t1(
+                    directional[f"P0_{direction}"],
+                    directional[f"P1_{direction}"], direction_survival,
+                    self.decay_delays_us,
+                    shots_per_condition=directional[f"dc_{direction}_shots"],
+                    min_ref_contrast=self.min_ref_contrast,
+                    max_relative_error=self.max_relative_error,
+                    max_t1_us=self.max_fit_t1_us,
+                )
             )
             direction_inv, direction_inv_err = _safe_inverse_t1_us(
                 direction_estimate["T1_us"], direction_estimate["T1_err_us"]

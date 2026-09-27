@@ -19,6 +19,8 @@ def five_point_output_metadata(data, condition_names):
     """String-valued acquisition and correction provenance for CSV rows."""
     correction = data.get("flux_tail_compensation")
     return {
+        **({"survival_probe_state": data["survival_probe_state"]}
+           if "survival_probe_state" in data else {}),
         "acquisition_order": data.get("acquisition_order", ""),
         "acquisition_loop_order": "shot,frequency,condition",
         "condition_order": ",".join(condition_names),
@@ -303,6 +305,23 @@ def estimate_matched_t1(
         "fit_deviance": deviance,
         "decay_delays_us": delays,
         "shots_per_condition": shots,
+    }
+
+
+def ground_probe_placeholder_estimate(p0, p1):
+    """Preserve reference contrast without fitting a ground-state rise as decay."""
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    if p0.shape != p1.shape:
+        raise ValueError("ground-probe references must have matching shapes")
+    missing = np.full(p0.shape, np.nan, dtype=float)
+    invalid = np.zeros(p0.shape, dtype=np.int64)
+    return {
+        "T1_us_raw": missing.copy(), "T1_us": missing.copy(),
+        "T1_err_us": missing.copy(), "valid_mask": invalid.copy(),
+        "fit_success": invalid.copy(), "P0_fit": missing.copy(),
+        "P1_fit": missing.copy(), "ref_contrast": p1 - p0,
+        "fit_deviance": missing.copy(),
     }
 
 
