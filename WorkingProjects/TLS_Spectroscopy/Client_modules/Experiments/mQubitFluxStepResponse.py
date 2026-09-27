@@ -29,6 +29,31 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order 
 )
 
 
+def _finalize_consensus_analysis(fit_correction, finalize_analysis, persist, data):
+    """A rejected fit is saved as a diagnostic, never lost with the raw map."""
+    error = None
+    try:
+        fit_correction()
+    except Exception as exc:
+        error = exc
+        data["correction_fit_error"] = str(exc)
+        data.setdefault("rise_decay_bump_dc_correction_fit", {
+            "success": False, "error": str(exc),
+            "method": "measured_trace_v1",
+        })
+        print(f"Correction fit rejected; preserving acquired data: {exc}")
+    try:
+        finalize_analysis()
+    except Exception as exc:
+        data["finalize_analysis_error"] = str(exc)
+        if error is None:
+            error = exc
+        print(f"Diagnostic figure generation failed; preserving acquired data: {exc}")
+    finally:
+        persist()
+    return error
+
+
 def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
     dc_vec = np.asarray(dc_vec, dtype=float)
     if resonator_lookup_csv is not None:
@@ -285,13 +310,14 @@ class QubitFluxStepResponse(ExperimentClass):
         self.composition_damping = float(composition_damping)
         self.trace_tracking_mode = str(trace_tracking_mode).strip().lower()
         if self.trace_tracking_mode not in {
+            "consensus_v1",
             "image_template_causal",
             "image_v26",
             "ridge",
             "independent_slices",
         }:
             raise ValueError(
-                "trace_tracking_mode must be 'image_template_causal', "
+                "trace_tracking_mode must be 'consensus_v1', 'image_template_causal', "
                 "'image_v26', 'ridge', or 'independent_slices'."
             )
         self.trace_polarity = self._resolve_trace_polarity(
@@ -613,7 +639,34 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
         self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
 
-        if self.trace_tracking_mode == "image_template_causal":
+        if self.trace_tracking_mode == "consensus_v1":
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.step_response.native import analyze_native_map
+            if np.count_nonzero(expected_window_mask) < 2:
+                raise ValueError("consensus trace window needs at least two frequency points")
+            analysis = analyze_native_map(
+                frequency_axis_ghz[expected_window_mask], self.t_vec,
+                np.asarray(iq_magnitude_dbm)[expected_window_mask, :],
+                None if iq_phase is None else np.asarray(iq_phase)[expected_window_mask, :],
+                baseline_frequency_ghz, target_frequency_ghz,
+                branch_preference=(self.trace_shoulder if self.trace_shoulder in
+                                   {"auto", "lower", "upper", "midpoint"} else "auto"),
+                polarity=self.trace_polarity,
+                max_jump_mhz=self.trace_max_jump_mhz,
+                min_support_fraction=max(0.80, self.trace_min_supported_fraction),
+            )
+            self.data.update(analysis)
+            trace_result = {
+                "selected_frequency_ghz": analysis["extracted_qubit_frequency_ghz"],
+                "extracted_if_frequency_hz": analysis["extracted_qubit_frequency_ghz"] * 1e9,
+                "extracted_fwhm_hz": np.full(len(self.t_vec), np.nan),
+                "supported": analysis["trace_supported"],
+                "method": ["consensus_v1" if ok else "consensus_v1_unsupported"
+                           for ok in analysis["trace_supported"]],
+                "trace_score": analysis["trace_score"],
+                "shoulder_mode": analysis["trace_branch"],
+            }
+            trace_signal_source = analysis["trace_signal_source"]
+        elif self.trace_tracking_mode == "image_template_causal":
             trace_result = track_template_causal_ridge(
                 frequency_axis_ghz,
                 np.asarray(self.t_vec, dtype=float) / 1e3,
@@ -818,6 +871,22 @@ class QubitFluxStepResponse(ExperimentClass):
     def _fit_rise_decay_bump_dc_correction_from_step_response(self):
         if not self.fit_rise_decay_bump_dc_correction:
             return None
+
+        if (self.trace_tracking_mode == "consensus_v1" and
+                not self.data.get("trace_quality_accepted", False)):
+            raise RuntimeError(
+                "Measured-trace quality gate withheld correction JSON: " +
+                "; ".join(self.data.get("trace_quality_reasons", ("unknown reason",)))
+            )
+        if self.trace_tracking_mode == "consensus_v1" and self.flux_tail_compensation is not None:
+            if not self.compose_with_applied_flux_tail_compensation:
+                raise ValueError("A corrected 3B trace requires residual composition with its prior")
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.step_response.native import validate_applied_correction
+            validate_applied_correction(
+                self.flux_tail_compensation,
+                baseline_dc=self.baseline_dc_offset, target_dc=self.dc_offset,
+                flux_channel=self.meta_dict["flux_channel"],
+            )
 
         response_for_correction = self._response_for_dc_tail_correction()
         finite_count = int(np.count_nonzero(np.isfinite(response_for_correction)))
@@ -1265,12 +1334,32 @@ class QubitFluxStepResponse(ExperimentClass):
         self._write_raw_sweep_csv()
         if live_fig is not None:
             live_fig.close()
-        self._extract_trace_from_map(iq_magnitude_dbm, iq_phase)
+        try:
+            self._extract_trace_from_map(iq_magnitude_dbm, iq_phase)
+        except Exception as exc:
+            if self.trace_tracking_mode != "consensus_v1":
+                raise
+            self.data["trace_quality_accepted"] = False
+            self.data["trace_quality_reasons"] = (f"trace extraction failed: {exc}",)
+            self.data["trace_analysis_error"] = str(exc)
+            print(f"Measured-trace extraction rejected; raw sweep preserved: {exc}")
+            self.data.update({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+            self.pickle_data()
+            return {'config': cfg, 'data': self.data}
         self._fit_predistortion_from_step_response()
-        self._fit_rise_decay_bump_dc_correction_from_step_response()
-        self.finalize_analysis()
-        self.data.update({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
-        self.pickle_data()
+        if self.trace_tracking_mode == "consensus_v1":
+            def persist_consensus():
+                self.data.update({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+                self.pickle_data()
+            self._correction_fit_error = _finalize_consensus_analysis(
+                self._fit_rise_decay_bump_dc_correction_from_step_response,
+                self.finalize_analysis, persist_consensus, self.data,
+            )
+        else:
+            self._fit_rise_decay_bump_dc_correction_from_step_response()
+            self.finalize_analysis()
+            self.data.update({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+            self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
     def _save_step_response_panel(self, time_us, measured_step_response, ideal_step_response):

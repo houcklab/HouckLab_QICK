@@ -9,13 +9,21 @@ from scipy import optimize, signal
 
 
 SUPPORTED_COMPENSATION_METHODS = frozenset(
-    {"rise_decay_bump_set_dc_offset_correction"}
+    {"rise_decay_bump_set_dc_offset_correction",
+     "measured_trace_piecewise_set_dc_offset_correction",
+     "measured_trace_residual_composed_set_dc_offset_correction"}
 )
 
 COMPENSATION_INTENDED_USES = {
     "rise_decay_bump_set_dc_offset_correction": frozenset({
         "rise_decay_bump_set_dc_offset_tail_compensation",
         "residual_composed_set_dc_offset_tail_compensation",
+    }),
+    "measured_trace_piecewise_set_dc_offset_correction": frozenset({
+        "measured_trace_set_dc_offset_tail_compensation",
+    }),
+    "measured_trace_residual_composed_set_dc_offset_correction": frozenset({
+        "measured_trace_residual_composed_set_dc_offset_tail_compensation",
     }),
 }
 
