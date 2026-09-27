@@ -60,7 +60,7 @@ def test_incomplete_records_are_saved_before_rejection(tmp_path):
         assert raw['reset_attempts'].tolist() == [2]
 
 
-@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "rejected_initial", "timeout"])
+@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "complete_memory", "rejected_initial", "timeout"])
 def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_path, monkeypatch, outcome):
     from contextlib import nullcontext
     from types import SimpleNamespace
@@ -78,7 +78,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
         from dataclasses import replace
         bundle = replace(bundle, loop=replace(bundle.loop, holdout={**bundle.loop.holdout, 'ground_accept': 0.}))
     raw = {c: {'ground': {'i': gi, 'q': q}, 'excited': {'i': ei, 'q': q}} for c in ['payload','loop']}
-    base = dict(ff_park_gain=-25146, qubit_pi_freq=4367.292, qubit_pi_gain=13500, read_length=3.5, ro_chs=[0])
+    base = dict(ff_park_gain=-25146, qubit_pi_freq=4367.292, qubit_pi_gain=13500, read_length=3.5, ro_chs=[0], read_pulse_gain=1880)
     fake_tls = SimpleNamespace(BaseConfig=base, makeProxy=lambda: (object(), object()))
     fake_five = SimpleNamespace(install_scan_calibration=lambda tls: None)
     monkeypatch.setattr(package, 'TLSSpectroscopy', fake_tls, raising=False)
@@ -101,6 +101,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
         def us2cycles(self, *args, **kwargs):
             return 1075
     monkeypatch.setattr(programs, 'OPXResetBenchmarkProgram', Program)
+    monkeypatch.setattr(programs, 'OPXReadoutMemoryBenchmarkProgram', Program)
     def acquire(soc, program, timeout, cfg, *, total_shots):
         assert total_shots == 400
         active = cfg['opx_reset_scheme'] == 'opx_unbounded'
@@ -113,7 +114,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             raise AcquisitionTimeout('simulated watchdog', completed_shots=3, partial_records=records[:3])
         return records
     monkeypatch.setattr(integration, '_run_program', acquire)
-    if outcome not in ('complete', 'complete_delay'):
+    if outcome not in ('complete', 'complete_delay', 'complete_memory'):
         with pytest.raises((ValueError, RuntimeError), match='confident|simulated watchdog'):
             m.run(data_root=tmp_path)
         path = next((tmp_path/'q3').glob('*/manifest.json'))
@@ -136,17 +137,25 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             assert 'AcquisitionTimeout: simulated watchdog' in manifest['error']
         return
     delay_check = outcome == 'complete_delay'
-    path = m.run(data_root=tmp_path, delay_check=delay_check)
-    expected_blocks = 144 if delay_check else 48
+    memory_check = outcome == 'complete_memory'
+    path = m.run(data_root=tmp_path, delay_check=delay_check, readout_memory_check=memory_check)
+    expected_blocks = 144 if delay_check or memory_check else 48
     manifest = json.loads(path.read_text())
     assert manifest['status'] == 'complete' and len(manifest['points']) == expected_blocks + 1
     assert len(configs) == expected_blocks and len(references) == 2
     assert references[0] == references[1]
     assert references[0]['opx_loop_recovery_us'] == 20
     assert all(c['opx_loop_recovery_us'] == 20 for c in configs)
-    assert {c['opx_verification_delay_us'] for c in configs} == ({20.,100.,500.} if delay_check else {20.})
+    assert {c['opx_verification_delay_us'] for c in configs} == ({20.,100.,500.} if delay_check or memory_check else {20.})
     assert all(c['opx_verification_delay_us'] == e['verification_delay_us'] for c,e in zip(configs, manifest['points'][:-1]))
     assert all(c['opx_reset_calibration'] == bundle.to_dict() for c in configs)
+    if memory_check:
+        assert {c['opx_reset_scheme'] for c in configs} == {'none'}
+        assert {c['opx_benchmark_initial_readout_gain'] for c in configs} == {0,1880}
+        assert all(c['read_pulse_gain'] == 1880 for c in configs)
+        for c,e in zip(configs, manifest['points'][:-1]):
+            assert e['verification_readout_gain'] == 1880
+            assert c['opx_benchmark_initial_readout_gain'] == e['initial_readout_gain'] == (0 if e['initial_readout']=='zero' else 1880)
     for entry in manifest['points'][:-1]:
         assert entry['status'] == 'complete' and 'acquisition_started_at' in entry
         with np.load(path.parent / (entry['name'] + '.npz')) as data:
@@ -176,3 +185,60 @@ def test_delay_plan_balances_all_conditions_without_changing_reset_settings():
         assert set(conditions) == expected
         for pos, condition in enumerate(conditions):positions[pos][condition] += 1
     assert all(set(c.values()) == {1} and set(c) == expected for c in positions)
+
+
+def test_readout_memory_plan_pairs_normal_and_zero_initial_drive_without_feedback():
+    p = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--readout-memory-check'], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    plan = json.loads(p.stdout)
+    assert plan['hardware_access'] is False and plan['readout_memory_check'] is True
+    assert plan['benchmark_shots'] == 57600 and plan['reference_shots'] == 16000
+    assert len(plan['points']) == 144
+    for repeat in range(12):
+        es = plan['points'][12*repeat:12*(repeat+1)]
+        assert {e['reset_scheme'] for e in es} == {'none'}
+        assert {(e['initial_readout'], e['preparation'], e['verification_delay_us']) for e in es} == {
+            (drive, prep, delay) for drive in ['normal','zero'] for prep in ['g','e'] for delay in [20.,100.,500.]}
+
+
+def test_readout_memory_program_changes_only_first_readout_gain(monkeypatch):
+    from types import SimpleNamespace
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
+    cls = programs.OPXReadoutMemoryBenchmarkProgram
+    traces = []
+    def project(self, calibration, context):
+        self.events.append(('measure_project',context))
+    monkeypatch.setattr(programs.OPXResetBenchmarkProgram, '_measure_project', project)
+    for gain in [0,1880]:
+        p = SimpleNamespace(cfg={'res_ch':0,'ro_chs':[0],'read_pulse_gain':1880,
+            'read_pulse_freq':6933.026,'read_length':3.5,'adc_trig_offset':.2,
+            'opx_benchmark_initial_readout_gain':gain}, events=[],
+            freq2reg=lambda *a,**k:123, deg2reg=lambda *a,**k:0,
+            us2cycles=lambda x,**k:int(100*x))
+        # The subclass method uses super(), so retain the actual class identity.
+        obj = object.__new__(cls)
+        obj.__dict__.update(p.__dict__)
+        obj.set_pulse_registers = lambda **kw: obj.events.append(('registers',kw))
+        cls._measure_project(obj, None, 'payload')
+        assert [e[0] for e in obj.events] == ['registers','measure_project','registers']
+        assert obj.events[0][1]['gain'] == gain
+        assert obj.events[-1][1]['gain'] == 1880
+        assert obj.cfg['read_pulse_gain'] == 1880
+        traces.append(obj.events)
+    traces[0][0][1]['gain'] = 1880
+    assert traces[0] == traces[1]
+
+
+def test_readout_memory_rejects_feedback_before_constructing_hardware_program():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
+    with pytest.raises(ValueError, match='requires no feedback'):
+        programs.OPXReadoutMemoryBenchmarkProgram(None, {'opx_reset_scheme':'opx_unbounded'}, None, None)
+
+
+@pytest.mark.parametrize('extra,match', [({'ro_mode_periodic':True}, 'pulsed readout'),
+    ({'opx_benchmark_initial_readout_gain':17}, 'zero or the normal')])
+def test_readout_memory_rejects_unsupported_gain_or_periodic_mode(extra, match):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
+    cfg = {'opx_reset_scheme':'none', 'read_pulse_gain':1880, 'opx_benchmark_initial_readout_gain':0, **extra}
+    with pytest.raises(ValueError, match=match):
+        programs.OPXReadoutMemoryBenchmarkProgram(None,cfg,None,None)

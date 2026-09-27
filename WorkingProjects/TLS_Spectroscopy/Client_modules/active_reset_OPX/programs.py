@@ -1305,6 +1305,31 @@ class OPXResetBenchmarkProgram(QickProgram):
         self.end()
 
 
+class OPXReadoutMemoryBenchmarkProgram(OPXResetBenchmarkProgram):
+    """No-feedback benchmark with matched first-readout timing at zero/normal gain."""
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        if cfg.get("opx_reset_scheme") != "none":
+            raise ValueError("readout memory benchmark requires no feedback")
+        if bool(cfg.get("ro_mode_periodic", False)):
+            raise ValueError("readout memory benchmark requires pulsed readout")
+        gain = cfg.get("opx_benchmark_initial_readout_gain")
+        if gain not in (0, cfg["read_pulse_gain"]):
+            raise ValueError("initial readout gain must be zero or the normal readout gain")
+        super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
+
+    def _measure_project(self, calibration, context):
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+
+        if context != "payload":
+            raise ValueError("readout memory benchmark has no feedback-loop measurement")
+        # Emit the same register writes and ADC/measurement sequence in both arms.
+        # Keep cfg's normal gain intact and restore it before verification.
+        set_readout_pulse(self, gain=int(self.cfg["opx_benchmark_initial_readout_gain"]))
+        super()._measure_project(calibration, context)
+        set_readout_pulse(self)
+
+
 class OPXResetT1Program(OPXResetBenchmarkProgram):
     def _set_payload_pulse(self, *, gain=None):
         cfg = self.cfg

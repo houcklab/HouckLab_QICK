@@ -865,3 +865,72 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 ```
 
 Output prefix: `q3/q3_pump_probe_reset_delay_check_<UTC>_<id>/`.
+
+## Verification-delay result and first-readout drive control
+
+Session `q3_pump_probe_reset_delay_check_20260927T002012Z_b7a77792`, commit
+`bb47105e`, completed all 144 benchmark blocks and both reference sets. All
+57,600 benchmark shots and 16,000 reference shots were checked against the
+manifest; all four reference fits reproduce exactly. All 28,800 active shots
+have confirmed-ground terminal status, and all no-feedback records have
+no-reset status. No runtime classifier update occurred.
+
+Using the fixed loop classifier, the nominal pi-minus-no-pi verification
+contrast in the active arm is:
+
+| Verification delay | Contrast, percentage points | Unadjusted 95% paired t interval |
+| --- | ---: | --- |
+| 20 us | +5.48 | [2.29, 8.67] |
+| 100 us | +3.35 | [0.89, 5.82] |
+| 500 us | +1.125 | [-0.027, 2.277] |
+
+The paired change at 500 versus 20 us is -4.35 points [-7.86, -0.85]; the
+100-versus-20 change remains unresolved. Payload-classifier analysis agrees
+qualitatively. At 500 us, an unresolved difference is not proof of equivalence
+or perfect initialization: a residual difference of about two points is still
+compatible with these data. The no-feedback contrast also drops, from +18.29
+points at 20 us to +1.44 [0.16, 2.72] at 500 us. Active/no-feedback differences
+at 500 us include zero for both preparations.
+
+The nominal ground verification fraction itself falls substantially: active
+0.2465 to 0.1135 and no-feedback 0.2442 to 0.1063 from 20 to 500 us. Both
+reference bundles pass; original-classifier held-out loop balanced score is
+0.7165 initially and 0.7020 finally (ground false-positive 0.289 to 0.311).
+These observations support a transient preparation/readout-related background,
+without distinguishing qubit relaxation, measurement effects, or readout-chain
+memory. They do not establish a microscopic cause or a TLS lifetime. A 500-us
+wait may also suppress the pump-associated transient of interest, so it is not
+automatically promoted into the pump-probe sequence.
+
+Next: `--readout-memory-check` directly varies the preceding readout drive.
+Feedback is disabled in every arm. Compare the initial readout pulse at its
+normal amplitude versus zero amplitude, retain its ADC trigger/integration and
+digital timing, and use the normal amplitude for the final verification pulse.
+Use both nominal preparations and all three delays (20/100/500 us), twelve
+balanced rounds, 400 shots per block: 57,600 benchmark shots plus 16,000 fresh
+pre/post reference shots. Initial and final physical gain values are saved in
+each manifest entry. The zero-amplitude initial projection is not a calibrated
+state measurement; it is retained for auditing and never drives feedback.
+
+The dedicated `OPXReadoutMemoryBenchmarkProgram` subclasses the existing
+benchmark, rejects feedback and periodic readout, and permits only zero or
+normal initial drive gain. It emits the same pulse-register setup calls for both
+arms, measures/projects the first capture, and restores normal readout registers
+before verification on every shot. Base benchmark behavior and production
+defaults are unchanged. Tests compare the actual readout-register helper's
+emitted settings, require gain restoration, and exercise all 144 mocked blocks.
+
+Primary comparison: normal-minus-zero initial drive within each preparation
+and delay, and its change with delay, retaining both classifier analyses and
+pre/post raw-reference checks. This tests whether the applied first readout
+drive changes the later observable; it cannot by itself distinguish qubit
+excitation from resonator/readout memory. The zero-drive arm still runs readout
+electronics and ADC capture. Sequential blocks and cyclic order balance
+ordinal position but do not eliminate predecessor effects or rapid drift.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --readout-memory-check
+```
+
+Typical duration is six minutes. Output prefix:
+`q3/q3_pump_probe_readout_memory_check_<UTC>_<id>/`.
