@@ -1625,3 +1625,33 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeParkPiSweep --run --stability-check
 ```
+
+## Fixed-frequency reference instability and guarded pump-off scout
+
+The 24-point stability run
+`q3_pump_probe_park_reference_stability_20260927T174709Z_f89dd2fb`
+completed at a fixed 4367.292 MHz park pi frequency, with paired half-gain
+decision and normal-gain probe references every 20 seconds. The half-gain
+reference passed in 5/12 slots; the normal-gain reference passed in 7/12.
+Both passed in slots 2 and 8–11; both failed in slots 1, 3–5, and 7. The final
+four pairs passed over a 60-second span. Prepared-excited IQ moved relative to
+ground while the frequency remained fixed. Thus the gate failures are not
+simply a wrong choice of readout gain, and one late passing reference is not
+enough to certify the planned 1,044-block drift tracker. The record does not
+identify whether the underlying cause is qubit-frequency motion, changing
+excitation/decay, or readout-history dependence.
+
+`TLSPumpProbeConfirmed --guarded-scout` returns to the pump-off loss question
+over 4.094–4.122 GHz at 1-MHz spacing. It makes two alternating-direction
+passes (174 data blocks, 250 shots each), with the original initial and final
+reference pairs. It adds paired decision/probe references after each ten target
+trios and at the end of the first pass. Each failed reference stops the scan,
+leaving all preceding raw IQ and CSV rows for analysis. Classifiers stay frozen
+within a run and the same quality guard remains active; checkpoint references
+validate their continued usability and are saved for drift comparison.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --guarded-scout
+```

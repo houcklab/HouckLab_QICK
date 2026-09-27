@@ -30,6 +30,11 @@ It uses the same pump-off protocol over 4.108..4.122 GHz at 0.5-MHz spacing.
 --drift-track revisits 4.094..4.122 GHz at 1-MHz spacing over twelve
 alternating-direction passes after the strongest loss shifted below 4.114 GHz.
 It establishes the passive position and time variation before a pump test.
+
+--guarded-scout visits the same range in two passes, with paired decision and
+probe references after each ten target-frequency trios. A rejected reference
+stops the scout and retains all preceding raw IQ; this limits the chance that
+intermittent calibration contrast contaminates an entire long drift scan.
 """
 
 import argparse
@@ -50,9 +55,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
-               secondary_localize=False, drift_track=False):
+               secondary_localize=False, drift_track=False, guarded_scout=False):
     if sum((transfer_check, relocalize, fine_localize,
-            secondary_localize, drift_track)) > 1:
+            secondary_localize, drift_track, guarded_scout)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage")
     p = pilot.parameters(location_check=True)
     p.update({
@@ -84,16 +89,18 @@ def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
                  probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
                  probe_locations=["target"], pump_detunings_mhz=[0.0],
                  bracket_each=False)
-    if drift_track:
+    if drift_track or guarded_scout:
         p.update(target_frequency_ghz=[round(4.094 + 0.001 * i, 3) for i in range(29)],
-                 freq_step_mhz=1.0, shots=250, repeats=12, order_seed=20261008,
+                 freq_step_mhz=1.0, shots=250,
+                 repeats=2 if guarded_scout else 12,
+                 order_seed=20261009 if guarded_scout else 20261008,
                  probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
                  probe_locations=["target"], pump_detunings_mhz=[0.0],
                  bracket_each=False)
     return p
 
 
-def scan_schedule(p):
+def scan_schedule(p, *, reference_interval_targets=None):
     """Keep each loss/reference trio local in time; reverse the second pass."""
     import random
 
@@ -103,7 +110,7 @@ def scan_schedule(p):
         targets = range(len(p["target_frequency_ghz"]))
         if repeat % 2:
             targets = reversed(targets)
-        for target in targets:
+        for target_count, target in enumerate(targets, start=1):
             probes = [("e", 2.0), ("e", 10.0), ("g", 10.0)]
             rng.shuffle(probes)
             comparison_id = f"pass_{repeat}_target_{target:04d}"
@@ -118,17 +125,31 @@ def scan_schedule(p):
                     "test_condition": f"{state}_{hold:g}us",
                     "comparison_id": comparison_id,
                 })
+            if (reference_interval_targets is not None
+                    and (target_count % reference_interval_targets == 0
+                         or target_count == len(p["target_frequency_ghz"]))
+                    and (repeat, target_count) !=
+                    (p["repeats"] - 1, len(p["target_frequency_ghz"]))):
+                for role in ("decision", "probe"):
+                    points.append({
+                        "name": f"checkpoint_{repeat:02d}_{target_count:02d}_{role}_reference",
+                        "kind": "reference", "reference_type": role,
+                        "repeat": repeat, "after_targets": target_count,
+                    })
     return points
 
 
 def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
-         secondary_localize=False, drift_track=False):
+         secondary_localize=False, drift_track=False, guarded_scout=False):
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
                    secondary_localize=secondary_localize,
-                   drift_track=drift_track)
-    scan_mode = relocalize or fine_localize or secondary_localize or drift_track
-    points = scan_schedule(p) if scan_mode else pilot.schedule(p)
+                   drift_track=drift_track, guarded_scout=guarded_scout)
+    scan_mode = relocalize or fine_localize or secondary_localize or drift_track or guarded_scout
+    points = (scan_schedule(p, reference_interval_targets=10 if guarded_scout else None)
+              if scan_mode else pilot.schedule(p))
+    checkpoint_refs = sum(x.get("kind") == "reference" for x in points)
+    data_blocks = len(points) - checkpoint_refs
     return {
         "hardware_access": False,
         "transfer_check": bool(transfer_check),
@@ -136,11 +157,13 @@ def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
         "fine_localize": bool(fine_localize),
         "secondary_localize": bool(secondary_localize),
         "drift_track": bool(drift_track),
+        "guarded_scout": bool(guarded_scout),
         "microwave_pump_enabled": not scan_mode,
         "parameters": p,
-        "acquisition_blocks": len(points),
-        "pump_probe_shots": len(points) * p["shots"],
-        "reference_shots": 4 * 4 * reference.SHOTS,
+        "acquisition_blocks": data_blocks,
+        "pump_probe_shots": data_blocks * p["shots"],
+        "checkpoint_references": checkpoint_refs,
+        "reference_shots": (4 + checkpoint_refs) * 4 * reference.SHOTS,
         "decision_readout_fraction": 0.5,
         "probe_readout_fraction": 1.0,
         "reset_policy": "required_loop_before_and_after_pump",
@@ -236,14 +259,14 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         transfer_check=False, relocalize=False, fine_localize=False,
-        secondary_localize=False, drift_track=False):
+        secondary_localize=False, drift_track=False, guarded_scout=False):
     import numpy as np
 
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
                    fine_localize=fine_localize,
                    secondary_localize=secondary_localize,
-                   drift_track=drift_track)
-    scan_mode = relocalize or fine_localize or secondary_localize or drift_track
+                   drift_track=drift_track, guarded_scout=guarded_scout)
+    scan_mode = relocalize or fine_localize or secondary_localize or drift_track or guarded_scout
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -289,7 +312,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        prefix = ("q3_pump_probe_drift_track_" if drift_track else
+        prefix = ("q3_pump_probe_guarded_scout_" if guarded_scout else
+                  "q3_pump_probe_drift_track_" if drift_track else
                   "q3_pump_probe_secondary_localize_" if secondary_localize else
                   "q3_pump_probe_fine_localize_" if fine_localize else
                   "q3_pump_probe_relocalize_" if relocalize else
@@ -300,10 +324,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
         path = folder / "manifest.json"
-        schedule = scan_schedule(p) if scan_mode else pilot.schedule(p)
+        schedule = (scan_schedule(p, reference_interval_targets=10 if guarded_scout else None)
+                    if scan_mode else pilot.schedule(p))
         points = [dict(entry, status="pending") for entry in schedule]
-        points += [dict(name="final_decision_reference", kind="reference", status="pending"),
-                   dict(name="final_probe_reference", kind="reference", status="pending")]
+        points += [dict(name="final_decision_reference", kind="reference",
+                        reference_type="decision", status="pending"),
+                   dict(name="final_probe_reference", kind="reference",
+                        reference_type="probe", status="pending")]
         manifest = {
             "schema": "q3.pump-probe-confirmed.v1", "session_id": session_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -313,10 +340,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "fine_localize": bool(fine_localize),
             "secondary_localize": bool(secondary_localize),
             "drift_track": bool(drift_track),
+            "guarded_scout": bool(guarded_scout),
             "parameters": plan(transfer_check=transfer_check, relocalize=relocalize,
                                fine_localize=fine_localize,
                                secondary_localize=secondary_localize,
-                               drift_track=drift_track),
+                               drift_track=drift_track,
+                               guarded_scout=guarded_scout),
             "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
@@ -383,13 +412,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 def acquire(entry):
                     nonlocal writer
                     if entry.get("kind") == "reference":
-                        cal_cfg = (decision_cal_cfg if entry["name"] == "final_decision_reference"
+                        cal_cfg = (decision_cal_cfg if entry["reference_type"] == "decision"
                                    else verification_cal_cfg)
                         _, report = acquire_reference(entry["name"], cal_cfg)
                         if not report["accepted"]:
                             entry["result"] = report
-                            manifest["final_references_accepted"] = False
-                            raise RuntimeError("Final calibration reference rejected; "
+                            final = entry["name"].startswith("final_")
+                            manifest["final_references_accepted" if final else
+                                     "checkpoint_references_accepted"] = False
+                            raise RuntimeError(f"{'Final' if final else 'Checkpoint'} "
+                                               "calibration reference rejected; "
                                                f"raw pump-probe data saved in {folder}")
                         return report
                     target = entry["target_index"]
@@ -457,7 +489,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise
         manifest["final_references_accepted"] = all(
             entry["result"]["accepted"] for entry in manifest["points"]
-            if entry.get("kind") == "reference")
+            if entry["name"].startswith("final_") and entry.get("kind") == "reference")
+        if guarded_scout:
+            manifest["checkpoint_references_accepted"] = all(
+                entry["result"]["accepted"] for entry in manifest["points"]
+                if entry.get("kind") == "reference" and
+                not entry["name"].startswith("final_"))
         protocol.checkpoint(path, manifest)
         print(f"[pump-probe-confirmed] complete; final references accepted="
               f"{manifest['final_references_accepted']}; summary={summary_path}", flush=True)
@@ -480,6 +517,8 @@ def main(argv=None):
                        help="check the 4.114..4.118-GHz candidate at 0.5-MHz spacing without pumping")
     stage.add_argument("--drift-track", action="store_true",
                        help="track pump-off loss over 4.094..4.122 GHz across twelve passes")
+    stage.add_argument("--guarded-scout", action="store_true",
+                       help="two-pass pump-off scout with periodic calibration references")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
@@ -488,13 +527,15 @@ def main(argv=None):
                               relocalize=args.relocalize,
                               fine_localize=args.fine_localize,
                               secondary_localize=args.secondary_localize,
-                              drift_track=args.drift_track), indent=2))
+                              drift_track=args.drift_track,
+                              guarded_scout=args.guarded_scout), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             transfer_check=args.transfer_check, relocalize=args.relocalize,
             fine_localize=args.fine_localize,
             secondary_localize=args.secondary_localize,
-            drift_track=args.drift_track)
+            drift_track=args.drift_track,
+            guarded_scout=args.guarded_scout)
     return 0
 
 
