@@ -1809,3 +1809,31 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeAdaptiveParkPump --run
 ```
+
+## Adaptive park-pump result and matched drift control
+
+The September 27 adaptive sequence completed. The pre-scout at 14:38:58
+selected a localized loss feature at 4.131 GHz (25-us survival depth 0.366;
+both scan directions passed). At that coordinate the pre-scout fitted
+T1=16.9 us. Seven pump/sham arms ran from 14:40:07 to 14:40:49, followed by
+a post-scout at 14:40:56. The post-scout selected 4.138 GHz and found
+T1=6.6 us there: the strongest loss moved by about 7 MHz over the sequence.
+The readout contrast also changed. At 4.131 GHz, normalized 25-us survival
+was 0.154, 0.305, 0.500 in the three shams and 0.398, 0.489 in the two
+nominally resonant pump arms. The rising final sham and migrating loss feature
+prevent a pump-specific saturation claim. The drive is applied at the parked
+qubit bias, so this null/ambiguous result cannot establish whether a TLS would
+respond to an on-target pump.
+
+The next control repeats the same pre-scout, seven short arms, and post-scout,
+but sets every park-pump gain to zero. This measures spontaneous feature
+motion over the same timing and recalibration cadence before attributing the
+shift to microwave drive. All files have a distinct `Drift_Control` suffix;
+the existing driven command and production TLS defaults are unchanged.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeAdaptiveParkPump --run --drift-control
+```

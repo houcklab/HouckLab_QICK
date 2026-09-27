@@ -5,6 +5,9 @@ The passive pre-scout spans 4.090..4.170 GHz in 1-MHz steps. A localized
 scan directions before the pump sequence starts. The pump uses the same
 park-bias protocol as TLSPumpProbePassiveParkPump, then a post-scout checks
 whether the selected feature remained nearby. No active reset is used.
+The --drift-control option runs the same schedule with all seven pump gains
+set to zero, testing whether the feature moves during an otherwise matched
+sequence.
 """
 
 import argparse
@@ -21,7 +24,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def scout_parameters(*, phase):
+def scout_parameters(*, phase, drift_control=False):
     if phase not in ("pre", "post"):
         raise ValueError("phase must be pre or post")
     return {
@@ -30,7 +33,10 @@ def scout_parameters(*, phase):
         "freq_max_ghz": 4.170,
         "freq_step_mhz": 1.0,
         "shots_per_condition": 350,
-        "output_suffix": f"TLS_PumpProbe_Adaptive_Scout_{phase}",
+        "output_suffix": (
+            "TLS_PumpProbe_Adaptive_Drift_Control_Scout_" if drift_control
+            else "TLS_PumpProbe_Adaptive_Scout_"
+        ) + phase,
     }
 
 
@@ -104,8 +110,8 @@ def select_loss_feature(rows):
     return best
 
 
-def plan():
-    scout = scout_parameters(phase="pre")
+def plan(*, drift_control=False):
+    scout = scout_parameters(phase="pre", drift_control=drift_control)
     return {
         "hardware_access": False,
         "pre_and_post_scout_frequencies": 81,
@@ -113,32 +119,60 @@ def plan():
         "scout_step_mhz": 1.0,
         "scout_shots_per_condition": 350,
         "pump_arms": [
-            {"label": arm["label"], "detuning_mhz": arm["frequency_mhz"] - 4140.0,
-             "gain": arm["gain"]}
+            {"label": "sham" if drift_control else arm["label"],
+             "detuning_mhz": 0.0 if drift_control
+             else arm["frequency_mhz"] - 4140.0,
+             "gain": 0 if drift_control else arm["gain"]}
             for arm in park_pump.arms()
         ],
         "pump_center": "selected from pre-scout; aborts if no localized dip",
+        "drift_control": drift_control,
+        "pump_gain_when_drift_control": 0,
         "parameters": scout,
         "note": __doc__,
     }
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        drift_control=False):
     pre_path = localizer.run(
         data_root=data_root, correction_json=correction_json,
-        parameter_overrides=scout_parameters(phase="pre"))
+        parameter_overrides=scout_parameters(
+            phase="pre", drift_control=drift_control))
     selected = select_loss_feature(read_scout(pre_path))
     center = selected["center_ghz"]
     print(f"[adaptive-park-pump] pre-scout={pre_path}; "
           f"selected={center:.3f} GHz depth={selected['depth']:.3f} "
           f"(up={selected['depth_scan_up']:.3f}, "
           f"down={selected['depth_scan_down']:.3f})", flush=True)
-    pump_paths = park_pump.run(
-        data_root=data_root, correction_json=correction_json,
-        center_ghz=center)
+    if drift_control:
+        pump_paths = []
+        base = park_pump.parameters(center_ghz=center)
+        for index in range(1, 8):
+            overrides = {
+                **base,
+                "park_pump_frequency_mhz": 1000.0 * center,
+                "park_pump_gain": 0,
+                "park_pump_us": 15.0,
+                "output_suffix": (
+                    f"TLS_PumpProbe_Adaptive_Drift_Control_"
+                    f"{center:.3f}".replace(".", "p")
+                    + f"_{index:02d}_sham"
+                ),
+            }
+            print(f"[adaptive-park-pump] drift-control sham "
+                  f"{index}/7 at {center:.3f} GHz", flush=True)
+            pump_paths.append(localizer.run(
+                data_root=data_root, correction_json=correction_json,
+                parameter_overrides=overrides))
+    else:
+        pump_paths = park_pump.run(
+            data_root=data_root, correction_json=correction_json,
+            center_ghz=center)
     post_path = localizer.run(
         data_root=data_root, correction_json=correction_json,
-        parameter_overrides=scout_parameters(phase="post"))
+        parameter_overrides=scout_parameters(
+            phase="post", drift_control=drift_control))
     try:
         post_selected = select_loss_feature(read_scout(post_path))
         print(f"[adaptive-park-pump] post-scout={post_path}; "
@@ -160,11 +194,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--drift-control", action="store_true",
+                        help="replace all seven drive arms with matched zero-gain shams")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(drift_control=args.drift_control), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            drift_control=args.drift_control)
     return 0
 
 

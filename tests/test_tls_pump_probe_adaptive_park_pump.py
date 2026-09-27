@@ -62,6 +62,25 @@ def test_adaptive_run_pumps_selected_current_center_then_checks_drift(
         calls[2][1]["parameter_overrides"]["output_suffix"])
 
 
+def test_drift_control_uses_seven_equal_duration_zero_gain_arms(monkeypatch, tmp_path):
+    runner = importlib.import_module(MODULE)
+    calls = []
+    monkeypatch.setattr(runner.localizer, "run", lambda **kw: (
+        calls.append(kw), tmp_path / "scout.csv")[1])
+    monkeypatch.setattr(runner, "read_scout", lambda _path: synthetic_scout())
+    result = runner.run(data_root=tmp_path, drift_control=True)
+    assert len(calls) == 9
+    arms = [call["parameter_overrides"] for call in calls[1:-1]]
+    assert all(arm["park_pump_gain"] == 0 for arm in arms)
+    assert all(arm["park_pump_us"] == 15.0 for arm in arms)
+    assert all(arm["park_pump_frequency_mhz"] == 4140.0 for arm in arms)
+    assert len({arm["output_suffix"] for arm in arms}) == 7
+    assert all("Drift_Control" in arm["output_suffix"] for arm in arms)
+    assert "Drift_Control" in calls[0]["parameter_overrides"]["output_suffix"]
+    assert "Drift_Control" in calls[-1]["parameter_overrides"]["output_suffix"]
+    assert len(result["pump_arms"]) == 7
+
+
 def test_scout_reader_rejects_duplicate_rows_disguised_as_full_pass(tmp_path):
     runner = importlib.import_module(MODULE)
     path = tmp_path / "scout.csv"
