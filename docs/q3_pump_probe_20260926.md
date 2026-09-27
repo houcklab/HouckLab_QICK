@@ -934,3 +934,67 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 
 Typical duration is six minutes. Output prefix:
 `q3/q3_pump_probe_readout_memory_check_<UTC>_<id>/`.
+
+## First-readout drive result and reduced-amplitude screen
+
+Session `q3_pump_probe_readout_memory_check_20260927T003357Z_70ec1322`, commit
+`dfe9f566`, completed all 144 benchmark blocks and both reference sets. All
+57,600 benchmark shots and 16,000 reference shots were checked. All four fits
+refit exactly; raw verification fractions match the manifest; every block has
+zero reset attempts/pi feedback pulses and no-reset terminal status. Manifest
+gains are first 0 or 1880, final 1880. Both reference bundles passed, although
+classification improved during the run: initial-classifier held-out loop
+balanced score was 0.7125 initially and 0.7605 finally. Local round pairing
+reduces sensitivity to slow drift but does not eliminate all history effects.
+
+With a 20-us verification delay, the fixed loop-classifier observable is:
+
+| Nominal preparation | Zero-amplitude first pulse | Normal first pulse |
+| --- | ---: | ---: |
+| No pi | 0.0919 | 0.2242 |
+| Pi | 0.6194 | 0.4015 |
+
+Normal-minus-zero paired differences are +13.23 percentage points [9.10, 17.36]
+for no-pi and -21.79 [-23.83, -19.75] for pi preparation. At 100 us they are
++13.60 [10.04, 17.17] and -9.31 [-12.93, -5.70]. At 500 us the no-pi effect
+remains +3.17 [2.13, 4.21], while the pi difference is unresolved at -0.56
+[-2.48, 1.36]. Intervals are unadjusted 95% t intervals across twelve paired
+rounds. The payload-classifier analysis agrees closely. The first readout
+drive therefore changes the later observable substantially under this control,
+with opposite signs for the two nominal preparations. This exceeds the scale
+of earlier few-point pump contrasts but does not prove those contrasts were
+entirely artifacts or identify qubit-state transitions versus readout-system
+memory. These are uncorrected readout fractions, not physical populations.
+
+Next screen reduced first-readout amplitude while preserving normal final
+readout. `--readout-gain-check` uses amplitude fractions 0, 0.25, 0.5, 0.75, 1
+(DAC gains 0, 470, 940, 1410, 1880 with current configuration), both nominal
+preparations, and a fixed 20-us verification delay. Feedback and pump remain
+off. Ten rounds cycle ten conditions so each occupies each ordinal position
+once; 400 shots per block give 40,000 benchmark shots plus 16,000 pre/post
+references. Earliest round starts are 30 seconds apart through 270 seconds,
+so typical duration is about five minutes. No gain exceeds the normal setting.
+
+Primary assessment: gain dependence of the later verification shift relative
+to zero drive, alongside first-capture separation along the saved fixed payload
+axis. `initial_z` is the hardware assembly projection: account for
+`payload.assembly_plan()['excited_above']` when converting to the Python
+classifier's projection convention. A held-out one-dimensional threshold
+comparison can screen separation, but only projected initial data are saved;
+this cannot optimize IQ angle separately at each gain. Do not interpret the
+normal-gain classifier's raw first-readout excited fraction at reduced gain as
+a population, or install a reduced-gain threshold without a fresh calibration.
+
+The existing dedicated no-feedback program now permits integer first gains
+between zero and the normal gain, rejecting negative, fractional, and larger
+values. It preserves the normal final pulse, timing, ADC acquisition, and
+raw-record layout. Existing modes retain their schedules and physical settings.
+Tests exercise all five register settings and a full mocked 100-block run,
+including actual gain metadata and fixed final gain. Production defaults stay
+unchanged pending a usable discrimination/disturbance tradeoff and validation.
+
+```powershell
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --readout-gain-check
+```
+
+Output prefix: `q3/q3_pump_probe_readout_gain_check_<UTC>_<id>/`.

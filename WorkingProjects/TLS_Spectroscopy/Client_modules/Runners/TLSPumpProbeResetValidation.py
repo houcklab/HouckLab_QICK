@@ -23,6 +23,11 @@ pulses with feedback disabled in every arm, at delays 20/100/500 us. The first
 ADC capture and digital sequence remain; only its drive amplitude changes.
 The final verification pulse always uses the normal gain. This tests the effect
 of the preceding readout drive on the later observable, not a specific mechanism.
+
+--readout-gain-check screens first-readout amplitude fractions 0/.25/.5/.75/1
+at 20-us verification delay, with feedback off and normal final readout gain.
+Ten balanced rounds retain initial decision projections for a fixed-axis
+separation check; this is not a fully recalibrated readout optimization.
 """
 
 import argparse
@@ -42,27 +47,31 @@ PROFILE = 'official_guard20'
 SHOTS = 400
 
 
-def plan(*, delay_check=False, readout_memory_check=False):
-    if delay_check and readout_memory_check:
+def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=False):
+    if sum((delay_check, readout_memory_check, readout_gain_check)) > 1:
         raise ValueError('Choose only one verification follow-up stage')
     delays = [20., 100., 500.] if delay_check or readout_memory_check else [20.]
-    conditions = [(scheme, prep, delay, 'normal') for delay in delays
+    conditions = [(scheme, prep, delay, 'normal', 1.) for delay in delays
                   for scheme, prep in [('opx_unbounded', 'g'), ('opx_unbounded', 'e'), ('none', 'g'), ('none', 'e')]]
     if readout_memory_check:
-        conditions = [('none', prep, delay, drive) for delay in delays
+        conditions = [('none', prep, delay, drive, 0. if drive == 'zero' else 1.) for delay in delays
                       for drive in ('normal', 'zero') for prep in ('g', 'e')]
+    if readout_gain_check:
+        conditions = [('none', prep, 20., f'amplitude_{fraction:g}', fraction)
+                      for fraction in (0., .25, .5, .75, 1.) for prep in ('g', 'e')]
     points = []
-    for repeat in range(12):
+    for repeat in range(10 if readout_gain_check else 12):
         offset = repeat % len(conditions)
         order = conditions[offset:] + conditions[:offset]
-        for scheme, preparation, delay, drive in order:
+        for scheme, preparation, delay, drive, fraction in order:
             points.append(dict(name=f'point_{len(points):04d}', repeat=repeat,
                                reset_scheme=scheme, preparation=preparation,
                                verification_delay_us=delay,
                                initial_readout=drive,
+                               initial_readout_fraction=fraction,
                                not_before_offset_s=repeat * 30.))
     return dict(hardware_access=False, profile=PROFILE, delay_check=bool(delay_check),
-                readout_memory_check=bool(readout_memory_check), shots_per_block=SHOTS,
+                readout_memory_check=bool(readout_memory_check), readout_gain_check=bool(readout_gain_check), shots_per_block=SHOTS,
                 benchmark_shots=len(points) * SHOTS, reference_shots=2 * 4 * reference.SHOTS,
                 points=points, note=__doc__)
 
@@ -103,8 +112,10 @@ def save_and_summarize(path, records, bundle):
     return result
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=False, readout_memory_check=False):
-    run_plan = plan(delay_check=delay_check, readout_memory_check=readout_memory_check)
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=False,
+        readout_memory_check=False, readout_gain_check=False):
+    run_plan = plan(delay_check=delay_check, readout_memory_check=readout_memory_check,
+                    readout_gain_check=readout_gain_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -128,6 +139,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
         prefix = 'q3_pump_probe_reset_delay_check_' if delay_check else 'q3_pump_probe_reset_validation_'
         if readout_memory_check:
             prefix = 'q3_pump_probe_readout_memory_check_'
+        if readout_gain_check:
+            prefix = 'q3_pump_probe_readout_gain_check_'
         session_id = prefix + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
         folder = data_root / 'q3' / session_id
         folder.mkdir(parents=True, exist_ok=False)
@@ -174,9 +187,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                 run_cfg = dict(cfg, opx_reset_scheme=entry['reset_scheme'], prep_excited=entry['preparation'] == 'e',
                                opx_verification_delay_us=entry['verification_delay_us'])
                 program_class = OPXResetBenchmarkProgram
-                if readout_memory_check:
-                    run_cfg['opx_benchmark_initial_readout_gain'] = (
-                        0 if entry['initial_readout'] == 'zero' else int(cfg['read_pulse_gain']))
+                if readout_memory_check or readout_gain_check:
+                    run_cfg['opx_benchmark_initial_readout_gain'] = int(round(
+                        int(cfg['read_pulse_gain']) * entry['initial_readout_fraction']))
                     entry['initial_readout_gain'] = run_cfg['opx_benchmark_initial_readout_gain']
                     entry['verification_readout_gain'] = int(cfg['read_pulse_gain'])
                     program_class = OPXReadoutMemoryBenchmarkProgram
@@ -219,14 +232,17 @@ def main(argv=None):
                         help='compare verification delays of 20, 100, and 500 us')
     stage.add_argument('--readout-memory-check', action='store_true',
                        help='compare normal/zero first readout drive with feedback off at all delays')
+    stage.add_argument('--readout-gain-check', action='store_true',
+                       help='screen reduced first-readout amplitudes at 20-us verification delay')
     parser.add_argument('--data-root', type=Path, default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json', type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(delay_check=args.delay_check, readout_memory_check=args.readout_memory_check), indent=2))
+        print(json.dumps(plan(delay_check=args.delay_check, readout_memory_check=args.readout_memory_check,
+                              readout_gain_check=args.readout_gain_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json, delay_check=args.delay_check,
-            readout_memory_check=args.readout_memory_check)
+            readout_memory_check=args.readout_memory_check, readout_gain_check=args.readout_gain_check)
     return 0
 
 

@@ -1306,7 +1306,7 @@ class OPXResetBenchmarkProgram(QickProgram):
 
 
 class OPXReadoutMemoryBenchmarkProgram(OPXResetBenchmarkProgram):
-    """No-feedback benchmark with matched first-readout timing at zero/normal gain."""
+    """No-feedback benchmark with matched first-readout timing at reduced gain."""
 
     def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
         if cfg.get("opx_reset_scheme") != "none":
@@ -1314,8 +1314,8 @@ class OPXReadoutMemoryBenchmarkProgram(OPXResetBenchmarkProgram):
         if bool(cfg.get("ro_mode_periodic", False)):
             raise ValueError("readout memory benchmark requires pulsed readout")
         gain = cfg.get("opx_benchmark_initial_readout_gain")
-        if gain not in (0, cfg["read_pulse_gain"]):
-            raise ValueError("initial readout gain must be zero or the normal readout gain")
+        if not isinstance(gain, (int, np.integer)) or not 0 <= gain <= cfg["read_pulse_gain"]:
+            raise ValueError("initial readout gain must be an integer between zero and normal readout gain")
         super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
 
     def _measure_project(self, calibration, context):

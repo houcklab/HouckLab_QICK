@@ -60,7 +60,7 @@ def test_incomplete_records_are_saved_before_rejection(tmp_path):
         assert raw['reset_attempts'].tolist() == [2]
 
 
-@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "complete_memory", "rejected_initial", "timeout"])
+@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "complete_memory", "complete_gain", "rejected_initial", "timeout"])
 def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_path, monkeypatch, outcome):
     from contextlib import nullcontext
     from types import SimpleNamespace
@@ -114,7 +114,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             raise AcquisitionTimeout('simulated watchdog', completed_shots=3, partial_records=records[:3])
         return records
     monkeypatch.setattr(integration, '_run_program', acquire)
-    if outcome not in ('complete', 'complete_delay', 'complete_memory'):
+    if outcome not in ('complete', 'complete_delay', 'complete_memory', 'complete_gain'):
         with pytest.raises((ValueError, RuntimeError), match='confident|simulated watchdog'):
             m.run(data_root=tmp_path)
         path = next((tmp_path/'q3').glob('*/manifest.json'))
@@ -138,8 +138,9 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
         return
     delay_check = outcome == 'complete_delay'
     memory_check = outcome == 'complete_memory'
-    path = m.run(data_root=tmp_path, delay_check=delay_check, readout_memory_check=memory_check)
-    expected_blocks = 144 if delay_check or memory_check else 48
+    gain_check = outcome == 'complete_gain'
+    path = m.run(data_root=tmp_path, delay_check=delay_check, readout_memory_check=memory_check, readout_gain_check=gain_check)
+    expected_blocks = 100 if gain_check else (144 if delay_check or memory_check else 48)
     manifest = json.loads(path.read_text())
     assert manifest['status'] == 'complete' and len(manifest['points']) == expected_blocks + 1
     assert len(configs) == expected_blocks and len(references) == 2
@@ -149,13 +150,13 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
     assert {c['opx_verification_delay_us'] for c in configs} == ({20.,100.,500.} if delay_check or memory_check else {20.})
     assert all(c['opx_verification_delay_us'] == e['verification_delay_us'] for c,e in zip(configs, manifest['points'][:-1]))
     assert all(c['opx_reset_calibration'] == bundle.to_dict() for c in configs)
-    if memory_check:
+    if memory_check or gain_check:
         assert {c['opx_reset_scheme'] for c in configs} == {'none'}
-        assert {c['opx_benchmark_initial_readout_gain'] for c in configs} == {0,1880}
+        assert {c['opx_benchmark_initial_readout_gain'] for c in configs} == ({0,470,940,1410,1880} if gain_check else {0,1880})
         assert all(c['read_pulse_gain'] == 1880 for c in configs)
         for c,e in zip(configs, manifest['points'][:-1]):
             assert e['verification_readout_gain'] == 1880
-            assert c['opx_benchmark_initial_readout_gain'] == e['initial_readout_gain'] == (0 if e['initial_readout']=='zero' else 1880)
+            assert c['opx_benchmark_initial_readout_gain'] == e['initial_readout_gain'] == round(1880 * e['initial_readout_fraction'])
     for entry in manifest['points'][:-1]:
         assert entry['status'] == 'complete' and 'acquisition_started_at' in entry
         with np.load(path.parent / (entry['name'] + '.npz')) as data:
@@ -209,7 +210,7 @@ def test_readout_memory_program_changes_only_first_readout_gain(monkeypatch):
     def project(self, calibration, context):
         self.events.append(('measure_project',context))
     monkeypatch.setattr(programs.OPXResetBenchmarkProgram, '_measure_project', project)
-    for gain in [0,1880]:
+    for gain in [0,470,940,1410,1880]:
         p = SimpleNamespace(cfg={'res_ch':0,'ro_chs':[0],'read_pulse_gain':1880,
             'read_pulse_freq':6933.026,'read_length':3.5,'adc_trig_offset':.2,
             'opx_benchmark_initial_readout_gain':gain}, events=[],
@@ -225,8 +226,9 @@ def test_readout_memory_program_changes_only_first_readout_gain(monkeypatch):
         assert obj.events[-1][1]['gain'] == 1880
         assert obj.cfg['read_pulse_gain'] == 1880
         traces.append(obj.events)
-    traces[0][0][1]['gain'] = 1880
-    assert traces[0] == traces[1]
+    for trace in traces:
+        trace[0][1]['gain'] = 1880
+        assert trace == traces[-1]
 
 
 def test_readout_memory_rejects_feedback_before_constructing_hardware_program():
@@ -236,9 +238,32 @@ def test_readout_memory_rejects_feedback_before_constructing_hardware_program():
 
 
 @pytest.mark.parametrize('extra,match', [({'ro_mode_periodic':True}, 'pulsed readout'),
-    ({'opx_benchmark_initial_readout_gain':17}, 'zero or the normal')])
+    ({'opx_benchmark_initial_readout_gain':1881}, 'between zero and normal'),
+    ({'opx_benchmark_initial_readout_gain':-1}, 'between zero and normal'),
+    ({'opx_benchmark_initial_readout_gain':1.5}, 'between zero and normal')])
 def test_readout_memory_rejects_unsupported_gain_or_periodic_mode(extra, match):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
     cfg = {'opx_reset_scheme':'none', 'read_pulse_gain':1880, 'opx_benchmark_initial_readout_gain':0, **extra}
     with pytest.raises(ValueError, match=match):
         programs.OPXReadoutMemoryBenchmarkProgram(None,cfg,None,None)
+
+
+def test_readout_gain_plan_is_bounded_and_balanced_at_short_delay():
+    from collections import Counter
+    p = subprocess.run([sys.executable, '-m', MODULE, '--plan', '--readout-gain-check'], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    plan = json.loads(p.stdout)
+    assert plan['readout_gain_check'] is True and plan['hardware_access'] is False
+    assert plan['benchmark_shots'] == 40000 and plan['reference_shots'] == 16000
+    assert len(plan['points']) == 100
+    positions = [Counter() for _ in range(10)]
+    expected = {(fraction,prep) for fraction in [0.,.25,.5,.75,1.] for prep in ['g','e']}
+    for repeat in range(10):
+        es = plan['points'][repeat*10:(repeat+1)*10]
+        assert {e['reset_scheme'] for e in es} == {'none'}
+        assert {e['verification_delay_us'] for e in es} == {20.}
+        assert {e['not_before_offset_s'] for e in es} == {30*repeat}
+        pairs = [(e['initial_readout_fraction'],e['preparation']) for e in es]
+        assert set(pairs) == expected
+        for i,pair in enumerate(pairs):positions[i][pair] += 1
+    assert all(set(c.values()) == {1} and set(c) == expected for c in positions)
