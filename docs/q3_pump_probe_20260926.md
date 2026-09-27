@@ -1555,3 +1555,42 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --drift-track
 ```
+
+## Park reference rejected twice before drift tracking could begin
+
+Drift-track sessions `q3_pump_probe_drift_track_20260927T171242Z_bf54c07c`
+and `q3_pump_probe_drift_track_20260927T172545Z_1d55fc4e` stopped during
+initial calibration; all 1044 scan blocks remained pending in each session.
+The first half-gain decision reference passed with loop peak fidelity 0.7335,
+but its separate normal-gain probe reference had loop peak fidelity 0.681 and
+`loop.ground_accept=0`. The second attempt failed earlier: its half-gain
+decision loop peak fidelity was 0.610, again with zero confident ground
+assignments. Both were properly rejected by the unchanged 0.20 acceptance
+guard. The same calibration config hashes and pinned correction were used in
+the successful secondary scan and both failures. The later opt-in step-response
+commit does not change this reference configuration.
+
+Ground-state IQ medians and spread remained roughly stable, while the
+prepared-excited cluster approached ground across the successful scan and two
+failures. At half readout gain, the median I separation fell from about 3200
+to 2660 to 1130 raw counts. This supports loss of excited-state preparation
+contrast, but does not distinguish a detuned park pi pulse from faster decay or
+another device change. Repeating the drift tracker again without diagnosing
+the park reference would be uninformative.
+
+`TLSPumpProbeParkPiSweep` is a calibration-only diagnostic. It uses the
+same half-gain park reference and `official_guard20` timing, varying only the
+park pi frequency around its configured 4367.292 MHz. It measures 0,
+then alternating ±2, ±4, …, ±20 MHz, and finally 0 again, with 500 shots
+per ground/excited state and payload/loop context at each of 22 points
+(44,000 total reference shots). Every raw IQ set and fit is saved, including
+rejected fits. It installs no calibration and leaves the production settings
+and quality guard unchanged. A recovered contrast away from zero would point
+toward frequency detuning; persistently poor contrast would require a different
+preparation/readout investigation.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeParkPiSweep --run
+```
