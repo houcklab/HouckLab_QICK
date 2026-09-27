@@ -1,0 +1,228 @@
+import importlib
+import json
+import subprocess
+import sys
+from collections import Counter
+from contextlib import nullcontext
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+
+PREFIX = "WorkingProjects.TLS_Spectroscopy.Client_modules"
+MODULE = f"{PREFIX}.Runners.TLSPumpProbeConfirmed"
+
+
+def runner():
+    return importlib.import_module(MODULE)
+
+
+def test_plan_is_hardware_free_and_every_test_has_local_shams():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False
+    assert plan["acquisition_blocks"] == 144
+    assert plan["pump_probe_shots"] == 57_600
+    assert plan["reference_shots"] == 32_000
+    p = plan["parameters"]
+    assert p["target_frequency_ghz"] == [4.110]
+    assert p["probe_states"] == ["g"]
+    assert p["probe_holds_us"] == [0.1]
+    assert p["probe_locations"] == ["target", "park"]
+    points = runner().pilot.schedule(p)
+    assert len(points) == 144
+    comparisons = {}
+    for entry in points:
+        comparisons.setdefault(entry["comparison_id"], []).append(entry)
+    assert len(comparisons) == 48
+    for triplet in comparisons.values():
+        assert [x["control_position"] for x in triplet] == ["before", "test", "after"]
+        assert triplet[0]["pump_mode"] == triplet[2]["pump_mode"] == "sham"
+        assert {x["pump_detuning_mhz"] for x in triplet} in ({8.0}, {-20.0})
+        assert len({(x["repeat"], x["probe_state"], x["probe_us"],
+                     x["probe_location"]) for x in triplet}) == 1
+    counts = Counter((x["probe_location"], x["test_condition"])
+                     for x in points if x["control_position"] == "test")
+    assert counts == Counter({(location, condition): 8 for location in ("target", "park")
+                              for condition in ("plus8", "minus20", "null")})
+
+
+def test_confirmed_program_requires_loop_and_restores_half_gain(monkeypatch):
+    module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
+    programs = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")
+    pulse_setup = importlib.import_module(f"{PREFIX}.Helpers.pulse_setup")
+    obj = object.__new__(module.ConfirmedPumpProbeProgram)
+    obj.cfg = {"qubit_ch": 1, "read_pulse_gain": 940,
+               "opx_diagnostic_probe_readout_gain": 1880}
+    obj.payload_calibration, obj.loop_calibration = "decision_payload", "decision_loop"
+    obj.reset_page, obj.reset_regs = 0, {"i": 1}
+    obj.reset_config = SimpleNamespace(read_delay_us=10., loop_recovery_us=20.,
+                                       feedback_syncdelay_us=8.)
+    events = []
+    obj._set_reset_pulse = lambda: events.append("reset_pulse")
+    obj._wait_reset_ringdown = lambda: events.append("ringdown")
+    obj._measure_raw = lambda: events.append("raw_probe_iq")
+    obj.pulse = lambda **kw: events.append(("pi", kw))
+    obj.sync_all = lambda t: events.append(("sync", t))
+    obj.us2cycles = lambda t: t
+    monkeypatch.setattr(module, "emit_unbounded_reset_state_machine",
+                        lambda *a, **kw: (events.append(("state_machine", kw["require_loop_readout"],
+                                                         kw["label_prefix"])), kw["measure_next"]()))
+    monkeypatch.setattr(programs.OPXResetTLSSaturationProgram, "_measure_project",
+                        lambda self, cal, context: events.append(("measure", cal, context)))
+    monkeypatch.setattr(programs.OPXResetTLSSaturationProgram, "_wait_saturation_probe",
+                        lambda self: events.append("probe_flux_return"))
+    monkeypatch.setattr(pulse_setup, "set_readout_pulse",
+                        lambda self, gain=None: events.append(("readout_gain", self.cfg["read_pulse_gain"]
+                                                               if gain is None else gain)))
+    obj._reset_saturation_qubit("pre")
+    obj._reset_saturation_qubit("post")
+    obj._wait_saturation_probe()
+    obj._measure_project(obj.payload_calibration, "payload")
+    obj._measure_project(obj.loop_calibration, "loop")
+    assert events == [
+        "reset_pulse", ("measure", "decision_payload", "payload"),
+        ("state_machine", True, "pre"), ("measure", "decision_loop", "loop"), ("sync", 20.),
+        "reset_pulse", ("measure", "decision_payload", "payload"),
+        ("state_machine", True, "post"), ("measure", "decision_loop", "loop"), ("sync", 20.),
+        "probe_flux_return", ("readout_gain", 1880),
+        "raw_probe_iq", ("readout_gain", 940),
+        ("measure", "decision_loop", "loop"),
+    ]
+
+
+@pytest.mark.parametrize("decision,probe,periodic", [
+    (940, 0, False), (940, 32768, False), (1880, 1880, False),
+    (0, 1880, False), (940, 1880, True),
+])
+def test_confirmed_program_rejects_invalid_gain_before_hardware(decision, probe, periodic):
+    module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
+    with pytest.raises(ValueError):
+        module.ConfirmedPumpProbeProgram(None, {
+            "read_pulse_gain": decision,
+            "opx_diagnostic_probe_readout_gain": probe,
+            "ro_mode_periodic": periodic,
+        }, None, None)
+
+
+@pytest.mark.parametrize("ending_accepted", [True, False])
+def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
+        tmp_path, monkeypatch, ending_accepted):
+    m = runner()
+    package = importlib.import_module(f"{PREFIX}.Runners")
+    calibration = importlib.import_module(f"{PREFIX}.active_reset_OPX.calibration")
+    grid = SimpleNamespace(_integer_dc_grid=lambda p, frequencies: (
+        np.arange(-16000, -15991), np.asarray(frequencies)))
+    monkeypatch.setitem(sys.modules, f"{PREFIX}.Runners.ThreePointApplesToApples", grid)
+
+    class Fit:
+        excited_threshold = 0
+
+        def __init__(self, label):
+            self.label = label
+
+        def project(self, i, q):
+            if self.label == "decision":
+                raise AssertionError("decision classifier used on full-gain probe IQ")
+            return np.asarray(i)
+
+    class Bundle:
+        def __init__(self, label):
+            self.payload = self.loop = Fit(label)
+            self.label = label
+
+        def to_dict(self):
+            return {"label": self.label}
+
+    base = {"ff_park_gain": -25146, "qubit_pi_freq": 4367.292,
+            "read_pulse_gain": 1880, "read_length": 3.5, "ro_chs": [0]}
+    fake_tls = SimpleNamespace(BaseConfig=base, makeProxy=lambda: (object(), object()),
+                               _load_correction=lambda *a: {"segments": []}, FLUX_FIT_PARAMS=[])
+    monkeypatch.setattr(package, "TLSSpectroscopy", fake_tls, raising=False)
+    monkeypatch.setattr(package, "FivePointApplesToApples",
+                        SimpleNamespace(install_scan_calibration=lambda tls: None), raising=False)
+    monkeypatch.setattr(m.localizer, "checked_correction", lambda *a: tmp_path / "correction.json")
+    monkeypatch.setattr(m.localizer, "scan_environment", lambda *a: nullcontext())
+    monkeypatch.setenv("Q3_CODE_COMMIT", "mock-test")
+    p = m.parameters()
+    p.update(repeats=1, shots=4)
+    monkeypatch.setattr(m, "parameters", lambda: p)
+    references = []
+
+    def fake_reference(soc, soccfg, cfg, **kwargs):
+        references.append(cfg["read_pulse_gain"])
+        return Bundle("decision" if cfg["read_pulse_gain"] == 940 else "probe"), {}
+
+    monkeypatch.setattr(calibration, "acquire_calibration", fake_reference)
+    monkeypatch.setattr(calibration, "save_calibration", lambda path, b: path.write_text(b.label))
+    monkeypatch.setattr(calibration, "save_raw_calibration", lambda path, raw: path.write_text("raw"))
+    monkeypatch.setattr(calibration, "validate_confident_calibration", lambda b: b)
+    monkeypatch.setattr(m.reference, "calibration_report",
+                        lambda b: {"accepted": ending_accepted or len(references) < 4})
+    point_cfgs = []
+
+    def fake_acquire(soc, soccfg, cfg):
+        point_cfgs.append(cfg)
+        records = [SimpleNamespace(final_i=i, final_q=0) for i in (-10, -10, 10, 10)]
+        return records, {"read_length_cycles": 10, "reset_reference_guard_us": 20.}
+
+    monkeypatch.setattr(m, "acquire_records", fake_acquire)
+    if ending_accepted:
+        path = m.run(data_root=tmp_path)
+    else:
+        with pytest.raises(RuntimeError, match="Final calibration reference rejected"):
+            m.run(data_root=tmp_path)
+        path = next((tmp_path / "q3").glob("*/manifest.json"))
+    manifest = json.loads(path.read_text())
+    assert manifest["status"] == ("complete" if ending_accepted else "failed")
+    assert manifest["final_references_accepted"] == ending_accepted
+    assert references == [940, 1880, 940, 1880]
+    assert len(point_cfgs) == 18
+    assert all(c["read_pulse_gain"] == 940 and c["opx_diagnostic_probe_readout_gain"] == 1880
+               and c["opx_loop_recovery_us"] == 20 for c in point_cfgs)
+    assert all(c["opx_reset_calibration"] == {"label": "decision"} for c in point_cfgs)
+    assert all(entry["result"]["P_excited"] == 0.5 for entry in manifest["points"][:18])
+    assert [entry["status"] for entry in manifest["points"]] == (
+        ["complete"] * 20 if ending_accepted else ["complete"] * 19 + ["failed"])
+    if not ending_accepted:
+        assert manifest["points"][-1]["result"] == {"accepted": False,
+                                                    "output": str(path.parent / "final_probe_reference")}
+    assert sum(1 for _ in (path.parent / "summary.csv").open()) == 19
+    with np.load(path.parent / "point_0000.npz") as raw:
+        assert raw["i_raw"].tolist() == [-10, -10, 10, 10]
+        assert raw["read_length_cycles"].item() == 10
+    assert base["read_pulse_gain"] == 1880
+
+
+def test_partial_timeout_saves_raw_iq_with_actual_read_cycles(tmp_path, monkeypatch):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import acquisition, integration
+    m = runner()
+    fit = SimpleNamespace(project=lambda i, q: np.asarray(i), excited_threshold=0)
+    bundle = SimpleNamespace(payload=fit, loop=fit)
+    monkeypatch.setattr(integration, "runtime_bundle", lambda cfg: bundle)
+    program_module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
+
+    class Program:
+        def __init__(self, soccfg, cfg, payload, loop):
+            self._saturation_reset_guard_us = 20.
+
+        def us2cycles(self, *a, **kw):
+            return 1075
+
+    monkeypatch.setattr(program_module, "ConfirmedPumpProbeProgram", Program)
+    def timeout(*a, **kw):
+        raise acquisition.AcquisitionTimeout("watchdog", completed_shots=2,
+                                             partial_records=[SimpleNamespace(final_i=1, final_q=2)] * 2)
+    monkeypatch.setattr(integration, "_run_program", timeout)
+    with pytest.raises(acquisition.AcquisitionTimeout) as error:
+        m.acquire_records(object(), object(), {"opx_saturation_shots": 4,
+                                                "read_length": 3.5, "ro_chs": [0]})
+    assert error.value.read_length_cycles == 1075
+    m.save_probe_iq(tmp_path / "partial.npz", error.value.partial_records,
+                    error.value.read_length_cycles, bundle)
+    with np.load(tmp_path / "partial.npz") as raw:
+        assert raw["i_raw"].tolist() == [1, 1]
+        assert raw["i"].tolist() == [1 / 1075, 1 / 1075]

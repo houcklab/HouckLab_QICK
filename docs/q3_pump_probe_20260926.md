@@ -1300,3 +1300,49 @@ and elapsed time along with eliminating the initial stopping branch; it
 establishes an operational improvement in this session, not ground-state
 fidelity or a TLS pump response. Repeat it under a fresh calibration before
 using it as the basis for a new pump-probe sequence or any production policy.
+
+## Required-loop half-gain reset, independent repeat and pump-probe pivot
+
+Session `q3_pump_probe_half_gain_confirm_check_20260927T043053Z_89ce25d4`,
+commit `1457ce64`, completed all 72 benchmark blocks and both ending reference
+sets. All 28,800 benchmark shots had 400-record raw blocks; the four reference
+sets and all required-loop attempt counters were present. Starting and ending
+calibrations passed the established quality guard. These are fixed initial
+normal-gain loop-classifier fractions, not physical reset fidelities:
+
+| Nominal preparation | No feedback | Ordinary half-gain reset | Required-loop half-gain reset |
+| --- | ---: | ---: | ---: |
+| No pi | 0.0704 | 0.0823 | 0.0842 |
+| Pi | 0.4825 | 0.0988 | 0.0921 |
+| Pi minus no-pi | 0.4121 | 0.0165 | 0.0079 |
+
+Across twelve paired rounds, required-minus-ordinary was +0.19 percentage
+points [-1.06, +1.43] for no-pi and -0.67 [-1.76, +0.43] for pi (unadjusted
+95% t intervals). This repeat does not resolve an advantage between the two
+active policies. The initial half-gain payload calibration accepted only 0.1%
+of known ground shots, versus 77.2% in the ending half-gain reference; the
+quality guard still passed because its payload requirement is confident
+excited firing, while loop decisions require confident ground acceptance.
+The ordinary arm had only 4/9600 zero-attempt shots (0.04%), so it almost
+always entered the feedback loop, making its path closer to the required-loop
+arm in this run. The ending probe
+reference also passed, but this reference change limits absolute comparisons.
+
+The next stage returns to a matched pump--probe measurement using the
+experiment-only `TLSPumpProbeConfirmed` runner. It uses fresh half-gain
+decision and normal-gain probe calibrations with the same official/20-us
+feedback timing, then requires a loop decision in resets both before and after
+the pump. At the 4.110-GHz target, eight randomized rounds of 400 shots compare
++8 and -20 MHz pumps with adjacent same-frequency zero-drive shams and a
+zero-drive null. Ground probes hold 0.1 us at either target or park, yielding
+144 pump--probe blocks (57,600 shots); initial and ending references add 32,000
+shots. Final probe IQ is classified with the initial normal-gain bundle, and
+both classifier axes and all raw IQ are saved. Ending reference failure marks
+the run failed while retaining data. The new runner and program leave the
+production TLS spectroscopy path and defaults unchanged.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run
+```

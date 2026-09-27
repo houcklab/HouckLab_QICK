@@ -140,7 +140,7 @@ def schedule(p):
         for target in targets:
             # Keep each state/hold's microwave controls adjacent in time.
             recoveries = p.get("additional_recovery_values_us", [p["additional_recovery_us"]])
-            probes = [(state, hold, recovery, location) for state in ("g", "e")
+            probes = [(state, hold, recovery, location) for state in p.get("probe_states", ("g", "e"))
                       for hold in p["probe_holds_us"] for recovery in recoveries
                       for location in p.get("probe_locations", ["target"])]
             rng.shuffle(probes)
