@@ -1066,3 +1066,76 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProb
 ```
 
 Output prefix: `q3/q3_pump_probe_half_gain_reset_check_<UTC>_<id>/`.
+
+## Half-gain reset result and required-loop control
+
+Session `q3_pump_probe_half_gain_reset_check_20260927T030145Z_21b4ba3e`, commit
+`807fca95`, completed all 48 blocks and four reference sets. All 19,200 benchmark
+shots and 32,000 reference shots were verified, including all eight exact
+calibration refits, gain metadata, classifier provenance, raw fractions,
+preparation labels, counters, and terminal statuses. All 9,600 active shots
+returned CONFIRMED_GROUND, a controller status rather than proof of physical
+state. Both starting and both ending reference bundles passed.
+
+The half-gain payload training peak was marginal at 0.7070 and its initial
+held-out balanced score was 0.6940 (fixed initial classifier on ending data:
+0.7235). Half-gain loop held-out score was 0.7755 initially / 0.7600 finally.
+For normal-gain verification, fixed payload score was 0.7465 / 0.7520, but
+fixed loop score drifted 0.7935 / 0.7455; loop reference ground false-positive
+fraction rose 0.176 to 0.231. Thus the main comparisons use interleaved local
+rounds and both verification axes; absolute fractions remain uncorrected.
+
+| Nominal preparation | No feedback, loop verification | Half-gain reset, loop verification |
+| --- | ---: | ---: |
+| No pi | 0.1131 | 0.1148 |
+| Pi | 0.6454 | 0.1833 |
+
+Paired active-minus-none is +0.17 percentage points [-1.59, 1.92] for no-pi
+and -46.21 [-49.40, -43.02] for pi. Residual pi-minus-no-pi after reset is
++6.85 [4.63, 9.08] points; the independent payload-axis analysis agrees at
++6.60 [4.95, 8.25]. All intervals are unadjusted 95% t intervals across twelve
+rounds. There is a large operational reduction of preparation dependence,
+but it is still resolved after feedback. Active and no-feedback durations
+are unequal; do not attribute the entire reduction solely to corrective pi
+pulses or infer a physical reset fidelity.
+
+Mean attempts were 1.0767 (no-pi) and 2.1104 (pi), p99 8 and 10, maximum 16
+for both. Initial ground acceptance produced zero feedback attempts on
+63.42% of no-pi and 15.06% of pi shots. Every zero-attempt flag matches the
+saved initial payload projection's ground decision exactly. Within pi shots,
+zero-attempt verification was 0.4993 (723 shots), compared with 0.1273 among
+those entering the loop (4,077 shots). For no-pi these conditional fractions
+were 0.0917 (3,044) and 0.1549 (1,756). These subsets are selected by a noisy
+measurement, not randomized causal comparisons. They motivate testing the
+initial acceptance rule rather than assuming its contribution has been proven.
+
+`--half-gain-confirm-check` interleaves three policies at the same half decision
+gain and full verification gain: ordinary unbounded reset, unbounded reset
+requiring at least one loop readout, and no feedback; each starts from no-pi
+or pi. Twelve rounds cycle six conditions so every condition occupies every
+ordinal position twice. 72 blocks x 400 = 28,800 benchmark shots, with the
+same 32,000 starting/ending reference shots. Round start offsets run from
+0 to 330 seconds; typical duration remains about six minutes.
+
+The intervention suppresses only the first ground-exit branch. An initially
+ground or ambiguous result waits through the existing ringdown and is
+remeasured without a pi pulse; an initially excited result follows its usual
+pi/remeasurement path. The existing loop classifier and ground stopping rule
+then apply. This does not require two consecutive ground classifications.
+Extra elapsed time and measurement are part of the intervention, so the
+comparison assesses operational performance rather than isolating those
+mechanisms. Thresholds, quality guards, readout amplitudes, verification delay,
+and pi settings are fixed within the session. Production defaults remain off
+for this diagnostic flag. Required-loop blocks must have at least one attempt
+per shot; violations fail only after raw records have been saved.
+
+Tests execute the emitted branch graph for both projection signs, including
+threshold boundaries and initial ground/ambiguous/excited paths, and check
+runner propagation, balancing, normal verification, and unchanged prior modes.
+No measurement hardware is invoked locally.
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --half-gain-confirm-check
+```
+
+Output prefix: `q3/q3_pump_probe_half_gain_confirm_check_<UTC>_<id>/`.

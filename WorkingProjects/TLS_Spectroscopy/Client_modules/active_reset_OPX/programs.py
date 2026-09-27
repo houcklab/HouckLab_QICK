@@ -463,7 +463,10 @@ def emit_benchmark_shot(
     play_pi,
     label_prefix,
     wait_reset_ringdown=None,
+    require_loop_readout=False,
 ):
+    if require_loop_readout and str(reset_scheme).strip().lower() != "opx_unbounded":
+        raise ValueError("required loop readout is supported only for unbounded reset")
     park_up()
     if int(preparation):
         prepare_excited()
@@ -495,6 +498,7 @@ def emit_benchmark_shot(
             play_pi=play_pi,
             label_prefix=label_prefix,
             wait_reset_ringdown=wait_reset_ringdown,
+            require_loop_readout=require_loop_readout,
         )
     elif scheme == "none":
         prog.regwi(page, regs["attempts"], 0, "no-reset attempts")
@@ -1256,6 +1260,7 @@ class OPXResetBenchmarkProgram(QickProgram):
             play_pi=lambda: self.pulse(ch=self.cfg["qubit_ch"]),
             label_prefix="OPX_RESET",
             wait_reset_ringdown=self._wait_reset_ringdown,
+            require_loop_readout=bool(self.cfg.get("opx_benchmark_require_loop_readout", False)),
         )
         self.sync_all(self.us2cycles(float(self.reset_config.inter_shot_delay_us)))
 

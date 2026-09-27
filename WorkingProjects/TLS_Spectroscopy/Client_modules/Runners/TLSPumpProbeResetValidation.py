@@ -34,6 +34,13 @@ normal amplitude, then repeats the active/none x no-pi/pi operational check.
 A separate normal-gain reference bundle classifies the normal-gain final readout.
 Both reference sets are repeated at the end; initial classifiers stay fixed.
 All starting bundles must pass the unchanged quality guard before benchmarking.
+
+--half-gain-confirm-check interleaves standard half-gain reset, half-gain reset
+requiring at least one loop readout, and no feedback, each from both preparations.
+Only the initial ground exit is suppressed in the required-loop arm; the initial
+excited/ambiguous decisions, loop thresholds and pi rules are unchanged. This
+is not a requirement for two consecutive ground classifications. Extra readout
+and elapsed time are part of the intervention, so it does not isolate them.
 """
 
 import argparse
@@ -54,9 +61,10 @@ SHOTS = 400
 
 
 def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=False,
-         half_gain_reset_check=False):
-    if sum((delay_check, readout_memory_check, readout_gain_check, half_gain_reset_check)) > 1:
+         half_gain_reset_check=False, half_gain_confirm_check=False):
+    if sum((delay_check, readout_memory_check, readout_gain_check, half_gain_reset_check, half_gain_confirm_check)) > 1:
         raise ValueError('Choose only one verification follow-up stage')
+    half_mode = half_gain_reset_check or half_gain_confirm_check
     delays = [20., 100., 500.] if delay_check or readout_memory_check else [20.]
     conditions = [(scheme, prep, delay, 'normal', 1.) for delay in delays
                   for scheme, prep in [('opx_unbounded', 'g'), ('opx_unbounded', 'e'), ('none', 'g'), ('none', 'e')]]
@@ -66,24 +74,30 @@ def plan(*, delay_check=False, readout_memory_check=False, readout_gain_check=Fa
     if readout_gain_check:
         conditions = [('none', prep, 20., f'amplitude_{fraction:g}', fraction)
                       for fraction in (0., .25, .5, .75, 1.) for prep in ('g', 'e')]
-    if half_gain_reset_check:
+    if half_mode:
         conditions = [(scheme, prep, delay, 'amplitude_0.5', .5)
                       for scheme, prep, delay, _, _ in conditions]
+    conditions = [(*condition, False) for condition in conditions]
+    if half_gain_confirm_check:
+        conditions = [(scheme, prep, 20., 'amplitude_0.5', .5, required)
+                      for scheme, required in [('opx_unbounded', False), ('opx_unbounded', True), ('none', False)]
+                      for prep in ('g', 'e')]
     points = []
     for repeat in range(10 if readout_gain_check else 12):
         offset = repeat % len(conditions)
         order = conditions[offset:] + conditions[:offset]
-        for scheme, preparation, delay, drive, fraction in order:
+        for scheme, preparation, delay, drive, fraction, required in order:
             points.append(dict(name=f'point_{len(points):04d}', repeat=repeat,
                                reset_scheme=scheme, preparation=preparation,
                                verification_delay_us=delay,
                                initial_readout=drive,
                                initial_readout_fraction=fraction,
+                               require_loop_readout=required,
                                not_before_offset_s=repeat * 30.))
     return dict(hardware_access=False, profile=PROFILE, delay_check=bool(delay_check),
                 readout_memory_check=bool(readout_memory_check), readout_gain_check=bool(readout_gain_check), shots_per_block=SHOTS,
-                half_gain_reset_check=bool(half_gain_reset_check),
-                benchmark_shots=len(points) * SHOTS, reference_shots=(4 if half_gain_reset_check else 2) * 4 * reference.SHOTS,
+                half_gain_reset_check=bool(half_gain_reset_check), half_gain_confirm_check=bool(half_gain_confirm_check),
+                benchmark_shots=len(points) * SHOTS, reference_shots=(4 if half_mode else 2) * 4 * reference.SHOTS,
                 points=points, note=__doc__)
 
 
@@ -124,9 +138,12 @@ def save_and_summarize(path, records, bundle):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=False,
-        readout_memory_check=False, readout_gain_check=False, half_gain_reset_check=False):
+        readout_memory_check=False, readout_gain_check=False, half_gain_reset_check=False,
+        half_gain_confirm_check=False):
     run_plan = plan(delay_check=delay_check, readout_memory_check=readout_memory_check,
-                    readout_gain_check=readout_gain_check, half_gain_reset_check=half_gain_reset_check)
+                    readout_gain_check=readout_gain_check, half_gain_reset_check=half_gain_reset_check,
+                    half_gain_confirm_check=half_gain_confirm_check)
+    half_mode = half_gain_reset_check or half_gain_confirm_check
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -148,7 +165,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
         frequency = next(float(tls.BaseConfig[k]) for k in ('reset_pi_freq', 'qubit_pi_freq', 'qubit_freq') if tls.BaseConfig.get(k) is not None)
         normal_gain = int(tls.BaseConfig['read_pulse_gain'])
         decision_base = dict(tls.BaseConfig)
-        if half_gain_reset_check:
+        if half_mode:
             decision_base['read_pulse_gain'] = int(round(normal_gain * .5))
         cal_cfg = reference.profile_config(build_calibration_config(decision_base, frequency), PROFILE)
         verification_cal_cfg = dict(cal_cfg, read_pulse_gain=normal_gain)
@@ -157,8 +174,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
             prefix = 'q3_pump_probe_readout_memory_check_'
         if readout_gain_check:
             prefix = 'q3_pump_probe_readout_gain_check_'
-        if half_gain_reset_check:
+        if half_mode:
             prefix = 'q3_pump_probe_half_gain_reset_check_'
+        if half_gain_confirm_check:
+            prefix = 'q3_pump_probe_half_gain_confirm_check_'
         session_id = prefix + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '_' + uuid.uuid4().hex[:8]
         folder = data_root / 'q3' / session_id
         folder.mkdir(parents=True, exist_ok=False)
@@ -169,7 +188,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                         points=[dict(p, status='pending') for p in run_plan['points']])
         # Final references are part of collection, so complete means they were saved too.
         manifest['points'].append(dict(name='final_reference', kind='reference', status='pending'))
-        if half_gain_reset_check:
+        if half_mode:
             manifest['points'].append(dict(name='final_verification_reference', kind='reference', status='pending'))
         protocol.checkpoint(path, manifest)
         print(f'[reset-validation] manifest={path}', flush=True)
@@ -192,13 +211,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
             protocol.checkpoint(path, manifest)
             validate_confident_calibration(bundle)  # Never retry a quality rejection here.
             verification_bundle = bundle
-            if half_gain_reset_check:
+            if half_mode:
                 verification_bundle, verification_report = acquire_reference('initial_verification_reference', verification_cal_cfg)
                 manifest['verification_reference'] = verification_report
                 protocol.checkpoint(path, manifest)
                 validate_confident_calibration(verification_bundle)
             cfg = runtime_config(decision_base, bundle.to_dict(), frequency)
-            if half_gain_reset_check:
+            if half_mode:
                 cfg['opx_benchmark_verification_gain'] = normal_gain
                 manifest['classifier_sources'] = dict(decision='initial_reference/calibration.json',
                                                       verification='initial_verification_reference/calibration.json')
@@ -224,9 +243,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                     entry['initial_readout_gain'] = run_cfg['opx_benchmark_initial_readout_gain']
                     entry['verification_readout_gain'] = int(cfg['read_pulse_gain'])
                     program_class = OPXReadoutMemoryBenchmarkProgram
-                if half_gain_reset_check:
+                if half_mode:
                     entry['initial_readout_gain'] = entry['decision_readout_gain'] = int(cfg['read_pulse_gain'])
                     entry['verification_readout_gain'] = normal_gain
+                    run_cfg['opx_benchmark_require_loop_readout'] = entry['require_loop_readout']
                     program_class = OPXVerificationGainBenchmarkProgram
                 program = program_class(soccfg, run_cfg, bundle.payload, bundle.loop)
                 try:
@@ -238,12 +258,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, delay_check=Fals
                         completed_shots=exc.completed_shots, recovered_records=len(exc.partial_records))
                     raise
                 result = save_and_summarize(folder / (entry['name'] + '.npz'), records, verification_bundle)
+                if entry['require_loop_readout'] and any(r.reset_attempts < 1 for r in records):
+                    raise RuntimeError('Required-loop benchmark returned zero-attempt records; raw data saved')
                 result['read_length_cycles'] = int(program.us2cycles(cfg['read_length'], ro_ch=cfg['ro_chs'][0]))
                 if entry['reset_scheme'] == 'opx_unbounded' and result['confirmed_ground_records'] != SHOTS:
                     raise RuntimeError('Active benchmark returned non-ground terminal records; raw data saved')
                 print(f"[reset-validation] {entry['name']} {entry['reset_scheme']} {entry['preparation']} "
                       f"delay={entry['verification_delay_us']:g} us "
-                      f"first_readout={entry['initial_readout']} "
+                      f"first_readout={entry['initial_readout']} require_loop={entry['require_loop_readout']} "
                       f"verification={result['verification_excited_fraction_loop']:.3f} "
                       f"attempts={result['mean_reset_attempts']:.2f}", flush=True)
                 return result
@@ -272,15 +294,19 @@ def main(argv=None):
                        help='screen reduced first-readout amplitudes at 20-us verification delay')
     stage.add_argument('--half-gain-reset-check', action='store_true',
                        help='validate half-amplitude feedback with separately calibrated normal verification')
+    stage.add_argument('--half-gain-confirm-check', action='store_true',
+                       help='interleave standard reset, required loop readout, and no feedback at half gain')
     parser.add_argument('--data-root', type=Path, default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json', type=Path)
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(delay_check=args.delay_check, readout_memory_check=args.readout_memory_check,
-                              readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check), indent=2))
+                              readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check,
+                              half_gain_confirm_check=args.half_gain_confirm_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json, delay_check=args.delay_check,
-            readout_memory_check=args.readout_memory_check, readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check)
+            readout_memory_check=args.readout_memory_check, readout_gain_check=args.readout_gain_check, half_gain_reset_check=args.half_gain_reset_check,
+                              half_gain_confirm_check=args.half_gain_confirm_check)
     return 0
 
 

@@ -195,7 +195,9 @@ def emit_unbounded_reset_state_machine(
     play_pi,
     label_prefix,
     wait_reset_ringdown=None,
+    require_loop_readout=False,
 ):
+    """Optionally suppress only the initial ground exit for diagnostic benchmarks."""
     required = {"z", "ground", "excited", "attempts", "pi_count", "status"}
     missing = sorted(required - set(regs))
     if missing:
@@ -216,7 +218,8 @@ def emit_unbounded_reset_state_machine(
     ground_op, no_pi_op = _comparison_ops(
         payload_calibration.assembly_plan()["excited_above"]
     )
-    prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
+    if not require_loop_readout:
+        prog.condj(page, regs["z"], ground_op, regs["ground"], ground_label)
     wait_reset_ringdown()
     prog.condj(
         page,

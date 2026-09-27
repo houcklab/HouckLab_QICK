@@ -60,7 +60,7 @@ def test_incomplete_records_are_saved_before_rejection(tmp_path):
         assert raw['reset_attempts'].tolist() == [2]
 
 
-@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "complete_memory", "complete_gain", "complete_half", "rejected_half", "rejected_verification", "rejected_initial", "timeout"])
+@pytest.mark.parametrize("outcome", ["complete", "complete_delay", "complete_memory", "complete_gain", "complete_half", "complete_confirm", "zero_confirm", "rejected_half", "rejected_verification", "rejected_initial", "timeout"])
 def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_path, monkeypatch, outcome):
     from contextlib import nullcontext
     from types import SimpleNamespace
@@ -78,7 +78,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
     if outcome in ('rejected_initial', 'rejected_half'):
         bundle = replace(bundle, loop=replace(bundle.loop, holdout={**bundle.loop.holdout, 'ground_accept': 0.}))
     verification_bundle = replace(bundle, payload=replace(bundle.payload, ground_threshold=-1000000001, excited_threshold=-1000000000),
-                                  loop=replace(bundle.loop, ground_threshold=-1000000001, excited_threshold=-1000000000)) if outcome == 'complete_half' else bundle
+                                  loop=replace(bundle.loop, ground_threshold=-1000000001, excited_threshold=-1000000000)) if outcome in ('complete_half', 'complete_confirm') else bundle
     if outcome == 'rejected_verification':
         verification_bundle = replace(bundle, loop=replace(bundle.loop, holdout={**bundle.loop.holdout, 'ground_accept': 0.}))
     raw = {c: {'ground': {'i': gi, 'q': q}, 'excited': {'i': ei, 'q': q}} for c in ['payload','loop']}
@@ -94,7 +94,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
     references = []
     def acquire_reference(soc, soccfg, cfg, **kwargs):
         references.append(dict(cfg))
-        return (verification_bundle if outcome in ('complete_half', 'rejected_verification') and cfg['read_pulse_gain'] == 1880 else bundle), raw
+        return (verification_bundle if outcome in ('complete_half', 'complete_confirm', 'rejected_verification') and cfg['read_pulse_gain'] == 1880 else bundle), raw
     monkeypatch.setattr(calibration, 'acquire_calibration', acquire_reference)
     configs = []
     class Program:
@@ -106,7 +106,7 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             return 1075
     monkeypatch.setattr(programs, 'OPXResetBenchmarkProgram', Program)
     monkeypatch.setattr(programs, 'OPXReadoutMemoryBenchmarkProgram', Program)
-    if outcome == 'complete_half':
+    if outcome in ('complete_half', 'complete_confirm', 'zero_confirm'):
         monkeypatch.setattr(programs, 'OPXVerificationGainBenchmarkProgram', Program)
     def acquire(soc, program, timeout, cfg, *, total_shots):
         assert total_shots == 400
@@ -115,18 +115,21 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
         records = [SimpleNamespace(preparation=int(cfg['prep_excited']), initial_z=100,
                 reset_attempts=2 if active else 0, pi_pulses=1 if active else 0,
                 terminal_status=status, final_i=-90, final_q=0, last_z=-100) for _ in range(total_shots)]
+        if outcome == 'zero_confirm' and cfg.get('opx_benchmark_require_loop_readout'):
+            for record in records:
+                record.reset_attempts = 0
         if outcome == 'timeout':
             from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.acquisition import AcquisitionTimeout
             raise AcquisitionTimeout('simulated watchdog', completed_shots=3, partial_records=records[:3])
         return records
     monkeypatch.setattr(integration, '_run_program', acquire)
-    if outcome not in ('complete', 'complete_delay', 'complete_memory', 'complete_gain', 'complete_half'):
-        with pytest.raises((ValueError, RuntimeError), match='confident|simulated watchdog'):
-            m.run(data_root=tmp_path, half_gain_reset_check=outcome in ('rejected_half', 'rejected_verification'))
+    if outcome not in ('complete', 'complete_delay', 'complete_memory', 'complete_gain', 'complete_half', 'complete_confirm'):
+        with pytest.raises((ValueError, RuntimeError), match='confident|simulated watchdog|Required-loop'):
+            m.run(data_root=tmp_path, half_gain_reset_check=outcome in ('rejected_half', 'rejected_verification'), half_gain_confirm_check=outcome == 'zero_confirm')
         path = next((tmp_path/'q3').glob('*/manifest.json'))
         manifest = json.loads(path.read_text())
         assert manifest['status'] == 'failed'
-        assert len(references) == (2 if outcome == 'rejected_verification' else 1)
+        assert len(references) == (2 if outcome in ('rejected_verification', 'zero_confirm') else 1)
         assert (path.parent/'initial_reference'/'calibration_raw.npz').is_file()
         assert not (path.parent/'final_reference').exists()
         if outcome in ('rejected_initial', 'rejected_half', 'rejected_verification'):
@@ -136,6 +139,13 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
             if outcome == 'rejected_verification':
                 assert (path.parent/'initial_verification_reference'/'calibration_raw.npz').is_file()
             assert all(e['status'] == 'pending' for e in manifest['points'])
+        elif outcome == 'zero_confirm':
+            entry = next(e for e in manifest['points'] if e['status'] == 'failed')
+            assert entry['require_loop_readout'] is True
+            with np.load(path.parent / (entry['name'] + '.npz')) as data:
+                assert data['reset_attempts'].shape == (400,)
+                assert np.all(data['reset_attempts'] == 0)
+            assert 'Required-loop' in manifest['error']
         else:
             entry = manifest['points'][0]
             assert entry['status'] == 'failed'
@@ -148,9 +158,10 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
     delay_check = outcome == 'complete_delay'
     memory_check = outcome == 'complete_memory'
     gain_check = outcome == 'complete_gain'
-    half_check = outcome == 'complete_half'
-    path = m.run(data_root=tmp_path, delay_check=delay_check, readout_memory_check=memory_check, readout_gain_check=gain_check, half_gain_reset_check=half_check)
-    expected_blocks = 100 if gain_check else (144 if delay_check or memory_check else 48)
+    confirm_check = outcome == 'complete_confirm'
+    half_check = outcome in ('complete_half', 'complete_confirm')
+    path = m.run(data_root=tmp_path, delay_check=delay_check, readout_memory_check=memory_check, readout_gain_check=gain_check, half_gain_reset_check=half_check and not confirm_check, half_gain_confirm_check=confirm_check)
+    expected_blocks = 72 if confirm_check else 100 if gain_check else (144 if delay_check or memory_check else 48)
     manifest = json.loads(path.read_text())
     assert manifest['status'] == 'complete' and len(manifest['points']) == expected_blocks + (2 if half_check else 1)
     assert len(configs) == expected_blocks and len(references) == (4 if half_check else 2)
@@ -160,7 +171,11 @@ def test_full_mocked_run_keeps_one_classifier_and_saves_final_references(tmp_pat
         assert base['read_pulse_gain'] == 1880
         assert all(c['read_pulse_gain'] == 940 and c['opx_benchmark_verification_gain'] == 1880 for c in configs)
         assert manifest['verification_reference']['accepted'] is True
-        assert 'q3_pump_probe_half_gain_reset_check_' in str(path)
+        assert ('q3_pump_probe_half_gain_confirm_check_' if confirm_check else 'q3_pump_probe_half_gain_reset_check_') in str(path)
+        if confirm_check:
+            assert sum(bool(c['opx_benchmark_require_loop_readout']) for c in configs) == 24
+            assert all(c['opx_benchmark_require_loop_readout'] == e['require_loop_readout'] for c,e in zip(configs,manifest['points']))
+            assert all(c['opx_reset_scheme']=='opx_unbounded' for c in configs if c['opx_benchmark_require_loop_readout'])
         for e in manifest['points'][:expected_blocks]:
             assert e['initial_readout_gain'] == e['decision_readout_gain'] == 940
             assert e['verification_readout_gain'] == 1880
@@ -327,3 +342,19 @@ def test_verification_gain_rejects_invalid_config_before_hardware(extra):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
     with pytest.raises(ValueError):
         programs.OPXVerificationGainBenchmarkProgram(None, {'opx_benchmark_verification_gain':1880, **extra}, None, None)
+
+
+def test_half_gain_confirmation_plan_interleaves_standard_required_and_no_feedback():
+    from collections import Counter
+    m=importlib.import_module(MODULE)
+    p=m.plan(half_gain_confirm_check=True)
+    assert p['half_gain_confirm_check'] and p['benchmark_shots']==28800 and p['reference_shots']==32000
+    expected={(scheme,required,prep) for scheme,required in [('opx_unbounded',False),('opx_unbounded',True),('none',False)] for prep in ['g','e']}
+    positions=[Counter() for _ in range(6)]
+    for repeat in range(12):
+        entries=p['points'][repeat*6:repeat*6+6]
+        assert {(e['reset_scheme'],e['require_loop_readout'],e['preparation']) for e in entries}==expected
+        assert all(e['initial_readout_fraction']==.5 and e['verification_delay_us']==20 and e['not_before_offset_s']==repeat*30 for e in entries)
+        for pos,e in enumerate(entries):positions[pos][e['reset_scheme'],e['require_loop_readout'],e['preparation']]+=1
+    assert all(set(c.values())=={2} and set(c)==expected for c in positions)
+    with pytest.raises(ValueError):m.plan(half_gain_reset_check=True,half_gain_confirm_check=True)
