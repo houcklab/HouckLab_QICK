@@ -1220,3 +1220,40 @@ Defer the required-loop policy experiment until this baseline is trustworthy:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResetValidation --run --half-gain-reset-check
 ```
+
+## Half-gain reset after signed-multiplier correction
+
+Session `q3_pump_probe_half_gain_reset_check_20260927T034723Z_ca6f9958`, commit
+`3ef8e587`, completed 48 benchmark blocks and all four reference sets. All
+19,200 raw benchmark shots and 32,000 reference shots were checked, with all
+eight fits reproducing the saved calibrations. Decision gain was 940, separate
+verification gain 1880, all active terminal statuses CONFIRMED_GROUND, and
+zero-attempt records exactly matched initial payload ground classifications.
+Every saved coefficient and raw-reference magnitude is within the new signed
+16-bit guard. Both initial and final reference bundles passed. The fixed
+full-gain loop classifier's held-out balanced score changed 0.7240 to 0.7470,
+so absolute fractions still have some calibration drift.
+
+| Nominal preparation | No-feedback loop verification | Active half-gain reset loop verification |
+| --- | ---: | ---: |
+| No pi | 0.1567 | 0.1406 |
+| Pi | 0.6433 | 0.2219 |
+
+Across twelve paired rounds, active-minus-none is -1.60 percentage points
+[-3.22, +0.01] for no-pi and -42.15 [-44.45, -39.85] for pi. Residual active
+pi-minus-no-pi is +8.13 [6.23, 10.02] points. Intervals are unadjusted 95% t
+intervals; independent payload-axis verification gives +8.17 [6.20, 10.13].
+This recovers the useful operational response seen in the first half-gain run
+(+6.85-point residual), after the intervening unsafe-coefficient run produced
++44.25 points and long feedback loops. The run supports the arithmetic fix in
+hardware but does not establish physical ground-state fidelity or the exact
+installed FPGA provenance.
+
+Mean feedback attempts are 1.034 no-pi and 2.258 pi, p99 9 and 10, maxima 18
+and 22. The pi zero-attempt fraction is 18.02% (865/4800); these selected
+shots have 55.14% later excited classification, versus 14.94% among the 3935
+shots that entered feedback. For no-pi the corresponding fractions are 12.91%
+and 16.51%. This reproduces the association between initial acceptance and
+residual preparation dependence, but the subsets are selected by a noisy
+measurement. The already pushed `--half-gain-confirm-check` is the direct
+interleaved comparison of ordinary reset with an arm requiring one loop readout.
