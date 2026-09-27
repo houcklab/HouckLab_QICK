@@ -1485,3 +1485,37 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --fine-localize
 ```
+
+## Fine scan weakens the first candidate; check the second broadband feature
+
+Session `q3_pump_probe_fine_localize_20260927T060406Z_39e09da8`, commit
+`82374867`, completed all 444 pump-off blocks (177,600 probe shots) and its
+final references. It revisited the same integer DC coordinates used in the
+broadband screen. The 4.044–4.046-GHz, 2-to-10-us loss contrast fell from
+0.190/0.242 in the two broadband passes to 0.044/0.058/0.051/0.048 in the
+four fine-scan passes (five 0.5-MHz bins). The fine-scan 4.050–4.054-GHz
+upper flank averaged 0.053/0.078/0.046/0.067, so the earlier sharp feature
+did not recur as an isolated peak. Both payload and loop classifiers agree;
+reprojecting 96 selected raw fine-scan blocks (38,400 shots) reproduces all
+saved counts and IQ means. Cross-projecting the earlier and later raw blocks
+with each other's payload classifiers changes the relevant contrasts by
+about 0.01 or less, far too little to explain the lost peak. All starting and ending
+references passed, although this does not by itself establish whether the
+change was microscopic TLS motion or another time-varying device effect.
+
+The broadband screen had a second candidate at 4.114–4.118 GHz. Across
+those three 2-MHz bins, the 2-to-10-us contrast averaged 0.132 in the
+forward pass and 0.173 in reverse; the adjacent 4.112- and 4.120-GHz bins
+were near zero or negative. This was selected after looking at the screen
+and remains a candidate rather than an identified TLS. `--secondary-localize`
+checks it independently, pump-off, from 4.108 to 4.122 GHz in 0.5-MHz steps:
+29 integer-DAC targets, four alternating passes, 400 shots each for excited
+2-us, excited 10-us, and ground 10-us probes. The production TLS pipeline is
+unchanged. A pump coordinate is deferred until a localized loss feature
+recurs with low-loss flanks.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --secondary-localize
+```

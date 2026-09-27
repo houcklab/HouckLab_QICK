@@ -22,6 +22,10 @@ feature may lie between screening points and needs a denser follow-up.
 4.045 GHz: 4.036..4.054 GHz in 0.5-MHz steps, four alternating-direction
 passes, and 400 shots for each of the same three pump-off probe conditions.
 This resolves the candidate and both flanks before selecting a pump coordinate.
+
+--secondary-localize checks the other independent-pass broadband candidate
+near 4.114..4.118 GHz after the 4.045-GHz peak weakened in the fine scan.
+It uses the same pump-off protocol over 4.108..4.122 GHz at 0.5-MHz spacing.
 """
 
 import argparse
@@ -41,8 +45,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters(*, transfer_check=False, relocalize=False, fine_localize=False):
-    if sum((transfer_check, relocalize, fine_localize)) > 1:
+def parameters(*, transfer_check=False, relocalize=False, fine_localize=False,
+               secondary_localize=False):
+    if sum((transfer_check, relocalize, fine_localize, secondary_localize)) > 1:
         raise ValueError("Choose only one pump-probe follow-up stage")
     p = pilot.parameters(location_check=True)
     p.update({
@@ -65,6 +70,12 @@ def parameters(*, transfer_check=False, relocalize=False, fine_localize=False):
     if fine_localize:
         p.update(target_frequency_ghz=[round(4.036 + 0.0005 * i, 4) for i in range(37)],
                  freq_step_mhz=0.5, shots=400, repeats=4, order_seed=20261006,
+                 probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
+                 probe_locations=["target"], pump_detunings_mhz=[0.0],
+                 bracket_each=False)
+    if secondary_localize:
+        p.update(target_frequency_ghz=[round(4.108 + 0.0005 * i, 4) for i in range(29)],
+                 freq_step_mhz=0.5, shots=400, repeats=4, order_seed=20261007,
                  probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
                  probe_locations=["target"], pump_detunings_mhz=[0.0],
                  bracket_each=False)
@@ -99,16 +110,19 @@ def scan_schedule(p):
     return points
 
 
-def plan(*, transfer_check=False, relocalize=False, fine_localize=False):
+def plan(*, transfer_check=False, relocalize=False, fine_localize=False,
+         secondary_localize=False):
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
-                   fine_localize=fine_localize)
-    scan_mode = relocalize or fine_localize
+                   fine_localize=fine_localize,
+                   secondary_localize=secondary_localize)
+    scan_mode = relocalize or fine_localize or secondary_localize
     points = scan_schedule(p) if scan_mode else pilot.schedule(p)
     return {
         "hardware_access": False,
         "transfer_check": bool(transfer_check),
         "relocalize": bool(relocalize),
         "fine_localize": bool(fine_localize),
+        "secondary_localize": bool(secondary_localize),
         "microwave_pump_enabled": not scan_mode,
         "parameters": p,
         "acquisition_blocks": len(points),
@@ -208,12 +222,14 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        transfer_check=False, relocalize=False, fine_localize=False):
+        transfer_check=False, relocalize=False, fine_localize=False,
+        secondary_localize=False):
     import numpy as np
 
     p = parameters(transfer_check=transfer_check, relocalize=relocalize,
-                   fine_localize=fine_localize)
-    scan_mode = relocalize or fine_localize
+                   fine_localize=fine_localize,
+                   secondary_localize=secondary_localize)
+    scan_mode = relocalize or fine_localize or secondary_localize
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -259,7 +275,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        prefix = ("q3_pump_probe_fine_localize_" if fine_localize else
+        prefix = ("q3_pump_probe_secondary_localize_" if secondary_localize else
+                  "q3_pump_probe_fine_localize_" if fine_localize else
                   "q3_pump_probe_relocalize_" if relocalize else
                   "q3_pump_probe_transfer_check_" if transfer_check else
                   "q3_pump_probe_confirmed_")
@@ -279,8 +296,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "transfer_check": bool(transfer_check),
             "relocalize": bool(relocalize),
             "fine_localize": bool(fine_localize),
+            "secondary_localize": bool(secondary_localize),
             "parameters": plan(transfer_check=transfer_check, relocalize=relocalize,
-                               fine_localize=fine_localize),
+                               fine_localize=fine_localize,
+                               secondary_localize=secondary_localize),
             "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
@@ -440,17 +459,21 @@ def main(argv=None):
                        help="screen 3.9..4.3 GHz for a current loss feature without microwave pumping")
     stage.add_argument("--fine-localize", action="store_true",
                        help="resolve the 4.045-GHz candidate at 0.5-MHz spacing without pumping")
+    stage.add_argument("--secondary-localize", action="store_true",
+                       help="check the 4.114..4.118-GHz candidate at 0.5-MHz spacing without pumping")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(transfer_check=args.transfer_check,
                               relocalize=args.relocalize,
-                              fine_localize=args.fine_localize), indent=2))
+                              fine_localize=args.fine_localize,
+                              secondary_localize=args.secondary_localize), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             transfer_check=args.transfer_check, relocalize=args.relocalize,
-            fine_localize=args.fine_localize)
+            fine_localize=args.fine_localize,
+            secondary_localize=args.secondary_localize)
     return 0
 
 
