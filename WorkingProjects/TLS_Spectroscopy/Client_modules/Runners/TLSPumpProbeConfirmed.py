@@ -10,6 +10,13 @@ uses a 2-us probe with both ground and excited preparations (288 blocks). Fresh
 half- and normal-gain references are acquired before and after either stage.
 These are matched pump-control experiments, not measurements of TLS identity or
 reset fidelity. The optional program and runner do not alter production scans.
+
+--relocalize uses the same reset, readout, and flux-return sequence with the
+microwave pump disabled. It screens 3.900..4.300 GHz at 2-MHz spacing, first
+forward then backward, comparing nearby-in-time excited 2/10-us probes with a
+ground 10-us control at each target. This is a loss-feature localizer; its
+model frequency is not an independently measured TLS frequency. A narrow
+feature may lie between screening points and needs a denser follow-up.
 """
 
 import argparse
@@ -29,7 +36,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters(*, transfer_check=False):
+def parameters(*, transfer_check=False, relocalize=False):
+    if transfer_check and relocalize:
+        raise ValueError("Choose only one pump-probe follow-up stage")
     p = pilot.parameters(location_check=True)
     p.update({
         "repeats": 8,
@@ -42,15 +51,51 @@ def parameters(*, transfer_check=False):
     if transfer_check:
         p.update(order_seed=20261004, probe_states=["g", "e"],
                  probe_holds_us=[2.0])
+    if relocalize:
+        p.update(target_frequency_ghz=[round(3.9 + 0.002 * i, 3) for i in range(201)],
+                 freq_step_mhz=2.0, shots=250, repeats=2, order_seed=20261005,
+                 probe_states=["g", "e"], probe_holds_us=[2.0, 10.0],
+                 probe_locations=["target"], pump_detunings_mhz=[0.0],
+                 bracket_each=False)
     return p
 
 
-def plan(*, transfer_check=False):
-    p = parameters(transfer_check=transfer_check)
-    points = pilot.schedule(p)
+def scan_schedule(p):
+    """Keep each loss/reference trio local in time; reverse the second pass."""
+    import random
+
+    rng = random.Random(p["order_seed"])
+    points = []
+    for repeat in range(p["repeats"]):
+        targets = range(len(p["target_frequency_ghz"]))
+        if repeat % 2:
+            targets = reversed(targets)
+        for target in targets:
+            probes = [("e", 2.0), ("e", 10.0), ("g", 10.0)]
+            rng.shuffle(probes)
+            comparison_id = f"pass_{repeat}_target_{target:04d}"
+            for state, hold in probes:
+                points.append({
+                    "name": f"point_{len(points):04d}", "repeat": repeat,
+                    "target_index": target, "pump_mode": "sham",
+                    "pump_detuning_mhz": 0.0, "probe_state": state,
+                    "pump_gain": 0, "probe_us": hold,
+                    "additional_recovery_us": 0.0, "probe_location": "target",
+                    "control_position": "scan",
+                    "test_condition": f"{state}_{hold:g}us",
+                    "comparison_id": comparison_id,
+                })
+    return points
+
+
+def plan(*, transfer_check=False, relocalize=False):
+    p = parameters(transfer_check=transfer_check, relocalize=relocalize)
+    points = scan_schedule(p) if relocalize else pilot.schedule(p)
     return {
         "hardware_access": False,
         "transfer_check": bool(transfer_check),
+        "relocalize": bool(relocalize),
+        "microwave_pump_enabled": not relocalize,
         "parameters": p,
         "acquisition_blocks": len(points),
         "pump_probe_shots": len(points) * p["shots"],
@@ -148,10 +193,11 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
     return result
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=False):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        transfer_check=False, relocalize=False):
     import numpy as np
 
-    p = parameters(transfer_check=transfer_check)
+    p = parameters(transfer_check=transfer_check, relocalize=relocalize)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -179,9 +225,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=F
             raise RuntimeError("Park calibration differs from the planned q3 configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        full_grid = np.linspace(4.094, 4.110, 9)
-        all_dc, all_realized = _integer_dc_grid(p, full_grid)
-        dc_gain, realized_ghz = int(all_dc[-1]), float(all_realized[-1])
+        if relocalize:
+            dc_vec, realized_vec = _integer_dc_grid(p, np.asarray(p["target_frequency_ghz"]))
+        else:
+            full_grid = np.linspace(4.094, 4.110, 9)
+            all_dc, all_realized = _integer_dc_grid(p, full_grid)
+            dc_vec, realized_vec = all_dc[-1:], all_realized[-1:]
         compensation = tls._load_correction(str(correction), str(data_root))
         frequency = next(float(tls.BaseConfig[key]) for key in
                          ("reset_pi_freq", "qubit_pi_freq", "qubit_freq")
@@ -194,13 +243,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=F
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        prefix = "q3_pump_probe_transfer_check_" if transfer_check else "q3_pump_probe_confirmed_"
+        prefix = ("q3_pump_probe_relocalize_" if relocalize else
+                  "q3_pump_probe_transfer_check_" if transfer_check else
+                  "q3_pump_probe_confirmed_")
         session_id = prefix + datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
         path = folder / "manifest.json"
-        points = [dict(entry, status="pending") for entry in pilot.schedule(p)]
+        schedule = scan_schedule(p) if relocalize else pilot.schedule(p)
+        points = [dict(entry, status="pending") for entry in schedule]
         points += [dict(name="final_decision_reference", kind="reference", status="pending"),
                    dict(name="final_probe_reference", kind="reference", status="pending")]
         manifest = {
@@ -208,10 +260,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=F
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "calibrating", "code_commit": os.environ["Q3_CODE_COMMIT"],
             "transfer_check": bool(transfer_check),
-            "parameters": plan(transfer_check=transfer_check), "points": points,
+            "relocalize": bool(relocalize),
+            "parameters": plan(transfer_check=transfer_check, relocalize=relocalize),
+            "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
-            "realized_frequency_ghz": realized_ghz, "dc_gain": dc_gain,
+            "realized_frequency_ghz": (realized_vec.tolist() if relocalize
+                                       else float(realized_vec[0])),
+            "dc_gain": dc_vec.tolist() if relocalize else int(dc_vec[0]),
             "classifier_sources": {"decision": "initial_decision_reference/calibration.json",
                                    "probe": "initial_probe_reference/calibration.json"},
         }
@@ -282,8 +338,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=F
                                                f"raw pump-probe data saved in {folder}")
                         return report
                     target = entry["target_index"]
-                    if target != 0:
+                    if not relocalize and target != 0:
                         raise RuntimeError("Unexpected target index in confirmed pilot")
+                    dc_gain = int(dc_vec[target])
+                    realized_ghz = float(realized_vec[target])
                     pump_frequency_mhz = realized_ghz * 1000 + entry["pump_detuning_mhz"]
                     drive = pilot.drive_settings(entry, p)
                     point_cfg = point_config(
@@ -330,8 +388,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=F
                     writer.writerow(row)
                     stream.flush()
                     result["telemetry"] = telemetry
-                    print(f"[pump-probe-confirmed] {entry['name']} {entry['pump_mode']} "
+                    print(f"[pump-probe-confirmed] {entry['name']} "
+                          f"{result['target_frequency_ghz']:.3f} GHz {entry['pump_mode']} "
                           f"{entry['pump_detuning_mhz']:+g} MHz {entry['probe_location']} "
+                          f"{entry['probe_state']} {entry['probe_us']:g} us "
                           f"P={result['P_excited']:.3f}", flush=True)
                     return result
 
@@ -354,16 +414,20 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
-    parser.add_argument("--transfer-check", action="store_true",
-                        help="compare ground and excited 2-us target/park probes")
+    stage = parser.add_mutually_exclusive_group()
+    stage.add_argument("--transfer-check", action="store_true",
+                       help="compare ground and excited 2-us target/park probes")
+    stage.add_argument("--relocalize", action="store_true",
+                       help="screen 3.9..4.3 GHz for a current loss feature without microwave pumping")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(transfer_check=args.transfer_check), indent=2))
+        print(json.dumps(plan(transfer_check=args.transfer_check,
+                              relocalize=args.relocalize), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            transfer_check=args.transfer_check)
+            transfer_check=args.transfer_check, relocalize=args.relocalize)
     return 0
 
 

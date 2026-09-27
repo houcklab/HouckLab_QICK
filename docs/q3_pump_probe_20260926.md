@@ -1395,3 +1395,52 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --transfer-check
 ```
+
+## Two-microsecond transfer check: candidate did not reproduce
+
+Session `q3_pump_probe_transfer_check_20260927T050733Z_4c90b982`, commit
+`57b0e009`, completed all 288 blocks (115,200 probe shots) and all four
+reference sets. The starting and ending decision and probe calibrations passed.
+Independent replay of every 400-shot raw IQ file reproduces the saved frozen
+full-gain payload and loop fractions; all 96 sham--test--sham trios have
+matching preparation, hold, detuning and location. Reclassifying with the
+ending probe bundle gives the same qualitative conclusion.
+
+The predeclared +8-MHz target comparison at a 2-us probe hold was:
+
+| Preparation | Driven test minus adjacent shams | Zero-drive null minus adjacent shams | Driven minus null |
+| --- | ---: | ---: | ---: |
+| Ground | -0.52 [-3.08, +2.05] | +1.13 [-0.58, +2.83] | -1.64 [-4.99, +1.71] |
+| Excited | +1.77 [-1.93, +5.46] | +0.63 [-3.66, +4.91] | +1.14 [-5.69, +7.97] |
+
+Values are percentage-point changes in the frozen full-gain payload
+classifier's excited label, with unadjusted 95% Student-t intervals across
+eight paired rounds. The +8-MHz park response is +0.00 [-1.89, +1.89] points
+for ground preparation and -1.30 [-4.33, +1.73] for excited preparation,
+also unresolved. A park/excited zero-drive null produces -2.81 [-5.13, -0.50]
+points versus its own shams; this exploratory nonzero null cautions against
+assigning small contrasts to the pump. The earlier +8-MHz ground/2-us target
+candidate does **not** repeat under this newly calibrated reset/readout
+protocol. This does not distinguish a past transient feature from earlier
+readout/reset or selection effects. It supplies no evidence for TLS population
+transfer, suppression, or persistent frequency control at 4.110 GHz.
+
+Stop tuning the pump around this unconfirmed target. The next experiment-only
+stage is `--relocalize`: a **microwave-pump-off** screening scan over
+3.900–4.300 GHz in 2-MHz steps using the same half-gain required-loop reset,
+normal-gain probe readout, pinned flux compensation and complete return.
+At each of 201 model-frequency targets, acquire nearby-in-time excited 2-us,
+excited 10-us and ground 10-us probes. One forward and one reverse pass,
+250 shots per block, give 1206 blocks (301,500 probe shots) plus 32,000
+reference shots. Compare the local excited 2-to-10-us loss against neighboring
+frequencies and the reverse pass before selecting any new pump coordinate.
+This is a coarse screen: narrow features can fall between 2-MHz samples, and
+the model coordinate is not an independently measured TLS frequency. The
+no-drive pre-probe flux excursion remains part of the pump--probe sequence so
+the eventual target is localized under the same history.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --relocalize
+```

@@ -72,6 +72,33 @@ def test_transfer_plan_probes_both_directions_at_two_microseconds():
                                                for condition in ("plus8", "minus20", "null")})
 
 
+def test_relocalize_plan_scans_broad_band_in_both_directions_without_microwave_pump():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan", "--relocalize"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False and plan["relocalize"]
+    assert plan["acquisition_blocks"] == 1206
+    assert plan["pump_probe_shots"] == 301_500
+    p = plan["parameters"]
+    assert p["target_frequency_ghz"][0] == 3.9
+    assert p["target_frequency_ghz"][-1] == 4.3
+    assert len(p["target_frequency_ghz"]) == 201
+    assert p["freq_step_mhz"] == 2.0 and p["shots"] == 250
+    points = runner().scan_schedule(p)
+    assert len(points) == 1206
+    assert {x["pump_mode"] for x in points} == {"sham"}
+    assert {x["probe_location"] for x in points} == {"target"}
+    assert all(x["pump_gain"] == 0 for x in points)
+    assert [x["target_index"] for x in points[::3]][:201] == list(range(201))
+    assert [x["target_index"] for x in points[::3]][201:] == list(reversed(range(201)))
+    for start in range(0, len(points), 3):
+        group = points[start:start + 3]
+        assert len({x["comparison_id"] for x in group}) == 1
+        assert {(x["probe_state"], x["probe_us"]) for x in group} == {
+            ("e", 2.0), ("e", 10.0), ("g", 10.0)}
+
+
 def test_confirmed_program_requires_loop_and_restores_half_gain(monkeypatch):
     module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
     programs = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")
@@ -131,14 +158,15 @@ def test_confirmed_program_rejects_invalid_gain_before_hardware(decision, probe,
 
 
 @pytest.mark.parametrize("ending_accepted", [True, False])
-@pytest.mark.parametrize("transfer_check", [False, True])
+@pytest.mark.parametrize("stage", ["short", "transfer", "relocalize"])
 def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
-        tmp_path, monkeypatch, ending_accepted, transfer_check):
+        tmp_path, monkeypatch, ending_accepted, stage):
     m = runner()
+    transfer_check, relocalize = stage == "transfer", stage == "relocalize"
     package = importlib.import_module(f"{PREFIX}.Runners")
     calibration = importlib.import_module(f"{PREFIX}.active_reset_OPX.calibration")
     grid = SimpleNamespace(_integer_dc_grid=lambda p, frequencies: (
-        np.arange(-16000, -15991), np.asarray(frequencies)))
+        np.arange(-16000, -16000 + len(frequencies)), np.asarray(frequencies)))
     monkeypatch.setitem(sys.modules, f"{PREFIX}.Runners.ThreePointApplesToApples", grid)
 
     class Fit:
@@ -170,8 +198,10 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
     monkeypatch.setattr(m.localizer, "checked_correction", lambda *a: tmp_path / "correction.json")
     monkeypatch.setattr(m.localizer, "scan_environment", lambda *a: nullcontext())
     monkeypatch.setenv("Q3_CODE_COMMIT", "mock-test")
-    p = m.parameters(transfer_check=transfer_check)
-    p.update(repeats=1, shots=4)
+    p = m.parameters(transfer_check=transfer_check, relocalize=relocalize)
+    p.update(repeats=2 if relocalize else 1, shots=4)
+    if relocalize:
+        p["target_frequency_ghz"] = [4.094, 4.096, 4.098]
     monkeypatch.setattr(m, "parameters", lambda **kwargs: p)
     references = []
 
@@ -194,22 +224,29 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
 
     monkeypatch.setattr(m, "acquire_records", fake_acquire)
     if ending_accepted:
-        path = m.run(data_root=tmp_path, transfer_check=transfer_check)
+        path = m.run(data_root=tmp_path, transfer_check=transfer_check,
+                     relocalize=relocalize)
     else:
         with pytest.raises(RuntimeError, match="Final calibration reference rejected"):
-            m.run(data_root=tmp_path, transfer_check=transfer_check)
+            m.run(data_root=tmp_path, transfer_check=transfer_check,
+                  relocalize=relocalize)
         path = next((tmp_path / "q3").glob("*/manifest.json"))
     manifest = json.loads(path.read_text())
     blocks = 36 if transfer_check else 18
     assert manifest["transfer_check"] == transfer_check
+    assert manifest["relocalize"] == relocalize
     assert manifest["status"] == ("complete" if ending_accepted else "failed")
     assert manifest["final_references_accepted"] == ending_accepted
     assert references == [940, 1880, 940, 1880]
     assert len(point_cfgs) == blocks
     assert {c["opx_saturation_probe_state"] for c in point_cfgs} == (
-        {"g", "e"} if transfer_check else {"g"})
+        {"g", "e"} if transfer_check or relocalize else {"g"})
     assert {c["opx_saturation_probe_us"] for c in point_cfgs} == (
-        {2.0} if transfer_check else {0.1})
+        {2.0, 10.0} if relocalize else {2.0} if transfer_check else {0.1})
+    if relocalize:
+        assert {c["opx_saturation_arm"] for c in point_cfgs} == {"no_pump"}
+        assert {c["ff_gain"] for c in point_cfgs} == {-16000, -15999, -15998}
+        assert manifest["dc_gain"] == [-16000, -15999, -15998]
     assert all(c["read_pulse_gain"] == 940 and c["opx_diagnostic_probe_readout_gain"] == 1880
                and c["opx_loop_recovery_us"] == 20 for c in point_cfgs)
     assert all(c["opx_reset_calibration"] == {"label": "decision"} for c in point_cfgs)
