@@ -1963,3 +1963,43 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeNearMax --run
 ```
+
+The near-maximum screen completed all 16 arms at 18:32–18:39. The guard
+passed throughout: frequency-median P0 stayed 0.063–0.109, and median
+P1−P0 stayed 0.360–0.437. The pre/post scouts selected 4.136/4.134 GHz,
+with localized dip depths 0.502/0.454. The strong loss remained visible,
+but moved about 2 MHz during the block. An analysis that only watches the
+original 4.136-GHz bin therefore overstates loss suppression.
+
+For a shift-tolerant comparison, take the mean normalized 25-us loss
+`(P1-Ps_25us)/(P1-P0)` over 4.128–4.138 GHz and subtract the mean over
+4.116–4.124 plus 4.148–4.156 GHz. The gain-30000 sequence gave **0.421**
+at −40 MHz, **0.437** on-frequency (first), **0.351** at +40 MHz, and
+**0.378** on-frequency (second); the final sham gave **0.387**. On-frequency
+pumping did not consistently suppress the dip relative to equal-gain
+off-frequency controls. The analogous target-localized normalized 2-us
+ground-excitation contrasts were **+0.019, −0.015, −0.010, +0.023** in the
+same order. They change sign between the two on-frequency runs. This is
+not a reproducible reciprocal pump response. Both scan directions also
+show substantial within-arm variation at the high gain. The conclusion is
+specific to a tone delivered while q3 is parked roughly 227 MHz from the
+loss coordinate; it does not rule out an on-target, qubit-mediated pump.
+
+The next experiment stays on the pump-probe path: determine a *loading time*
+for moving a prepared qubit excitation into the feature. A fresh 81-point
+scout selects the current coordinate. Four 25-point passive maps span that
+center ±12 MHz at 1-MHz spacing with 400 shots per condition. They use
+additional target holds of 0.25/0.5/1, 1.5/2.5/4, and 6/10/20 us beyond
+the 0.1-us matched reference; the earliest panel is repeated at the end,
+followed by a post-scout. The existing pi pulse, corrected flux excursion,
+and readout are unchanged. Analyze raw P0/P1/Ps and both scan directions for
+a reproducible nonmonotonic swap minimum or, if loss is monotonic, a useful
+transfer time. That time will set the subsequent hot/cold, on/off-target
+loading and signed return probes; a time-domain dip alone is not TLS proof.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeOnTargetTiming --run
+```
