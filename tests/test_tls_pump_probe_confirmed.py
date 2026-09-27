@@ -50,6 +50,28 @@ def test_plan_is_hardware_free_and_every_test_has_local_shams():
                               for condition in ("plus8", "minus20", "null")})
 
 
+def test_transfer_plan_probes_both_directions_at_two_microseconds():
+    result = subprocess.run([sys.executable, "-m", MODULE, "--plan", "--transfer-check"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["hardware_access"] is False and plan["transfer_check"]
+    assert plan["acquisition_blocks"] == 288
+    assert plan["pump_probe_shots"] == 115_200
+    p = plan["parameters"]
+    assert p["target_frequency_ghz"] == [4.110]
+    assert p["probe_states"] == ["g", "e"]
+    assert p["probe_holds_us"] == [2.0]
+    points = runner().pilot.schedule(p)
+    assert len({x["comparison_id"] for x in points}) == 96
+    tests = [x for x in points if x["control_position"] == "test"]
+    assert Counter((x["probe_state"], x["probe_location"], x["test_condition"])
+                   for x in tests) == Counter({(state, location, condition): 8
+                                               for state in ("g", "e")
+                                               for location in ("target", "park")
+                                               for condition in ("plus8", "minus20", "null")})
+
+
 def test_confirmed_program_requires_loop_and_restores_half_gain(monkeypatch):
     module = importlib.import_module(f"{PREFIX}.Runners.TLSPumpProbeConfirmedProgram")
     programs = importlib.import_module(f"{PREFIX}.active_reset_OPX.programs")
@@ -109,8 +131,9 @@ def test_confirmed_program_rejects_invalid_gain_before_hardware(decision, probe,
 
 
 @pytest.mark.parametrize("ending_accepted", [True, False])
+@pytest.mark.parametrize("transfer_check", [False, True])
 def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
-        tmp_path, monkeypatch, ending_accepted):
+        tmp_path, monkeypatch, ending_accepted, transfer_check):
     m = runner()
     package = importlib.import_module(f"{PREFIX}.Runners")
     calibration = importlib.import_module(f"{PREFIX}.active_reset_OPX.calibration")
@@ -147,9 +170,9 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
     monkeypatch.setattr(m.localizer, "checked_correction", lambda *a: tmp_path / "correction.json")
     monkeypatch.setattr(m.localizer, "scan_environment", lambda *a: nullcontext())
     monkeypatch.setenv("Q3_CODE_COMMIT", "mock-test")
-    p = m.parameters()
+    p = m.parameters(transfer_check=transfer_check)
     p.update(repeats=1, shots=4)
-    monkeypatch.setattr(m, "parameters", lambda: p)
+    monkeypatch.setattr(m, "parameters", lambda **kwargs: p)
     references = []
 
     def fake_reference(soc, soccfg, cfg, **kwargs):
@@ -171,26 +194,32 @@ def test_full_mocked_run_uses_separate_frozen_classifiers_and_final_references(
 
     monkeypatch.setattr(m, "acquire_records", fake_acquire)
     if ending_accepted:
-        path = m.run(data_root=tmp_path)
+        path = m.run(data_root=tmp_path, transfer_check=transfer_check)
     else:
         with pytest.raises(RuntimeError, match="Final calibration reference rejected"):
-            m.run(data_root=tmp_path)
+            m.run(data_root=tmp_path, transfer_check=transfer_check)
         path = next((tmp_path / "q3").glob("*/manifest.json"))
     manifest = json.loads(path.read_text())
+    blocks = 36 if transfer_check else 18
+    assert manifest["transfer_check"] == transfer_check
     assert manifest["status"] == ("complete" if ending_accepted else "failed")
     assert manifest["final_references_accepted"] == ending_accepted
     assert references == [940, 1880, 940, 1880]
-    assert len(point_cfgs) == 18
+    assert len(point_cfgs) == blocks
+    assert {c["opx_saturation_probe_state"] for c in point_cfgs} == (
+        {"g", "e"} if transfer_check else {"g"})
+    assert {c["opx_saturation_probe_us"] for c in point_cfgs} == (
+        {2.0} if transfer_check else {0.1})
     assert all(c["read_pulse_gain"] == 940 and c["opx_diagnostic_probe_readout_gain"] == 1880
                and c["opx_loop_recovery_us"] == 20 for c in point_cfgs)
     assert all(c["opx_reset_calibration"] == {"label": "decision"} for c in point_cfgs)
-    assert all(entry["result"]["P_excited"] == 0.5 for entry in manifest["points"][:18])
+    assert all(entry["result"]["P_excited"] == 0.5 for entry in manifest["points"][:blocks])
     assert [entry["status"] for entry in manifest["points"]] == (
-        ["complete"] * 20 if ending_accepted else ["complete"] * 19 + ["failed"])
+        ["complete"] * (blocks + 2) if ending_accepted else ["complete"] * (blocks + 1) + ["failed"])
     if not ending_accepted:
         assert manifest["points"][-1]["result"] == {"accepted": False,
                                                     "output": str(path.parent / "final_probe_reference")}
-    assert sum(1 for _ in (path.parent / "summary.csv").open()) == 19
+    assert sum(1 for _ in (path.parent / "summary.csv").open()) == blocks + 1
     with np.load(path.parent / "point_0000.npz") as raw:
         assert raw["i_raw"].tolist() == [-10, -10, 10, 10]
         assert raw["read_length_cycles"].item() == 10

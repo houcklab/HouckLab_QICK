@@ -4,10 +4,12 @@ At 4.110 GHz, compare +8 and -20 MHz pumps with immediately adjacent zero-drive
 shams and a zero-drive null. Ground-state probes visit both target and park for
 0.1 us. The same required-loop, half-gain feedback reset precedes and follows
 every pump; the final probe uses a separately calibrated normal-gain readout.
-Eight randomized rounds of 400 shots give 144 pump--probe blocks. Fresh half-
-and normal-gain references are acquired before and after the blocks. This is a
-matched pump-control experiment, not a measurement of TLS identity or reset
-fidelity. Its optional program and runner do not alter production scan defaults.
+Eight randomized rounds of 400 shots give 144 pump--probe blocks. The
+--transfer-check follow-up keeps the same pump conditions and locations but
+uses a 2-us probe with both ground and excited preparations (288 blocks). Fresh
+half- and normal-gain references are acquired before and after either stage.
+These are matched pump-control experiments, not measurements of TLS identity or
+reset fidelity. The optional program and runner do not alter production scans.
 """
 
 import argparse
@@ -27,7 +29,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-def parameters():
+def parameters(*, transfer_check=False):
     p = pilot.parameters(location_check=True)
     p.update({
         "repeats": 8,
@@ -37,14 +39,18 @@ def parameters():
         "probe_locations": ["target", "park"],
         "inter_shot_delay_us": 500.0,
     })
+    if transfer_check:
+        p.update(order_seed=20261004, probe_states=["g", "e"],
+                 probe_holds_us=[2.0])
     return p
 
 
-def plan():
-    p = parameters()
+def plan(*, transfer_check=False):
+    p = parameters(transfer_check=transfer_check)
     points = pilot.schedule(p)
     return {
         "hardware_access": False,
+        "transfer_check": bool(transfer_check),
         "parameters": p,
         "acquisition_blocks": len(points),
         "pump_probe_shots": len(points) * p["shots"],
@@ -142,10 +148,10 @@ def save_probe_iq(path, records, read_cycles, verification_bundle):
     return result
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, transfer_check=False):
     import numpy as np
 
-    p = parameters()
+    p = parameters(transfer_check=transfer_check)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -188,7 +194,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             build_calibration_config(decision_base, frequency), reset_validation.PROFILE)
         verification_cal_cfg = dict(decision_cal_cfg, read_pulse_gain=normal_gain)
 
-        session_id = "q3_pump_probe_confirmed_" + datetime.now(timezone.utc).strftime(
+        prefix = "q3_pump_probe_transfer_check_" if transfer_check else "q3_pump_probe_confirmed_"
+        session_id = prefix + datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
@@ -200,7 +207,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             "schema": "q3.pump-probe-confirmed.v1", "session_id": session_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "calibrating", "code_commit": os.environ["Q3_CODE_COMMIT"],
-            "parameters": plan(), "points": points,
+            "transfer_check": bool(transfer_check),
+            "parameters": plan(transfer_check=transfer_check), "points": points,
             "correction_json": str(correction),
             "correction_sha256": localizer.CORRECTION_SHA256,
             "realized_frequency_ghz": realized_ghz, "dc_gain": dc_gain,
@@ -346,13 +354,16 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--transfer-check", action="store_true",
+                        help="compare ground and excited 2-us target/park probes")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(transfer_check=args.transfer_check), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            transfer_check=args.transfer_check)
     return 0
 
 

@@ -1346,3 +1346,52 @@ On the measurement PC after stopping other acquisitions:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run
 ```
+
+## Confirmed-reset short-hold pump--probe result and transfer follow-up
+
+Session `q3_pump_probe_confirmed_20260927T045322Z_509b23af`, commit
+`ee7a1445`, completed 144 pump--probe blocks (57,600 shots) and all four
+reference sets. Starting and ending half-gain decision and normal-gain probe
+references passed. Independent replay of all 144 raw IQ files reproduces both
+saved classifier fractions exactly; every file has 400 shots and the recorded
+read length. All 48 adjacent sham--test--sham triplets have matching detuning,
+probe location, and preparation. The full-gain payload reference's held-out
+peak score changed from 0.745 to 0.707, and ground acceptance from 0.650 to
+0.817; the acquisition uses the frozen starting classifier throughout.
+
+Each value below is a test block minus the mean of its immediately adjacent
+shams, in percentage points of the frozen payload classifier's excited label.
+Intervals are unadjusted 95% Student-t intervals across eight repeats:
+
+| Probe at 4.110 GHz, ground preparation, 0.1-us hold | Park | Target |
+| --- | ---: | ---: |
+| +8-MHz pump | +0.03 [-1.60, +1.66] | +0.34 [-1.22, +1.91] |
+| -20-MHz pump | +0.69 [-0.73, +2.10] | -0.27 [-2.32, +1.79] |
+| Zero-drive null | -0.25 [-2.59, +2.09] | -0.64 [-2.50, +1.22] |
+
+The independent loop classifier and reclassification with the ending probe
+bundle likewise show no statistically resolved change in the classified
+population. An
+unthresholded Q shift for the target +8-MHz pump is -0.107 in normalized IQ
+units, but the target zero-drive null is also -0.079; their within-round
+difference is -0.028 [-0.136, +0.080]. None of these data establishes a
+target-specific microwave effect or TLS transfer at this short hold. The
+earlier strongest candidate was a **2-us target probe**, so this short-hold
+result does not directly repeat it.
+
+The `--transfer-check` follow-up keeps the same fresh dual calibrations,
+required-loop half-gain resets, normal-gain final readout, +8/-20-MHz pumps,
+adjacent shams and zero-drive null. It uses a **2-us hold with both ground and
+excited probes at target and park**. Eight rounds of 400 shots give 288 blocks
+(115,200 probe shots), plus 32,000 reference shots. The predeclared priority is
+whether the earlier +8-MHz target ground-probe signal repeats against both its
+shams and null, with an excited-probe response and a target-versus-park
+contrast. The -20-MHz arm monitors detuning specificity. A positive response
+would still require current loss-feature localization and persistence tests
+before assigning a TLS mechanism.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeConfirmed --run --transfer-check
+```
