@@ -3488,3 +3488,41 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dual-line-dynamics
 ```
+
+The simultaneous two-line run completed at
+`q3_tls_dual_line_dynamics_20260928T191619Z_7e340715`: 180/180
+cycles passed both control gates, pre/post readout fidelities were
+0.906/0.918, and both transfer controls passed. The main broad-scout
+center remained 4.107 GHz; the separate upper feature was selected at
+4.147 before and 4.148 GHz afterward. In the 3-point within-shot
+profiles, the main asymmetry (loss at center+2 MHz minus loss at
+center−2 MHz) moved from −0.053 in cycles 0–19 to −0.231 in cycles
+160–179. The upper asymmetry changed from +0.107 to +0.116. Their
+change difference was −0.188; an exploratory four-cycle block-bootstrap
+interval was [−0.249,−0.130]. The cycle-by-cycle correlation between
+the two line asymmetries was only +0.114, compared with +0.414 between
+their control contrasts. Continuous IQ independently reproduces both
+line asymmetries (correlations 0.914 and 0.905 with classified values)
+and the weak between-line correlation (+0.113).
+
+The distinct responses argue against a *simple common readout drift*.
+They do not yet exclude global flux drift because the two lines may
+have different sensitivity to a shared flux offset. Also, the upper
+feature is weaker, and the post-run park-to-readout transfer contrast
+fell while remaining above its acceptance threshold. The next run
+calibrates the common-flux response directly: in alternating four-cycle
+ABBA blocks, it adds −20 or +20 DAC counts to **every** science flux
+point (both lines and both controls). Each sign appears in both shot
+orders, and the pairwise difference is measured over nearby cycles.
+The offset is about 1 MHz on the local frequency grid, small compared
+with the 2-MHz sample spacing. This gives an empirical fingerprint of
+how a global flux shift changes each line's asymmetry. The dither could
+itself perturb a defect, so the interpretation will use repeatability
+and raw IQ rather than assuming a passive calibration.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dual-line-dither
+```

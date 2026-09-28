@@ -319,3 +319,36 @@ def test_dual_line_interleaves_both_features_and_scores_independent_asymmetry(ca
     plan = json.loads(capsys.readouterr().out)
     assert plan["programs"] == 180
     assert plan["conditions_per_shot"] == 16
+
+
+def test_dual_line_dither_balances_gain_sign_and_shot_order(capsys):
+    import json
+    module = experiment()
+    specs = module.dual_line_dither_specs(4.107, 4.093, 4.147, 4.136)
+    assert len(specs) == 120
+    assert [x["dc_offset_dac"] for x in specs[:8]] == [
+        -20, 20, 20, -20, 20, -20, -20, 20]
+    assert specs[0]["order"] == specs[2]["order"]
+    assert specs[1]["order"] == specs[3]["order"]
+    gains = {c["flux_ghz"]: -(i + 1) * 100
+             for i, c in enumerate(specs[0]["conditions"][::2])}
+    cfg_minus = module._condition_configs(
+        {"sigma": .1, "ff_park_gain": -25146}, specs[0], gains)
+    cfg_plus = module._condition_configs(
+        {"sigma": .1, "ff_park_gain": -25146}, specs[1], gains)
+    by_site_minus = {c["site"]: cfg["ff_gain"]
+                     for c, cfg in zip(specs[0]["conditions"], cfg_minus)}
+    by_site_plus = {c["site"]: cfg["ff_gain"]
+                    for c, cfg in zip(specs[1]["conditions"], cfg_plus)}
+    assert all(by_site_plus[s] - by_site_minus[s] == 40
+               for s in module.DUAL_SITES)
+    fractions = {f"{site}_{state}": .1 if state == "g" else .6
+                 for site in module.DUAL_SITES for state in ("g", "e")}
+    scored = module.score_dual_line(fractions)
+    report = module.dual_line_report(
+        specs[:4], {entry["name"]: scored for entry in specs[:4]})
+    assert [entry["dc_offset_dac"] for entry in report] == [-20, 20, 20, -20]
+    assert module.main(["--plan", "--dual-line-dither"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["programs"] == 120
+    assert plan["dc_offsets_dac"] == [-20, 20]
