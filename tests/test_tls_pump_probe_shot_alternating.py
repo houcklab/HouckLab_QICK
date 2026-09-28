@@ -286,3 +286,117 @@ def test_loss_program_configs_use_the_flank_dc_and_full_shot_count():
     assert {cfg["opx_resident_post_us"] for cfg in cfgs} == {2.0}
     assert {cfg["shots"] for cfg in cfgs} == {400}
     assert {cfg["opx_resident_gain"] for cfg in cfgs} == {0, 6000}
+
+
+def test_hold_alternating_specs_put_both_holds_in_each_hardware_shot():
+    module = experiment()
+    specs = module.hold_alternating_specs(4.130)
+    assert len(specs) == 8
+    assert {(x["site"], x["tone"], x["direction"]) for x in specs} == {
+        (site, tone, direction)
+        for site in ("feature", "flank")
+        for tone in ("on", "detuned")
+        for direction in ("forward", "reverse")}
+    assert all(len(x["conditions"]) == 8 and x["shots"] == 400
+               for x in specs)
+    forward = next(x for x in specs if x["site"] == "feature" and
+                   x["tone"] == "on" and x["direction"] == "forward")
+    reverse = next(x for x in specs if x["site"] == "feature" and
+                   x["tone"] == "on" and x["direction"] == "reverse")
+    assert forward["order"] == [
+        "hold0p1_sham_g", "hold0p1_sham_e", "hold0p1_on_g", "hold0p1_on_e",
+        "hold2_sham_g", "hold2_sham_e", "hold2_on_g", "hold2_on_e"]
+    assert reverse["order"] == list(reversed(forward["order"]))
+
+
+def test_eight_condition_stream_keeps_each_hold_aligned_by_logical_shot():
+    module = experiment()
+    order = module.hold_alternating_specs(4.130)[0]["order"]
+    records = [module.resident.SingleIQ(i, -i) for i in range(24)]
+    split = module.split_records(records, order, shots=3)
+    assert [r.i for r in split["hold0p1_sham_g"]] == [0, 8, 16]
+    assert [r.i for r in split["hold2_on_e"]] == [7, 15, 23]
+    assert module.stream_dimensions(400, records_per_shot=8) == {
+        "total_shots": 400, "records_per_shot": 8,
+        "total_units": 400, "records_per_unit": 8}
+
+
+def test_eight_condition_program_streams_eight_records_per_shot(monkeypatch):
+    module = experiment()
+    captured = {}
+    def fake_base_init(self, _soccfg, cfg, _payload, _loop):
+        captured.update(cfg)
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__", fake_base_init)
+    cfgs = [{"ff_gain": -17000, "ff_park_gain": -25146,
+             "opx_resident_pre_us": 20.0, "opx_resident_post_us": hold,
+             "opx_resident_freq_mhz": 4135.0, "shots": 400, "reps": 400,
+             "opx_resident_gain": gain,
+             "opx_resident_preparation_state": state}
+            for hold in (0.1, 2.0)
+            for gain, state in ((0, "g"), (0, "e"), (6000, "g"), (6000, "e"))]
+    program = module.ShotAlternatingResidentProgram(None, cfgs, None, None)
+    assert program.conditions_per_shot == 8
+    assert captured["reps"] == 3200
+    events = []
+    program.cfg = {"qubit_ch": 1}
+    program.record_base, program.done_addr = 32, 1
+    program.ch_page = lambda *_: 0
+    program._declare_experiment = lambda: None
+    program._initialize_stream = lambda _controls, **kw: events.append(("stream", kw))
+    program._begin_park_lifecycle = lambda: None
+    program._end_park_lifecycle = lambda: None
+    program._emit_body = lambda: events.append(("emit", program.cfg["opx_resident_post_us"]))
+    program._stream_after_shot = lambda: events.append("boundary")
+    program._finish_stream = lambda: None
+    program.regwi = program.memwi = program.label = program.loopnz = program.end = lambda *_: None
+    program.mathi = lambda _page, _dst, _src, _op, value: events.append(("done", value))
+    monkeypatch.setattr(module, "_declare_common", lambda _p: None)
+    monkeypatch.setattr(module, "allocate_registers", lambda *_: {"address": 1})
+    monkeypatch.setattr(module, "_reserved_registers", lambda *_: set())
+    monkeypatch.setattr(module, "resident_control_names", lambda _cfg, names: names)
+    monkeypatch.setattr(module, "allocate_named_registers",
+                        lambda *_a, **_kw: {"shot_loop": 2, "done": 3})
+    program.make_program()
+    assert [event[1] for event in events if event[0] == "emit"] == [0.1] * 4 + [2.0] * 4
+    assert ("done", 8) in events
+    assert events.count("boundary") == 1
+    assert next(event[1] for event in events if event[0] == "stream")[
+        "records_per_unit"] == 8
+
+
+def test_hold_alternating_configs_use_the_posthold_of_each_subshot():
+    module = experiment()
+    entry = next(x for x in module.hold_alternating_specs(4.130)
+                 if x["site"] == "flank" and x["tone"] == "detuned")
+    cfgs = module.condition_configs({"sigma": 0.1}, entry,
+                                    {4.130: -100, 4.116: -123}, 4.130)
+    assert len(cfgs) == 8
+    assert [x["opx_resident_post_us"] for x in cfgs] == [0.1] * 4 + [2.0] * 4
+    assert {x["ff_gain"] for x in cfgs} == {-123}
+    assert {x["opx_resident_freq_mhz"] for x in cfgs} == {4106.0}
+
+
+def test_hold_alternating_plan_puts_short_and_long_probes_in_one_stream():
+    module = experiment()
+    plan = module.plan(hold_alternating=True)
+    assert plan["programs"] == 8
+    assert plan["conditions_per_shot"] == 8
+    assert plan["shots_per_program"] == 400
+    assert plan["post_drive_holds_us"] == [0.1, 2.0]
+    assert plan["sites"] == ["feature", "14-MHz lower flank"]
+
+
+def test_hold_alternating_scores_preserve_the_existing_loss_report_keys():
+    module = experiment()
+    entry = module.hold_alternating_specs(4.130)[0]
+    fractions = {
+        "hold0p1_sham_g": 0.10, "hold0p1_sham_e": 0.30,
+        "hold0p1_on_g": 0.20, "hold0p1_on_e": 0.40,
+        "hold2_sham_g": 0.10, "hold2_sham_e": 0.20,
+        "hold2_on_g": 0.15, "hold2_on_e": 0.18}
+    for cond in entry["conditions"]:
+        cond["excited_fraction_pre_axis"] = fractions[cond["name"]]
+    scores = module.program_scores([entry], hold_alternating=True)
+    assert scores["r0_feature_hold0p1_on"]["cold_drive_contrast"] == pytest.approx(0.10)
+    assert scores["r0_feature_hold2_on"]["hot_preparation_contrast"] == pytest.approx(0.10)
+    assert scores["r0_feature_hold2_on"]["hot_minus_cold_drive_change"] == pytest.approx(-0.07)

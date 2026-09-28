@@ -2502,3 +2502,42 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loss-check
 ```
+
+The loss comparison completed all 16 programs in
+`q3_pump_probe_shot_alternating_loss_20260928T055734Z_99fd68d3`.
+The feature persisted at 4.130/4.129 GHz, with dip depths 0.301/0.335;
+pre/post readout fidelities were 0.900/0.910. Both actual-site preliminary
+gain-6000 drive checks passed (on-tone excess +0.120 feature, +0.148 flank),
+and the transfer controls passed. All 25,600 science IQ records are present
+and reproduce the saved classifications. The prespecified feature-specific,
+tone-selective short-minus-long loss contrast was +0.195 forward and +0.110
+reverse. Within-program 20-shot block resampling gave approximate 95% ranges
+of [-0.040,+0.428] and [-0.115,+0.333] for the classified outcomes, before
+allowing for drift between programs. Unthresholded-IQ versions were +0.223
+and +0.059, also with ranges covering zero. The run's status is
+`complete_controls_unstable`: the reverse feature short-hold on-tone
+ground-drive contrast was +0.080, below the 0.10 gate.
+
+More importantly, the feature sham hot-minus-cold baseline in the forward
+on-tone programs rose from 0.150 at the 0.1-us hold to 0.368 at the 2-us
+hold. Physical relaxation alone cannot produce that rise. Those holds were
+separate QICK programs about a second apart, so fast baseline motion can
+contaminate their difference. The repeated positive sign is interesting but
+does not establish a pump-induced loss change or TLS saturation.
+
+The next sequence puts both holds in each logical QICK shot. Each program
+has eight complete resident visits and readouts: four sham/driven x hot/cold
+subshots at 0.1 us and four at 2 us. A reverse program flips both hold and
+condition order. Feature/flank and on-tone/detuned still require separate
+programs, giving eight 400-shot programs total, with the same raw-IQ,
+readout, transfer, scout, and control checks. This shortens the hold-pair
+comparison from seconds to milliseconds and directly tests whether the
+previous contrast survives better alternation. It remains a candidate bath
+response measurement, not a single-TLS identification.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --hold-alternating
+```

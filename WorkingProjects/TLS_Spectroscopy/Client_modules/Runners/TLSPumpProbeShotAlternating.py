@@ -54,14 +54,18 @@ def split_records(records, order, *, shots):
     records = list(records)
     if len(records) != int(shots) * len(order):
         raise ValueError(f"expected {int(shots) * len(order)} IQ records; got {len(records)}")
-    if len(order) != 4 or set(order) != set(CONDITION_NAMES):
+    expected = (set(CONDITION_NAMES) if len(order) == 4 else
+                {f"hold{hold:g}".replace(".", "p") + f"_{name}"
+                 for hold in LOSS_POSTHOLDS_US for name in CONDITION_NAMES}
+                if len(order) == 8 else set())
+    if set(order) != expected or len(order) != len(expected):
         raise ValueError("interleaved order must contain each condition exactly once")
-    return {name: records[index::4] for index, name in enumerate(order)}
+    return {name: records[index::len(order)] for index, name in enumerate(order)}
 
 
-def stream_dimensions(shots):
-    return {"total_shots": int(shots), "records_per_shot": 4,
-            "total_units": int(shots), "records_per_unit": 4}
+def stream_dimensions(shots, *, records_per_shot=4):
+    return {"total_shots": int(shots), "records_per_shot": int(records_per_shot),
+            "total_units": int(shots), "records_per_unit": int(records_per_shot)}
 
 
 def score_conditions(fractions):
@@ -116,6 +120,40 @@ def loss_program_specs(center_ghz):
     return result
 
 
+def hold_alternating_specs(center_ghz):
+    """Alternate the two loss-probe holds inside each hardware shot."""
+    center = float(center_ghz)
+    flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+    result = []
+    for repeat in (0, 1):
+        sites = (("feature", center), ("flank", flank))
+        tones = (("on", 5.0), ("detuned", -10.0))
+        holds = LOSS_POSTHOLDS_US
+        if repeat:
+            sites = tuple(reversed(sites))
+            tones = tuple(reversed(tones))
+            holds = tuple(reversed(holds))
+        direction = "reverse" if repeat else "forward"
+        for site, flux in sites:
+            for tone, detuning in tones:
+                condition_list = []
+                for hold in holds:
+                    prefix = f"hold{hold:g}".replace(".", "p")
+                    for base in conditions(flux, reverse=bool(repeat),
+                                           detuning_mhz=detuning):
+                        condition_list.append({**base, "base_name": base["name"],
+                                               "name": f"{prefix}_{base['name']}",
+                                               "post_drive_us": hold})
+                result.append({
+                    "name": f"r{repeat}_{site}_{tone}", "repeat": repeat,
+                    "direction": direction, "site": site, "flux_ghz": flux,
+                    "tone": tone, "detuning_mhz": detuning,
+                    "pre_drive_us": resident.PRE_DRIVE_US,
+                    "shots": LOSS_SHOTS, "order": [x["name"] for x in condition_list],
+                    "conditions": condition_list})
+    return result
+
+
 def loss_control_report(scores):
     """Check drive specificity and sham baselines at both probe holds."""
     groups = {}
@@ -164,6 +202,24 @@ def loss_effect_report(scores):
     return report
 
 
+def program_scores(entries, *, hold_alternating=False):
+    scores = {}
+    for entry in entries:
+        if hold_alternating:
+            for hold in LOSS_POSTHOLDS_US:
+                hold_label = f"hold{hold:g}".replace(".", "p")
+                fractions = {c["base_name"]: c["excited_fraction_pre_axis"]
+                             for c in entry["conditions"]
+                             if c["post_drive_us"] == hold}
+                scores[f"r{entry['repeat']}_{entry['site']}_{hold_label}_"
+                       f"{entry['tone']}"] = score_conditions(fractions)
+        else:
+            fractions = {c["name"]: c["excited_fraction_pre_axis"]
+                         for c in entry["conditions"]}
+            scores[entry["name"]] = score_conditions(fractions)
+    return scores
+
+
 def usable_loading_times(scores):
     """Select preholds with repeatable hot preparation and local drive response."""
     usable = []
@@ -192,7 +248,7 @@ def condition_configs(base, entry, dc_lookup, center_ghz):
                "drive_mhz": cond["drive_mhz"], "gain": cond["gain"],
                "preparation_state": cond["preparation_state"],
                "pre_drive_us": entry["pre_drive_us"],
-               "post_drive_us": entry["post_drive_us"],
+               "post_drive_us": cond.get("post_drive_us", entry.get("post_drive_us")),
                "shots": entry.get("shots", SHOTS)}, dc_lookup)
             for cond in entry["conditions"]]
 
@@ -208,27 +264,37 @@ def drive_check_gate(score, *, loading_check):
 
 
 class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
-    """Four complete resident-probe subshots per streamed hardware shot."""
+    """Four or eight complete resident-probe subshots per hardware shot."""
 
     def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
         configs = [dict(cfg) for cfg in condition_cfgs]
-        if len(configs) != 4:
-            raise ValueError("four condition configurations are required")
+        if len(configs) not in (4, 8):
+            raise ValueError("four or eight condition configurations are required")
+        self.conditions_per_shot = len(configs)
         common = ("ff_gain", "ff_park_gain", "opx_resident_pre_us",
-                  "opx_resident_post_us", "opx_resident_freq_mhz", "shots", "reps")
+                  "opx_resident_freq_mhz", "shots", "reps")
+        if self.conditions_per_shot == 4:
+            common += ("opx_resident_post_us",)
         if any(any(cfg[key] != configs[0][key] for key in common)
                for cfg in configs[1:]):
             raise ValueError("interleaved conditions must share flux, timing, frequency, shots")
-        expected = {(0, "g"), (0, "e"), (6000, "g"), (6000, "e")}
-        observed = {(int(cfg["opx_resident_gain"]),
-                     cfg["opx_resident_preparation_state"]) for cfg in configs}
+        expected = ({(0, "g"), (0, "e"), (6000, "g"), (6000, "e")}
+                    if self.conditions_per_shot == 4 else
+                    {(hold, gain, state) for hold in LOSS_POSTHOLDS_US
+                     for gain in (0, 6000) for state in ("g", "e")})
+        observed = ({(int(cfg["opx_resident_gain"]),
+                      cfg["opx_resident_preparation_state"]) for cfg in configs}
+                    if self.conditions_per_shot == 4 else
+                    {(float(cfg["opx_resident_post_us"]),
+                      int(cfg["opx_resident_gain"]),
+                      cfg["opx_resident_preparation_state"]) for cfg in configs})
         if observed != expected:
-            raise ValueError("interleaved conditions must be sham/on crossed with g/e")
+            raise ValueError("interleaved conditions must cover sham/on, g/e, and holds")
         self.logical_shots = int(configs[0]["shots"])
         if self.logical_shots <= 0:
             raise ValueError("logical shot count must be positive")
         self.condition_cfgs = configs
-        run_cfg = dict(configs[0], reps=4 * self.logical_shots)
+        run_cfg = dict(configs[0], reps=self.conditions_per_shot * self.logical_shots)
         super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
 
     def make_program(self):
@@ -246,7 +312,8 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
         self.regwi(0, controls["shot_loop"], self.logical_shots - 1)
-        self._initialize_stream(controls, **stream_dimensions(self.logical_shots),
+        self._initialize_stream(controls, **stream_dimensions(
+            self.logical_shots, records_per_shot=len(self.condition_cfgs)),
                                 prefix="Q3_INTERLEAVED_RESIDENT")
         self._begin_park_lifecycle()
         self.label("Q3_INTERLEAVED_SHOT_LOOP")
@@ -256,7 +323,8 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
             self._emit_body()
         self.cfg = base_cfg
         # The acquisition reader checks completed *records*, not logical shots.
-        self.mathi(0, controls["done"], controls["done"], "+", 4)
+        self.mathi(0, controls["done"], controls["done"], "+",
+                   len(self.condition_cfgs))
         self.memwi(0, controls["done"], self.done_addr)
         self._stream_after_shot()
         self.loopnz(0, controls["shot_loop"], "Q3_INTERLEAVED_SHOT_LOOP")
@@ -265,9 +333,26 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
         self.end()
 
 
-def plan(*, loading_check=False, loss_check=False):
-    if loading_check and loss_check:
+def plan(*, loading_check=False, loss_check=False, hold_alternating=False):
+    if sum((bool(loading_check), bool(loss_check), bool(hold_alternating))) > 1:
         raise ValueError("select at most one check mode")
+    if hold_alternating:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "test short/long loss with both holds in each QICK shot",
+                "sites": ["feature", "14-MHz lower flank"],
+                "pre_drive_us": resident.PRE_DRIVE_US,
+                "post_drive_holds_us": list(LOSS_POSTHOLDS_US),
+                "tones_mhz": [5.0, -10.0], "drive_gain_dac": 6000,
+                "programs": 8, "conditions_per_shot": 8,
+                "shots_per_program": LOSS_SHOTS, "raw_iq_saved": True,
+                "fresh_drive_check_arms": 8,
+                "weak_drive_check_policy": "record and continue; each program measures its own drive control",
+                "full_return_before_each_readout_us": 40.0,
+                "inter_shot_delay_us": 500.0,
+                "calibration_session": probe.CALIBRATION_SESSION_ID,
+                "note": "Each logical shot contains both holds with sham/driven and hot/cold "
+                        "conditions. The same tone/flank-subtracted statistic and controls "
+                        "as the prior loss run apply. A response is not proof of one TLS."}
     if loss_check:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "compare target-resident drive-induced short/long loss",
@@ -320,9 +405,10 @@ def plan(*, loading_check=False, loss_check=False):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        loading_check=False, loss_check=False):
-    if loading_check and loss_check:
+        loading_check=False, loss_check=False, hold_alternating=False):
+    if sum((bool(loading_check), bool(loss_check), bool(hold_alternating))) > 1:
         raise ValueError("select at most one check mode")
+    loss_mode = loss_check or hold_alternating
     data_root = Path(data_root)
     calibration_path, calibration = probe.checked_calibration(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -354,7 +440,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
         flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
-        grid = np.asarray([center, flank] if loss_check else [center], dtype=float)
+        grid = np.asarray([center, flank] if loss_mode else [center], dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
@@ -380,17 +466,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         preholds = LOADING_PREHOLDS_US if loading_check else (
             resident.TRANSFER_PRE_US, resident.PRE_DRIVE_US)
         for pre in preholds:
-            holds = LOSS_POSTHOLDS_US if loss_check and pre == resident.PRE_DRIVE_US else (
+            holds = LOSS_POSTHOLDS_US if loss_mode and pre == resident.PRE_DRIVE_US else (
                 resident.POST_DRIVE_US,)
             for post in holds:
                 before, after, recovery = resident.resident_segments(
                     compensation, pre_us=pre + ff_pulse.flux_settle_us(base),
                     pulse_us=pulse_us, post_us=post, recovery_us=40.0)
-                key = f"{pre:g}/{post:g}" if loss_check else str(pre)
+                key = f"{pre:g}/{post:g}" if loss_mode else str(pre)
                 windows[key] = {"held_multiplier": before[-1][0],
                                 "post_multiplier": after[0][0],
                                 "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = (("q3_pump_probe_shot_alternating_loss_" if loss_check else
+        session_id = (("q3_pump_probe_hold_alternating_loss_" if hold_alternating else
+                       "q3_pump_probe_shot_alternating_loss_" if loss_check else
                        "q3_pump_probe_shot_alternating_loading_" if loading_check
                        else "q3_pump_probe_shot_alternating_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
@@ -403,11 +490,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
         drive_checks = (probe.carryover_drive_checks(center, flank)
-                        if loss_check else fresh_drive_arms(center))
+                        if loss_mode else fresh_drive_arms(center))
         if loading_check:
             for arm in drive_checks:
                 arm["pre_drive_us"] = 8.0
-        program_specs = (loss_program_specs(center) if loss_check else
+        program_specs = (hold_alternating_specs(center) if hold_alternating else
+                         loss_program_specs(center) if loss_check else
                          loading_program_specs(center) if loading_check else [
             {"name": direction, "direction": direction,
              "pre_drive_us": resident.PRE_DRIVE_US,
@@ -415,7 +503,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
              "order": [c["name"] for c in order], "conditions": order}
             for direction, order in (("forward", conditions(center)),
                                      ("reverse", conditions(center, reverse=True)))])
-        manifest = {"schema": ("q3.pump-probe-shot-alternating-loss.v1"
+        manifest = {"schema": ("q3.pump-probe-hold-alternating-loss.v1"
+                               if hold_alternating else
+                               "q3.pump-probe-shot-alternating-loss.v1"
                                if loss_check else
                                "q3.pump-probe-shot-alternating-loading.v1"
                                if loading_check else
@@ -426,10 +516,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
                     "scout_csv": str(scout), "selected": selected,
-                    "center_ghz": center, "flank_ghz": flank if loss_check else None,
+                    "center_ghz": center, "flank_ghz": flank if loss_mode else None,
                     "dc_gain": int(dc[0]), "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(loading_check=loading_check, loss_check=loss_check),
+                    "plan": plan(loading_check=loading_check, loss_check=loss_check,
+                                 hold_alternating=hold_alternating),
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
@@ -444,7 +535,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         try:
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
-            # Build every four-condition program before the first readout.
+            # Build every interleaved program before the first readout.
             programs = {}
             for entry in manifest["programs"]:
                 cfgs = condition_configs(base, entry, dc_lookup, center)
@@ -513,7 +604,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 arm["excited_fraction_pre_axis"] = resident.classify(records, axis)
                 arm["status"] = "complete"
                 protocol.checkpoint(path, manifest)
-            if loss_check:
+            if loss_mode:
                 manifest["fresh_drive_score"] = {
                     site: probe.evaluate_drive_check({
                         a["tone"]: a["excited_fraction_pre_axis"]
@@ -541,14 +632,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             for entry in manifest["programs"]:
                 name = entry["name"]
                 shots = int(entry.get("shots", SHOTS))
-                print(f"[shot-alternating] {name} {shots} x 4 conditions", flush=True)
+                n_conditions = len(entry["conditions"])
+                print(f"[shot-alternating] {name} {shots} x {n_conditions} conditions",
+                      flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 start = time.monotonic()
                 entry["acquisition_started_at_utc"] = datetime.now(timezone.utc).isoformat()
                 records = _run_program(
                     soc, programs[name],
-                    max(30.0, 4.0 * _block_timeout_s(base, shots)),
+                    max(30.0, n_conditions * _block_timeout_s(base, shots)),
                     base, total_shots=shots)
                 entry["acquisition_elapsed_s"] = time.monotonic() - start
                 entry["acquisition_finished_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -577,11 +670,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             for item in manifest["transfer_control"].values():
                 item["usable"] = resident.transfer_usable(item["ground"],
                                                            item["excited"])
-            order_scores = {}
-            for entry in manifest["programs"]:
-                x = {c["name"]: c["excited_fraction_pre_axis"]
-                     for c in entry["conditions"]}
-                order_scores[entry["name"]] = score_conditions(x)
+            order_scores = program_scores(manifest["programs"],
+                                          hold_alternating=hold_alternating)
             manifest["order_scores"] = order_scores
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
@@ -599,7 +689,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             controls_valid = (manifest["post_readout_score"]["valid"] and
                               all(x["usable"] for x in manifest["transfer_control"].values()) and
                               manifest["feature_stable"])
-            if loss_check:
+            if loss_mode:
                 manifest["loss_control_report"] = loss_control_report(order_scores)
                 manifest["loss_effect_report"] = loss_effect_report(order_scores)
                 valid = controls_valid and manifest["loss_control_report"]["usable"]
@@ -635,13 +725,16 @@ def main(argv=None):
     check_mode = parser.add_mutually_exclusive_group()
     check_mode.add_argument("--loading-check", action="store_true")
     check_mode.add_argument("--loss-check", action="store_true")
+    check_mode.add_argument("--hold-alternating", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(loading_check=args.loading_check,
-                              loss_check=args.loss_check), indent=2))
+                              loss_check=args.loss_check,
+                              hold_alternating=args.hold_alternating), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            loading_check=args.loading_check, loss_check=args.loss_check)
+            loading_check=args.loading_check, loss_check=args.loss_check,
+            hold_alternating=args.hold_alternating)
     return 0
 
 
