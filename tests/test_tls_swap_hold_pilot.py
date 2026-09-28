@@ -98,3 +98,78 @@ def test_post_scout_tracks_same_upper_feature_not_whichever_dip_is_deepest():
     pre = module.select_anchored_feature(scout_rows())
     post = module.select_anchored_feature(scout_rows())
     assert module.feature_stable(pre, post)
+
+
+def wide_scout_rows(*, other_feature=True, poor_control=False):
+    rows = []
+    for index in range(251):
+        frequency = round(3.800 + .002 * index, 3)
+        survival = .8
+        if frequency in (4.100, 4.102, 4.104):
+            survival = .2  # The already tested feature is excluded.
+        if other_feature and frequency in (4.046, 4.050):
+            survival = .5
+        if other_feature and frequency == 4.048:
+            survival = .2
+        if poor_control and frequency in (4.060, 4.062, 4.064):
+            survival = .38
+        row = {"target_frequency_ghz": f"{frequency:.3f}"}
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row["P0" + suffix] = ".1"
+            row["P1" + suffix] = ".9"
+            row["Ps_25us" + suffix] = str(.1 + .8 * survival)
+        rows.append(row)
+    return rows
+
+
+def test_wide_selector_finds_new_isolated_candidate_with_clean_control():
+    selected = experiment().select_wide_candidate(wide_scout_rows())
+    assert selected["center_ghz"] == 4.048
+    assert selected["control_ghz"] == 4.062
+    assert selected["depth"] >= .15
+
+
+def test_wide_selector_rejects_known_band_and_missing_candidate():
+    with pytest.raises(ValueError, match="outside"):
+        experiment().select_wide_candidate(wide_scout_rows(other_feature=False))
+
+
+def test_wide_selector_tracks_same_candidate_in_post_scout():
+    module = experiment()
+    selected = module.select_wide_candidate(wide_scout_rows())
+    post = module.select_wide_candidate(wide_scout_rows(),
+                                        preferred_center=selected["center_ghz"])
+    assert module.feature_stable(selected, post)
+
+
+def test_wide_selector_rejects_incomplete_frequency_pass():
+    with pytest.raises(ValueError, match="complete"):
+        experiment().select_wide_candidate(wide_scout_rows()[:-1])
+
+
+def test_wide_selector_prefers_sharp_candidate_over_broad_loss_band():
+    rows = wide_scout_rows()
+    for row in rows:
+        f = float(row["target_frequency_ghz"])
+        if f in (4.000, 4.002, 4.004, 4.006, 4.008):
+            survival = .25
+        elif f in (4.046, 4.050):
+            survival = .55
+        elif f == 4.048:
+            survival = .20
+        else:
+            continue
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row["Ps_25us" + suffix] = str(.1 + .8 * survival)
+    selected = experiment().select_wide_candidate(rows)
+    assert selected["center_ghz"] == 4.048
+
+
+def test_wide_candidate_plan_runs_direct_exchange_trace(capsys):
+    import json
+    assert experiment().main(["--plan", "--wide-candidate"]) == 0
+    description = json.loads(capsys.readouterr().out)
+    assert description["wide_candidate"] is True
+    assert description["pre_and_post_scout_frequencies"] == 251
+    assert description["programs"] == 88
+    assert description["reset_mode"] == "passive"

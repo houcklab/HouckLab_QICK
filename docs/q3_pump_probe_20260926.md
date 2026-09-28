@@ -3595,3 +3595,37 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSTwoVisitMemory --run --confirm
 ```
+
+The within-shot confirmation completed at
+`q3_tls_two_visit_memory_confirm_20260928T204426Z_33753877`.
+All four 1200-shot blocks, 16 conditions per block, completed; pre/post
+readout fidelities were 0.909/0.898 and transfer controls passed.
+The loss center moved from 4.102 to 4.105 GHz, beyond the preregistered
+2-MHz stability gate. The blockwise classified 10-minus-40-µs log
+interactions were −0.146, −0.201, +0.325, and −0.064, averaging −0.022.
+A paired shot bootstrap gave an exploratory 95% interval of
+[−0.188, +0.148]. The unthresholded-IQ mean was −0.030 with interval
+[−0.206, +0.153]. There is no replicated memory or energy-return
+effect in this protocol; the earlier 10-µs hint should be dropped.
+
+Further repetitions of pump–probe on this 4.10-GHz loss feature are not
+justified by these data: it is a robust loss channel but has shown no
+repeatable saturation, coherent swap, or loaded-state memory. The next
+direct TLS-control attempt moves to a **different** candidate rather
+than tracking this feature's drift. `TLSSwapHoldPilot --wide-candidate`
+first acquires one 3.8–4.3-GHz passive scout, then selects an isolated,
+sharp dip outside 4.080–4.190 GHz with a clean ±14-MHz control in both
+scan directions. In the September 27 wide data this rule would select
+the separate 4.048-GHz dip, but the run uses the freshly measured
+location. It immediately performs the existing 0.1–6-µs g/e swap-hold
+trace at that candidate and control, with forward and reverse order,
+raw IQ, readout/transfer references, and a post wide scout. A feature-
+local, reproducible **nonmonotonic** trace would motivate a swap
+chevron; monotonic loss alone will not be called a controlled TLS.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run --wide-candidate
+```

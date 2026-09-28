@@ -9,6 +9,7 @@ qubit-TLS exchange. No pump, active reset, or target microwave pulse is used.
 """
 
 import argparse
+import csv
 from datetime import datetime, timezone
 import json
 import math
@@ -160,6 +161,83 @@ def choose_feature(rows, *, follow_moving_dip=False, preferred_center=None):
     return select_anchored_feature(rows, preferred_center=preferred_center)
 
 
+def read_wide_scout(path):
+    if path is None:
+        raise RuntimeError("wide scout completed without a CSV")
+    with Path(path).open(newline="", encoding="utf-8") as stream:
+        return list(csv.DictReader(stream))
+
+
+def select_wide_candidate(rows, *, preferred_center=None):
+    """Find an isolated bidirectional loss dip outside the tested 4.1-GHz band."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    expected = {round(3.800 + .002 * i, 3) for i in range(251)}
+    if len(rows) != 251 or set(indexed) != expected:
+        raise ValueError("wide candidate needs one complete 251-point pass")
+    candidates = []
+    for center in sorted(indexed):
+        if 4.080 <= center <= 4.190:
+            continue
+        if (preferred_center is not None and
+                abs(center - float(preferred_center)) > .004001):
+            continue
+        immediate = [adaptive._survival(indexed[round(center + .002 * i, 3)])
+                     for i in (-1, 0, 1)
+                     if round(center + .002 * i, 3) in indexed]
+        if (len(immediate) != 3 or
+                not all(math.isfinite(value) for value in immediate) or
+                min(immediate[0], immediate[2]) - immediate[1] < .08):
+            continue
+        groups = {
+            "feature": [round(center + .002 * i, 3) for i in (-1, 0, 1)],
+            "left": [round(center - .002 * i, 3) for i in (4, 5, 6)],
+            "right": [round(center + .002 * i, 3) for i in (4, 5, 6)],
+        }
+        if any(f not in indexed for fs in groups.values() for f in fs):
+            continue
+        for offset in (.014, -.014):
+            control = round(center + offset, 3)
+            site_groups = {**groups,
+                           "control": [round(control + .002 * i, 3)
+                                       for i in (-1, 0, 1)]}
+            if any(f not in indexed for fs in site_groups.values()
+                   for f in fs):
+                continue
+            depths, advantages = {}, {}
+            for direction in ("", "up", "down"):
+                values = {name: [adaptive._survival(indexed[f], direction)
+                                 for f in fs]
+                          for name, fs in site_groups.items()}
+                if any(not math.isfinite(v) for vs in values.values()
+                       for v in vs):
+                    break
+                feature = mean(values["feature"])
+                depths[direction or "combined"] = min(
+                    median(values["left"]), median(values["right"])) - feature
+                advantages[direction or "combined"] = (
+                    mean(values["control"]) - feature)
+            if (len(depths) != 3 or depths["combined"] < .15 or
+                    min(depths["up"], depths["down"]) < .08 or
+                    min(advantages.values()) < .15):
+                continue
+            candidates.append({"center_ghz": center, "control_ghz": control,
+                               "anchor_ghz": (float(preferred_center)
+                                              if preferred_center is not None
+                                              else center),
+                               "control_offset_ghz": offset,
+                               "depth": depths["combined"],
+                               "depth_scan_up": depths["up"],
+                               "depth_scan_down": depths["down"],
+                               "control_survival_advantage": advantages,
+                               "selector": "wide_isolated_swap_candidate"})
+    if not candidates:
+        raise ValueError("no qualified loss outside the previously tested band")
+    return max(candidates, key=lambda x: (min(x["depth_scan_up"],
+                                              x["depth_scan_down"]),
+                                          x["depth"]))
+
+
 def program_specs(feature_ghz, control_ghz):
     specs = []
     for repeat in (0, 1):
@@ -224,12 +302,17 @@ def arm_config(base, arm, dc_lookup):
     return cfg
 
 
-def plan(*, follow_moving_dip=False):
+def plan(*, follow_moving_dip=False, wide_candidate=False):
     return {"hardware_access": False, "reset_mode": "passive",
+            "wide_candidate": bool(wide_candidate),
+            "pre_and_post_scout_frequencies": 251 if wide_candidate else 81,
             "feature": ("fresh qualified lower-band trough, 4.105–4.134 GHz"
                         if follow_moving_dip else
+                        "fresh isolated trough outside 4.080–4.190 GHz"
+                        if wide_candidate else
                         "anchored upper loss near 4.144 GHz, else lower near 4.127 GHz"),
-            "control_offset_mhz": (-14 if follow_moving_dip else
+            "control_offset_mhz": ("clean ±14" if wide_candidate else
+                                   -14 if follow_moving_dip else
                                    "upper +14; lower -14"),
             "dwell_us": list(HOLDS_US),
             "orders": ["forward", "reverse"],
@@ -242,15 +325,23 @@ def plan(*, follow_moving_dip=False):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        follow_moving_dip=False):
+        follow_moving_dip=False, wide_candidate=False):
+    if wide_candidate and follow_moving_dip:
+        raise ValueError("select one swap-hold candidate mode")
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    scout_parameters = (wide.parameters() if wide_candidate else
+                        adaptive.scout_parameters(phase="pre"))
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_SwapHold_Pilot_Scout_pre"})
-    selected = choose_feature(adaptive.read_scout(scout),
-                              follow_moving_dip=follow_moving_dip)
+        parameter_overrides={**scout_parameters,
+                             "output_suffix": ("TLS_SwapHold_Wide_Candidate_Scout_pre"
+                                               if wide_candidate else
+                                               "TLS_SwapHold_Pilot_Scout_pre")})
+    selected = (select_wide_candidate(read_wide_scout(scout))
+                if wide_candidate else
+                choose_feature(adaptive.read_scout(scout),
+                               follow_moving_dip=follow_moving_dip))
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[swap-hold] feature={center:.3f} GHz; clean "
           f"control={control:.3f} GHz", flush=True)
@@ -294,7 +385,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_swap_hold_moving_trace_" if follow_moving_dip
+        session_id = (("q3_tls_swap_hold_wide_candidate_" if wide_candidate
+                       else "q3_tls_swap_hold_moving_trace_" if follow_moving_dip
                        else "q3_tls_swap_hold_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
@@ -305,7 +397,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-swap-hold-moving-trace.v1"
+        manifest = {"schema": ("q3.tls-swap-hold-wide-candidate.v1"
+                               if wide_candidate else
+                               "q3.tls-swap-hold-moving-trace.v1"
                                if follow_moving_dip else "q3.tls-swap-hold.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
@@ -314,7 +408,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-                    "plan": plan(follow_moving_dip=follow_moving_dip),
+                    "plan": plan(follow_moving_dip=follow_moving_dip,
+                                 wide_candidate=wide_candidate),
                     "references": refs,
                     "programs": program_specs(center, control)}
         protocol.checkpoint(path, manifest)
@@ -428,16 +523,25 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                         str(hold): by_key[(hold, "e")] - by_key[(hold, "g")]
                         for hold in HOLDS_US}
             manifest["survival_contrasts"] = contrasts
+            post_parameters = (wide.parameters() if wide_candidate else
+                               adaptive.scout_parameters(phase="post"))
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_SwapHold_Pilot_Scout_post"})
+                parameter_overrides={**post_parameters,
+                                     "output_suffix": (
+                                         "TLS_SwapHold_Wide_Candidate_Scout_post"
+                                         if wide_candidate else
+                                         "TLS_SwapHold_Pilot_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = choose_feature(
-                    adaptive.read_scout(post_scout),
-                    follow_moving_dip=follow_moving_dip,
-                    preferred_center=selected["anchor_ghz"])
+                manifest["post_selected"] = (
+                    select_wide_candidate(
+                        read_wide_scout(post_scout),
+                        preferred_center=selected["anchor_ghz"])
+                    if wide_candidate else
+                    choose_feature(adaptive.read_scout(post_scout),
+                                   follow_moving_dip=follow_moving_dip,
+                                   preferred_center=selected["anchor_ghz"]))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
@@ -470,12 +574,16 @@ def main(argv=None):
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--follow-moving-dip", action="store_true",
                         help="trace a freshly located lower-band loss dip")
+    parser.add_argument("--wide-candidate", action="store_true",
+                        help="search 3.8–4.3 GHz for a new isolated swap candidate")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(follow_moving_dip=args.follow_moving_dip), indent=2))
+        print(json.dumps(plan(follow_moving_dip=args.follow_moving_dip,
+                              wide_candidate=args.wide_candidate), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            follow_moving_dip=args.follow_moving_dip)
+            follow_moving_dip=args.follow_moving_dip,
+            wide_candidate=args.wide_candidate)
     return 0
 
 
