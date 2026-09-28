@@ -2491,8 +2491,10 @@ preliminary check cannot terminate the comparison. The prespecified effect
 is the driven-minus-sham hot/cold loss between 0.1 and 2 us, subtracting
 the detuned and flank responses separately in each order. Readout,
 short-return, feature-stability, on-tone response, detuned response, and
-sham-baseline agreement gates remain explicit in the manifest. A selective
-effect would be a candidate bath response, not proof of one TLS.
+sham-baseline agreement gates remain explicit in the manifest at both holds.
+The 2-us sham hot contrast must remain at least 0.05 to avoid a floor, but
+the driven 2-us contrast may decay. A selective effect would be a candidate
+bath response, not proof of one TLS.
 
 On the measurement PC after stopping other acquisitions:
 

@@ -214,11 +214,37 @@ def test_loss_controls_reject_detuned_drive_and_sham_baseline_motion():
             scores[f"r{repeat}_{site}_hold0p1_detuned"] = {
                 "cold_drive_contrast": 0.02,
                 "hot_preparation_contrast": 0.24}
+            scores[f"r{repeat}_{site}_hold2_on"] = {
+                "cold_drive_contrast": 0.07,
+                "hot_preparation_contrast": 0.12}
+            scores[f"r{repeat}_{site}_hold2_detuned"] = {
+                "cold_drive_contrast": 0.02,
+                "hot_preparation_contrast": 0.11}
     assert module.loss_control_report(scores)["usable"]
     scores["r0_feature_hold0p1_detuned"]["cold_drive_contrast"] = 0.17
     assert not module.loss_control_report(scores)["usable"]
     scores["r0_feature_hold0p1_detuned"]["cold_drive_contrast"] = 0.02
     scores["r1_flank_hold0p1_detuned"]["hot_preparation_contrast"] = 0.01
+    assert not module.loss_control_report(scores)["usable"]
+
+
+def test_loss_controls_reject_a_long_hold_floor_or_detuned_response():
+    module = experiment()
+    scores = {}
+    for repeat in (0, 1):
+        for site in ("feature", "flank"):
+            for hold in ("0p1", "2"):
+                scores[f"r{repeat}_{site}_hold{hold}_on"] = {
+                    "cold_drive_contrast": 0.20,
+                    "hot_preparation_contrast": 0.25}
+                scores[f"r{repeat}_{site}_hold{hold}_detuned"] = {
+                    "cold_drive_contrast": 0.02,
+                    "hot_preparation_contrast": 0.24}
+    assert module.loss_control_report(scores)["usable"]
+    scores["r1_feature_hold2_on"]["hot_preparation_contrast"] = 0.0
+    assert not module.loss_control_report(scores)["usable"]
+    scores["r1_feature_hold2_on"]["hot_preparation_contrast"] = 0.12
+    scores["r0_flank_hold2_detuned"]["cold_drive_contrast"] = 0.15
     assert not module.loss_control_report(scores)["usable"]
 
 

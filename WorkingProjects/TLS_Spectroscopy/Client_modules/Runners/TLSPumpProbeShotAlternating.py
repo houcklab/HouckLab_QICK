@@ -1,10 +1,11 @@
-"""Small hardware pilot for shot-alternating target-resident pump/probe.
+"""Shot-alternating target-resident pump/probe and timing controls.
 
 Each hardware shot contains four complete park-preparation, corrected target
 visit, return, and readout sequences. Cold/hot and sham/on conditions are
 therefore separated by milliseconds inside one compiled program, rather than
 by separate Python acquisitions. Forward and reverse orders diagnose
-condition-order carryover. This is a sequencing pilot, not a TLS claim.
+condition-order carryover. Optional modes compare loading time or short/long
+loss at the feature and flank. None of these alone establishes a TLS claim.
 """
 
 import argparse
@@ -116,25 +117,28 @@ def loss_program_specs(center_ghz):
 
 
 def loss_control_report(scores):
-    """Require on-tone response and stable, weak detuned controls at short hold."""
+    """Check drive specificity and sham baselines at both probe holds."""
     groups = {}
     for repeat in (0, 1):
         for site in ("feature", "flank"):
-            on = scores[f"r{repeat}_{site}_hold0p1_on"]
-            detuned = scores[f"r{repeat}_{site}_hold0p1_detuned"]
-            groups[f"r{repeat}_{site}"] = {
-                "on_cold_drive_contrast": on["cold_drive_contrast"],
-                "detuned_cold_drive_contrast": detuned["cold_drive_contrast"],
-                "on_sham_hot_contrast": on["hot_preparation_contrast"],
-                "detuned_sham_hot_contrast": detuned["hot_preparation_contrast"],
-                "sham_hot_spread": abs(on["hot_preparation_contrast"] -
-                                       detuned["hot_preparation_contrast"]),
-                "usable": bool(on["cold_drive_contrast"] >= 0.10 and
-                               abs(detuned["cold_drive_contrast"]) <= 0.10 and
-                               min(on["hot_preparation_contrast"],
-                                   detuned["hot_preparation_contrast"]) >= 0.10 and
-                               abs(on["hot_preparation_contrast"] -
-                                   detuned["hot_preparation_contrast"]) <= 0.20)}
+            for hold in ("0p1", "2"):
+                on = scores[f"r{repeat}_{site}_hold{hold}_on"]
+                detuned = scores[f"r{repeat}_{site}_hold{hold}_detuned"]
+                hot_floor = 0.10 if hold == "0p1" else 0.05
+                spread = abs(on["hot_preparation_contrast"] -
+                             detuned["hot_preparation_contrast"])
+                groups[f"r{repeat}_{site}_hold{hold}"] = {
+                    "on_cold_drive_contrast": on["cold_drive_contrast"],
+                    "detuned_cold_drive_contrast": detuned["cold_drive_contrast"],
+                    "on_sham_hot_contrast": on["hot_preparation_contrast"],
+                    "detuned_sham_hot_contrast": detuned["hot_preparation_contrast"],
+                    "sham_hot_spread": spread, "minimum_sham_hot_contrast": hot_floor,
+                    "usable": bool((hold != "0p1" or
+                                    on["cold_drive_contrast"] >= 0.10) and
+                                   abs(detuned["cold_drive_contrast"]) <= 0.10 and
+                                   min(on["hot_preparation_contrast"],
+                                       detuned["hot_preparation_contrast"]) >= hot_floor and
+                                   spread <= 0.20)}
     return {"groups": groups,
             "usable": all(group["usable"] for group in groups.values())}
 
