@@ -2580,3 +2580,48 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulationCalibration --run
 ```
+
+The calibration completed at
+`q3_flux_modulation_calibration_20260928T063011Z_63ebbcfd` with status
+`complete`. The loss feature remained at 4.136/4.135 GHz (pre/post depths
+0.405/0.510). The corrected flank was 4.122 GHz. The pre/post park-readout
+fidelities were 0.915/0.884, and the unmodulated carrier was 4.126 GHz,
+with initial/repeated excess excitation 0.304/0.248. The compiled flux
+waveform had 5,504 samples, 24 complete cycles in 0.79985 us at 30.0056 MHz,
+and a safe -17,742..-14,542 DAC range for the 1,600-DAC flank arm.
+
+The calibration spectra show a substantial AC response. At the carrier,
+classified excited fraction was 0.397 (AC off), 0.222 (800 DAC), and 0.135
+(1,600 DAC). At 4.094 GHz, the corresponding fractions were
+0.105/0.212/0.183, and at 4.154 GHz they were 0.092/0.180/0.150. The
+projected raw-IQ means change in the same directions. These are nearly
+symmetric first-sideband responses about the carrier, though the maxima
+shift by about 2 MHz from nominal ±30-MHz positions; the 1,600-DAC peak may
+lie partly outside the five-point sideband window. The strong carrier
+suppression does not by itself give an exact in situ modulation amplitude or
+prove that the target loss feature will be suppressed.
+
+The next bounded test interleaves AC off/on within each logical QICK shot.
+Each of eight 4,000-shot programs has short/6-us target holds crossed with
+off/on modulation and park-prepared ground/excited states, in forward and
+reverse orders at the fresh feature and its 14-MHz lower flank. The on arms
+use 800 or 1,600 DAC AC waveforms whose slowly varying DC baseline follows
+the pinned correction; off arms play that correction without the sinusoid.
+Every subshot receives a complete corrected 40-us return before readout.
+The runner sets the compiled park-ramp envelope to 1 us so two ramp
+envelopes plus both AC holds fit q3's 65,536-sample generator memory. The
+resident sequence uses hard flux steps and does not play those park ramps;
+the AC on/off arms share the same actual park and target timing. A preflight
+records the full envelope-memory accounting before any acquisition.
+The predeclared effect is the modulation-induced change in hot-minus-cold
+survival from 0.1 to 6 us, then feature-minus-flank. Ground response,
+preparation contrast, readout, transfer, and feature-stability controls
+remain explicit. A selective response is only a candidate bath effect, not
+proof of one TLS or a microscopic saturation mechanism.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run
+```
