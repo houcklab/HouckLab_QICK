@@ -3302,3 +3302,47 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --paired-tone-dynamics
 ```
+
+The paired-tone dynamics run completed at
+`q3_pump_probe_paired_tone_dynamics_20260928T181326Z_e820cfd9`.
+All sixteen 16-condition programs completed, and pre/post scouts both
+located the main loss center at 4.106 GHz. The loss depth changed from
+0.427 to 0.590; readout and transfer controls passed. The fresh gain-20000
+drive had excited-fraction response +0.0875 at the feature (below the
+0.10 threshold) and +0.1125 at the flank. Within-program feature cold-drive
+responses were +0.090–0.134 at 1.5 us; off-tone responses stayed near
+zero. Only one of eight feature/flank cycle pairs passed every prespecified
+drive and preparation gate. The feature-specific normalized pump statistic
+by cycle was -0.330, +0.361, -0.113, +0.146, +0.140, -0.377, +0.311,
+and +0.049: no reproducible sign. Continuous-IQ estimates also change
+sign. A non-normalized, tone- and flank-subtracted four-way contrast
+averaged -0.035 classified and -0.032 in reference-normalized IQ units;
+neither establishes the sought positive saturation effect.
+
+The short-time loss baseline itself varied locally: the feature's 1.5-us
+sham hot-minus-ground contrast ranged from +0.130 to +0.282, while the
+flank's corresponding on-tone contrast stayed around +0.41–0.46. The
+feature variation appears in both +5-MHz and +20-MHz tone groups and in
+continuous IQ, so it is not simply a pump-tone response. This run is a
+decision point: stop this qubit-mediated pump/probe saturation protocol.
+It neither proves nor excludes a microscopic TLS. The feature's switching
+or spectral diffusion is now the more informative target.
+
+The next experiment omits the pump and measures the local loss dynamics
+directly. A broad scout finds the feature and a clean 14-MHz-lower
+control. Sixty short programs each collect 250 logical shots containing
+feature/control, g/e preparation, and 1.5/25-us holds in the *same*
+hardware shot. The eight-condition order reverses each cycle. Raw IQ and
+UTC timestamps preserve a roughly seconds-resolution trace of early
+survival, late survival, and feature-minus-control incremental loss.
+Pre/post readout and flux scouts remain controls; a shifted post-scout
+center is recorded as part of the physics rather than discarding the
+time trace. This tests whether the loss changes on a seconds timescale,
+and does not by itself identify one defect or the mechanism of switching.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --loss-dynamics
+```

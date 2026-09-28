@@ -121,3 +121,33 @@ def test_within_shot_time_map_plan_is_bounded():
     assert plan["conditions_per_shot"] == 8
     assert plan["programs"] == 10
     assert plan["later_holds_us"] == [3.0, 6.0, 10.0, 16.0, 25.0]
+
+
+def test_loss_dynamics_repeats_feature_control_in_reversed_shot_order(capsys):
+    import json
+    module = experiment()
+    specs = module.loss_dynamics_specs(4.106, 4.092)
+    assert len(specs) == 60
+    assert all(x["shots"] == 250 and len(x["conditions"]) == 8 for x in specs)
+    assert [x["cycle"] for x in specs] == list(range(60))
+    assert {c["hold_us"] for c in specs[0]["conditions"]} == {1.5, 25.0}
+    assert specs[1]["order"] == list(reversed(specs[0]["order"]))
+    assert {c["flux_ghz"] for c in specs[0]["conditions"]} == {4.106, 4.092}
+    assert module.main(["--plan", "--loss-dynamics"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["programs"] == 60 and plan["conditions_per_shot"] == 8
+    assert plan["shots_per_program"] == 250
+
+
+def test_loss_dynamics_scores_late_loss_without_rejecting_feature_floor():
+    module = experiment()
+    fractions = {"feature_early_g": .08, "feature_early_e": .20,
+                 "feature_late_g": .08, "feature_late_e": .09,
+                 "control_early_g": .08, "control_early_e": .55,
+                 "control_late_g": .09, "control_late_e": .35}
+    score = module.score_loss_dynamics(fractions)
+    assert score["feature"]["early_contrast"] == pytest.approx(.12)
+    assert score["excess_drop"] == pytest.approx(-.10)
+    assert score["usable"]
+    fractions["control_late_g"] = .20
+    assert not module.score_loss_dynamics(fractions)["usable"]
