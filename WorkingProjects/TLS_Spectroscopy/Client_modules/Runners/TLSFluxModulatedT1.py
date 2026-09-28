@@ -114,16 +114,19 @@ def feature_specific_effect(feature, flank):
                  flank["modulation_survival_change"])
 
 
-def plan():
+def plan(*, focused=False):
+    amplitudes = (1600,) if focused else AMPLITUDES_DAC
     return {"hardware_access": False, "reset_mode": "passive",
             "site": "fresh loss feature and 14-MHz lower flank",
             "modulation_frequency_mhz": MODULATION_MHZ,
-            "modulation_amplitudes_dac": list(AMPLITUDES_DAC),
+            "modulation_amplitudes_dac": list(amplitudes),
             "holds_us": list(HOLDS_US),
             "pre_target_hold_us": PRE_US,
             "park_ramp_us": PARK_RAMP_US,
             "conditions_per_shot": RECORDS_PER_SHOT,
-            "programs": 8, "shots_per_program": SHOTS,
+            "programs": 4 if focused else 8,
+            "shots_per_program": 8000 if focused else SHOTS,
+            "midpoint_feature_scout": bool(focused),
             "full_return_before_readout_us": 40.0,
             "raw_iq_saved": True,
             "measurement": "within-shot hot/cold survival, AC on/off, short/long",
@@ -237,26 +240,48 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
         self.sync_all(0)
 
 
-def program_specs(center):
+def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS):
     flank = round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
     specs = []
     for repeat in (0, 1):
         sites = (("feature", float(center)), ("flank", flank))
-        amplitudes = AMPLITUDES_DAC
+        ordered_amplitudes = tuple(amplitudes)
         if repeat:
-            sites, amplitudes = tuple(reversed(sites)), tuple(reversed(amplitudes))
+            sites, ordered_amplitudes = (tuple(reversed(sites)),
+                                         tuple(reversed(ordered_amplitudes)))
         for site, flux in sites:
-            for amplitude in amplitudes:
+            for amplitude in ordered_amplitudes:
                 conds = conditions(flux, amplitude_dac=amplitude,
                                    reverse=bool(repeat))
                 specs.append({"name": f"r{repeat}_{site}_a{amplitude}",
                               "repeat": repeat, "site": site,
                               "flux_ghz": flux,
                               "amplitude_dac": amplitude,
-                              "shots": SHOTS,
+                              "shots": int(shots),
                               "order": [c["name"] for c in conds],
                               "conditions": conds, "status": "pending"})
     return specs
+
+
+def recenter_repeat(specs, *, center, repeat):
+    """Retarget an unacquired repeat after its own fresh loss scout."""
+    flank = round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
+    for entry in specs:
+        if entry["repeat"] != repeat:
+            continue
+        if entry["status"] != "pending":
+            raise ValueError("cannot retarget an acquired modulation program")
+        flux = round(float(center), 3) if entry["site"] == "feature" else flank
+        conds = conditions(flux, amplitude_dac=entry["amplitude_dac"],
+                           reverse=bool(repeat))
+        entry["flux_ghz"] = flux
+        entry["conditions"] = conds
+        entry["order"] = [condition["name"] for condition in conds]
+
+
+def block_stability(pre, mid, post):
+    return {"r0": resident.feature_stable(pre, mid),
+            "r1": resident.feature_stable(mid, post)}
 
 
 def split_records(records, order, *, shots):
@@ -298,7 +323,8 @@ def _controls(scores):
             "usable": all(x["usable"] for x in reports.values())}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        focused=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
@@ -372,8 +398,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(), "references": refs,
-                    "programs": program_specs(center)}
+                    "plan": plan(focused=focused), "references": refs,
+                    "programs": program_specs(
+                        center, amplitudes=(1600,) if focused else AMPLITUDES_DAC,
+                        shots=8000 if focused else SHOTS)}
         protocol.checkpoint(path, manifest)
         print(f"[mod-T1] manifest={path}", flush=True)
         raw_refs = {}
@@ -382,7 +410,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             programs = {}
-            for entry in manifest["programs"]:
+
+            def compile_entry(entry):
                 cfgs = _condition_configs(base, entry, dc_lookup)
                 program = ModulatedT1Program(
                     soccfg, cfgs, bundle.payload, bundle.loop)
@@ -393,11 +422,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     wave_path = folder / f"{entry['name']}_waveform_{hold}.npz"
                     np.savez_compressed(wave_path, idata=samples)
                     entry.setdefault("waveform_npz", {})[hold] = str(wave_path)
-            for ref in refs:
+
+            for entry in manifest["programs"]:
+                if not focused or entry["repeat"] == 0:
+                    compile_entry(entry)
+            for ref in refs[:4] if focused else refs:
                 resident.ResidentDriveProgram(
                     soccfg, resident.arm_config(base, ref, dc_lookup),
                     bundle.payload, bundle.loop)
-            manifest["preflight_complete"] = True
+            manifest["preflight_complete"] = not focused
+            manifest["first_block_preflight_complete"] = True
             protocol.checkpoint(path, manifest)
 
             def acquire_ref(ref):
@@ -433,14 +467,50 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 print(f"[mod-T1] {ref['name']}", flush=True)
                 acquire_ref(ref)
             for entry in manifest["programs"]:
-                print(f"[mod-T1] {entry['name']} {SHOTS} x 8", flush=True)
+                if focused and entry["repeat"] == 1 and "mid_selected" not in manifest:
+                    mid_scout = localizer.run(
+                        data_root=data_root, correction_json=correction,
+                        parameter_overrides={**adaptive.scout_parameters(phase="post"),
+                                             "output_suffix":
+                                             "TLS_FluxModulated_T1_Scout_mid"})
+                    mid_selected = adaptive.select_loss_feature(
+                        adaptive.read_scout(mid_scout))
+                    mid_center = round(float(mid_selected["center_ghz"]), 3)
+                    mid_flank = round(mid_center + resident.FLANK_OFFSET_GHZ, 3)
+                    recenter_repeat(manifest["programs"], center=mid_center,
+                                    repeat=1)
+                    mid_grid = np.asarray([mid_center, mid_flank], dtype=float)
+                    mid_dc, mid_realized = _integer_dc_grid(
+                        wide.parameters(), mid_grid, tls)
+                    dc_lookup.update({float(f): int(g)
+                                      for f, g in zip(mid_grid, mid_dc)})
+                    manifest.update({"mid_scout_csv": str(mid_scout),
+                                     "mid_selected": mid_selected,
+                                     "mid_center_ghz": mid_center,
+                                     "mid_flank_ghz": mid_flank,
+                                     "mid_realized_ghz": mid_realized.tolist()})
+                    for ref in refs[4:]:
+                        ref["flux_ghz"] = mid_center
+                        ref["drive_mhz"] = round(1000.0 * mid_center + 5.0, 3)
+                        resident.ResidentDriveProgram(
+                            soccfg, resident.arm_config(base, ref, dc_lookup),
+                            bundle.payload, bundle.loop)
+                    for future in manifest["programs"]:
+                        if future["repeat"] == 1:
+                            compile_entry(future)
+                    manifest["preflight_complete"] = True
+                    protocol.checkpoint(path, manifest)
+                    print(f"[mod-T1] midpoint feature={mid_center:.3f} GHz; "
+                          f"first block shift={1000*(mid_center-center):+.1f} MHz",
+                          flush=True)
+                print(f"[mod-T1] {entry['name']} {entry['shots']} x 8", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 records = _run_program(
                     soc, programs[entry["name"]],
-                    max(30.0, RECORDS_PER_SHOT * _block_timeout_s(base, SHOTS)),
-                    base, total_shots=SHOTS)
-                split = split_records(records, entry["order"], shots=SHOTS)
+                    max(30.0, RECORDS_PER_SHOT * _block_timeout_s(base, entry["shots"])),
+                    base, total_shots=entry["shots"])
+                split = split_records(records, entry["order"], shots=entry["shots"])
                 for cond in entry["conditions"]:
                     subset = split[cond["name"]]
                     raw_path = folder / f"{entry['name']}_{cond['name']}.npz"
@@ -474,7 +544,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             manifest["control_report"] = _controls(scores)
             effects = {}
             for repeat in (0, 1):
-                for amplitude in AMPLITUDES_DAC:
+                for amplitude in ((1600,) if focused else AMPLITUDES_DAC):
                     f = scores[f"r{repeat}_feature_a{amplitude}"]
                     b = scores[f"r{repeat}_flank_a{amplitude}"]
                     effects[f"r{repeat}_a{amplitude}"] = {
@@ -494,9 +564,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     adaptive.read_scout(post_scout))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
-            manifest["feature_stable"] = (
-                resident.feature_stable(selected, manifest["post_selected"])
-                if "post_selected" in manifest else False)
+            if focused and "post_selected" in manifest:
+                manifest["block_stability"] = block_stability(
+                    selected, manifest["mid_selected"], manifest["post_selected"])
+                manifest["feature_stable"] = all(
+                    manifest["block_stability"].values())
+            else:
+                manifest["feature_stable"] = (
+                    resident.feature_stable(selected, manifest["post_selected"])
+                    if "post_selected" in manifest else False)
             valid = (manifest["post_readout_score"]["valid"] and
                      all(x["usable"] for x in manifest["transfer_control"].values()) and
                      manifest["control_report"]["usable"] and
@@ -517,13 +593,16 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--focused", action="store_true",
+                        help="1600-DAC repeat with a fresh midpoint feature scout")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(focused=args.focused), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            focused=args.focused)
     return 0
 
 

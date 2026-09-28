@@ -86,3 +86,35 @@ def test_park_ramps_and_both_ac_holds_fit_the_q3_envelope_memory():
     # q3's FF generator has 6,881.28 samples/us and 65,536 samples total.
     requested = (2 * plan["park_ramp_us"] + sum(plan["holds_us"])) * 6881.28
     assert requested < 65536
+
+
+def test_focused_specs_use_only_calibrated_high_amplitude_and_retrack_second_pair():
+    module = experiment()
+    specs = module.program_specs(4.131, amplitudes=(1600,), shots=8000)
+    assert [s["name"] for s in specs] == [
+        "r0_feature_a1600", "r0_flank_a1600",
+        "r1_flank_a1600", "r1_feature_a1600"]
+    assert [s["flux_ghz"] for s in specs] == [4.131, 4.117, 4.117, 4.131]
+    assert all(s["shots"] == 8000 for s in specs)
+    module.recenter_repeat(specs, center=4.127, repeat=1)
+    assert [s["flux_ghz"] for s in specs] == [4.131, 4.117, 4.113, 4.127]
+    for spec in specs[2:]:
+        assert {c["flux_ghz"] for c in spec["conditions"]} == {spec["flux_ghz"]}
+        assert [c["name"] for c in spec["conditions"]] == spec["order"]
+
+
+def test_focused_block_stability_requires_each_pair_to_stay_near_its_own_scout():
+    module = experiment()
+    pre = {"center_ghz": 4.131, "depth": 0.3}
+    mid = {"center_ghz": 4.127, "depth": 0.3}
+    post = {"center_ghz": 4.127, "depth": 0.3}
+    assert module.block_stability(pre, mid, post) == {
+        "r0": False, "r1": True}
+
+
+def test_focused_plan_halves_programs_and_scans_between_pairs():
+    plan = experiment().plan(focused=True)
+    assert plan["modulation_amplitudes_dac"] == [1600]
+    assert plan["programs"] == 4
+    assert plan["shots_per_program"] == 8000
+    assert plan["midpoint_feature_scout"] is True

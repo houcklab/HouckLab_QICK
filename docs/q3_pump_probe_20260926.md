@@ -2625,3 +2625,40 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run
 ```
+
+The first modulated-T1 comparison completed at
+`q3_flux_modulated_t1_20260928T064334Z_87403532`. All eight 4,000-shot
+programs and raw IQ files are present. The pre/post scouts found a strong
+loss feature at 4.131/4.127 GHz (depths 0.290/0.335), a 4-MHz shift that
+fails the prespecified 2-MHz stability gate. Readout fidelity was 0.895
+before and 0.879 after; transfer and all eight within-program hot/cold,
+ground-response controls passed. The final status is
+`complete_controls_unstable` because of the feature shift.
+
+The classified feature-minus-flank, AC-induced change in hot-minus-cold
+survival from 0.1 to 6 us was +0.044/-0.0495 in forward/reverse order at
+800 DAC and +0.0598/+0.0200 at 1,600 DAC. Shot-paired 95% bootstrap
+intervals for the latter were approximately [+0.011,+0.107] and
+[-0.025,+0.067]. After normalizing continuous IQ by the pre-run ground/e
+reference separation, the 1,600-DAC feature-specific values were
++0.0625/+0.0032. Thus 800 DAC reverses sign and the 1,600-DAC response
+weakens substantially in the reverse repeat. This is an interesting
+calibrated-AC delivery experiment, but not a reproducible suppression of
+TLS-mediated loss.
+
+The next focused repeat keeps only 1,600 DAC and uses 8,000 logical shots
+per program. After the forward feature/flank pair it performs a fresh
+81-point loss scout and retargets the reverse flank/feature pair to the
+newly selected frequency. A final scout gives a stability check for each
+pair separately. The original off/on, short/long, ground/excited conditions
+remain interleaved within each hardware shot, and the corrected 40-us
+return still precedes readout. This tests whether the small first-pass
+1,600-DAC effect reproduces at a tracked feature; it does not infer TLS
+identity from modulation alone.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --focused
+```
