@@ -10,15 +10,23 @@ survives the compensated flux return and first readout; a null does not rule
 out a shorter-lived TLS or an incoherent absorber.
 
 This runner is experimental and does not change the production TLS scan.
+
+The --prep-postselect mode repurposes the first readout as a ground-state
+herald *before* a fresh g/e target visit. It reports the short/long target
+loss with and without offline selection on that first readout, using the same
+saved shots. It does not put a readout between the science visit and its final
+readout.
 """
 
 import argparse
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import math
 import os
 from pathlib import Path
+from statistics import mean
 import uuid
 
 import numpy as np
@@ -36,6 +44,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records im
 
 
 SHOTS = 400
+POSTSELECT_SHOTS = 800
 PUMP_US = 20.0
 PROBE_US = 2.0
 FLANK_OFFSET_GHZ = -0.014
@@ -166,6 +175,65 @@ def science_arms(*, center_ghz, flank_ghz):
                          "probe_prepare_after_return": False})
     return base + [{**arm, "name": arm["name"] + "_repeat"}
                    for arm in reversed(base)]
+
+
+def preparation_postselection_arms(*, center_ghz, flank_ghz):
+    """Measure short/long target loss with a *preceding* ground herald.
+
+    The first, identical 0.1-us ground/control excursion ends at a park
+    readout. The second excursion is the science visit; there is no readout
+    between that visit and its final park readout.
+    """
+    base = []
+    for site, frequency in (("feature", center_ghz),
+                            ("control", flank_ghz)):
+        for dwell, hold_us in (("early", 1.5), ("late", 6.0)):
+            for state in ("g", "e"):
+                base.append({"name": f"{site}_{dwell}_{state}",
+                             "site": site, "dwell": dwell, "state": state,
+                             "pump_state": "g", "pump_ghz": flank_ghz,
+                             "pump_us": 0.1,
+                             "probe_state": state, "probe_ghz": frequency,
+                             "probe_us": hold_us,
+                             "pump_prepare_after_return": False,
+                             "probe_prepare_after_return": False,
+                             "shots": POSTSELECT_SHOTS})
+    return ([{**arm, "name": "r0_" + arm["name"], "repeat": 0}
+             for arm in base] +
+            [{**arm, "name": "r1_" + arm["name"], "repeat": 1}
+             for arm in reversed(base)])
+
+
+def preparation_postselection_report(arms):
+    by_name = {arm["name"]: arm for arm in arms}
+    report = {}
+    for repeat in (0, 1):
+        order = f"r{repeat}"
+        report[order] = {}
+        for label, value_key in (("all_shots", "final_excited_all"),
+                                 ("ground_heralded", "final_excited_given_ground")):
+            names = [f"{order}_{site}_{dwell}_{state}"
+                     for site in ("feature", "control")
+                     for dwell in ("early", "late")
+                     for state in ("g", "e")]
+            if any(name not in by_name or
+                   not by_name[name].get("summary", {}).get("interpretation_valid") or
+                   by_name[name]["summary"].get(value_key) is None or
+                   (label == "ground_heralded" and
+                    by_name[name]["summary"].get("herald_ground_shots", 0) < 50)
+                   for name in names):
+                report[order][label] = None
+                continue
+            def contrast(site, dwell):
+                e = by_name[f"{order}_{site}_{dwell}_e"]["summary"][value_key]
+                g = by_name[f"{order}_{site}_{dwell}_g"]["summary"][value_key]
+                return float(e - g)
+            feature_drop = contrast("feature", "early") - contrast("feature", "late")
+            control_drop = contrast("control", "early") - contrast("control", "late")
+            report[order][label] = {
+                "feature_drop": feature_drop, "control_drop": control_drop,
+                "excess_drop": feature_drop - control_drop}
+    return report
 
 
 def fit_readout_axis(ground_iq, excited_iq):
@@ -324,10 +392,58 @@ def finalize_arm_summaries(arms, *, controls_valid):
             summary["final_excited_given_ground"] = None
 
 
-def feature_stability(pre_selected, post_selected):
+def feature_stability(pre_selected, post_selected, *, tolerance_mhz=1.0):
     shift_mhz = round(1000.0 * (float(post_selected["center_ghz"]) -
                                   float(pre_selected["center_ghz"])), 3)
-    return {"center_shift_mhz": shift_mhz, "stable": abs(shift_mhz) <= 1.0}
+    return {"center_shift_mhz": shift_mhz,
+            "stable": abs(shift_mhz) <= float(tolerance_mhz)}
+
+
+def postselection_scout_parameters(phase):
+    return {**adaptive.scout_parameters(phase=phase),
+            "freq_min_ghz": 4.060, "freq_max_ghz": 4.170,
+            "max_runs": 1,
+            "output_suffix": f"TLS_Preparation_Postselection_Scout_{phase}"}
+
+
+def read_postselection_scout(path):
+    with Path(path).open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    expected = [round(4.060 + 0.001 * i, 3) for i in range(111)]
+    observed = sorted(round(float(row["target_frequency_ghz"]), 3)
+                      for row in rows)
+    if (observed != expected or
+            len({row["wall_clock_run_index"] for row in rows}) != 1):
+        raise RuntimeError("postselection scout requires one complete 111-point pass")
+    return rows
+
+
+def select_postselection_feature(rows):
+    """Require the lower control to be loss-free in both scan directions."""
+    selected = adaptive.select_loss_feature(rows)
+    center = float(selected["center_ghz"])
+    control = round(center + FLANK_OFFSET_GHZ, 3)
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    advantage = {}
+    for direction in ("", "up", "down"):
+        try:
+            feature = mean(adaptive._survival(
+                indexed[round(center + offset / 1000.0, 3)], direction)
+                for offset in (-1, 0, 1))
+            flank = mean(adaptive._survival(
+                indexed[round(control + offset / 1000.0, 3)], direction)
+                for offset in (-1, 0, 1))
+        except KeyError as exc:
+            raise ValueError("14-MHz lower control lies outside scout") from exc
+        advantage[direction or "combined"] = flank - feature
+    if (not all(math.isfinite(value) for value in advantage.values()) or
+            advantage["combined"] < 0.20 or
+            min(advantage["up"], advantage["down"]) < 0.15):
+        raise ValueError(f"14-MHz lower control is not separated from loss: "
+                         f"{advantage}")
+    return {**selected, "control_ghz": control,
+            "control_survival_advantage": advantage}
 
 
 def plan():
@@ -347,8 +463,30 @@ def plan():
             "note": __doc__}
 
 
+def preparation_postselection_plan():
+    return {"hardware_access": False, "reset_mode": "passive",
+            "purpose": "compare the same raw science shots with/without ground "
+                       "post-selection before qubit preparation",
+            "scout_ghz": [4.060, 4.170], "scout_step_mhz": 1,
+            "probe_sites": ["fresh loss feature", "14-MHz lower control"],
+            "probe_dwells_us": [1.5, 6.0],
+            "probe_states": ["g", "e"], "science_arms": 16,
+            "science_shots_per_arm": POSTSELECT_SHOTS,
+            "reference_arms": 6, "reference_shots_per_arm": SHOTS,
+            "first_readout": "after identical 0.1-us ground/control visit",
+            "second_readout": "after prepared target visit and corrected return",
+            "readouts_between_science_visit_and_final": 0,
+            "minimum_conditioned_shots_per_arm": 50,
+            "raw_paired_iq_saved": True,
+            "effect": "(early-minus-late excited/ground contrast at feature) "
+                      "minus corresponding control drop, per acquisition order",
+            "interpretation": "herald readout may disturb the system; compare "
+                              "conditioned with all-shot results and pre/post scouts"}
+
+
 def arm_config(base, arm, dc_lookup):
     cfg = dict(base)
+    shots = int(arm.get("shots", SHOTS))
     cfg.update({"ff_gain": dc_lookup[arm["pump_ghz"]],
                 "opx_herald_probe_gain": dc_lookup[arm["probe_ghz"]],
                 "ff_hold": max(arm["pump_us"], arm["probe_us"]),
@@ -360,21 +498,31 @@ def arm_config(base, arm, dc_lookup):
                     "pump_prepare_after_return"],
                 "opx_herald_probe_prepare_after_return": arm[
                     "probe_prepare_after_return"],
-                "shots": SHOTS, "reps": SHOTS})
+                "shots": shots, "reps": shots})
     return cfg
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        prep_postselect=False):
     data_root = Path(data_root)
+    label = "prep-postselect" if prep_postselect else "heralded"
     correction = localizer.checked_correction(data_root, correction_json)
+    scout_parameters = (postselection_scout_parameters if prep_postselect
+                        else lambda phase: {**adaptive.scout_parameters(phase=phase),
+                                            "output_suffix":
+                                            "TLS_PumpProbe_Heralded_Scout" if phase == "pre"
+                                            else "TLS_PumpProbe_Heralded_Scout_post"})
+    read_scout = (read_postselection_scout if prep_postselect else
+                  adaptive.read_scout)
     pre_scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_PumpProbe_Heralded_Scout"})
-    selected = adaptive.select_loss_feature(adaptive.read_scout(pre_scout))
+        parameter_overrides=scout_parameters("pre"))
+    selected = (select_postselection_feature(read_scout(pre_scout))
+                if prep_postselect else
+                adaptive.select_loss_feature(read_scout(pre_scout)))
     center = round(float(selected["center_ghz"]), 3)
     flank = round(center + FLANK_OFFSET_GHZ, 3)
-    print(f"[heralded] feature {center:.3f} GHz depth={selected['depth']:.3f}; "
+    print(f"[{label}] feature {center:.3f} GHz depth={selected['depth']:.3f}; "
           f"control {flank:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
@@ -415,16 +563,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "do_ff": True, "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_pump_probe_heralded_" +
+        session_id = (("q3_preparation_postselection_" if prep_postselect else
+                       "q3_pump_probe_heralded_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
         manifest_path = folder / "manifest.json"
-        arms = (reference_arms(center, phase="pre") +
-                science_arms(center_ghz=center, flank_ghz=flank) +
-                reference_arms(center, phase="post"))
-        manifest = {"schema": "q3.pump-probe-heralded.v1",
+        pre_refs = reference_arms(center, phase="pre")
+        post_refs = reference_arms(center, phase="post")
+        if prep_postselect:
+            for ref in pre_refs + post_refs:
+                ref["pump_ghz"] = flank
+        science = (preparation_postselection_arms(
+            center_ghz=center, flank_ghz=flank) if prep_postselect else
+                   science_arms(center_ghz=center, flank_ghz=flank))
+        arms = pre_refs + science + post_refs
+        manifest = {"schema": ("q3.preparation-postselection.v1"
+                               if prep_postselect else "q3.pump-probe-heralded.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -433,10 +589,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": {str(k): v for k, v in dc_lookup.items()},
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(),
+                    "plan": (preparation_postselection_plan()
+                             if prep_postselect else plan()),
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
         protocol.checkpoint(manifest_path, manifest)
-        print(f"[heralded] manifest={manifest_path}", flush=True)
+        print(f"[{label}] manifest={manifest_path}", flush=True)
         soc, soccfg = tls.makeProxy()
         raw_by_name = {}
         axes = None
@@ -444,16 +601,17 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         try:
             for index, arm in enumerate(manifest["arms"], start=1):
                 cfg = arm_config(base, arm, dc_lookup)
-                print(f"[heralded] {index}/{len(arms)} {arm['name']}", flush=True)
+                shots = int(cfg["shots"])
+                print(f"[{label}] {index}/{len(arms)} {arm['name']}", flush=True)
                 arm["status"] = "acquiring"
                 protocol.checkpoint(manifest_path, manifest)
                 program = HeraldedPumpProbeProgram(
                     soccfg, cfg, bundle.payload, bundle.loop)
                 records = _run_program(
-                    soc, program, max(30.0, _block_timeout_s(cfg, SHOTS)),
-                    cfg, total_shots=SHOTS)
-                if len(records) != SHOTS:
-                    raise RuntimeError(f"{arm['name']}: received {len(records)} of {SHOTS} shots")
+                    soc, program, max(30.0, _block_timeout_s(cfg, shots)),
+                    cfg, total_shots=shots)
+                if len(records) != shots:
+                    raise RuntimeError(f"{arm['name']}: received {len(records)} of {shots} shots")
                 raw_path = folder / f"{arm['name']}.npz"
                 np.savez_compressed(raw_path,
                                     herald_i=[r.herald_i for r in records],
@@ -470,11 +628,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     manifest["pre_reference_valid"] = assessment["valid"]
                     if axes is None:
                         manifest["pre_readout_calibration_error"] = assessment["error"]
-                        print(f"[heralded] readout interpretation unavailable: "
+                        print(f"[{label}] readout interpretation unavailable: "
                               f"{assessment['error']}; acquiring raw IQ", flush=True)
                     else:
                         manifest["pre_readout_axes"] = axes
-                        print(f"[heralded] pre readout F: first="
+                        print(f"[{label}] pre readout F: first="
                               f"{axes['herald']['fidelity']:.3f}, "
                               f"second={axes['final']['fidelity']:.3f}; "
                               f"holdout_valid={assessment['valid']}", flush=True)
@@ -484,14 +642,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     if (not arm["name"].startswith("ref_") and
                             manifest.get("pre_reference_valid", False)):
                         s = arm["summary"]
-                        print(f"[heralded] {arm['name']}: ground herald "
-                              f"{s['herald_ground_shots']}/{SHOTS}, "
+                        print(f"[{label}] {arm['name']}: ground herald "
+                              f"{s['herald_ground_shots']}/{shots}, "
                               "conditional result pending post references", flush=True)
                     elif not arm["name"].startswith("ref_"):
-                        print(f"[heralded] {arm['name']}: raw paired IQ saved; "
+                        print(f"[{label}] {arm['name']}: raw paired IQ saved; "
                               "conditional estimate unvalidated", flush=True)
                 elif not arm["name"].startswith("ref_"):
-                    print(f"[heralded] {arm['name']}: raw paired IQ saved; "
+                    print(f"[{label}] {arm['name']}: raw paired IQ saved; "
                           "no readout axis", flush=True)
                 if arm["name"] == "ref_final_e_post":
                     post_assessment = assess_pre_references(
@@ -512,30 +670,36 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 protocol.checkpoint(manifest_path, manifest)
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_PumpProbe_Heralded_Scout_post"})
+                parameter_overrides=scout_parameters("post"))
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                post_selected = adaptive.select_loss_feature(adaptive.read_scout(post_scout))
+                post_selected = (select_postselection_feature(read_scout(post_scout))
+                                 if prep_postselect else
+                                 adaptive.select_loss_feature(read_scout(post_scout)))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
                 manifest["feature_stability"] = {"stable": False}
             else:
                 manifest["post_selected"] = post_selected
-                manifest["feature_stability"] = feature_stability(selected, post_selected)
+                manifest["feature_stability"] = feature_stability(
+                    selected, post_selected,
+                    tolerance_mhz=2.0 if prep_postselect else 1.0)
             feature_stable = manifest["feature_stability"]["stable"]
             readout_stable = bool(
                 manifest.get("pre_reference_valid", False) and
                 manifest["post_reference_validation"]["valid"])
             finalize_arm_summaries(manifest["arms"],
                                    controls_valid=readout_stable and feature_stable)
+            if prep_postselect:
+                manifest["postselection_report"] = (
+                    preparation_postselection_report(manifest["arms"]))
             manifest["status"] = (
                 "complete" if feature_stable and readout_stable
                 else "complete_feature_unstable" if not feature_stable and readout_stable
                 else "complete_readout_unstable" if feature_stable
                 else "complete_controls_unstable")
             protocol.checkpoint(manifest_path, manifest)
-            print(f"[heralded] {manifest['status']}: {manifest_path}", flush=True)
+            print(f"[{label}] {manifest['status']}: {manifest_path}", flush=True)
             return manifest_path
         except BaseException as exc:
             manifest["status"] = "failed"
@@ -551,11 +715,15 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--prep-postselect", action="store_true",
+                        help="pre-herald ground and compare conditioned/unconditioned loss")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(preparation_postselection_plan()
+                         if args.prep_postselect else plan(), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            prep_postselect=args.prep_postselect)
     return 0
 
 

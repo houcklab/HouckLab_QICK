@@ -2957,3 +2957,43 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectralDiffusionMonitor --run
 ```
+
+The finite baseline monitor completed ten 111-frequency passes between
+11:04:42 and 11:18:06 local time on September 28. A three-point 25-us
+survival dip was present in both scan directions on every pass. Its strongest
+center moved from 4.106 GHz on the first pass to 4.101 GHz around passes
+five and six, then 4.103 GHz on the last pass. Combined local depth varied
+roughly 0.41–0.60 in normalized survival. A weaker, persistent trough near
+4.146–4.148 GHz also appeared in every pass; the scan alone does not show
+whether either trough is one microscopic TLS. The median P1-minus-P0
+reference contrast stayed 0.49–0.53 across the ten passes. Thus the main
+obstacle for a long fixed-frequency swap or pump run is movement of the loss
+coordinate, not an obvious collapse of the passive preparation/readout
+references. The old moving-lower-dip selector started at 4.105 GHz, so its
+failure on some of these passes is a range artifact; the raw loss remained.
+
+To test whether imperfect initial ground preparation still dilutes the
+short/long-hold signal, an experiment-only pre-herald mode reuses the proven
+two-readout QICK program. A first readout follows an identical 0.1-us ground
+visit at the lower control; after the readout guard, a freshly prepared g/e
+qubit visits the feature or 14-MHz-lower control for 1.5 or 6 us and gets a
+final readout. No readout intervenes between that science visit and its final
+readout. Both raw IQ records are saved. Six reference arms calibrate and
+validate a frozen first-readout ground cutoff and a final-readout axis, but
+invalid references do not discard the raw science. Sixteen science arms cover
+all site/dwell/preparation combinations in forward and reverse order, with
+800 shots per arm. The same saved shots produce all-shot and ground-heralded
+excess-loss estimates; no conditioning uses the final outcome. Broad 4.060–
+4.170-GHz scouts before and after locate the loss and flag more than 2-MHz
+movement, and the 14-MHz-lower control must be separated from the loss in
+both scan directions. The first measurement itself could alter the device,
+so this is a test of heralded preparation, not a correction to the prior
+unheralded swap-hold measurements.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --plan --prep-postselect
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run --prep-postselect
+```

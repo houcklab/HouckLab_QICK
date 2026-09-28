@@ -219,3 +219,78 @@ def test_two_mhz_feature_shift_marks_run_uncertain():
     shifted = module.feature_stability({"center_ghz": 4.134},
                                        {"center_ghz": 4.136})
     assert shifted == {"center_shift_mhz": 2.0, "stable": False}
+
+
+def test_preparation_postselection_arms_herald_before_science():
+    module = experiment()
+    arms = module.preparation_postselection_arms(
+        center_ghz=4.102, flank_ghz=4.088)
+    assert len(arms) == 16
+    assert len({arm["name"] for arm in arms}) == 16
+    assert {arm["pump_state"] for arm in arms} == {"g"}
+    assert {arm["pump_us"] for arm in arms} == {0.1}
+    assert {arm["pump_ghz"] for arm in arms} == {4.088}
+    assert {arm["probe_us"] for arm in arms} == {1.5, 6.0}
+    assert {arm["probe_state"] for arm in arms} == {"g", "e"}
+    assert {arm["probe_ghz"] for arm in arms} == {4.102, 4.088}
+    assert all(not arm["probe_prepare_after_return"] for arm in arms)
+    assert [a["name"] for a in arms[:8]] == [
+        "r0_feature_early_g", "r0_feature_early_e",
+        "r0_feature_late_g", "r0_feature_late_e",
+        "r0_control_early_g", "r0_control_early_e",
+        "r0_control_late_g", "r0_control_late_e",
+    ]
+    assert [a["name"] for a in arms[8:]] == [
+        "r1_control_late_e", "r1_control_late_g",
+        "r1_control_early_e", "r1_control_early_g",
+        "r1_feature_late_e", "r1_feature_late_g",
+        "r1_feature_early_e", "r1_feature_early_g",
+    ]
+
+
+def test_preparation_postselection_effect_compares_same_shots():
+    module = experiment()
+    arms = module.preparation_postselection_arms(
+        center_ghz=4.102, flank_ghz=4.088)
+    for arm in arms:
+        site = "feature" if "feature" in arm["name"] else "control"
+        dwell = "early" if "early" in arm["name"] else "late"
+        state = "_e" if arm["name"].endswith("_e") else "_g"
+        ground = 0.1
+        contrast = (0.6 if dwell == "early" else 0.4)
+        if site == "control" and dwell == "late":
+            contrast = 0.5
+        value = ground + (contrast if state == "_e" else 0.0)
+        arm["summary"] = {"final_excited_all": value,
+                          "final_excited_given_ground": value + 0.02,
+                          "herald_ground_shots": 500,
+                          "shots": 800,
+                          "interpretation_valid": True}
+    report = module.preparation_postselection_report(arms)
+    for order in ("r0", "r1"):
+        assert report[order]["all_shots"]["excess_drop"] == pytest.approx(0.1)
+        assert report[order]["ground_heralded"]["excess_drop"] == pytest.approx(0.1)
+    arms[0]["summary"]["interpretation_valid"] = False
+    assert module.preparation_postselection_report(arms)["r0"]["ground_heralded"] is None
+
+
+def test_preparation_postselection_requires_clean_control_in_both_directions(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(module.adaptive, "select_loss_feature",
+                        lambda rows: {"center_ghz": 4.102, "depth": 0.5})
+    def rows(control_survival):
+        return [{"target_frequency_ghz": str(f), "P0": "0", "P1": "1",
+                 "Ps_25us": str(survival),
+                 "P0_scan_up": "0", "P1_scan_up": "1",
+                 "Ps_25us_scan_up": str(survival),
+                 "P0_scan_down": "0", "P1_scan_down": "1",
+                 "Ps_25us_scan_down": str(survival)}
+                for center, survival in ((4.102, 0.2),
+                                         (4.088, control_survival))
+                for f in (round(center - 0.001, 3), center,
+                          round(center + 0.001, 3))]
+    selected = module.select_postselection_feature(rows(0.8))
+    assert selected["control_ghz"] == 4.088
+    assert selected["control_survival_advantage"]["combined"] == pytest.approx(0.6)
+    with pytest.raises(ValueError, match="control is not separated"):
+        module.select_postselection_feature(rows(0.25))
