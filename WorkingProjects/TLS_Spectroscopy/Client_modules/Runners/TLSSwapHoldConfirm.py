@@ -32,15 +32,20 @@ LATE_US = 6.0
 SHOTS = 3000
 MAP_SHOTS = 1000
 MAP_RADIUS_MHZ = 8
+PAIR_SHOTS = 800
+PAIR_REFERENCE_US = 0.1
+PAIR_DWELLS_US = swap.HOLDS_US[1:]
 REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 CONDITION_NAMES = ("early_g", "early_e", "late_g", "late_e")
 
 
-def conditions(*, reverse=False):
+def conditions(*, reverse=False, early_us=EARLY_US, late_us=LATE_US):
+    if not 0.05 <= float(early_us) < float(late_us):
+        raise ValueError("paired dwells must be ordered and at least 0.05 us")
     result = [{"name": f"{label}_{state}", "hold_us": hold,
                "state": state}
-              for label, hold in (("early", EARLY_US), ("late", LATE_US))
+              for label, hold in (("early", early_us), ("late", late_us))
               for state in ("g", "e")]
     return list(reversed(result)) if reverse else result
 
@@ -79,6 +84,55 @@ def flux_map_specs(feature_ghz, control_ghz):
                       else reversed(range(len(frequencies)))):
             append(f"r{repeat}_f{index:02d}", "map", frequencies[index])
         append(f"r{repeat}_control_post", "control", control_ghz)
+    return specs
+
+
+def paired_dwell_specs(feature_ghz, control_ghz):
+    """Pair each later hold with 0.1 us in both site and time orders."""
+    specs = []
+    for repeat in (0, 1):
+        holds = PAIR_DWELLS_US if repeat == 0 else tuple(reversed(PAIR_DWELLS_US))
+        sites = (("feature", feature_ghz), ("control", control_ghz))
+        if repeat:
+            sites = tuple(reversed(sites))
+        for hold in holds:
+            label = f"{hold:g}".replace(".", "p")
+            for site, flux in sites:
+                conds = conditions(reverse=bool(repeat),
+                                   early_us=PAIR_REFERENCE_US, late_us=hold)
+                specs.append({"name": f"r{repeat}_t{label}_{site}",
+                              "repeat": repeat, "site": site,
+                              "flux_ghz": float(flux), "hold_us": hold,
+                              "shots": PAIR_SHOTS,
+                              "order": [item["name"] for item in conds],
+                              "conditions": conds, "status": "pending"})
+    return specs
+
+
+def paired_dwell_report(specs, scores):
+    report = {}
+    for repeat in (0, 1):
+        rows = []
+        holds = sorted({item["hold_us"] for item in specs})
+        for hold in holds:
+            items = {item["site"]: item for item in specs
+                     if item["repeat"] == repeat and item["hold_us"] == hold}
+            feature = scores[items["feature"]["name"]]
+            control = scores[items["control"]["name"]]
+            rows.append({"hold_us": hold,
+                         "feature_drop": feature["drop"],
+                         "control_drop": control["drop"],
+                         "excess_drop": effect(feature, control),
+                         "usable": feature["usable"] and control["usable"]})
+        report[f"r{repeat}"] = rows
+    return report
+
+
+def preflight_entries(specs, *, flux_map=False, paired_dwell_scan=False):
+    if paired_dwell_scan:
+        return [specs[i] for i in (0, 1, 18, 19, 20, 21, 38, 39)]
+    if flux_map:
+        return [specs[i] for i in (0, 1, 17, 18, 19, 20, 36, 37)]
     return specs
 
 
@@ -127,9 +181,25 @@ def effect(feature, control):
     return float(feature["drop"] - control["drop"])
 
 
-def plan(*, flux_map=False, follow_moving_dip=False):
-    if flux_map and follow_moving_dip:
+def plan(*, flux_map=False, follow_moving_dip=False,
+         paired_dwell_scan=False):
+    if flux_map and (follow_moving_dip or paired_dwell_scan):
         raise ValueError("select one swap-hold follow-up mode")
+    if paired_dwell_scan:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "feature_search_ghz": [4.105, 4.134],
+                "control": "fresh qualified 14-MHz lower flux point",
+                "reference_hold_us": PAIR_REFERENCE_US,
+                "later_holds_us": list(PAIR_DWELLS_US),
+                "conditions_per_shot": RECORDS_PER_SHOT,
+                "shots_per_program": PAIR_SHOTS, "programs": 40,
+                "orders": ["ascending", "descending"],
+                "full_return_before_each_readout_us": 40.0,
+                "raw_iq_saved": True,
+                "primary_effect": "at each dwell, feature early-minus-late "
+                                  "hot-cold contrast minus control drop",
+                "interpretation": "0.1-us reference includes flux settling; "
+                                  "compare 0.5–6-us structure cautiously"}
     if follow_moving_dip:
         return {"hardware_access": False, "reset_mode": "passive",
                 "feature_search_ghz": [4.105, 4.134],
@@ -180,8 +250,10 @@ class AlternatingSwapHoldProgram(alternating.ShotAlternatingResidentProgram):
             raise ValueError("within-shot swap conditions must share flux and shots")
         observed = {(float(cfg["opx_swap_hold_us"]),
                      cfg["opx_resident_preparation_state"]) for cfg in configs}
-        if observed != {(hold, state) for hold in (EARLY_US, LATE_US)
-                       for state in ("g", "e")}:
+        holds = {hold for hold, _ in observed}
+        if (len(holds) != 2 or
+                observed != {(hold, state) for hold in holds
+                             for state in ("g", "e")}):
             raise ValueError("swap conditions must span both dwells and states")
         self.conditions_per_shot = RECORDS_PER_SHOT
         self.logical_shots = int(configs[0]["shots"])
@@ -202,15 +274,18 @@ def _condition_configs(base, entry, dc_lookup):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        flux_map=False, follow_moving_dip=False):
-    if flux_map and follow_moving_dip:
+        flux_map=False, follow_moving_dip=False, paired_dwell_scan=False):
+    if flux_map and (follow_moving_dip or paired_dwell_scan):
         raise ValueError("select one swap-hold follow-up mode")
+    follow_moving_dip = follow_moving_dip or paired_dwell_scan
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    scout_suffix = ("TLS_SwapHold_Paired_Dwell_Scout_pre" if paired_dwell_scan
+                    else "TLS_SwapHold_Confirm_Scout_pre")
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_SwapHold_Confirm_Scout_pre"})
+                             "output_suffix": scout_suffix})
     selector = (select_moving_lower_dip if follow_moving_dip else
                 lambda rows: swap.select_anchored_feature(
                     rows, preferred_center=4.127))
@@ -238,12 +313,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
         specs = (flux_map_specs(center, control) if flux_map else
+                 paired_dwell_specs(center, control) if paired_dwell_scan else
                  program_specs(center, control))
         grid = np.asarray(sorted({item["flux_ghz"] for item in specs}), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
-        for hold in (EARLY_US, LATE_US):
+        holds = ({cond["hold_us"] for entry in specs
+                  for cond in entry["conditions"]})
+        for hold in sorted(holds):
             swap.swap_segments(compensation, hold_us=hold)
         base = ProductionResetSession.passive().apply(tls.BaseConfig)
         five.apply_verified_feedback_timing(base)
@@ -260,7 +338,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_swap_hold_flux_map_" if flux_map else
+        session_id = (("q3_tls_swap_hold_paired_dwell_" if paired_dwell_scan else
+                       "q3_tls_swap_hold_flux_map_" if flux_map else
                        "q3_tls_swap_hold_moving_dip_" if follow_moving_dip else
                        "q3_tls_swap_hold_confirm_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
@@ -272,7 +351,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-swap-hold-flux-map.v1" if flux_map else
+        manifest = {"schema": ("q3.tls-swap-hold-paired-dwell.v1"
+                               if paired_dwell_scan else
+                               "q3.tls-swap-hold-flux-map.v1" if flux_map else
                                "q3.tls-swap-hold-moving-dip.v1"
                                if follow_moving_dip else
                                "q3.tls-swap-hold-confirm.v1"),
@@ -284,7 +365,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
                     "plan": plan(flux_map=flux_map,
-                                 follow_moving_dip=follow_moving_dip),
+                                 follow_moving_dip=follow_moving_dip,
+                                 paired_dwell_scan=paired_dwell_scan),
                     "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
@@ -295,8 +377,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             programs = {}
-            preflight = (manifest["programs"] if not flux_map else
-                         [manifest["programs"][i] for i in (0, 1, 17, 18, 19, 20, 36, 37)])
+            preflight = preflight_entries(
+                manifest["programs"], flux_map=flux_map,
+                paired_dwell_scan=paired_dwell_scan)
             for entry in preflight:
                 cfgs = _condition_configs(base, entry, dc_lookup)
                 programs[entry["name"]] = AlternatingSwapHoldProgram(
@@ -385,7 +468,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 for cond in entry["conditions"]})
                 for entry in manifest["programs"]}
             manifest["program_scores"] = scores
-            if flux_map:
+            if paired_dwell_scan:
+                manifest["paired_dwell_report"] = paired_dwell_report(specs, scores)
+            elif flux_map:
                 manifest["flux_map_report"] = flux_map_report(specs, scores)
             else:
                 manifest["effect_report"] = {
@@ -395,7 +480,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_SwapHold_Confirm_Scout_post"})
+                                     "output_suffix": (
+                                         "TLS_SwapHold_Paired_Dwell_Scout_post"
+                                         if paired_dwell_scan else
+                                         "TLS_SwapHold_Confirm_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = selector(
@@ -435,16 +523,20 @@ def main(argv=None):
                         help="map the short/long excess loss across flux")
     parser.add_argument("--follow-moving-dip", action="store_true",
                         help="retarget the lower-band loss after larger spectral shifts")
+    parser.add_argument("--paired-dwell-scan", action="store_true",
+                        help="interleave 0.1 us and later holds at moving dip")
     args = parser.parse_args(argv)
-    if args.flux_map and args.follow_moving_dip:
-        parser.error("select at most one of --flux-map and --follow-moving-dip")
+    if args.flux_map and (args.follow_moving_dip or args.paired_dwell_scan):
+        parser.error("--flux-map cannot be combined with another follow-up mode")
     if args.plan:
         print(json.dumps(plan(flux_map=args.flux_map,
-                              follow_moving_dip=args.follow_moving_dip), indent=2))
+                              follow_moving_dip=args.follow_moving_dip,
+                              paired_dwell_scan=args.paired_dwell_scan), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             flux_map=args.flux_map,
-            follow_moving_dip=args.follow_moving_dip)
+            follow_moving_dip=args.follow_moving_dip,
+            paired_dwell_scan=args.paired_dwell_scan)
     return 0
 
 

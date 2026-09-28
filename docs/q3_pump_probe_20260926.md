@@ -2892,3 +2892,35 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --follow-moving-dip
 ```
+
+The within-shot confirmation completed at
+`q3_tls_swap_hold_moving_dip_20260928T141757Z_e302ed09`. Fresh scouts
+selected 4.110 GHz pre and 4.111 GHz post, with a 4.096-GHz lower
+control during science acquisition. Readout fidelity was 0.895/0.903,
+both transfer controls passed, and every program's early/late
+preparation and ground-drift gate passed. The predeclared extra
+1.5-to-6-us feature-minus-control loss was +0.0997 and +0.0493 in
+forward/reverse order, pooled +0.0745 classified. Continuous IQ gave
++0.1679/+0.0303, pooled +0.0991 reference separations. Twenty-shot
+block bootstrap intervals for the pooled effects were [+0.045,+0.104]
+classified and [+0.061,+0.137] continuous-IQ units. The apparent
+late-time loss therefore persists at the now-lower feature, while the
+separately acquired 11-time-point pilot is too order-sensitive to resolve
+its detailed time course.
+
+The next measurement pairs each of ten later holds (0.2, 0.35, 0.5,
+0.75, 1, 1.5, 2, 3, 4, 6 us) with a 0.1-us reference inside each
+logical shot. It repeats feature/control in ascending and descending
+hold order: 40 four-condition programs, 800 logical shots each, fresh
+pre/post scouts, passive reset, and the same pinned flux correction.
+The 0.1-us reference includes flux settling, so the long-time curve
+and any oscillatory structure should be interpreted with that limitation.
+This addresses the separate-arm order noise before attempting a model
+fit or a stronger claim about coherent exchange.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --paired-dwell-scan
+```
