@@ -3526,3 +3526,41 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dual-line-dither
 ```
+
+## Direct two-visit memory test (current next experiment)
+
+The flux-dither proposal above was **not run**. The user wants to act on a
+loss feature rather than measure its spectral diffusion or common-mode flux
+motion. Earlier afterglow attempts inserted a full corrected return and an
+intermediate readout between loading and probing. A negative result there
+does not test whether excitation can be recovered sooner.
+
+`TLSTwoVisitMemory` freshly locates a qualified loss feature and a clean
+14-MHz-lower control. In each hardware shot it interleaves eight subshots:
+first/second visits at feature/feature, feature/control, control/feature,
+or control/control, each with park-ground or park-excited preparation.
+The first visit lasts 10 µs. After a 0.5, 2, 10, or 40 µs storage interval
+at park, the second visit lasts 6 µs. Flux-tail compensation superposes
+the four step responses, with no measurement or full 40 µs recovery between
+visits. A 40 µs corrected return precedes the **only** readout. Each gap
+is repeated with the eight subshot orders reversed; gaps are visited in
+ascending then descending order, 800 logical shots per program. Raw IQ,
+readout and park-transfer references, and pre/post broad
+scouts are saved.
+
+The preregistered interaction score is
+`log[(C_ff × C_cc)/(C_fc × C_cf)]`, where `C_ab` is the final excited-minus-
+ground readout contrast after first site `a` and second site `b`.
+Independent multiplicative loss from the two visits gives zero. A
+reproducible short-gap interaction that disappears by 40 µs would be
+evidence of memory across visits. It would not by itself identify a single
+TLS or prove coherent exchange; flux-history and other non-Markovian
+mechanisms would remain alternatives. Both order repeats and the scout /
+readout controls must pass before interpretation.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSTwoVisitMemory --run
+```
