@@ -2412,3 +2412,34 @@ and sham. It starts shot-alternating acquisition only if the on-tone
 response exceeds the local sham by at least 0.10, the detuned response
 remains within 0.10, and the sham bracket stays within 0.10. Raw check IQ
 is saved; a five-second washout separates the check from the pilot.
+
+The subsequent pilot at `q3_pump_probe_shot_alternating_20260928T052601Z_c3f80105`
+completed both QICK stream orders and saved all 1,600 interleaved IQ records.
+The fresh feature was 4.129 GHz; pre/post dip depths were 0.360/0.293.
+The local gain-6000 drive check passed: gain-6000 excess +0.175, detuned
+excess +0.040, and sham-bracket drift 0.020. The pre/post readout references
+and short-return transfer controls also passed. In the forward order,
+sham ground/excited fractions were 0.080/0.270 and driven ground/excited
+fractions were 0.280/0.320. In reverse order, those fractions were
+0.115/0.205 and 0.265/0.305. Thus cold-drive contrast persisted in both
+orders (+0.200/+0.150), while the 20-us sham hot-minus-cold contrast was
+0.190 forward and 0.090 reverse. The latter misses the prespecified 0.10
+gate, so the pilot status is `complete_controls_unstable`. The QICK stream
+works; this still cannot be interpreted as TLS saturation.
+
+The next check holds everything else fixed but compares 4, 8, 12, and 20-us
+target visits before the resident drive. Each visit gets forward and reverse
+200-shot four-condition programs, with the same raw IQ, local drive check,
+readout references, corrected 40-us return, and pre/post loss scouts.
+Shorter visits should preserve more of the prepared hot state. A usable
+loading time needs at least 0.10 hot-minus-cold sham contrast and 0.10
+ground-state drive contrast in both orders, with no large order disagreement.
+This check selects timing for a subsequent short/long-hold, detuned and flank
+comparison; it is not itself a TLS-memory test.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loading-check
+```

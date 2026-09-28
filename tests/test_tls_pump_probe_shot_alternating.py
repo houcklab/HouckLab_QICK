@@ -119,3 +119,50 @@ def test_scoring_retains_hot_preparation_contrast_as_control():
                                       "on_g": 0.29, "on_e": 0.25})
     assert score["cold_drive_contrast"] == pytest.approx(0.21)
     assert score["hot_preparation_contrast"] == pytest.approx(0.23)
+
+
+def test_loading_check_pairs_four_preholds_in_both_shot_orders():
+    module = experiment()
+    specs = module.loading_program_specs(4.129)
+    assert len(specs) == 8
+    assert [(x["pre_drive_us"], x["direction"]) for x in specs] == [
+        (4.0, "forward"), (8.0, "forward"),
+        (12.0, "forward"), (20.0, "forward"),
+        (20.0, "reverse"), (12.0, "reverse"),
+        (8.0, "reverse"), (4.0, "reverse")]
+    assert all(x["post_drive_us"] == 0.1 for x in specs)
+    assert all({c["name"] for c in x["conditions"]} ==
+               {"sham_g", "sham_e", "on_g", "on_e"} for x in specs)
+    assert specs[0]["order"] == ["sham_g", "sham_e", "on_g", "on_e"]
+    assert specs[-1]["order"] == ["on_e", "on_g", "sham_e", "sham_g"]
+
+
+def test_loading_check_requires_repeatable_hot_and_drive_contrast():
+    module = experiment()
+    scores = {
+        "load4_forward": {"hot_preparation_contrast": 0.25,
+                          "cold_drive_contrast": 0.20,
+                          "hot_minus_cold_drive_change": 0.02},
+        "load4_reverse": {"hot_preparation_contrast": 0.24,
+                          "cold_drive_contrast": 0.18,
+                          "hot_minus_cold_drive_change": 0.01},
+        "load8_forward": {"hot_preparation_contrast": 0.16,
+                          "cold_drive_contrast": 0.19,
+                          "hot_minus_cold_drive_change": 0.05},
+        "load8_reverse": {"hot_preparation_contrast": 0.08,
+                          "cold_drive_contrast": 0.17,
+                          "hot_minus_cold_drive_change": 0.04},
+        "load12_forward": {"hot_preparation_contrast": 0.09,
+                           "cold_drive_contrast": 0.17,
+                           "hot_minus_cold_drive_change": 0.04},
+        "load12_reverse": {"hot_preparation_contrast": 0.12,
+                           "cold_drive_contrast": 0.17,
+                           "hot_minus_cold_drive_change": 0.04},
+        "load20_forward": {"hot_preparation_contrast": 0.19,
+                           "cold_drive_contrast": 0.17,
+                           "hot_minus_cold_drive_change": 0.04},
+        "load20_reverse": {"hot_preparation_contrast": 0.09,
+                           "cold_drive_contrast": 0.17,
+                           "hot_minus_cold_drive_change": 0.04},
+    }
+    assert module.usable_loading_times(scores) == [4.0]

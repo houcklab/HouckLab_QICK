@@ -35,6 +35,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
 SHOTS = 200
 REFERENCE_SHOTS = 400
 CONDITION_NAMES = ("sham_g", "sham_e", "on_g", "on_e")
+LOADING_PREHOLDS_US = (4.0, 8.0, 12.0, 20.0)
 
 
 def conditions(center_ghz, *, reverse=False):
@@ -66,6 +67,35 @@ def score_conditions(fractions):
             "hot_preparation_contrast": x["sham_e"] - x["sham_g"],
             "hot_minus_cold_drive_change": (
                 x["on_e"] - x["on_g"] - x["sham_e"] + x["sham_g"])}
+
+
+def loading_program_specs(center_ghz):
+    """Pair each target loading time across reversed within-shot orders."""
+    result = []
+    for direction, preholds in (("forward", LOADING_PREHOLDS_US),
+                                ("reverse", tuple(reversed(LOADING_PREHOLDS_US)))):
+        for pre in preholds:
+            condition_list = conditions(center_ghz, reverse=(direction == "reverse"))
+            result.append({"name": f"load{pre:g}_{direction}",
+                           "direction": direction, "pre_drive_us": pre,
+                           "post_drive_us": resident.POST_DRIVE_US,
+                           "order": [x["name"] for x in condition_list],
+                           "conditions": condition_list})
+    return result
+
+
+def usable_loading_times(scores):
+    """Select preholds with repeatable hot preparation and local drive response."""
+    usable = []
+    for pre in LOADING_PREHOLDS_US:
+        forward = scores[f"load{pre:g}_forward"]
+        reverse = scores[f"load{pre:g}_reverse"]
+        if (all(x["hot_preparation_contrast"] >= 0.10 and
+                x["cold_drive_contrast"] >= 0.10 for x in (forward, reverse)) and
+                abs(forward["hot_minus_cold_drive_change"] -
+                    reverse["hot_minus_cold_drive_change"]) <= 0.25):
+            usable.append(pre)
+    return usable
 
 
 def fresh_drive_arms(center_ghz):
@@ -133,7 +163,22 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
         self.end()
 
 
-def plan():
+def plan(*, loading_check=False):
+    if loading_check:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "choose a stable target loading time before shot-alternating loss test",
+                "site": "freshly selected loss feature",
+                "pre_drive_holds_us": list(LOADING_PREHOLDS_US),
+                "post_drive_us": resident.POST_DRIVE_US,
+                "programs": 8, "conditions_per_shot": 4,
+                "shots_per_program": SHOTS, "raw_iq_saved": True,
+                "fresh_drive_check_arms": 4,
+                "fresh_drive_check_pre_us": 8.0,
+                "full_return_before_each_readout_us": 40.0,
+                "inter_shot_delay_us": 500.0,
+                "success_gate": "hot and cold-drive contrast >=0.10 in both orders",
+                "calibration_session": probe.CALIBRATION_SESSION_ID,
+                "note": "This checks preparation stability; it cannot establish TLS saturation."}
     return {"hardware_access": False, "reset_mode": "passive",
             "purpose": "validate shot-alternating target-resident condition order",
             "site": "freshly selected loss feature",
@@ -152,7 +197,8 @@ def plan():
             "note": __doc__}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        loading_check=False):
     data_root = Path(data_root)
     calibration_path, calibration = probe.checked_calibration(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -205,7 +251,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         if abs(pulse_us - float(calibration["drive_pulse_nominal_us"])) > 0.01:
             raise RuntimeError("qubit Gaussian duration changed since drive calibration")
         windows = {}
-        for pre in (resident.TRANSFER_PRE_US, resident.PRE_DRIVE_US):
+        preholds = LOADING_PREHOLDS_US if loading_check else (
+            resident.TRANSFER_PRE_US, resident.PRE_DRIVE_US)
+        for pre in preholds:
             before, after, recovery = resident.resident_segments(
                 compensation, pre_us=pre + ff_pulse.flux_settle_us(base),
                 pulse_us=pulse_us, post_us=resident.POST_DRIVE_US,
@@ -213,7 +261,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             windows[str(pre)] = {"held_multiplier": before[-1][0],
                                  "post_multiplier": after[0][0],
                                  "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = ("q3_pump_probe_shot_alternating_" +
+        session_id = (("q3_pump_probe_shot_alternating_loading_" if loading_check
+                       else "q3_pump_probe_shot_alternating_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -224,8 +273,19 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
         drive_checks = fresh_drive_arms(center)
-        orders = [conditions(center), conditions(center, reverse=True)]
-        manifest = {"schema": "q3.pump-probe-shot-alternating-pilot.v1",
+        if loading_check:
+            for arm in drive_checks:
+                arm["pre_drive_us"] = 8.0
+        program_specs = (loading_program_specs(center) if loading_check else [
+            {"name": direction, "direction": direction,
+             "pre_drive_us": resident.PRE_DRIVE_US,
+             "post_drive_us": resident.POST_DRIVE_US,
+             "order": [c["name"] for c in order], "conditions": order}
+            for direction, order in (("forward", conditions(center)),
+                                     ("reverse", conditions(center, reverse=True)))])
+        manifest = {"schema": ("q3.pump-probe-shot-alternating-loading.v1"
+                               if loading_check else
+                               "q3.pump-probe-shot-alternating-pilot.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "calibration_manifest": str(calibration_path),
@@ -233,16 +293,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "correction_sha256": localizer.CORRECTION_SHA256,
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "dc_gain": int(dc[0]),
-                    "realized_ghz": realized.tolist(), "plan": plan(),
+                    "realized_ghz": realized.tolist(),
+                    "plan": plan(loading_check=loading_check),
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
                     "fresh_drive_checks": [{**a, "status": "pending"}
                                            for a in drive_checks],
-                    "programs": [{"name": name, "order": [c["name"] for c in order],
-                                  "conditions": order, "status": "pending"}
-                                 for name, order in (("forward", orders[0]),
-                                                     ("reverse", orders[1]))]}
+                    "programs": [{**spec, "status": "pending"}
+                                 for spec in program_specs]}
         protocol.checkpoint(path, manifest)
         print(f"[shot-alternating] manifest={path}", flush=True)
         raw_refs = {}
@@ -257,8 +316,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     base, {"flux_ghz": center, "drive_mhz": cond["drive_mhz"],
                            "gain": cond["gain"],
                            "preparation_state": cond["preparation_state"],
-                           "pre_drive_us": resident.PRE_DRIVE_US,
-                           "post_drive_us": resident.POST_DRIVE_US,
+                           "pre_drive_us": entry["pre_drive_us"],
+                           "post_drive_us": entry["post_drive_us"],
                            "shots": SHOTS}, dc_lookup)
                         for cond in entry["conditions"]]
                 programs[entry["name"]] = ShotAlternatingResidentProgram(
@@ -339,7 +398,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             protocol.checkpoint(path, manifest)
             for entry in manifest["programs"]:
                 name = entry["name"]
-                print(f"[shot-alternating] {name} 200 x 4 conditions", flush=True)
+                print(f"[shot-alternating] {name} {SHOTS} x 4 conditions", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 start = time.monotonic()
@@ -394,15 +453,20 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             manifest["feature_stable"] = (
                 resident.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
-            valid = (manifest["post_readout_score"]["valid"] and
-                     all(x["usable"] for x in manifest["transfer_control"].values()) and
-                     manifest["feature_stable"] and
-                     all(x["cold_drive_contrast"] >= 0.10
-                         for x in order_scores.values()) and
-                     all(x["hot_preparation_contrast"] >= 0.10
-                         for x in order_scores.values()) and
-                     abs(order_scores["forward"]["hot_minus_cold_drive_change"] -
-                         order_scores["reverse"]["hot_minus_cold_drive_change"]) <= 0.25)
+            controls_valid = (manifest["post_readout_score"]["valid"] and
+                              all(x["usable"] for x in manifest["transfer_control"].values()) and
+                              manifest["feature_stable"])
+            if loading_check:
+                manifest["usable_loading_times_us"] = usable_loading_times(order_scores)
+                valid = controls_valid and bool(manifest["usable_loading_times_us"])
+            else:
+                valid = (controls_valid and
+                         all(x["cold_drive_contrast"] >= 0.10
+                             for x in order_scores.values()) and
+                         all(x["hot_preparation_contrast"] >= 0.10
+                             for x in order_scores.values()) and
+                         abs(order_scores["forward"]["hot_minus_cold_drive_change"] -
+                             order_scores["reverse"]["hot_minus_cold_drive_change"]) <= 0.25)
             manifest["status"] = "complete" if valid else "complete_controls_unstable"
             protocol.checkpoint(path, manifest)
             print(f"[shot-alternating] {manifest['status']}: {path}", flush=True)
@@ -421,11 +485,13 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--loading-check", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(loading_check=args.loading_check), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            loading_check=args.loading_check)
     return 0
 
 
