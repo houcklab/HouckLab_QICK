@@ -2240,3 +2240,51 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run
 ```
+
+The first short-gap run completed 128/128 arms in
+`q3_pump_probe_resident_probe_20260928T043204Z_c978173b`. The pre/post
+scouts selected 4.128/4.129 GHz with depths 0.318/0.335, so the feature
+persisted through the experiment. Frozen-axis reference fidelities were
+0.854 before and 0.905 after; the short-return ground/excited controls
+were 0.113/0.595 before and 0.070/0.633 after. All recorded NPZ shots
+are present, and the saved classifications match recalculation from raw IQ.
+
+For the planned 0.1-to-2-us hot-minus-cold loss contrast, after subtracting
+the mean of the two zero-drive shams and then the flank, gain 6000 at +5 MHz
+gave **+0.314 and +0.195** in the two repeats. This is repeatable but has
+the **opposite sign** from the simple saturation hypothesis, in which hot
+loading would reduce subsequent loss. The -10-MHz gain-6000 control also
+gave +0.159 and +0.105; gain 30000 gave +0.166 and -0.013. Raw-IQ
+projections confirm the gain-6000 short-gap change in both repeats, so it
+is not created by the classifier threshold. However, the zero-drive short
+hold still retains appreciable hot-minus-cold qubit excitation (roughly
+0.12-0.17 at the feature and 0.50-0.57 at the flank). The resident drive
+can rotate that residual population. These data establish a candidate
+pump-dependent response, **not** TLS saturation or single-TLS memory.
+
+## Loading-time check for the residual-qubit confound
+
+The next bounded run repeats the target-resident sequence after either a
+20- or 80-us visit before the microwave pulse. It keeps matched hot/cold
+preparation, 0.1/2-us post-drive holds, gain-zero brackets, the +5-MHz
+gain-6000 drive, the -10-MHz gain-6000 control, and the 14-MHz lower flank.
+Both sites and both loading times run twice in reversed order: 128 science
+arms at 400 raw-IQ shots each, plus the same pre/post references and feature
+scouts. The drive window is checked against the pinned flux correction at
+both loading times before acquisition. The nominal 80-us correction is flat
+through the drive window and retains the complete 40-us return.
+
+First compare the *zero-drive* short-hold hot-minus-cold population at 20
+and 80 us. If it has not appreciably converged at 80 us, this check cannot
+separate residual qubit excitation from bath memory. If it converges, ask
+whether the on-tone incremental-loss contrast remains while the detuned and
+flank controls do not; inspect both repeats and unthresholded IQ. Even a
+selective effect would remain evidence for a pump-dependent loss mechanism,
+not proof of a microscopic TLS.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run --loading-time-check
+```

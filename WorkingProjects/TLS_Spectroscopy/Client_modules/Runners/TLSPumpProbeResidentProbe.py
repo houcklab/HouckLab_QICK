@@ -8,6 +8,10 @@ occur. Feature/flank, zero-drive, and detuned-drive arms are paired and
 repeated in reverse order. A pump-dependent difference in the hold response
 would be a candidate TLS/bath effect, not proof of a single TLS.
 
+The optional loading-time check instead compares 20- and 80-us target visits
+with 0.1- and 2-us post-drive holds at gain 6000. Its purpose is to test
+whether the short-gap response follows residual qubit excitation.
+
 This runner is experiment-only; it does not modify production TLS scans.
 """
 
@@ -33,6 +37,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 CALIBRATION_SESSION_ID = "q3_pump_probe_resident_drive_20260928T041637Z_8faee4a6"
 SHOTS = 400
 POST_HOLDS_US = (0.1, 2.0, 6.0)
+LOADING_TIMES_US = (20.0, 80.0)
+LOADING_POST_HOLDS_US = (0.1, 2.0)
+LOADING_TONE_ORDER = ("sham_a", "on_6000", "detuned_6000", "sham_b")
 TONE_ORDER = ("sham_a", "on_6000", "detuned_6000",
               "on_30000", "sham_b")
 TONE_SETTINGS = {
@@ -73,6 +80,38 @@ def probe_arms(center_ghz, flank_ghz):
     return arms
 
 
+def loading_time_arms(center_ghz, flank_ghz):
+    """Interleave hot/cold while reversing site, load, hold and tone order."""
+    arms = []
+    for repeat in (0, 1):
+        sites = (("feature", center_ghz), ("flank", flank_ghz))
+        if repeat:
+            sites = tuple(reversed(sites))
+        loads = LOADING_TIMES_US if not repeat else tuple(reversed(LOADING_TIMES_US))
+        holds = LOADING_POST_HOLDS_US if not repeat else tuple(reversed(LOADING_POST_HOLDS_US))
+        tones = LOADING_TONE_ORDER if not repeat else tuple(reversed(LOADING_TONE_ORDER))
+        preparations = ("g", "e") if not repeat else ("e", "g")
+        for site, flux_ghz in sites:
+            for load in loads:
+                for hold in holds:
+                    for tone in tones:
+                        gain, detuning = TONE_SETTINGS[tone]
+                        for state in preparations:
+                            arms.append({
+                                "name": (f"r{repeat}_{site}_load{load:g}us_"
+                                         f"hold{hold:g}us_{tone}_{state}").replace(".", "p"),
+                                "repeat": repeat, "site": site,
+                                "flux_ghz": float(flux_ghz),
+                                "drive_mhz": round(1000.0 * float(flux_ghz) + detuning, 3),
+                                "gain": gain, "tone": tone,
+                                "preparation_state": state,
+                                "pre_drive_us": float(load),
+                                "post_drive_us": float(hold),
+                                "shots": SHOTS,
+                            })
+    return arms
+
+
 def reference_arms(center_ghz, *, phase):
     def arm(name, state, *, transfer=False):
         return {"name": f"{name}_{phase}", "site": "feature",
@@ -90,7 +129,23 @@ def reference_arms(center_ghz, *, phase):
             arm("ref_transfer_e", "e", transfer=True)]
 
 
-def plan():
+def plan(*, loading_time_check=False):
+    if loading_time_check:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "test whether short-gap response follows residual qubit excitation",
+                "pump": "park pi (hot) or matched zero-gain pulse (cold)",
+                "pre_drive_holds_us": list(LOADING_TIMES_US),
+                "target_resident_probe": "Gaussian qubit drive at model +5 MHz",
+                "probe_dac_gains": [0, 6000],
+                "detuned_control_mhz": -10,
+                "probe_holds_us": list(LOADING_POST_HOLDS_US),
+                "sites": ["selected loss feature", "14-MHz lower flank"],
+                "paired_preparations": ["g", "e"],
+                "repeats": 2, "science_arms": 128,
+                "shots_per_arm": SHOTS, "intermediate_readout": False,
+                "full_return_before_final_readout_us": 40.0,
+                "calibration_session": CALIBRATION_SESSION_ID,
+                "note": "A load-time trend alone is not proof of TLS memory."}
     return {"hardware_access": False, "reset_mode": "passive",
             "pump": "park pi (hot) or zero-gain matched pulse (cold), then 20-us target visit",
             "target_resident_probe": "Gaussian qubit drive at model +5 MHz",
@@ -142,14 +197,20 @@ def calibration_covers_feature(calibrated_ghz, current_ghz):
     return abs(1000.0 * (float(current_ghz) - float(calibrated_ghz))) <= 5.0 + 1e-6
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        loading_time_check=False):
     data_root = Path(data_root)
+    label = "loading-time" if loading_time_check else "resident-probe"
+    suffix = ("TLS_PumpProbe_LoadingTime" if loading_time_check
+              else "TLS_PumpProbe_ResidentProbe")
+    post_holds = LOADING_POST_HOLDS_US if loading_time_check else POST_HOLDS_US
+    pre_holds = LOADING_TIMES_US if loading_time_check else (resident.PRE_DRIVE_US,)
     calibration_path, calibration = checked_calibration(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_PumpProbe_ResidentProbe_Scout"})
+                             "output_suffix": suffix + "_Scout"})
     selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
     center = round(float(selected["center_ghz"]), 3)
     if not calibration_covers_feature(calibration["center_ghz"], center):
@@ -158,7 +219,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             f"drive calibration {calibration['center_ghz']:.3f} GHz; "
             "rerun TLSPumpProbeResidentDrive first")
     flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
-    print(f"[resident-probe] feature={center:.3f} GHz, "
+    print(f"[{label}] feature={center:.3f} GHz, "
           f"flank={flank:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
@@ -203,8 +264,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         if abs(pulse_us - float(calibration["drive_pulse_nominal_us"])) > 0.01:
             raise RuntimeError("qubit Gaussian duration changed since drive calibration")
         windows = {}
-        for pre in (resident.PRE_DRIVE_US, resident.TRANSFER_PRE_US):
-            for post in POST_HOLDS_US:
+        for pre in sorted(set(pre_holds) | {resident.TRANSFER_PRE_US,
+                                          resident.PRE_DRIVE_US}):
+            for post in post_holds:
                 before, after, recovery = resident.resident_segments(
                     compensation,
                     pre_us=pre + ff_pulse.flux_settle_us(base),
@@ -213,16 +275,20 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "held_multiplier": before[-1][0],
                     "post_multiplier": after[0][0],
                     "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = ("q3_pump_probe_resident_probe_" +
+        session_id = (("q3_pump_probe_loading_time_" if loading_time_check
+                       else "q3_pump_probe_resident_probe_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
         manifest_path = folder / "manifest.json"
+        science_arms = (loading_time_arms(center, flank) if loading_time_check
+                        else probe_arms(center, flank))
         arms = (reference_arms(center, phase="pre") +
-                probe_arms(center, flank) +
+                science_arms +
                 reference_arms(center, phase="post"))
-        manifest = {"schema": "q3.pump-probe-resident-probe.v1",
+        manifest = {"schema": ("q3.pump-probe-loading-time.v1" if loading_time_check
+                               else "q3.pump-probe-resident-probe.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "calibration_manifest": str(calibration_path),
@@ -232,24 +298,35 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": {str(k): v for k, v in dc_lookup.items()},
-                    "realized_ghz": realized.tolist(), "plan": plan(),
+                    "realized_ghz": realized.tolist(),
+                    "plan": plan(loading_time_check=loading_time_check),
                     "drive_pulse_nominal_us": pulse_us,
                     "correction_windows": windows,
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
         protocol.checkpoint(manifest_path, manifest)
-        print(f"[resident-probe] manifest={manifest_path}", flush=True)
+        print(f"[{label}] manifest={manifest_path}", flush=True)
         raw_by_name = {}
         axis = None
         try:
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             preflight = list(arms[:4])
-            preflight += [next(arm for arm in arms
-                               if arm.get("site") == site and
-                               arm.get("tone") == "on_30000" and
-                               arm.get("post_drive_us") == hold)
-                          for site in ("feature", "flank")
-                          for hold in (min(POST_HOLDS_US), max(POST_HOLDS_US))]
+            if loading_time_check:
+                preflight += [next(arm for arm in science_arms
+                                   if arm["site"] == site and
+                                   arm["tone"] == "on_6000" and
+                                   arm["pre_drive_us"] == load and
+                                   arm["post_drive_us"] == hold)
+                              for site in ("feature", "flank")
+                              for load in LOADING_TIMES_US
+                              for hold in LOADING_POST_HOLDS_US]
+            else:
+                preflight += [next(arm for arm in science_arms
+                                   if arm["site"] == site and
+                                   arm["tone"] == "on_30000" and
+                                   arm["post_drive_us"] == hold)
+                              for site in ("feature", "flank")
+                              for hold in (min(POST_HOLDS_US), max(POST_HOLDS_US))]
             for arm in preflight:
                 resident.ResidentDriveProgram(
                     soccfg, resident.arm_config(base, arm, dc_lookup),
@@ -258,7 +335,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             protocol.checkpoint(manifest_path, manifest)
             for index, arm in enumerate(manifest["arms"], start=1):
                 cfg = resident.arm_config(base, arm, dc_lookup)
-                print(f"[resident-probe] {index}/{len(arms)} {arm['name']}",
+                print(f"[{label}] {index}/{len(arms)} {arm['name']}",
                       flush=True)
                 arm["status"] = "acquiring"
                 protocol.checkpoint(manifest_path, manifest)
@@ -309,7 +386,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_PumpProbe_ResidentProbe_Scout_post"})
+                                     "output_suffix": suffix + "_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = adaptive.select_loss_feature(
@@ -330,7 +407,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                               manifest["feature_stable"]
                 else "complete_controls_unstable")
             protocol.checkpoint(manifest_path, manifest)
-            print(f"[resident-probe] {manifest['status']}: {manifest_path}",
+            print(f"[{label}] {manifest['status']}: {manifest_path}",
                   flush=True)
             return manifest_path
         except BaseException as exc:
@@ -347,11 +424,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--loading-time-check", action="store_true",
+                        help="vary target loading time to separate qubit residual from memory")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(loading_time_check=args.loading_time_check), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            loading_time_check=args.loading_time_check)
     return 0
 
 

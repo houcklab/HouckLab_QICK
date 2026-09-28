@@ -167,6 +167,46 @@ def test_probe_schedule_pairs_hot_cold_and_brackets_each_tone_block():
                            for a in block)
 
 
+def test_loading_time_schedule_balances_loads_and_reverses_order():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    arms = module.loading_time_arms(4.128, 4.114)
+    assert len(arms) == 128
+    assert {a["pre_drive_us"] for a in arms} == {20.0, 80.0}
+    assert {a["post_drive_us"] for a in arms} == {0.1, 2.0}
+    assert {a["tone"] for a in arms} == {
+        "sham_a", "on_6000", "detuned_6000", "sham_b"}
+    assert all(a["gain"] in (0, 6000) and a["shots"] == 400 for a in arms)
+    for repeat in (0, 1):
+        subset = [a for a in arms if a["repeat"] == repeat]
+        expected_loads = (20.0, 80.0) if repeat == 0 else (80.0, 20.0)
+        assert list(dict.fromkeys(a["pre_drive_us"] for a in subset[:64])) == list(expected_loads)
+        for site in ("feature", "flank"):
+            for load in expected_loads:
+                for hold in (0.1, 2.0):
+                    block = [a for a in subset if a["site"] == site and
+                             a["pre_drive_us"] == load and a["post_drive_us"] == hold]
+                    assert len(block) == 8
+                    assert all({block[i]["preparation_state"],
+                                block[i + 1]["preparation_state"]} == {"g", "e"}
+                               for i in range(0, 8, 2))
+                    assert [a["tone"] for a in block[::2]] == (
+                        ["sham_a", "on_6000", "detuned_6000", "sham_b"]
+                        if repeat == 0 else
+                        ["sham_b", "detuned_6000", "on_6000", "sham_a"])
+    assert len({a["name"] for a in arms}) == len(arms)
+
+
+def test_loading_time_plan_describes_actual_schedule():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    plan = module.plan(loading_time_check=True)
+    assert plan["science_arms"] == 128
+    assert plan["pre_drive_holds_us"] == [20.0, 80.0]
+    assert plan["probe_holds_us"] == [0.1, 2.0]
+    assert plan["probe_dac_gains"] == [0, 6000]
+
+
 def test_probe_rejects_feature_outside_calibrated_frequency_neighborhood():
     module = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
