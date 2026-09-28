@@ -3083,3 +3083,48 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --plan --within-shot-time-map
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --within-shot-time-map
 ```
+
+The within-shot time map completed in
+`q3_tls_swap_hold_within_shot_time_map_20260928T155435Z_046eec13`.
+All ten eight-condition programs completed, and the readout and transfer
+controls passed. The loss feature was at 4.102 GHz in the pre-scout and
+4.104 GHz in the post-scout; the 4.088-GHz fixed control remained separated
+from the loss. The feature-minus-control extra loss relative to 1.5 us was
+-0.058/-0.055 at 3 us, +0.083/+0.102 at 6 us, +0.100/+0.122 at 10 us,
++0.170/+0.172 at 16 us, and +0.307/+0.393 at 25 us, in the two
+reversed condition orders. Block resampling 20 logical shots at a time
+gives pooled classified 95% intervals of [-0.121,+0.009] at 3 us,
+[+0.031,+0.154] at 6 us, and [+0.288,+0.413] at 25 us. The continuous
+IQ projections agree in sign and magnitude at 6–25 us. These intervals
+cover within-program shot variation, not uncertainty from the 2-MHz
+feature motion. The 3-us negative point is inconclusive. The result is
+a time-resolved, frequency-local loss signal; it does not identify a
+single microscopic TLS or demonstrate saturation.
+
+The next experiment directly tests loading-dependent loss before any
+intermediate return or readout. A fresh 4.060–4.170-GHz scout selects the
+strongest qualified loss feature and a clean 14-MHz-lower control. In each
+science subshot, q3 starts in g or e, visits the target for 20 us, receives
+a gain-6000 on-tone or detuned pulse while still at the target, remains
+there for 1.5 or 16 us, and is read out once after the full corrected
+return. Eight 1,500-logical-shot programs cross feature/control, on/detuned
+tone, and reversed condition order; each logical shot alternates the two
+probe holds, sham/driven pulse, and g/e loading. All single-shot IQ is
+saved. Fresh resident-drive checks, readout/transfer references, and a
+post-scout gate interpretation. The prespecified statistic compares
+ground-referenced 16-to-1.5-us survival ratios after loaded and cold
+preparations, then subtracts the corresponding off-feature difference.
+Normalizing each preparation to its own short-time signal prevents unequal
+post-pulse qubit populations from mimicking saturation. Detuned-tone arms
+gate drive specificity. A positive result would be candidate saturation,
+conditional on those controls, not proof
+of a single TLS. A null result would leave faster TLS relaxation or weak
+target drive unresolved.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --short-gap-saturation
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --short-gap-saturation
+```

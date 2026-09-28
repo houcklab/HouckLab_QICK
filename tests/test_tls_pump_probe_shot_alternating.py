@@ -400,3 +400,68 @@ def test_hold_alternating_scores_preserve_the_existing_loss_report_keys():
     assert scores["r0_feature_hold0p1_on"]["cold_drive_contrast"] == pytest.approx(0.10)
     assert scores["r0_feature_hold2_on"]["hot_preparation_contrast"] == pytest.approx(0.10)
     assert scores["r0_feature_hold2_on"]["hot_minus_cold_drive_change"] == pytest.approx(-0.07)
+
+
+def test_short_gap_saturation_uses_long_probe_holds_in_matched_shots():
+    module = experiment()
+    specs = module.short_gap_saturation_specs(4.102)
+    assert len(specs) == 8
+    assert all(item["shots"] == 1500 for item in specs)
+    forward = next(x for x in specs if x["name"] == "r0_feature_on")
+    reverse = next(x for x in specs if x["name"] == "r1_feature_on")
+    assert [x["post_drive_us"] for x in forward["conditions"]] == [1.5] * 4 + [16.0] * 4
+    assert [x["name"] for x in reverse["conditions"]] == list(reversed(forward["order"]))
+    assert all(x["pre_drive_us"] == 20.0 for x in specs)
+    assert {x["flux_ghz"] for x in specs if x["site"] == "flank"} == {4.088}
+    assert module.plan(short_gap_saturation=True)["intermediate_readout"] is False
+
+
+def test_short_gap_stream_rejects_missing_condition_and_accepts_eight_real_holds(monkeypatch):
+    module = experiment()
+    entry = module.short_gap_saturation_specs(4.102)[0]
+    order = entry["order"]
+    records = [module.resident.SingleIQ(i, 0) for i in range(16)]
+    split = module.split_records(records, order, shots=2, holds=(1.5, 16.0))
+    assert [r.i for r in split["hold1p5_sham_g"]] == [0, 8]
+    assert [r.i for r in split["hold16_on_e"]] == [7, 15]
+    with pytest.raises(ValueError, match="each condition"):
+        module.split_records(records, order[:-1] + [order[0]], shots=2,
+                             holds=(1.5, 16.0))
+    cfgs = module.condition_configs({"sigma": 0.1, "ff_park_gain": -25146}, entry,
+                                    {4.102: -100, 4.088: -123}, 4.102)
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, *_a: None)
+    program = module.ShotAlternatingResidentProgram(None, cfgs, None, None)
+    assert program.conditions_per_shot == 8
+    assert program.logical_shots == 1500
+
+
+def test_short_gap_statistic_normalizes_unequal_probe_preparations():
+    module = experiment()
+    scores = {}
+    for repeat in (0, 1):
+        for site in ("feature", "flank"):
+            for tone in ("on", "detuned"):
+                short = {"sham_g": .10, "sham_e": .30,
+                         "on_g": .70 if tone == "on" else .11,
+                         "on_e": .50 if tone == "on" else .31}
+                long = {"sham_g": .10, "sham_e": .16,
+                        "on_g": .40 if site == "feature" else .55,
+                        "on_e": .30 if site == "feature" else .40}
+                if tone == "detuned":
+                    long.update(on_g=.11, on_e=.17)
+                scores[f"r{repeat}_{site}_hold1p5_{tone}"] = module.score_conditions(short)
+                scores[f"r{repeat}_{site}_hold16_{tone}"] = module.score_conditions(long)
+    # At the feature, both driven populations halve after the short hold.
+    # The loaded arm started lower; an unnormalized long-minus-short
+    # difference would falsely suggest saturation.
+    null = module.short_gap_saturation_report(scores)
+    assert null["r0"]["feature_specific_loaded_survival_advantage"] == pytest.approx(0.0)
+    scores["r0_feature_hold16_on"]["fractions"]["on_e"] = .42
+    scores["r1_feature_hold16_on"]["fractions"]["on_e"] = .38
+    report = module.short_gap_saturation_report(scores)
+    assert report["r0"]["feature_specific_loaded_survival_advantage"] == pytest.approx(0.30)
+    assert report["r1"]["feature_specific_loaded_survival_advantage"] == pytest.approx(0.20)
+    assert module.short_gap_saturation_controls(scores)["usable"]
+    scores["r0_feature_hold1p5_on"]["cold_drive_contrast"] = 0.02
+    assert not module.short_gap_saturation_controls(scores)["usable"]
