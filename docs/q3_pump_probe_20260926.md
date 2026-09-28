@@ -2924,3 +2924,36 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --paired-dwell-scan
 ```
+
+The paired-dwell scan
+`q3_tls_swap_hold_paired_dwell_20260928T143254Z_20d8a8e3` completed
+40/40 four-condition programs. Readout fidelity was 0.899/0.908,
+pre/post transfer controls passed, and all 40 individual preparation
+and ground-drift checks passed. However, the strong T1 loss trough was
+centered near 4.113 GHz before and 4.107 GHz after the run: a 6-MHz
+shift, well outside the 2-MHz stability gate. The fixed 4.113-GHz
+science point became nearly loss-free in the post-scout, while the
+4.099-GHz control remained away from the trough. The feature-minus-
+control 0.1-to-6-us excess loss was -0.061/-0.036 classified and
+-0.044/-0.028 continuous-IQ units in ascending/descending order.
+These are measurements at a drifting fixed frequency, not evidence that
+the feature itself became nonsaturable or lost its extra late-time decay.
+The separately acquired time trace and this paired curve cannot resolve
+coherent exchange under such movement.
+
+The next measurement quantifies the baseline spectral diffusion: ten
+finite corrected passive five-point T1-versus-flux passes across
+4.060–4.170 GHz at 1-MHz spacing, 350 shots per condition and five
+conditions, stopping after ten passes or 25 minutes between passes.
+Each pass checkpoints the usual one-stop CSV. A time series of trough
+center, depth, width, and scan-direction disagreement will tell us how
+quickly a future pump/swap experiment must relocate the feature and
+whether the apparent movement looks continuous or jump-like. No pump is
+applied during this baseline monitor.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectralDiffusionMonitor --run
+```
