@@ -106,7 +106,7 @@ def select_moving_lower_dip(rows):
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
                for row in rows}
     candidates = []
-    for mhz in range(4110, 4135):
+    for mhz in range(4105, 4135):
         center = round(mhz / 1000.0, 3)
         control = round(center - 0.014, 3)
         groups = {name: [round(base + 0.001 * offset, 3)
@@ -226,7 +226,7 @@ def arm_config(base, arm, dc_lookup):
 
 def plan(*, follow_moving_dip=False):
     return {"hardware_access": False, "reset_mode": "passive",
-            "feature": ("fresh qualified lower-band trough, 4.110–4.134 GHz"
+            "feature": ("fresh qualified lower-band trough, 4.105–4.134 GHz"
                         if follow_moving_dip else
                         "anchored upper loss near 4.144 GHz, else lower near 4.127 GHz"),
             "control_offset_mhz": (-14 if follow_moving_dip else

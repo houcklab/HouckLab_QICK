@@ -45,6 +45,13 @@ def test_wide_lower_selector_can_find_dip_below_previous_search_edge():
     assert pilot.choose_feature(rows, follow_moving_dip=True) == selected
 
 
+def test_wide_lower_selector_can_follow_further_shift_with_scout_control():
+    selected = pilot.choose_feature(scout_with_lower_dip(4.108),
+                                    follow_moving_dip=True)
+    assert selected["center_ghz"] == 4.108
+    assert selected["control_ghz"] == 4.094
+
+
 def test_moving_time_trace_retains_reversed_hold_and_site_orders():
     plan = pilot.plan(follow_moving_dip=True)
     assert plan["programs"] == 88
@@ -54,7 +61,7 @@ def test_moving_time_trace_retains_reversed_hold_and_site_orders():
 
 def test_follow_moving_plan_preserves_original_four_program_comparison():
     plan = confirm.plan(follow_moving_dip=True)
-    assert plan["feature_search_ghz"] == [4.110, 4.134]
+    assert plan["feature_search_ghz"] == [4.105, 4.134]
     assert plan["dwells_us"] == [1.5, 6.0]
     assert plan["programs"] == 4
     assert plan["shots_per_program"] == 3000

@@ -132,7 +132,7 @@ def plan(*, flux_map=False, follow_moving_dip=False):
         raise ValueError("select one swap-hold follow-up mode")
     if follow_moving_dip:
         return {"hardware_access": False, "reset_mode": "passive",
-                "feature_search_ghz": [4.110, 4.134],
+                "feature_search_ghz": [4.105, 4.134],
                 "control": "14-MHz lower point qualified in both scout directions",
                 "dwells_us": [EARLY_US, LATE_US],
                 "conditions_per_shot": RECORDS_PER_SHOT,

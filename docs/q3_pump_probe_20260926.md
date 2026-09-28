@@ -2862,3 +2862,33 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run --follow-moving-dip
 ```
+
+After an hours-long gap, the moving-dip swap-hold trace completed at
+`q3_tls_swap_hold_moving_trace_20260928T140534Z_ed9a97a9`. Its fresh
+pre/post scouts both found a deep loss region near 4.109–4.110 GHz;
+the original wider selector's 4.110-GHz lower search bound returned
+4.110 GHz with a 4.096-GHz control. Extending the qualified search to
+4.105 GHz selects a three-point center of 4.109 GHz and a 4.095-GHz
+control in both saved scouts. The dip had therefore moved several MHz
+since the 4.115-GHz run, but it was stable during this trace. Readout
+fidelity was 0.915/0.906 and pre/post park-to-target transfer controls
+passed; all 88 arms and raw IQ were present.
+
+The separately acquired 0.1–6-us feature and control curves show no
+reproducible coherent exchange oscillation. At 1.5 versus 6 us, the
+feature-minus-control extra loss is approximately -0.024 in the forward
+order and +0.098 in reverse by classified readout, so this run does not
+resolve whether the previously confirmed extra late loss still follows
+the now-lower dip. Control-arm time dependence and acquisition-order
+variation matter here. The next run uses the existing within-shot
+four-condition confirmation at a fresh qualified dip (now searching
+4.105–4.134 GHz), with a clean control 14 MHz below and reversed order.
+If its pre-scout cannot find a qualified dip, the experiment stops rather
+than measuring at an assumed old frequency.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --follow-moving-dip
+```
