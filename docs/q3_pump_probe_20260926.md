@@ -2388,7 +2388,8 @@ condition order. The 4-IQ-per-shot stream is split by the recorded order,
 with raw IQ saved per condition. Fresh scouts and pre/post readout and
 short-return references bound drift. The program is constructed for both
 orders before the first readout. This small pilot validates the QICK stream,
-drive contrast, and order dependence; it is not yet a loss-vs-hold scan or
+drive contrast, and order dependence. Success also requires at least 0.10
+hot-minus-cold contrast in each 20-us sham condition. It is not yet a loss-vs-hold scan or
 a TLS saturation result. If it works, extend the same shot-level alternation
 to short/long holds, detuned control, and the flank.
 

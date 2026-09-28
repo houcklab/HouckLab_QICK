@@ -60,6 +60,14 @@ def stream_dimensions(shots):
             "total_units": int(shots), "records_per_unit": 4}
 
 
+def score_conditions(fractions):
+    x = {name: float(fractions[name]) for name in CONDITION_NAMES}
+    return {"cold_drive_contrast": x["on_g"] - x["sham_g"],
+            "hot_preparation_contrast": x["sham_e"] - x["sham_g"],
+            "hot_minus_cold_drive_change": (
+                x["on_e"] - x["on_g"] - x["sham_e"] + x["sham_g"])}
+
+
 class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
     """Four complete resident-probe subshots per streamed hardware shot."""
 
@@ -77,8 +85,12 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
                      cfg["opx_resident_preparation_state"]) for cfg in configs}
         if observed != expected:
             raise ValueError("interleaved conditions must be sham/on crossed with g/e")
+        self.logical_shots = int(configs[0]["shots"])
+        if self.logical_shots <= 0:
+            raise ValueError("logical shot count must be positive")
         self.condition_cfgs = configs
-        super().__init__(soccfg, configs[0], payload_calibration, loop_calibration)
+        run_cfg = dict(configs[0], reps=4 * self.logical_shots)
+        super().__init__(soccfg, run_cfg, payload_calibration, loop_calibration)
 
     def make_program(self):
         _declare_common(self)
@@ -94,8 +106,8 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
         self.regwi(self.reset_page, self.reset_regs["address"], self.record_base)
         self.regwi(0, controls["done"], 0)
         self.memwi(0, controls["done"], self.done_addr)
-        self.regwi(0, controls["shot_loop"], self.reps - 1)
-        self._initialize_stream(controls, **stream_dimensions(self.reps),
+        self.regwi(0, controls["shot_loop"], self.logical_shots - 1)
+        self._initialize_stream(controls, **stream_dimensions(self.logical_shots),
                                 prefix="Q3_INTERLEAVED_RESIDENT")
         self._begin_park_lifecycle()
         self.label("Q3_INTERLEAVED_SHOT_LOOP")
@@ -322,10 +334,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             for entry in manifest["programs"]:
                 x = {c["name"]: c["excited_fraction_pre_axis"]
                      for c in entry["conditions"]}
-                order_scores[entry["name"]] = {
-                    "cold_drive_contrast": x["on_g"] - x["sham_g"],
-                    "hot_minus_cold_drive_change": (
-                        x["on_e"] - x["on_g"] - x["sham_e"] + x["sham_g"])}
+                order_scores[entry["name"]] = score_conditions(x)
             manifest["order_scores"] = order_scores
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
@@ -344,6 +353,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      all(x["usable"] for x in manifest["transfer_control"].values()) and
                      manifest["feature_stable"] and
                      all(x["cold_drive_contrast"] >= 0.10
+                         for x in order_scores.values()) and
+                     all(x["hot_preparation_contrast"] >= 0.10
                          for x in order_scores.values()) and
                      abs(order_scores["forward"]["hot_minus_cold_drive_change"] -
                          order_scores["reverse"]["hot_minus_cold_drive_change"]) <= 0.25)
