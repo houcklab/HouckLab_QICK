@@ -2541,3 +2541,42 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --hold-alternating
 ```
+
+The completed hold-alternating run is
+`q3_pump_probe_hold_alternating_loss_20260928T061232Z_b39cdba0`. The loss
+feature remained strong: the pre/post scouts selected 4.136/4.137 GHz with
+depths 0.301/0.440. Readout fidelity was 0.904/0.903, both fresh site-drive
+checks passed, and the transfer references remained usable. The predeclared
+feature-specific, tone-selective short-minus-long contrast was **-0.118**
+forward and **+0.005** reverse, rather than the earlier separate-program
++0.195/+0.110. The forward feature 0.1-us on-tone cold-drive contrast was
++0.0775, below its 0.10 gate; the run status is
+`complete_controls_unstable`. A shot-paired bootstrap of the two-order mean
+gave approximately [-0.21,+0.10] for the classified outcome. The earlier
+positive hint did not reproduce with stronger hold alternation. These runs
+were at selected features 4.130 and 4.136 GHz, so the comparison does not
+prove why the effect changed or settle the microscopic TLS identity.
+
+The next stage tests fast-flux delivery before trying modulation-assisted T1.
+`TLSFluxModulationCalibration` first scouts the current loss feature, then
+performs sideband spectroscopy at its 14-MHz lower flank. A 0.8-us arbitrary
+fast-flux waveform containing 24 cycles near 30 MHz is synchronized with the
+existing gain-6000 Gaussian qubit probe. The waveform has the corrected DC
+target bias plus 0, 800, or 1600 DAC of AC amplitude. A 17-point unmodulated
+carrier scan locates the actual qubit resonance; then fifteen frequencies
+cover carrier and ±30-MHz first-sideband windows for each amplitude. Adjacent
+amplitude arms reverse order between frequency points. The full corrected
+40-us return precedes every park readout. Pre/post ground/excited references,
+a repeated carrier, and pre/post loss scouts check drift; raw IQ and compiled
+waveform samples are saved in a manifest. The script rejects DAC clipping,
+waveform-memory overflow, a correction window that is not flat, and a weak
+or edge-selected carrier. It does not claim a TLS response or a T1 benefit.
+The sidebands will determine whether the line delivers a useful AC swing and
+which amplitude to try in a later modulated-T1 comparison.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulationCalibration --run
+```
