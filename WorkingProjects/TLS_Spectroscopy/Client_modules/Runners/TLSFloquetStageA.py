@@ -16,6 +16,7 @@ from pathlib import Path
 import uuid
 
 import numpy as np
+from scipy.integrate import trapezoid
 from scipy.special import jv
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
@@ -45,7 +46,22 @@ PERIODIC_BLOCKS = 4
 J0_ZERO = 2.4048255577
 
 
-def plan():
+def plan(*, periodic_check_only=False):
+    if periodic_check_only:
+        return {"hardware_access": False, "stage": "periodic_hardware_check",
+                "purpose": "verify sustained 30-MHz flux waveform before loss science",
+                "anchor_ghz": ANCHOR_GHZ,
+                "calibration_site": "qualified +14-MHz quiet flank",
+                "modulation_mhz": 30.0056,
+                "amplitudes_dac": [0, 1400],
+                "probe_gain_dac": 6000,
+                "sideband_orders": [-1, 1],
+                "sideband_offsets_mhz": list(range(-6, 7, 2)),
+                "periodic_check": "early-versus-late first-sideband response",
+                "periodic_blocks": PERIODIC_BLOCKS,
+                "full_corrected_return_us": 40.0,
+                "raw_iq_saved": True,
+                "next_stage": "no loss run until periodic output is demonstrated"}
     return {"hardware_access": False, "stage": "calibration_only",
             "purpose": "measure modulation index and verify repeated flux waveform",
             "anchor_ghz": ANCHOR_GHZ,
@@ -127,11 +143,11 @@ def validate_block_report(report):
 
 
 def probe_arm(name, flank, frequency_mhz, amplitude_dac, *, shots=SHOTS,
-              periodic_position=None):
+              periodic_position=None, probe_gain_dac=PROBE_GAIN_DAC):
     if amplitude_dac not in AMPLITUDES_DAC:
         raise ValueError("undeclared modulation amplitude")
     return {"name": name, "flux_ghz": float(flank),
-            "drive_mhz": float(frequency_mhz), "gain": PROBE_GAIN_DAC,
+            "drive_mhz": float(frequency_mhz), "gain": int(probe_gain_dac),
             "reference_state": None, "preparation_state": "g",
             "pre_drive_us": calibration.SETTLE_US,
             "post_drive_us": calibration.POST_US,
@@ -221,6 +237,50 @@ def spectrum_arms(flank, carrier_mhz):
     return arms
 
 
+def periodic_scan_arms(flank, carrier_mhz):
+    arms = []
+    for order in (-1, 1):
+        for offset in range(-6, 7, 2):
+            frequency = round(carrier_mhz + order * MODULATION_MHZ + offset, 3)
+            for amplitude in (0, 1400):
+                arm = probe_arm(f"pilot_n{order:+d}_o{offset:+d}_a{amplitude}",
+                                flank, frequency, amplitude, shots=1000,
+                                probe_gain_dac=6000)
+                arm.update(order=order, offset_mhz=offset)
+                arms.append(arm)
+    return arms
+
+
+def select_periodic_sideband(arms):
+    by_point = {(arm["order"], arm["offset_mhz"],
+                 arm["modulation_amplitude_dac"]): arm for arm in arms}
+    candidates = []
+    for order in (-1, 1):
+        for offset in range(-4, 5, 2):
+            on = by_point[(order, offset, 1400)]
+            off = by_point[(order, offset, 0)]
+            candidates.append({"order": order,
+                               "frequency_mhz": on["drive_mhz"],
+                               "on_off_excess": (
+                                   on["excited_fraction_pre_axis"] -
+                                   off["excited_fraction_pre_axis"])})
+    best = max(candidates, key=lambda item: item["on_off_excess"])
+    if best["on_off_excess"] < .05:
+        raise ValueError("no resolved first sideband for periodic check")
+    return best
+
+
+def periodic_response_valid(fractions):
+    off = float(fractions["off"])
+    oneshot = float(fractions["oneshot"])
+    early = float(fractions["early"])
+    late = float(fractions["late"])
+    return bool(oneshot - off >= .05 and early - off >= .04 and
+                late - off >= .04 and
+                abs(early - oneshot) <= .06 and
+                abs(late - early) <= .06)
+
+
 def summarize_spectra(arms, ground_fraction):
     fits = {}
     for amplitude in AMPLITUDES_DAC:
@@ -233,7 +293,7 @@ def summarize_spectra(arms, ground_fraction):
                 raise ValueError("incomplete sideband frequency window")
             excess = np.asarray([arm["excited_fraction_pre_axis"] - ground_fraction
                                  for arm in group], dtype=float)
-            areas[order] = float(np.trapezoid(excess, dx=2.0))
+            areas[order] = float(trapezoid(excess, dx=2.0))
             best = int(np.argmax(excess))
             peaks[order] = {"frequency_mhz": group[best]["drive_mhz"],
                             "offset_mhz": group[best]["offset_mhz"],
@@ -250,13 +310,17 @@ def _program_config(base, arm, dc_lookup):
     return cfg
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        periodic_check_only=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**wide.parameters(),
-                             "output_suffix": "TLS_Floquet_StageA_Scout_pre"})
+                             "output_suffix": (
+                                 "TLS_Floquet_Periodic_Check_Scout_pre"
+                                 if periodic_check_only else
+                                 "TLS_Floquet_StageA_Scout_pre")})
     selected = swap.select_wide_candidate(
         swap.read_wide_scout(scout), preferred_center=ANCHOR_GHZ)
     center, flank = selected["center_ghz"], selected["control_ghz"]
@@ -301,7 +365,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_floquet_stage_a_" +
+        session_id = (("q3_floquet_periodic_check_"
+                       if periodic_check_only else "q3_floquet_stage_a_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -311,9 +376,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 for phase in ("pre", "post") for state in ("g", "e")]
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
-        carrier = [probe_arm(f"carrier_{i:02d}", flank, f, 0)
+        probe_gain = 6000 if periodic_check_only else PROBE_GAIN_DAC
+        carrier = [probe_arm(f"carrier_{i:02d}", flank, f, 0,
+                             probe_gain_dac=probe_gain)
                    for i, f in enumerate(calibration.carrier_grid(1000.0 * flank + 5.0))]
-        manifest = {"schema": "q3.floquet-stage-a.v1", "status": "running",
+        manifest = {"schema": ("q3.floquet-periodic-check.v1"
+                               if periodic_check_only else
+                               "q3.floquet-stage-a.v1"), "status": "running",
                     "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -321,7 +390,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "flank_ghz": flank, "dc_gain": int(dc[0]),
                     "realized_ghz": float(realized[0]),
-                    "plan": plan(), "references": refs,
+                    "plan": plan(periodic_check_only=periodic_check_only),
+                    "references": refs,
                     "carrier_arms": carrier, "spectrum_arms": [],
                     "periodic_check_arms": []}
         protocol.checkpoint(path, manifest)
@@ -338,9 +408,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     soccfg, cfg, bundle.payload, bundle.loop)
 
             for arm in (refs[0], carrier[len(carrier)//2],
-                        probe_arm("preflight_max", flank, flank*1000+5, 2000),
+                        probe_arm("preflight_max", flank, flank*1000+5,
+                                  1400 if periodic_check_only else 2000,
+                                  probe_gain_dac=probe_gain),
                         probe_arm("preflight_periodic", flank, flank*1000+35,
-                                  1600, periodic_position="late")):
+                                  1400 if periodic_check_only else 1600,
+                                  periodic_position="late",
+                                  probe_gain_dac=probe_gain)):
                 _, program = compile_arm(arm)
                 if arm["name"] == "preflight_max":
                     report = program.modulation_waveform_report
@@ -383,65 +457,94 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             best = max(carrier, key=lambda arm: arm["excited_fraction_pre_axis"])
             carrier_excess = best["excited_fraction_pre_axis"] - ground
             manifest["carrier_center_mhz"] = best["drive_mhz"]
-            manifest["weak_carrier_excess"] = carrier_excess
+            manifest["carrier_excess"] = carrier_excess
             protocol.checkpoint(path, manifest)
+            lower, upper = ((.15, .45) if periodic_check_only else (.05, .20))
             if (best is carrier[0] or best is carrier[-1] or
-                    not .05 <= carrier_excess <= .20):
-                raise RuntimeError("weak probe carrier outside bracket or 0.05–0.20 excess gate")
+                    not lower <= carrier_excess <= upper):
+                raise RuntimeError("probe carrier outside bracket or contrast gate")
             print(f"[floquet-A] carrier={best['drive_mhz']:.1f} MHz; "
-                  f"weak excess={carrier_excess:.3f}", flush=True)
+                  f"excess={carrier_excess:.3f}", flush=True)
 
-            arms = spectrum_arms(flank, best["drive_mhz"])
-            manifest["spectrum_arms"] = arms
-            protocol.checkpoint(path, manifest)
-            for index, arm in enumerate(arms, 1):
-                acquire(arm)
-                if index % len(AMPLITUDES_DAC) == 0:
-                    print(f"[floquet-A] spectrum {index}/{len(arms)}", flush=True)
-            fits = summarize_spectra(arms, ground)
-            for item in fits.values():
-                try:
-                    item["measured_mean_shift_mhz"] = estimate_mean_shift_mhz(
-                        item["peaks"], carrier_mhz=best["drive_mhz"])
-                except ValueError as exc:
-                    item["mean_shift_error"] = str(exc)
-            manifest["sideband_fits"] = fits
-            beta_by_a = {int(a): item["beta"] for a, item in fits.items()}
-            try:
-                manifest["estimated_j0_zero_dac"] = estimate_zero_dac(beta_by_a)
-            except ValueError as exc:
-                manifest["zero_estimate_error"] = str(exc)
-            protocol.checkpoint(path, manifest)
-
-            check_amplitude = min(AMPLITUDES_DAC[1:],
-                                  key=lambda a: abs(beta_by_a[a] - J0_ZERO))
-            manifest["periodic_check_amplitude_dac"] = check_amplitude
-            check_arms = []
-            for order in (-1, 1):
-                peak = fits[str(check_amplitude)]["peaks"][str(order)]
-                frequency = peak["frequency_mhz"]
+            if periodic_check_only:
+                arms = periodic_scan_arms(flank, best["drive_mhz"])
+                manifest["spectrum_arms"] = arms
+                protocol.checkpoint(path, manifest)
+                for index, arm in enumerate(arms, 1):
+                    acquire(arm)
+                    if index % 4 == 0:
+                        print(f"[floquet-A] sideband pilot {index}/{len(arms)}",
+                              flush=True)
+                chosen = select_periodic_sideband(arms)
+                manifest["selected_sideband"] = chosen
+                check_amplitude = 1400
+                check_arms = [probe_arm("periodic_off", flank,
+                                        chosen["frequency_mhz"], 0,
+                                        shots=2000, probe_gain_dac=probe_gain)]
                 for position in (None, "early", "late"):
-                    label = position or "oneshot"
-                    arm = probe_arm(f"periodic_n{order:+d}_{label}", flank,
-                                    frequency, check_amplitude,
-                                    shots=CHECK_SHOTS,
-                                    periodic_position=position)
-                    arm["order"] = order
-                    check_arms.append(arm)
+                    check_arms.append(probe_arm(
+                        f"periodic_{position or 'oneshot'}", flank,
+                        chosen["frequency_mhz"], check_amplitude,
+                        shots=2000, periodic_position=position,
+                        probe_gain_dac=probe_gain))
+            else:
+                arms = spectrum_arms(flank, best["drive_mhz"])
+                manifest["spectrum_arms"] = arms
+                protocol.checkpoint(path, manifest)
+                for index, arm in enumerate(arms, 1):
+                    acquire(arm)
+                    if index % len(AMPLITUDES_DAC) == 0:
+                        print(f"[floquet-A] spectrum {index}/{len(arms)}", flush=True)
+                fits = summarize_spectra(arms, ground)
+                for item in fits.values():
+                    try:
+                        item["measured_mean_shift_mhz"] = estimate_mean_shift_mhz(
+                            item["peaks"], carrier_mhz=best["drive_mhz"])
+                    except ValueError as exc:
+                        item["mean_shift_error"] = str(exc)
+                manifest["sideband_fits"] = fits
+                beta_by_a = {int(a): item["beta"] for a, item in fits.items()}
+                try:
+                    manifest["estimated_j0_zero_dac"] = estimate_zero_dac(beta_by_a)
+                except ValueError as exc:
+                    manifest["zero_estimate_error"] = str(exc)
+                protocol.checkpoint(path, manifest)
+                check_amplitude = min(AMPLITUDES_DAC[1:],
+                                      key=lambda a: abs(beta_by_a[a] - J0_ZERO))
+                check_arms = []
+                for order in (-1, 1):
+                    peak = fits[str(check_amplitude)]["peaks"][str(order)]
+                    frequency = peak["frequency_mhz"]
+                    for position in (None, "early", "late"):
+                        label = position or "oneshot"
+                        arm = probe_arm(f"periodic_n{order:+d}_{label}", flank,
+                                        frequency, check_amplitude,
+                                        shots=CHECK_SHOTS,
+                                        periodic_position=position)
+                        arm["order"] = order
+                        check_arms.append(arm)
+            manifest["periodic_check_amplitude_dac"] = check_amplitude
             manifest["periodic_check_arms"] = check_arms
             protocol.checkpoint(path, manifest)
             for arm in check_arms:
                 acquire(arm)
-            check_scores = {}
-            for order in (-1, 1):
-                group = {arm["periodic_position"] or "oneshot":
-                         arm["excited_fraction_pre_axis"] - ground
-                         for arm in check_arms if arm["order"] == order}
-                check_scores[str(order)] = group
+            if periodic_check_only:
+                check_scores = {arm["periodic_position"] or "oneshot":
+                                arm["excited_fraction_pre_axis"]
+                                for arm in check_arms[1:]}
+                check_scores["off"] = check_arms[0]["excited_fraction_pre_axis"]
+            else:
+                check_scores = {}
+                for order in (-1, 1):
+                    group = {arm["periodic_position"] or "oneshot":
+                             arm["excited_fraction_pre_axis"] - ground
+                             for arm in check_arms if arm["order"] == order}
+                    check_scores[str(order)] = group
             manifest["periodic_check_excess"] = check_scores
 
             repeated = probe_arm("carrier_repeat", flank,
-                                 best["drive_mhz"], 0)
+                                 best["drive_mhz"], 0,
+                                 probe_gain_dac=probe_gain)
             manifest["carrier_repeat"] = repeated
             acquire(repeated)
             for ref in refs[2:]:
@@ -455,7 +558,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**wide.parameters(),
-                                     "output_suffix": "TLS_Floquet_StageA_Scout_post"})
+                                     "output_suffix": (
+                                         "TLS_Floquet_Periodic_Check_Scout_post"
+                                         if periodic_check_only else
+                                         "TLS_Floquet_StageA_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 post = swap.select_wide_candidate(
@@ -468,19 +574,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             manifest["feature_stable"] = (
                 swap.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
-            periodic_valid = all(
-                score["oneshot"] >= .025 and score["early"] >= .025 and
-                score["late"] >= .025 and
-                abs(score["early"] - score["oneshot"]) <= .08 and
-                abs(score["late"] - score["early"]) <= .08
-                for score in check_scores.values())
-            fit_valid = ("estimated_j0_zero_dac" in manifest and
-                         all(item["relative_residual"] <= .35
-                             for item in fits.values()) and
-                         all(fits[str(check_amplitude)]["peaks"][str(order)]["interior"]
-                             for order in (-1, 1)))
+            periodic_valid = (periodic_response_valid(check_scores)
+                              if periodic_check_only else
+                              all(score["oneshot"] >= .025 and
+                                  score["early"] >= .025 and
+                                  score["late"] >= .025 and
+                                  abs(score["early"] - score["oneshot"]) <= .08 and
+                                  abs(score["late"] - score["early"]) <= .08
+                                  for score in check_scores.values()))
             manifest["periodic_check_valid"] = periodic_valid
-            manifest["bessel_fit_valid"] = fit_valid
+            if periodic_check_only:
+                fit_valid = True
+            else:
+                fit_valid = ("estimated_j0_zero_dac" in manifest and
+                             all(item["relative_residual"] <= .35
+                                 for item in fits.values()) and
+                             all(fits[str(check_amplitude)]["peaks"][str(order)]["interior"]
+                                 for order in (-1, 1)))
+                manifest["bessel_fit_valid"] = fit_valid
             valid = (manifest["feature_stable"] and
                      manifest["post_readout_score"]["valid"] and
                      abs(manifest["carrier_repeat_excess"] - carrier_excess) <= .10 and
@@ -503,11 +614,15 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--periodic-check-only", action="store_true",
+                        help="use a strong-probe sideband pilot to verify repeated waveform playback")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(periodic_check_only=args.periodic_check_only),
+                         indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            periodic_check_only=args.periodic_check_only)
     return 0
 
 

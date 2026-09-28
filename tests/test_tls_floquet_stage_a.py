@@ -2,6 +2,7 @@
 
 import importlib
 
+import numpy as np
 import pytest
 from scipy.special import jv
 
@@ -18,6 +19,13 @@ def test_plan_targets_stable_line_and_never_claims_science_result():
     assert plan["probe_gain_dac"] == 3000
     assert plan["stage"] == "calibration_only"
     assert plan["periodic_check"] == "early-versus-late first-sideband response"
+
+
+def test_periodic_only_plan_uses_stronger_probe_without_bessel_fit():
+    description = experiment().plan(periodic_check_only=True)
+    assert description["probe_gain_dac"] == 6000
+    assert description["amplitudes_dac"] == [0, 1400]
+    assert description["stage"] == "periodic_hardware_check"
 
 
 def test_joint_sideband_weights_recover_bessel_index():
@@ -50,6 +58,24 @@ def test_mean_shift_uses_resolved_sidebands_when_carrier_is_dark():
     assert module.estimate_mean_shift_mhz(peaks, carrier_mhz=4011.0) == pytest.approx(-2.0)
 
 
+def test_spectrum_summary_works_with_numpy_one_api(monkeypatch):
+    module = experiment()
+    arms = []
+    for amplitude in module.AMPLITUDES_DAC:
+        beta = 2.405 * amplitude / 1400
+        for order in module.ORDERS:
+            for offset in module.WINDOW_OFFSETS_MHZ:
+                arms.append({"modulation_amplitude_dac": amplitude,
+                             "order": order, "offset_mhz": offset,
+                             "drive_mhz": 4010 + order * 30 + offset,
+                             "excited_fraction_pre_axis": .1 +
+                             .12 * jv(abs(order), beta)**2 *
+                             np.exp(-.5 * (offset / 3)**2)})
+    monkeypatch.delattr(module.np, "trapezoid", raising=False)
+    fits = module.summarize_spectra(arms, ground_fraction=.1)
+    assert fits["1400"]["beta"] == pytest.approx(2.405, abs=.02)
+
+
 def test_periodic_probe_requires_quiet_compensation_tail():
     module = experiment()
     with pytest.raises(ValueError, match="DC correction spread"):
@@ -70,6 +96,33 @@ def test_periodic_block_must_match_verified_24_cycle_waveform():
     module.validate_block_report({"duration_us": .79985,
                                   "cycles_per_waveform": 24,
                                   "actual_modulation_mhz": 30.0056})
+
+
+def test_periodic_check_selects_only_a_real_first_sideband():
+    module = experiment()
+    arms = module.periodic_scan_arms(4.006, 4010.0)
+    assert len(arms) == 28
+    assert all(arm["gain"] == 6000 for arm in arms)
+    for arm in arms:
+        arm["excited_fraction_pre_axis"] = .1
+        if (arm["order"] == 1 and arm["offset_mhz"] == -2 and
+                arm["modulation_amplitude_dac"] == 1400):
+            arm["excited_fraction_pre_axis"] = .19
+    chosen = module.select_periodic_sideband(arms)
+    assert chosen == {"order": 1, "frequency_mhz": 4038.0,
+                      "on_off_excess": pytest.approx(.09)}
+    for arm in arms:
+        arm["excited_fraction_pre_axis"] = .1
+    with pytest.raises(ValueError, match="first sideband"):
+        module.select_periodic_sideband(arms)
+
+
+def test_periodic_check_requires_late_sideband_not_just_early_response():
+    module = experiment()
+    assert module.periodic_response_valid(
+        {"off": .10, "oneshot": .18, "early": .17, "late": .16})
+    assert not module.periodic_response_valid(
+        {"off": .10, "oneshot": .18, "early": .17, "late": .11})
 
 
 def test_periodic_probe_uses_repeating_arb_and_explicit_dc_recovery(monkeypatch):

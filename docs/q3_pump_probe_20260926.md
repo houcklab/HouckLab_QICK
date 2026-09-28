@@ -3741,3 +3741,35 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetStageA --run
 ```
+
+The first stage-A attempt saved its data at
+`q3_floquet_stage_a_20260928T215420Z_b31af91e`. The 3.992-GHz
+feature again qualified (depth 0.472), the pre-run readout fidelity
+was 0.911, the weak 3000-DAC carrier contrast was 0.0845, and all
+308 sideband arms completed. Local analysis then failed on
+`np.trapezoid`, which is unavailable under the measurement PC's
+required NumPy<2. The runner now uses SciPy's compatible trapezoidal
+integrator. Recovering the saved spectra showed a second, more
+important limitation: the weak sideband response is too close to the
+off-resonance floor, and neither classified fractions nor continuous
+IQ yield a consistent, monotonic β(A) or mean shift. There is **no
+measured J0-zero amplitude** from this run. The periodic early/late
+arms had not started; do not rerun the same 308-arm calibration.
+
+The next bounded hardware test is `--periodic-check-only`. It keeps
+the fresh anchored scout and the exact 24-cycle, 0.8-µs waveform, but
+uses the previously successful 6000-DAC probe gain. A 28-arm pilot
+compares AC off and 1400 DAC at ±1 sidebands over ±6 MHz. It proceeds
+only if an interior first sideband has at least 0.05 classified
+on-minus-off contrast. At that frequency it measures off, one-shot
+AC, early periodic AC, and late periodic AC with 2000 shots each;
+only persistent late sideband response and passing pre/post controls
+validate repeated playback. This still does not claim loss suppression
+or a calibrated J0 zero. Raw IQ is saved for the final assessment.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetStageA --run --periodic-check-only
+```
