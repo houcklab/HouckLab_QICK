@@ -35,6 +35,9 @@ MAP_RADIUS_MHZ = 8
 PAIR_SHOTS = 800
 PAIR_REFERENCE_US = 0.1
 PAIR_DWELLS_US = swap.HOLDS_US[1:]
+TIME_MAP_REFERENCE_US = 1.5
+TIME_MAP_LATER_US = (3.0, 6.0, 10.0, 16.0, 25.0)
+TIME_MAP_SHOTS = 600
 REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 CONDITION_NAMES = ("early_g", "early_e", "late_g", "late_e")
@@ -109,6 +112,73 @@ def paired_dwell_specs(feature_ghz, control_ghz):
     return specs
 
 
+def within_shot_time_map_specs(feature_ghz, control_ghz):
+    """Alternate both flux sites, preparations, and dwells in each shot."""
+    specs = []
+    for hold in TIME_MAP_LATER_US:
+        for repeat in (0, 1):
+            conditions = []
+            for site, frequency in (("feature", feature_ghz),
+                                    ("control", control_ghz)):
+                for dwell, duration in (("early", TIME_MAP_REFERENCE_US),
+                                        ("late", hold)):
+                    for state in ("g", "e"):
+                        conditions.append({
+                            "name": f"{site}_{dwell}_{state}",
+                            "site": site, "flux_ghz": float(frequency),
+                            "hold_us": float(duration), "state": state})
+            if repeat:
+                conditions.reverse()
+            label = f"{hold:g}".replace(".", "p")
+            specs.append({"name": f"r{repeat}_t{label}",
+                          "repeat": repeat, "hold_us": hold,
+                          "flux_ghz": float(feature_ghz),
+                          "shots": TIME_MAP_SHOTS,
+                          "order": [c["name"] for c in conditions],
+                          "conditions": conditions, "status": "pending"})
+    return specs
+
+
+def split_eight_records(records, order, *, shots):
+    names = {f"{site}_{dwell}_{state}"
+             for site in ("feature", "control")
+             for dwell in ("early", "late")
+             for state in ("g", "e")}
+    records = list(records)
+    if len(order) != 8 or set(order) != names:
+        raise ValueError("invalid eight-condition stream order")
+    if len(records) != 8 * int(shots):
+        raise ValueError("incomplete eight-condition IQ stream")
+    return {name: records[index::8] for index, name in enumerate(order)}
+
+
+def score_eight_condition_program(fractions):
+    by_site = {}
+    for site in ("feature", "control"):
+        by_site[site] = score({
+            f"{dwell}_{state}": fractions[f"{site}_{dwell}_{state}"]
+            for dwell in ("early", "late") for state in ("g", "e")})
+    feature, control = by_site["feature"], by_site["control"]
+    # Feature late contrast or ground excitation may be the signal.
+    usable = bool(feature["early_contrast"] >= 0.20 and
+                  control["early_contrast"] >= 0.20 and
+                  control["late_contrast"] >= 0.10 and
+                  abs(control["ground_change"]) <= 0.08)
+    return {**by_site,
+            "excess_drop": effect(feature, control),
+            "usable": usable}
+
+
+def within_shot_time_map_report(specs, scores):
+    return [{"name": entry["name"], "repeat": entry["repeat"],
+             "hold_us": entry["hold_us"],
+             "feature_drop": scores[entry["name"]]["feature"]["drop"],
+             "control_drop": scores[entry["name"]]["control"]["drop"],
+             "excess_drop": scores[entry["name"]]["excess_drop"],
+             "usable": scores[entry["name"]]["usable"]}
+            for entry in specs]
+
+
 def paired_dwell_report(specs, scores):
     report = {}
     for repeat in (0, 1):
@@ -128,7 +198,10 @@ def paired_dwell_report(specs, scores):
     return report
 
 
-def preflight_entries(specs, *, flux_map=False, paired_dwell_scan=False):
+def preflight_entries(specs, *, flux_map=False, paired_dwell_scan=False,
+                      within_shot_time_map=False):
+    if within_shot_time_map:
+        return [specs[i] for i in (0, 1, len(specs) - 2, len(specs) - 1)]
     if paired_dwell_scan:
         return [specs[i] for i in (0, 1, 18, 19, 20, 21, 38, 39)]
     if flux_map:
@@ -182,9 +255,24 @@ def effect(feature, control):
 
 
 def plan(*, flux_map=False, follow_moving_dip=False,
-         paired_dwell_scan=False):
-    if flux_map and (follow_moving_dip or paired_dwell_scan):
+         paired_dwell_scan=False, within_shot_time_map=False):
+    if sum(map(bool, (flux_map, paired_dwell_scan,
+                      within_shot_time_map))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
+    if within_shot_time_map:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "resolve transfer before 40-us return/readout dead time",
+                "feature_scout_ghz": [4.060, 4.170],
+                "control": "qualified 14-MHz lower flux point",
+                "reference_hold_us": TIME_MAP_REFERENCE_US,
+                "later_holds_us": list(TIME_MAP_LATER_US),
+                "conditions_per_shot": 8, "shots_per_program": TIME_MAP_SHOTS,
+                "programs": 2 * len(TIME_MAP_LATER_US),
+                "condition_order": "feature/control, g/e, short/long; reversed",
+                "raw_iq_saved": True,
+                "observable": "feature minus control incremental loss from 1.5 us",
+                "interpretation": "a non-exponential curve could suggest memory "
+                                  "but does not identify one microscopic TLS"}
     if paired_dwell_scan:
         return {"hardware_access": False, "reset_mode": "passive",
                 "feature_search_ghz": [4.105, 4.134],
@@ -266,30 +354,78 @@ class AlternatingSwapHoldProgram(alternating.ShotAlternatingResidentProgram):
         swap.SwapHoldProgram._resident_excursion(self)
 
 
+class EightSiteSwapHoldProgram(alternating.ShotAlternatingResidentProgram):
+    """Eight complete subshots with feature/control steps inside each shot."""
+
+    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
+        configs = [dict(cfg) for cfg in condition_cfgs]
+        if len(configs) != 8:
+            raise ValueError("eight site/time/state conditions are required")
+        common = ("ff_park_gain", "shots", "reps")
+        if any(any(cfg[key] != configs[0][key] for key in common)
+               for cfg in configs[1:]):
+            raise ValueError("within-shot map must share park and shot count")
+        observed = {(int(cfg["ff_gain"]),
+                     float(cfg["opx_swap_hold_us"]),
+                     cfg["opx_resident_preparation_state"]) for cfg in configs}
+        gains = {item[0] for item in observed}
+        holds = {item[1] for item in observed}
+        if (len(gains) != 2 or len(holds) != 2 or
+                observed != {(gain, hold, state)
+                             for gain in gains for hold in holds
+                             for state in ("g", "e")}):
+            raise ValueError("eight conditions must span two sites, dwells, and states")
+        self.conditions_per_shot = 8
+        self.logical_shots = int(configs[0]["shots"])
+        self.condition_cfgs = configs
+        run_cfg = dict(configs[0], reps=8 * self.logical_shots)
+        resident.ResidentDriveProgram.__init__(
+            self, soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _resident_excursion(self):
+        swap.SwapHoldProgram._resident_excursion(self)
+
+
 def _condition_configs(base, entry, dc_lookup):
     return [swap.arm_config(base, {
-        "flux_ghz": entry["flux_ghz"], "hold_us": cond["hold_us"],
+        "flux_ghz": cond.get("flux_ghz", entry["flux_ghz"]),
+        "hold_us": cond["hold_us"],
         "state": cond["state"], "shots": entry["shots"]}, dc_lookup)
         for cond in entry["conditions"]]
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        flux_map=False, follow_moving_dip=False, paired_dwell_scan=False):
-    if flux_map and (follow_moving_dip or paired_dwell_scan):
+        flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
+        within_shot_time_map=False):
+    if sum(map(bool, (flux_map, paired_dwell_scan,
+                      within_shot_time_map))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
-    follow_moving_dip = follow_moving_dip or paired_dwell_scan
+    follow_moving_dip = (follow_moving_dip or paired_dwell_scan or
+                         within_shot_time_map)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
-    scout_suffix = ("TLS_SwapHold_Paired_Dwell_Scout_pre" if paired_dwell_scan
+    scout_suffix = ("TLS_SwapHold_WithinShot_TimeMap_Scout_pre"
+                    if within_shot_time_map else
+                    "TLS_SwapHold_Paired_Dwell_Scout_pre" if paired_dwell_scan
                     else "TLS_SwapHold_Confirm_Scout_pre")
+    if within_shot_time_map:
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+            TLSPumpProbeHeralded as heralded,
+        )
+    scout_parameters = (heralded.postselection_scout_parameters("pre")
+                        if within_shot_time_map else
+                        adaptive.scout_parameters(phase="pre"))
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
+        parameter_overrides={**scout_parameters,
                              "output_suffix": scout_suffix})
-    selector = (select_moving_lower_dip if follow_moving_dip else
+    selector = (heralded.select_postselection_feature if within_shot_time_map
+                else select_moving_lower_dip if follow_moving_dip else
                 lambda rows: swap.select_anchored_feature(
                     rows, preferred_center=4.127))
-    selected = selector(adaptive.read_scout(scout))
+    read_scout = (heralded.read_postselection_scout if within_shot_time_map
+                  else adaptive.read_scout)
+    selected = selector(read_scout(scout))
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[swap-confirm] lower feature={center:.3f} GHz; "
           f"control={control:.3f} GHz", flush=True)
@@ -312,10 +448,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = (flux_map_specs(center, control) if flux_map else
+        specs = (within_shot_time_map_specs(center, control)
+                 if within_shot_time_map else
+                 flux_map_specs(center, control) if flux_map else
                  paired_dwell_specs(center, control) if paired_dwell_scan else
                  program_specs(center, control))
-        grid = np.asarray(sorted({item["flux_ghz"] for item in specs}), dtype=float)
+        grid = np.asarray(sorted({
+            cond.get("flux_ghz", item["flux_ghz"])
+            for item in specs for cond in item["conditions"]}), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
@@ -338,7 +478,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_swap_hold_paired_dwell_" if paired_dwell_scan else
+        session_id = (("q3_tls_swap_hold_within_shot_time_map_"
+                       if within_shot_time_map else
+                       "q3_tls_swap_hold_paired_dwell_" if paired_dwell_scan else
                        "q3_tls_swap_hold_flux_map_" if flux_map else
                        "q3_tls_swap_hold_moving_dip_" if follow_moving_dip else
                        "q3_tls_swap_hold_confirm_") +
@@ -351,7 +493,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-swap-hold-paired-dwell.v1"
+        manifest = {"schema": ("q3.tls-swap-hold-within-shot-time-map.v1"
+                               if within_shot_time_map else
+                               "q3.tls-swap-hold-paired-dwell.v1"
                                if paired_dwell_scan else
                                "q3.tls-swap-hold-flux-map.v1" if flux_map else
                                "q3.tls-swap-hold-moving-dip.v1"
@@ -366,7 +510,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
                     "plan": plan(flux_map=flux_map,
                                  follow_moving_dip=follow_moving_dip,
-                                 paired_dwell_scan=paired_dwell_scan),
+                                 paired_dwell_scan=paired_dwell_scan,
+                                 within_shot_time_map=within_shot_time_map),
                     "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
@@ -379,10 +524,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             programs = {}
             preflight = preflight_entries(
                 manifest["programs"], flux_map=flux_map,
-                paired_dwell_scan=paired_dwell_scan)
+                paired_dwell_scan=paired_dwell_scan,
+                within_shot_time_map=within_shot_time_map)
+            program_type = (EightSiteSwapHoldProgram if within_shot_time_map
+                            else AlternatingSwapHoldProgram)
             for entry in preflight:
                 cfgs = _condition_configs(base, entry, dc_lookup)
-                programs[entry["name"]] = AlternatingSwapHoldProgram(
+                programs[entry["name"]] = program_type(
                     soccfg, cfgs, bundle.payload, bundle.loop)
             for ref in refs:
                 resident.ResidentDriveProgram(
@@ -426,19 +574,23 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 acquire_ref(ref)
             for entry in manifest["programs"]:
                 shots = int(entry["shots"])
-                print(f"[swap-confirm] {entry['name']} {shots} x 4", flush=True)
+                records_per_shot = 8 if within_shot_time_map else RECORDS_PER_SHOT
+                print(f"[swap-confirm] {entry['name']} "
+                      f"{shots} x {records_per_shot}", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 program = programs.get(entry["name"])
                 if program is None:
-                    program = AlternatingSwapHoldProgram(
+                    program = program_type(
                         soccfg, _condition_configs(base, entry, dc_lookup),
                         bundle.payload, bundle.loop)
                 records = _run_program(
                     soc, program,
-                    max(30.0, RECORDS_PER_SHOT * _block_timeout_s(base, shots)),
+                    max(30.0, records_per_shot * _block_timeout_s(base, shots)),
                     base, total_shots=shots)
-                split = split_records(records, entry["order"], shots=shots)
+                split = (split_eight_records(records, entry["order"], shots=shots)
+                         if within_shot_time_map else
+                         split_records(records, entry["order"], shots=shots))
                 for cond in entry["conditions"]:
                     subset = split[cond["name"]]
                     raw_path = folder / f"{entry['name']}_{cond['name']}.npz"
@@ -463,12 +615,17 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             for item in manifest["transfer_control"].values():
                 item["usable"] = resident.transfer_usable(item["ground"],
                                                            item["excited"])
-            scores = {entry["name"]: score({
+            scorer = (score_eight_condition_program if within_shot_time_map
+                      else score)
+            scores = {entry["name"]: scorer({
                 cond["name"]: cond["excited_fraction_pre_axis"]
                 for cond in entry["conditions"]})
                 for entry in manifest["programs"]}
             manifest["program_scores"] = scores
-            if paired_dwell_scan:
+            if within_shot_time_map:
+                manifest["within_shot_time_map_report"] = (
+                    within_shot_time_map_report(specs, scores))
+            elif paired_dwell_scan:
                 manifest["paired_dwell_report"] = paired_dwell_report(specs, scores)
             elif flux_map:
                 manifest["flux_map_report"] = flux_map_report(specs, scores)
@@ -479,18 +636,25 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     for repeat in (0, 1)}
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
+                parameter_overrides={**(
+                    heralded.postselection_scout_parameters("post")
+                    if within_shot_time_map else
+                    adaptive.scout_parameters(phase="post")),
                                      "output_suffix": (
+                                         "TLS_SwapHold_WithinShot_TimeMap_Scout_post"
+                                         if within_shot_time_map else
                                          "TLS_SwapHold_Paired_Dwell_Scout_post"
                                          if paired_dwell_scan else
                                          "TLS_SwapHold_Confirm_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = selector(
-                    adaptive.read_scout(post_scout))
+                    read_scout(post_scout))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
+                resident.feature_stable(selected, manifest["post_selected"])
+                if within_shot_time_map and "post_selected" in manifest else
                 swap.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
             if "post_selected" in manifest:
@@ -525,18 +689,25 @@ def main(argv=None):
                         help="retarget the lower-band loss after larger spectral shifts")
     parser.add_argument("--paired-dwell-scan", action="store_true",
                         help="interleave 0.1 us and later holds at moving dip")
+    parser.add_argument("--within-shot-time-map", action="store_true",
+                        help="interleave feature/control and short/long visits in each shot")
     args = parser.parse_args(argv)
-    if args.flux_map and (args.follow_moving_dip or args.paired_dwell_scan):
-        parser.error("--flux-map cannot be combined with another follow-up mode")
+    if (sum(map(bool, (args.flux_map, args.paired_dwell_scan,
+                       args.within_shot_time_map))) > 1 or
+            (args.flux_map and args.follow_moving_dip)):
+        parser.error("select one swap-hold follow-up mode")
     if args.plan:
         print(json.dumps(plan(flux_map=args.flux_map,
                               follow_moving_dip=args.follow_moving_dip,
-                              paired_dwell_scan=args.paired_dwell_scan), indent=2))
+                              paired_dwell_scan=args.paired_dwell_scan,
+                              within_shot_time_map=args.within_shot_time_map),
+                         indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             flux_map=args.flux_map,
             follow_moving_dip=args.follow_moving_dip,
-            paired_dwell_scan=args.paired_dwell_scan)
+            paired_dwell_scan=args.paired_dwell_scan,
+            within_shot_time_map=args.within_shot_time_map)
     return 0
 
 

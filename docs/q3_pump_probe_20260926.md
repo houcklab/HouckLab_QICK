@@ -3039,3 +3039,47 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --plan --afterglow
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run --afterglow
 ```
+
+The feature-local afterglow run
+`q3_pump_probe_afterglow_20260928T154340Z_b90f1e08` completed all 24 science
+arms. The pre/post loss centers were 4.103/4.102 GHz, and pre/mid/post
+readout references all passed. At the first readout, the qubit was classified
+excited in 36.6% of hot/on-target shots versus 53.6% of hot/off-target shots:
+the on-target flux visit caused pronounced extra qubit loss. But after
+confident-ground heralding, pooled final excited probabilities were
+91/965 = 0.094 for hot/on-target, 58/716 = 0.081 for hot/off-target, and
+107/1489 = 0.072 for cold/on-target. Hot-on minus hot-off was +0.013, with
+an approximate independent-shot 95% interval [-0.014,+0.041]; this interval
+does not cover temporal correlations. In the two acquisition orders that
+difference was approximately +0.030 and -0.002, and neither probe dwell nor
+the extra 50-us wait showed a consistent feature-selective return pattern.
+The larger all-shot hot/cold differences largely track residual qubit
+excitation left after pumping; ground heralding greatly reduces them. This
+clean run supports strong on-feature energy loss but does not establish
+energy returning to q3 after the corrected pump return and readout. It does
+not exclude faster memory before that roughly 40-us-plus-readout gap or a
+loss process that dissipates without returning energy to the qubit.
+
+The next bounded check resolves transfer *within one target visit*, before
+the return/readout gap. A broad fresh passive scout locates the strongest
+qualified dip and 14-MHz-lower control. Ten eight-condition programs compare
+1.5 us with 3, 6, 10, 16, or 25 us. Each logical shot contains feature and
+control visits, ground/excited preparations, and both dwells; the condition
+order is reversed in the paired program at each dwell. Six hundred logical
+shots per program save all raw IQ. Pre/post scouts and state-transfer/readout
+references gate interpretation. The observable is the feature-minus-control
+incremental loss relative to 1.5 us. The feature's late contrast may go near
+zero from real loss, so the quality gate checks early contrast and the late
+control contrast rather than demanding a large late feature contrast. It
+also records feature ground-state excitation rather than rejecting it as
+drift; only the control ground-state change enters the drift gate.
+An unusual time course can motivate a microscopic model but is not by itself
+proof of a single TLS.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --plan --within-shot-time-map
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --within-shot-time-map
+```
