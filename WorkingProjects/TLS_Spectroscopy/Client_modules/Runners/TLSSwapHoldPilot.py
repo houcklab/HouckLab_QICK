@@ -1,7 +1,8 @@
-"""Probe short-time q3 exchange at the persistent upper loss feature.
+"""Probe short-time q3 exchange at a freshly verified loss feature.
 
-Prepare g/e at the park point, visit an anchored feature near 4.144 GHz or
-its clean upper control for 0.1..6 us, apply the complete corrected return,
+Prepare g/e at the park point, visit an anchored feature near 4.144 GHz
+(falling back to 4.127 GHz if absent) or its clean control for 0.1..6 us,
+apply the complete corrected return,
 and read out once. Both site and dwell order reverse on the second pass.
 Short dwell points include flux settling and cannot alone prove coherent
 qubit-TLS exchange. No pump, active reset, or target microwave pulse is used.
@@ -29,65 +30,75 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 )
 
 
-ANCHOR_GHZ = 4.144
-CONTROL_OFFSET_GHZ = 0.014
+ANCHORS = ((4.144, 0.014, 2), (4.127, -0.014, 3))
 HOLDS_US = (0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 SHOTS = 600
 REFERENCE_SHOTS = 400
 
 
-def select_anchored_feature(rows):
-    """Select the upper feature, even when a lower dip becomes deeper."""
+def select_anchored_feature(rows, *, preferred_center=None):
+    """Prefer the upper dip, but follow the lower dip if it is the target."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
                for row in rows}
-    candidates = []
-    for index in range(-2, 3):
-        center = round(ANCHOR_GHZ + index * 0.001, 3)
-        groups = {
-            "feature": [round(center + i * 0.001, 3) for i in (-1, 0, 1)],
-            "left": [round(center - i * 0.001, 3) for i in (4, 5, 6)],
-            "right": [round(center + i * 0.001, 3) for i in (4, 5, 6)],
-            "control": [round(center + CONTROL_OFFSET_GHZ + i * 0.001, 3)
-                        for i in (-1, 0, 1)],
-        }
-        if any(f not in indexed for group in groups.values() for f in group):
+    anchors = ANCHORS
+    if preferred_center is not None:
+        anchors = tuple(item for item in ANCHORS
+                        if abs(item[0] - float(preferred_center)) < 0.001)
+        if len(anchors) != 1:
+            raise ValueError("unknown anchored feature family")
+    for anchor, offset, radius in anchors:
+        candidates = []
+        for index in range(-radius, radius + 1):
+            center = round(anchor + index * 0.001, 3)
+            groups = {
+                "feature": [round(center + i * 0.001, 3) for i in (-1, 0, 1)],
+                "left": [round(center - i * 0.001, 3) for i in (4, 5, 6)],
+                "right": [round(center + i * 0.001, 3) for i in (4, 5, 6)],
+                "control": [round(center + offset + i * 0.001, 3)
+                            for i in (-1, 0, 1)],
+            }
+            if any(f not in indexed for group in groups.values() for f in group):
+                continue
+            depths = {}
+            control_levels = {}
+            for direction in ("", "up", "down"):
+                values = {name: [adaptive._survival(indexed[f], direction)
+                                 for f in frequencies]
+                          for name, frequencies in groups.items()}
+                if not all(math.isfinite(value)
+                           for group in values.values() for value in group):
+                    break
+                feature = mean(values["feature"])
+                depths[direction or "combined"] = min(
+                    median(values["left"]) - feature,
+                    median(values["right"]) - feature)
+                control_levels[direction or "combined"] = (
+                    mean(values["control"]) - feature)
+            if len(depths) != 3:
+                continue
+            if (depths["combined"] < 0.15 or
+                    min(depths["up"], depths["down"]) < 0.08):
+                continue
+            candidates.append({"center_ghz": center,
+                               "control_ghz": round(center + offset, 3),
+                               "anchor_ghz": anchor,
+                               "control_offset_ghz": offset,
+                               "depth": depths["combined"],
+                               "depth_scan_up": depths["up"],
+                               "depth_scan_down": depths["down"],
+                               "control_survival_advantage": control_levels})
+        if not candidates:
             continue
-        depths = {}
-        control_levels = {}
-        for direction in ("", "up", "down"):
-            values = {name: [adaptive._survival(indexed[f], direction)
-                             for f in frequencies]
-                      for name, frequencies in groups.items()}
-            if not all(math.isfinite(value)
-                       for group in values.values() for value in group):
-                break
-            feature = mean(values["feature"])
-            depths[direction or "combined"] = min(
-                median(values["left"]) - feature,
-                median(values["right"]) - feature)
-            control_levels[direction or "combined"] = (
-                mean(values["control"]) - feature)
-        if len(depths) != 3:
-            continue
-        if (depths["combined"] < 0.15 or
-                min(depths["up"], depths["down"]) < 0.08):
-            continue
-        candidates.append({"center_ghz": center,
-                           "control_ghz": round(center + CONTROL_OFFSET_GHZ, 3),
-                           "depth": depths["combined"],
-                           "depth_scan_up": depths["up"],
-                           "depth_scan_down": depths["down"],
-                           "control_survival_advantage": control_levels})
-    if not candidates:
-        raise ValueError("anchored upper loss feature is absent")
-    selected = max(candidates, key=lambda item: item["depth"])
-    if min(selected["control_survival_advantage"].values()) < 0.15:
-        raise ValueError("upper control is not cleanly away from the loss feature")
-    return selected
+        selected = max(candidates, key=lambda item: item["depth"])
+        if min(selected["control_survival_advantage"].values()) < 0.15:
+            raise ValueError("control is not cleanly away from the loss feature")
+        return selected
+    raise ValueError("no anchored loss feature is present")
 
 
 def feature_stable(pre, post):
-    return resident.feature_stable(pre, post)
+    return (pre["anchor_ghz"] == post["anchor_ghz"] and
+            resident.feature_stable(pre, post))
 
 
 def program_specs(feature_ghz, control_ghz):
@@ -156,8 +167,8 @@ def arm_config(base, arm, dc_lookup):
 
 def plan():
     return {"hardware_access": False, "reset_mode": "passive",
-            "feature": "anchored upper loss near 4.144 GHz",
-            "control_offset_mhz": 14.0,
+            "feature": "anchored upper loss near 4.144 GHz, else lower near 4.127 GHz",
+            "control_offset_mhz": "upper +14; lower -14",
             "dwell_us": list(HOLDS_US),
             "orders": ["forward", "reverse"],
             "programs": 88, "shots_per_program": SHOTS,
@@ -177,7 +188,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                              "output_suffix": "TLS_SwapHold_Pilot_Scout_pre"})
     selected = select_anchored_feature(adaptive.read_scout(scout))
     center, control = selected["center_ghz"], selected["control_ghz"]
-    print(f"[swap-hold] feature={center:.3f} GHz; clean upper "
+    print(f"[swap-hold] feature={center:.3f} GHz; clean "
           f"control={control:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
@@ -357,7 +368,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = select_anchored_feature(
-                    adaptive.read_scout(post_scout))
+                    adaptive.read_scout(post_scout),
+                    preferred_center=selected["anchor_ghz"])
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (

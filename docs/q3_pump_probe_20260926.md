@@ -2706,3 +2706,22 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run
 ```
+
+The first swap-hold attempt stopped after its pre-scout
+`q3_03_06_27_TLS_SwapHold_Pilot_Scout_pre_T1_5pt_vs_wall_clock_full.csv`;
+it made no science manifest and applied no swap-hold pulses. The anchored
+4.144-GHz feature was no longer sufficiently deep, while the lower loss
+feature near 4.127–4.129 GHz remained strong. The revised selector first
+tests the upper family, then falls back to the lower family with a control
+14 MHz below it; the post-scout must track whichever family was selected
+pre-run, even if the other dip reappears. On the failed attempt's actual
+scout it selects 4.128 GHz (depth 0.253 in both scan directions) and a
+clean 4.114-GHz control (survival advantage 0.516). If neither feature or
+its corresponding control passes, the runner still stops before science.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run
+```
