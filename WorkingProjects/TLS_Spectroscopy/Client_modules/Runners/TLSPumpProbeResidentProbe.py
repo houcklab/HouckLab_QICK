@@ -470,9 +470,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 program = resident.ResidentDriveProgram(
                     soccfg, cfg, bundle.payload, bundle.loop)
                 shots = int(arm["shots"])
+                arm["acquisition_started_at_utc"] = datetime.now(timezone.utc).isoformat()
+                acquisition_start = time.monotonic()
                 records = _run_program(
                     soc, program, max(30.0, _block_timeout_s(cfg, shots)),
                     cfg, total_shots=shots)
+                arm["acquisition_elapsed_s"] = time.monotonic() - acquisition_start
+                arm["acquisition_finished_at_utc"] = datetime.now(timezone.utc).isoformat()
                 if len(records) != shots:
                     raise RuntimeError(f"{arm['name']}: received {len(records)} of {shots} shots")
                 raw_path = folder / f"{arm['name']}.npz"

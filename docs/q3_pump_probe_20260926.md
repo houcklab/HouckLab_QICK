@@ -2322,6 +2322,9 @@ alternates. A five-second park recovery separates groups, and its actual
 duration is logged. The measured pre-baselines of the three tone groups at
 each site/cycle must agree within 0.20 excited-fraction units for the data
 to pass the stability gate; a fixed wait alone does not prove recovery.
+Each arm also records the start and end of the actual QICK acquisition so
+the pump-to-post interval can be reconstructed separately from file writes
+and program construction.
 All arms use the same 20-us target visit, 0.1-us post-pulse hold, full
 corrected return, and one readout per shot. There are 180 science arms at
 100 shots each, plus 400-shot pre/post readout and transfer controls. Eight
