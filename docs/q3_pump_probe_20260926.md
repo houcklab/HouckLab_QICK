@@ -3696,3 +3696,48 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot --wide-anchor-ghz 3.992
 ```
+
+The anchored run completed at
+`q3_tls_swap_hold_wide_within_shot_20260928T212906Z_2098c911`.
+The same 3.992-GHz feature and 4.006-GHz control qualified before and
+after (depths 0.527/0.633), with no measured frequency shift. All 20
+programs completed, pre/post readout fidelities were 0.938/0.921, and
+both transfer controls passed. At 3 and 6 µs, the continuous-IQ
+feature-minus-control excess loss was about 0.08 in each case. The
+apparent short-time peaks and dips did not consistently replicate in
+both program orders and unthresholded IQ; there is no convincing
+coherent exchange. Stop the present swap/pump–probe branch at this
+candidate rather than refining its dwell grid again.
+
+The next distinct direct-control idea is **fast longitudinal modulation
+of the qubit frequency** to suppress coupling to a narrow loss
+resonance near the first zero of J0. This is not a claim that the line
+is a single microscopic TLS. The older 30-MHz modulation runs were
+not decisive: they applied AC only after a 20-µs unmodulated target
+dwell, did not measure the amplitude at the J0 zero, and did not
+remove the AC-induced mean-frequency shift. A staged experiment first
+calibrates the in-situ modulation index and the shift and verifies
+repeated waveform playback. Only those measurements can determine
+the science amplitude and DC recentering.
+
+`TLSFloquetStageA` is that calibration stage. A fresh 3.8–4.3-GHz
+scout must qualify the loss within ±4 MHz of 3.992 GHz and a clean
+upper flank; the weak qubit probe then runs at the flank. It measures
+carrier and n=±1,−2 sideband windows at 0–2000 DAC using 3000-DAC
+probe gain, fits the four peak areas to Jn²(β), records the common
+mean-frequency shift, and interpolates the measured J0-zero amplitude
+only if it is bracketed. A four-block periodic waveform is tested by
+comparing first-sideband response for one-shot, early-periodic, and
+late-periodic probes. Pre/post references, raw IQ, compiled waveform,
+and wide scouts are saved. A failed carrier, fit, periodic, or feature
+stability gate means **no Floquet T1 science run yet**. The later loss
+run will use approximately 1.6- and 10.4-µs visits to avoid the
+3.992-GHz 25-µs readout floor, with AC on for the entire target visit
+and a detuning-only control.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetStageA --run
+```
