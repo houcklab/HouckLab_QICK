@@ -2003,3 +2003,33 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeOnTargetTiming --run
 ```
+
+The September 27 timing run completed its pre/post scouts and all four
+panels. The scouts selected 4.134 and 4.135 GHz, respectively. Averaging
+normalized survival `(Ps-P0)/(P1-P0)` over 4.132–4.136 GHz gives 0.762,
+0.696, and 0.442 at additional holds of 6, 10, and 20 us. The nearby
+4.120–4.124-GHz flank gives 0.895, 0.928, and 0.825. The early and repeated
+early panels show no stable oscillatory minimum at 0.25–1 us. A 20-us target
+visit is consequently a useful **incoherent loading pilot**, not an observed
+coherent swap time or evidence that a TLS has been excited.
+
+The follow-up uses the prepared qubit as its pump. After the 20-us target
+visit and complete 40-us corrected return, it reads out the qubit once,
+waits for the readout accumulator, prepares a ground or excited probe, visits
+the target for 2 us, and reads out again. Raw IQ for both readouts is saved
+shot by shot. Offline analysis selects first-readout ground shots, then
+compares hot/on-target loading with cold/on-target and hot/off-target
+controls. The first and second readouts each have paired ground/excited
+references before and after the science arms; the second-readout excited
+reference is itself selected on first-readout ground. This sequence does not
+use the unreliable active-reset feedback decision. A null is limited by the
+roughly 40-us return plus first-readout time before the return probe. A post
+loss-feature scout records drift; shifts greater than 1 MHz mark the pilot
+frequency-unstable rather than treating a null as evidence against return.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run
+```
