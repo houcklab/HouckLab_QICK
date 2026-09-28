@@ -85,6 +85,24 @@ def test_overlapping_herald_reference_aborts_instead_of_reporting_a_signal():
         module.fit_readout_axis(np.zeros(100), np.zeros(100))
 
 
+def test_herald_threshold_uses_allowed_false_ground_budget_to_keep_clean_shots():
+    module = experiment()
+    ground = np.array([-10.0] * 15 + [3.0] * 40 + [20.0] * 45)
+    excited = np.arange(100, dtype=float)
+    axis = module.fit_readout_axis(ground, excited)
+    assert axis["ground_accept"] == 0.55
+    assert axis["false_ground"] == 0.05
+    assert module.confident_ground(ground, axis).sum() == 55
+
+
+def test_false_ground_budget_holds_for_small_conditioned_reference():
+    module = experiment()
+    axis = module.fit_readout_axis(np.full(187, -1.0),
+                                   np.arange(187, dtype=float))
+    assert axis["false_ground"] <= 0.05
+    assert axis["ground_accept"] == 1.0
+
+
 def test_second_readout_reference_uses_ground_heralded_pi_arm():
     module = experiment()
     arms = module.reference_arms(4.134, phase="pre")
@@ -99,6 +117,29 @@ def test_second_readout_reference_uses_ground_heralded_pi_arm():
     axes = module.calibrate_pair(g, first_e, final_e)
     assert axes["herald"]["fidelity"] == 1.0
     assert axes["final"]["fidelity"] == 1.0
+    assert all(report["valid"] for report in axes["herald_holdout"])
+
+
+def test_frozen_axis_rejects_independent_false_ground_drift():
+    module = experiment()
+    axis = {"theta_rad": 0.0, "threshold": 0.0, "ground_limit": -1.0}
+    ground = np.full(100, -2.0)
+    excited = np.r_[np.full(20, -2.0), np.full(80, 2.0)]
+    report = module.evaluate_reference_axis(axis, ground, excited)
+    assert report["false_ground"] == 0.20
+    assert report["valid"] is False
+
+
+def test_post_references_score_pre_axis_without_refitting():
+    module = experiment()
+    g = [module.PairedIQ(-2, 0, -2, 0)] * 100
+    e = [module.PairedIQ(2, 0, -2, 0)] * 100
+    final_e = [module.PairedIQ(-2, 0, 2, 0)] * 100
+    axes = module.calibrate_pair(g, e, final_e)
+    post_e = [module.PairedIQ(-2, 0, -2, 0)] * 20 + e[:80]
+    report = module.validate_pair_against_axes(axes, g, post_e, final_e)
+    assert report["herald"]["false_ground"] == 0.20
+    assert report["valid"] is False
 
 
 def test_excited_references_prepare_after_each_flux_return():

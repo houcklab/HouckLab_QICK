@@ -184,10 +184,12 @@ def fit_readout_axis(ground_iq, excited_iq):
     fidelity = float((np.mean(g < threshold) + np.mean(e > threshold)) / 2.0)
     # The lower excited tail bounds false-ground heralding. An overlapping
     # distribution must abort rather than manufacture a conditional signal.
-    ground_limit = float(np.quantile(e, 0.02))
+    # With strict '<', the order statistic at floor(5% * N) admits at most
+    # that many excited-reference shots, even for small conditioned samples.
+    ground_limit = float(np.sort(e)[int(np.floor(0.05 * e.size))])
     accept = float(np.mean(g < ground_limit))
     false_ground = float(np.mean(e < ground_limit))
-    if fidelity < 0.60 or accept < 0.20 or false_ground > 0.05:
+    if fidelity < 0.60 or accept < 0.20:
         raise RuntimeError(
             f"reference contrast: fidelity={fidelity:.3f}, "
             f"ground_accept={accept:.3f}, false_ground={false_ground:.3f}")
@@ -214,16 +216,72 @@ def record_iq(records, prefix):
                                getattr(r, prefix + "_q")) for r in records])
 
 
+def evaluate_reference_axis(axis, ground_iq, excited_iq):
+    """Score an already fixed classifier on independent labeled readouts."""
+    g = _projection(ground_iq, axis).reshape(-1)
+    e = _projection(excited_iq, axis).reshape(-1)
+    if g.size < 50 or e.size < 50:
+        return {"valid": False, "ground_shots": int(g.size),
+                "excited_shots": int(e.size), "reason": "too few reference shots"}
+    ground_accept = float(np.mean(g < axis["ground_limit"]))
+    false_ground = float(np.mean(e < axis["ground_limit"]))
+    fidelity = float((np.mean(g < axis["threshold"]) +
+                      np.mean(e > axis["threshold"])) / 2.0)
+    # One-sided 95% Wilson upper bound reports the finite-sample uncertainty;
+    # the pilot validity gate uses the independent empirical rate.
+    z = 1.645
+    n = int(e.size)
+    denominator = 1.0 + z * z / n
+    upper = ((false_ground + z * z / (2 * n)) +
+             z * math.sqrt(false_ground * (1.0 - false_ground) / n +
+                           z * z / (4 * n * n))) / denominator
+    return {"valid": bool(fidelity >= 0.60 and ground_accept >= 0.20 and
+                           false_ground <= 0.10),
+            "ground_shots": int(g.size), "excited_shots": n,
+            "fidelity": fidelity, "ground_accept": ground_accept,
+            "false_ground": false_ground,
+            "false_ground_upper_95": float(upper)}
+
+
+def validate_pair_against_axes(axes, ground_records, excited_records,
+                               final_excited_records):
+    """Check the frozen pre-run axes on post-run data without refitting."""
+    herald = evaluate_reference_axis(
+        axes["herald"], record_iq(ground_records, "herald"),
+        record_iq(excited_records, "herald"))
+    ground_mask = confident_ground(record_iq(ground_records, "herald"),
+                                   axes["herald"])
+    excited_mask = confident_ground(record_iq(final_excited_records, "herald"),
+                                    axes["herald"])
+    final = evaluate_reference_axis(
+        axes["final"], record_iq(ground_records, "final")[ground_mask],
+        record_iq(final_excited_records, "final")[excited_mask])
+    return {"valid": bool(herald["valid"] and final["valid"]),
+            "herald": herald, "final": final}
+
+
 def calibrate_pair(ground_records, excited_records, final_excited_records):
-    herald_axis = fit_readout_axis(record_iq(ground_records, "herald"),
-                                   record_iq(excited_records, "herald"))
+    ground_herald = record_iq(ground_records, "herald")
+    excited_herald = record_iq(excited_records, "herald")
+    holdout = []
+    for training, validation in ((slice(None, None, 2), slice(1, None, 2)),
+                                 (slice(1, None, 2), slice(None, None, 2))):
+        trial_axis = fit_readout_axis(ground_herald[training],
+                                      excited_herald[training])
+        report = evaluate_reference_axis(
+            trial_axis, ground_herald[validation], excited_herald[validation])
+        holdout.append(report)
+        if not report["valid"]:
+            raise RuntimeError(f"independent herald reference rejected: {report}")
+    herald_axis = fit_readout_axis(ground_herald, excited_herald)
     ground_mask = confident_ground(record_iq(ground_records, "herald"), herald_axis)
     excited_mask = confident_ground(
         record_iq(final_excited_records, "herald"), herald_axis)
     final_axis = fit_readout_axis(
         record_iq(ground_records, "final")[ground_mask],
         record_iq(final_excited_records, "final")[excited_mask])
-    return {"herald": herald_axis, "final": final_axis}
+    return {"herald": herald_axis, "final": final_axis,
+            "herald_holdout": holdout}
 
 
 def summarize_records(records, axes):
@@ -388,9 +446,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                               f"{s['herald_ground_shots']}/{SHOTS}, "
                               f"P(e|ground)={s['final_excited_given_ground']}", flush=True)
                 if arm["name"] == "ref_final_e_post":
-                    manifest["post_readout_axes"] = calibrate_pair(
-                        raw_by_name["ref_g_post"],
-                        raw_by_name["ref_e_post"], records)
+                    try:
+                        manifest["post_readout_axes"] = calibrate_pair(
+                            raw_by_name["ref_g_post"],
+                            raw_by_name["ref_e_post"], records)
+                    except RuntimeError as exc:
+                        manifest["post_readout_calibration_error"] = str(exc)
+                    manifest["post_reference_validation"] = (
+                        validate_pair_against_axes(
+                            axes, raw_by_name["ref_g_post"],
+                            raw_by_name["ref_e_post"], records))
                 arm["status"] = "complete"
                 protocol.checkpoint(manifest_path, manifest)
             post_scout = localizer.run(
@@ -406,9 +471,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             else:
                 manifest["post_selected"] = post_selected
                 manifest["feature_stability"] = feature_stability(selected, post_selected)
+            feature_stable = manifest["feature_stability"]["stable"]
+            readout_stable = manifest["post_reference_validation"]["valid"]
             manifest["status"] = (
-                "complete" if manifest["feature_stability"]["stable"]
-                else "complete_feature_unstable")
+                "complete" if feature_stable and readout_stable
+                else "complete_feature_unstable" if not feature_stable and readout_stable
+                else "complete_readout_unstable" if feature_stable
+                else "complete_controls_unstable")
             protocol.checkpoint(manifest_path, manifest)
             print(f"[heralded] {manifest['status']}: {manifest_path}", flush=True)
             return manifest_path

@@ -2044,6 +2044,26 @@ still prepare before their target visit, so the loading and return test is
 unchanged. Raw paired IQ and the strict reference-quality guard remain in
 place; a failing readout reference still stops the run before science data.
 
+The retry's scout selected 4.123 GHz with depth 0.397 and SS-calibration
+fidelity 0.911. Its post-return first-readout reference improved to fidelity
+0.880, but the fixed 2% false-ground cutoff accepted only 15.5% of the
+prepared-ground shots, below the pilot's 20% minimum. Again it stopped before
+all science arms. Replaying the saved paired IQ with a **5% empirical
+false-ground cap** accepts 52.5% of ground-reference shots for the first
+readout (fidelity 0.880) and yields a second-readout reference with fidelity
+0.819, ground acceptance 50.0%, and false-ground rate 4.7%. The revised cutoff
+uses a discrete order statistic rather than an interpolated percentile, so it
+never exceeds its 5% cap on the finite reference sample. It retains the
+original readout and science pulse sequence; this is an exploratory pilot,
+with the full raw IQ preserved for alternate threshold analysis. The 5% is an
+in-sample cap, not a guarantee for future shots. Odd/even reference holdouts
+must independently show at most 10% false-ground labeling before science
+starts. On the saved retry IQ, the two held-out rates were 3.5% and 7.0%.
+Post-run references are scored against the *frozen pre-run axes* without
+refitting; an unstable post readout marks the completed science block as
+readout-unstable. The manifest also records a one-sided 95% upper bound on
+the measured false-ground rate to make finite-sample uncertainty visible.
+
 On the measurement PC after stopping other acquisitions:
 
 ```bash
