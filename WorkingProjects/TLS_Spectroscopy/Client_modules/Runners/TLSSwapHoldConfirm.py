@@ -11,10 +11,8 @@ not proof of a single coherent TLS or a successful pump-probe saturation.
 import argparse
 from datetime import datetime, timezone
 import json
-import math
 import os
 from pathlib import Path
-from statistics import mean, median
 import uuid
 
 import numpy as np
@@ -101,56 +99,7 @@ def flux_map_report(specs, scores):
 
 
 def select_moving_lower_dip(rows):
-    """Find a qualified lower-band trough even after multi-MHz movement."""
-    indexed = {round(float(row["target_frequency_ghz"]), 3): row
-               for row in rows}
-    candidates = []
-    for mhz in range(4116, 4135):
-        center = round(mhz / 1000.0, 3)
-        control = round(center - 0.014, 3)
-        groups = {name: [round(base + 0.001 * offset, 3)
-                         for offset in (-1, 0, 1)]
-                  for name, base in (("feature", center),
-                                     ("left", center - 0.008),
-                                     ("right", center + 0.008),
-                                     ("control", control))}
-        if any(freq not in indexed for freqs in groups.values()
-               for freq in freqs):
-            continue
-        depths = {}
-        advantages = {}
-        feature_survival = None
-        for direction in ("", "up", "down"):
-            values = {name: [adaptive._survival(indexed[freq], direction)
-                             for freq in freqs]
-                      for name, freqs in groups.items()}
-            if not all(math.isfinite(value) for group in values.values()
-                       for value in group):
-                break
-            feature = mean(values["feature"])
-            control_survival = mean(values["control"])
-            depths[direction or "combined"] = min(
-                median(values["left"]), median(values["right"])) - feature
-            advantages[direction or "combined"] = control_survival - feature
-            if direction == "":
-                feature_survival = feature
-        if (len(depths) != 3 or depths["combined"] < 0.15 or
-                min(depths["up"], depths["down"]) < 0.08 or
-                min(advantages.values()) < 0.15):
-            continue
-        candidates.append({"center_ghz": center, "control_ghz": control,
-                           "anchor_ghz": 4.127,
-                           "control_offset_ghz": -0.014,
-                           "depth": depths["combined"],
-                           "depth_scan_up": depths["up"],
-                           "depth_scan_down": depths["down"],
-                           "control_survival_advantage": advantages,
-                           "feature_survival": feature_survival,
-                           "selector": "moving_lower_band"})
-    if not candidates:
-        raise ValueError("no qualified moving lower-band dip")
-    return max(candidates, key=lambda item: (item["depth"],
-                                              -item["feature_survival"]))
+    return swap.select_moving_lower_dip(rows)
 
 
 def split_records(records, order, *, shots):
@@ -183,7 +132,7 @@ def plan(*, flux_map=False, follow_moving_dip=False):
         raise ValueError("select one swap-hold follow-up mode")
     if follow_moving_dip:
         return {"hardware_access": False, "reset_mode": "passive",
-                "feature_search_ghz": [4.116, 4.134],
+                "feature_search_ghz": [4.110, 4.134],
                 "control": "14-MHz lower point qualified in both scout directions",
                 "dwells_us": [EARLY_US, LATE_US],
                 "conditions_per_shot": RECORDS_PER_SHOT,

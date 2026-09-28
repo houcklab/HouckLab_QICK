@@ -2828,3 +2828,37 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --follow-moving-dip
 ```
+
+The retargeted confirmation
+`q3_tls_swap_hold_moving_dip_20260928T074757Z_0996a6c1` found strong
+loss near 4.115–4.116 GHz. The run selected 4.116 GHz with a 4.102-GHz
+control; readout fidelity was 0.901/0.911 pre/post, both transfer
+controls passed, and all four science-program contrast and ground-drift
+checks passed. The predeclared extra 1.5-to-6-us loss at feature minus
+control was +0.1087/+0.1870 in the two orders, pooled +0.1478
+classified. Continuous-IQ normalization gave +0.1223/+0.2307, pooled
++0.1765 reference separations. Twenty-logical-shot block bootstrap
+intervals for the pooled effects were [+0.118,+0.178] classified and
+[+0.137,+0.217] continuous-IQ units. These intervals capture within-run
+shot variation, not uncertainty about whether this and the earlier
+4.127-GHz trough are the same microscopic object. Widening the selector's
+lower edge from 4.116 to 4.110 GHz finds a three-point center at 4.116
+before and 4.115 GHz after this run; the old selection was clipped at
+the lower search boundary. Both scouts show a pronounced local minimum
+at 4.115 GHz, and the 1-MHz three-point shift is within the stability
+gate. Thus excitation-dependent excess loss reappeared at a substantially
+lower-frequency loss feature with stable readout and control behavior.
+
+The next measurement uses the already checked 88-arm passive swap-hold
+time-trace protocol at the freshly selected lower-band dip: eleven dwell
+times from 0.1 to 6 us, ground/excited preparation, feature/control, and
+forward/reverse orders, with 600 shots per arm and pre/post scouts. This
+tests whether the shifted feature supports reproducible exchange structure
+or a simple extra decay envelope.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run --follow-moving-dip
+```

@@ -101,6 +101,65 @@ def feature_stable(pre, post):
             resident.feature_stable(pre, post))
 
 
+def select_moving_lower_dip(rows):
+    """Locate a qualified lower-band trough across multi-MHz shifts."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    candidates = []
+    for mhz in range(4110, 4135):
+        center = round(mhz / 1000.0, 3)
+        control = round(center - 0.014, 3)
+        groups = {name: [round(base + 0.001 * offset, 3)
+                         for offset in (-1, 0, 1)]
+                  for name, base in (("feature", center),
+                                     ("left", center - 0.008),
+                                     ("right", center + 0.008),
+                                     ("control", control))}
+        if any(freq not in indexed for freqs in groups.values()
+               for freq in freqs):
+            continue
+        depths = {}
+        advantages = {}
+        feature_survival = None
+        for direction in ("", "up", "down"):
+            values = {name: [adaptive._survival(indexed[freq], direction)
+                             for freq in freqs]
+                      for name, freqs in groups.items()}
+            if not all(math.isfinite(value) for group in values.values()
+                       for value in group):
+                break
+            feature = mean(values["feature"])
+            control_survival = mean(values["control"])
+            depths[direction or "combined"] = min(
+                median(values["left"]), median(values["right"])) - feature
+            advantages[direction or "combined"] = control_survival - feature
+            if direction == "":
+                feature_survival = feature
+        if (len(depths) != 3 or depths["combined"] < 0.15 or
+                min(depths["up"], depths["down"]) < 0.08 or
+                min(advantages.values()) < 0.15):
+            continue
+        candidates.append({"center_ghz": center, "control_ghz": control,
+                           "anchor_ghz": 4.127,
+                           "control_offset_ghz": -0.014,
+                           "depth": depths["combined"],
+                           "depth_scan_up": depths["up"],
+                           "depth_scan_down": depths["down"],
+                           "control_survival_advantage": advantages,
+                           "feature_survival": feature_survival,
+                           "selector": "moving_lower_band"})
+    if not candidates:
+        raise ValueError("no qualified moving lower-band dip")
+    return max(candidates, key=lambda item: (item["depth"],
+                                              -item["feature_survival"]))
+
+
+def choose_feature(rows, *, follow_moving_dip=False, preferred_center=None):
+    if follow_moving_dip:
+        return select_moving_lower_dip(rows)
+    return select_anchored_feature(rows, preferred_center=preferred_center)
+
+
 def program_specs(feature_ghz, control_ghz):
     specs = []
     for repeat in (0, 1):
@@ -165,10 +224,13 @@ def arm_config(base, arm, dc_lookup):
     return cfg
 
 
-def plan():
+def plan(*, follow_moving_dip=False):
     return {"hardware_access": False, "reset_mode": "passive",
-            "feature": "anchored upper loss near 4.144 GHz, else lower near 4.127 GHz",
-            "control_offset_mhz": "upper +14; lower -14",
+            "feature": ("fresh qualified lower-band trough, 4.110–4.134 GHz"
+                        if follow_moving_dip else
+                        "anchored upper loss near 4.144 GHz, else lower near 4.127 GHz"),
+            "control_offset_mhz": (-14 if follow_moving_dip else
+                                   "upper +14; lower -14"),
             "dwell_us": list(HOLDS_US),
             "orders": ["forward", "reverse"],
             "programs": 88, "shots_per_program": SHOTS,
@@ -179,14 +241,16 @@ def plan():
                               "early dwells also include flux settling"}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        follow_moving_dip=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**adaptive.scout_parameters(phase="pre"),
                              "output_suffix": "TLS_SwapHold_Pilot_Scout_pre"})
-    selected = select_anchored_feature(adaptive.read_scout(scout))
+    selected = choose_feature(adaptive.read_scout(scout),
+                              follow_moving_dip=follow_moving_dip)
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[swap-hold] feature={center:.3f} GHz; clean "
           f"control={control:.3f} GHz", flush=True)
@@ -230,7 +294,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_tls_swap_hold_" +
+        session_id = (("q3_tls_swap_hold_moving_trace_" if follow_moving_dip
+                       else "q3_tls_swap_hold_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -240,7 +305,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": "q3.tls-swap-hold.v1",
+        manifest = {"schema": ("q3.tls-swap-hold-moving-trace.v1"
+                               if follow_moving_dip else "q3.tls-swap-hold.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -248,7 +314,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-                    "plan": plan(), "references": refs,
+                    "plan": plan(follow_moving_dip=follow_moving_dip),
+                    "references": refs,
                     "programs": program_specs(center, control)}
         protocol.checkpoint(path, manifest)
         print(f"[swap-hold] manifest={path}", flush=True)
@@ -367,14 +434,19 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                                      "output_suffix": "TLS_SwapHold_Pilot_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = select_anchored_feature(
+                manifest["post_selected"] = choose_feature(
                     adaptive.read_scout(post_scout),
+                    follow_moving_dip=follow_moving_dip,
                     preferred_center=selected["anchor_ghz"])
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
                 feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
+            if "post_selected" in manifest:
+                manifest["feature_shift_mhz"] = round(
+                    1000.0 * (manifest["post_selected"]["center_ghz"] - center),
+                    3)
             valid = (manifest["post_readout_score"]["valid"] and
                      all(x["usable"] for x in manifest["transfer_control"].values())
                      and manifest["feature_stable"])
@@ -396,11 +468,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--follow-moving-dip", action="store_true",
+                        help="trace a freshly located lower-band loss dip")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(follow_moving_dip=args.follow_moving_dip), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            follow_moving_dip=args.follow_moving_dip)
     return 0
 
 
