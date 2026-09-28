@@ -2662,3 +2662,47 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --focused
 ```
+
+The focused run completed at
+`q3_flux_modulated_t1_20260928T065416Z_8526a431`. All four 8,000-shot
+programs and raw IQ files are present; readout fidelity was 0.896/0.878,
+and all four within-program preparation/ground-response controls passed.
+The pre/mid/post global selectors returned 4.144/4.129/4.126 GHz, so both
+selector-stability gates failed. Inspection of the full scout curves shows
+two coexisting features: the upper 4.143–4.145-GHz dip persists in all three
+scans, while a lower 4.126–4.131-GHz dip also persists and becomes deeper.
+The 15-MHz selection jump therefore cannot be called a physical shift of
+one TLS. The first pair's nominal 4.130-GHz lower control fell into the
+second loss feature, invalidating it as a clean flank.
+
+The within-feature 1,600-DAC modulation-induced change in hot-minus-cold
+survival from 0.1 to 6 us was only +0.0069 at 4.144 GHz and +0.0085 at
+4.129 GHz (shot-paired standard errors about 0.013 each). The normalized
+continuous-IQ versions were +0.0035 and +0.0132. The second pair's
+feature-minus-control +0.0496 was driven mostly by a -0.0411 response at
+the 4.115-GHz control, not a feature-local suppression. Thus this 30-MHz,
+1,600-DAC, park-prepared modulation protocol did not reproducibly suppress
+the measured loss. The earlier marginal 1,600-DAC hint is not confirmed.
+
+The next experiment sets aside the saturation protocol and probes direct
+time-domain exchange. A fresh passive scout identifies the persistent
+upper loss feature within 4.142–4.146 GHz and checks that the +14-MHz
+upper control is clean. A park pi prepares excited versus matched ground
+shots; the qubit visits the candidate or control flux for eleven dwell times
+from 0.1 to 6 us, returns with the full 40-us correction, and is read out
+once. Forward and reversed dwell/site/state order, pre/post readout and
+transfer references, early contrast gating, and a post-scout anchored to
+the *same* upper feature protect against the selector switching between
+the two dips. All 88 arms use 600 raw-IQ shots. A reproducible nonmonotonic
+time trace localized to the feature would motivate a denser swap chevron;
+the shortest points include flux settling and are not by themselves proof
+of coherent exchange. This follows the standard qubit–defect swap protocol
+used, for example, in
+https://pubmed.ncbi.nlm.nih.gov/25652611/ .
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run
+```
