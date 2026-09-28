@@ -266,3 +266,56 @@ def test_dense_profile_long_monitor_preserves_same_shots_and_has_bounded_length(
     assert plan["cycles"] == 180
     with pytest.raises(ValueError, match="40..180"):
         module.dense_profile_specs(4.105, 4.091, cycles=181)
+
+
+def test_dual_line_selects_separate_upper_feature_and_clean_control():
+    module = experiment()
+    rows = []
+    for mhz in range(4129, 4159):
+        f = mhz / 1000
+        survival = .35 if 4148 <= mhz <= 4150 else .8
+        if 4130 <= mhz <= 4132:
+            survival = .93
+        rows.append({"target_frequency_ghz": f, "P0": 0, "P1": 1,
+                     "Ps_25us": survival,
+                     "P0_scan_up": 0, "P1_scan_up": 1,
+                     "Ps_25us_scan_up": survival,
+                     "P0_scan_down": 0, "P1_scan_down": 1,
+                     "Ps_25us_scan_down": survival})
+    selected = module.select_upper_loss_feature(rows)
+    assert selected["center_ghz"] == 4.149
+    assert selected["control_ghz"] == 4.131
+    assert selected["depth"] >= .3
+    assert selected["control_survival_advantage"] >= .3
+
+
+def test_dual_line_interleaves_both_features_and_scores_independent_asymmetry(capsys):
+    import json
+    module = experiment()
+    specs = module.dual_line_specs(4.105, 4.091, 4.149, 4.131)
+    assert len(specs) == 180
+    assert all(len(x["conditions"]) == 16 and x["shots"] == 200 for x in specs)
+    assert [c["flux_ghz"] for c in specs[0]["conditions"][::2]] == [
+        4.103, 4.105, 4.107, 4.091, 4.147, 4.149, 4.151, 4.131]
+    assert specs[1]["order"] == list(reversed(specs[0]["order"]))
+    split = module.split_dual_records(list(range(32)), specs[0]["order"], shots=2)
+    assert split["main_m2_g"] == [0, 16]
+    assert split["upper_control_e"] == [15, 31]
+    with pytest.raises(ValueError, match="incomplete"):
+        module.split_dual_records(list(range(31)), specs[0]["order"], shots=2)
+    fractions = {f"{site}_g": .1 for site in module.DUAL_SITES}
+    fractions.update({f"{site}_e": .6 for site in module.DUAL_SITES})
+    fractions["main_m2_e"] = .3
+    fractions["main_p2_e"] = .5
+    fractions["upper_m2_e"] = .5
+    fractions["upper_p2_e"] = .3
+    scored = module.score_dual_line(fractions)
+    assert scored["main_asymmetry"] == pytest.approx(-.2)
+    assert scored["upper_asymmetry"] == pytest.approx(.2)
+    assert scored["usable"]
+    fractions["upper_control_e"] = .15
+    assert not module.score_dual_line(fractions)["usable"]
+    assert module.main(["--plan", "--dual-line-dynamics"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["programs"] == 180
+    assert plan["conditions_per_shot"] == 16

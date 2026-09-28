@@ -48,6 +48,8 @@ LINE_DYNAMICS_SHOTS = 200
 LINE_OFFSETS_MHZ = (-3, 0, 3)
 DENSE_OFFSETS_MHZ = (-6, -4, -2, 0, 2, 4, 6)
 DENSE_SITES = ("m6", "m4", "m2", "c", "p2", "p4", "p6", "control")
+DUAL_SITES = ("main_m2", "main_c", "main_p2", "main_control",
+              "upper_m2", "upper_c", "upper_p2", "upper_control")
 REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 CONDITION_NAMES = ("early_g", "early_e", "late_g", "late_e")
@@ -223,6 +225,84 @@ def dense_profile_specs(feature_ghz, control_ghz, *, cycles=LINE_DYNAMICS_CYCLES
     return specs
 
 
+def select_upper_loss_feature(rows):
+    """Qualify the separate 4.15-GHz loss dip and a lower quiet point."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+
+    def survival_group(base, offsets, direction):
+        values = [adaptive._survival(indexed[round(base + offset / 1000, 3)],
+                                     direction) for offset in offsets]
+        if not all(np.isfinite(value) for value in values):
+            raise ValueError("upper-feature scout has invalid survival")
+        return float(np.mean(values))
+
+    candidates = []
+    for mhz in range(4146, 4152):
+        center = round(mhz / 1000, 3)
+        try:
+            depths = {}
+            survival = {}
+            for direction in ("", "up", "down"):
+                feature = survival_group(center, (-1, 0, 1), direction)
+                left = survival_group(center, (-7, -6, -5), direction)
+                right = survival_group(center, (5, 6, 7), direction)
+                survival[direction] = feature
+                depths[direction] = min(left, right) - feature
+        except KeyError:
+            continue
+        if depths[""] >= .15 and min(depths["up"], depths["down"]) >= .08:
+            candidates.append((depths[""], center, survival, depths))
+    if not candidates:
+        raise ValueError("no qualified upper loss feature near 4.15 GHz")
+    depth, center, feature_survival, depths = max(candidates)
+    controls = []
+    for mhz in range(4131, 4139):
+        frequency = round(mhz / 1000, 3)
+        try:
+            values = {direction: survival_group(frequency, (-1, 0, 1), direction)
+                      for direction in ("", "up", "down")}
+        except KeyError:
+            continue
+        advantage = {direction: values[direction] - feature_survival[direction]
+                     for direction in values}
+        if advantage[""] >= .20 and min(advantage["up"], advantage["down"]) >= .15:
+            controls.append((min(advantage["up"], advantage["down"]),
+                             frequency, advantage))
+    if not controls:
+        raise ValueError("no clean lower control for upper loss feature")
+    _, control, advantage = max(controls)
+    return {"center_ghz": center, "control_ghz": control,
+            "depth": depth, "depth_scan_up": depths["up"],
+            "depth_scan_down": depths["down"],
+            "control_survival_advantage": advantage[""]}
+
+
+def dual_line_specs(main_ghz, main_control_ghz, upper_ghz,
+                    upper_control_ghz):
+    """Interleave both loss profiles and their controls in each QICK shot."""
+    sites = [(f"{family}_{offset}", round(float(center) + shift / 1000, 3))
+             for family, center in (("main", main_ghz), ("upper", upper_ghz))
+             for offset, shift in (("m2", -2), ("c", 0), ("p2", 2))]
+    sites = sites[:3] + [("main_control", float(main_control_ghz))] + sites[3:]
+    sites.append(("upper_control", float(upper_control_ghz)))
+    specs = []
+    for cycle in range(180):
+        conditions = [{"name": f"{site}_{state}", "site": site,
+                       "flux_ghz": flux, "hold_us": LOSS_DYNAMICS_LATE_US,
+                       "state": state}
+                      for site, flux in sites for state in ("g", "e")]
+        if cycle % 2:
+            conditions.reverse()
+        specs.append({"name": f"cycle{cycle:03d}", "cycle": cycle,
+                      "repeat": cycle % 2, "hold_us": LOSS_DYNAMICS_LATE_US,
+                      "flux_ghz": float(main_ghz),
+                      "shots": LINE_DYNAMICS_SHOTS,
+                      "order": [c["name"] for c in conditions],
+                      "conditions": conditions, "status": "pending"})
+    return specs
+
+
 def split_eight_records(records, order, *, shots):
     names = {f"{site}_{dwell}_{state}"
              for site in ("feature", "control")
@@ -253,6 +333,16 @@ def split_dense_records(records, order, *, shots):
     records = list(records)
     if len(order) != 16 or set(order) != names:
         raise ValueError("invalid sixteen-condition dense-profile stream order")
+    if len(records) != 16 * int(shots):
+        raise ValueError("incomplete sixteen-condition IQ stream")
+    return {name: records[index::16] for index, name in enumerate(order)}
+
+
+def split_dual_records(records, order, *, shots):
+    names = {f"{site}_{state}" for site in DUAL_SITES for state in ("g", "e")}
+    records = list(records)
+    if len(order) != 16 or set(order) != names:
+        raise ValueError("invalid sixteen-condition dual-line stream order")
     if len(records) != 16 * int(shots):
         raise ValueError("incomplete sixteen-condition IQ stream")
     return {name: records[index::16] for index, name in enumerate(order)}
@@ -313,6 +403,20 @@ def score_dense_profile(fractions):
             "usable": bool(control >= 0.10)}
 
 
+def score_dual_line(fractions):
+    contrasts = {site: float(fractions[f"{site}_e"] - fractions[f"{site}_g"])
+                 for site in DUAL_SITES}
+    extra = {family: {offset: contrasts[f"{family}_control"] -
+                            contrasts[f"{family}_{offset}"]
+                      for offset in ("m2", "c", "p2")}
+             for family in ("main", "upper")}
+    return {"contrasts": contrasts, "extra_loss": extra,
+            "main_asymmetry": extra["main"]["p2"] - extra["main"]["m2"],
+            "upper_asymmetry": extra["upper"]["p2"] - extra["upper"]["m2"],
+            "usable": bool(contrasts["main_control"] >= .10 and
+                           contrasts["upper_control"] >= .10)}
+
+
 def within_shot_time_map_report(specs, scores):
     return [{"name": entry["name"], "repeat": entry["repeat"],
              "hold_us": entry["hold_us"],
@@ -361,6 +465,19 @@ def dense_profile_report(specs, scores):
             for entry in specs]
 
 
+def dual_line_report(specs, scores):
+    return [{"cycle": entry["cycle"], "name": entry["name"],
+             "started_at_utc": entry.get("acquisition_started_at_utc"),
+             "finished_at_utc": entry.get("acquisition_finished_at_utc"),
+             "acquisition_elapsed_s": entry.get("acquisition_elapsed_s"),
+             "contrasts": scores[entry["name"]]["contrasts"],
+             "extra_loss": scores[entry["name"]]["extra_loss"],
+             "main_asymmetry": scores[entry["name"]]["main_asymmetry"],
+             "upper_asymmetry": scores[entry["name"]]["upper_asymmetry"],
+             "controls_usable": scores[entry["name"]]["usable"]}
+            for entry in specs]
+
+
 def paired_dwell_report(specs, scores):
     report = {}
     for repeat in (0, 1):
@@ -382,9 +499,10 @@ def paired_dwell_report(specs, scores):
 
 def preflight_entries(specs, *, flux_map=False, paired_dwell_scan=False,
                       within_shot_time_map=False, loss_dynamics=False,
-                      loss_line_dynamics=False, dense_profile=False):
+                      loss_line_dynamics=False, dense_profile=False,
+                      dual_line_dynamics=False):
     if (within_shot_time_map or loss_dynamics or loss_line_dynamics or
-            dense_profile):
+            dense_profile or dual_line_dynamics):
         return [specs[i] for i in (0, 1, len(specs) - 2, len(specs) - 1)]
     if paired_dwell_scan:
         return [specs[i] for i in (0, 1, 18, 19, 20, 21, 38, 39)]
@@ -441,11 +559,28 @@ def effect(feature, control):
 def plan(*, flux_map=False, follow_moving_dip=False,
          paired_dwell_scan=False, within_shot_time_map=False,
          loss_dynamics=False, loss_line_dynamics=False,
-         dense_profile=False, dense_profile_cycles=LINE_DYNAMICS_CYCLES):
+         dense_profile=False, dense_profile_cycles=LINE_DYNAMICS_CYCLES,
+         dual_line_dynamics=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
                       within_shot_time_map, loss_dynamics,
-                      loss_line_dynamics, dense_profile))) > 1:
+                      loss_line_dynamics, dense_profile,
+                      dual_line_dynamics))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
+    if dual_line_dynamics:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "compare simultaneous spectral motion of two loss features",
+                "feature_scout_ghz": [4.060, 4.170],
+                "main_offsets_mhz": [-2, 0, 2],
+                "upper_offsets_mhz": [-2, 0, 2],
+                "controls": "freshly qualified separate lower controls",
+                "hold_us": LOSS_DYNAMICS_LATE_US,
+                "cycles": 180, "conditions_per_shot": 16,
+                "shots_per_program": LINE_DYNAMICS_SHOTS,
+                "programs": 180,
+                "condition_order": "two three-point profiles and two controls, g/e; reversed each cycle",
+                "raw_iq_saved": True, "per_cycle_utc_timestamps": True,
+                "observable": "main and upper line asymmetries and their cross-correlation",
+                "interpretation": "uncorrelated motion argues against a common flux/readout drift; correlated motion is not proof of one cause"}
     if dense_profile:
         if not 40 <= int(dense_profile_cycles) <= 180:
             raise ValueError("dense-profile cycles must be 40..180")
@@ -691,18 +826,23 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
         within_shot_time_map=False, loss_dynamics=False,
         loss_line_dynamics=False, dense_profile=False,
-        dense_profile_cycles=LINE_DYNAMICS_CYCLES):
+        dense_profile_cycles=LINE_DYNAMICS_CYCLES,
+        dual_line_dynamics=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
                       within_shot_time_map, loss_dynamics,
-                      loss_line_dynamics, dense_profile))) > 1:
+                      loss_line_dynamics, dense_profile,
+                      dual_line_dynamics))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
     site_time_mode = (within_shot_time_map or loss_dynamics or
-                      loss_line_dynamics or dense_profile)
+                      loss_line_dynamics or dense_profile or
+                      dual_line_dynamics)
     follow_moving_dip = (follow_moving_dip or paired_dwell_scan or
                          site_time_mode)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
-    scout_suffix = ("TLS_Dense_Loss_Profile_Scout_pre"
+    scout_suffix = ("TLS_Dual_Line_Dynamics_Scout_pre"
+                    if dual_line_dynamics else
+                    "TLS_Dense_Loss_Profile_Scout_pre"
                     if dense_profile else
                     "TLS_Loss_Line_Dynamics_Scout_pre"
                     if loss_line_dynamics else
@@ -728,10 +868,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     rows, preferred_center=4.127))
     read_scout = (heralded.read_postselection_scout if site_time_mode
                   else adaptive.read_scout)
-    selected = selector(read_scout(scout))
+    scout_rows = read_scout(scout)
+    selected = selector(scout_rows)
+    upper_selected = (select_upper_loss_feature(scout_rows)
+                      if dual_line_dynamics else None)
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[swap-confirm] lower feature={center:.3f} GHz; "
           f"control={control:.3f} GHz", flush=True)
+    if upper_selected is not None:
+        print(f"[swap-confirm] upper feature={upper_selected['center_ghz']:.3f} GHz; "
+              f"control={upper_selected['control_ghz']:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -751,7 +897,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = (dense_profile_specs(center, control,
+        specs = (dual_line_specs(center, control,
+                                 upper_selected["center_ghz"],
+                                 upper_selected["control_ghz"])
+                 if dual_line_dynamics else
+                 dense_profile_specs(center, control,
                                      cycles=dense_profile_cycles)
                  if dense_profile else
                  loss_line_dynamics_specs(center, control)
@@ -787,7 +937,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_dense_loss_profile_"
+        session_id = (("q3_tls_dual_line_dynamics_"
+                       if dual_line_dynamics else
+                       "q3_tls_dense_loss_profile_"
                        if dense_profile else
                        "q3_tls_loss_line_dynamics_"
                        if loss_line_dynamics else
@@ -807,7 +959,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-dense-loss-profile.v1"
+        manifest = {"schema": ("q3.tls-dual-line-dynamics.v1"
+                               if dual_line_dynamics else
+                               "q3.tls-dense-loss-profile.v1"
                                if dense_profile else
                                "q3.tls-loss-line-dynamics.v1"
                                if loss_line_dynamics else
@@ -825,6 +979,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
                     "scout_csv": str(scout), "selected": selected,
+                    "upper_selected": upper_selected,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
                     "plan": plan(flux_map=flux_map,
@@ -834,7 +989,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  loss_dynamics=loss_dynamics,
                                  loss_line_dynamics=loss_line_dynamics,
                                  dense_profile=dense_profile,
-                                 dense_profile_cycles=dense_profile_cycles),
+                                 dense_profile_cycles=dense_profile_cycles,
+                                 dual_line_dynamics=dual_line_dynamics),
                     "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
@@ -851,8 +1007,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 within_shot_time_map=within_shot_time_map,
                 loss_dynamics=loss_dynamics,
                 loss_line_dynamics=loss_line_dynamics,
-                dense_profile=dense_profile)
-            program_type = (DenseProfileProgram if dense_profile else
+                dense_profile=dense_profile,
+                dual_line_dynamics=dual_line_dynamics)
+            program_type = (DenseProfileProgram if dense_profile or
+                            dual_line_dynamics else
                             MultiSiteSwapHoldProgram if loss_line_dynamics else
                             EightSiteSwapHoldProgram if site_time_mode
                             else AlternatingSwapHoldProgram)
@@ -902,7 +1060,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 acquire_ref(ref)
             for entry in manifest["programs"]:
                 shots = int(entry["shots"])
-                records_per_shot = (16 if loss_line_dynamics or dense_profile else 8
+                records_per_shot = (16 if loss_line_dynamics or dense_profile or
+                                    dual_line_dynamics else 8
                                     if site_time_mode else RECORDS_PER_SHOT)
                 print(f"[swap-confirm] {entry['name']} "
                       f"{shots} x {records_per_shot}", flush=True)
@@ -923,7 +1082,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 entry["acquisition_elapsed_s"] = time.monotonic() - start
                 entry["acquisition_finished_at_utc"] = (
                     datetime.now(timezone.utc).isoformat())
-                split = (split_dense_records(records, entry["order"], shots=shots)
+                split = (split_dual_records(records, entry["order"], shots=shots)
+                         if dual_line_dynamics else
+                         split_dense_records(records, entry["order"], shots=shots)
                          if dense_profile else
                          split_line_records(records, entry["order"], shots=shots)
                          if loss_line_dynamics else
@@ -954,7 +1115,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             for item in manifest["transfer_control"].values():
                 item["usable"] = resident.transfer_usable(item["ground"],
                                                            item["excited"])
-            scorer = (score_dense_profile if dense_profile else
+            scorer = (score_dual_line if dual_line_dynamics else
+                      score_dense_profile if dense_profile else
                       score_loss_line if loss_line_dynamics else
                       score_loss_dynamics if loss_dynamics else
                       score_eight_condition_program if within_shot_time_map
@@ -964,7 +1126,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 for cond in entry["conditions"]})
                 for entry in manifest["programs"]}
             manifest["program_scores"] = scores
-            if dense_profile:
+            if dual_line_dynamics:
+                manifest["dual_line_report"] = dual_line_report(specs, scores)
+            elif dense_profile:
                 manifest["dense_profile_report"] = dense_profile_report(specs, scores)
             elif loss_line_dynamics:
                 manifest["loss_line_report"] = loss_line_report(specs, scores)
@@ -989,6 +1153,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     if site_time_mode else
                     adaptive.scout_parameters(phase="post")),
                                      "output_suffix": (
+                                         "TLS_Dual_Line_Dynamics_Scout_post"
+                                         if dual_line_dynamics else
                                          "TLS_Dense_Loss_Profile_Scout_post"
                                          if dense_profile else
                                          "TLS_Loss_Line_Dynamics_Scout_post"
@@ -1002,8 +1168,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                          "TLS_SwapHold_Confirm_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = selector(
-                    read_scout(post_scout))
+                post_rows = read_scout(post_scout)
+                manifest["post_selected"] = selector(post_rows)
+                if dual_line_dynamics:
+                    manifest["post_upper_selected"] = (
+                        select_upper_loss_feature(post_rows))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
@@ -1015,13 +1184,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["feature_shift_mhz"] = round(
                     1000.0 * (manifest["post_selected"]["center_ghz"] - center),
                     3)
-            if loss_line_dynamics or loss_dynamics or dense_profile:
+            if dual_line_dynamics:
+                manifest["upper_feature_stable"] = bool(
+                    "post_upper_selected" in manifest and
+                    abs(1000 * (manifest["post_upper_selected"]["center_ghz"] -
+                                upper_selected["center_ghz"])) <= 2.0 + 1e-6)
+                if "post_upper_selected" in manifest:
+                    manifest["upper_feature_shift_mhz"] = round(
+                        1000 * (manifest["post_upper_selected"]["center_ghz"] -
+                                upper_selected["center_ghz"]), 3)
+                manifest["feature_stable"] &= manifest["upper_feature_stable"]
+            if (loss_line_dynamics or loss_dynamics or dense_profile or
+                    dual_line_dynamics):
                 usable_cycles = sum(x["usable"] for x in scores.values())
                 manifest["usable_cycle_count"] = usable_cycles
                 valid = (manifest["post_readout_score"]["valid"] and
                          all(x["usable"] for x in manifest["transfer_control"].values())
                          and usable_cycles >= (int(.8 * len(specs))
-                                              if dense_profile else
+                                              if dense_profile or dual_line_dynamics else
                                               32 if loss_line_dynamics else 48) and
                          "post_selected" in manifest)
                 manifest["status"] = (
@@ -1068,10 +1248,13 @@ def main(argv=None):
     parser.add_argument("--dense-profile-cycles", type=int,
                         default=LINE_DYNAMICS_CYCLES,
                         help="40..180 dense-profile cycles (default: 40)")
+    parser.add_argument("--dual-line-dynamics", action="store_true",
+                        help="monitor two separate loss features in each shot")
     args = parser.parse_args(argv)
     if (sum(map(bool, (args.flux_map, args.paired_dwell_scan,
                        args.within_shot_time_map, args.loss_dynamics,
-                       args.loss_line_dynamics, args.dense_profile))) > 1 or
+                       args.loss_line_dynamics, args.dense_profile,
+                       args.dual_line_dynamics))) > 1 or
             (args.flux_map and args.follow_moving_dip)):
         parser.error("select one swap-hold follow-up mode")
     if (not 40 <= args.dense_profile_cycles <= 180 or
@@ -1086,7 +1269,8 @@ def main(argv=None):
                               loss_dynamics=args.loss_dynamics,
                               loss_line_dynamics=args.loss_line_dynamics,
                               dense_profile=args.dense_profile,
-                              dense_profile_cycles=args.dense_profile_cycles),
+                              dense_profile_cycles=args.dense_profile_cycles,
+                              dual_line_dynamics=args.dual_line_dynamics),
                          indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
@@ -1097,7 +1281,8 @@ def main(argv=None):
             loss_dynamics=args.loss_dynamics,
             loss_line_dynamics=args.loss_line_dynamics,
             dense_profile=args.dense_profile,
-            dense_profile_cycles=args.dense_profile_cycles)
+            dense_profile_cycles=args.dense_profile_cycles,
+            dual_line_dynamics=args.dual_line_dynamics)
     return 0
 
 

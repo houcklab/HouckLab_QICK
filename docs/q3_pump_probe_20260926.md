@@ -3454,3 +3454,37 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dense-profile --dense-profile-cycles 180
 ```
+
+The extended trace completed at
+`q3_tls_dense_loss_profile_20260928T185929Z_91db64ce`: 180/180 cycles
+passed the control gate, readout fidelity was 0.900/0.901 pre/post, and
+both transfer controls passed. The broad scout selected the main trough
+at 4.105 GHz before and 4.107 GHz afterward. During the roughly
+seven-minute science interval, its local profile repeatedly shifted in
+relative weight. Define asymmetry as extra loss at center+2 MHz minus
+extra loss at center−2 MHz. Ten-cycle means were −0.075 and −0.103 for
+cycles 0–19, +0.214 to +0.236 for cycles 30–59, −0.071 and −0.073 for
+cycles 130–149, then +0.198 for cycles 170–179. Unthresholded IQ gives
+the same sequence and correlates with the classified per-cycle asymmetry
+at 0.964. Even/odd cycle mean asymmetries were +0.085/+0.099. The
+asymmetry–clean-control contrast correlation was only −0.145.
+
+This establishes recurring, minutes-scale changes in the *relative
+frequency profile* of the qubit loss, not just a one-time warmup drift.
+The trajectory is not cleanly binary, so a two-state fluctuator and its
+switching rate should not be inferred from these data alone. A global
+flux drift could still move all loss features together. The next run
+tests that possibility by measuring the main trough and the separate
+4.15-GHz trough in the same hardware shot. A pre-scout independently
+qualifies the upper trough and its own lower control; three frequencies
+at ±2 MHz and center around each trough, plus both controls, comprise
+the same proven 16-subshot format. The 180-cycle trace saves raw IQ and
+timestamps. Independent line motion would weigh against a common global
+flux/readout drift, though it would still not identify a microscopic TLS.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dual-line-dynamics
+```
