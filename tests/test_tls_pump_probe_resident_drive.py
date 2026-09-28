@@ -207,6 +207,42 @@ def test_loading_time_plan_describes_actual_schedule():
     assert plan["probe_dac_gains"] == [0, 6000]
 
 
+def test_carryover_schedule_has_paired_baselines_around_each_pump_block():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    arms = module.carryover_arms(4.125, 4.111)
+    assert len(arms) == 240
+    assert len({a["name"] for a in arms}) == 240
+    assert {a["cycle"] for a in arms} == set(range(8))
+    assert {a["site"] for a in arms} == {"feature", "flank"}
+    for cycle in range(8):
+        for site in ("feature", "flank"):
+            for tone in ("sham", "on_6000", "detuned_6000"):
+                group = [a for a in arms if a["cycle"] == cycle and
+                         a["site"] == site and a["pump_tone"] == tone]
+                assert [a["role"] for a in group] == [
+                    "pre_g", "pre_e", "pump_e", "post_e", "post_g"]
+                assert [a["gain"] for a in group] == [
+                    0, 0, {"sham": 0, "on_6000": 6000,
+                           "detuned_6000": 6000}[tone], 0, 0]
+                assert all(a["pre_drive_us"] == 20.0 and
+                           a["post_drive_us"] == 0.1 and a["shots"] == 100
+                           for a in group)
+    assert [a["site"] for a in arms[:15]] == ["feature"] * 15
+    assert [a["site"] for a in arms[15:30]] == ["flank"] * 15
+    assert [a["site"] for a in arms[30:45]] == ["flank"] * 15
+
+
+def test_carryover_plan_and_calibration_frequency_bracket():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    plan = module.plan(carryover_check=True)
+    assert plan["science_arms"] == 240
+    assert plan["shots_per_arm"] == 100
+    assert module.calibration_brackets_feature({"center_ghz": 4.133}, 4.125)
+    assert not module.calibration_brackets_feature({"center_ghz": 4.133}, 4.115)
+
+
 def test_probe_rejects_feature_outside_calibrated_frequency_neighborhood():
     module = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")

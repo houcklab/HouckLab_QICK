@@ -2288,3 +2288,57 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run --loading-time-check
 ```
+
+The loading-time run acquired all 136 arms in
+`q3_pump_probe_loading_time_20260928T044344Z_e4999f87`. Its frozen readout
+fidelity was 0.904 before and 0.891 after; short-return ground/excited
+controls were 0.135/0.608 before and 0.075/0.568 after. Every NPZ has the
+expected 400 shots, and raw-IQ classifications reproduce the manifest.
+The loss feature remained visible, but its selected center changed from
+4.128 to 4.125 GHz during the run, exceeding the 2-MHz stability gate.
+
+More seriously, the zero-drive hot control at the feature fluctuated
+between short adjacent arms: at 20-us loading in the first repeat it fell
+from 0.585 to 0.238 excited fraction between the two sham brackets, roughly
+two seconds apart. At 80-us loading, the first repeat's sham hot fractions
+were 0.040/0.118, whereas the second repeat's were 0.398/0.430. Each 400-shot
+arm is internally much steadier in 40-shot bins than these differences
+between arms, and the cold controls and readout references did not show a
+comparable collapse. Consequently the 20-to-80-us result is not a reliable
+TLS-memory test: neither an apparent convergence nor a pooled on-tone
+contrast survives the rapidly changing loss baseline.
+
+## Pump carryover check
+
+The next test asks a narrower question suggested by the inconsistent sham
+brackets: does a driven block reproducibly change the *following* zero-drive
+hot survival at the same flux, or do similar changes occur after an undriven
+block? The experimental `--carryover-check` mode performs eight short cycles
+of feature/flank groups. Each group measures zero-drive ground and excited
+baselines, then 100 hot pump shots, then zero-drive excited and ground
+baselines. Pump groups rotate among gain-zero sham, +5-MHz gain-6000, and
+-10-MHz gain-6000; the site and tone orders are balanced across cycles.
+All arms use the same 20-us target visit, 0.1-us post-pulse hold, full
+corrected return, and one readout per shot. There are 240 science arms at
+100 shots each, plus 400-shot pre/post readout and transfer controls. The
+frozen IQ axis, raw shots, pre/post feature scouts, and exact arm order are
+saved. The feature must fall within the interval in which the prior
+calibration actually demonstrated gain-6000 drive contrast (4.119-4.133
+GHz); the flank remains an empirical control whose drive response must be
+verified in this run.
+
+For each group, compare the post-minus-pre change in hot-minus-cold sham
+survival. A pump-induced effect requires a repeatable change after on-tone
+blocks beyond the sham and detuned blocks, with an appropriate flank
+control and stable readout. Even then, seconds-scale carryover alone would
+not establish a microscopic TLS. A null would identify the prior bracket
+divergence as a baseline nonstationarity to handle by faster interleaving
+or feature tracking, rather than justify pooling the earlier pump-probe
+arms.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run --carryover-check
+```

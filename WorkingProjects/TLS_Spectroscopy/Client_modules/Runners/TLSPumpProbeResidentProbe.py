@@ -12,6 +12,9 @@ The optional loading-time check instead compares 20- and 80-us target visits
 with 0.1- and 2-us post-drive holds at gain 6000. Its purpose is to test
 whether the short-gap response follows residual qubit excitation.
 
+The optional carryover check repeats sham baseline, pump block, sham baseline
+groups to test whether a pump changes *subsequent* loss over many shots.
+
 This runner is experiment-only; it does not modify production TLS scans.
 """
 
@@ -112,6 +115,39 @@ def loading_time_arms(center_ghz, flank_ghz):
     return arms
 
 
+def carryover_arms(center_ghz, flank_ghz):
+    """Short ABBA-like groups that measure pump-induced cross-arm memory."""
+    arms = []
+    pump_tones = ("sham", "on_6000", "detuned_6000")
+    for cycle in range(8):
+        sites = (("feature", center_ghz), ("flank", flank_ghz))
+        if cycle % 2:
+            sites = tuple(reversed(sites))
+        rotated_tones = pump_tones[cycle % 3:] + pump_tones[:cycle % 3]
+        if cycle % 2:
+            rotated_tones = tuple(reversed(rotated_tones))
+        for site, flux_ghz in sites:
+            for pump_tone in rotated_tones:
+                for role, state in (("pre_g", "g"), ("pre_e", "e"),
+                                    ("pump_e", "e"), ("post_e", "e"),
+                                    ("post_g", "g")):
+                    is_pump = role == "pump_e"
+                    gain, detuning = (TONE_SETTINGS[pump_tone]
+                                      if is_pump and pump_tone != "sham" else (0, 5))
+                    arms.append({
+                        "name": f"c{cycle}_{site}_{pump_tone}_{role}",
+                        "cycle": cycle, "site": site, "pump_tone": pump_tone,
+                        "role": role, "tone": pump_tone if is_pump else "sham",
+                        "flux_ghz": float(flux_ghz),
+                        "drive_mhz": round(1000.0 * float(flux_ghz) + detuning, 3),
+                        "gain": gain, "preparation_state": state,
+                        "pre_drive_us": resident.PRE_DRIVE_US,
+                        "post_drive_us": resident.POST_DRIVE_US,
+                        "shots": 100,
+                    })
+    return arms
+
+
 def reference_arms(center_ghz, *, phase):
     def arm(name, state, *, transfer=False):
         return {"name": f"{name}_{phase}", "site": "feature",
@@ -129,7 +165,24 @@ def reference_arms(center_ghz, *, phase):
             arm("ref_transfer_e", "e", transfer=True)]
 
 
-def plan(*, loading_time_check=False):
+def plan(*, loading_time_check=False, carryover_check=False):
+    if loading_time_check and carryover_check:
+        raise ValueError("select at most one check mode")
+    if carryover_check:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "test reproducible pump-induced change in later sham loss",
+                "group_order": ["pre_g", "pre_e", "pump_e", "post_e", "post_g"],
+                "pump_tones": ["sham", "on_6000", "detuned_6000"],
+                "pump_gain_dac": 6000, "pump_detunings_mhz": [5, -10],
+                "sites": ["selected loss feature", "14-MHz lower flank"],
+                "pre_drive_us": resident.PRE_DRIVE_US,
+                "post_drive_us": resident.POST_DRIVE_US,
+                "cycles": 8, "science_arms": 240, "shots_per_arm": 100,
+                "raw_iq_saved": True, "intermediate_readout": False,
+                "full_return_before_final_readout_us": 40.0,
+                "calibration_session": CALIBRATION_SESSION_ID,
+                "note": "Compare post-minus-pre hot/cold baseline after each pump block; "
+                        "check sham and detuned controls before physical interpretation."}
     if loading_time_check:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "test whether short-gap response follows residual qubit excitation",
@@ -197,13 +250,25 @@ def calibration_covers_feature(calibrated_ghz, current_ghz):
     return abs(1000.0 * (float(current_ghz) - float(calibrated_ghz))) <= 5.0 + 1e-6
 
 
+def calibration_brackets_feature(calibration, current_ghz):
+    """Both calibration sites showed gain-6000 contrast in this interval."""
+    high = float(calibration["center_ghz"])
+    low = high + resident.FLANK_OFFSET_GHZ
+    return low - 1e-9 <= float(current_ghz) <= high + 1e-9
+
+
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        loading_time_check=False):
+        loading_time_check=False, carryover_check=False):
+    if loading_time_check and carryover_check:
+        raise ValueError("select at most one check mode")
     data_root = Path(data_root)
-    label = "loading-time" if loading_time_check else "resident-probe"
-    suffix = ("TLS_PumpProbe_LoadingTime" if loading_time_check
-              else "TLS_PumpProbe_ResidentProbe")
-    post_holds = LOADING_POST_HOLDS_US if loading_time_check else POST_HOLDS_US
+    label = ("carryover" if carryover_check else
+             "loading-time" if loading_time_check else "resident-probe")
+    suffix = ("TLS_PumpProbe_Carryover" if carryover_check else
+              "TLS_PumpProbe_LoadingTime" if loading_time_check else
+              "TLS_PumpProbe_ResidentProbe")
+    post_holds = ((resident.POST_DRIVE_US,) if carryover_check else
+                  LOADING_POST_HOLDS_US if loading_time_check else POST_HOLDS_US)
     pre_holds = LOADING_TIMES_US if loading_time_check else (resident.PRE_DRIVE_US,)
     calibration_path, calibration = checked_calibration(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -213,10 +278,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                              "output_suffix": suffix + "_Scout"})
     selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
     center = round(float(selected["center_ghz"]), 3)
-    if not calibration_covers_feature(calibration["center_ghz"], center):
+    calibrated = (calibration_brackets_feature(calibration, center)
+                  if carryover_check else
+                  calibration_covers_feature(calibration["center_ghz"], center))
+    if not calibrated:
         raise RuntimeError(
-            f"current feature {center:.3f} GHz is more than 5 MHz from "
-            f"drive calibration {calibration['center_ghz']:.3f} GHz; "
+            f"current feature {center:.3f} GHz is outside the "
+            f"validated drive calibration region near "
+            f"{calibration['center_ghz']:.3f} GHz; "
             "rerun TLSPumpProbeResidentDrive first")
     flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
     print(f"[{label}] feature={center:.3f} GHz, "
@@ -275,19 +344,22 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "held_multiplier": before[-1][0],
                     "post_multiplier": after[0][0],
                     "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = (("q3_pump_probe_loading_time_" if loading_time_check
+        session_id = (("q3_pump_probe_carryover_" if carryover_check else
+                       "q3_pump_probe_loading_time_" if loading_time_check
                        else "q3_pump_probe_resident_probe_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
         folder.mkdir(parents=True, exist_ok=False)
         manifest_path = folder / "manifest.json"
-        science_arms = (loading_time_arms(center, flank) if loading_time_check
+        science_arms = (carryover_arms(center, flank) if carryover_check else
+                        loading_time_arms(center, flank) if loading_time_check
                         else probe_arms(center, flank))
         arms = (reference_arms(center, phase="pre") +
                 science_arms +
                 reference_arms(center, phase="post"))
-        manifest = {"schema": ("q3.pump-probe-loading-time.v1" if loading_time_check
+        manifest = {"schema": ("q3.pump-probe-carryover.v1" if carryover_check else
+                               "q3.pump-probe-loading-time.v1" if loading_time_check
                                else "q3.pump-probe-resident-probe.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
@@ -299,7 +371,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": {str(k): v for k, v in dc_lookup.items()},
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(loading_time_check=loading_time_check),
+                    "plan": plan(loading_time_check=loading_time_check,
+                                 carryover_check=carryover_check),
                     "drive_pulse_nominal_us": pulse_us,
                     "correction_windows": windows,
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
@@ -311,7 +384,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             preflight = list(arms[:4])
-            if loading_time_check:
+            if carryover_check:
+                preflight += [next(arm for arm in science_arms
+                                   if arm["site"] == site and
+                                   arm["pump_tone"] == tone and
+                                   arm["role"] == "pump_e")
+                              for site in ("feature", "flank")
+                              for tone in ("on_6000", "detuned_6000")]
+            elif loading_time_check:
                 preflight += [next(arm for arm in science_arms
                                    if arm["site"] == site and
                                    arm["tone"] == "on_6000" and
@@ -341,11 +421,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 protocol.checkpoint(manifest_path, manifest)
                 program = resident.ResidentDriveProgram(
                     soccfg, cfg, bundle.payload, bundle.loop)
+                shots = int(arm["shots"])
                 records = _run_program(
-                    soc, program, max(30.0, _block_timeout_s(cfg, SHOTS)),
-                    cfg, total_shots=SHOTS)
-                if len(records) != SHOTS:
-                    raise RuntimeError(f"{arm['name']}: received {len(records)} of {SHOTS} shots")
+                    soc, program, max(30.0, _block_timeout_s(cfg, shots)),
+                    cfg, total_shots=shots)
+                if len(records) != shots:
+                    raise RuntimeError(f"{arm['name']}: received {len(records)} of {shots} shots")
                 raw_path = folder / f"{arm['name']}.npz"
                 np.savez_compressed(raw_path,
                                     i=[r.i for r in records],
@@ -424,14 +505,19 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
-    parser.add_argument("--loading-time-check", action="store_true",
-                        help="vary target loading time to separate qubit residual from memory")
+    check = parser.add_mutually_exclusive_group()
+    check.add_argument("--loading-time-check", action="store_true",
+                       help="vary target loading time to separate qubit residual from memory")
+    check.add_argument("--carryover-check", action="store_true",
+                       help="test whether a pump block changes later zero-drive loss")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(loading_time_check=args.loading_time_check), indent=2))
+        print(json.dumps(plan(loading_time_check=args.loading_time_check,
+                              carryover_check=args.carryover_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            loading_time_check=args.loading_time_check)
+            loading_time_check=args.loading_time_check,
+            carryover_check=args.carryover_check)
     return 0
 
 
