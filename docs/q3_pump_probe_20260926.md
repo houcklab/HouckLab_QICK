@@ -2086,3 +2086,41 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run
 ```
+
+The September 27 retry completed all 18 arms and saved 400 paired-IQ shots per
+arm in `q3_pump_probe_heralded_20260928T035041Z_782f2184`. The independent
+pre-run readout checks and frozen-axis post-run checks passed. The pre/post
+scouts selected 4.132/4.130 GHz, so the runner conservatively marked the
+feature unstable under its 1-MHz center-shift rule. The loss itself did not
+disappear: at the fixed 4.132-GHz coordinate, normalized 25-us survival was
+0.298 before and 0.402 after, versus 0.771 and 0.826 at the 4.118-GHz flank.
+The 2-MHz change in selected minimum should not be interpreted as loss of the
+feature or a measured TLS frequency jump.
+
+For an offline descriptive estimate, project all paired IQ onto the *frozen*
+pre-run axes, retain first-readout IQ below the confident-ground limit, and
+classify final-readout IQ using the pre-run threshold. In the pooled two
+repetitions, final excited counts after first-readout ground selection were:
+
+| Probe preparation | Hot/on target | Cold/on target | Hot/off target | Hot-minus-cold |
+| --- | ---: | ---: | ---: | ---: |
+| Ground | 29/244 = 0.119 | 40/353 = 0.113 | 15/159 = 0.094 | +0.006 |
+| Excited | 214/330 = 0.648 | 242/376 = 0.644 | 104/154 = 0.675 | +0.005 |
+
+The naive shot-binomial 95% intervals for hot-minus-cold are approximately
+[-0.047, +0.058] for the ground probe and [-0.066, +0.076] for the excited
+probe. These are *not* uncertainty bounds for device drift or correlated
+shots. The matched differences are also small within each repetition: ground
++0.017 and +0.001; excited +0.002 and +0.007. This is a null for a population
+effect that survives the compensated return, first readout, and next probe.
+It does not exclude shorter-lived TLS excitation or establish that the loss
+feature is a TLS.
+
+One repeated hot/on-target ground-probe arm had only 77/400 confident-ground
+first readouts, versus 167/400 in its earlier nominally identical arm and
+167/400 in the immediately preceding hot/on-target excited-probe repetition.
+The settings match; the raw first-IQ distribution changed. This isolated
+nonstationarity precludes a stronger pooled claim, but does not by itself
+establish telegraph noise or identify its cause. A follow-up should interleave
+hot/cold controls on a shorter timescale and move the second probe ahead of
+the 40-us return/readout latency.
