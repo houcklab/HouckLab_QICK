@@ -501,3 +501,20 @@ def test_strong_short_gap_is_selectable_from_qick_terminal(capsys):
     assert plan["load_us"] == 12.0
     assert plan["drive_gain_dac"] == 30000
     assert plan["intermediate_readout"] is False
+
+
+def test_strong_long_load_is_a_full_probe_with_proven_settling_time(capsys):
+    import json
+    module = experiment()
+    specs = module.short_gap_saturation_specs(4.102, strong=True, load_us=20.0)
+    assert len(specs) == 8
+    assert all(entry["pre_drive_us"] == 20.0 and entry["shots"] == 1500
+               for entry in specs)
+    assert {c["gain"] for e in specs for c in e["conditions"]} == {0, 30000}
+    checks = module.strong_drive_checks(4.102, 4.088, load_us=20.0)
+    assert all(arm["pre_drive_us"] == 20.0 for arm in checks)
+    assert module.main(["--plan", "--strong-long-load"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["load_us"] == 20.0
+    assert plan["drive_gain_dac"] == 30000
+    assert plan["post_drive_holds_us"] == [1.5, 16.0]

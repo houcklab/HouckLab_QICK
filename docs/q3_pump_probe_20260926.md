@@ -3161,3 +3161,36 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --strong-short-gap
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --strong-short-gap
 ```
+
+The gain-30000, 12-us-load run
+`q3_pump_probe_strong_short_gap_20260928T173324Z_a4a397da`
+completed all science programs, but its status is
+`complete_controls_unstable`. The pre/post loss centers were 4.104/4.102
+GHz with deep, well-separated troughs; readout and transfer controls
+passed. The target-resident gain-30000 pulse produced almost no cold-arm
+excitation at either flux point. Fresh-drive on-minus-sham fractions were
++0.003 at the feature and -0.018 at the flank; the within-program 1.5-us
+cold-arm contrasts were only +0.012–0.025. Continuous IQ projections
+agree that the response was near zero. The normalized saturation statistic
+is undefined because its cold-arm denominator is too small. This run is
+not evidence for or against TLS saturation. Earlier loading-time tests
+found the resident pulse response at 4, 8, and 12 us weak, while 20 us
+worked; changing loading time and gain together in this run left the cause
+of drive failure ambiguous.
+
+The next measurement keeps gain 30000 but restores the previously usable
+20-us target-loading/settling time. It otherwise reuses the same
+1.5/16-us, hot/cold, sham/on, feature/flank, detuned, and reversed-order
+science protocol. The fresh high-gain drive check and each science program
+measure whether the cold probe pulse actually excites q3. If they fail,
+the raw data are retained but no saturation statistic is interpreted.
+If they pass, this isolates the effect of higher drive gain relative to
+the completed gain-6000, 20-us-load experiment.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --strong-long-load
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --strong-long-load
+```
