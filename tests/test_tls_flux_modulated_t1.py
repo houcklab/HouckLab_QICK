@@ -118,3 +118,51 @@ def test_focused_plan_halves_programs_and_scans_between_pairs():
     assert plan["programs"] == 4
     assert plan["shots_per_program"] == 8000
     assert plan["midpoint_feature_scout"] is True
+
+
+def test_direct_floquet_plan_visits_loss_without_long_unmodulated_predwell():
+    module = experiment()
+    plan = module.plan(floquet_direct=True)
+    assert plan["site"] == "fresh 3.992-GHz loss feature and clean upper flank"
+    assert plan["holds_us"] == [1.6, 5.6]
+    assert plan["pre_target_hold_us"] == pytest.approx(.05)
+    assert plan["modulation_amplitudes_dac"] == [1000, 1600]
+    assert plan["programs"] == 8
+    assert plan["midpoint_feature_scout"] is True
+    assert (2 * plan["park_ramp_us"] + sum(plan["holds_us"])) * 6881.28 < 65536
+
+
+def test_direct_floquet_specs_use_upper_flank_and_retarget_repeat():
+    module = experiment()
+    specs = module.program_specs(
+        3.992, amplitudes=(1000, 1600), shots=6000,
+        control_ghz=4.006, holds_us=(1.6, 5.6), pre_us=.05)
+    assert len(specs) == 8
+    assert [s["flux_ghz"] for s in specs] == [
+        3.992, 3.992, 4.006, 4.006,
+        4.006, 4.006, 3.992, 3.992]
+    for spec in specs:
+        expected = ([1.6] * 4 + [5.6] * 4 if spec["repeat"] == 0 else
+                    [5.6] * 4 + [1.6] * 4)
+        assert [c["post_drive_us"] for c in spec["conditions"]] == expected
+    assert all(c["pre_drive_us"] == .05 for s in specs
+               for c in s["conditions"])
+    module.recenter_repeat(
+        specs, center=3.994, control_ghz=4.008, repeat=1,
+        holds_us=(1.6, 5.6), pre_us=.05)
+    assert [s["flux_ghz"] for s in specs[4:]] == [4.008, 4.008, 3.994, 3.994]
+
+
+def test_direct_floquet_waveforms_follow_early_changing_correction():
+    module = experiment()
+    waveform, report = module.compensated_ac_waveform(
+        segments=[(1.025, 5504/6881.28), (1.035, 5504/6881.28)],
+        park_gain=-25146, target_gain=-16000,
+        amplitude_gain=1000, modulation_mhz=30.0,
+        sample_rate_mhz=6881.28, fabric_rate_mhz=430.08,
+        cycles=688, max_gain=32767)
+    assert report["cycles_per_waveform"] == 48
+    assert len(waveform) == 11008
+    assert waveform[0] == round(-25146 + 1.025 * 9146)
+    # Half the 48-cycle waveform is exactly a zero crossing at the DC step.
+    assert waveform[5504] == round(-25146 + 1.035 * 9146)

@@ -7,6 +7,12 @@ short/long, modulation off/on, and park-prepared ground/excited visits. The
 off visit uses the pinned static correction; the on visit adds a zero-mean
 sinusoid to that same correction. Readout occurs after the full corrected
 40-us return. This measures a candidate loss response, not TLS identity.
+
+The ``--floquet-direct`` mode instead anchors the stronger 3.992-GHz
+feature and applies a fully sampled, correction-matched AC waveform
+after only the required 0.55-us arrival/settle. It compares 1.6- and
+5.6-us AC-on/off visits in both program orders. This is a direct loss
+test, not a calibrated J0-zero measurement.
 """
 
 import argparse
@@ -31,6 +37,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
     TLSPumpProbeResidentProbe as probe,
     TLSPumpProbeShotAlternating as alternating,
     TLSPumpProbeWidePassiveScan as wide,
+    TLSSwapHoldPilot as swap,
 )
 
 
@@ -42,6 +49,10 @@ REFERENCE_SHOTS = 400
 PRE_US = 20.0
 PARK_RAMP_US = 1.0
 RECORDS_PER_SHOT = 8
+DIRECT_AMPLITUDES_DAC = (1000, 1600)
+DIRECT_HOLDS_US = (1.6, 5.6)
+DIRECT_PRE_US = 0.05
+DIRECT_SHOTS = 6000
 
 
 def compensated_ac_waveform(*, segments, park_gain, target_gain,
@@ -77,9 +88,10 @@ def compensated_ac_waveform(*, segments, park_gain, target_gain,
     return waveform, report
 
 
-def conditions(flux_ghz, *, amplitude_dac, reverse=False):
+def conditions(flux_ghz, *, amplitude_dac, reverse=False,
+               holds_us=HOLDS_US, pre_us=PRE_US):
     result = []
-    for hold_label, hold_us in (("short", HOLDS_US[0]), ("long", HOLDS_US[1])):
+    for hold_label, hold_us in zip(("short", "long"), holds_us):
         for drive in ("off", "on"):
             for state in ("g", "e"):
                 result.append({"name": f"{hold_label}_{drive}_{state}",
@@ -87,7 +99,7 @@ def conditions(flux_ghz, *, amplitude_dac, reverse=False):
                                "drive_mhz": float(flux_ghz) * 1000.0,
                                "gain": 0, "preparation_state": state,
                                "reference_state": None,
-                               "pre_drive_us": PRE_US,
+                               "pre_drive_us": float(pre_us),
                                "post_drive_us": hold_us,
                                "modulation_amplitude_dac": (
                                    int(amplitude_dac) if drive == "on" else 0)})
@@ -114,7 +126,25 @@ def feature_specific_effect(feature, flank):
                  flank["modulation_survival_change"])
 
 
-def plan(*, focused=False):
+def plan(*, focused=False, floquet_direct=False):
+    if focused and floquet_direct:
+        raise ValueError("focused and floquet-direct modes are exclusive")
+    if floquet_direct:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "site": "fresh 3.992-GHz loss feature and clean upper flank",
+                "modulation_frequency_mhz": MODULATION_MHZ,
+                "modulation_amplitudes_dac": list(DIRECT_AMPLITUDES_DAC),
+                "holds_us": list(DIRECT_HOLDS_US),
+                "pre_target_hold_us": DIRECT_PRE_US,
+                "park_ramp_us": PARK_RAMP_US,
+                "conditions_per_shot": RECORDS_PER_SHOT,
+                "programs": 8,
+                "shots_per_program": DIRECT_SHOTS,
+                "midpoint_feature_scout": True,
+                "full_return_before_readout_us": 40.0,
+                "raw_iq_saved": True,
+                "measurement": "within-shot hot/cold loss with AC on/off at 1.6 and 5.6 us",
+                "interpretation": "direct loss response; no calibrated J0 zero or TLS identity"}
     amplitudes = (1600,) if focused else AMPLITUDES_DAC
     return {"hardware_access": False, "reset_mode": "passive",
             "site": "fresh loss feature and 14-MHz lower flank",
@@ -147,7 +177,9 @@ def _target_segments(compensation, *, pre_us, hold_us, recovery_us):
 class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
     """Eight complete visits/readouts per shot, with one AC level per program."""
 
-    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
+    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration,
+                 *, holds_us=HOLDS_US, pre_us=PRE_US,
+                 allowed_amplitudes=AMPLITUDES_DAC):
         configs = [dict(cfg) for cfg in condition_cfgs]
         if len(configs) != RECORDS_PER_SHOT:
             raise ValueError("modulated T1 requires eight condition configurations")
@@ -156,16 +188,18 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
                for cfg in configs[1:]):
             raise ValueError("within-shot conditions must share flux, prehold, and shots")
         amplitudes = {int(cfg["opx_modulation_amplitude_dac"]) for cfg in configs}
-        if amplitudes != {0, max(amplitudes)} or max(amplitudes) not in AMPLITUDES_DAC:
+        if amplitudes != {0, max(amplitudes)} or max(amplitudes) not in allowed_amplitudes:
             raise ValueError("each program needs AC-off and one declared AC-on level")
         observed = {(float(cfg["opx_resident_post_us"]),
                      int(cfg["opx_modulation_amplitude_dac"]),
                      cfg["opx_resident_preparation_state"]) for cfg in configs}
-        expected = {(hold, amplitude, state) for hold in HOLDS_US
+        expected = {(hold, amplitude, state) for hold in holds_us
                     for amplitude in amplitudes for state in ("g", "e")}
         if observed != expected:
             raise ValueError("conditions do not span both holds, AC states, and preparations")
         self.ac_amplitude_dac = max(amplitudes)
+        self.holds_us = tuple(float(hold) for hold in holds_us)
+        self.pre_us = float(pre_us)
         self.logical_shots = int(configs[0]["shots"])
         self.condition_cfgs = configs
         run_cfg = dict(configs[0], reps=RECORDS_PER_SHOT * self.logical_shots)
@@ -178,10 +212,10 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
         generator = self.soccfg["gens"][int(cfg["ff_ch"])]
         self.ac_reports = {}
         self.ac_waveforms = {}
-        for hold in HOLDS_US:
+        for hold in self.holds_us:
             _, during, _ = _target_segments(
                 self._t1_ff_compensation,
-                pre_us=PRE_US + self._t1_ff_settle_us,
+                pre_us=self.pre_us + self._t1_ff_settle_us,
                 hold_us=hold,
                 recovery_us=self._t1_ff_predistortion_recovery_us)
             cycles = int(self.us2cycles(hold, gen_ch=cfg["ff_ch"]))
@@ -208,7 +242,7 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
                                    "total_samples": total_samples,
                                    "capacity_samples": budget}
         for hold, waveform in self.ac_waveforms.items():
-            name = "q3_ac_short" if float(hold) == HOLDS_US[0] else "q3_ac_long"
+            name = "q3_ac_short" if float(hold) == self.holds_us[0] else "q3_ac_long"
             self.add_pulse(ch=cfg["ff_ch"], name=name, idata=waveform,
                            qdata=np.zeros_like(waveform))
 
@@ -228,7 +262,7 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
         if int(cfg["opx_modulation_amplitude_dac"]) == 0:
             ff_pulse.play_relative_compensation_segments(self, park, target, during)
         else:
-            name = "q3_ac_short" if hold == HOLDS_US[0] else "q3_ac_long"
+            name = "q3_ac_short" if hold == self.holds_us[0] else "q3_ac_long"
             self.set_pulse_registers(
                 ch=cfg["ff_ch"], freq=0, style="arb", phase=0,
                 stdysel="last", gain=ff_maxv(self), waveform=name,
@@ -240,8 +274,10 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
         self.sync_all(0)
 
 
-def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS):
-    flank = round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
+def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS,
+                  control_ghz=None, holds_us=HOLDS_US, pre_us=PRE_US):
+    flank = (round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
+             if control_ghz is None else round(float(control_ghz), 3))
     specs = []
     for repeat in (0, 1):
         sites = (("feature", float(center)), ("flank", flank))
@@ -252,7 +288,8 @@ def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS):
         for site, flux in sites:
             for amplitude in ordered_amplitudes:
                 conds = conditions(flux, amplitude_dac=amplitude,
-                                   reverse=bool(repeat))
+                                   reverse=bool(repeat), holds_us=holds_us,
+                                   pre_us=pre_us)
                 specs.append({"name": f"r{repeat}_{site}_a{amplitude}",
                               "repeat": repeat, "site": site,
                               "flux_ghz": flux,
@@ -263,9 +300,11 @@ def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS):
     return specs
 
 
-def recenter_repeat(specs, *, center, repeat):
+def recenter_repeat(specs, *, center, repeat, control_ghz=None,
+                    holds_us=HOLDS_US, pre_us=PRE_US):
     """Retarget an unacquired repeat after its own fresh loss scout."""
-    flank = round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
+    flank = (round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
+             if control_ghz is None else round(float(control_ghz), 3))
     for entry in specs:
         if entry["repeat"] != repeat:
             continue
@@ -273,7 +312,8 @@ def recenter_repeat(specs, *, center, repeat):
             raise ValueError("cannot retarget an acquired modulation program")
         flux = round(float(center), 3) if entry["site"] == "feature" else flank
         conds = conditions(flux, amplitude_dac=entry["amplitude_dac"],
-                           reverse=bool(repeat))
+                           reverse=bool(repeat), holds_us=holds_us,
+                           pre_us=pre_us)
         entry["flux_ghz"] = flux
         entry["conditions"] = conds
         entry["order"] = [condition["name"] for condition in conds]
@@ -324,16 +364,31 @@ def _controls(scores):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        focused=False):
+        focused=False, floquet_direct=False):
+    if focused and floquet_direct:
+        raise ValueError("focused and floquet-direct modes are exclusive")
+    amplitudes = (DIRECT_AMPLITUDES_DAC if floquet_direct else
+                  (1600,) if focused else AMPLITUDES_DAC)
+    holds = DIRECT_HOLDS_US if floquet_direct else HOLDS_US
+    pre_us = DIRECT_PRE_US if floquet_direct else PRE_US
+    shots = DIRECT_SHOTS if floquet_direct else 8000 if focused else SHOTS
+    midpoint = focused or floquet_direct
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_FluxModulated_T1_Scout_pre"})
-    selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
+        parameter_overrides={**(wide.parameters() if floquet_direct else
+                                adaptive.scout_parameters(phase="pre")),
+                             "output_suffix": ("TLS_Floquet_Direct_Loss_Scout_pre"
+                                               if floquet_direct else
+                                               "TLS_FluxModulated_T1_Scout_pre")})
+    selected = (swap.select_wide_candidate(
+        swap.read_wide_scout(scout), preferred_center=3.992)
+        if floquet_direct else
+        adaptive.select_loss_feature(adaptive.read_scout(scout)))
     center = round(float(selected["center_ghz"]), 3)
-    flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+    flank = (round(float(selected["control_ghz"]), 3) if floquet_direct
+             else round(center + resident.FLANK_OFFSET_GHZ, 3))
     print(f"[mod-T1] feature={center:.3f} GHz; flank={flank:.3f} GHz",
           flush=True)
 
@@ -375,10 +430,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        for hold in HOLDS_US:
-            _target_segments(compensation, pre_us=PRE_US + 0.5,
+        for hold in holds:
+            _target_segments(compensation, pre_us=pre_us + 0.5,
                              hold_us=hold, recovery_us=40.0)
-        session_id = ("q3_flux_modulated_t1_" +
+        session_id = (("q3_floquet_direct_loss_" if floquet_direct else
+                       "q3_flux_modulated_t1_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -389,7 +445,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
             ref["status"] = "pending"
-        manifest = {"schema": "q3.flux-modulated-t1.v1",
+        manifest = {"schema": ("q3.floquet-direct-loss.v1" if floquet_direct
+                                else "q3.flux-modulated-t1.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -398,10 +455,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(focused=focused), "references": refs,
+                    "plan": plan(focused=focused, floquet_direct=floquet_direct),
+                    "references": refs,
                     "programs": program_specs(
-                        center, amplitudes=(1600,) if focused else AMPLITUDES_DAC,
-                        shots=8000 if focused else SHOTS)}
+                        center, amplitudes=amplitudes, shots=shots,
+                        control_ghz=flank if floquet_direct else None,
+                        holds_us=holds, pre_us=pre_us)}
         protocol.checkpoint(path, manifest)
         print(f"[mod-T1] manifest={path}", flush=True)
         raw_refs = {}
@@ -414,7 +473,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             def compile_entry(entry):
                 cfgs = _condition_configs(base, entry, dc_lookup)
                 program = ModulatedT1Program(
-                    soccfg, cfgs, bundle.payload, bundle.loop)
+                    soccfg, cfgs, bundle.payload, bundle.loop,
+                    holds_us=holds, pre_us=pre_us,
+                    allowed_amplitudes=amplitudes)
                 programs[entry["name"]] = program
                 entry["waveform_reports"] = program.ac_reports
                 entry["ff_envelope_report"] = program.ff_envelope_report
@@ -424,13 +485,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     entry.setdefault("waveform_npz", {})[hold] = str(wave_path)
 
             for entry in manifest["programs"]:
-                if not focused or entry["repeat"] == 0:
+                if not midpoint or entry["repeat"] == 0:
                     compile_entry(entry)
-            for ref in refs[:4] if focused else refs:
+            for ref in refs[:4] if midpoint else refs:
                 resident.ResidentDriveProgram(
                     soccfg, resident.arm_config(base, ref, dc_lookup),
                     bundle.payload, bundle.loop)
-            manifest["preflight_complete"] = not focused
+            manifest["preflight_complete"] = not midpoint
             manifest["first_block_preflight_complete"] = True
             protocol.checkpoint(path, manifest)
 
@@ -467,18 +528,29 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 print(f"[mod-T1] {ref['name']}", flush=True)
                 acquire_ref(ref)
             for entry in manifest["programs"]:
-                if focused and entry["repeat"] == 1 and "mid_selected" not in manifest:
+                if midpoint and entry["repeat"] == 1 and "mid_selected" not in manifest:
                     mid_scout = localizer.run(
                         data_root=data_root, correction_json=correction,
-                        parameter_overrides={**adaptive.scout_parameters(phase="post"),
+                        parameter_overrides={**(wide.parameters() if floquet_direct
+                                                else adaptive.scout_parameters(phase="post")),
                                              "output_suffix":
-                                             "TLS_FluxModulated_T1_Scout_mid"})
-                    mid_selected = adaptive.select_loss_feature(
-                        adaptive.read_scout(mid_scout))
+                                             ("TLS_Floquet_Direct_Loss_Scout_mid"
+                                              if floquet_direct else
+                                              "TLS_FluxModulated_T1_Scout_mid")})
+                    mid_selected = (swap.select_wide_candidate(
+                        swap.read_wide_scout(mid_scout),
+                        preferred_center=center,
+                        preferred_control_offset=.014)
+                        if floquet_direct else
+                        adaptive.select_loss_feature(adaptive.read_scout(mid_scout)))
                     mid_center = round(float(mid_selected["center_ghz"]), 3)
-                    mid_flank = round(mid_center + resident.FLANK_OFFSET_GHZ, 3)
+                    mid_flank = (round(float(mid_selected["control_ghz"]), 3)
+                                 if floquet_direct else
+                                 round(mid_center + resident.FLANK_OFFSET_GHZ, 3))
                     recenter_repeat(manifest["programs"], center=mid_center,
-                                    repeat=1)
+                                    repeat=1,
+                                    control_ghz=mid_flank if floquet_direct else None,
+                                    holds_us=holds, pre_us=pre_us)
                     mid_grid = np.asarray([mid_center, mid_flank], dtype=float)
                     mid_dc, mid_realized = _integer_dc_grid(
                         wide.parameters(), mid_grid, tls)
@@ -544,7 +616,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["control_report"] = _controls(scores)
             effects = {}
             for repeat in (0, 1):
-                for amplitude in ((1600,) if focused else AMPLITUDES_DAC):
+                for amplitude in amplitudes:
                     f = scores[f"r{repeat}_feature_a{amplitude}"]
                     b = scores[f"r{repeat}_flank_a{amplitude}"]
                     effects[f"r{repeat}_a{amplitude}"] = {
@@ -556,15 +628,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["effect_report"] = effects
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_FluxModulated_T1_Scout_post"})
+                parameter_overrides={**(wide.parameters() if floquet_direct else
+                                        adaptive.scout_parameters(phase="post")),
+                                     "output_suffix": (
+                                         "TLS_Floquet_Direct_Loss_Scout_post"
+                                         if floquet_direct else
+                                         "TLS_FluxModulated_T1_Scout_post")})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = adaptive.select_loss_feature(
-                    adaptive.read_scout(post_scout))
+                manifest["post_selected"] = (swap.select_wide_candidate(
+                    swap.read_wide_scout(post_scout),
+                    preferred_center=(manifest["mid_center_ghz"]
+                                      if midpoint else center),
+                    preferred_control_offset=.014)
+                    if floquet_direct else
+                    adaptive.select_loss_feature(adaptive.read_scout(post_scout)))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
-            if focused and "post_selected" in manifest:
+            if midpoint and "post_selected" in manifest:
                 manifest["block_stability"] = block_stability(
                     selected, manifest["mid_selected"], manifest["post_selected"])
                 manifest["feature_stable"] = all(
@@ -595,14 +676,17 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--focused", action="store_true",
                         help="1600-DAC repeat with a fresh midpoint feature scout")
+    parser.add_argument("--floquet-direct", action="store_true",
+                        help="short-predwell 1.6/5.6-us direct AC-on/off loss comparison")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(focused=args.focused), indent=2))
+        print(json.dumps(plan(focused=args.focused,
+                              floquet_direct=args.floquet_direct), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            focused=args.focused)
+            focused=args.focused, floquet_direct=args.floquet_direct)
     return 0
 
 

@@ -3786,3 +3786,47 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetStageA --run --periodic-check-only
 ```
+
+The second periodic-check attempt saved data at
+`q3_floquet_periodic_check_20260928T221849Z_1e7dacab`. The feature
+again qualified at 3.992 GHz (depth 0.562), the 4.011-GHz carrier
+passed (classified contrast 0.107), and all 28 sideband pilot arms
+completed. No single first-sideband on/off point met the predeclared
+0.025 contrast and three-standard-error criterion. The largest
+classified point difference was 0.0193 at the lower sideband,
+3977 MHz. A neighboring cluster at 3977–3981 MHz showed small
+positive differences in both classified fractions and rotated IQ,
+but the localization is weak and there is no repeated-waveform
+measurement. This is insufficient to infer a modulation index or J0
+zero, and rerunning the pilot with a lowered threshold is not warranted.
+
+The next run measures the loss response directly. `TLSFluxModulatedT1
+--floquet-direct` uses the fresh wide scout to find the 3.992-GHz
+feature and clean upper flank, then records ground- and excited-prepared
+visits with AC off/on at 1000 and 1600 DAC and dwell 1.6 or 5.6 µs.
+The eight conditions are interleaved within each hardware shot and
+the feature/flank program order is reversed in a second block after a
+new scout. The 20-µs unmodulated pre-dwell of the older modulation
+experiment is removed; only the required 0.5-µs flux settle and a
+0.05-µs pre-window precede AC. A full sampled waveform contains the
+pinned, time-varying DC correction plus AC throughout each dwell. The
+two waveforms plus park ramps fit q3's 65,536-sample memory (a 6.4-µs
+long dwell would not). The full corrected return precedes every
+readout. This tests whether AC changes the loss feature; without a
+reliable modulation-index or mean-shift calibration, any positive
+result still needs a static-detuning control before a Floquet/J0
+interpretation.
+The +14-MHz flank is a nearby comparison site, not a TLS-free negative
+control during AC: the frequency excursion can cross the loss line from
+that starting point. Analyze each site's within-program on/off effect
+before subtracting sites.
+The previous pilot is only a weak hardware-response diagnostic, so a
+null direct-loss result will not establish that modulation cannot affect
+the defect.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-direct
+```
