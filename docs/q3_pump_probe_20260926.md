@@ -3830,3 +3830,49 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-direct
 ```
+
+The direct run completed at
+`q3_floquet_direct_loss_20260928T224306Z_bf8ae446`. All three wide
+scouts selected 3.992 GHz (depths 0.594, 0.602, 0.550) with 4.006 GHz
+as the nearby comparison site. The pre/post readout fidelities were
+0.913/0.926, all eight within-program controls passed, and both
+program orders completed. At the feature, the difference between
+long-minus-short survival with AC on versus off was +0.162/+0.127
+for 1000 DAC across the two repeats and +0.159/+0.076 for 1600 DAC.
+The nearby site showed small negative changes instead. Pooling both
+repeats and subtracting the nearby-site result gives +0.165 for
+1000 DAC (approximate 95% shot-level interval 0.136–0.195) and
++0.129 for 1600 DAC (0.100–0.158). Rotated continuous IQ supports
+the same sign. This is a reproducible, sizable modulation-induced
+change in the qubit's loss at the feature.
+
+The observed hot-minus-cold contrast gives an approximate rate between
+1.6 and 5.6 µs of 0.07–0.12 /µs with AC off, versus 0.012–0.020 /µs
+with AC on at the feature. The *static* flux fit predicts only about
+−1.6 MHz (1000 DAC) or −4.2 MHz (1600 DAC) of mean frequency shift
+if the full programmed amplitude reaches the qubit. The wide scouts
+show that a shift of only −1.6 MHz would leave substantial loss, so
+a mean shift alone is insufficient. An incoherent model that averages
+the static loss rate over the sinusoidal frequency excursion predicts
+roughly 0.018–0.025 /µs for plausible 25–100% AC transfer, close to
+the observed rate. The result therefore demonstrates control of the
+qubit–loss-feature interaction, but it does not yet establish coherent
+J0/Floquet suppression or microscopic TLS saturation.
+
+The next direct test keeps the drive at 30 MHz and sweeps AC amplitude
+from 200 to 2400 DAC. Every program still interleaves AC off/on,
+short/long, and ground/excited preparations; it visits only the fresh
+feature. Ten amplitudes are measured in ascending order, then in
+descending order after a midpoint scout; a post scout bounds drift.
+The response shape can distinguish a low-amplitude onset and plateau
+from a reproducible nonmonotonic optimum. Frequency stays fixed so
+the flux line's unknown frequency response is not added as a new
+variable. Neither shape alone proves J0 physics; the measured static
+loss profile and any higher-amplitude lines must be considered.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-amplitude-sweep
+```

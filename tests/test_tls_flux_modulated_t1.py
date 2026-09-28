@@ -166,3 +166,40 @@ def test_direct_floquet_waveforms_follow_early_changing_correction():
     assert waveform[0] == round(-25146 + 1.025 * 9146)
     # Half the 48-cycle waveform is exactly a zero crossing at the DC step.
     assert waveform[5504] == round(-25146 + 1.035 * 9146)
+
+
+def test_floquet_amplitude_sweep_keeps_modulation_frequency_fixed():
+    module = experiment()
+    plan = module.plan(floquet_amplitude_sweep=True)
+    assert plan["site"] == "fresh 3.992-GHz loss feature"
+    assert plan["modulation_frequency_mhz"] == 30.0
+    assert plan["modulation_amplitudes_dac"] == [
+        200, 400, 600, 800, 1000, 1200, 1400, 1600, 2000, 2400]
+    assert plan["holds_us"] == [1.6, 5.6]
+    assert plan["pre_target_hold_us"] == .05
+    assert plan["programs"] == 20
+    assert plan["shots_per_program"] == 4000
+    assert plan["midpoint_feature_scout"] is True
+
+
+def test_amplitude_sweep_specs_repeat_in_reverse_order_without_flank_programs():
+    module = experiment()
+    specs = module.program_specs(
+        3.992, amplitudes=(200, 400, 1000), shots=4000,
+        sites=("feature",), holds_us=(1.6, 5.6), pre_us=.05)
+    assert [s["name"] for s in specs] == [
+        "r0_feature_a200", "r0_feature_a400", "r0_feature_a1000",
+        "r1_feature_a1000", "r1_feature_a400", "r1_feature_a200"]
+    assert all(s["flux_ghz"] == 3.992 for s in specs)
+    assert all(len(s["conditions"]) == 8 for s in specs)
+    module.recenter_repeat(
+        specs, center=3.994, repeat=1,
+        holds_us=(1.6, 5.6), pre_us=.05)
+    assert [s["flux_ghz"] for s in specs] == [
+        3.992, 3.992, 3.992, 3.994, 3.994, 3.994]
+
+
+def test_amplitude_sweep_rejects_combination_with_other_modes():
+    module = experiment()
+    with pytest.raises(ValueError, match="exclusive"):
+        module.plan(floquet_direct=True, floquet_amplitude_sweep=True)
