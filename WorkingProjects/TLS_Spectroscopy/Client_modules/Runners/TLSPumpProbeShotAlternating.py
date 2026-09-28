@@ -43,6 +43,11 @@ SATURATION_POSTHOLDS_US = (1.5, 16.0)
 SATURATION_SHOTS = 1500
 STRONG_LOAD_US = 12.0
 STRONG_GAIN = 30000
+MAPPED_GAIN = 20000
+MAPPED_ON_DETUNING_MHZ = 5.0
+MAPPED_OFF_DETUNING_MHZ = 20.0
+MAPPED_CALIBRATION_SESSION_ID = (
+    "q3_pump_probe_resident_drive_fresh_map_20260928T175415Z_eae54320")
 
 
 def conditions(center_ghz, *, reverse=False, detuning_mhz=5.0,
@@ -128,14 +133,17 @@ def loss_program_specs(center_ghz):
 
 def hold_alternating_specs(center_ghz, *, holds=LOSS_POSTHOLDS_US,
                            shots=LOSS_SHOTS, pre_drive_us=resident.PRE_DRIVE_US,
-                           drive_gain=6000):
+                           drive_gain=6000, on_detuning_mhz=5.0,
+                           off_detuning_mhz=-10.0, flank_ghz=None):
     """Alternate the two loss-probe holds inside each hardware shot."""
     center = float(center_ghz)
-    flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+    flank = (round(center + resident.FLANK_OFFSET_GHZ, 3) if flank_ghz is None
+             else float(flank_ghz))
     result = []
     for repeat in (0, 1):
         sites = (("feature", center), ("flank", flank))
-        tones = (("on", 5.0), ("detuned", -10.0))
+        tones = (("on", float(on_detuning_mhz)),
+                 ("detuned", float(off_detuning_mhz)))
         ordered_holds = tuple(holds)
         if repeat:
             sites = tuple(reversed(sites))
@@ -171,6 +179,87 @@ def short_gap_saturation_specs(center_ghz, *, strong=False, load_us=None):
                                   shots=SATURATION_SHOTS,
                                   pre_drive_us=float(load_us),
                                   drive_gain=(STRONG_GAIN if strong else 6000))
+
+
+def mapped_short_gap_specs(center_ghz, *, flank_ghz=None):
+    """Use the freshly mapped pulse for the actual hot/cold pump–probe."""
+    return hold_alternating_specs(
+        center_ghz, holds=SATURATION_POSTHOLDS_US,
+        shots=SATURATION_SHOTS, pre_drive_us=resident.PRE_DRIVE_US,
+        drive_gain=MAPPED_GAIN, on_detuning_mhz=MAPPED_ON_DETUNING_MHZ,
+        off_detuning_mhz=MAPPED_OFF_DETUNING_MHZ, flank_ghz=flank_ghz)
+
+
+def mapped_drive_checks(center_ghz, flank_ghz):
+    """Bracket the mapped pulse at each new flux coordinate before science."""
+    arms = []
+    for site, flux in (("feature", center_ghz), ("flank", flank_ghz)):
+        for tone, gain, detuning in (
+            ("sham_a", 0, MAPPED_ON_DETUNING_MHZ),
+            ("on_20000", MAPPED_GAIN, MAPPED_ON_DETUNING_MHZ),
+            ("detuned_20000", MAPPED_GAIN, MAPPED_OFF_DETUNING_MHZ),
+            ("sham_b", 0, MAPPED_ON_DETUNING_MHZ),
+        ):
+            arms.append({"name": f"drivecheck_{site}_{tone}",
+                         "drive_check": True, "site": site, "tone": tone,
+                         "flux_ghz": float(flux),
+                         "drive_mhz": round(1000.0 * float(flux) + detuning, 3),
+                         "gain": gain, "preparation_state": "g",
+                         "pre_drive_us": resident.PRE_DRIVE_US,
+                         "post_drive_us": resident.POST_DRIVE_US,
+                         "shots": 200})
+    return arms
+
+
+def evaluate_mapped_drive_check(fractions):
+    result = {key: float(value) for key, value in fractions.items()}
+    sham = (result["sham_a"] + result["sham_b"]) / 2.0
+    result.update({"on_excess": result["on_20000"] - sham,
+                   "detuned_excess": result["detuned_20000"] - sham,
+                   "bracket_drift": abs(result["sham_b"] - result["sham_a"])})
+    result["usable"] = bool(result["on_excess"] >= 0.10 and
+                            abs(result["detuned_excess"]) <= 0.10 and
+                            result["bracket_drift"] <= 0.10)
+    return result
+
+
+def checked_mapped_calibration(data_root):
+    """Require a complete, stable map with a selective response at both sites."""
+    path = (Path(data_root) / "q3" / MAPPED_CALIBRATION_SESSION_ID /
+            "manifest.json")
+    manifest = json.loads(path.read_text())
+    if (manifest.get("schema") != "q3.pump-probe-resident-drive-fresh-map.v1" or
+            manifest.get("status") != "complete" or
+            manifest.get("correction_sha256") != localizer.CORRECTION_SHA256 or
+            not manifest.get("feature_stable") or
+            not manifest.get("pre_readout_valid") or
+            not manifest.get("post_readout_score", {}).get("valid") or
+            not all(manifest.get("transfer_control", {}).get(phase, {}).get("usable")
+                    for phase in ("pre", "post"))):
+        raise ValueError("fresh resident-drive map failed stability or calibration controls")
+    prior_plan = manifest.get("plan", {})
+    if (prior_plan.get("pre_drive_us") != resident.PRE_DRIVE_US or
+            prior_plan.get("post_drive_us") != resident.POST_DRIVE_US or
+            MAPPED_GAIN not in prior_plan.get("driven_gains_dac", ())):
+        raise ValueError("fresh resident-drive map used different pulse settings")
+    for site in ("feature", "flank"):
+        for detuning in (MAPPED_ON_DETUNING_MHZ, MAPPED_OFF_DETUNING_MHZ):
+            arms = [a for a in manifest["arms"] if a.get("site") == site and
+                    a.get("detuning_mhz") == detuning]
+            if (len(arms) < 3 or arms[0].get("gain") != 0 or
+                    arms[-1].get("gain") != 0 or
+                    any(a.get("status") != "complete" for a in arms)):
+                raise ValueError(f"{site}: mapped drive brackets incomplete")
+            driven = [a for a in arms if a.get("gain") == MAPPED_GAIN]
+            if len(driven) != 1:
+                raise ValueError(f"{site}: mapped drive arm incomplete")
+            sham = (arms[0]["excited_fraction_pre_axis"] +
+                    arms[-1]["excited_fraction_pre_axis"]) / 2.0
+            excess = driven[0]["excited_fraction_pre_axis"] - sham
+            if (detuning == MAPPED_ON_DETUNING_MHZ and excess < 0.10 or
+                    detuning == MAPPED_OFF_DETUNING_MHZ and abs(excess) > 0.10):
+                raise ValueError(f"{site}: mapped {detuning:+g}-MHz contrast failed")
+    return path, manifest
 
 
 def strong_drive_checks(center_ghz, flank_ghz, *, load_us=STRONG_LOAD_US):
@@ -449,20 +538,25 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
 
 def plan(*, loading_check=False, loss_check=False, hold_alternating=False,
          short_gap_saturation=False, strong_short_gap=False,
-         strong_long_load=False):
+         strong_long_load=False, mapped_short_gap=False):
     if sum(map(bool, (loading_check, loss_check, hold_alternating,
                       short_gap_saturation, strong_short_gap,
-                      strong_long_load))) > 1:
+                      strong_long_load, mapped_short_gap))) > 1:
         raise ValueError("select at most one check mode")
-    if short_gap_saturation or strong_short_gap or strong_long_load:
+    if short_gap_saturation or strong_short_gap or strong_long_load or mapped_short_gap:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "test whether qubit loading suppresses subsequent on-feature loss",
                 "sites": ["fresh loss feature", "qualified 14-MHz lower flank"],
                 "load_us": STRONG_LOAD_US if strong_short_gap else resident.PRE_DRIVE_US,
                 "post_drive_holds_us": list(SATURATION_POSTHOLDS_US),
-                "tones_mhz": [5.0, -10.0],
-                "drive_gain_dac": (STRONG_GAIN if strong_short_gap or strong_long_load
+                "tones_mhz": ([MAPPED_ON_DETUNING_MHZ, MAPPED_OFF_DETUNING_MHZ]
+                               if mapped_short_gap else [5.0, -10.0]),
+                "drive_gain_dac": (MAPPED_GAIN if mapped_short_gap else
+                                   STRONG_GAIN if strong_short_gap or strong_long_load
                                    else 6000),
+                "calibration_session": (MAPPED_CALIBRATION_SESSION_ID
+                                        if mapped_short_gap else
+                                        probe.CALIBRATION_SESSION_ID),
                 "programs": 8, "conditions_per_shot": 8,
                 "shots_per_program": SATURATION_SHOTS,
                 "intermediate_readout": False,
@@ -544,17 +638,20 @@ def plan(*, loading_check=False, loss_check=False, hold_alternating=False,
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         loading_check=False, loss_check=False, hold_alternating=False,
         short_gap_saturation=False, strong_short_gap=False,
-        strong_long_load=False):
+        strong_long_load=False, mapped_short_gap=False):
     if sum(map(bool, (loading_check, loss_check, hold_alternating,
                       short_gap_saturation, strong_short_gap,
-                      strong_long_load))) > 1:
+                      strong_long_load, mapped_short_gap))) > 1:
         raise ValueError("select at most one check mode")
-    saturation_mode = short_gap_saturation or strong_short_gap or strong_long_load
+    saturation_mode = (short_gap_saturation or strong_short_gap or
+                       strong_long_load or mapped_short_gap)
     strong_drive_mode = strong_short_gap or strong_long_load
     loss_mode = loss_check or hold_alternating or saturation_mode
     science_pre_us = STRONG_LOAD_US if strong_short_gap else resident.PRE_DRIVE_US
     data_root = Path(data_root)
-    calibration_path, calibration = probe.checked_calibration(data_root)
+    calibration_path, calibration = (checked_mapped_calibration(data_root)
+                                     if mapped_short_gap else
+                                     probe.checked_calibration(data_root))
     correction = localizer.checked_correction(data_root, correction_json)
     if saturation_mode:
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -637,7 +734,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 windows[key] = {"held_multiplier": before[-1][0],
                                 "post_multiplier": after[0][0],
                                 "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = (("q3_pump_probe_strong_long_load_" if strong_long_load else
+        session_id = (("q3_pump_probe_mapped_short_gap_" if mapped_short_gap else
+                       "q3_pump_probe_strong_long_load_" if strong_long_load else
                        "q3_pump_probe_strong_short_gap_" if strong_short_gap else
                        "q3_pump_probe_short_gap_saturation_" if short_gap_saturation else
                        "q3_pump_probe_hold_alternating_loss_" if hold_alternating else
@@ -653,14 +751,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
-        drive_checks = (strong_drive_checks(center, flank, load_us=science_pre_us)
+        drive_checks = (mapped_drive_checks(center, flank)
+                        if mapped_short_gap else
+                        strong_drive_checks(center, flank, load_us=science_pre_us)
                         if strong_drive_mode else
                         probe.carryover_drive_checks(center, flank)
                         if loss_mode else fresh_drive_arms(center))
         if loading_check:
             for arm in drive_checks:
                 arm["pre_drive_us"] = 8.0
-        program_specs = (short_gap_saturation_specs(
+        program_specs = (mapped_short_gap_specs(center, flank_ghz=flank)
+                         if mapped_short_gap else
+                         short_gap_saturation_specs(
                              center, strong=strong_drive_mode,
                              load_us=science_pre_us)
                          if saturation_mode else
@@ -673,7 +775,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
              "order": [c["name"] for c in order], "conditions": order}
             for direction, order in (("forward", conditions(center)),
                                      ("reverse", conditions(center, reverse=True)))])
-        manifest = {"schema": ("q3.pump-probe-strong-long-load.v1"
+        manifest = {"schema": ("q3.pump-probe-mapped-short-gap.v1"
+                               if mapped_short_gap else
+                               "q3.pump-probe-strong-long-load.v1"
                                if strong_long_load else
                                "q3.pump-probe-strong-short-gap.v1"
                                if strong_short_gap else
@@ -699,7 +803,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  hold_alternating=hold_alternating,
                                  short_gap_saturation=short_gap_saturation,
                                  strong_short_gap=strong_short_gap,
-                                 strong_long_load=strong_long_load),
+                                 strong_long_load=strong_long_load,
+                                 mapped_short_gap=mapped_short_gap),
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
@@ -784,7 +889,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 arm["status"] = "complete"
                 protocol.checkpoint(path, manifest)
             if loss_mode:
-                scorer = (evaluate_strong_drive_check if strong_drive_mode else
+                scorer = (evaluate_mapped_drive_check if mapped_short_gap else
+                          evaluate_strong_drive_check if strong_drive_mode else
                           probe.evaluate_drive_check)
                 manifest["fresh_drive_score"] = {
                     site: scorer({
@@ -932,6 +1038,7 @@ def main(argv=None):
     check_mode.add_argument("--short-gap-saturation", action="store_true")
     check_mode.add_argument("--strong-short-gap", action="store_true")
     check_mode.add_argument("--strong-long-load", action="store_true")
+    check_mode.add_argument("--mapped-short-gap", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(loading_check=args.loading_check,
@@ -939,14 +1046,16 @@ def main(argv=None):
                               hold_alternating=args.hold_alternating,
                               short_gap_saturation=args.short_gap_saturation,
                               strong_short_gap=args.strong_short_gap,
-                              strong_long_load=args.strong_long_load), indent=2))
+                              strong_long_load=args.strong_long_load,
+                              mapped_short_gap=args.mapped_short_gap), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             loading_check=args.loading_check, loss_check=args.loss_check,
             hold_alternating=args.hold_alternating,
             short_gap_saturation=args.short_gap_saturation,
             strong_short_gap=args.strong_short_gap,
-            strong_long_load=args.strong_long_load)
+            strong_long_load=args.strong_long_load,
+            mapped_short_gap=args.mapped_short_gap)
     return 0
 
 

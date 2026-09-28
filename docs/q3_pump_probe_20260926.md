@@ -3226,3 +3226,35 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentDrive --run --fresh-map
 ```
+
+The fresh resident-drive map completed at
+`q3_pump_probe_resident_drive_fresh_map_20260928T175415Z_eae54320`.
+Both scouts found a 4.104-GHz loss center (depth 0.484/0.509), with a
+qualified 4.090-GHz lower-flank control. Readout fidelity was 0.91 before
+and 0.90 afterward; pre/post park-preparation transfer contrasts were
+0.380/0.390. With 20-us target settling, a +5-MHz resident qubit pulse at
+gain 20000 raised the excited fraction above adjacent zero-drive brackets
+by +0.1425 at the feature and +0.1325 at the flank (200 shots per arm).
+Shot-bootstrap 95% intervals were [0.075, 0.210] and [0.065, 0.200]. At
++20 MHz, the same gain gave +0.010 and +0.0225, respectively, with intervals
+spanning zero. Continuous IQ projections agree in sign and size. Gain
+30000 was weaker than 20000, as expected from the earlier failure. This is
+a usable *qubit drive calibration*, not evidence of TLS saturation.
+
+The next run uses the measured gain-20000, +5-MHz pulse for the actual
+short-gap hot/cold pump–probe. It repeats the earlier 20-us load and
+1.5/16-us probe holds, with sham, +20-MHz off-tone, lower-flank, and
+reversed-order controls. The feature is located afresh; the map's controls
+are validated before hardware access, and the current feature and flank
+each receive new on/off/sham drive checks. The final report requires
+within-program cold-drive response and stable readout, transfer, and
+feature controls before interpreting a loaded-versus-cold survival effect.
+The drive and target hold are within one flux visit, with no intermediate
+readout. This changes only the experimental runner.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --mapped-short-gap
+```

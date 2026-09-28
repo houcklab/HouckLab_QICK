@@ -518,3 +518,53 @@ def test_strong_long_load_is_a_full_probe_with_proven_settling_time(capsys):
     assert plan["load_us"] == 20.0
     assert plan["drive_gain_dac"] == 30000
     assert plan["post_drive_holds_us"] == [1.5, 16.0]
+
+
+def test_mapped_short_gap_uses_fresh_map_pulse_and_off_tone(capsys):
+    import json
+    module = experiment()
+    specs = module.mapped_short_gap_specs(4.104)
+    assert len(specs) == 8
+    assert {c["gain"] for e in specs for c in e["conditions"]} == {0, 20000}
+    assert {e["detuning_mhz"] for e in specs if e["tone"] == "on"} == {5.0}
+    assert {e["detuning_mhz"] for e in specs if e["tone"] == "detuned"} == {20.0}
+    assert {e["pre_drive_us"] for e in specs} == {20.0}
+    assert {e["shots"] for e in specs} == {1500}
+    checks = module.mapped_drive_checks(4.104, 4.090)
+    assert len(checks) == 8
+    assert {a["drive_mhz"] for a in checks if a["site"] == "feature"
+            and a["gain"] == 20000} == {4109.0, 4124.0}
+    assert module.main(["--plan", "--mapped-short-gap"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["drive_gain_dac"] == 20000
+    assert plan["tones_mhz"] == [5.0, 20.0]
+    assert plan["intermediate_readout"] is False
+
+
+def test_fresh_map_calibration_validates_both_sites_and_off_tone(tmp_path):
+    import json
+    module = experiment()
+    session = tmp_path / "q3" / module.MAPPED_CALIBRATION_SESSION_ID
+    session.mkdir(parents=True)
+    arms = []
+    for site in ("feature", "flank"):
+        for detuning, driven in ((5, .24), (20, .11)):
+            for gain, excited in ((0, .10), (20000, driven), (0, .10)):
+                arms.append({"site": site, "detuning_mhz": detuning,
+                             "gain": gain, "status": "complete",
+                             "excited_fraction_pre_axis": excited})
+    manifest = {"schema": "q3.pump-probe-resident-drive-fresh-map.v1",
+                "status": "complete", "correction_sha256": module.localizer.CORRECTION_SHA256,
+                "feature_stable": True, "pre_readout_valid": True,
+                "post_readout_score": {"valid": True},
+                "transfer_control": {"pre": {"usable": True},
+                                     "post": {"usable": True}},
+                "plan": {"pre_drive_us": 20.0, "post_drive_us": 0.1,
+                         "driven_gains_dac": [20000]},
+                "arms": arms}
+    (session / "manifest.json").write_text(json.dumps(manifest))
+    assert module.checked_mapped_calibration(tmp_path)[1] == manifest
+    arms[1]["excited_fraction_pre_axis"] = .15
+    (session / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="feature.*contrast"):
+        module.checked_mapped_calibration(tmp_path)
