@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import time
 import uuid
 
 import numpy as np
@@ -43,6 +44,15 @@ POST_HOLDS_US = (0.1, 2.0, 6.0)
 LOADING_TIMES_US = (20.0, 80.0)
 LOADING_POST_HOLDS_US = (0.1, 2.0)
 LOADING_TONE_ORDER = ("sham_a", "on_6000", "detuned_6000", "sham_b")
+CARRYOVER_TONE_ORDERS = (
+    ("sham", "on_6000", "detuned_6000"),
+    ("on_6000", "detuned_6000", "sham"),
+    ("detuned_6000", "sham", "on_6000"),
+    ("detuned_6000", "on_6000", "sham"),
+    ("on_6000", "sham", "detuned_6000"),
+    ("sham", "detuned_6000", "on_6000"),
+)
+CARRYOVER_WASHOUT_S = 5.0
 TONE_ORDER = ("sham_a", "on_6000", "detuned_6000",
               "on_30000", "sham_b")
 TONE_SETTINGS = {
@@ -118,16 +128,12 @@ def loading_time_arms(center_ghz, flank_ghz):
 def carryover_arms(center_ghz, flank_ghz):
     """Short ABBA-like groups that measure pump-induced cross-arm memory."""
     arms = []
-    pump_tones = ("sham", "on_6000", "detuned_6000")
-    for cycle in range(8):
+    for cycle, pump_tones in enumerate(CARRYOVER_TONE_ORDERS):
         sites = (("feature", center_ghz), ("flank", flank_ghz))
         if cycle % 2:
             sites = tuple(reversed(sites))
-        rotated_tones = pump_tones[cycle % 3:] + pump_tones[:cycle % 3]
-        if cycle % 2:
-            rotated_tones = tuple(reversed(rotated_tones))
         for site, flux_ghz in sites:
-            for pump_tone in rotated_tones:
+            for pump_tone in pump_tones:
                 for role, state in (("pre_g", "g"), ("pre_e", "e"),
                                     ("pump_e", "e"), ("post_e", "e"),
                                     ("post_g", "g")):
@@ -146,6 +152,39 @@ def carryover_arms(center_ghz, flank_ghz):
                         "shots": 100,
                     })
     return arms
+
+
+def carryover_drive_checks(center_ghz, flank_ghz):
+    """Fresh ground-state drive checks at both actual flux coordinates."""
+    arms = []
+    for site, flux_ghz in (("feature", center_ghz), ("flank", flank_ghz)):
+        for tone in ("sham_a", "on_6000", "detuned_6000", "sham_b"):
+            gain, detuning = TONE_SETTINGS[tone]
+            arms.append({
+                "name": f"drivecheck_{site}_{tone}", "drive_check": True,
+                "site": site, "tone": tone,
+                "flux_ghz": float(flux_ghz),
+                "drive_mhz": round(1000.0 * float(flux_ghz) + detuning, 3),
+                "gain": gain, "preparation_state": "g",
+                "pre_drive_us": resident.PRE_DRIVE_US,
+                "post_drive_us": resident.POST_DRIVE_US,
+                "shots": 200,
+            })
+    return arms
+
+
+def evaluate_drive_check(fractions):
+    """Gate the current-site qubit drive against local sham and detuned arms."""
+    result = dict(fractions)
+    sham = (float(result["sham_a"]) + float(result["sham_b"])) / 2.0
+    result.update({"on_excess": float(result["on_6000"]) - sham,
+                   "detuned_excess": float(result["detuned_6000"]) - sham,
+                   "bracket_drift": abs(float(result["sham_b"]) -
+                                        float(result["sham_a"]))})
+    result["usable"] = bool(result["on_excess"] >= 0.10 and
+                            abs(result["detuned_excess"]) <= 0.10 and
+                            result["bracket_drift"] <= 0.10)
+    return result
 
 
 def reference_arms(center_ghz, *, phase):
@@ -177,7 +216,10 @@ def plan(*, loading_time_check=False, carryover_check=False):
                 "sites": ["selected loss feature", "14-MHz lower flank"],
                 "pre_drive_us": resident.PRE_DRIVE_US,
                 "post_drive_us": resident.POST_DRIVE_US,
-                "cycles": 8, "science_arms": 240, "shots_per_arm": 100,
+                "cycles": 6, "science_arms": 180, "shots_per_arm": 100,
+                "drive_check_arms": 8,
+                "group_washout_s": CARRYOVER_WASHOUT_S,
+                "max_pre_baseline_spread_per_site_cycle": 0.20,
                 "raw_iq_saved": True, "intermediate_readout": False,
                 "full_return_before_final_readout_us": 40.0,
                 "calibration_session": CALIBRATION_SESSION_ID,
@@ -355,7 +397,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         science_arms = (carryover_arms(center, flank) if carryover_check else
                         loading_time_arms(center, flank) if loading_time_check
                         else probe_arms(center, flank))
+        drive_checks = (carryover_drive_checks(center, flank)
+                        if carryover_check else [])
         arms = (reference_arms(center, phase="pre") +
+                drive_checks +
                 science_arms +
                 reference_arms(center, phase="post"))
         manifest = {"schema": ("q3.pump-probe-carryover.v1" if carryover_check else
@@ -375,6 +420,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  carryover_check=carryover_check),
                     "drive_pulse_nominal_us": pulse_us,
                     "correction_windows": windows,
+                    "fresh_drive_checks": {},
+                    "group_results": {},
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
         protocol.checkpoint(manifest_path, manifest)
         print(f"[{label}] manifest={manifest_path}", flush=True)
@@ -383,7 +430,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         try:
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
-            preflight = list(arms[:4])
+            preflight = list(arms[:4 + len(drive_checks)])
             if carryover_check:
                 preflight += [next(arm for arm in science_arms
                                    if arm["site"] == site and
@@ -418,6 +465,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 print(f"[{label}] {index}/{len(arms)} {arm['name']}",
                       flush=True)
                 arm["status"] = "acquiring"
+                arm["started_at_utc"] = datetime.now(timezone.utc).isoformat()
                 protocol.checkpoint(manifest_path, manifest)
                 program = resident.ResidentDriveProgram(
                     soccfg, cfg, bundle.payload, bundle.loop)
@@ -446,6 +494,66 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 if axis is not None and axis["valid"]:
                     arm["excited_fraction_pre_axis"] = resident.classify(records, axis)
                 arm["status"] = "complete"
+                arm["completed_at_utc"] = datetime.now(timezone.utc).isoformat()
+                protocol.checkpoint(manifest_path, manifest)
+                if carryover_check and arm.get("drive_check") and arm["tone"] == "sham_b":
+                    if axis is None or not axis["valid"]:
+                        raise RuntimeError("fresh drive checks require a valid readout axis")
+                    site = arm["site"]
+                    checks = {tone: next(a["excited_fraction_pre_axis"]
+                                         for a in manifest["arms"]
+                                         if a.get("drive_check") and a["site"] == site
+                                         and a["tone"] == tone)
+                              for tone in ("sham_a", "on_6000",
+                                           "detuned_6000", "sham_b")}
+                    checks = evaluate_drive_check(checks)
+                    manifest["fresh_drive_checks"][site] = checks
+                    protocol.checkpoint(manifest_path, manifest)
+                    if not checks["usable"]:
+                        raise RuntimeError(f"{site} fresh drive check failed: {checks}")
+                if carryover_check and arm.get("role") == "pre_e":
+                    key = f"c{arm['cycle']}_{arm['site']}_{arm['pump_tone']}"
+                    ground = next(a["excited_fraction_pre_axis"]
+                                  for a in manifest["arms"]
+                                  if a["name"] == key + "_pre_g")
+                    excited = arm["excited_fraction_pre_axis"]
+                    manifest["group_results"][key] = {
+                        "pre_ground": ground, "pre_excited": excited,
+                        "pre_hot_minus_cold": excited - ground}
+                    protocol.checkpoint(manifest_path, manifest)
+                if carryover_check and arm.get("role") == "post_g":
+                    key = f"c{arm['cycle']}_{arm['site']}_{arm['pump_tone']}"
+                    result = manifest["group_results"][key]
+                    excited = next(a["excited_fraction_pre_axis"]
+                                   for a in manifest["arms"]
+                                   if a["name"] == key + "_post_e")
+                    ground = arm["excited_fraction_pre_axis"]
+                    result.update({
+                        "post_ground": ground, "post_excited": excited,
+                        "post_hot_minus_cold": excited - ground,
+                        "delta_hot_minus_cold": (
+                            excited - ground - result["pre_hot_minus_cold"])})
+                    start = time.monotonic()
+                    time.sleep(CARRYOVER_WASHOUT_S)
+                    result["washout_s_actual"] = time.monotonic() - start
+                    protocol.checkpoint(manifest_path, manifest)
+                elif carryover_check and arm.get("drive_check") and arm["tone"] == "sham_b":
+                    start = time.monotonic()
+                    time.sleep(CARRYOVER_WASHOUT_S)
+                    manifest["fresh_drive_checks"][arm["site"]]["washout_s_actual"] = (
+                        time.monotonic() - start)
+                    protocol.checkpoint(manifest_path, manifest)
+            if carryover_check:
+                spreads = {}
+                for cycle in range(len(CARRYOVER_TONE_ORDERS)):
+                    for site in ("feature", "flank"):
+                        values = [manifest["group_results"][
+                            f"c{cycle}_{site}_{tone}"]["pre_hot_minus_cold"]
+                            for tone in ("sham", "on_6000", "detuned_6000")]
+                        spreads[f"c{cycle}_{site}"] = max(values) - min(values)
+                manifest["pre_baseline_spread_by_cycle_site"] = spreads
+                manifest["pre_baseline_stable"] = bool(
+                    all(value <= 0.20 for value in spreads.values()))
                 protocol.checkpoint(manifest_path, manifest)
             if axis is not None and axis["valid"]:
                 manifest["post_readout_score"] = resident.score_axis(
@@ -485,7 +593,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 and len(manifest.get("transfer_control", {})) == 2)
             manifest["status"] = (
                 "complete" if readout_valid and transfer_valid and
-                              manifest["feature_stable"]
+                              manifest["feature_stable"] and
+                              (not carryover_check or manifest["pre_baseline_stable"])
                 else "complete_controls_unstable")
             protocol.checkpoint(manifest_path, manifest)
             print(f"[{label}] {manifest['status']}: {manifest_path}",

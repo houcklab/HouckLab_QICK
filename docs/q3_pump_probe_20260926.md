@@ -2313,19 +2313,28 @@ contrast survives the rapidly changing loss baseline.
 The next test asks a narrower question suggested by the inconsistent sham
 brackets: does a driven block reproducibly change the *following* zero-drive
 hot survival at the same flux, or do similar changes occur after an undriven
-block? The experimental `--carryover-check` mode performs eight short cycles
+block? The experimental `--carryover-check` mode performs six short cycles
 of feature/flank groups. Each group measures zero-drive ground and excited
 baselines, then 100 hot pump shots, then zero-drive excited and ground
 baselines. Pump groups rotate among gain-zero sham, +5-MHz gain-6000, and
--10-MHz gain-6000; the site and tone orders are balanced across cycles.
+-10-MHz gain-6000; all six tone permutations occur once and site order
+alternates. A five-second park recovery separates groups, and its actual
+duration is logged. The measured pre-baselines of the three tone groups at
+each site/cycle must agree within 0.20 excited-fraction units for the data
+to pass the stability gate; a fixed wait alone does not prove recovery.
 All arms use the same 20-us target visit, 0.1-us post-pulse hold, full
-corrected return, and one readout per shot. There are 240 science arms at
-100 shots each, plus 400-shot pre/post readout and transfer controls. The
+corrected return, and one readout per shot. There are 180 science arms at
+100 shots each, plus 400-shot pre/post readout and transfer controls. Eight
+fresh 200-shot ground-drive checks at the actual feature and flank bracket
+the on-tone and detuned pulses with gain-zero shams. Science acquisition
+starts only if on-tone gain 6000 produces at least 0.10 excess excitation,
+the detuned pulse stays within 0.10 of sham, and the sham bracket stays
+within 0.10 at both sites; these checks are washed out before science. The
 frozen IQ axis, raw shots, pre/post feature scouts, and exact arm order are
 saved. The feature must fall within the interval in which the prior
 calibration actually demonstrated gain-6000 drive contrast (4.119-4.133
-GHz); the flank remains an empirical control whose drive response must be
-verified in this run.
+GHz). The flank can fall outside that interval, which is why its fresh
+drive check is mandatory.
 
 For each group, compare the post-minus-pre change in hot-minus-cold sham
 survival. A pump-induced effect requires a repeatable change after on-tone

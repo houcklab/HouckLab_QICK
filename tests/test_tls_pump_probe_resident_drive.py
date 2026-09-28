@@ -211,11 +211,11 @@ def test_carryover_schedule_has_paired_baselines_around_each_pump_block():
     module = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
     arms = module.carryover_arms(4.125, 4.111)
-    assert len(arms) == 240
-    assert len({a["name"] for a in arms}) == 240
-    assert {a["cycle"] for a in arms} == set(range(8))
+    assert len(arms) == 180
+    assert len({a["name"] for a in arms}) == 180
+    assert {a["cycle"] for a in arms} == set(range(6))
     assert {a["site"] for a in arms} == {"feature", "flank"}
-    for cycle in range(8):
+    for cycle in range(6):
         for site in ("feature", "flank"):
             for tone in ("sham", "on_6000", "detuned_6000"):
                 group = [a for a in arms if a["cycle"] == cycle and
@@ -231,16 +231,51 @@ def test_carryover_schedule_has_paired_baselines_around_each_pump_block():
     assert [a["site"] for a in arms[:15]] == ["feature"] * 15
     assert [a["site"] for a in arms[15:30]] == ["flank"] * 15
     assert [a["site"] for a in arms[30:45]] == ["flank"] * 15
+    orders = [tuple(dict.fromkeys(a["pump_tone"] for a in arms
+                                  if a["cycle"] == cycle and
+                                  a["site"] == "feature"))
+              for cycle in range(6)]
+    assert len(set(orders)) == 6
+
+
+def test_carryover_fresh_drive_checks_cover_both_sites_and_detunings():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    arms = module.carryover_drive_checks(4.125, 4.111)
+    assert len(arms) == 8
+    for site in ("feature", "flank"):
+        checks = [a for a in arms if a["site"] == site]
+        assert [a["tone"] for a in checks] == [
+            "sham_a", "on_6000", "detuned_6000", "sham_b"]
+        assert [a["gain"] for a in checks] == [0, 6000, 6000, 0]
+        assert all(a["preparation_state"] == "g" and a["shots"] == 200
+                   for a in checks)
 
 
 def test_carryover_plan_and_calibration_frequency_bracket():
     module = importlib.import_module(
         "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
     plan = module.plan(carryover_check=True)
-    assert plan["science_arms"] == 240
+    assert plan["science_arms"] == 180
     assert plan["shots_per_arm"] == 100
+    assert plan["drive_check_arms"] == 8
+    assert plan["group_washout_s"] == 5.0
     assert module.calibration_brackets_feature({"center_ghz": 4.133}, 4.125)
     assert not module.calibration_brackets_feature({"center_ghz": 4.133}, 4.115)
+
+
+def test_carryover_fresh_drive_gate_rejects_detuned_response_or_sham_drift():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    good = module.evaluate_drive_check({"sham_a": 0.08, "on_6000": 0.30,
+                                        "detuned_6000": 0.10, "sham_b": 0.09})
+    assert good["usable"] and good["on_excess"] > 0.20
+    assert not module.evaluate_drive_check({"sham_a": 0.08, "on_6000": 0.30,
+                                            "detuned_6000": 0.23,
+                                            "sham_b": 0.09})["usable"]
+    assert not module.evaluate_drive_check({"sham_a": 0.08, "on_6000": 0.30,
+                                            "detuned_6000": 0.10,
+                                            "sham_b": 0.20})["usable"]
 
 
 def test_probe_rejects_feature_outside_calibrated_frequency_neighborhood():
