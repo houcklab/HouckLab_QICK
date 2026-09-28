@@ -96,22 +96,36 @@ class HeraldedPumpProbeProgram(OPXResetT1Program):
         self._set_payload_pulse(gain=0 if state == "g" else None)
         _pulse_pi_and_align(self)
 
+    def _prepare_and_excursion(self, state, hold_us, *, after_return):
+        # References must label the state *at readout*, after the long
+        # compensated return. Science arms load the target before returning.
+        self._prepare_state("g" if after_return else state)
+        self._wait_t1_payload(float(hold_us))
+        if after_return:
+            self._prepare_state(state)
+
     def _emit_body(self):
         park_up, park_down = self._shot_park_callbacks()
         park_up()
-        self._prepare_state(self.cfg["opx_herald_pump_state"])
-        self._wait_t1_payload(float(self.cfg["opx_herald_pump_us"]))
+        self._prepare_and_excursion(
+            self.cfg["opx_herald_pump_state"],
+            self.cfg["opx_herald_pump_us"],
+            after_return=bool(self.cfg.get(
+                "opx_herald_pump_prepare_after_return", False)))
         self._measure_raw()
         self._save_readout()
 
         # wait_all(read_delay) advances the tProc but not the pulse reference.
         # Give the second pi instruction headroom after the first accumulator.
         self.sync_all(self.us2cycles(float(self.reset_config.read_delay_us) + 10.0))
-        self._prepare_state(self.cfg["opx_herald_probe_state"])
         pump_gain = self.cfg["ff_gain"]
         try:
             self.cfg["ff_gain"] = self.cfg["opx_herald_probe_gain"]
-            self._wait_t1_payload(float(self.cfg["opx_herald_probe_us"]))
+            self._prepare_and_excursion(
+                self.cfg["opx_herald_probe_state"],
+                self.cfg["opx_herald_probe_us"],
+                after_return=bool(self.cfg.get(
+                    "opx_herald_probe_prepare_after_return", False)))
         finally:
             self.cfg["ff_gain"] = pump_gain
         self._measure_raw()
@@ -125,7 +139,9 @@ def reference_arms(center_ghz, *, phase):
         {"name": f"{name}_{phase}", "pump_state": pump_state,
          "probe_state": probe_state, "pump_ghz": center_ghz,
          "probe_ghz": center_ghz, "pump_us": 0.1,
-         "probe_us": 0.1}
+         "probe_us": 0.1,
+         "pump_prepare_after_return": True,
+         "probe_prepare_after_return": True}
         for name, pump_state, probe_state in (
             ("ref_g", "g", "g"),
             ("ref_e", "e", "g"),
@@ -145,7 +161,9 @@ def science_arms(*, center_ghz, flank_ghz):
             base.append({"name": f"{loading}_{probe_state}",
                          "pump_state": pump_state, "probe_state": probe_state,
                          "pump_ghz": pump_ghz, "probe_ghz": center_ghz,
-                         "pump_us": PUMP_US, "probe_us": PROBE_US})
+                         "pump_us": PUMP_US, "probe_us": PROBE_US,
+                         "pump_prepare_after_return": False,
+                         "probe_prepare_after_return": False})
     return base + [{**arm, "name": arm["name"] + "_repeat"}
                    for arm in reversed(base)]
 
@@ -249,6 +267,10 @@ def arm_config(base, arm, dc_lookup):
                 "opx_herald_probe_us": arm["probe_us"],
                 "opx_herald_pump_state": arm["pump_state"],
                 "opx_herald_probe_state": arm["probe_state"],
+                "opx_herald_pump_prepare_after_return": arm[
+                    "pump_prepare_after_return"],
+                "opx_herald_probe_prepare_after_return": arm[
+                    "probe_prepare_after_return"],
                 "shots": SHOTS, "reps": SHOTS})
     return cfg
 

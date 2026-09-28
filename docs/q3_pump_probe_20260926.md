@@ -2027,6 +2027,23 @@ roughly 40-us return plus first-readout time before the return probe. A post
 loss-feature scout records drift; shifts greater than 1 MHz mark the pilot
 frequency-unstable rather than treating a null as evidence against return.
 
+The first heralded attempt on September 27 stopped during its third reference,
+before any science arm. Its fresh scout selected 4.124 GHz (the feature had
+moved since the earlier timing map). The ordinary single-shot calibration just
+before the scout had ground/excited fidelity `(0.943+0.896)/2 = 0.9195`.
+However, the pilot's first-readout reference prepared an excited qubit *before*
+the target excursion and 40-us return. That state can relax before it is read;
+the resulting prepared-excited IQ distribution yielded apparent fidelity
+0.711 and only 7.7% prepared-ground acceptance at a 2% lower-tail cutoff.
+No pump/probe result can be inferred from this stopped run.
+
+The reference arms now perform their calibrated pi (or zero-gain matched
+pulse) **after** the complete flux return, immediately before the respective
+readout. They therefore calibrate the state present at readout. Science arms
+still prepare before their target visit, so the loading and return test is
+unchanged. Raw paired IQ and the strict reference-quality guard remain in
+place; a failing readout reference still stops the run before science data.
+
 On the measurement PC after stopping other acquisitions:
 
 ```bash

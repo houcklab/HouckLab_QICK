@@ -101,6 +101,43 @@ def test_second_readout_reference_uses_ground_heralded_pi_arm():
     assert axes["final"]["fidelity"] == 1.0
 
 
+def test_excited_references_prepare_after_each_flux_return():
+    module = experiment()
+    refs = {a["name"]: a for a in module.reference_arms(4.124, phase="pre")}
+    assert refs["ref_e_pre"]["pump_prepare_after_return"] is True
+    assert refs["ref_final_e_pre"]["probe_prepare_after_return"] is True
+    assert all(a["pump_prepare_after_return"] and a["probe_prepare_after_return"]
+               for a in refs.values())
+    assert all(not a["pump_prepare_after_return"] and
+               not a["probe_prepare_after_return"]
+               for a in module.science_arms(center_ghz=4.124, flank_ghz=4.110))
+
+    program = object.__new__(module.HeraldedPumpProbeProgram)
+    program.cfg = {"qubit_ch": 1, "ff_gain": -17000,
+                   "opx_herald_probe_gain": -17000,
+                   "opx_herald_pump_state": "e", "opx_herald_probe_state": "e",
+                   "opx_herald_pump_us": 0.1, "opx_herald_probe_us": 0.1,
+                   "opx_herald_pump_prepare_after_return": True,
+                   "opx_herald_probe_prepare_after_return": True}
+    program.reset_config = SimpleNamespace(read_delay_us=10.0,
+                                           inter_shot_delay_us=500.0)
+    program.reset_page, program.reset_regs = 0, {"i": 1, "q": 2, "address": 3}
+    events = []
+    program._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    program._set_payload_pulse = lambda **kw: events.append(("prep_gain", kw.get("gain")))
+    program.pulse = lambda **_: None
+    program._wait_t1_payload = lambda us: events.append(("excursion", us))
+    program._measure_raw = lambda: events.append("readout")
+    program.memw = program.mathi = lambda *_: None
+    program.us2cycles = lambda us, **_: us
+    program.sync_all = lambda *_: None
+    program._emit_body()
+    assert events == [("prep_gain", 0), ("excursion", 0.1),
+                      ("prep_gain", None), "readout",
+                      ("prep_gain", 0), ("excursion", 0.1),
+                      ("prep_gain", None), "readout"]
+
+
 def test_two_mhz_feature_shift_marks_run_uncertain():
     module = experiment()
     assert module.feature_stability({"center_ghz": 4.134},
