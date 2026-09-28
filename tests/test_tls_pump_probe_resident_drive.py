@@ -1,6 +1,7 @@
 """Behavioral contracts for the target-resident q3 drive calibration."""
 
 import importlib
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -127,3 +128,76 @@ def test_feature_shift_and_transfer_contrast_gate_interpretation():
                                      {"center_ghz": 4.136, "depth": 0.25})
     assert module.transfer_usable(0.1, 0.4)
     assert not module.transfer_usable(0.1, 0.2)
+
+
+def test_arm_config_preserves_requested_probe_hold_and_hot_preparation():
+    module = experiment()
+    cfg = module.arm_config(
+        {"sigma": 0.2},
+        {"flux_ghz": 4.133, "drive_mhz": 4138.0, "gain": 6000,
+         "preparation_state": "e", "post_drive_us": 6.0, "shots": 400},
+        {4.133: -17000})
+    assert cfg["opx_resident_preparation_state"] == "e"
+    assert cfg["opx_resident_post_us"] == 6.0
+    assert cfg["ff_hold"] == pytest.approx(26.81)
+    assert cfg["shots"] == cfg["reps"] == 400
+
+
+def test_probe_schedule_pairs_hot_cold_and_brackets_each_tone_block():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    arms = module.probe_arms(4.133, 4.119)
+    assert len(arms) == 120
+    for repeat in (0, 1):
+        for site in ("feature", "flank"):
+            for hold in (0.1, 2.0, 6.0):
+                block = [a for a in arms if a["repeat"] == repeat and
+                         a["site"] == site and a["post_drive_us"] == hold]
+                expected = (["sham_a", "on_6000", "detuned_6000",
+                             "on_30000", "sham_b"] if repeat == 0 else
+                            ["sham_b", "on_30000", "detuned_6000",
+                             "on_6000", "sham_a"])
+                assert [a["tone"] for a in block[::2]] == expected
+                assert all({block[i]["preparation_state"],
+                            block[i+1]["preparation_state"]} == {"g", "e"}
+                           for i in range(0, len(block), 2))
+                assert all(a["pre_drive_us"] == 20.0 for a in block)
+                assert all(a["drive_mhz"] == pytest.approx(1000 * a["flux_ghz"] +
+                             (5 if a["tone"] != "detuned_6000" else -10))
+                           for a in block)
+
+
+def test_probe_rejects_feature_outside_calibrated_frequency_neighborhood():
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    assert module.calibration_covers_feature(4.133, 4.137)
+    assert not module.calibration_covers_feature(4.133, 4.140)
+
+
+def test_probe_rejects_calibration_with_wrong_flux_correction(tmp_path):
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    folder = tmp_path / "q3" / module.CALIBRATION_SESSION_ID
+    folder.mkdir(parents=True)
+    (folder / "manifest.json").write_text(
+        '{"status":"complete","schema":"q3.pump-probe-resident-drive.v1",'
+        '"feature_stable":true,"pre_readout_valid":true,'
+        '"correction_sha256":"wrong","arms":[]}')
+    with pytest.raises(ValueError, match="flux correction"):
+        module.checked_calibration(tmp_path)
+
+
+def test_probe_rejects_calibration_with_different_drive_settings(tmp_path):
+    module = importlib.import_module(
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe")
+    folder = tmp_path / "q3" / module.CALIBRATION_SESSION_ID
+    folder.mkdir(parents=True)
+    (folder / "manifest.json").write_text(json.dumps({
+        "status": "complete", "schema": "q3.pump-probe-resident-drive.v1",
+        "feature_stable": True, "pre_readout_valid": True,
+        "correction_sha256": module.localizer.CORRECTION_SHA256,
+        "plan": {"pre_drive_us": 1.0, "driven_gains_dac": [6000, 30000]},
+        "arms": [],
+    }))
+    with pytest.raises(ValueError, match="drive settings"):
+        module.checked_calibration(tmp_path)

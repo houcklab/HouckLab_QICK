@@ -246,16 +246,18 @@ def plan():
 
 def arm_config(base, arm, dc_lookup):
     cfg = dict(base)
+    post_us = float(arm.get("post_drive_us", POST_DRIVE_US))
     cfg.update({"ff_gain": dc_lookup[arm["flux_ghz"]],
-                "ff_hold": float(arm.get("pre_drive_us", PRE_DRIVE_US)) + POST_DRIVE_US +
+                "ff_hold": float(arm.get("pre_drive_us", PRE_DRIVE_US)) + post_us +
                            4.0 * float(base["sigma"]) + 0.01,
                 "opx_resident_pre_us": float(arm.get("pre_drive_us", PRE_DRIVE_US)),
-                "opx_resident_post_us": POST_DRIVE_US,
+                "opx_resident_post_us": post_us,
                 "opx_resident_freq_mhz": arm["drive_mhz"],
                 "opx_resident_gain": arm["gain"],
                 "opx_resident_reference_state": arm.get("reference_state"),
                 "opx_resident_preparation_state": arm.get("preparation_state", "g"),
-                "shots": SHOTS, "reps": SHOTS})
+                "shots": int(arm.get("shots", SHOTS)),
+                "reps": int(arm.get("shots", SHOTS))})
     return cfg
 
 

@@ -2166,3 +2166,77 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentDrive --run
 ```
+
+The September 28 calibration completed all 120 arms in
+`q3_pump_probe_resident_drive_20260928T041637Z_8faee4a6`. Both scouts
+selected 4.133 GHz, with dip depths 0.381/0.420. The frozen readout axis
+scored fidelity 0.885 before and 0.913 after. Short-return ground/excited
+controls gave 0.115/0.495 before and 0.095/0.475 after, so a prepared
+excitation remained visible through their target visit and return.
+
+The drive response is narrow and tracks the flux-model qubit frequency:
+the clearest response is **model frequency +5 MHz** at both the loss
+coordinate and 14-MHz lower flank. With gain 6000, final classified excited
+fractions at the feature were 0.285 versus bracketing zero-gain 0.095/0.090;
+at the flank they were 0.265 versus 0.100/0.105. The unthresholded IQ
+projection changes in the excited direction too. At gain 30000, the same
+feature arm reached 0.390 versus 0.095/0.090, while the flank reached 0.270
+versus 0.100/0.105. Gain 20000 was much less effective, consistent with a
+nonmonotonic drive response; the high-gain contrast must not be interpreted
+as saturation. Most other detunings have only small, fluctuating contrasts.
+This establishes a usable **post-return qubit-drive signal** for the next
+probe, not a TLS-specific pump effect. Use gain 6000 as the lower-power
+primary probe, include gain 30000 as a sensitivity check, and retain
+zero-gain and detuned controls. The short-return control cannot prove that
+excitation created at target survives in exactly the same way; the science
+run must compare its own short- and longer-hold arms.
+
+## Target-resident hot/cold probe
+
+The follow-up reuses the calibrated `ResidentDriveProgram` pulse sequence,
+with a fresh 81-point feature scout. A park pi prepares the hot arm (a
+zero-gain waveform prepares the cold arm). The qubit stays at the selected
+flux for 20 us, receives a Gaussian pulse there, then remains there for
+0.1, 2, or 6 us. It returns with the complete pinned 40-us correction and
+is read out once. Thus the probe hold starts immediately after the target
+microwave pulse, without the intervening first readout and return that
+limited the heralded pilot.
+
+For each hold, site, and two reversed repeats, hot/cold arms are adjacent.
+The tone block is bracketed by two gain-zero shams, with an on-frequency
+gain-6000 primary probe, a -10-MHz detuned gain-6000 control, and an
+on-frequency gain-30000 sensitivity arm. The same sequence runs at the
+14-MHz lower flux flank, with its microwave frequency tracking that
+coordinate. There are 120 science arms of 400 shots each, plus pre/post
+readout and short-return controls. Raw IQ is retained for every arm.
+The runner checks the completed resident-drive calibration, constructs
+representative QICK programs before acquiring, checks the flat corrected
+drive window and full return, and makes a post scout. A >2-MHz selected
+feature shift, weak feature, readout failure, or failed short-return
+contrast marks the finished data controls-unstable. If the fresh pre-scout
+feature is more than 5 MHz from the calibrated 4.133-GHz coordinate, the
+runner stops before science acquisition and requests a new drive calibration.
+
+Analyze each arm's full readout distribution and hot/cold changes in the
+**incremental** 0.1-to-2 and 0.1-to-6-us loss, not just its final excited
+fraction: hot loading can leave residual qubit excitation that the target
+microwave pulse partly inverts. Require a response in both repeats that
+survives zero-drive bracket drift, differs from the detuned tone, and is
+stronger at the feature than the flank before calling it a candidate
+pump-dependent loss change. A null here is substantially more informative
+about short-lived memory than the heralded result, but still does not
+exclude every possible TLS or prove the loss dip's microscopic origin.
+The primary planned contrast is the hot-minus-cold difference in loss from
+0.1 to 2 us at gain 6000, corrected by the mean local zero-drive sham and
+then by the same quantity on the flank. A negative result would have the
+sign expected if hot loading reduces subsequent target loss. The 6-us and
+gain-30000 arms are sensitivity checks, and the detuned drive must not
+produce the same selective effect. Inspect the two repeats separately
+before pooling them.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run
+```
