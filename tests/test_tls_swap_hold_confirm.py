@@ -150,6 +150,23 @@ def test_wide_within_shot_swap_plan_is_direct_exchange(capsys):
     assert plan["early_hold_us"] == .1
 
 
+def test_wide_within_shot_can_anchor_persistent_two_bin_dip(capsys):
+    import json
+    module = experiment()
+    assert module.main(["--plan", "--wide-within-shot",
+                        "--wide-anchor-ghz", "3.992"]) == 0
+    description = json.loads(capsys.readouterr().out)
+    assert description["wide_anchor_ghz"] == 3.992
+    assert description["purpose"] == (
+        "test short-time exchange at the anchored wide-band loss candidate")
+
+
+def test_wide_anchor_requires_direct_wide_mode():
+    module = experiment()
+    with pytest.raises(ValueError, match="requires wide-within-shot"):
+        module.plan(wide_anchor_ghz=3.992)
+
+
 def test_loss_dynamics_repeats_feature_control_in_reversed_shot_order(capsys):
     import json
     module = experiment()

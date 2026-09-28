@@ -607,7 +607,7 @@ def effect(feature, control):
 
 def plan(*, flux_map=False, follow_moving_dip=False,
          paired_dwell_scan=False, within_shot_time_map=False,
-         wide_within_shot=False,
+         wide_within_shot=False, wide_anchor_ghz=None,
          loss_dynamics=False, loss_line_dynamics=False,
          dense_profile=False, dense_profile_cycles=LINE_DYNAMICS_CYCLES,
          dual_line_dynamics=False, dual_line_dither=False):
@@ -616,6 +616,14 @@ def plan(*, flux_map=False, follow_moving_dip=False,
                       loss_line_dynamics, dense_profile,
                       dual_line_dynamics, dual_line_dither))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
+    if wide_anchor_ghz is not None:
+        if not wide_within_shot:
+            raise ValueError("wide anchor requires wide-within-shot mode")
+        anchor = float(wide_anchor_ghz)
+        if (not np.isfinite(anchor) or not 3.8 <= anchor <= 4.3 or
+                4.08 <= anchor <= 4.19 or
+                abs((anchor - 3.8) / .002 - round((anchor - 3.8) / .002)) > 1e-6):
+            raise ValueError("wide anchor must be on the 2-MHz scout grid outside 4.08–4.19 GHz")
     if dual_line_dither:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "calibrate how a common DC flux offset moves both loss-line asymmetries",
@@ -637,7 +645,10 @@ def plan(*, flux_map=False, follow_moving_dip=False,
     if wide_within_shot:
         return {"hardware_access": False, "reset_mode": "passive",
                 "wide_within_shot": True,
-                "purpose": "test short-time exchange at a new isolated loss candidate",
+                "wide_anchor_ghz": wide_anchor_ghz,
+                "purpose": ("test short-time exchange at the anchored wide-band loss candidate"
+                            if wide_anchor_ghz is not None else
+                            "test short-time exchange at a new isolated loss candidate"),
                 "feature_scout_ghz": [3.8, 4.3],
                 "excluded_prior_band_ghz": [4.08, 4.19],
                 "control": "fresh qualified clean ±14-MHz point",
@@ -913,6 +924,7 @@ def _condition_configs(base, entry, dc_lookup):
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
         within_shot_time_map=False, wide_within_shot=False,
+        wide_anchor_ghz=None,
         loss_dynamics=False,
         loss_line_dynamics=False, dense_profile=False,
         dense_profile_cycles=LINE_DYNAMICS_CYCLES,
@@ -923,6 +935,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                       loss_line_dynamics, dense_profile,
                       dual_line_dynamics, dual_line_dither))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
+    if wide_anchor_ghz is not None:
+        plan(wide_within_shot=wide_within_shot,
+             wide_anchor_ghz=wide_anchor_ghz)
     dual_mode = dual_line_dynamics or dual_line_dither
     site_time_mode = (within_shot_time_map or wide_within_shot or
                       loss_dynamics or
@@ -968,7 +983,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                   heralded.read_postselection_scout if site_time_mode
                   else adaptive.read_scout)
     scout_rows = read_scout(scout)
-    selected = selector(scout_rows)
+    selected = (selector(scout_rows, preferred_center=wide_anchor_ghz)
+                if wide_within_shot else selector(scout_rows))
     upper_selected = (select_upper_loss_feature(scout_rows)
                       if dual_mode else None)
     center, control = selected["center_ghz"], selected["control_ghz"]
@@ -1100,6 +1116,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  paired_dwell_scan=paired_dwell_scan,
                                  within_shot_time_map=within_shot_time_map,
                                  wide_within_shot=wide_within_shot,
+                                 wide_anchor_ghz=wide_anchor_ghz,
                                  loss_dynamics=loss_dynamics,
                                  loss_line_dynamics=loss_line_dynamics,
                                  dense_profile=dense_profile,
@@ -1367,6 +1384,8 @@ def main(argv=None):
                         help="interleave feature/control and short/long visits in each shot")
     parser.add_argument("--wide-within-shot", action="store_true",
                         help="direct short-time swap map at a new wide-band candidate")
+    parser.add_argument("--wide-anchor-ghz", type=float,
+                        help="anchor the wide within-shot map to a prior loss feature")
     parser.add_argument("--loss-dynamics", action="store_true",
                         help="track feature-local loss over 60 short cycles")
     parser.add_argument("--loss-line-dynamics", action="store_true",
@@ -1392,12 +1411,15 @@ def main(argv=None):
             (not args.dense_profile and
              args.dense_profile_cycles != LINE_DYNAMICS_CYCLES)):
         parser.error("--dense-profile-cycles requires --dense-profile and 40..180")
+    if args.wide_anchor_ghz is not None and not args.wide_within_shot:
+        parser.error("--wide-anchor-ghz requires --wide-within-shot")
     if args.plan:
         print(json.dumps(plan(flux_map=args.flux_map,
                               follow_moving_dip=args.follow_moving_dip,
                               paired_dwell_scan=args.paired_dwell_scan,
                               within_shot_time_map=args.within_shot_time_map,
                               wide_within_shot=args.wide_within_shot,
+                              wide_anchor_ghz=args.wide_anchor_ghz,
                               loss_dynamics=args.loss_dynamics,
                               loss_line_dynamics=args.loss_line_dynamics,
                               dense_profile=args.dense_profile,
@@ -1412,6 +1434,7 @@ def main(argv=None):
             paired_dwell_scan=args.paired_dwell_scan,
             within_shot_time_map=args.within_shot_time_map,
             wide_within_shot=args.wide_within_shot,
+            wide_anchor_ghz=args.wide_anchor_ghz,
             loss_dynamics=args.loss_dynamics,
             loss_line_dynamics=args.loss_line_dynamics,
             dense_profile=args.dense_profile,

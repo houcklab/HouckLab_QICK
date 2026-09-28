@@ -3665,3 +3665,34 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot
 ```
+
+The unanchored within-shot run completed at
+`q3_tls_swap_hold_wide_within_shot_20260928T211537Z_224e8c29`.
+Its fresh selector chose 3.840 GHz, not the intended 3.992-GHz
+candidate, because the latter's loss minimum straddled two 2-MHz
+bins and failed the single-bin sharpness test. At 3.840 GHz, the
+short-time excess-loss signs did not replicate (for example, at
+0.75 µs they were −0.068 and +0.041 in forward and reverse order).
+Continuous IQ shows no repeatable short-time oscillation either. The
+3.840-GHz sharp feature no longer met the isolation criterion in the
+post scout. This is no evidence of coherent exchange at 3.840 GHz.
+
+Crucially, the *same* pre/post wide scouts show that the 3.992-GHz
+feature remained strong and anchored: 3.992 GHz and 4.006-GHz control
+both times, with bidirectional qualified depths 0.429 pre and 0.477
+post. The direct within-shot test therefore still has not measured the
+candidate that motivated it. `--wide-anchor-ghz 3.992` retains the
+fresh wide scout, asks the selector to search within ±4 MHz of that
+frequency, accepts an otherwise qualified two-bin minimum, and aborts
+before the swap map if it has disappeared. The 20-program 0.1–6-µs
+within-shot exchange map and controls are otherwise unchanged. A
+replicated, nonmonotonic feature in both orders and raw IQ is required
+before claiming coherent TLS coupling; a monotonic loss curve ends
+this candidate's swap-control branch.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot --wide-anchor-ghz 3.992
+```
