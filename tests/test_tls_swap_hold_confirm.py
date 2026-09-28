@@ -200,3 +200,51 @@ def test_loss_line_program_and_score_use_four_flux_points(monkeypatch):
     assert score["extra_loss"]["right"] == pytest.approx(.45)
     assert score["right_minus_left_extra_loss"] == pytest.approx(.35)
     assert score["usable"]
+
+
+def test_dense_profile_interleaves_seven_offsets_and_control(capsys):
+    import json
+    module = experiment()
+    specs = module.dense_profile_specs(4.106, 4.092)
+    assert len(specs) == 40
+    assert all(x["shots"] == 200 and len(x["conditions"]) == 16 for x in specs)
+    assert [c["flux_ghz"] for c in specs[0]["conditions"][::2]] == [
+        4.100, 4.102, 4.104, 4.106, 4.108, 4.110, 4.112, 4.092]
+    assert {c["hold_us"] for c in specs[0]["conditions"]} == {25.0}
+    assert specs[1]["order"] == list(reversed(specs[0]["order"]))
+    split = module.split_dense_records(list(range(32)), specs[0]["order"], shots=2)
+    assert split["m6_g"] == [0, 16]
+    assert split["control_e"] == [15, 31]
+    with pytest.raises(ValueError, match="incomplete"):
+        module.split_dense_records(list(range(31)), specs[0]["order"], shots=2)
+    assert module.main(["--plan", "--dense-profile"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["feature_offsets_mhz"] == [-6, -4, -2, 0, 2, 4, 6]
+    assert plan["conditions_per_shot"] == 16
+
+
+def test_dense_profile_program_and_score_separate_shape_from_control(monkeypatch):
+    module = experiment()
+    entry = module.dense_profile_specs(4.106, 4.092)[0]
+    gains = {4.100: -1, 4.102: -2, 4.104: -3, 4.106: -4,
+             4.108: -5, 4.110: -6, 4.112: -7, 4.092: -8}
+    cfgs = module._condition_configs({"sigma": .1, "ff_park_gain": -25146},
+                                     entry, gains)
+    seen = []
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, _soccfg, cfg, _payload, _loop:
+                        seen.append(dict(cfg)))
+    program = module.DenseProfileProgram(None, cfgs, None, None)
+    assert program.conditions_per_shot == 16
+    assert program.logical_shots == 200
+    assert seen[0]["reps"] == 3200
+    fractions = {f"{site}_g": .1 for site in module.DENSE_SITES}
+    fractions.update({f"{site}_e": .6 for site in module.DENSE_SITES})
+    fractions["c_e"] = .25
+    fractions["p2_e"] = .35
+    score = module.score_dense_profile(fractions)
+    assert score["extra_loss"]["c"] == pytest.approx(.35)
+    assert score["extra_loss"]["p2"] == pytest.approx(.25)
+    assert score["usable"]
+    fractions["control_e"] = .15
+    assert not module.score_dense_profile(fractions)["usable"]

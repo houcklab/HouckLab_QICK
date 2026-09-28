@@ -3384,3 +3384,40 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --loss-line-dynamics
 ```
+
+The three-frequency trace completed at
+`q3_tls_loss_line_dynamics_20260928T183725Z_1a549b0e`: all 40 cycles
+acquired, 39 passed the within-shot control gate, and pre/post readout and
+transfer controls passed. The broad scouts found a deep feature at 4.106
+and then 4.105 GHz. At the fixed 4.103, 4.106, and 4.109-GHz science
+points, mean feature-minus-control extra loss in the first ten cycles was
++0.241, +0.204, and +0.024; in the last ten it was +0.229, +0.312, and
++0.128. Two-cycle block-bootstrap intervals for the last-minus-first
+changes were [−0.102,+0.075], [+0.068,+0.153], and [+0.038,+0.176].
+The right-minus-left change was +0.117 with interval [+0.029,+0.199].
+Reversing condition order between cycles gave much smaller even/odd
+differences. Continuous-IQ projections agree that the center and right
+side gained loss, though the left-side change depends on the estimator.
+These are exploratory first/last comparisons; three points do not establish
+a rigid line shift, a width change, or one microscopic fluctuator. The
+broad-scout minimum moved *down* by 1 MHz while the fixed-point asymmetry
+moved toward the high-frequency side, so a single rigid shift is already
+an inadequate description of both observations.
+
+The next run resolves the local shape with seven 2-MHz-spaced offsets
+(−6 to +6 MHz) and one clean control inside each 16-condition shot. At
+each flux point it measures g/e contrast after the same 25-us hold. Forty
+200-shot cycles alternate the subshot order; raw IQ, cycle times, and
+pre/post broad scouts are saved. Since this uses the same QICK stream size
+as the completed three-point trace, it trades the short-dwell reference
+for four more simultaneous frequencies. It tests whether the entire loss
+profile translates, changes width/depth, or develops multiple components.
+The data remain qubit-loss spectroscopy, not a definitive identification
+of a single TLS.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dense-profile
+```
