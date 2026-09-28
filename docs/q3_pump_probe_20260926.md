@@ -3760,12 +3760,25 @@ The next bounded hardware test is `--periodic-check-only`. It keeps
 the fresh anchored scout and the exact 24-cycle, 0.8-µs waveform, but
 uses the previously successful 6000-DAC probe gain. A 28-arm pilot
 compares AC off and 1400 DAC at ±1 sidebands over ±6 MHz. It proceeds
-only if an interior first sideband has at least 0.05 classified
-on-minus-off contrast. At that frequency it measures off, one-shot
-AC, early periodic AC, and late periodic AC with 2000 shots each;
+only if an interior first sideband has at least 0.025 classified
+on-minus-off contrast and exceeds three estimated standard errors.
+The pilot uses 4000 shots per arm. At the selected frequency it measures off,
+one-shot AC, early periodic AC, and late periodic AC with 6000 shots each;
 only persistent late sideband response and passing pre/post controls
 validate repeated playback. This still does not claim loss suppression
 or a calibrated J0 zero. Raw IQ is saved for the final assessment.
+
+The first periodic-check attempt saved its data at
+`q3_floquet_periodic_check_20260928T220858Z_fcba2851` but stopped before
+the pilot. The 3.992-GHz feature was strong (depth 0.609) and the
+4.011-GHz carrier was a localized peak: classified excitation 0.230
+there, 0.110 in the ground reference, and about 0.10 off resonance.
+Rotated continuous IQ gave 0.187 of the ground-to-excited separation
+at the peak. The original hard 0.15 carrier-excess gate rejected this
+measured 0.120 contrast. The revised gate uses the off-resonant floor
+and finite-shot uncertainty, while keeping a centered-peak and minimum
+contrast requirement. No sideband or periodic result was obtained in
+that attempt.
 
 On the measurement PC:
 

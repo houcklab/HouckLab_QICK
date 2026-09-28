@@ -55,6 +55,8 @@ def plan(*, periodic_check_only=False):
                 "modulation_mhz": 30.0056,
                 "amplitudes_dac": [0, 1400],
                 "probe_gain_dac": 6000,
+                "sideband_pilot_shots": 4000,
+                "periodic_check_shots": 6000,
                 "sideband_orders": [-1, 1],
                 "sideband_offsets_mhz": list(range(-6, 7, 2)),
                 "periodic_check": "early-versus-late first-sideband response",
@@ -244,11 +246,31 @@ def periodic_scan_arms(flank, carrier_mhz):
             frequency = round(carrier_mhz + order * MODULATION_MHZ + offset, 3)
             for amplitude in (0, 1400):
                 arm = probe_arm(f"pilot_n{order:+d}_o{offset:+d}_a{amplitude}",
-                                flank, frequency, amplitude, shots=1000,
+                                flank, frequency, amplitude, shots=4000,
                                 probe_gain_dac=6000)
                 arm.update(order=order, offset_mhz=offset)
                 arms.append(arm)
     return arms
+
+
+def _fraction_se(on, off, on_shots, off_shots):
+    return math.sqrt(on * (1.0 - on) / on_shots +
+                     off * (1.0 - off) / off_shots)
+
+
+def periodic_carrier_valid(fractions, *, ground_fraction, shots):
+    """Require a centered carrier distinguished from the measured off-resonant floor."""
+    values = np.asarray(fractions, dtype=float)
+    if len(values) < 7 or not np.all(np.isfinite(values)):
+        return False
+    index = int(np.argmax(values))
+    if index in (0, len(values) - 1):
+        return False
+    peak = float(values[index])
+    floor = float(np.mean(np.r_[values[:3], values[-3:]]))
+    se = _fraction_se(peak, floor, shots, 6 * shots)
+    return bool(.06 <= peak - ground_fraction <= .45 and
+                peak - floor >= max(.06, 4.0 * se))
 
 
 def select_periodic_sideband(arms):
@@ -263,20 +285,25 @@ def select_periodic_sideband(arms):
                                "frequency_mhz": on["drive_mhz"],
                                "on_off_excess": (
                                    on["excited_fraction_pre_axis"] -
-                                   off["excited_fraction_pre_axis"])})
+                                   off["excited_fraction_pre_axis"]),
+                               "standard_error": _fraction_se(
+                                   on["excited_fraction_pre_axis"],
+                                   off["excited_fraction_pre_axis"],
+                                   on["shots"], off["shots"])})
     best = max(candidates, key=lambda item: item["on_off_excess"])
-    if best["on_off_excess"] < .05:
+    if best["on_off_excess"] < max(.025, 3.0 * best["standard_error"]):
         raise ValueError("no resolved first sideband for periodic check")
-    return best
+    return {key: value for key, value in best.items() if key != "standard_error"}
 
 
-def periodic_response_valid(fractions):
+def periodic_response_valid(fractions, *, shots=2000):
     off = float(fractions["off"])
     oneshot = float(fractions["oneshot"])
     early = float(fractions["early"])
     late = float(fractions["late"])
-    return bool(oneshot - off >= .05 and early - off >= .04 and
-                late - off >= .04 and
+    return bool(all(value - off >= max(.02, 3.0 * _fraction_se(
+                    value, off, shots, shots))
+                    for value in (oneshot, early, late)) and
                 abs(early - oneshot) <= .06 and
                 abs(late - early) <= .06)
 
@@ -459,9 +486,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["carrier_center_mhz"] = best["drive_mhz"]
             manifest["carrier_excess"] = carrier_excess
             protocol.checkpoint(path, manifest)
-            lower, upper = ((.15, .45) if periodic_check_only else (.05, .20))
-            if (best is carrier[0] or best is carrier[-1] or
-                    not lower <= carrier_excess <= upper):
+            carrier_valid = (periodic_carrier_valid(
+                [arm["excited_fraction_pre_axis"] for arm in carrier],
+                ground_fraction=ground, shots=carrier[0]["shots"])
+                if periodic_check_only else
+                best is not carrier[0] and best is not carrier[-1] and
+                .05 <= carrier_excess <= .20)
+            if not carrier_valid:
                 raise RuntimeError("probe carrier outside bracket or contrast gate")
             print(f"[floquet-A] carrier={best['drive_mhz']:.1f} MHz; "
                   f"excess={carrier_excess:.3f}", flush=True)
@@ -480,12 +511,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 check_amplitude = 1400
                 check_arms = [probe_arm("periodic_off", flank,
                                         chosen["frequency_mhz"], 0,
-                                        shots=2000, probe_gain_dac=probe_gain)]
+                                        shots=6000, probe_gain_dac=probe_gain)]
                 for position in (None, "early", "late"):
                     check_arms.append(probe_arm(
                         f"periodic_{position or 'oneshot'}", flank,
                         chosen["frequency_mhz"], check_amplitude,
-                        shots=2000, periodic_position=position,
+                        shots=6000, periodic_position=position,
                         probe_gain_dac=probe_gain))
             else:
                 arms = spectrum_arms(flank, best["drive_mhz"])
@@ -574,7 +605,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["feature_stable"] = (
                 swap.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
-            periodic_valid = (periodic_response_valid(check_scores)
+            periodic_valid = (periodic_response_valid(
+                                  check_scores, shots=check_arms[0]["shots"])
                               if periodic_check_only else
                               all(score["oneshot"] >= .025 and
                                   score["early"] >= .025 and

@@ -28,6 +28,19 @@ def test_periodic_only_plan_uses_stronger_probe_without_bessel_fit():
     assert description["stage"] == "periodic_hardware_check"
 
 
+def test_periodic_carrier_accepts_localized_peak_from_measured_run():
+    module = experiment()
+    fractions = [.116, .078, .104, .120, .148, .136, .154,
+                 .196, .230, .186, .126, .096, .126, .112,
+                 .096, .098, .070]
+    assert module.periodic_carrier_valid(fractions, ground_fraction=.11,
+                                         shots=500)
+    assert not module.periodic_carrier_valid([.11] * 17,
+                                             ground_fraction=.11, shots=500)
+    assert not module.periodic_carrier_valid([.23] + [.11] * 16,
+                                             ground_fraction=.11, shots=500)
+
+
 def test_joint_sideband_weights_recover_bessel_index():
     module = experiment()
     beta = 2.405
@@ -117,12 +130,36 @@ def test_periodic_check_selects_only_a_real_first_sideband():
         module.select_periodic_sideband(arms)
 
 
+def test_periodic_pilot_resolves_small_sideband_with_enough_shots():
+    module = experiment()
+    arms = module.periodic_scan_arms(4.006, 4011.0)
+    assert all(arm["shots"] == 4000 for arm in arms)
+    for arm in arms:
+        arm["excited_fraction_pre_axis"] = .10
+        if (arm["order"] == 1 and arm["offset_mhz"] == -2 and
+                arm["modulation_amplitude_dac"] == 1400):
+            arm["excited_fraction_pre_axis"] = .133
+    chosen = module.select_periodic_sideband(arms)
+    assert chosen["frequency_mhz"] == pytest.approx(4039.0)
+    assert chosen["on_off_excess"] == pytest.approx(.033)
+    for arm in arms:
+        arm["shots"] = 1000
+    with pytest.raises(ValueError, match="first sideband"):
+        module.select_periodic_sideband(arms)
+
+
 def test_periodic_check_requires_late_sideband_not_just_early_response():
     module = experiment()
     assert module.periodic_response_valid(
         {"off": .10, "oneshot": .18, "early": .17, "late": .16})
     assert not module.periodic_response_valid(
         {"off": .10, "oneshot": .18, "early": .17, "late": .11})
+    assert module.periodic_response_valid(
+        {"off": .10, "oneshot": .132, "early": .131, "late": .130},
+        shots=6000)
+    assert not module.periodic_response_valid(
+        {"off": .10, "oneshot": .132, "early": .131, "late": .130},
+        shots=2000)
 
 
 def test_periodic_probe_uses_repeating_arb_and_explicit_dc_recovery(monkeypatch):
