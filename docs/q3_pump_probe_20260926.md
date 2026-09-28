@@ -3128,3 +3128,36 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --short-gap-saturation
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --short-gap-saturation
 ```
+
+The first short-gap saturation run completed at
+`q3_pump_probe_short_gap_saturation_20260928T171947Z_7a4dd52e`.
+Pre/post scouts both selected 4.102 GHz with a clean 4.088-GHz flank;
+readout, transfer, fresh drive, and all per-program controls passed.
+The prespecified normalized, flank-subtracted loaded-survival advantage
+was -0.017/-0.044 in the two reversed orders. Twenty-logical-shot block
+resampling gives pooled classified -0.031 with approximate 95% interval
+[-0.201,+0.164]; continuous IQ gives -0.055 with [-0.229,+0.122].
+Thus this run does not resolve loading-induced saturation, but its
+uncertainty still allows a smaller positive effect. The gain-6000 pulse
+produced only about 0.15–0.18 short-hold cold-arm excitation contrast.
+These intervals measure within-program shot variation and do not include
+systematic uncertainty from the pulse model.
+
+The next bounded follow-up keeps the same normalized statistic and controls
+but shortens the target loading visit from 20 to 12 us and uses gain 30000
+for the target-resident pulse. The previous drive calibration included this
+gain, and fresh on/detuned/sham drive checks at both actual flux points
+will again be measured before science. This tests whether weak re-excitation
+or loss of defect memory during the 20-us preload concealed a short-gap
+effect. Changing both settings together means any positive result will
+require a later dose/timing dissection. A weak preliminary drive check
+will not discard raw science; the within-program drive controls determine
+whether a saturation claim is allowed.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --strong-short-gap
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --strong-short-gap
+```

@@ -465,3 +465,39 @@ def test_short_gap_statistic_normalizes_unequal_probe_preparations():
     assert module.short_gap_saturation_controls(scores)["usable"]
     scores["r0_feature_hold1p5_on"]["cold_drive_contrast"] = 0.02
     assert not module.short_gap_saturation_controls(scores)["usable"]
+
+
+def test_strong_short_gap_changes_loading_and_drive_without_changing_controls(monkeypatch):
+    module = experiment()
+    specs = module.short_gap_saturation_specs(4.102, strong=True)
+    assert len(specs) == 8
+    assert all(entry["pre_drive_us"] == 12.0 and entry["shots"] == 1500
+               for entry in specs)
+    assert {c["gain"] for e in specs for c in e["conditions"]} == {0, 30000}
+    assert {e["tone"] for e in specs} == {"on", "detuned"}
+    assert module.plan(strong_short_gap=True)["drive_gain_dac"] == 30000
+    checks = module.strong_drive_checks(4.102, 4.088)
+    assert {a["gain"] for a in checks} == {0, 30000}
+    assert all(a["pre_drive_us"] == 12.0 for a in checks)
+    assert {a["tone"] for a in checks if a["gain"] == 30000} == {
+        "on_30000", "detuned_30000"}
+    score = module.evaluate_strong_drive_check({
+        "sham_a": .08, "on_30000": .31,
+        "detuned_30000": .09, "sham_b": .10})
+    assert score["usable"] and score["on_excess"] == pytest.approx(.22)
+    entry = next(e for e in specs if e["name"] == "r0_feature_on")
+    cfgs = module.condition_configs({"sigma": .1, "ff_park_gain": -25146}, entry,
+                                    {4.102: -100, 4.088: -123}, 4.102)
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, *_a: None)
+    assert module.ShotAlternatingResidentProgram(None, cfgs, None, None).logical_shots == 1500
+
+
+def test_strong_short_gap_is_selectable_from_qick_terminal(capsys):
+    import json
+    module = experiment()
+    assert module.main(["--plan", "--strong-short-gap"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["load_us"] == 12.0
+    assert plan["drive_gain_dac"] == 30000
+    assert plan["intermediate_readout"] is False
