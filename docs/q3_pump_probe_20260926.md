@@ -2064,6 +2064,22 @@ refitting; an unstable post readout marks the completed science block as
 readout-unstable. The manifest also records a one-sided 95% upper bound on
 the measured false-ground rate to make finite-sample uncertainty visible.
 
+The next retry's scout selected 4.129 GHz with depth 0.245, but an independent
+200-shot excited reference scored 12% below the candidate herald cutoff, so
+the run again stopped before its first science arm. The full 400-shot paired
+reference still had first-readout fidelity 0.849, and the two disjoint
+holdouts scored 2% and 12% false-ground. Quarter-by-quarter IQ means did not
+show a clear time trend; the extreme-tail cutoff is unstable at this sample
+size. After three reference-only aborts, the hard herald gate is no longer a
+sound acquisition policy. The runner now records all hot/cold, on/off-target
+science arms and paired raw IQ even if offline classification is uncertain.
+It suppresses unvalidated online conditional claims and marks the completed
+dataset readout-unstable unless pre and post references pass. This changes
+data retention and interpretation policy, not the science pulse sequence.
+Per-arm conditional probabilities remain provisional until the post readout
+and feature scouts finish; they are nulled in the final manifest if either
+control is unstable. The paired IQ files remain available for offline work.
+
 On the measurement PC after stopping other acquisitions:
 
 ```bash

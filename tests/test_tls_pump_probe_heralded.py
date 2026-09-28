@@ -142,6 +142,39 @@ def test_post_references_score_pre_axis_without_refitting():
     assert report["valid"] is False
 
 
+def test_failed_herald_holdout_can_be_flagged_without_discarding_raw_science():
+    module = experiment()
+    ground = [module.PairedIQ(-5, 0, -5, 0)] * 400
+    even = [-4] * 10 + [-1] * 15 + [2] * 175
+    odd = [-4] * 2 + [-1] * 8 + [2] * 190
+    first_e = [module.PairedIQ(value, 0, -5, 0)
+               for pair in zip(even, odd) for value in pair]
+    final_e = [module.PairedIQ(-5, 0, 2, 0)] * 400
+    with pytest.raises(RuntimeError, match="independent herald reference rejected"):
+        module.calibrate_pair(ground, first_e, final_e)
+    axes = module.calibrate_pair(ground, first_e, final_e,
+                                 enforce_holdout=False)
+    assert axes["herald"]["fidelity"] > 0.9
+    assert any(not report["valid"] for report in axes["herald_holdout"])
+    assessment = module.assess_pre_references(ground, first_e, final_e)
+    assert assessment["axes"] is not None
+    assert assessment["valid"] is False
+    assert assessment["error"] is None
+
+
+def test_final_readout_failure_invalidates_every_conditional_arm_summary():
+    module = experiment()
+    arms = [{"name": "hot_on_g", "summary": {
+        "final_excited_given_ground": 0.7,
+        "interpretation_valid": True}},
+        {"name": "cold_on_g", "summary": {
+            "final_excited_given_ground": 0.2,
+            "interpretation_valid": True}}]
+    module.finalize_arm_summaries(arms, controls_valid=False)
+    assert all(a["summary"]["interpretation_valid"] is False for a in arms)
+    assert all(a["summary"]["final_excited_given_ground"] is None for a in arms)
+
+
 def test_excited_references_prepare_after_each_flux_return():
     module = experiment()
     refs = {a["name"]: a for a in module.reference_arms(4.124, phase="pre")}

@@ -260,18 +260,24 @@ def validate_pair_against_axes(axes, ground_records, excited_records,
             "herald": herald, "final": final}
 
 
-def calibrate_pair(ground_records, excited_records, final_excited_records):
+def calibrate_pair(ground_records, excited_records, final_excited_records,
+                   *, enforce_holdout=True):
     ground_herald = record_iq(ground_records, "herald")
     excited_herald = record_iq(excited_records, "herald")
     holdout = []
     for training, validation in ((slice(None, None, 2), slice(1, None, 2)),
                                  (slice(1, None, 2), slice(None, None, 2))):
-        trial_axis = fit_readout_axis(ground_herald[training],
-                                      excited_herald[training])
-        report = evaluate_reference_axis(
-            trial_axis, ground_herald[validation], excited_herald[validation])
+        try:
+            trial_axis = fit_readout_axis(ground_herald[training],
+                                          excited_herald[training])
+            report = evaluate_reference_axis(
+                trial_axis, ground_herald[validation], excited_herald[validation])
+        except RuntimeError as exc:
+            if enforce_holdout:
+                raise
+            report = {"valid": False, "reason": str(exc)}
         holdout.append(report)
-        if not report["valid"]:
+        if enforce_holdout and not report["valid"]:
             raise RuntimeError(f"independent herald reference rejected: {report}")
     herald_axis = fit_readout_axis(ground_herald, excited_herald)
     ground_mask = confident_ground(record_iq(ground_records, "herald"), herald_axis)
@@ -284,6 +290,19 @@ def calibrate_pair(ground_records, excited_records, final_excited_records):
             "herald_holdout": holdout}
 
 
+def assess_pre_references(ground_records, excited_records,
+                          final_excited_records):
+    """Retain raw-acquisition progress even if offline heralding is uncertain."""
+    try:
+        axes = calibrate_pair(ground_records, excited_records,
+                              final_excited_records, enforce_holdout=False)
+    except RuntimeError as exc:
+        return {"axes": None, "valid": False, "error": str(exc)}
+    return {"axes": axes,
+            "valid": all(report["valid"] for report in axes["herald_holdout"]),
+            "error": None}
+
+
 def summarize_records(records, axes):
     herald = confident_ground(record_iq(records, "herald"), axes["herald"])
     final = excited(record_iq(records, "final"), axes["final"])
@@ -293,6 +312,16 @@ def summarize_records(records, axes):
             "final_excited_all": float(np.mean(final)),
             "final_excited_given_ground": (
                 float(np.mean(final[herald])) if accepted else None)}
+
+
+def finalize_arm_summaries(arms, *, controls_valid):
+    for arm in arms:
+        summary = arm.get("summary")
+        if summary is None:
+            continue
+        summary["interpretation_valid"] = bool(controls_valid)
+        if not controls_valid:
+            summary["final_excited_given_ground"] = None
 
 
 def feature_stability(pre_selected, post_selected):
@@ -310,7 +339,9 @@ def plan():
             "pre_and_post_loss_scouts": True,
             "flank_offset_mhz": 1000 * FLANK_OFFSET_GHZ,
             "readouts_per_shot": 2,
-            "first_readout_selection": "offline confident ground",
+            "first_readout_selection": (
+                "offline confident ground only when independent references validate; "
+                "always save paired raw IQ"),
             "flux_return_before_each_readout_us": 40.0,
             "interpretation_limit": "no sensitivity to TLS population lost before first readout",
             "note": __doc__}
@@ -432,30 +463,51 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 raw_by_name[arm["name"]] = records
                 arm["raw_npz"] = str(raw_path)
                 if arm["name"] == "ref_final_e_pre":
-                    axes = calibrate_pair(raw_by_name["ref_g_pre"],
-                                          raw_by_name["ref_e_pre"], records)
-                    manifest["pre_readout_axes"] = axes
-                    print(f"[heralded] pre readout F: first="
-                          f"{axes['herald']['fidelity']:.3f}, "
-                          f"second={axes['final']['fidelity']:.3f}", flush=True)
+                    assessment = assess_pre_references(
+                        raw_by_name["ref_g_pre"],
+                        raw_by_name["ref_e_pre"], records)
+                    axes = assessment["axes"]
+                    manifest["pre_reference_valid"] = assessment["valid"]
+                    if axes is None:
+                        manifest["pre_readout_calibration_error"] = assessment["error"]
+                        print(f"[heralded] readout interpretation unavailable: "
+                              f"{assessment['error']}; acquiring raw IQ", flush=True)
+                    else:
+                        manifest["pre_readout_axes"] = axes
+                        print(f"[heralded] pre readout F: first="
+                              f"{axes['herald']['fidelity']:.3f}, "
+                              f"second={axes['final']['fidelity']:.3f}; "
+                              f"holdout_valid={assessment['valid']}", flush=True)
                 if axes is not None:
                     arm["summary"] = summarize_records(records, axes)
-                    if not arm["name"].startswith("ref_"):
+                    arm["summary"]["interpretation_valid"] = False
+                    if (not arm["name"].startswith("ref_") and
+                            manifest.get("pre_reference_valid", False)):
                         s = arm["summary"]
                         print(f"[heralded] {arm['name']}: ground herald "
                               f"{s['herald_ground_shots']}/{SHOTS}, "
-                              f"P(e|ground)={s['final_excited_given_ground']}", flush=True)
+                              "conditional result pending post references", flush=True)
+                    elif not arm["name"].startswith("ref_"):
+                        print(f"[heralded] {arm['name']}: raw paired IQ saved; "
+                              "conditional estimate unvalidated", flush=True)
+                elif not arm["name"].startswith("ref_"):
+                    print(f"[heralded] {arm['name']}: raw paired IQ saved; "
+                          "no readout axis", flush=True)
                 if arm["name"] == "ref_final_e_post":
-                    try:
-                        manifest["post_readout_axes"] = calibrate_pair(
-                            raw_by_name["ref_g_post"],
-                            raw_by_name["ref_e_post"], records)
-                    except RuntimeError as exc:
-                        manifest["post_readout_calibration_error"] = str(exc)
+                    post_assessment = assess_pre_references(
+                        raw_by_name["ref_g_post"],
+                        raw_by_name["ref_e_post"], records)
+                    if post_assessment["axes"] is not None:
+                        manifest["post_readout_axes"] = post_assessment["axes"]
+                    if post_assessment["error"] is not None:
+                        manifest["post_readout_calibration_error"] = (
+                            post_assessment["error"])
                     manifest["post_reference_validation"] = (
                         validate_pair_against_axes(
                             axes, raw_by_name["ref_g_post"],
-                            raw_by_name["ref_e_post"], records))
+                            raw_by_name["ref_e_post"], records)
+                        if axes is not None else
+                        {"valid": False, "reason": "no pre-run readout axis"})
                 arm["status"] = "complete"
                 protocol.checkpoint(manifest_path, manifest)
             post_scout = localizer.run(
@@ -472,7 +524,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 manifest["post_selected"] = post_selected
                 manifest["feature_stability"] = feature_stability(selected, post_selected)
             feature_stable = manifest["feature_stability"]["stable"]
-            readout_stable = manifest["post_reference_validation"]["valid"]
+            readout_stable = bool(
+                manifest.get("pre_reference_valid", False) and
+                manifest["post_reference_validation"]["valid"])
+            finalize_arm_summaries(manifest["arms"],
+                                   controls_valid=readout_stable and feature_stable)
             manifest["status"] = (
                 "complete" if feature_stable and readout_stable
                 else "complete_feature_unstable" if not feature_stable and readout_stable
