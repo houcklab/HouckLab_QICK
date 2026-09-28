@@ -68,6 +68,13 @@ def score_conditions(fractions):
                 x["on_e"] - x["on_g"] - x["sham_e"] + x["sham_g"])}
 
 
+def fresh_drive_arms(center_ghz):
+    """Four short, locally bracketed drive checks at the current loss flux."""
+    return [arm for arm in probe.carryover_drive_checks(
+        center_ghz, center_ghz + resident.FLANK_OFFSET_GHZ)
+            if arm["site"] == "feature"]
+
+
 class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
     """Four complete resident-probe subshots per streamed hardware shot."""
 
@@ -134,6 +141,9 @@ def plan():
             "condition_orders": [list(CONDITION_NAMES), list(reversed(CONDITION_NAMES))],
             "programs": 2, "conditions_per_shot": 4,
             "shots_per_program": SHOTS, "raw_iq_saved": True,
+            "fresh_drive_check_arms": 4,
+            "fresh_drive_check_shots_per_arm": 200,
+            "fresh_drive_check_gate": "on minus sham >=0.10; abs(detuned minus sham) <=0.10; sham drift <=0.10",
             "pre_drive_us": resident.PRE_DRIVE_US,
             "post_drive_us": resident.POST_DRIVE_US,
             "full_return_before_each_readout_us": 40.0,
@@ -152,9 +162,6 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                              "output_suffix": "TLS_PumpProbe_ShotAlternating_Scout"})
     selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
     center = round(float(selected["center_ghz"]), 3)
-    if not probe.calibration_brackets_feature(calibration, center):
-        raise RuntimeError(f"{center:.3f} GHz lies outside the calibrated "
-                           "gain-6000 region; rerun TLSPumpProbeResidentDrive")
     print(f"[shot-alternating] feature={center:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
@@ -216,6 +223,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
+        drive_checks = fresh_drive_arms(center)
         orders = [conditions(center), conditions(center, reverse=True)]
         manifest = {"schema": "q3.pump-probe-shot-alternating-pilot.v1",
                     "status": "running", "session_id": session_id,
@@ -229,6 +237,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
+                    "fresh_drive_checks": [{**a, "status": "pending"}
+                                           for a in drive_checks],
                     "programs": [{"name": name, "order": [c["name"] for c in order],
                                   "conditions": order, "status": "pending"}
                                  for name, order in (("forward", orders[0]),
@@ -256,6 +266,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             for ref in manifest["references"]:
                 resident.ResidentDriveProgram(
                     soccfg, resident.arm_config(base, ref, dc_lookup),
+                    bundle.payload, bundle.loop)
+            for arm in manifest["fresh_drive_checks"]:
+                resident.ResidentDriveProgram(
+                    soccfg, resident.arm_config(base, arm, dc_lookup),
                     bundle.payload, bundle.loop)
             manifest["preflight_complete"] = True
             protocol.checkpoint(path, manifest)
@@ -292,6 +306,37 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             for ref in manifest["references"][:4]:
                 print(f"[shot-alternating] {ref['name']}", flush=True)
                 acquire_ref(ref)
+            for arm in manifest["fresh_drive_checks"]:
+                print(f"[shot-alternating] {arm['name']}", flush=True)
+                arm["status"] = "acquiring"
+                protocol.checkpoint(path, manifest)
+                cfg = resident.arm_config(base, arm, dc_lookup)
+                program = resident.ResidentDriveProgram(
+                    soccfg, cfg, bundle.payload, bundle.loop)
+                shots = int(arm["shots"])
+                records = _run_program(
+                    soc, program, max(30.0, _block_timeout_s(cfg, shots)),
+                    cfg, total_shots=shots)
+                if len(records) != shots:
+                    raise RuntimeError(f"{arm['name']}: incomplete drive-check records")
+                raw_path = folder / f"{arm['name']}.npz"
+                np.savez_compressed(raw_path, i=[r.i for r in records],
+                                    q=[r.q for r in records])
+                arm["raw_npz"] = str(raw_path)
+                arm["excited_fraction_pre_axis"] = resident.classify(records, axis)
+                arm["status"] = "complete"
+                protocol.checkpoint(path, manifest)
+            manifest["fresh_drive_score"] = probe.evaluate_drive_check(
+                {a["tone"]: a["excited_fraction_pre_axis"]
+                 for a in manifest["fresh_drive_checks"]})
+            protocol.checkpoint(path, manifest)
+            if not manifest["fresh_drive_score"]["usable"]:
+                raise RuntimeError("fresh feature drive check failed: "
+                                   f"{manifest['fresh_drive_score']}")
+            washout_start = time.monotonic()
+            time.sleep(5.0)
+            manifest["pre_pilot_washout_s_actual"] = time.monotonic() - washout_start
+            protocol.checkpoint(path, manifest)
             for entry in manifest["programs"]:
                 name = entry["name"]
                 print(f"[shot-alternating] {name} 200 x 4 conditions", flush=True)

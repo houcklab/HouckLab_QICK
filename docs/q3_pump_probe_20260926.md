@@ -2399,3 +2399,16 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run
 ```
+
+The first pilot attempt made only its passive scout. It selected a clear
+new loss feature at 4.144 GHz (depth 0.306); the previous 4.129-GHz feature
+was no longer prominent. The pilot stopped before any resident-drive
+acquisition because 4.144 GHz lay outside the old drive calibration's
+4.119-4.133-GHz interval. This is an expected safety stop, not a failed
+QICK stream. The pilot now keeps the old calibration's verified pulse and
+correction settings but performs four fresh 200-shot ground-drive checks
+at the newly selected feature: sham, +5-MHz gain-6000, -10-MHz gain-6000,
+and sham. It starts shot-alternating acquisition only if the on-tone
+response exceeds the local sham by at least 0.10, the detuned response
+remains within 0.10, and the sham bracket stays within 0.10. Raw check IQ
+is saved; a five-second washout separates the check from the pilot.

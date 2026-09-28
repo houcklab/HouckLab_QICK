@@ -100,6 +100,17 @@ def test_pilot_plan_is_bounded_and_uses_full_return():
     assert plan["conditions_per_shot"] == 4
     assert plan["shots_per_program"] == 200
     assert plan["full_return_before_each_readout_us"] == 40.0
+    assert plan["fresh_drive_check_arms"] == 4
+
+
+def test_fresh_drive_check_tracks_new_feature_without_old_frequency_bracket():
+    module = experiment()
+    arms = module.fresh_drive_arms(4.144)
+    assert [a["tone"] for a in arms] == [
+        "sham_a", "on_6000", "detuned_6000", "sham_b"]
+    assert [a["gain"] for a in arms] == [0, 6000, 6000, 0]
+    assert [a["drive_mhz"] for a in arms] == [4149.0, 4149.0, 4134.0, 4149.0]
+    assert all(a["flux_ghz"] == 4.144 and a["shots"] == 200 for a in arms)
 
 
 def test_scoring_retains_hot_preparation_contrast_as_control():
