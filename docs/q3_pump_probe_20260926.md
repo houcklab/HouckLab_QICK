@@ -2354,3 +2354,47 @@ On the measurement PC after stopping other acquisitions:
 git pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentProbe --run --carryover-check
 ```
+
+The carryover run acquired all 196 arms in
+`q3_pump_probe_carryover_20260928T045929Z_00d31985`. Both scouts selected
+4.129 GHz with dip depths 0.294/0.302. Pre/post readout fidelities were
+0.895/0.880, and short-return controls retained excited-minus-ground
+contrast of 0.465/0.475. Fresh gain-6000 drive checks passed at both actual
+sites: on-minus-sham was +0.173 at the feature and +0.185 at the flank,
+while the detuned excess was +0.013/0.000. All raw IQ files contain the
+requested shots and reproduce the manifest classifications. The QICK
+pump-to-post acquisition gap was 0.060-0.135 seconds; the logged inter-group
+recovery was at least 5.0 seconds.
+
+The feature's pre-pump hot-minus-cold baseline remained within the 0.20
+spread gate in cycles 0-2 but failed in cycles 3-5 (within-cycle spreads
+0.35, 0.37, and 0.42). Sham groups themselves sometimes changed markedly
+from pre to post. In the three stable cycles, the mean on-tone post-minus-pre
+change relative to the mean sham/detuned change was +0.055 at the feature
+and +0.045 at the flank. This tiny feature-minus-flank difference (+0.010)
+does not support a selective, seconds-scale on-tone carryover. The full
+six-cycle result is controls-unstable and cannot be used to claim a null or
+positive microscopic TLS result. The rapid baseline changes remain the
+dominant obstacle to interpreting separate-arm pump-probe comparisons.
+
+## Shot-alternating sequencing pilot
+
+The next step puts the four primary conditions inside one QICK program:
+ground/sham, excited/sham, ground/+5-MHz gain-6000, and excited/+5-MHz
+gain-6000. Each logical hardware shot executes all four complete resident
+visits, corrected 40-us returns, and individual readouts, separated by the
+same 500-us inter-shot delay. Two 200-shot programs use forward and reverse
+condition order. The 4-IQ-per-shot stream is split by the recorded order,
+with raw IQ saved per condition. Fresh scouts and pre/post readout and
+short-return references bound drift. The program is constructed for both
+orders before the first readout. This small pilot validates the QICK stream,
+drive contrast, and order dependence; it is not yet a loss-vs-hold scan or
+a TLS saturation result. If it works, extend the same shot-level alternation
+to short/long holds, detuned control, and the flank.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run
+```
