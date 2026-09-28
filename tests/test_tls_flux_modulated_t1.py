@@ -203,3 +203,73 @@ def test_amplitude_sweep_rejects_combination_with_other_modes():
     module = experiment()
     with pytest.raises(ValueError, match="exclusive"):
         module.plan(floquet_direct=True, floquet_amplitude_sweep=True)
+
+
+def test_frequency_sweep_plan_repeats_direct_loss_measurement_at_three_rates():
+    module = experiment()
+    plan = module.plan(floquet_frequency_sweep=True)
+    assert plan["modulation_frequencies_mhz"] == [20.0, 30.0, 40.0]
+    assert plan["modulation_amplitudes_dac"] == [600, 1000, 1400, 2000]
+    assert plan["holds_us"] == [1.6, 5.6]
+    assert plan["conditions_per_shot"] == 8
+    assert plan["programs"] == 24
+    assert plan["midpoint_feature_scout"] is True
+
+
+def test_frequency_sweep_interleaves_rates_within_amplitudes_and_reverses():
+    module = experiment()
+    specs = module.program_specs(
+        3.992, amplitudes=(600, 1000), frequencies_mhz=(20.0, 30.0, 40.0),
+        shots=4000, sites=("feature",), holds_us=(1.6, 5.6), pre_us=.05)
+    assert [s["name"] for s in specs] == [
+        "r0_feature_a600_f20", "r0_feature_a600_f30", "r0_feature_a600_f40",
+        "r0_feature_a1000_f20", "r0_feature_a1000_f30", "r0_feature_a1000_f40",
+        "r1_feature_a1000_f40", "r1_feature_a1000_f30", "r1_feature_a1000_f20",
+        "r1_feature_a600_f40", "r1_feature_a600_f30", "r1_feature_a600_f20"]
+    assert [s["modulation_frequency_mhz"] for s in specs[:3]] == [20., 30., 40.]
+    assert all(len(s["conditions"]) == 8 for s in specs)
+    module.recenter_repeat(specs, center=3.994, repeat=1,
+                           holds_us=(1.6, 5.6), pre_us=.05)
+    assert all(s["flux_ghz"] == 3.994 for s in specs[6:])
+    assert [s["modulation_frequency_mhz"] for s in specs[6:9]] == [40., 30., 20.]
+
+
+def test_frequency_sweep_rejects_concurrent_experiment_modes():
+    module = experiment()
+    with pytest.raises(ValueError, match="exclusive"):
+        module.plan(floquet_frequency_sweep=True,
+                    floquet_amplitude_sweep=True)
+
+
+def test_compiled_ac_waveforms_use_each_programs_frequency(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(
+        module.alternating.ShotAlternatingResidentProgram,
+        "_declare_experiment", lambda self: None)
+    monkeypatch.setattr(module, "_target_segments",
+                        lambda _correction, *, pre_us, hold_us, recovery_us:
+                        ([(1.0, pre_us)], [(1.0, hold_us + .01)],
+                         [(1.0, recovery_us)]))
+    monkeypatch.setattr(module, "ff_maxv", lambda *_args, **_kw: 32767)
+    monkeypatch.setattr(module, "ff_envelope_samples", lambda *_args: 65536)
+    for requested in (20.0, 40.0):
+        program = object.__new__(module.ModulatedT1Program)
+        program.cfg = {"ff_ch": 0, "ff_gain": -14299,
+                       "ff_park_gain": -25146}
+        program.soccfg = {"gens": [{"fs": 6881.28, "f_fabric": 430.08}]}
+        program.holds_us = (1.6, 5.6)
+        program.pre_us = .05
+        program.ac_amplitude_dac = 1000
+        program.modulation_mhz = requested
+        program._t1_ff_compensation = object()
+        program._t1_ff_settle_us = .5
+        program._t1_ff_predistortion_recovery_us = 40.
+        program._ff_ramp_cache = {}
+        program.us2cycles = lambda hold, **_kw: round(hold * 430.08)
+        program.add_pulse = lambda **_kw: None
+        program._declare_experiment()
+        assert [program.ac_reports[str(hold)]["cycles_per_waveform"]
+                for hold in (1.6, 5.6)] == (
+                    [32, 112] if requested == 20.0 else [64, 224])
+        assert all(program.ac_reports[str(hold)]["actual_modulation_mhz"] ==
+                   pytest.approx(requested, abs=.02) for hold in (1.6, 5.6))

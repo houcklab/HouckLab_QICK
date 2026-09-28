@@ -3876,3 +3876,47 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-amplitude-sweep
 ```
+
+The amplitude sweep completed at
+`q3_floquet_amplitude_sweep_20260928T230126Z_7c4d4560`. The pre,
+midpoint, and post scouts all selected 3.992 GHz with depths 0.532,
+0.573, and 0.585. The pre/post readout fidelities were 0.895/0.933;
+the transfer and 20 within-program controls passed. Each amplitude had
+4000 hardware shots in each of two reversed-order passes. Shot-paired
+standard errors of the hot-minus-cold, long-minus-short AC effect give
+pooled effects of +0.0146 ± 0.0124 at 400 DAC, +0.0774 ± 0.0124 at
+1200 DAC, and +0.0366 ± 0.0125 at 2400 DAC. The 1200-versus-400
+increase is +0.0628 ± 0.0175; the 2400-versus-1200 decrease is
+−0.0408 ± 0.0176 and remains tentative. Rotated IQ gives the same
+broad shape. At 1200 DAC the approximate contrast-decay rate between
+1.6 and 5.6 µs was 0.040–0.055 /µs with AC off versus 0.002–0.007
+/µs with AC on. These rates are conditional on the short-visit contrast,
+not independently calibrated TLS decay rates.
+
+The installed static flux fit predicts a full 1200-DAC excursion of
+about −88 to +79 MHz around 3.992 GHz, with a −2.3-MHz cycle-averaged
+shift. The wide scouts show additional loss away from the main feature,
+including near −50, −110, −150, and +120 MHz. Thus a rise and later
+decline in protection could arise from which static loss sites the AC
+excursion samples. The experiment establishes amplitude-dependent
+control of the qubit's loss at this feature, but neither coherent J0
+suppression nor microscopic TLS saturation is established.
+
+The next measurement tests frequency scaling of this direct response.
+`--floquet-frequency-sweep` runs 20, 30, and 40 MHz at amplitudes 600,
+1000, 1400, and 2000 DAC, with 1.6- and 5.6-µs visits. AC-off/on and
+ground/excited preparations remain interleaved within each hardware
+shot. Frequency is varied within each amplitude, and the 12 settings
+are reversed after a midpoint wide scout; pre/post scouts, readout
+references, raw IQ, and actual compiled waveforms are saved. Moving
+protection maxima would motivate a coherent/Floquet follow-up, whereas
+an amplitude-fixed response would favor a time-averaged static-loss
+picture. Flux-line transfer versus frequency is an unresolved confound
+in either outcome, so this run alone cannot establish J0 scaling.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-frequency-sweep
+```
