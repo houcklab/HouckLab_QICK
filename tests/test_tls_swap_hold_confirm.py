@@ -248,3 +248,21 @@ def test_dense_profile_program_and_score_separate_shape_from_control(monkeypatch
     assert score["usable"]
     fractions["control_e"] = .15
     assert not module.score_dense_profile(fractions)["usable"]
+
+
+def test_dense_profile_long_monitor_preserves_same_shots_and_has_bounded_length(capsys):
+    import json
+    module = experiment()
+    specs = module.dense_profile_specs(4.105, 4.091, cycles=180)
+    assert len(specs) == 180
+    assert [x["cycle"] for x in specs] == list(range(180))
+    assert specs[0]["order"] == specs[-2]["order"]
+    assert specs[1]["order"] == specs[-1]["order"]
+    assert all(x["shots"] == 200 for x in specs)
+    assert module.main(["--plan", "--dense-profile",
+                        "--dense-profile-cycles", "180"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["programs"] == 180
+    assert plan["cycles"] == 180
+    with pytest.raises(ValueError, match="40..180"):
+        module.dense_profile_specs(4.105, 4.091, cycles=181)

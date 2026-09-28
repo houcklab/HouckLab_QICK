@@ -199,13 +199,15 @@ def loss_line_dynamics_specs(feature_ghz, control_ghz):
     return specs
 
 
-def dense_profile_specs(feature_ghz, control_ghz):
+def dense_profile_specs(feature_ghz, control_ghz, *, cycles=LINE_DYNAMICS_CYCLES):
     """Track a seven-point late-survival profile inside each logical shot."""
+    if not 40 <= int(cycles) <= 180 or int(cycles) != cycles:
+        raise ValueError("dense-profile cycles must be 40..180")
     sites = [(name, round(float(feature_ghz) + offset / 1000.0, 3))
              for name, offset in zip(DENSE_SITES[:-1], DENSE_OFFSETS_MHZ)]
     sites.append(("control", float(control_ghz)))
     specs = []
-    for cycle in range(LINE_DYNAMICS_CYCLES):
+    for cycle in range(int(cycles)):
         conditions = [{"name": f"{site}_{state}", "site": site,
                        "flux_ghz": flux, "hold_us": LOSS_DYNAMICS_LATE_US,
                        "state": state}
@@ -439,22 +441,24 @@ def effect(feature, control):
 def plan(*, flux_map=False, follow_moving_dip=False,
          paired_dwell_scan=False, within_shot_time_map=False,
          loss_dynamics=False, loss_line_dynamics=False,
-         dense_profile=False):
+         dense_profile=False, dense_profile_cycles=LINE_DYNAMICS_CYCLES):
     if sum(map(bool, (flux_map, paired_dwell_scan,
                       within_shot_time_map, loss_dynamics,
                       loss_line_dynamics, dense_profile))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
     if dense_profile:
+        if not 40 <= int(dense_profile_cycles) <= 180:
+            raise ValueError("dense-profile cycles must be 40..180")
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "resolve seconds-scale loss-line motion versus depth and width changes",
                 "feature_scout_ghz": [4.060, 4.170],
                 "feature_offsets_mhz": list(DENSE_OFFSETS_MHZ),
                 "control": "qualified 14-MHz lower flux point",
                 "hold_us": LOSS_DYNAMICS_LATE_US,
-                "cycles": LINE_DYNAMICS_CYCLES,
+                "cycles": int(dense_profile_cycles),
                 "conditions_per_shot": 16,
                 "shots_per_program": LINE_DYNAMICS_SHOTS,
-                "programs": LINE_DYNAMICS_CYCLES,
+                "programs": int(dense_profile_cycles),
                 "condition_order": "seven feature frequencies and control, g/e; reversed each cycle",
                 "raw_iq_saved": True, "per_cycle_utc_timestamps": True,
                 "observable": "seven simultaneous control-referenced late-survival losses",
@@ -686,7 +690,8 @@ def _condition_configs(base, entry, dc_lookup):
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
         within_shot_time_map=False, loss_dynamics=False,
-        loss_line_dynamics=False, dense_profile=False):
+        loss_line_dynamics=False, dense_profile=False,
+        dense_profile_cycles=LINE_DYNAMICS_CYCLES):
     if sum(map(bool, (flux_map, paired_dwell_scan,
                       within_shot_time_map, loss_dynamics,
                       loss_line_dynamics, dense_profile))) > 1:
@@ -746,7 +751,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = (dense_profile_specs(center, control)
+        specs = (dense_profile_specs(center, control,
+                                     cycles=dense_profile_cycles)
                  if dense_profile else
                  loss_line_dynamics_specs(center, control)
                  if loss_line_dynamics else
@@ -827,7 +833,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  within_shot_time_map=within_shot_time_map,
                                  loss_dynamics=loss_dynamics,
                                  loss_line_dynamics=loss_line_dynamics,
-                                 dense_profile=dense_profile),
+                                 dense_profile=dense_profile,
+                                 dense_profile_cycles=dense_profile_cycles),
                     "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
@@ -1013,7 +1020,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["usable_cycle_count"] = usable_cycles
                 valid = (manifest["post_readout_score"]["valid"] and
                          all(x["usable"] for x in manifest["transfer_control"].values())
-                         and usable_cycles >= (32 if loss_line_dynamics or dense_profile else 48) and
+                         and usable_cycles >= (int(.8 * len(specs))
+                                              if dense_profile else
+                                              32 if loss_line_dynamics else 48) and
                          "post_selected" in manifest)
                 manifest["status"] = (
                     "complete" if valid and manifest["feature_stable"] else
@@ -1056,12 +1065,19 @@ def main(argv=None):
                         help="track a three-point loss profile over 40 short cycles")
     parser.add_argument("--dense-profile", action="store_true",
                         help="track seven loss-line frequencies within each shot")
+    parser.add_argument("--dense-profile-cycles", type=int,
+                        default=LINE_DYNAMICS_CYCLES,
+                        help="40..180 dense-profile cycles (default: 40)")
     args = parser.parse_args(argv)
     if (sum(map(bool, (args.flux_map, args.paired_dwell_scan,
                        args.within_shot_time_map, args.loss_dynamics,
                        args.loss_line_dynamics, args.dense_profile))) > 1 or
             (args.flux_map and args.follow_moving_dip)):
         parser.error("select one swap-hold follow-up mode")
+    if (not 40 <= args.dense_profile_cycles <= 180 or
+            (not args.dense_profile and
+             args.dense_profile_cycles != LINE_DYNAMICS_CYCLES)):
+        parser.error("--dense-profile-cycles requires --dense-profile and 40..180")
     if args.plan:
         print(json.dumps(plan(flux_map=args.flux_map,
                               follow_moving_dip=args.follow_moving_dip,
@@ -1069,7 +1085,8 @@ def main(argv=None):
                               within_shot_time_map=args.within_shot_time_map,
                               loss_dynamics=args.loss_dynamics,
                               loss_line_dynamics=args.loss_line_dynamics,
-                              dense_profile=args.dense_profile),
+                              dense_profile=args.dense_profile,
+                              dense_profile_cycles=args.dense_profile_cycles),
                          indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
@@ -1079,7 +1096,8 @@ def main(argv=None):
             within_shot_time_map=args.within_shot_time_map,
             loss_dynamics=args.loss_dynamics,
             loss_line_dynamics=args.loss_line_dynamics,
-            dense_profile=args.dense_profile)
+            dense_profile=args.dense_profile,
+            dense_profile_cycles=args.dense_profile_cycles)
     return 0
 
 

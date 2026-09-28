@@ -3421,3 +3421,36 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dense-profile
 ```
+
+The seven-point trace completed at
+`q3_tls_dense_loss_profile_20260928T184741Z_a3a36000`. All 40 cycles,
+all control gates, both transfer controls, and both readout references passed
+(fidelity 0.919 pre and 0.914 post). The broad scouts both selected 4.105
+GHz, but the *within-shot* profile switched character during the 89-second
+science interval. In cycles 0–9, control-referenced extra loss at 4.099 and
+4.105 GHz averaged +0.167 and +0.136. In cycles 10–39, those values were
++0.038 and +0.288. Thus the 4.105-minus-4.099 relative loss changed from
+−0.031 to +0.250; from cycle 10 onward, all 30 individual cycles had the
+4.105-GHz point more lossy. The clean-control g/e contrast changed only
+from +0.357 to +0.385. Raw, unthresholded IQ projections independently
+show the same profile change. Reversing the shot order between even and odd
+cycles does not account for it.
+
+The pre-scout already had a deep trough at 4.105 GHz, so the early
+low-frequency profile appears temporary; it is not adequately explained by
+the pre/post fitted center alone. Neither a single resonance jumping nor
+two nearby fluctuators changing weight is established yet. The first-ten
+versus later comparison was chosen after viewing the trace, so it is
+descriptive rather than a predeclared significance test. A longer monitor
+with the identical 16-condition shot can test whether low-frequency
+episodes recur, how long each profile state persists, and whether changes
+are abrupt. A 180-cycle run should take several minutes and preserves the
+same flux and readout controls. If no second transition occurs, the earlier
+event remains a transient rather than an estimated switching process.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --dense-profile --dense-profile-cycles 180
+```
