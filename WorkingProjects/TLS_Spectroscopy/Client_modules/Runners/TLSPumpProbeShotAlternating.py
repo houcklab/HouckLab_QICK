@@ -105,6 +105,16 @@ def fresh_drive_arms(center_ghz):
             if arm["site"] == "feature"]
 
 
+def drive_check_gate(score, *, loading_check):
+    if score["usable"]:
+        return "passed"
+    if loading_check:
+        # This diagnostic measures drive contrast independently at every
+        # loading time, including the checked 8-us time.
+        return "diagnostic_only"
+    raise RuntimeError(f"fresh feature drive check failed: {score}")
+
+
 class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
     """Four complete resident-probe subshots per streamed hardware shot."""
 
@@ -174,6 +184,7 @@ def plan(*, loading_check=False):
                 "shots_per_program": SHOTS, "raw_iq_saved": True,
                 "fresh_drive_check_arms": 4,
                 "fresh_drive_check_pre_us": 8.0,
+                "weak_drive_check_policy": "record and continue; each loading time has its own drive control",
                 "full_return_before_each_readout_us": 40.0,
                 "inter_shot_delay_us": 500.0,
                 "success_gate": "hot and cold-drive contrast >=0.10 in both orders",
@@ -388,10 +399,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["fresh_drive_score"] = probe.evaluate_drive_check(
                 {a["tone"]: a["excited_fraction_pre_axis"]
                  for a in manifest["fresh_drive_checks"]})
+            manifest["fresh_drive_gate"] = drive_check_gate(
+                manifest["fresh_drive_score"], loading_check=loading_check)
             protocol.checkpoint(path, manifest)
-            if not manifest["fresh_drive_score"]["usable"]:
-                raise RuntimeError("fresh feature drive check failed: "
-                                   f"{manifest['fresh_drive_score']}")
+            if manifest["fresh_drive_gate"] == "diagnostic_only":
+                print("[shot-alternating] weak 8-us drive check; "
+                      "continuing loading-time diagnostic", flush=True)
             washout_start = time.monotonic()
             time.sleep(5.0)
             manifest["pre_pilot_washout_s_actual"] = time.monotonic() - washout_start

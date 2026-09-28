@@ -166,3 +166,14 @@ def test_loading_check_requires_repeatable_hot_and_drive_contrast():
                            "hot_minus_cold_drive_change": 0.04},
     }
     assert module.usable_loading_times(scores) == [4.0]
+
+
+def test_weak_short_drive_check_is_diagnostic_only_for_loading_scan():
+    module = experiment()
+    weak = {"sham_a": 0.065, "on_6000": 0.135,
+            "detuned_6000": 0.105, "sham_b": 0.080,
+            "on_excess": 0.0625, "detuned_excess": 0.0325,
+            "bracket_drift": 0.015, "usable": False}
+    assert module.drive_check_gate(weak, loading_check=True) == "diagnostic_only"
+    with pytest.raises(RuntimeError, match="fresh feature drive check failed"):
+        module.drive_check_gate(weak, loading_check=False)

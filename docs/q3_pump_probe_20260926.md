@@ -2443,3 +2443,23 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loading-check
 ```
+
+The first loading-time attempt, `q3_pump_probe_shot_alternating_loading_20260928T053650Z_8db3dbff`,
+stopped after the four preliminary drive checks and before any of the eight
+shot-alternating programs. It selected a 4.131-GHz loss feature (depth 0.431)
+and had a valid pre-run readout axis (fidelity 0.903). The 8-us gain-6000
+check produced excited fractions 0.065/0.135/0.105/0.080 for sham/on/detuned/sham,
+so on-tone excess was only 0.063 against the required 0.10. The 8-us drive
+check alone cannot answer which loading time supports both hot preparation
+and resident drive. For this timing diagnostic only, a weak preliminary
+check is now recorded but does not abort the scan. Each of the eight programs
+directly measures its own ground-state drive and sham hot-minus-cold contrast;
+the final usable-time gate still requires both to pass in both shot orders.
+The original two-program pilot retains its strict preliminary drive gate.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loading-check
+```
