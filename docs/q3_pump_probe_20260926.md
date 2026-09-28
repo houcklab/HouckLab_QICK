@@ -2797,3 +2797,34 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --flux-map
 ```
+
+The bidirectional flux map completed at
+`q3_tls_swap_hold_flux_map_20260928T073005Z_ade6d323`: 38/38 programs,
+all program preparation and ground-drift checks usable, and 0.910/0.884
+pre/post readout fidelity. In the ascending sweep, the control-subtracted
+extra 1.5-to-6-us loss was largest at 4.126 GHz (+0.171 classified);
+the descending sweep had +0.130 at 4.126 GHz and +0.151 at 4.124 GHz.
+The broad 4.124–4.130-GHz band was higher than the ten outer map points
+in both directions (+0.120/+0.058 classified and +0.140/+0.067
+continuous-IQ reference separations). This band and contrast were chosen
+after seeing the map, so those numbers describe a pattern rather than an
+independent significance test. The old narrow post-scout selector found
+no anchored feature, but direct inspection showed a substantial lower
+loss trough that had moved down and broadened. A qualified wider selector
+locates 4.126 GHz in the pre-scout and 4.120 GHz in the post-scout, with
+clean 14-MHz-lower controls in both scan directions. Thus the data do
+not yet distinguish a moving resonance from two nearby loss processes.
+
+The next one-cycle follow-up uses the same four-program, 3,000-shot
+short/long-hold comparison but relocates the deepest qualified dip over
+4.116–4.134 GHz before the experiment. It rejects flat/noisy scans,
+records pre/post movement, and measures a clean control 14 MHz below
+the new dip. Seeing the extra late loss at a newly shifted dip would
+test whether the effect follows the loss feature.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --follow-moving-dip
+```

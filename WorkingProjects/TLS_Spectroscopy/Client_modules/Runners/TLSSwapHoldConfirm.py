@@ -11,8 +11,10 @@ not proof of a single coherent TLS or a successful pump-probe saturation.
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
+from statistics import mean, median
 import uuid
 
 import numpy as np
@@ -98,6 +100,59 @@ def flux_map_report(specs, scores):
     return report
 
 
+def select_moving_lower_dip(rows):
+    """Find a qualified lower-band trough even after multi-MHz movement."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    candidates = []
+    for mhz in range(4116, 4135):
+        center = round(mhz / 1000.0, 3)
+        control = round(center - 0.014, 3)
+        groups = {name: [round(base + 0.001 * offset, 3)
+                         for offset in (-1, 0, 1)]
+                  for name, base in (("feature", center),
+                                     ("left", center - 0.008),
+                                     ("right", center + 0.008),
+                                     ("control", control))}
+        if any(freq not in indexed for freqs in groups.values()
+               for freq in freqs):
+            continue
+        depths = {}
+        advantages = {}
+        feature_survival = None
+        for direction in ("", "up", "down"):
+            values = {name: [adaptive._survival(indexed[freq], direction)
+                             for freq in freqs]
+                      for name, freqs in groups.items()}
+            if not all(math.isfinite(value) for group in values.values()
+                       for value in group):
+                break
+            feature = mean(values["feature"])
+            control_survival = mean(values["control"])
+            depths[direction or "combined"] = min(
+                median(values["left"]), median(values["right"])) - feature
+            advantages[direction or "combined"] = control_survival - feature
+            if direction == "":
+                feature_survival = feature
+        if (len(depths) != 3 or depths["combined"] < 0.15 or
+                min(depths["up"], depths["down"]) < 0.08 or
+                min(advantages.values()) < 0.15):
+            continue
+        candidates.append({"center_ghz": center, "control_ghz": control,
+                           "anchor_ghz": 4.127,
+                           "control_offset_ghz": -0.014,
+                           "depth": depths["combined"],
+                           "depth_scan_up": depths["up"],
+                           "depth_scan_down": depths["down"],
+                           "control_survival_advantage": advantages,
+                           "feature_survival": feature_survival,
+                           "selector": "moving_lower_band"})
+    if not candidates:
+        raise ValueError("no qualified moving lower-band dip")
+    return max(candidates, key=lambda item: (item["depth"],
+                                              -item["feature_survival"]))
+
+
 def split_records(records, order, *, shots):
     records = list(records)
     if len(order) != RECORDS_PER_SHOT or set(order) != set(CONDITION_NAMES):
@@ -123,7 +178,20 @@ def effect(feature, control):
     return float(feature["drop"] - control["drop"])
 
 
-def plan(*, flux_map=False):
+def plan(*, flux_map=False, follow_moving_dip=False):
+    if flux_map and follow_moving_dip:
+        raise ValueError("select one swap-hold follow-up mode")
+    if follow_moving_dip:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "feature_search_ghz": [4.116, 4.134],
+                "control": "14-MHz lower point qualified in both scout directions",
+                "dwells_us": [EARLY_US, LATE_US],
+                "conditions_per_shot": RECORDS_PER_SHOT,
+                "shots_per_program": SHOTS, "programs": 4,
+                "full_return_before_each_readout_us": 40.0,
+                "raw_iq_saved": True,
+                "primary_effect": "feature versus control extra 1.5-to-6-us "
+                                  "hot-cold loss, forward and reverse"}
     if flux_map:
         return {"hardware_access": False, "reset_mode": "passive",
                 "feature_anchor_ghz": 4.127,
@@ -185,15 +253,19 @@ def _condition_configs(base, entry, dc_lookup):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        flux_map=False):
+        flux_map=False, follow_moving_dip=False):
+    if flux_map and follow_moving_dip:
+        raise ValueError("select one swap-hold follow-up mode")
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**adaptive.scout_parameters(phase="pre"),
                              "output_suffix": "TLS_SwapHold_Confirm_Scout_pre"})
-    selected = swap.select_anchored_feature(
-        adaptive.read_scout(scout), preferred_center=4.127)
+    selector = (select_moving_lower_dip if follow_moving_dip else
+                lambda rows: swap.select_anchored_feature(
+                    rows, preferred_center=4.127))
+    selected = selector(adaptive.read_scout(scout))
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[swap-confirm] lower feature={center:.3f} GHz; "
           f"control={control:.3f} GHz", flush=True)
@@ -240,6 +312,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
         session_id = (("q3_tls_swap_hold_flux_map_" if flux_map else
+                       "q3_tls_swap_hold_moving_dip_" if follow_moving_dip else
                        "q3_tls_swap_hold_confirm_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
@@ -251,6 +324,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
         manifest = {"schema": ("q3.tls-swap-hold-flux-map.v1" if flux_map else
+                               "q3.tls-swap-hold-moving-dip.v1"
+                               if follow_moving_dip else
                                "q3.tls-swap-hold-confirm.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
@@ -259,7 +334,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-                    "plan": plan(flux_map=flux_map), "references": refs,
+                    "plan": plan(flux_map=flux_map,
+                                 follow_moving_dip=follow_moving_dip),
+                    "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
         print(f"[swap-confirm] manifest={path}", flush=True)
@@ -372,13 +449,17 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                      "output_suffix": "TLS_SwapHold_Confirm_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = swap.select_anchored_feature(
-                    adaptive.read_scout(post_scout), preferred_center=4.127)
+                manifest["post_selected"] = selector(
+                    adaptive.read_scout(post_scout))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
                 swap.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
+            if "post_selected" in manifest:
+                manifest["feature_shift_mhz"] = round(
+                    1000.0 * (manifest["post_selected"]["center_ghz"] - center),
+                    3)
             valid = (manifest["post_readout_score"]["valid"] and
                      all(x["usable"] for x in manifest["transfer_control"].values())
                      and all(x["usable"] for x in scores.values()) and
@@ -403,12 +484,18 @@ def main(argv=None):
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--flux-map", action="store_true",
                         help="map the short/long excess loss across flux")
+    parser.add_argument("--follow-moving-dip", action="store_true",
+                        help="retarget the lower-band loss after larger spectral shifts")
     args = parser.parse_args(argv)
+    if args.flux_map and args.follow_moving_dip:
+        parser.error("select at most one of --flux-map and --follow-moving-dip")
     if args.plan:
-        print(json.dumps(plan(flux_map=args.flux_map), indent=2))
+        print(json.dumps(plan(flux_map=args.flux_map,
+                              follow_moving_dip=args.follow_moving_dip), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            flux_map=args.flux_map)
+            flux_map=args.flux_map,
+            follow_moving_dip=args.follow_moving_dip)
     return 0
 
 
