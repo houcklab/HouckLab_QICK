@@ -33,16 +33,18 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
 
 
 SHOTS = 200
+LOSS_SHOTS = 400
 REFERENCE_SHOTS = 400
 CONDITION_NAMES = ("sham_g", "sham_e", "on_g", "on_e")
 LOADING_PREHOLDS_US = (4.0, 8.0, 12.0, 20.0)
+LOSS_POSTHOLDS_US = (0.1, 2.0)
 
 
-def conditions(center_ghz, *, reverse=False):
+def conditions(center_ghz, *, reverse=False, detuning_mhz=5.0):
     center = float(center_ghz)
     result = [{"name": name, "preparation_state": name[-1],
                "gain": 6000 if name.startswith("on") else 0,
-               "drive_mhz": round(1000.0 * center + 5.0, 3)}
+               "drive_mhz": round(1000.0 * center + float(detuning_mhz), 3)}
               for name in CONDITION_NAMES]
     return list(reversed(result)) if reverse else result
 
@@ -84,6 +86,80 @@ def loading_program_specs(center_ghz):
     return result
 
 
+def loss_program_specs(center_ghz):
+    """Repeat a feature/flank, hold, and tone comparison in reversed order."""
+    center = float(center_ghz)
+    flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+    result = []
+    for repeat in (0, 1):
+        sites = (("feature", center), ("flank", flank))
+        holds = LOSS_POSTHOLDS_US
+        tones = (("on", 5.0), ("detuned", -10.0))
+        if repeat:
+            sites, holds, tones = (tuple(reversed(x)) for x in (sites, holds, tones))
+        direction = "reverse" if repeat else "forward"
+        for site, flux in sites:
+            for hold in holds:
+                for tone, detuning in tones:
+                    condition_list = conditions(
+                        flux, reverse=bool(repeat), detuning_mhz=detuning)
+                    result.append({
+                        "name": f"r{repeat}_{site}_hold{hold:g}_{tone}".replace(".", "p"),
+                        "repeat": repeat, "direction": direction,
+                        "site": site, "flux_ghz": flux, "tone": tone,
+                        "detuning_mhz": detuning,
+                        "pre_drive_us": resident.PRE_DRIVE_US,
+                        "post_drive_us": hold, "shots": LOSS_SHOTS,
+                        "order": [x["name"] for x in condition_list],
+                        "conditions": condition_list})
+    return result
+
+
+def loss_control_report(scores):
+    """Require on-tone response and stable, weak detuned controls at short hold."""
+    groups = {}
+    for repeat in (0, 1):
+        for site in ("feature", "flank"):
+            on = scores[f"r{repeat}_{site}_hold0p1_on"]
+            detuned = scores[f"r{repeat}_{site}_hold0p1_detuned"]
+            groups[f"r{repeat}_{site}"] = {
+                "on_cold_drive_contrast": on["cold_drive_contrast"],
+                "detuned_cold_drive_contrast": detuned["cold_drive_contrast"],
+                "on_sham_hot_contrast": on["hot_preparation_contrast"],
+                "detuned_sham_hot_contrast": detuned["hot_preparation_contrast"],
+                "sham_hot_spread": abs(on["hot_preparation_contrast"] -
+                                       detuned["hot_preparation_contrast"]),
+                "usable": bool(on["cold_drive_contrast"] >= 0.10 and
+                               abs(detuned["cold_drive_contrast"]) <= 0.10 and
+                               min(on["hot_preparation_contrast"],
+                                   detuned["hot_preparation_contrast"]) >= 0.10 and
+                               abs(on["hot_preparation_contrast"] -
+                                   detuned["hot_preparation_contrast"]) <= 0.20)}
+    return {"groups": groups,
+            "usable": all(group["usable"] for group in groups.values())}
+
+
+def loss_effect_report(scores):
+    """Prespecified driven loss contrast after detuned and flank subtraction."""
+    report = {}
+    for repeat in (0, 1):
+        row = {}
+        for site in ("feature", "flank"):
+            for tone in ("on", "detuned"):
+                short = scores[f"r{repeat}_{site}_hold0p1_{tone}"][
+                    "hot_minus_cold_drive_change"]
+                long = scores[f"r{repeat}_{site}_hold2_{tone}"][
+                    "hot_minus_cold_drive_change"]
+                row[f"{site}_{tone}_incremental_loss"] = float(short - long)
+        row["feature_specific_tone_selective_incremental_loss"] = (
+            row["feature_on_incremental_loss"] -
+            row["feature_detuned_incremental_loss"] -
+            row["flank_on_incremental_loss"] +
+            row["flank_detuned_incremental_loss"])
+        report[f"r{repeat}"] = row
+    return report
+
+
 def usable_loading_times(scores):
     """Select preholds with repeatable hot preparation and local drive response."""
     usable = []
@@ -103,6 +179,18 @@ def fresh_drive_arms(center_ghz):
     return [arm for arm in probe.carryover_drive_checks(
         center_ghz, center_ghz + resident.FLANK_OFFSET_GHZ)
             if arm["site"] == "feature"]
+
+
+def condition_configs(base, entry, dc_lookup, center_ghz):
+    """Apply each program's actual flux coordinate, hold, and shot count."""
+    return [resident.arm_config(
+        base, {"flux_ghz": entry.get("flux_ghz", center_ghz),
+               "drive_mhz": cond["drive_mhz"], "gain": cond["gain"],
+               "preparation_state": cond["preparation_state"],
+               "pre_drive_us": entry["pre_drive_us"],
+               "post_drive_us": entry["post_drive_us"],
+               "shots": entry.get("shots", SHOTS)}, dc_lookup)
+            for cond in entry["conditions"]]
 
 
 def drive_check_gate(score, *, loading_check):
@@ -173,7 +261,26 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
         self.end()
 
 
-def plan(*, loading_check=False):
+def plan(*, loading_check=False, loss_check=False):
+    if loading_check and loss_check:
+        raise ValueError("select at most one check mode")
+    if loss_check:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "compare target-resident drive-induced short/long loss",
+                "sites": ["feature", "14-MHz lower flank"],
+                "pre_drive_us": resident.PRE_DRIVE_US,
+                "post_drive_holds_us": list(LOSS_POSTHOLDS_US),
+                "tones_mhz": [5.0, -10.0], "drive_gain_dac": 6000,
+                "programs": 16, "conditions_per_shot": 4,
+                "shots_per_program": LOSS_SHOTS, "raw_iq_saved": True,
+                "fresh_drive_check_arms": 8,
+                "weak_drive_check_policy": "record and continue; on/detuned programs have their own drive controls",
+                "full_return_before_each_readout_us": 40.0,
+                "inter_shot_delay_us": 500.0,
+                "calibration_session": probe.CALIBRATION_SESSION_ID,
+                "note": "Compare driven-minus-sham hot/cold loss between 0.1 and 2 us, "
+                        "then subtract detuned and flank controls in each order. "
+                        "A selective response is not proof of one microscopic TLS."}
     if loading_check:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "choose a stable target loading time before shot-alternating loss test",
@@ -209,7 +316,9 @@ def plan(*, loading_check=False):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        loading_check=False):
+        loading_check=False, loss_check=False):
+    if loading_check and loss_check:
+        raise ValueError("select at most one check mode")
     data_root = Path(data_root)
     calibration_path, calibration = probe.checked_calibration(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -240,8 +349,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        dc, realized = _integer_dc_grid(wide.parameters(), np.asarray([center]), tls)
-        dc_lookup = {center: int(dc[0])}
+        flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+        grid = np.asarray([center, flank] if loss_check else [center], dtype=float)
+        dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
+        dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
         base = ProductionResetSession.passive().apply(tls.BaseConfig)
         five.apply_verified_feedback_timing(base)
@@ -265,14 +376,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         preholds = LOADING_PREHOLDS_US if loading_check else (
             resident.TRANSFER_PRE_US, resident.PRE_DRIVE_US)
         for pre in preholds:
-            before, after, recovery = resident.resident_segments(
-                compensation, pre_us=pre + ff_pulse.flux_settle_us(base),
-                pulse_us=pulse_us, post_us=resident.POST_DRIVE_US,
-                recovery_us=40.0)
-            windows[str(pre)] = {"held_multiplier": before[-1][0],
-                                 "post_multiplier": after[0][0],
-                                 "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = (("q3_pump_probe_shot_alternating_loading_" if loading_check
+            holds = LOSS_POSTHOLDS_US if loss_check and pre == resident.PRE_DRIVE_US else (
+                resident.POST_DRIVE_US,)
+            for post in holds:
+                before, after, recovery = resident.resident_segments(
+                    compensation, pre_us=pre + ff_pulse.flux_settle_us(base),
+                    pulse_us=pulse_us, post_us=post, recovery_us=40.0)
+                key = f"{pre:g}/{post:g}" if loss_check else str(pre)
+                windows[key] = {"held_multiplier": before[-1][0],
+                                "post_multiplier": after[0][0],
+                                "recovery_us": sum(duration for _, duration in recovery)}
+        session_id = (("q3_pump_probe_shot_alternating_loss_" if loss_check else
+                       "q3_pump_probe_shot_alternating_loading_" if loading_check
                        else "q3_pump_probe_shot_alternating_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
@@ -283,18 +398,22 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
-        drive_checks = fresh_drive_arms(center)
+        drive_checks = (probe.carryover_drive_checks(center, flank)
+                        if loss_check else fresh_drive_arms(center))
         if loading_check:
             for arm in drive_checks:
                 arm["pre_drive_us"] = 8.0
-        program_specs = (loading_program_specs(center) if loading_check else [
+        program_specs = (loss_program_specs(center) if loss_check else
+                         loading_program_specs(center) if loading_check else [
             {"name": direction, "direction": direction,
              "pre_drive_us": resident.PRE_DRIVE_US,
              "post_drive_us": resident.POST_DRIVE_US,
              "order": [c["name"] for c in order], "conditions": order}
             for direction, order in (("forward", conditions(center)),
                                      ("reverse", conditions(center, reverse=True)))])
-        manifest = {"schema": ("q3.pump-probe-shot-alternating-loading.v1"
+        manifest = {"schema": ("q3.pump-probe-shot-alternating-loss.v1"
+                               if loss_check else
+                               "q3.pump-probe-shot-alternating-loading.v1"
                                if loading_check else
                                "q3.pump-probe-shot-alternating-pilot.v1"),
                     "status": "running", "session_id": session_id,
@@ -303,9 +422,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
                     "scout_csv": str(scout), "selected": selected,
-                    "center_ghz": center, "dc_gain": int(dc[0]),
+                    "center_ghz": center, "flank_ghz": flank if loss_check else None,
+                    "dc_gain": int(dc[0]), "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(loading_check=loading_check),
+                    "plan": plan(loading_check=loading_check, loss_check=loss_check),
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
@@ -320,17 +440,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         try:
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
-            # Build both full four-condition programs before the first readout.
+            # Build every four-condition program before the first readout.
             programs = {}
             for entry in manifest["programs"]:
-                cfgs = [resident.arm_config(
-                    base, {"flux_ghz": center, "drive_mhz": cond["drive_mhz"],
-                           "gain": cond["gain"],
-                           "preparation_state": cond["preparation_state"],
-                           "pre_drive_us": entry["pre_drive_us"],
-                           "post_drive_us": entry["post_drive_us"],
-                           "shots": SHOTS}, dc_lookup)
-                        for cond in entry["conditions"]]
+                cfgs = condition_configs(base, entry, dc_lookup, center)
                 programs[entry["name"]] = ShotAlternatingResidentProgram(
                     soccfg, cfgs, bundle.payload, bundle.loop)
             for ref in manifest["references"]:
@@ -396,33 +509,46 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 arm["excited_fraction_pre_axis"] = resident.classify(records, axis)
                 arm["status"] = "complete"
                 protocol.checkpoint(path, manifest)
-            manifest["fresh_drive_score"] = probe.evaluate_drive_check(
-                {a["tone"]: a["excited_fraction_pre_axis"]
-                 for a in manifest["fresh_drive_checks"]})
-            manifest["fresh_drive_gate"] = drive_check_gate(
-                manifest["fresh_drive_score"], loading_check=loading_check)
+            if loss_check:
+                manifest["fresh_drive_score"] = {
+                    site: probe.evaluate_drive_check({
+                        a["tone"]: a["excited_fraction_pre_axis"]
+                        for a in manifest["fresh_drive_checks"] if a["site"] == site})
+                    for site in ("feature", "flank")}
+                manifest["fresh_drive_gate"] = {
+                    site: drive_check_gate(score, loading_check=True)
+                    for site, score in manifest["fresh_drive_score"].items()}
+            else:
+                manifest["fresh_drive_score"] = probe.evaluate_drive_check(
+                    {a["tone"]: a["excited_fraction_pre_axis"]
+                     for a in manifest["fresh_drive_checks"]})
+                manifest["fresh_drive_gate"] = drive_check_gate(
+                    manifest["fresh_drive_score"], loading_check=loading_check)
             protocol.checkpoint(path, manifest)
-            if manifest["fresh_drive_gate"] == "diagnostic_only":
-                print("[shot-alternating] weak 8-us drive check; "
-                      "continuing loading-time diagnostic", flush=True)
+            if (manifest["fresh_drive_gate"] == "diagnostic_only" or
+                    isinstance(manifest["fresh_drive_gate"], dict) and
+                    "diagnostic_only" in manifest["fresh_drive_gate"].values()):
+                print("[shot-alternating] weak preliminary drive check; "
+                      "continuing with per-program drive controls", flush=True)
             washout_start = time.monotonic()
             time.sleep(5.0)
             manifest["pre_pilot_washout_s_actual"] = time.monotonic() - washout_start
             protocol.checkpoint(path, manifest)
             for entry in manifest["programs"]:
                 name = entry["name"]
-                print(f"[shot-alternating] {name} {SHOTS} x 4 conditions", flush=True)
+                shots = int(entry.get("shots", SHOTS))
+                print(f"[shot-alternating] {name} {shots} x 4 conditions", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 start = time.monotonic()
                 entry["acquisition_started_at_utc"] = datetime.now(timezone.utc).isoformat()
                 records = _run_program(
                     soc, programs[name],
-                    max(30.0, 4.0 * _block_timeout_s(base, SHOTS)),
-                    base, total_shots=SHOTS)
+                    max(30.0, 4.0 * _block_timeout_s(base, shots)),
+                    base, total_shots=shots)
                 entry["acquisition_elapsed_s"] = time.monotonic() - start
                 entry["acquisition_finished_at_utc"] = datetime.now(timezone.utc).isoformat()
-                split = split_records(records, entry["order"], shots=SHOTS)
+                split = split_records(records, entry["order"], shots=shots)
                 for cond in entry["conditions"]:
                     subset = split[cond["name"]]
                     raw_path = folder / f"{name}_{cond['name']}.npz"
@@ -469,7 +595,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             controls_valid = (manifest["post_readout_score"]["valid"] and
                               all(x["usable"] for x in manifest["transfer_control"].values()) and
                               manifest["feature_stable"])
-            if loading_check:
+            if loss_check:
+                manifest["loss_control_report"] = loss_control_report(order_scores)
+                manifest["loss_effect_report"] = loss_effect_report(order_scores)
+                valid = controls_valid and manifest["loss_control_report"]["usable"]
+            elif loading_check:
                 manifest["usable_loading_times_us"] = usable_loading_times(order_scores)
                 valid = controls_valid and bool(manifest["usable_loading_times_us"])
             else:
@@ -498,13 +628,16 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
-    parser.add_argument("--loading-check", action="store_true")
+    check_mode = parser.add_mutually_exclusive_group()
+    check_mode.add_argument("--loading-check", action="store_true")
+    check_mode.add_argument("--loss-check", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(loading_check=args.loading_check), indent=2))
+        print(json.dumps(plan(loading_check=args.loading_check,
+                              loss_check=args.loss_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            loading_check=args.loading_check)
+            loading_check=args.loading_check, loss_check=args.loss_check)
     return 0
 
 

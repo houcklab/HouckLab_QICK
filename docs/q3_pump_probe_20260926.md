@@ -2463,3 +2463,40 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loading-check
 ```
+
+The completed loading-time run is
+`q3_pump_probe_shot_alternating_loading_20260928T054034Z_4b1e77d5`.
+Both scouts found the same loss feature within 1 MHz (4.131/4.130 GHz),
+with depths 0.472/0.389. Pre/post readout fidelities were 0.898/0.875;
+short-return hot-minus-cold controls were 0.443/0.420. All 6,400 program
+IQ records are present and reproduce the saved classifications. The local
+8-us preliminary drive check was weak (on-tone excess 0.015), and the
+eight-program scan explains why: at 4 and 8 us, sham hot-minus-cold
+contrasts remained 0.35-0.41 and 0.31-0.38, but cold-drive contrasts were
+between -0.03 and +0.07. At 12 us the drive contrast was also inconsistent.
+At 20 us, both orders passed the prespecified gates: sham hot-minus-cold
+0.195/0.125, cold-drive contrast 0.190/0.105, and hot-minus-cold drive
+change -0.140/-0.030. These are timing-control results, not evidence of
+TLS saturation. The need for a longer wait may reflect the target flux
+or qubit frequency settling; this scan alone cannot distinguish that from
+other drive-calibration changes.
+
+The next run uses the 20-us visit and 400 logical shots per program. Sixteen
+shot-alternating programs cross feature/flank, 0.1/2-us post-drive holds,
++5-MHz gain-6000/-10-MHz gain-6000 tones, and forward/reverse order. Each
+program measures sham and driven hot/cold shots in one QICK stream; all raw
+IQ is saved. Eight fresh drive checks at the actual feature and flank are
+recorded, but program-level controls determine usability so one noisy
+preliminary check cannot terminate the comparison. The prespecified effect
+is the driven-minus-sham hot/cold loss between 0.1 and 2 us, subtracting
+the detuned and flank responses separately in each order. Readout,
+short-return, feature-stability, on-tone response, detuned response, and
+sham-baseline agreement gates remain explicit in the manifest. A selective
+effect would be a candidate bath response, not proof of one TLS.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --loss-check
+```

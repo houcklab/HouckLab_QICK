@@ -177,3 +177,86 @@ def test_weak_short_drive_check_is_diagnostic_only_for_loading_scan():
     assert module.drive_check_gate(weak, loading_check=True) == "diagnostic_only"
     with pytest.raises(RuntimeError, match="fresh feature drive check failed"):
         module.drive_check_gate(weak, loading_check=False)
+
+
+def test_loss_check_crosses_feature_flank_holds_tones_and_orders():
+    module = experiment()
+    specs = module.loss_program_specs(4.129)
+    assert len(specs) == 16
+    assert {(x["site"], x["post_drive_us"], x["tone"], x["direction"])
+            for x in specs} == {
+                (site, hold, tone, direction)
+                for site in ("feature", "flank")
+                for hold in (0.1, 2.0)
+                for tone in ("on", "detuned")
+                for direction in ("forward", "reverse")}
+    assert all(x["pre_drive_us"] == 20.0 and x["shots"] == 400
+               for x in specs)
+    feature_on = next(x for x in specs if x["site"] == "feature" and
+                      x["tone"] == "on")
+    flank_detuned = next(x for x in specs if x["site"] == "flank" and
+                         x["tone"] == "detuned")
+    assert {c["drive_mhz"] for c in feature_on["conditions"]} == {4134.0}
+    assert {c["drive_mhz"] for c in flank_detuned["conditions"]} == {4105.0}
+    assert {x["flux_ghz"] for x in specs if x["site"] == "flank"} == {4.115}
+    assert specs[0]["direction"] == "forward"
+    assert specs[-1]["direction"] == "reverse"
+
+
+def test_loss_controls_reject_detuned_drive_and_sham_baseline_motion():
+    module = experiment()
+    scores = {}
+    for repeat in (0, 1):
+        for site in ("feature", "flank"):
+            scores[f"r{repeat}_{site}_hold0p1_on"] = {
+                "cold_drive_contrast": 0.20,
+                "hot_preparation_contrast": 0.25}
+            scores[f"r{repeat}_{site}_hold0p1_detuned"] = {
+                "cold_drive_contrast": 0.02,
+                "hot_preparation_contrast": 0.24}
+    assert module.loss_control_report(scores)["usable"]
+    scores["r0_feature_hold0p1_detuned"]["cold_drive_contrast"] = 0.17
+    assert not module.loss_control_report(scores)["usable"]
+    scores["r0_feature_hold0p1_detuned"]["cold_drive_contrast"] = 0.02
+    scores["r1_flank_hold0p1_detuned"]["hot_preparation_contrast"] = 0.01
+    assert not module.loss_control_report(scores)["usable"]
+
+
+def test_loss_plan_uses_longer_streams_and_matched_controls():
+    module = experiment()
+    plan = module.plan(loss_check=True)
+    assert plan["programs"] == 16
+    assert plan["shots_per_program"] == 400
+    assert plan["post_drive_holds_us"] == [0.1, 2.0]
+    assert plan["sites"] == ["feature", "14-MHz lower flank"]
+    assert plan["tones_mhz"] == [5.0, -10.0]
+
+
+def test_loss_statistic_subtracts_hold_detuning_and_flank_in_each_order():
+    module = experiment()
+    scores = {x["name"]: {"hot_minus_cold_drive_change": 0.0}
+              for x in module.loss_program_specs(4.129)}
+    scores["r0_feature_hold0p1_on"]["hot_minus_cold_drive_change"] = 0.4
+    scores["r0_feature_hold2_on"]["hot_minus_cold_drive_change"] = 0.1
+    scores["r0_flank_hold0p1_on"]["hot_minus_cold_drive_change"] = 0.2
+    scores["r0_flank_hold2_on"]["hot_minus_cold_drive_change"] = 0.1
+    report = module.loss_effect_report(scores)
+    assert report["r0"]["feature_on_incremental_loss"] == pytest.approx(0.3)
+    assert report["r0"]["flank_on_incremental_loss"] == pytest.approx(0.1)
+    assert report["r0"]["feature_specific_tone_selective_incremental_loss"] == pytest.approx(0.2)
+    assert report["r1"]["feature_specific_tone_selective_incremental_loss"] == 0.0
+
+
+def test_loss_program_configs_use_the_flank_dc_and_full_shot_count():
+    module = experiment()
+    entry = next(x for x in module.loss_program_specs(4.129)
+                 if x["site"] == "flank" and x["tone"] == "detuned" and
+                 x["post_drive_us"] == 2.0)
+    cfgs = module.condition_configs({"sigma": 0.1}, entry,
+                                    {4.129: -100, 4.115: -123}, 4.129)
+    assert len(cfgs) == 4
+    assert {cfg["ff_gain"] for cfg in cfgs} == {-123}
+    assert {cfg["opx_resident_freq_mhz"] for cfg in cfgs} == {4105.0}
+    assert {cfg["opx_resident_post_us"] for cfg in cfgs} == {2.0}
+    assert {cfg["shots"] for cfg in cfgs} == {400}
+    assert {cfg["opx_resident_gain"] for cfg in cfgs} == {0, 6000}
