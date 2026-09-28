@@ -142,6 +142,39 @@ def test_wide_selector_tracks_same_candidate_in_post_scout():
     assert module.feature_stable(selected, post)
 
 
+def test_wide_post_selector_accepts_same_dip_split_across_adjacent_bins():
+    module = experiment()
+    pre = module.select_wide_candidate(wide_scout_rows())
+    rows = wide_scout_rows()
+    for row in rows:
+        f = float(row["target_frequency_ghz"])
+        if f == 4.046:
+            survival = .2
+        elif f == 4.048:
+            survival = .2
+        elif f == 4.050:
+            survival = .5
+        else:
+            continue
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row["Ps_25us" + suffix] = str(.1 + .8 * survival)
+    post = module.select_wide_candidate(rows,
+                                        preferred_center=pre["center_ghz"])
+    assert abs(post["center_ghz"] - pre["center_ghz"]) <= .002
+    assert module.feature_stable(pre, post)
+
+
+def test_wide_post_selector_does_not_switch_to_other_control():
+    module = experiment()
+    pre = module.select_wide_candidate(wide_scout_rows())
+    assert pre["control_offset_ghz"] == .014
+    with pytest.raises(ValueError, match="qualified"):
+        module.select_wide_candidate(
+            wide_scout_rows(poor_control=True),
+            preferred_center=pre["center_ghz"],
+            preferred_control_offset=pre["control_offset_ghz"])
+
+
 def test_wide_selector_rejects_incomplete_frequency_pass():
     with pytest.raises(ValueError, match="complete"):
         experiment().select_wide_candidate(wide_scout_rows()[:-1])

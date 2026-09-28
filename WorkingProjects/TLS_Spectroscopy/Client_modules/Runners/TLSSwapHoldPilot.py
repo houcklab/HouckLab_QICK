@@ -168,7 +168,8 @@ def read_wide_scout(path):
         return list(csv.DictReader(stream))
 
 
-def select_wide_candidate(rows, *, preferred_center=None):
+def select_wide_candidate(rows, *, preferred_center=None,
+                          preferred_control_offset=None):
     """Find an isolated bidirectional loss dip outside the tested 4.1-GHz band."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
                for row in rows}
@@ -187,7 +188,8 @@ def select_wide_candidate(rows, *, preferred_center=None):
                      if round(center + .002 * i, 3) in indexed]
         if (len(immediate) != 3 or
                 not all(math.isfinite(value) for value in immediate) or
-                min(immediate[0], immediate[2]) - immediate[1] < .08):
+                (preferred_center is None and
+                 min(immediate[0], immediate[2]) - immediate[1] < .08)):
             continue
         groups = {
             "feature": [round(center + .002 * i, 3) for i in (-1, 0, 1)],
@@ -196,7 +198,9 @@ def select_wide_candidate(rows, *, preferred_center=None):
         }
         if any(f not in indexed for fs in groups.values() for f in fs):
             continue
-        for offset in (.014, -.014):
+        offsets = ((float(preferred_control_offset),)
+                   if preferred_control_offset is not None else (.014, -.014))
+        for offset in offsets:
             control = round(center + offset, 3)
             site_groups = {**groups,
                            "control": [round(control + .002 * i, 3)
@@ -537,7 +541,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["post_selected"] = (
                     select_wide_candidate(
                         read_wide_scout(post_scout),
-                        preferred_center=selected["anchor_ghz"])
+                        preferred_center=selected["anchor_ghz"],
+                        preferred_control_offset=selected["control_offset_ghz"])
                     if wide_candidate else
                     choose_feature(adaptive.read_scout(post_scout),
                                    follow_moving_dip=follow_moving_dip,

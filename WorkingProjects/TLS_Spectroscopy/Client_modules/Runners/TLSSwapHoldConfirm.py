@@ -39,6 +39,10 @@ PAIR_DWELLS_US = swap.HOLDS_US[1:]
 TIME_MAP_REFERENCE_US = 1.5
 TIME_MAP_LATER_US = (3.0, 6.0, 10.0, 16.0, 25.0)
 TIME_MAP_SHOTS = 600
+WIDE_EARLY_US = 0.1
+WIDE_LATER_US = (0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0,
+                 3.0, 4.0, 6.0)
+WIDE_TIME_MAP_SHOTS = 800
 LOSS_DYNAMICS_CYCLES = 60
 LOSS_DYNAMICS_SHOTS = 250
 LOSS_DYNAMICS_EARLY_US = 1.5
@@ -148,6 +152,32 @@ def within_shot_time_map_specs(feature_ghz, control_ghz):
                           "repeat": repeat, "hold_us": hold,
                           "flux_ghz": float(feature_ghz),
                           "shots": TIME_MAP_SHOTS,
+                          "order": [c["name"] for c in conditions],
+                          "conditions": conditions, "status": "pending"})
+    return specs
+
+
+def wide_within_shot_specs(feature_ghz, control_ghz):
+    """Short-time direct swap map at a new feature, with matched controls."""
+    specs = []
+    for repeat in (0, 1):
+        holds = WIDE_LATER_US if repeat == 0 else tuple(reversed(WIDE_LATER_US))
+        for hold in holds:
+            conditions = [{"name": f"{site}_{dwell}_{state}",
+                           "site": site, "flux_ghz": float(frequency),
+                           "hold_us": float(duration), "state": state}
+                          for site, frequency in (("feature", feature_ghz),
+                                                  ("control", control_ghz))
+                          for dwell, duration in (("early", WIDE_EARLY_US),
+                                                  ("late", hold))
+                          for state in ("g", "e")]
+            if repeat:
+                conditions.reverse()
+            label = f"{hold:g}".replace(".", "p")
+            specs.append({"name": f"wide_r{repeat}_t{label}",
+                          "repeat": repeat, "hold_us": hold,
+                          "flux_ghz": float(feature_ghz),
+                          "shots": WIDE_TIME_MAP_SHOTS,
                           "order": [c["name"] for c in conditions],
                           "conditions": conditions, "status": "pending"})
     return specs
@@ -577,11 +607,12 @@ def effect(feature, control):
 
 def plan(*, flux_map=False, follow_moving_dip=False,
          paired_dwell_scan=False, within_shot_time_map=False,
+         wide_within_shot=False,
          loss_dynamics=False, loss_line_dynamics=False,
          dense_profile=False, dense_profile_cycles=LINE_DYNAMICS_CYCLES,
          dual_line_dynamics=False, dual_line_dither=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
-                      within_shot_time_map, loss_dynamics,
+                      within_shot_time_map, wide_within_shot, loss_dynamics,
                       loss_line_dynamics, dense_profile,
                       dual_line_dynamics, dual_line_dither))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
@@ -603,6 +634,22 @@ def plan(*, flux_map=False, follow_moving_dip=False,
                 "raw_iq_saved": True, "per_cycle_utc_timestamps": True,
                 "observable": "paired change in main and upper line asymmetries per 40-DAC common offset",
                 "interpretation": "calibrates a common-gain drift fingerprint; dither could itself perturb defects"}
+    if wide_within_shot:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "wide_within_shot": True,
+                "purpose": "test short-time exchange at a new isolated loss candidate",
+                "feature_scout_ghz": [3.8, 4.3],
+                "excluded_prior_band_ghz": [4.08, 4.19],
+                "control": "fresh qualified clean ±14-MHz point",
+                "early_hold_us": WIDE_EARLY_US,
+                "later_holds_us": list(WIDE_LATER_US),
+                "conditions_per_shot": 8,
+                "shots_per_program": WIDE_TIME_MAP_SHOTS,
+                "programs": 2 * len(WIDE_LATER_US),
+                "condition_order": "ascending then descending dwells; reverse subshot order",
+                "raw_iq_saved": True,
+                "observable": "replicated feature-minus-control short-time swap trace",
+                "interpretation": "only reproducible nonmonotonic exchange motivates a TLS chevron"}
     if dual_line_dynamics:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "compare simultaneous spectral motion of two loss features",
@@ -865,24 +912,29 @@ def _condition_configs(base, entry, dc_lookup):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
-        within_shot_time_map=False, loss_dynamics=False,
+        within_shot_time_map=False, wide_within_shot=False,
+        loss_dynamics=False,
         loss_line_dynamics=False, dense_profile=False,
         dense_profile_cycles=LINE_DYNAMICS_CYCLES,
         dual_line_dynamics=False, dual_line_dither=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
-                      within_shot_time_map, loss_dynamics,
+                      within_shot_time_map, wide_within_shot,
+                      loss_dynamics,
                       loss_line_dynamics, dense_profile,
                       dual_line_dynamics, dual_line_dither))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
     dual_mode = dual_line_dynamics or dual_line_dither
-    site_time_mode = (within_shot_time_map or loss_dynamics or
+    site_time_mode = (within_shot_time_map or wide_within_shot or
+                      loss_dynamics or
                       loss_line_dynamics or dense_profile or
                       dual_mode)
     follow_moving_dip = (follow_moving_dip or paired_dwell_scan or
                          site_time_mode)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
-    scout_suffix = ("TLS_Dual_Line_Dither_Scout_pre"
+    scout_suffix = ("TLS_SwapHold_Wide_WithinShot_Scout_pre"
+                    if wide_within_shot else
+                    "TLS_Dual_Line_Dither_Scout_pre"
                     if dual_line_dither else
                     "TLS_Dual_Line_Dynamics_Scout_pre"
                     if dual_line_dynamics else
@@ -899,25 +951,28 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
             TLSPumpProbeHeralded as heralded,
         )
-    scout_parameters = (heralded.postselection_scout_parameters("pre")
+    scout_parameters = (wide.parameters() if wide_within_shot else
+                        heralded.postselection_scout_parameters("pre")
                         if site_time_mode else
                         adaptive.scout_parameters(phase="pre"))
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**scout_parameters,
                              "output_suffix": scout_suffix})
-    selector = (heralded.select_postselection_feature if site_time_mode
+    selector = (swap.select_wide_candidate if wide_within_shot else
+                heralded.select_postselection_feature if site_time_mode
                 else select_moving_lower_dip if follow_moving_dip else
                 lambda rows: swap.select_anchored_feature(
                     rows, preferred_center=4.127))
-    read_scout = (heralded.read_postselection_scout if site_time_mode
+    read_scout = (swap.read_wide_scout if wide_within_shot else
+                  heralded.read_postselection_scout if site_time_mode
                   else adaptive.read_scout)
     scout_rows = read_scout(scout)
     selected = selector(scout_rows)
     upper_selected = (select_upper_loss_feature(scout_rows)
                       if dual_mode else None)
     center, control = selected["center_ghz"], selected["control_ghz"]
-    print(f"[swap-confirm] lower feature={center:.3f} GHz; "
+    print(f"[swap-confirm] feature={center:.3f} GHz; "
           f"control={control:.3f} GHz", flush=True)
     if upper_selected is not None:
         print(f"[swap-confirm] upper feature={upper_selected['center_ghz']:.3f} GHz; "
@@ -941,7 +996,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = (dual_line_dither_specs(center, control,
+        specs = (wide_within_shot_specs(center, control)
+                 if wide_within_shot else
+                 dual_line_dither_specs(center, control,
                                         upper_selected["center_ghz"],
                                         upper_selected["control_ghz"])
                  if dual_line_dither else
@@ -985,7 +1042,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_dual_line_dither_"
+        session_id = (("q3_tls_swap_hold_wide_within_shot_"
+                       if wide_within_shot else
+                       "q3_tls_dual_line_dither_"
                        if dual_line_dither else
                        "q3_tls_dual_line_dynamics_"
                        if dual_line_dynamics else
@@ -1009,7 +1068,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-dual-line-dither.v1"
+        manifest = {"schema": ("q3.tls-swap-hold-wide-within-shot.v1"
+                               if wide_within_shot else
+                               "q3.tls-dual-line-dither.v1"
                                if dual_line_dither else
                                "q3.tls-dual-line-dynamics.v1"
                                if dual_line_dynamics else
@@ -1038,6 +1099,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  follow_moving_dip=follow_moving_dip,
                                  paired_dwell_scan=paired_dwell_scan,
                                  within_shot_time_map=within_shot_time_map,
+                                 wide_within_shot=wide_within_shot,
                                  loss_dynamics=loss_dynamics,
                                  loss_line_dynamics=loss_line_dynamics,
                                  dense_profile=dense_profile,
@@ -1057,7 +1119,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             preflight = preflight_entries(
                 manifest["programs"], flux_map=flux_map,
                 paired_dwell_scan=paired_dwell_scan,
-                within_shot_time_map=within_shot_time_map,
+                within_shot_time_map=(within_shot_time_map or wide_within_shot),
                 loss_dynamics=loss_dynamics,
                 loss_line_dynamics=loss_line_dynamics,
                 dense_profile=dense_profile,
@@ -1173,7 +1235,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                       score_dense_profile if dense_profile else
                       score_loss_line if loss_line_dynamics else
                       score_loss_dynamics if loss_dynamics else
-                      score_eight_condition_program if within_shot_time_map
+                      score_eight_condition_program
+                      if within_shot_time_map or wide_within_shot
                       else score)
             scores = {entry["name"]: scorer({
                 cond["name"]: cond["excited_fraction_pre_axis"]
@@ -1188,7 +1251,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["loss_line_report"] = loss_line_report(specs, scores)
             elif loss_dynamics:
                 manifest["loss_dynamics_report"] = loss_dynamics_report(specs, scores)
-            elif within_shot_time_map:
+            elif within_shot_time_map or wide_within_shot:
                 manifest["within_shot_time_map_report"] = (
                     within_shot_time_map_report(specs, scores))
             elif paired_dwell_scan:
@@ -1203,10 +1266,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**(
+                    wide.parameters() if wide_within_shot else
                     heralded.postselection_scout_parameters("post")
                     if site_time_mode else
                     adaptive.scout_parameters(phase="post")),
                                      "output_suffix": (
+                                         "TLS_SwapHold_Wide_WithinShot_Scout_post"
+                                         if wide_within_shot else
                                          "TLS_Dual_Line_Dither_Scout_post"
                                          if dual_line_dither else
                                          "TLS_Dual_Line_Dynamics_Scout_post"
@@ -1225,7 +1291,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 post_rows = read_scout(post_scout)
-                manifest["post_selected"] = selector(post_rows)
+                manifest["post_selected"] = (
+                    swap.select_wide_candidate(
+                        post_rows, preferred_center=center,
+                        preferred_control_offset=selected["control_offset_ghz"])
+                    if wide_within_shot else selector(post_rows))
                 if dual_mode:
                     manifest["post_upper_selected"] = (
                         select_upper_loss_feature(post_rows))
@@ -1295,6 +1365,8 @@ def main(argv=None):
                         help="interleave 0.1 us and later holds at moving dip")
     parser.add_argument("--within-shot-time-map", action="store_true",
                         help="interleave feature/control and short/long visits in each shot")
+    parser.add_argument("--wide-within-shot", action="store_true",
+                        help="direct short-time swap map at a new wide-band candidate")
     parser.add_argument("--loss-dynamics", action="store_true",
                         help="track feature-local loss over 60 short cycles")
     parser.add_argument("--loss-line-dynamics", action="store_true",
@@ -1310,7 +1382,8 @@ def main(argv=None):
                         help="interleave common ±20-DAC flux offsets on two loss lines")
     args = parser.parse_args(argv)
     if (sum(map(bool, (args.flux_map, args.paired_dwell_scan,
-                       args.within_shot_time_map, args.loss_dynamics,
+                       args.within_shot_time_map, args.wide_within_shot,
+                       args.loss_dynamics,
                        args.loss_line_dynamics, args.dense_profile,
                        args.dual_line_dynamics, args.dual_line_dither))) > 1 or
             (args.flux_map and args.follow_moving_dip)):
@@ -1324,6 +1397,7 @@ def main(argv=None):
                               follow_moving_dip=args.follow_moving_dip,
                               paired_dwell_scan=args.paired_dwell_scan,
                               within_shot_time_map=args.within_shot_time_map,
+                              wide_within_shot=args.wide_within_shot,
                               loss_dynamics=args.loss_dynamics,
                               loss_line_dynamics=args.loss_line_dynamics,
                               dense_profile=args.dense_profile,
@@ -1337,6 +1411,7 @@ def main(argv=None):
             follow_moving_dip=args.follow_moving_dip,
             paired_dwell_scan=args.paired_dwell_scan,
             within_shot_time_map=args.within_shot_time_map,
+            wide_within_shot=args.wide_within_shot,
             loss_dynamics=args.loss_dynamics,
             loss_line_dynamics=args.loss_line_dynamics,
             dense_profile=args.dense_profile,

@@ -123,6 +123,33 @@ def test_within_shot_time_map_plan_is_bounded():
     assert plan["later_holds_us"] == [3.0, 6.0, 10.0, 16.0, 25.0]
 
 
+def test_wide_within_shot_swap_map_pairs_candidate_and_control_at_short_dwells():
+    module = experiment()
+    specs = module.wide_within_shot_specs(3.992, 4.006)
+    assert len(specs) == 20
+    assert [s["hold_us"] for s in specs[:10]] == [
+        .2, .35, .5, .75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+    assert [s["hold_us"] for s in specs[10:]] == [
+        6.0, 4.0, 3.0, 2.0, 1.5, 1.0, .75, .5, .35, .2]
+    assert all(s["shots"] == 800 and len(s["conditions"]) == 8
+               for s in specs)
+    assert {c["hold_us"] for c in specs[0]["conditions"]} == {.1, .2}
+    assert {c["flux_ghz"] for c in specs[0]["conditions"]} == {3.992, 4.006}
+    assert specs[-1]["order"] == list(reversed(specs[0]["order"]))
+
+
+def test_wide_within_shot_swap_plan_is_direct_exchange(capsys):
+    import json
+    module = experiment()
+    assert module.main(["--plan", "--wide-within-shot"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["wide_within_shot"] is True
+    assert plan["conditions_per_shot"] == 8
+    assert plan["programs"] == 20
+    assert plan["shots_per_program"] == 800
+    assert plan["early_hold_us"] == .1
+
+
 def test_loss_dynamics_repeats_feature_control_in_reversed_shot_order(capsys):
     import json
     module = experiment()

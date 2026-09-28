@@ -3629,3 +3629,39 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run --wide-candidate
 ```
+
+The wide-candidate run completed at
+`q3_tls_swap_hold_wide_candidate_20260928T210034Z_1d9b202a`.
+It selected a strong separate dip at 3.992 GHz with a 4.006-GHz control;
+all 88 swap arms completed. Readout fidelity was 0.926/0.903, and the
+park-transfer controls passed. The manifest marked the feature unstable
+because the post-scout selector demanded a single-bin minimum. Direct
+inspection shows that the same 3.990–3.992-GHz dip persisted: applying
+the same three-point depth and bidirectional control criteria around
+the pre-run anchor gives a 3.992-GHz post center, depth 0.509 versus
+0.499 pre, and the same clean control. The selector now allows a
+two-bin minimum on the anchored post pass, while retaining a sharp-
+minimum requirement for choosing a new pre-run candidate.
+
+The sequential 0.1–6-µs trace is not convincing coherent exchange.
+The feature-minus-control g/e contrast curve has forward/reverse
+correlation −0.29; the large 0.1- and 0.75-µs excursions change sign
+between orders. Continuous IQ shows the same disagreements. There is
+more feature-local late loss, but that alone is ordinary relaxation.
+
+The next direct test keeps this *new* candidate family and interleaves
+feature/control, ground/excited, and 0.1-µs/longer visits inside every
+hardware shot. Ten later holds from 0.2 to 6 µs are measured in
+ascending and descending order, 800 logical shots per program. A fresh
+wide scout selects the current coordinate automatically; readout,
+transfer, and post-scout controls remain. The question is whether a
+nonmonotonic swap-time feature replicates when temporal changes are
+suppressed by within-shot pairing. If not, stop treating this loss dip
+as a coherent TLS candidate.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot
+```
