@@ -23,6 +23,19 @@ def test_single_readout_decoder_preserves_signed_iq_and_rejects_missing_word():
         module.decode_single_iq([1], 1)
 
 
+def test_fresh_drive_map_covers_moving_feature_and_remains_readout_only(capsys):
+    module = experiment()
+    scout = module.fresh_map_scout_parameters("pre")
+    assert scout["freq_min_ghz"] == 4.060
+    assert scout["freq_max_ghz"] == 4.170
+    assert scout["max_runs"] == 1
+    assert module.main(["--plan", "--fresh-map"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["pre_drive_us"] == 20.0
+    assert plan["driven_gains_dac"] == [1000, 3000, 6000, 12000, 20000, 30000]
+    assert plan["scout_range_ghz"] == [4.060, 4.170]
+
+
 def test_resident_drive_is_scheduled_between_target_segments_before_return(monkeypatch):
     module = experiment()
     program = object.__new__(module.ResidentDriveProgram)

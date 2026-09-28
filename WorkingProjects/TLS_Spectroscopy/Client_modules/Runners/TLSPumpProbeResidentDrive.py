@@ -227,8 +227,16 @@ def calibration_arms(center_ghz, flank_ghz):
     return arms
 
 
-def plan():
-    return {"hardware_access": False, "reset_mode": "passive",
+def fresh_map_scout_parameters(phase):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+        TLSPumpProbeHeralded as heralded,
+    )
+    return {**heralded.postselection_scout_parameters(phase),
+            "output_suffix": f"TLS_ResidentDrive_FreshMap_Scout_{phase}"}
+
+
+def plan(*, fresh_map=False):
+    result = {"hardware_access": False, "reset_mode": "passive",
             "purpose": "calibrate a target-resident qubit re-excitation pulse",
             "sites": ["loss feature", "14-MHz lower flank"],
             "detunings_mhz": list(DETUNINGS_MHZ),
@@ -242,6 +250,10 @@ def plan():
             "raw_iq_saved": True,
             "follow_up": "Choose pulse from raw IQ, then run short-gap hot/cold probe",
             "note": __doc__}
+    if fresh_map:
+        result["scout_range_ghz"] = [4.060, 4.170]
+        result["control"] = "qualified 14-MHz lower flux point"
+    return result
 
 
 def arm_config(base, arm, dc_lookup):
@@ -261,16 +273,26 @@ def arm_config(base, arm, dc_lookup):
     return cfg
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        fresh_map=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    if fresh_map:
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+            TLSPumpProbeHeralded as heralded,
+        )
+    scout_parameters = (fresh_map_scout_parameters("pre") if fresh_map else
+                        {**adaptive.scout_parameters(phase="pre"),
+                         "output_suffix": "TLS_PumpProbe_ResidentDrive_Scout"})
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_PumpProbe_ResidentDrive_Scout"})
-    selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
+        parameter_overrides=scout_parameters)
+    selected = (heralded.select_postselection_feature(
+        heralded.read_postselection_scout(scout)) if fresh_map else
+        adaptive.select_loss_feature(adaptive.read_scout(scout)))
     center = round(float(selected["center_ghz"]), 3)
-    flank = round(center + FLANK_OFFSET_GHZ, 3)
+    flank = (float(selected["control_ghz"]) if fresh_map else
+             round(center + FLANK_OFFSET_GHZ, 3))
     print(f"[resident-drive] feature={center:.3f} GHz, "
           f"flank={flank:.3f} GHz", flush=True)
 
@@ -324,7 +346,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 "post_multiplier": after[0][0],
                 "recovery_us": sum(duration for _, duration in recovery),
             }
-        session_id = ("q3_pump_probe_resident_drive_" +
+        session_id = (("q3_pump_probe_resident_drive_fresh_map_" if fresh_map else
+                       "q3_pump_probe_resident_drive_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -347,7 +370,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                  reference("ref_transfer_e_post", "e", transfer=True),
                  reference("ref_g_post", "g"),
                  reference("ref_e_post", "e")])
-        manifest = {"schema": "q3.pump-probe-resident-drive.v1",
+        manifest = {"schema": ("q3.pump-probe-resident-drive-fresh-map.v1"
+                               if fresh_map else "q3.pump-probe-resident-drive.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -355,7 +379,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": {str(k): v for k, v in dc_lookup.items()},
-                    "realized_ghz": realized.tolist(), "plan": plan(),
+                    "realized_ghz": realized.tolist(), "plan": plan(fresh_map=fresh_map),
                     "drive_pulse_nominal_us": pulse_us,
                     "correction_windows": correction_windows,
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
@@ -431,14 +455,20 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             else:
                 manifest["post_readout_score"] = {
                     "valid": False, "reason": "no valid pre-run readout axis"}
+            post_scout_parameters = (
+                fresh_map_scout_parameters("post") if fresh_map else
+                {**adaptive.scout_parameters(phase="post"),
+                 "output_suffix": "TLS_PumpProbe_ResidentDrive_Scout_post"})
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_PumpProbe_ResidentDrive_Scout_post"})
+                parameter_overrides=post_scout_parameters)
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = adaptive.select_loss_feature(
-                    adaptive.read_scout(post_scout))
+                manifest["post_selected"] = (
+                    heralded.select_postselection_feature(
+                        heralded.read_postselection_scout(post_scout))
+                    if fresh_map else
+                    adaptive.select_loss_feature(adaptive.read_scout(post_scout)))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
@@ -472,11 +502,13 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--fresh-map", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(fresh_map=args.fresh_map), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            fresh_map=args.fresh_map)
     return 0
 
 

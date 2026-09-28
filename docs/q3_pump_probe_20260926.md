@@ -3194,3 +3194,35 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --plan --strong-long-load
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --strong-long-load
 ```
+
+The 20-us-load, gain-30000 follow-up completed at
+`q3_pump_probe_strong_long_load_20260928T174229Z_c7a2b280` with status
+`complete_controls_unstable`. The loss center was 4.105/4.104 GHz pre/post,
+the flank stayed separated, and readout/transfer controls passed. Restoring
+20 us improved the fresh high-gain on-minus-sham response to +0.108 at the
+feature, but only +0.073 at the flank. Within science, the 1.5-us cold-arm
+drive response was +0.077–0.096 at the feature and +0.040–0.079 at the
+flank, below the predeclared 0.10 gate in every program. The reverse-order
+flank normalization denominator was below its 0.05 minimum. Continuous
+IQ gives similarly small responses. Thus the gain-30000 saturation
+comparison remains inconclusive; its apparently positive forward-order
+ratio is not a validated physical effect. The earlier gain-6000, 20-us
+run had stronger probe preparation, so simply increasing the DAC gain
+was counterproductive at the current feature.
+
+Rather than guess another gain, the next bounded measurement maps the
+target-resident qubit pulse at the *current* loss feature. It uses the
+proven 20-us target settling, scans gains 1000–30000 and detunings
+-20 to +20 MHz with zero-drive brackets at the feature and qualified
+14-MHz-lower control, and saves raw IQ. A fresh 4.060–4.170-GHz scout
+locates the moving feature before the map and checks it afterward. The
+purpose is to select a locally effective qubit re-excitation pulse for
+one more short-gap pump–probe test; the map itself is not a TLS
+saturation measurement.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentDrive --run --fresh-map
+```
