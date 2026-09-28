@@ -294,3 +294,70 @@ def test_preparation_postselection_requires_clean_control_in_both_directions(mon
     assert selected["control_survival_advantage"]["combined"] == pytest.approx(0.6)
     with pytest.raises(ValueError, match="control is not separated"):
         module.select_postselection_feature(rows(0.25))
+
+
+def test_afterglow_arms_bracket_hot_pump_with_cold_and_off_target_controls():
+    module = experiment()
+    assert module.afterglow_plan()["reference_phases"] == ["pre", "mid", "post"]
+    arms = module.afterglow_arms(center_ghz=4.102, flank_ghz=4.088)
+    assert len(arms) == 24
+    assert len({arm["name"] for arm in arms}) == 24
+    assert {arm["probe_state"] for arm in arms} == {"g"}
+    assert {arm["probe_ghz"] for arm in arms} == {4.102}
+    assert {arm["pump_us"] for arm in arms} == {20.0}
+    assert {arm["probe_us"] for arm in arms} == {2.0, 10.0}
+    assert {arm["interstage_extra_us"] for arm in arms} == {0.0, 50.0}
+    assert [a["name"] for a in arms[:3]] == [
+        "r0_w0_t2_cold_on", "r0_w0_t2_hot_on", "r0_w0_t2_hot_off"]
+    assert [a["name"] for a in arms[-3:]] == [
+        "r1_w0_t2_hot_off", "r1_w0_t2_hot_on", "r1_w0_t2_cold_on"]
+    for arm in arms:
+        if arm["pump_label"] == "hot_on":
+            assert arm["pump_state"] == "e" and arm["pump_ghz"] == 4.102
+        elif arm["pump_label"] == "hot_off":
+            assert arm["pump_state"] == "e" and arm["pump_ghz"] == 4.088
+        else:
+            assert arm["pump_state"] == "g" and arm["pump_ghz"] == 4.102
+
+
+def test_afterglow_extra_wait_is_between_readouts_and_defaults_to_zero():
+    module = experiment()
+    program = object.__new__(module.HeraldedPumpProbeProgram)
+    program.cfg = {"qubit_ch": 1, "ff_gain": -17200,
+                   "opx_herald_probe_gain": -17000,
+                   "opx_herald_pump_state": "e", "opx_herald_probe_state": "g",
+                   "opx_herald_pump_us": 20.0, "opx_herald_probe_us": 10.0,
+                   "opx_herald_interstage_extra_us": 50.0}
+    program.reset_config = SimpleNamespace(read_delay_us=10.0,
+                                           inter_shot_delay_us=500.0)
+    program.reset_page, program.reset_regs = 0, {"i": 1, "q": 2, "address": 3}
+    events = []
+    program._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    program._set_payload_pulse = lambda **_: None
+    program.pulse = lambda **_: None
+    program._wait_t1_payload = lambda us: events.append(("visit", us))
+    program._measure_raw = lambda: events.append("readout")
+    program.memw = program.mathi = lambda *_: None
+    program.us2cycles = lambda us, **_: us
+    program.sync_all = lambda us: events.append(("wait", us))
+    program._emit_body()
+    assert events == [("wait", 0.01), ("visit", 20.0), "readout",
+                      ("wait", 70.0), ("wait", 0.01), ("visit", 10.0),
+                      "readout", ("wait", 500.0)]
+
+
+def test_afterglow_report_keeps_both_controls_and_acceptance():
+    module = experiment()
+    arms = module.afterglow_arms(center_ghz=4.102, flank_ghz=4.088)
+    values = {"cold_on": 0.1, "hot_on": 0.25, "hot_off": 0.12}
+    for arm in arms:
+        arm["summary"] = {
+            "shots": 400, "herald_ground_shots": 200,
+            "final_excited_all": values[arm["pump_label"]],
+            "final_excited_given_ground": values[arm["pump_label"]] + 0.02}
+    report = module.afterglow_report(arms)
+    row = report["r0_w0_t2"]
+    assert row["all_shots"]["hot_on_minus_cold_on"] == pytest.approx(0.15)
+    assert row["ground_heralded"]["hot_on_minus_hot_off"] == pytest.approx(0.13)
+    assert row["ground_heralded"]["accepted_shots"] == {
+        "cold_on": 200, "hot_on": 200, "hot_off": 200}

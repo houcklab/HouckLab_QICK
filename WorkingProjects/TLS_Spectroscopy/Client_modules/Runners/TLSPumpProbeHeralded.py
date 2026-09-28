@@ -16,6 +16,12 @@ herald *before* a fresh g/e target visit. It reports the short/long target
 loss with and without offline selection on that first readout, using the same
 saved shots. It does not put a readout between the science visit and its final
 readout.
+
+The --afterglow mode retains the two-stage qubit-mediated pump/probe, but
+varies the second target dwell and the interval after the first readout. It
+compares hot/on-target loading with cold/on-target and hot/off-target controls
+in reversed acquisition orders. It is a narrow feature-local memory test,
+not broadband environmental spectroscopy.
 """
 
 import argparse
@@ -90,6 +96,9 @@ class HeraldedPumpProbeProgram(OPXResetT1Program):
         for key in ("opx_herald_pump_us", "opx_herald_probe_us"):
             if not math.isfinite(float(cfg[key])) or float(cfg[key]) < 0.1:
                 raise ValueError(f"{key} must be finite and at least 0.1 us")
+        extra_us = float(cfg.get("opx_herald_interstage_extra_us", 0.0))
+        if not math.isfinite(extra_us) or not 0.0 <= extra_us <= 1000.0:
+            raise ValueError("interstage extra wait must be 0..1000 us")
         for key in ("ff_gain", "opx_herald_probe_gain"):
             if not -32768 <= int(cfg[key]) <= 32767:
                 raise ValueError(f"{key} exceeds signed DAC range")
@@ -126,7 +135,9 @@ class HeraldedPumpProbeProgram(OPXResetT1Program):
 
         # wait_all(read_delay) advances the tProc but not the pulse reference.
         # Give the second pi instruction headroom after the first accumulator.
-        self.sync_all(self.us2cycles(float(self.reset_config.read_delay_us) + 10.0))
+        self.sync_all(self.us2cycles(
+            float(self.reset_config.read_delay_us) + 10.0 +
+            float(self.cfg.get("opx_herald_interstage_extra_us", 0.0))))
         pump_gain = self.cfg["ff_gain"]
         try:
             self.cfg["ff_gain"] = self.cfg["opx_herald_probe_gain"]
@@ -202,6 +213,61 @@ def preparation_postselection_arms(*, center_ghz, flank_ghz):
              for arm in base] +
             [{**arm, "name": "r1_" + arm["name"], "repeat": 1}
              for arm in reversed(base)])
+
+
+def afterglow_arms(*, center_ghz, flank_ghz):
+    """Bracket target loading with thermal and off-target controls."""
+    base = []
+    for wait_us in (0.0, 50.0):
+        for probe_us in (2.0, 10.0):
+            for label, pump_state, pump_ghz in (
+                ("cold_on", "g", center_ghz),
+                ("hot_on", "e", center_ghz),
+                ("hot_off", "e", flank_ghz)):
+                base.append({
+                    "name": f"w{wait_us:g}_t{probe_us:g}_{label}",
+                    "pump_label": label, "pump_state": pump_state,
+                    "pump_ghz": pump_ghz, "pump_us": 20.0,
+                    "probe_state": "g", "probe_ghz": center_ghz,
+                    "probe_us": probe_us,
+                    "interstage_extra_us": wait_us,
+                    "pump_prepare_after_return": False,
+                    "probe_prepare_after_return": False})
+    return ([{**arm, "name": "r0_" + arm["name"], "repeat": 0}
+             for arm in base] +
+            [{**arm, "name": "r1_" + arm["name"], "repeat": 1}
+             for arm in reversed(base)])
+
+
+def afterglow_report(arms):
+    """Descriptive fixed-pre-axis contrasts; validity is checked separately."""
+    indexed = {arm["name"]: arm for arm in arms}
+    result = {}
+    for repeat in (0, 1):
+        for wait_us in (0, 50):
+            for probe_us in (2, 10):
+                prefix = f"r{repeat}_w{wait_us}_t{probe_us}"
+                result[prefix] = {}
+                for label, key in (("all_shots", "final_excited_all"),
+                                   ("ground_heralded", "final_excited_given_ground")):
+                    names = {pump: f"{prefix}_{pump}"
+                             for pump in ("cold_on", "hot_on", "hot_off")}
+                    if any(name not in indexed or
+                           indexed[name].get("summary", {}).get(key) is None
+                           for name in names.values()):
+                        result[prefix][label] = None
+                        continue
+                    values = {pump: float(indexed[name]["summary"][key])
+                              for pump, name in names.items()}
+                    counts = {pump: int(indexed[name]["summary"][
+                        "herald_ground_shots"])
+                              for pump, name in names.items()}
+                    result[prefix][label] = {
+                        "excited_fraction": values,
+                        "accepted_shots": counts,
+                        "hot_on_minus_cold_on": values["hot_on"] - values["cold_on"],
+                        "hot_on_minus_hot_off": values["hot_on"] - values["hot_off"]}
+    return result
 
 
 def preparation_postselection_report(arms):
@@ -406,6 +472,11 @@ def postselection_scout_parameters(phase):
             "output_suffix": f"TLS_Preparation_Postselection_Scout_{phase}"}
 
 
+def afterglow_scout_parameters(phase):
+    return {**postselection_scout_parameters(phase),
+            "output_suffix": f"TLS_PumpProbe_Afterglow_Scout_{phase}"}
+
+
 def read_postselection_scout(path):
     with Path(path).open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
@@ -484,6 +555,27 @@ def preparation_postselection_plan():
                               "conditioned with all-shot results and pre/post scouts"}
 
 
+def afterglow_plan():
+    return {"hardware_access": False, "reset_mode": "passive",
+            "purpose": "narrow feature-local qubit-mediated pump/probe memory test",
+            "scout_ghz": [4.060, 4.170], "scout_step_mhz": 1,
+            "pump": "park pi then 20-us feature visit; compare ground/no-pi "
+                    "and excited 14-MHz-lower control",
+            "first_readout": "after corrected 40-us pump return; offline ground herald",
+            "additional_interstage_wait_us": [0, 50],
+            "second_ground_probe_us": [2, 10],
+            "science_arms": 24, "science_shots_per_arm": SHOTS,
+            "acquisition_orders": ["forward", "reverse"],
+            "reference_arms": 9,
+            "reference_phases": ["pre", "mid", "post"],
+            "raw_paired_iq_saved": True,
+            "observables": ["hot-on minus cold-on", "hot-on minus hot-off",
+                            "each versus probe dwell and wait"],
+            "interpretation": "a selective positive return is evidence of "
+                              "environmental memory, not proof of one TLS; "
+                              "the first return/readout misses faster memory"}
+
+
 def arm_config(base, arm, dc_lookup):
     cfg = dict(base)
     shots = int(arm.get("shots", SHOTS))
@@ -494,6 +586,8 @@ def arm_config(base, arm, dc_lookup):
                 "opx_herald_probe_us": arm["probe_us"],
                 "opx_herald_pump_state": arm["pump_state"],
                 "opx_herald_probe_state": arm["probe_state"],
+                "opx_herald_interstage_extra_us": arm.get(
+                    "interstage_extra_us", 0.0),
                 "opx_herald_pump_prepare_after_return": arm[
                     "pump_prepare_after_return"],
                 "opx_herald_probe_prepare_after_return": arm[
@@ -503,22 +597,27 @@ def arm_config(base, arm, dc_lookup):
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        prep_postselect=False):
+        prep_postselect=False, afterglow=False):
+    if prep_postselect and afterglow:
+        raise ValueError("select only one heralded follow-up mode")
     data_root = Path(data_root)
-    label = "prep-postselect" if prep_postselect else "heralded"
+    label = ("afterglow" if afterglow else
+             "prep-postselect" if prep_postselect else "heralded")
     correction = localizer.checked_correction(data_root, correction_json)
-    scout_parameters = (postselection_scout_parameters if prep_postselect
+    broad_scout = prep_postselect or afterglow
+    scout_parameters = ((afterglow_scout_parameters if afterglow else
+                         postselection_scout_parameters) if broad_scout
                         else lambda phase: {**adaptive.scout_parameters(phase=phase),
                                             "output_suffix":
                                             "TLS_PumpProbe_Heralded_Scout" if phase == "pre"
                                             else "TLS_PumpProbe_Heralded_Scout_post"})
-    read_scout = (read_postselection_scout if prep_postselect else
+    read_scout = (read_postselection_scout if broad_scout else
                   adaptive.read_scout)
     pre_scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides=scout_parameters("pre"))
     selected = (select_postselection_feature(read_scout(pre_scout))
-                if prep_postselect else
+                if broad_scout else
                 adaptive.select_loss_feature(read_scout(pre_scout)))
     center = round(float(selected["center_ghz"]), 3)
     flank = round(center + FLANK_OFFSET_GHZ, 3)
@@ -563,7 +662,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "do_ff": True, "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_preparation_postselection_" if prep_postselect else
+        session_id = (("q3_pump_probe_afterglow_" if afterglow else
+                       "q3_preparation_postselection_" if prep_postselect else
                        "q3_pump_probe_heralded_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
@@ -572,14 +672,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         manifest_path = folder / "manifest.json"
         pre_refs = reference_arms(center, phase="pre")
         post_refs = reference_arms(center, phase="post")
+        mid_refs = reference_arms(center, phase="mid") if afterglow else []
         if prep_postselect:
             for ref in pre_refs + post_refs:
                 ref["pump_ghz"] = flank
-        science = (preparation_postselection_arms(
+        science = (afterglow_arms(center_ghz=center, flank_ghz=flank)
+                   if afterglow else preparation_postselection_arms(
             center_ghz=center, flank_ghz=flank) if prep_postselect else
                    science_arms(center_ghz=center, flank_ghz=flank))
-        arms = pre_refs + science + post_refs
-        manifest = {"schema": ("q3.preparation-postselection.v1"
+        arms = (pre_refs + science[:12] + mid_refs + science[12:] + post_refs
+                if afterglow else pre_refs + science + post_refs)
+        manifest = {"schema": ("q3.pump-probe-afterglow.v1" if afterglow else
+                               "q3.preparation-postselection.v1"
                                if prep_postselect else "q3.pump-probe-heralded.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
@@ -589,7 +693,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "center_ghz": center, "flank_ghz": flank,
                     "dc_lookup": {str(k): v for k, v in dc_lookup.items()},
                     "realized_ghz": realized.tolist(),
-                    "plan": (preparation_postselection_plan()
+                    "plan": (afterglow_plan() if afterglow else
+                             preparation_postselection_plan()
                              if prep_postselect else plan()),
                     "arms": [{**arm, "status": "pending"} for arm in arms]}
         protocol.checkpoint(manifest_path, manifest)
@@ -666,6 +771,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                             raw_by_name["ref_e_post"], records)
                         if axes is not None else
                         {"valid": False, "reason": "no pre-run readout axis"})
+                if arm["name"] == "ref_final_e_mid":
+                    manifest["mid_reference_validation"] = (
+                        validate_pair_against_axes(
+                            axes, raw_by_name["ref_g_mid"],
+                            raw_by_name["ref_e_mid"], records)
+                        if axes is not None else
+                        {"valid": False, "reason": "no pre-run readout axis"})
                 arm["status"] = "complete"
                 protocol.checkpoint(manifest_path, manifest)
             post_scout = localizer.run(
@@ -674,7 +786,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 post_selected = (select_postselection_feature(read_scout(post_scout))
-                                 if prep_postselect else
+                                 if broad_scout else
                                  adaptive.select_loss_feature(read_scout(post_scout)))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
@@ -683,11 +795,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["post_selected"] = post_selected
                 manifest["feature_stability"] = feature_stability(
                     selected, post_selected,
-                    tolerance_mhz=2.0 if prep_postselect else 1.0)
+                    tolerance_mhz=2.0 if broad_scout else 1.0)
             feature_stable = manifest["feature_stability"]["stable"]
             readout_stable = bool(
                 manifest.get("pre_reference_valid", False) and
-                manifest["post_reference_validation"]["valid"])
+                manifest["post_reference_validation"]["valid"] and
+                (not afterglow or
+                 manifest["mid_reference_validation"]["valid"]))
+            if afterglow:
+                manifest["afterglow_descriptive_report"] = afterglow_report(
+                    manifest["arms"])
+                manifest["afterglow_controls_valid"] = bool(
+                    feature_stable and readout_stable)
             finalize_arm_summaries(manifest["arms"],
                                    controls_valid=readout_stable and feature_stable)
             if prep_postselect:
@@ -717,13 +836,18 @@ def main(argv=None):
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--prep-postselect", action="store_true",
                         help="pre-herald ground and compare conditioned/unconditioned loss")
+    parser.add_argument("--afterglow", action="store_true",
+                        help="feature-local pump/probe wait and dwell sweep")
     args = parser.parse_args(argv)
+    if args.prep_postselect and args.afterglow:
+        parser.error("select only one heralded follow-up mode")
     if args.plan:
-        print(json.dumps(preparation_postselection_plan()
+        print(json.dumps(afterglow_plan() if args.afterglow else
+                         preparation_postselection_plan()
                          if args.prep_postselect else plan(), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            prep_postselect=args.prep_postselect)
+            prep_postselect=args.prep_postselect, afterglow=args.afterglow)
     return 0
 
 

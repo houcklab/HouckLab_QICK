@@ -2997,3 +2997,45 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --plan --prep-postselect
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run --prep-postselect
 ```
+
+The pre-heralded preparation comparison completed in
+`q3_preparation_postselection_20260928T153131Z_e43defe2`. The loss center
+was 4.102 GHz in both the broad pre and post scouts, with normalized local
+depths 0.584 and 0.551; the 4.088-GHz control remained clean. The first
+readout held a 0.64–0.71 confident-ground acceptance across science arms.
+The pre reference passed its independent herald checks, but the frozen final
+readout axis failed the post reference: final-state fidelity fell from about
+0.818 to 0.770, and excited-reference false-ground rate reached 0.106,
+slightly above the preset 0.10 limit. The manifest therefore correctly
+withheld a validated conditional result. Descriptively, projecting the raw
+IQ on the frozen pre axes gives feature-minus-control 1.5-to-6-us excess
+loss of +0.157 in the forward order and -0.034 in reverse after ground
+heralding. All-shot estimates are +0.069 and 0.000. The order disagreement
+persists after postselection, so this run does not show that imperfect
+initial ground preparation was the principal obstacle. It also does not
+refute the loss feature, which remained strong and fixed during the run.
+
+The next bounded measurement returns to qubit-mediated pump/probe and asks
+whether loading at this loss feature leaves a time-dependent excitation
+memory. A park pi (or zero-gain cold control) precedes a 20-us target visit;
+an excited pump at the 14-MHz-lower control checks off-target loading.
+After the compensated return and first readout, a ground-prepared qubit
+visits the loss feature for either 2 or 10 us. An additional 0 or 50 us
+between readouts varies the post-loading wait. Each hot-on, cold-on, and
+hot-off triad is repeated in reverse order: 24 science arms at 400 shots,
+plus pre/mid/post references and broad pre/post loss scouts. Paired raw IQ is
+saved even if the final reference gate fails. The descriptive report keeps
+hot-on-minus-cold-on and hot-on-minus-hot-off separately; neither is
+interpreted as a confirmed TLS signal unless the readout and feature
+controls pass. This is a feature-local memory check inspired by the
+time-dependent energy return in Guimarães et al. (arXiv:2609.31280), not a
+replication of their broadband excitation spectroscopy. Its approximately
+40-us first return plus readout still limits sensitivity to very fast memory.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --plan --afterglow
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeHeralded --run --afterglow
+```
