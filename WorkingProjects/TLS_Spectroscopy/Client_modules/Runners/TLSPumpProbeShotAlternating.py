@@ -1,9 +1,9 @@
 """Shot-alternating target-resident pump/probe and timing controls.
 
-Each hardware shot contains four complete park-preparation, corrected target
-visit, return, and readout sequences. Cold/hot and sham/on conditions are
-therefore separated by milliseconds inside one compiled program, rather than
-by separate Python acquisitions. Forward and reverse orders diagnose
+Each hardware shot contains four or eight complete park-preparation,
+corrected target-visit, return, and readout sequences. Cold/hot and sham/on
+conditions are separated by milliseconds inside one compiled program,
+rather than by separate Python acquisitions. Forward and reverse orders diagnose
 condition-order carryover. Optional modes compare loading time or short/long
 loss at the feature and flank. None of these alone establishes a TLS claim.
 """
