@@ -2725,3 +2725,40 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldPilot --run
 ```
+
+The retargeted swap-hold run completed at
+`q3_tls_swap_hold_20260928T071255Z_3f183279` with all 88 arms and raw IQ
+present. Its anchored lower feature was 4.127 GHz before and 4.126 GHz
+after, with depths 0.448/0.300; the clean lower control was 4.113 GHz.
+Readout fidelity was 0.856 before and 0.908 after. Pre/post transfer
+controls and both early hot-minus-cold contrasts passed. The 0.1–6-us
+trace did **not** show a convincing coherent swap oscillation. It did show
+larger late-time loss at the feature than at the control in both forward
+and reverse orders. For the *post hoc* 1.5-to-6-us difference of
+hot-minus-cold contrasts, feature minus control was +0.150/+0.118 by
+classified outcome, and +0.197/+0.232 using continuous IQ normalized by
+the pre-run reference separation. Contiguous 20-shot block bootstraps gave
+classified 95% intervals of roughly [+0.060,+0.235] and
+[+0.027,+0.210]; continuous-IQ intervals were [+0.059,+0.331] and
+[+0.093,+0.364]. These intervals describe shot uncertainty conditional
+on the selected dwell pair; the pair was noticed after examining the trace,
+so they do not establish a discovery-level effect. The forward control
+trace also varied with dwell time.
+
+The next run makes 1.5 versus 6 us the *predeclared* comparison. Each
+logical QICK shot contains four complete visits and readouts at one site:
+ground/excited at 1.5 us and ground/excited at 6 us. Four 3,000-shot
+programs cover lower feature/control in forward and reversed order. The
+fresh pre-scout must find the lower 4.127-GHz family with a clean 14-MHz
+lower control, and the post-scout must track that same family. Readout,
+transfer, ground-drift, and preparation-contrast gates remain explicit.
+The primary statistic is the extra 1.5-to-6-us hot-minus-cold loss at the
+feature after subtracting the same loss at the control. Reproduction would
+confirm a time-localized excess-loss feature, not microscopic TLS identity.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run
+```
