@@ -151,3 +151,52 @@ def test_loss_dynamics_scores_late_loss_without_rejecting_feature_floor():
     assert score["usable"]
     fractions["control_late_g"] = .20
     assert not module.score_loss_dynamics(fractions)["usable"]
+
+
+def test_loss_line_dynamics_interleaves_three_feature_frequencies_and_control(capsys):
+    import json
+    module = experiment()
+    specs = module.loss_line_dynamics_specs(4.104, 4.090)
+    assert len(specs) == 40
+    assert all(x["shots"] == 200 and len(x["conditions"]) == 16 for x in specs)
+    assert {c["flux_ghz"] for c in specs[0]["conditions"]} == {
+        4.101, 4.104, 4.107, 4.090}
+    assert specs[1]["order"] == list(reversed(specs[0]["order"]))
+    order = specs[0]["order"]
+    records = list(range(32))
+    split = module.split_line_records(records, order, shots=2)
+    assert split["left_early_g"] == [0, 16]
+    assert split["control_late_e"] == [15, 31]
+    assert module.main(["--plan", "--loss-line-dynamics"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["programs"] == 40 and plan["conditions_per_shot"] == 16
+    assert plan["feature_offsets_mhz"] == [-3, 0, 3]
+
+
+def test_loss_line_program_and_score_use_four_flux_points(monkeypatch):
+    module = experiment()
+    entry = module.loss_line_dynamics_specs(4.104, 4.090)[0]
+    cfgs = module._condition_configs({"sigma": .1, "ff_park_gain": -25146}, entry,
+                                     {4.101: -1, 4.104: -2,
+                                      4.107: -3, 4.090: -4})
+    seen = []
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, _soccfg, cfg, _payload, _loop:
+                        seen.append(dict(cfg)))
+    program = module.MultiSiteSwapHoldProgram(None, cfgs, None, None)
+    assert program.conditions_per_shot == 16
+    assert program.logical_shots == 200
+    assert seen[0]["reps"] == 3200
+    fractions = {}
+    for site, early, late in (("left", .4, .2), ("center", .5, .1),
+                              ("right", .6, .05), ("control", .6, .5)):
+        fractions.update({f"{site}_early_g": .1,
+                          f"{site}_early_e": early + .1,
+                          f"{site}_late_g": .1,
+                          f"{site}_late_e": late + .1})
+    score = module.score_loss_line(fractions)
+    assert score["extra_loss"]["left"] == pytest.approx(.1)
+    assert score["extra_loss"]["center"] == pytest.approx(.3)
+    assert score["extra_loss"]["right"] == pytest.approx(.45)
+    assert score["right_minus_left_extra_loss"] == pytest.approx(.35)
+    assert score["usable"]

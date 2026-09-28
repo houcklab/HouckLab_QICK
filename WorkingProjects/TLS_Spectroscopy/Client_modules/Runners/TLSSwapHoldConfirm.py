@@ -43,6 +43,9 @@ LOSS_DYNAMICS_CYCLES = 60
 LOSS_DYNAMICS_SHOTS = 250
 LOSS_DYNAMICS_EARLY_US = 1.5
 LOSS_DYNAMICS_LATE_US = 25.0
+LINE_DYNAMICS_CYCLES = 40
+LINE_DYNAMICS_SHOTS = 200
+LINE_OFFSETS_MHZ = (-3, 0, 3)
 REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 CONDITION_NAMES = ("early_g", "early_e", "late_g", "late_e")
@@ -168,6 +171,32 @@ def loss_dynamics_specs(feature_ghz, control_ghz):
     return specs
 
 
+def loss_line_dynamics_specs(feature_ghz, control_ghz):
+    """Repeated three-point loss profile with a simultaneous clean control."""
+    frequencies = [(label, round(float(feature_ghz) + offset / 1000.0, 3))
+                   for label, offset in zip(("left", "center", "right"),
+                                            LINE_OFFSETS_MHZ)]
+    frequencies.append(("control", float(control_ghz)))
+    specs = []
+    for cycle in range(LINE_DYNAMICS_CYCLES):
+        conditions = [{"name": f"{site}_{dwell}_{state}",
+                       "site": site, "flux_ghz": flux,
+                       "hold_us": duration, "state": state}
+                      for site, flux in frequencies
+                      for dwell, duration in (("early", LOSS_DYNAMICS_EARLY_US),
+                                              ("late", LOSS_DYNAMICS_LATE_US))
+                      for state in ("g", "e")]
+        if cycle % 2:
+            conditions.reverse()
+        specs.append({"name": f"cycle{cycle:02d}", "cycle": cycle,
+                      "repeat": cycle % 2, "hold_us": LOSS_DYNAMICS_LATE_US,
+                      "flux_ghz": float(feature_ghz),
+                      "shots": LINE_DYNAMICS_SHOTS,
+                      "order": [c["name"] for c in conditions],
+                      "conditions": conditions, "status": "pending"})
+    return specs
+
+
 def split_eight_records(records, order, *, shots):
     names = {f"{site}_{dwell}_{state}"
              for site in ("feature", "control")
@@ -179,6 +208,18 @@ def split_eight_records(records, order, *, shots):
     if len(records) != 8 * int(shots):
         raise ValueError("incomplete eight-condition IQ stream")
     return {name: records[index::8] for index, name in enumerate(order)}
+
+
+def split_line_records(records, order, *, shots):
+    names = {f"{site}_{dwell}_{state}"
+             for site in ("left", "center", "right", "control")
+             for dwell in ("early", "late") for state in ("g", "e")}
+    records = list(records)
+    if len(order) != 16 or set(order) != names:
+        raise ValueError("invalid sixteen-condition line stream order")
+    if len(records) != 16 * int(shots):
+        raise ValueError("incomplete sixteen-condition IQ stream")
+    return {name: records[index::16] for index, name in enumerate(order)}
 
 
 def score_eight_condition_program(fractions):
@@ -211,6 +252,21 @@ def score_loss_dynamics(fractions):
                            abs(control["ground_change"]) <= 0.08)}
 
 
+def score_loss_line(fractions):
+    by_site = {site: score({
+        f"{dwell}_{state}": fractions[f"{site}_{dwell}_{state}"]
+        for dwell in ("early", "late") for state in ("g", "e")})
+        for site in ("left", "center", "right", "control")}
+    control = by_site["control"]
+    extra = {site: effect(by_site[site], control)
+             for site in ("left", "center", "right")}
+    return {"sites": by_site, "extra_loss": extra,
+            "right_minus_left_extra_loss": extra["right"] - extra["left"],
+            "usable": bool(control["early_contrast"] >= 0.20 and
+                           control["late_contrast"] >= 0.10 and
+                           abs(control["ground_change"]) <= 0.08)}
+
+
 def within_shot_time_map_report(specs, scores):
     return [{"name": entry["name"], "repeat": entry["repeat"],
              "hold_us": entry["hold_us"],
@@ -235,6 +291,19 @@ def loss_dynamics_report(specs, scores):
             for entry in specs]
 
 
+def loss_line_report(specs, scores):
+    return [{"cycle": entry["cycle"], "name": entry["name"],
+             "started_at_utc": entry.get("acquisition_started_at_utc"),
+             "finished_at_utc": entry.get("acquisition_finished_at_utc"),
+             "acquisition_elapsed_s": entry.get("acquisition_elapsed_s"),
+             "sites": scores[entry["name"]]["sites"],
+             "extra_loss": scores[entry["name"]]["extra_loss"],
+             "right_minus_left_extra_loss": scores[entry["name"]][
+                 "right_minus_left_extra_loss"],
+             "control_usable": scores[entry["name"]]["usable"]}
+            for entry in specs]
+
+
 def paired_dwell_report(specs, scores):
     report = {}
     for repeat in (0, 1):
@@ -255,8 +324,9 @@ def paired_dwell_report(specs, scores):
 
 
 def preflight_entries(specs, *, flux_map=False, paired_dwell_scan=False,
-                      within_shot_time_map=False, loss_dynamics=False):
-    if within_shot_time_map or loss_dynamics:
+                      within_shot_time_map=False, loss_dynamics=False,
+                      loss_line_dynamics=False):
+    if within_shot_time_map or loss_dynamics or loss_line_dynamics:
         return [specs[i] for i in (0, 1, len(specs) - 2, len(specs) - 1)]
     if paired_dwell_scan:
         return [specs[i] for i in (0, 1, 18, 19, 20, 21, 38, 39)]
@@ -312,10 +382,29 @@ def effect(feature, control):
 
 def plan(*, flux_map=False, follow_moving_dip=False,
          paired_dwell_scan=False, within_shot_time_map=False,
-         loss_dynamics=False):
+         loss_dynamics=False, loss_line_dynamics=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
-                      within_shot_time_map, loss_dynamics))) > 1:
+                      within_shot_time_map, loss_dynamics,
+                      loss_line_dynamics))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
+    if loss_line_dynamics:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "distinguish seconds-scale loss-frequency motion from depth variation",
+                "feature_scout_ghz": [4.060, 4.170],
+                "feature_offsets_mhz": list(LINE_OFFSETS_MHZ),
+                "control": "qualified 14-MHz lower flux point",
+                "dwells_us": [LOSS_DYNAMICS_EARLY_US, LOSS_DYNAMICS_LATE_US],
+                "cycles": LINE_DYNAMICS_CYCLES,
+                "conditions_per_shot": 16,
+                "shots_per_program": LINE_DYNAMICS_SHOTS,
+                "programs": LINE_DYNAMICS_CYCLES,
+                "condition_order": "three feature frequencies and control, g/e, "
+                                   "short/long; reversed each cycle",
+                "raw_iq_saved": True, "per_cycle_utc_timestamps": True,
+                "observable": "three within-shot feature-minus-control loss "
+                              "contrasts and right-minus-left asymmetry",
+                "interpretation": "line-profile changes can indicate motion or "
+                                  "changing depth, but cannot by themselves prove one TLS"}
     if loss_dynamics:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "measure second-scale dynamics of feature-local qubit loss",
@@ -460,6 +549,33 @@ class EightSiteSwapHoldProgram(alternating.ShotAlternatingResidentProgram):
         swap.SwapHoldProgram._resident_excursion(self)
 
 
+class MultiSiteSwapHoldProgram(EightSiteSwapHoldProgram):
+    """Sixteen subshots across three feature offsets and a control."""
+
+    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
+        configs = [dict(cfg) for cfg in condition_cfgs]
+        if len(configs) != 16:
+            raise ValueError("sixteen line conditions are required")
+        common = ("ff_park_gain", "shots", "reps")
+        if any(any(cfg[key] != configs[0][key] for key in common)
+               for cfg in configs[1:]):
+            raise ValueError("within-shot line conditions must share park and shots")
+        observed = {(int(cfg["ff_gain"]), float(cfg["opx_swap_hold_us"]),
+                     cfg["opx_resident_preparation_state"]) for cfg in configs}
+        gains = {item[0] for item in observed}
+        holds = {item[1] for item in observed}
+        if (len(gains) != 4 or len(holds) != 2 or
+                observed != {(gain, hold, state) for gain in gains
+                             for hold in holds for state in ("g", "e")}):
+            raise ValueError("line conditions must span four sites, two dwells, g/e")
+        self.conditions_per_shot = 16
+        self.logical_shots = int(configs[0]["shots"])
+        self.condition_cfgs = configs
+        run_cfg = dict(configs[0], reps=16 * self.logical_shots)
+        resident.ResidentDriveProgram.__init__(
+            self, soccfg, run_cfg, payload_calibration, loop_calibration)
+
+
 def _condition_configs(base, entry, dc_lookup):
     return [swap.arm_config(base, {
         "flux_ghz": cond.get("flux_ghz", entry["flux_ghz"]),
@@ -470,16 +586,21 @@ def _condition_configs(base, entry, dc_lookup):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         flux_map=False, follow_moving_dip=False, paired_dwell_scan=False,
-        within_shot_time_map=False, loss_dynamics=False):
+        within_shot_time_map=False, loss_dynamics=False,
+        loss_line_dynamics=False):
     if sum(map(bool, (flux_map, paired_dwell_scan,
-                      within_shot_time_map, loss_dynamics))) > 1:
+                      within_shot_time_map, loss_dynamics,
+                      loss_line_dynamics))) > 1:
         raise ValueError("select one swap-hold follow-up mode")
-    site_time_mode = within_shot_time_map or loss_dynamics
+    site_time_mode = (within_shot_time_map or loss_dynamics or
+                      loss_line_dynamics)
     follow_moving_dip = (follow_moving_dip or paired_dwell_scan or
                          site_time_mode)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
-    scout_suffix = ("TLS_Loss_Dynamics_Scout_pre" if loss_dynamics else
+    scout_suffix = ("TLS_Loss_Line_Dynamics_Scout_pre"
+                    if loss_line_dynamics else
+                    "TLS_Loss_Dynamics_Scout_pre" if loss_dynamics else
                     "TLS_SwapHold_WithinShot_TimeMap_Scout_pre"
                     if within_shot_time_map else
                     "TLS_SwapHold_Paired_Dwell_Scout_pre" if paired_dwell_scan
@@ -524,7 +645,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = (loss_dynamics_specs(center, control) if loss_dynamics else
+        specs = (loss_line_dynamics_specs(center, control)
+                 if loss_line_dynamics else
+                 loss_dynamics_specs(center, control) if loss_dynamics else
                  within_shot_time_map_specs(center, control)
                  if within_shot_time_map else
                  flux_map_specs(center, control) if flux_map else
@@ -555,7 +678,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = (("q3_tls_loss_dynamics_" if loss_dynamics else
+        session_id = (("q3_tls_loss_line_dynamics_"
+                       if loss_line_dynamics else
+                       "q3_tls_loss_dynamics_" if loss_dynamics else
                        "q3_tls_swap_hold_within_shot_time_map_"
                        if within_shot_time_map else
                        "q3_tls_swap_hold_paired_dwell_" if paired_dwell_scan else
@@ -571,7 +696,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": ("q3.tls-loss-dynamics.v1" if loss_dynamics else
+        manifest = {"schema": ("q3.tls-loss-line-dynamics.v1"
+                               if loss_line_dynamics else
+                               "q3.tls-loss-dynamics.v1" if loss_dynamics else
                                "q3.tls-swap-hold-within-shot-time-map.v1"
                                if within_shot_time_map else
                                "q3.tls-swap-hold-paired-dwell.v1"
@@ -591,7 +718,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  follow_moving_dip=follow_moving_dip,
                                  paired_dwell_scan=paired_dwell_scan,
                                  within_shot_time_map=within_shot_time_map,
-                                 loss_dynamics=loss_dynamics),
+                                 loss_dynamics=loss_dynamics,
+                                 loss_line_dynamics=loss_line_dynamics),
                     "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
@@ -606,8 +734,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["programs"], flux_map=flux_map,
                 paired_dwell_scan=paired_dwell_scan,
                 within_shot_time_map=within_shot_time_map,
-                loss_dynamics=loss_dynamics)
-            program_type = (EightSiteSwapHoldProgram if site_time_mode
+                loss_dynamics=loss_dynamics,
+                loss_line_dynamics=loss_line_dynamics)
+            program_type = (MultiSiteSwapHoldProgram if loss_line_dynamics else
+                            EightSiteSwapHoldProgram if site_time_mode
                             else AlternatingSwapHoldProgram)
             for entry in preflight:
                 cfgs = _condition_configs(base, entry, dc_lookup)
@@ -655,7 +785,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 acquire_ref(ref)
             for entry in manifest["programs"]:
                 shots = int(entry["shots"])
-                records_per_shot = 8 if site_time_mode else RECORDS_PER_SHOT
+                records_per_shot = (16 if loss_line_dynamics else 8
+                                    if site_time_mode else RECORDS_PER_SHOT)
                 print(f"[swap-confirm] {entry['name']} "
                       f"{shots} x {records_per_shot}", flush=True)
                 entry["status"] = "acquiring"
@@ -675,7 +806,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 entry["acquisition_elapsed_s"] = time.monotonic() - start
                 entry["acquisition_finished_at_utc"] = (
                     datetime.now(timezone.utc).isoformat())
-                split = (split_eight_records(records, entry["order"], shots=shots)
+                split = (split_line_records(records, entry["order"], shots=shots)
+                         if loss_line_dynamics else
+                         split_eight_records(records, entry["order"], shots=shots)
                          if site_time_mode else
                          split_records(records, entry["order"], shots=shots))
                 for cond in entry["conditions"]:
@@ -702,7 +835,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             for item in manifest["transfer_control"].values():
                 item["usable"] = resident.transfer_usable(item["ground"],
                                                            item["excited"])
-            scorer = (score_loss_dynamics if loss_dynamics else
+            scorer = (score_loss_line if loss_line_dynamics else
+                      score_loss_dynamics if loss_dynamics else
                       score_eight_condition_program if within_shot_time_map
                       else score)
             scores = {entry["name"]: scorer({
@@ -710,7 +844,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 for cond in entry["conditions"]})
                 for entry in manifest["programs"]}
             manifest["program_scores"] = scores
-            if loss_dynamics:
+            if loss_line_dynamics:
+                manifest["loss_line_report"] = loss_line_report(specs, scores)
+            elif loss_dynamics:
                 manifest["loss_dynamics_report"] = loss_dynamics_report(specs, scores)
             elif within_shot_time_map:
                 manifest["within_shot_time_map_report"] = (
@@ -731,6 +867,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     if site_time_mode else
                     adaptive.scout_parameters(phase="post")),
                                      "output_suffix": (
+                                         "TLS_Loss_Line_Dynamics_Scout_post"
+                                         if loss_line_dynamics else
                                          "TLS_Loss_Dynamics_Scout_post"
                                          if loss_dynamics else
                                          "TLS_SwapHold_WithinShot_TimeMap_Scout_post"
@@ -753,12 +891,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["feature_shift_mhz"] = round(
                     1000.0 * (manifest["post_selected"]["center_ghz"] - center),
                     3)
-            if loss_dynamics:
+            if loss_line_dynamics or loss_dynamics:
                 usable_cycles = sum(x["usable"] for x in scores.values())
                 manifest["usable_cycle_count"] = usable_cycles
                 valid = (manifest["post_readout_score"]["valid"] and
                          all(x["usable"] for x in manifest["transfer_control"].values())
-                         and usable_cycles >= 48 and
+                         and usable_cycles >= (32 if loss_line_dynamics else 48) and
                          "post_selected" in manifest)
                 manifest["status"] = (
                     "complete" if valid and manifest["feature_stable"] else
@@ -797,9 +935,12 @@ def main(argv=None):
                         help="interleave feature/control and short/long visits in each shot")
     parser.add_argument("--loss-dynamics", action="store_true",
                         help="track feature-local loss over 60 short cycles")
+    parser.add_argument("--loss-line-dynamics", action="store_true",
+                        help="track a three-point loss profile over 40 short cycles")
     args = parser.parse_args(argv)
     if (sum(map(bool, (args.flux_map, args.paired_dwell_scan,
-                       args.within_shot_time_map, args.loss_dynamics))) > 1 or
+                       args.within_shot_time_map, args.loss_dynamics,
+                       args.loss_line_dynamics))) > 1 or
             (args.flux_map and args.follow_moving_dip)):
         parser.error("select one swap-hold follow-up mode")
     if args.plan:
@@ -807,7 +948,8 @@ def main(argv=None):
                               follow_moving_dip=args.follow_moving_dip,
                               paired_dwell_scan=args.paired_dwell_scan,
                               within_shot_time_map=args.within_shot_time_map,
-                              loss_dynamics=args.loss_dynamics),
+                              loss_dynamics=args.loss_dynamics,
+                              loss_line_dynamics=args.loss_line_dynamics),
                          indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
@@ -815,7 +957,8 @@ def main(argv=None):
             follow_moving_dip=args.follow_moving_dip,
             paired_dwell_scan=args.paired_dwell_scan,
             within_shot_time_map=args.within_shot_time_map,
-            loss_dynamics=args.loss_dynamics)
+            loss_dynamics=args.loss_dynamics,
+            loss_line_dynamics=args.loss_line_dynamics)
     return 0
 
 

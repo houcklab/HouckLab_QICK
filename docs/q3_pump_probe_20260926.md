@@ -3346,3 +3346,41 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --loss-dynamics
 ```
+
+The pump-free loss-dynamics trace completed at
+`q3_tls_loss_dynamics_20260928T182534Z_defa0535`: 60/60 cycles passed
+the within-shot control gate. Readout fidelity was 0.920/0.884 pre/post;
+both transfer controls passed. The main loss center was 4.102 GHz in the
+pre-scout and 4.104 GHz afterward, still with a deep loss trough. Each
+cycle lasted about 1.2 seconds. At the fixed 4.102-GHz science point,
+feature-minus-control extra 1.5-to-25-us loss averaged +0.250 in the
+first 20 cycles and +0.154 in the last 20. The difference +0.096 has a
+four-cycle block-bootstrap 95% interval [+0.062,+0.131]. Continuous IQ
+agrees in direction: +0.286 early versus +0.198 late in units of the
+pre-run reference separation. Reversing the eight-condition order each
+cycle produced only +0.021 mean difference between even and odd cycles.
+Thus the measured loss at a fixed flux point changed during roughly
+82 seconds, even though the clean control remained usable. The 2-MHz
+pre/post center motion means this trace cannot distinguish a resonance
+moving away from 4.102 GHz from a change in its depth. It is evidence
+for time-varying local loss, not proof of telegraph switching or a single
+microscopic TLS.
+
+The next pump-free experiment samples a *local loss profile* fast enough
+to separate those possibilities. Each 16-condition hardware shot visits
+the freshly located center and ±3-MHz offsets, plus the qualified
+14-MHz-lower control. At each point it measures ground/excited contrasts
+after 1.5 and 25 us. Forty 200-shot cycles alternate condition order;
+raw IQ and UTC timing are saved. The three simultaneous extra-loss
+values and their right-minus-left asymmetry reveal whether the loss
+peak shifts within the local band or instead changes approximately
+uniformly in strength. A pre/post broad scout still checks the wider
+frequency context. This is a spectral-diffusion measurement, not
+another attempt at saturation.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --loss-line-dynamics
+```
