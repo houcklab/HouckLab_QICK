@@ -568,3 +568,97 @@ def test_fresh_map_calibration_validates_both_sites_and_off_tone(tmp_path):
     (session / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="feature.*contrast"):
         module.checked_mapped_calibration(tmp_path)
+
+
+def test_paired_tone_cycles_put_both_tones_in_each_hardware_shot(capsys):
+    import json
+    module = experiment()
+    specs = module.paired_tone_specs(4.106, 4.092)
+    assert len(specs) == 16
+    assert [(x["cycle"], x["site"]) for x in specs[:4]] == [
+        (0, "feature"), (0, "flank"), (1, "flank"), (1, "feature")]
+    assert all(x["shots"] == 500 and len(x["conditions"]) == 16 for x in specs)
+    assert all({(c["tone"], c["post_drive_us"], c["base_name"])
+                for c in x["conditions"]} == {
+        (tone, hold, name)
+        for tone in ("on", "detuned") for hold in (1.5, 16.0)
+        for name in module.CONDITION_NAMES} for x in specs)
+    assert {c["gain"] for x in specs for c in x["conditions"]} == {0, 20000}
+    assert {c["drive_mhz"] for c in specs[0]["conditions"]} == {4111.0, 4126.0}
+    assert specs[3]["order"] == list(reversed(specs[0]["order"]))
+    assert module.main(["--plan", "--paired-tone-dynamics"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["cycles"] == 8 and plan["conditions_per_shot"] == 16
+    assert plan["shots_per_program"] == 500
+
+
+def test_paired_tone_split_and_program_accept_two_frequencies(monkeypatch):
+    module = experiment()
+    entry = module.paired_tone_specs(4.106, 4.092)[0]
+    order = entry["order"]
+    records = [module.resident.SingleIQ(i, 0) for i in range(32)]
+    split = module.split_records(records, order, shots=2, paired_tones=True)
+    assert [r.i for r in split["on_hold1p5_sham_g"]] == [0, 16]
+    assert [r.i for r in split["detuned_hold16_on_e"]] == [15, 31]
+    with pytest.raises(ValueError, match="each condition"):
+        module.split_records(records, order[:-1] + [order[0]], shots=2,
+                             paired_tones=True)
+    cfgs = module.condition_configs({"sigma": 0.1, "ff_park_gain": -25146},
+                                    entry, {4.106: -100, 4.092: -123}, 4.106)
+    assert {cfg["opx_resident_freq_mhz"] for cfg in cfgs} == {4111.0, 4126.0}
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, *_a: None)
+    program = module.ShotAlternatingResidentProgram(None, cfgs, None, None)
+    assert program.conditions_per_shot == 16
+    assert program.logical_shots == 500
+    events = []
+    program.cfg = {"qubit_ch": 1}
+    program.record_base, program.done_addr = 32, 1
+    program.ch_page = lambda *_: 0
+    program._declare_experiment = lambda: None
+    program._initialize_stream = lambda _controls, **kw: events.append(("stream", kw))
+    program._begin_park_lifecycle = lambda: None
+    program._end_park_lifecycle = lambda: None
+    program._emit_body = lambda: events.append(("emit", program.cfg["opx_resident_freq_mhz"]))
+    program._stream_after_shot = lambda: events.append("boundary")
+    program._finish_stream = lambda: None
+    program.regwi = program.memwi = program.label = program.loopnz = program.end = lambda *_: None
+    program.mathi = lambda _page, _dst, _src, _op, value: events.append(("done", value))
+    monkeypatch.setattr(module, "_declare_common", lambda _p: None)
+    monkeypatch.setattr(module, "allocate_registers", lambda *_: {"address": 1})
+    monkeypatch.setattr(module, "_reserved_registers", lambda *_: set())
+    monkeypatch.setattr(module, "resident_control_names", lambda _cfg, names: names)
+    monkeypatch.setattr(module, "allocate_named_registers",
+                        lambda *_a, **_kw: {"shot_loop": 2, "done": 3})
+    program.make_program()
+    assert len([event for event in events if event[0] == "emit"]) == 16
+    assert ("done", 16) in events
+    assert events.count("boundary") == 1
+    assert next(event[1] for event in events if event[0] == "stream")[
+        "records_per_unit"] == 16
+
+
+def test_paired_tone_scores_keep_cycle_identity():
+    module = experiment()
+    specs = module.paired_tone_specs(4.106, 4.092)
+    for entry in specs:
+        for cond in entry["conditions"]:
+            cond["excited_fraction_pre_axis"] = (
+                .3 if cond["base_name"] == "on_g" and cond["tone"] == "on"
+                else .1)
+    scores = module.program_scores(specs, paired_tones=True)
+    assert len(scores) == 8 * 2 * 2 * 2
+    assert scores["r0_feature_hold1p5_on"]["cold_drive_contrast"] == pytest.approx(.2)
+    assert scores["r7_flank_hold16_detuned"]["cold_drive_contrast"] == 0
+
+
+def test_paired_cycle_quality_requires_six_complete_feature_flank_pairs():
+    module = experiment()
+    groups = {f"r{cycle}_{site}": {"usable": True}
+              for cycle in range(8) for site in ("feature", "flank")}
+    assert module.paired_cycle_quality(groups)["usable"]
+    groups["r0_feature"]["usable"] = False
+    groups["r2_flank"]["usable"] = False
+    assert module.paired_cycle_quality(groups)["usable"]
+    groups["r4_feature"]["usable"] = False
+    assert not module.paired_cycle_quality(groups)["usable"]

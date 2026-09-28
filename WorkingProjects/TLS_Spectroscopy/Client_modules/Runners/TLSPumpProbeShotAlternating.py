@@ -41,6 +41,8 @@ LOADING_PREHOLDS_US = (4.0, 8.0, 12.0, 20.0)
 LOSS_POSTHOLDS_US = (0.1, 2.0)
 SATURATION_POSTHOLDS_US = (1.5, 16.0)
 SATURATION_SHOTS = 1500
+PAIRED_CYCLES = 8
+PAIRED_SHOTS = 500
 STRONG_LOAD_US = 12.0
 STRONG_GAIN = 30000
 MAPPED_GAIN = 20000
@@ -60,11 +62,18 @@ def conditions(center_ghz, *, reverse=False, detuning_mhz=5.0,
     return list(reversed(result)) if reverse else result
 
 
-def split_records(records, order, *, shots, holds=LOSS_POSTHOLDS_US):
+def split_records(records, order, *, shots, holds=LOSS_POSTHOLDS_US,
+                  paired_tones=False):
     records = list(records)
+    if paired_tones and holds == LOSS_POSTHOLDS_US:
+        holds = SATURATION_POSTHOLDS_US
     if len(records) != int(shots) * len(order):
         raise ValueError(f"expected {int(shots) * len(order)} IQ records; got {len(records)}")
-    expected = (set(CONDITION_NAMES) if len(order) == 4 else
+    expected = ({f"{tone}_hold{hold:g}".replace(".", "p") + f"_{name}"
+                 for tone in ("on", "detuned") for hold in holds
+                 for name in CONDITION_NAMES}
+                if paired_tones and len(order) == 16 else
+                set(CONDITION_NAMES) if len(order) == 4 else
                 {f"hold{hold:g}".replace(".", "p") + f"_{name}"
                  for hold in holds for name in CONDITION_NAMES}
                 if len(order) == 8 else set())
@@ -188,6 +197,42 @@ def mapped_short_gap_specs(center_ghz, *, flank_ghz=None):
         shots=SATURATION_SHOTS, pre_drive_us=resident.PRE_DRIVE_US,
         drive_gain=MAPPED_GAIN, on_detuning_mhz=MAPPED_ON_DETUNING_MHZ,
         off_detuning_mhz=MAPPED_OFF_DETUNING_MHZ, flank_ghz=flank_ghz)
+
+
+def paired_tone_specs(center_ghz, flank_ghz, *, cycles=PAIRED_CYCLES,
+                      shots=PAIRED_SHOTS):
+    """Put both tones, both holds, and hot/cold sham/drive in each shot."""
+    result = []
+    for cycle in range(int(cycles)):
+        reverse = bool(cycle % 2)
+        sites = (("feature", float(center_ghz)), ("flank", float(flank_ghz)))
+        if reverse:
+            sites = tuple(reversed(sites))
+        for site, flux in sites:
+            tones = (("on", MAPPED_ON_DETUNING_MHZ),
+                     ("detuned", MAPPED_OFF_DETUNING_MHZ))
+            holds = SATURATION_POSTHOLDS_US
+            if reverse:
+                tones, holds = tuple(reversed(tones)), tuple(reversed(holds))
+            entries = []
+            for tone, detuning in tones:
+                for hold in holds:
+                    label = f"{tone}_hold{hold:g}".replace(".", "p")
+                    for base in conditions(flux, reverse=reverse,
+                                           detuning_mhz=detuning,
+                                           drive_gain=MAPPED_GAIN):
+                        entries.append({**base, "tone": tone,
+                                        "base_name": base["name"],
+                                        "name": f"{label}_{base['name']}",
+                                        "post_drive_us": hold})
+            result.append({"name": f"cycle{cycle}_{site}", "cycle": cycle,
+                           "repeat": cycle, "site": site, "flux_ghz": flux,
+                           "direction": "reverse" if reverse else "forward",
+                           "pre_drive_us": resident.PRE_DRIVE_US,
+                           "shots": int(shots),
+                           "order": [x["name"] for x in entries],
+                           "conditions": entries})
+    return result
 
 
 def mapped_drive_checks(center_ghz, flank_ghz):
@@ -334,12 +379,12 @@ def loss_effect_report(scores):
     return report
 
 
-def short_gap_saturation_report(scores):
+def short_gap_saturation_report(scores, *, repeats=range(2)):
     """Compare hot/cold survival ratios after their unequal short-time starts."""
     short, long = (f"hold{hold:g}".replace(".", "p")
                    for hold in SATURATION_POSTHOLDS_US)
     report = {}
-    for repeat in (0, 1):
+    for repeat in repeats:
         row = {}
         for site in ("feature", "flank"):
             prefix = f"r{repeat}_{site}_"
@@ -362,12 +407,12 @@ def short_gap_saturation_report(scores):
     return report
 
 
-def short_gap_saturation_controls(scores):
+def short_gap_saturation_controls(scores, *, repeats=range(2)):
     """Gate pulse preparation at the short hold without demanding late feature survival."""
     short, long = (f"hold{hold:g}".replace(".", "p")
                    for hold in SATURATION_POSTHOLDS_US)
     groups = {}
-    for repeat in (0, 1):
+    for repeat in repeats:
         for site in ("feature", "flank"):
             name = f"r{repeat}_{site}"
             early_on = scores[f"{name}_{short}_on"]
@@ -398,10 +443,36 @@ def short_gap_saturation_controls(scores):
             "usable": all(group["usable"] for group in groups.values())}
 
 
-def program_scores(entries, *, hold_alternating=False, holds=LOSS_POSTHOLDS_US):
+def paired_cycle_quality(groups):
+    """Keep only complete feature/flank pairs with both condition orders."""
+    qualified = [cycle for cycle in range(PAIRED_CYCLES)
+                 if all(groups[f"r{cycle}_{site}"]["usable"]
+                        for site in ("feature", "flank"))]
+    parity_counts = {"forward": sum(cycle % 2 == 0 for cycle in qualified),
+                     "reverse": sum(cycle % 2 == 1 for cycle in qualified)}
+    return {"qualified_cycles": qualified,
+            "qualified_count": len(qualified),
+            "parity_counts": parity_counts,
+            "usable": bool(len(qualified) >= 6 and
+                           min(parity_counts.values()) >= 2)}
+
+
+def program_scores(entries, *, hold_alternating=False, holds=LOSS_POSTHOLDS_US,
+                   paired_tones=False):
+    if paired_tones and holds == LOSS_POSTHOLDS_US:
+        holds = SATURATION_POSTHOLDS_US
     scores = {}
     for entry in entries:
-        if hold_alternating:
+        if paired_tones:
+            for tone in ("on", "detuned"):
+                for hold in holds:
+                    hold_label = f"hold{hold:g}".replace(".", "p")
+                    fractions = {c["base_name"]: c["excited_fraction_pre_axis"]
+                                 for c in entry["conditions"]
+                                 if c["tone"] == tone and c["post_drive_us"] == hold}
+                    scores[f"r{entry['cycle']}_{entry['site']}_{hold_label}_{tone}"] = (
+                        score_conditions(fractions))
+        elif hold_alternating:
             for hold in holds:
                 hold_label = f"hold{hold:g}".replace(".", "p")
                 fractions = {c["base_name"]: c["excited_fraction_pre_axis"]
@@ -460,38 +531,49 @@ def drive_check_gate(score, *, loading_check):
 
 
 class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
-    """Four or eight complete resident-probe subshots per hardware shot."""
+    """Four, eight, or sixteen complete resident-probe subshots per shot."""
 
     def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
         configs = [dict(cfg) for cfg in condition_cfgs]
-        if len(configs) not in (4, 8):
-            raise ValueError("four or eight condition configurations are required")
+        if len(configs) not in (4, 8, 16):
+            raise ValueError("four, eight, or sixteen condition configurations are required")
         self.conditions_per_shot = len(configs)
         common = ("ff_gain", "ff_park_gain", "opx_resident_pre_us",
-                  "opx_resident_freq_mhz", "shots", "reps")
+                  "shots", "reps")
+        if self.conditions_per_shot != 16:
+            common += ("opx_resident_freq_mhz",)
         if self.conditions_per_shot == 4:
             common += ("opx_resident_post_us",)
         if any(any(cfg[key] != configs[0][key] for key in common)
                for cfg in configs[1:]):
             raise ValueError("interleaved conditions must share flux, timing, frequency, shots")
         actual_holds = ({float(cfg["opx_resident_post_us"]) for cfg in configs}
-                        if self.conditions_per_shot == 8 else set())
-        expected = ({(0, "g"), (0, "e"), (6000, "g"), (6000, "e")}
-                    if self.conditions_per_shot == 4 else
-                    {(hold, gain, state) for hold in actual_holds
-                     for gain in {int(cfg["opx_resident_gain"]) for cfg in configs}
-                     for state in ("g", "e")})
-        observed = ({(int(cfg["opx_resident_gain"]),
-                      cfg["opx_resident_preparation_state"]) for cfg in configs}
-                    if self.conditions_per_shot == 4 else
-                    {(float(cfg["opx_resident_post_us"]),
-                      int(cfg["opx_resident_gain"]),
-                      cfg["opx_resident_preparation_state"]) for cfg in configs})
+                        if self.conditions_per_shot in (8, 16) else set())
+        actual_freqs = {float(cfg["opx_resident_freq_mhz"]) for cfg in configs}
         actual_gains = {int(cfg["opx_resident_gain"]) for cfg in configs}
-        if (observed != expected or
-                (self.conditions_per_shot == 8 and
+        if self.conditions_per_shot == 4:
+            observed = {(int(cfg["opx_resident_gain"]),
+                         cfg["opx_resident_preparation_state"]) for cfg in configs}
+            valid = observed == {(0, "g"), (0, "e"), (6000, "g"), (6000, "e")}
+        elif self.conditions_per_shot == 8:
+            observed = {(float(cfg["opx_resident_post_us"]),
+                         int(cfg["opx_resident_gain"]),
+                         cfg["opx_resident_preparation_state"]) for cfg in configs}
+            valid = observed == {(hold, gain, state) for hold in actual_holds
+                                 for gain in actual_gains for state in ("g", "e")}
+        else:
+            observed = {(float(cfg["opx_resident_freq_mhz"]),
+                         float(cfg["opx_resident_post_us"]),
+                         int(cfg["opx_resident_gain"]),
+                         cfg["opx_resident_preparation_state"]) for cfg in configs}
+            valid = observed == {(freq, hold, gain, state)
+                                 for freq in actual_freqs for hold in actual_holds
+                                 for gain in actual_gains for state in ("g", "e")}
+        if (not valid or
+                (self.conditions_per_shot in (8, 16) and
                  (len(actual_holds) != 2 or len(actual_gains) != 2 or
-                  0 not in actual_gains or max(actual_gains) > 30000))):
+                  0 not in actual_gains or max(actual_gains) > 30000)) or
+                (self.conditions_per_shot == 16 and len(actual_freqs) != 2)):
             raise ValueError("interleaved conditions must cover sham/on, g/e, and holds")
         self.logical_shots = int(configs[0]["shots"])
         if self.logical_shots <= 0:
@@ -538,11 +620,34 @@ class ShotAlternatingResidentProgram(resident.ResidentDriveProgram):
 
 def plan(*, loading_check=False, loss_check=False, hold_alternating=False,
          short_gap_saturation=False, strong_short_gap=False,
-         strong_long_load=False, mapped_short_gap=False):
+         strong_long_load=False, mapped_short_gap=False,
+         paired_tone_dynamics=False):
     if sum(map(bool, (loading_check, loss_check, hold_alternating,
                       short_gap_saturation, strong_short_gap,
-                      strong_long_load, mapped_short_gap))) > 1:
+                      strong_long_load, mapped_short_gap,
+                      paired_tone_dynamics))) > 1:
         raise ValueError("select at most one check mode")
+    if paired_tone_dynamics:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "repeat time-local hot/cold pump-probe with tone pairing",
+                "sites": ["fresh loss feature", "qualified 14-MHz lower flank"],
+                "calibration_session": MAPPED_CALIBRATION_SESSION_ID,
+                "cycles": PAIRED_CYCLES, "programs": 2 * PAIRED_CYCLES,
+                "conditions_per_shot": 16, "shots_per_program": PAIRED_SHOTS,
+                "pre_drive_us": resident.PRE_DRIVE_US,
+                "post_drive_holds_us": list(SATURATION_POSTHOLDS_US),
+                "tones_mhz": [MAPPED_ON_DETUNING_MHZ, MAPPED_OFF_DETUNING_MHZ],
+                "drive_gain_dac": MAPPED_GAIN,
+                "on_off_tones_within_same_hardware_shot": True,
+                "hot_cold_sham_drive_within_same_hardware_shot": True,
+                "feature_flank_order_reversed_each_cycle": True,
+                "intermediate_readout": False,
+                "only_readout_after_full_return_us": 40.0,
+                "raw_iq_saved": True,
+                "primary_effect": "per-cycle loaded-minus-cold normalized "
+                                  "1.5-to-16-us survival difference at feature "
+                                  "minus flank; require at least six valid "
+                                  "feature/flank cycle pairs and both orders"}
     if short_gap_saturation or strong_short_gap or strong_long_load or mapped_short_gap:
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "test whether qubit loading suppresses subsequent on-feature loss",
@@ -638,19 +743,22 @@ def plan(*, loading_check=False, loss_check=False, hold_alternating=False,
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         loading_check=False, loss_check=False, hold_alternating=False,
         short_gap_saturation=False, strong_short_gap=False,
-        strong_long_load=False, mapped_short_gap=False):
+        strong_long_load=False, mapped_short_gap=False,
+        paired_tone_dynamics=False):
     if sum(map(bool, (loading_check, loss_check, hold_alternating,
                       short_gap_saturation, strong_short_gap,
-                      strong_long_load, mapped_short_gap))) > 1:
+                      strong_long_load, mapped_short_gap,
+                      paired_tone_dynamics))) > 1:
         raise ValueError("select at most one check mode")
     saturation_mode = (short_gap_saturation or strong_short_gap or
-                       strong_long_load or mapped_short_gap)
+                       strong_long_load or mapped_short_gap or
+                       paired_tone_dynamics)
     strong_drive_mode = strong_short_gap or strong_long_load
     loss_mode = loss_check or hold_alternating or saturation_mode
     science_pre_us = STRONG_LOAD_US if strong_short_gap else resident.PRE_DRIVE_US
     data_root = Path(data_root)
     calibration_path, calibration = (checked_mapped_calibration(data_root)
-                                     if mapped_short_gap else
+                                     if mapped_short_gap or paired_tone_dynamics else
                                      probe.checked_calibration(data_root))
     correction = localizer.checked_correction(data_root, correction_json)
     if saturation_mode:
@@ -734,7 +842,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 windows[key] = {"held_multiplier": before[-1][0],
                                 "post_multiplier": after[0][0],
                                 "recovery_us": sum(duration for _, duration in recovery)}
-        session_id = (("q3_pump_probe_mapped_short_gap_" if mapped_short_gap else
+        session_id = (("q3_pump_probe_paired_tone_dynamics_"
+                       if paired_tone_dynamics else
+                       "q3_pump_probe_mapped_short_gap_" if mapped_short_gap else
                        "q3_pump_probe_strong_long_load_" if strong_long_load else
                        "q3_pump_probe_strong_short_gap_" if strong_short_gap else
                        "q3_pump_probe_short_gap_saturation_" if short_gap_saturation else
@@ -752,7 +862,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
         drive_checks = (mapped_drive_checks(center, flank)
-                        if mapped_short_gap else
+                        if mapped_short_gap or paired_tone_dynamics else
                         strong_drive_checks(center, flank, load_us=science_pre_us)
                         if strong_drive_mode else
                         probe.carryover_drive_checks(center, flank)
@@ -760,7 +870,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         if loading_check:
             for arm in drive_checks:
                 arm["pre_drive_us"] = 8.0
-        program_specs = (mapped_short_gap_specs(center, flank_ghz=flank)
+        program_specs = (paired_tone_specs(center, flank)
+                         if paired_tone_dynamics else
+                         mapped_short_gap_specs(center, flank_ghz=flank)
                          if mapped_short_gap else
                          short_gap_saturation_specs(
                              center, strong=strong_drive_mode,
@@ -775,7 +887,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
              "order": [c["name"] for c in order], "conditions": order}
             for direction, order in (("forward", conditions(center)),
                                      ("reverse", conditions(center, reverse=True)))])
-        manifest = {"schema": ("q3.pump-probe-mapped-short-gap.v1"
+        manifest = {"schema": ("q3.pump-probe-paired-tone-dynamics.v1"
+                               if paired_tone_dynamics else
+                               "q3.pump-probe-mapped-short-gap.v1"
                                if mapped_short_gap else
                                "q3.pump-probe-strong-long-load.v1"
                                if strong_long_load else
@@ -804,7 +918,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                  short_gap_saturation=short_gap_saturation,
                                  strong_short_gap=strong_short_gap,
                                  strong_long_load=strong_long_load,
-                                 mapped_short_gap=mapped_short_gap),
+                                 mapped_short_gap=mapped_short_gap,
+                                 paired_tone_dynamics=paired_tone_dynamics),
                     "correction_windows": windows,
                     "drive_pulse_nominal_us": pulse_us,
                     "references": [{**r, "status": "pending"} for r in refs],
@@ -889,7 +1004,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 arm["status"] = "complete"
                 protocol.checkpoint(path, manifest)
             if loss_mode:
-                scorer = (evaluate_mapped_drive_check if mapped_short_gap else
+                scorer = (evaluate_mapped_drive_check
+                          if mapped_short_gap or paired_tone_dynamics else
                           evaluate_strong_drive_check if strong_drive_mode else
                           probe.evaluate_drive_check)
                 manifest["fresh_drive_score"] = {
@@ -935,7 +1051,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 split = split_records(
                     records, entry["order"], shots=shots,
                     holds=(SATURATION_POSTHOLDS_US if saturation_mode else
-                           LOSS_POSTHOLDS_US))
+                           LOSS_POSTHOLDS_US),
+                    paired_tones=paired_tone_dynamics)
                 for cond in entry["conditions"]:
                     subset = split[cond["name"]]
                     raw_path = folder / f"{name}_{cond['name']}.npz"
@@ -964,7 +1081,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 manifest["programs"],
                 hold_alternating=hold_alternating or saturation_mode,
                 holds=(SATURATION_POSTHOLDS_US if saturation_mode else
-                       LOSS_POSTHOLDS_US))
+                       LOSS_POSTHOLDS_US),
+                paired_tones=paired_tone_dynamics)
             manifest["order_scores"] = order_scores
             post_scout_parameters = (heralded.postselection_scout_parameters("post")
                                      if saturation_mode else
@@ -992,12 +1110,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                               all(x["usable"] for x in manifest["transfer_control"].values()) and
                               manifest["feature_stable"])
             if saturation_mode:
+                repeats = (range(PAIRED_CYCLES) if paired_tone_dynamics else
+                           range(2))
                 manifest["saturation_control_report"] = (
-                    short_gap_saturation_controls(order_scores))
+                    short_gap_saturation_controls(order_scores, repeats=repeats))
                 manifest["saturation_effect_report"] = (
-                    short_gap_saturation_report(order_scores))
-                valid = (controls_valid and
-                         manifest["saturation_control_report"]["usable"])
+                    short_gap_saturation_report(order_scores, repeats=repeats))
+                if paired_tone_dynamics:
+                    manifest["paired_cycle_quality"] = paired_cycle_quality(
+                        manifest["saturation_control_report"]["groups"])
+                    manifest["saturation_control_report"]["all_groups_usable"] = (
+                        manifest["saturation_control_report"]["usable"])
+                    manifest["saturation_control_report"]["usable"] = (
+                        manifest["paired_cycle_quality"]["usable"])
+                    valid = (controls_valid and
+                             manifest["paired_cycle_quality"]["usable"])
+                else:
+                    valid = (controls_valid and
+                             manifest["saturation_control_report"]["usable"])
             elif loss_mode:
                 manifest["loss_control_report"] = loss_control_report(order_scores)
                 manifest["loss_effect_report"] = loss_effect_report(order_scores)
@@ -1039,6 +1169,7 @@ def main(argv=None):
     check_mode.add_argument("--strong-short-gap", action="store_true")
     check_mode.add_argument("--strong-long-load", action="store_true")
     check_mode.add_argument("--mapped-short-gap", action="store_true")
+    check_mode.add_argument("--paired-tone-dynamics", action="store_true")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(loading_check=args.loading_check,
@@ -1047,7 +1178,8 @@ def main(argv=None):
                               short_gap_saturation=args.short_gap_saturation,
                               strong_short_gap=args.strong_short_gap,
                               strong_long_load=args.strong_long_load,
-                              mapped_short_gap=args.mapped_short_gap), indent=2))
+                              mapped_short_gap=args.mapped_short_gap,
+                              paired_tone_dynamics=args.paired_tone_dynamics), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             loading_check=args.loading_check, loss_check=args.loss_check,
@@ -1055,7 +1187,8 @@ def main(argv=None):
             short_gap_saturation=args.short_gap_saturation,
             strong_short_gap=args.strong_short_gap,
             strong_long_load=args.strong_long_load,
-            mapped_short_gap=args.mapped_short_gap)
+            mapped_short_gap=args.mapped_short_gap,
+            paired_tone_dynamics=args.paired_tone_dynamics)
     return 0
 
 

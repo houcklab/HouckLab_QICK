@@ -3258,3 +3258,47 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --mapped-short-gap
 ```
+
+The mapped-pulse short-gap run completed at
+`q3_pump_probe_mapped_short_gap_20260928T180222Z_f158ca27`, with status
+`complete_controls_unstable`. All eight science programs and raw IQ files
+were saved. The pre/post scouts both found 4.106 GHz (depth 0.485/0.519),
+and the 4.092-GHz flank, readout, and park-transfer controls passed. The
+fresh gain-20000 pulse produced +0.075 excited-fraction contrast at the
+feature and +0.120 at the flank; the first feature check was below the
+0.10 gate. Within-program 1.5-us cold-drive contrast was +0.090 at the
+first feature pass and +0.124 at the reverse pass; both flank passes were
+about +0.14. The +20-MHz off-tone stayed near zero.
+
+The feature-specific loaded-minus-cold survival statistic changed sign:
+-0.385 in the first order and +0.241 in the reverse order. Fifty-shot-block
+bootstrap 95% intervals were [-0.828, +0.037] and [-0.063, +0.616],
+respectively; the pooled interval [-0.338, +0.198] includes zero. The
+feature's sham hot-preparation contrast rose from +0.132 to +0.264 over
+the 50-second science sequence; the off-tone program showed the same
+change (+0.122 to +0.240), and continuous IQ confirms it. The flank did
+not show a comparable change. Thus neither sign can be interpreted as a
+repeatable TLS saturation effect. Stable pre/post scout centers do not
+guarantee that the short-time loss baseline stayed fixed in between.
+
+The next measurement pairs +5-MHz on-tone and +20-MHz off-tone conditions
+with both 1.5/16-us holds, hot/cold preparation, and sham/drive within
+each 16-condition hardware shot. It repeats 500 shots at the feature and
+flank in eight short cycles, reversing site and condition order every
+cycle. Each program has 8000 IQ records, fewer than the 12000-record
+programs that just ran. The result preserves cycle-by-cycle loss baseline
+and pump response, so a changing feature can be separated from a
+reproducible pump effect. The pulse is still checked at the current flux
+before science, and the feature is scouted before and afterward. This is
+an actual repeated pump–probe experiment, not another pulse map. The
+predeclared quality rule requires at least six complete feature/flank
+cycle pairs, including at least two of each condition order; the
+cycle-level effect and sham hot-preparation contrast remain available
+even if this gate fails.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeShotAlternating --run --paired-tone-dynamics
+```
