@@ -34,10 +34,15 @@ PROBE_US = 6.0
 STORE_US = (0.5, 2.0, 10.0, 40.0)
 RECOVERY_US = 40.0
 SHOTS = 800
+CONFIRM_SHOTS = 1200
+CONFIRM_GAPS_US = (10.0, 40.0)
 REFERENCE_SHOTS = 400
 PAIR_NAMES = ("ff", "fc", "cf", "cc")
 CONDITION_NAMES = tuple(f"{pair}_{state}" for pair in PAIR_NAMES
                         for state in ("g", "e"))
+CONFIRM_CONDITION_NAMES = tuple(
+    f"t{int(gap)}_{name}" for gap in CONFIRM_GAPS_US
+    for name in CONDITION_NAMES)
 
 
 def two_visit_segments(compensation, *, load_us, store_us, probe_us,
@@ -102,13 +107,40 @@ def program_specs(feature_ghz, control_ghz):
     return specs
 
 
+def confirmation_specs(feature_ghz, control_ghz):
+    """Interleave both gaps within every shot; reverse temporal order twice."""
+    sites = {"f": float(feature_ghz), "c": float(control_ghz)}
+    specs = []
+    for block in range(4):
+        gaps = (CONFIRM_GAPS_US if block < 2 else
+                tuple(reversed(CONFIRM_GAPS_US)))
+        conditions = [{"name": f"t{int(gap)}_{pair}_{state}",
+                       "load_site": pair[0], "probe_site": pair[1],
+                       "load_ghz": sites[pair[0]],
+                       "probe_ghz": sites[pair[1]], "state": state,
+                       "load_us": LOAD_US, "store_us": gap,
+                       "probe_us": PROBE_US}
+                      for gap in gaps for pair in PAIR_NAMES
+                      for state in ("g", "e")]
+        if block % 2:
+            conditions.reverse()
+        specs.append({"name": f"confirm_b{block}", "block": block,
+                      "shots": CONFIRM_SHOTS,
+                      "order": [c["name"] for c in conditions],
+                      "conditions": conditions, "status": "pending"})
+    return specs
+
+
 def split_records(records, order, *, shots):
     records = list(records)
-    if len(order) != 8 or set(order) != set(CONDITION_NAMES):
+    valid = ((len(order) == 8 and set(order) == set(CONDITION_NAMES)) or
+             (len(order) == 16 and set(order) == set(CONFIRM_CONDITION_NAMES)))
+    if not valid:
         raise ValueError("invalid two-visit stream order")
-    if len(records) != 8 * int(shots):
+    if len(records) != len(order) * int(shots):
         raise ValueError("incomplete two-visit IQ stream")
-    return {name: records[index::8] for index, name in enumerate(order)}
+    return {name: records[index::len(order)]
+            for index, name in enumerate(order)}
 
 
 def score(fractions):
@@ -120,6 +152,17 @@ def score(fractions):
                    if usable else None)
     return {"contrasts": contrasts, "log_interaction": interaction,
             "usable": usable}
+
+
+def score_entry(entry, *, confirm=False):
+    if confirm:
+        return {str(gap): score({
+            cond["name"].removeprefix(f"t{int(gap)}_"):
+            cond["excited_fraction_pre_axis"]
+            for cond in entry["conditions"] if cond["store_us"] == gap})
+            for gap in CONFIRM_GAPS_US}
+    return score({cond["name"]: cond["excited_fraction_pre_axis"]
+                  for cond in entry["conditions"]})
 
 
 def arm_config(base, condition, dc_lookup, *, shots=SHOTS):
@@ -142,28 +185,31 @@ def arm_config(base, condition, dc_lookup, *, shots=SHOTS):
 
 
 class TwoVisitProgram(alternating.ShotAlternatingResidentProgram):
-    """Eight matched visit-pair/preparation subshots per hardware shot."""
+    """Matched visit-pair/preparation subshots per hardware shot."""
 
     def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
         configs = [dict(cfg) for cfg in condition_cfgs]
-        if len(configs) != 8:
-            raise ValueError("eight two-visit conditions are required")
+        if len(configs) not in (8, 16):
+            raise ValueError("eight or sixteen two-visit conditions are required")
         common = ("ff_park_gain", "shots", "reps", "opx_load_us",
-                  "opx_store_us", "opx_probe_us")
+                  "opx_probe_us")
         if any(any(cfg[key] != configs[0][key] for key in common)
                for cfg in configs[1:]):
             raise ValueError("within-shot visits must share timing and shots")
         observed = {(int(cfg["ff_gain"]), int(cfg["opx_probe_ff_gain"]),
-                     cfg["opx_resident_preparation_state"]) for cfg in configs}
+                     cfg["opx_resident_preparation_state"],
+                     float(cfg["opx_store_us"])) for cfg in configs}
         gains = {cfg["ff_gain"] for cfg in configs}
-        if len(gains) != 2 or observed != {
-                (a, b, state) for a in gains for b in gains
-                for state in ("g", "e")}:
-            raise ValueError("conditions must span four visit pairs and g/e")
-        self.conditions_per_shot = 8
+        gaps = {float(cfg["opx_store_us"]) for cfg in configs}
+        if (len(gains) != 2 or len(gaps) != len(configs) // 8 or
+                observed != {(a, b, state, gap)
+                            for a in gains for b in gains
+                            for state in ("g", "e") for gap in gaps}):
+            raise ValueError("conditions must span four visit pairs, g/e, and gaps")
+        self.conditions_per_shot = len(configs)
         self.logical_shots = int(configs[0]["shots"])
         self.condition_cfgs = configs
-        run_cfg = dict(configs[0], reps=8 * self.logical_shots)
+        run_cfg = dict(configs[0], reps=len(configs) * self.logical_shots)
         resident.ResidentDriveProgram.__init__(
             self, soccfg, run_cfg, payload_calibration, loop_calibration)
 
@@ -187,15 +233,19 @@ class TwoVisitProgram(alternating.ShotAlternatingResidentProgram):
         self.sync_all(0)
 
 
-def plan():
+def plan(*, confirm=False):
     return {"hardware_access": False, "goal": "direct two-visit TLS memory",
-            "load_us": LOAD_US, "store_us": list(STORE_US),
+            "load_us": LOAD_US,
+            "store_us": list(CONFIRM_GAPS_US if confirm else STORE_US),
             "probe_us": PROBE_US, "recovery_us": RECOVERY_US,
-            "conditions_per_shot": 8, "programs": 8,
-            "shots_per_program": SHOTS, "intermediate_readouts": 0,
+            "conditions_per_shot": 16 if confirm else 8,
+            "programs": 4 if confirm else 8,
+            "shots_per_program": CONFIRM_SHOTS if confirm else SHOTS,
+            "intermediate_readouts": 0,
             "readout": "one readout after both visits and corrected return",
             "reset": "passive", "control": "four first/second site pairs, g/e",
-            "interpretation": "short-gap interaction beyond independent qubit loss"}
+            "interpretation": "short-gap interaction beyond independent qubit loss",
+            "confirm": bool(confirm)}
 
 
 def _condition_configs(base, entry, dc_lookup):
@@ -217,7 +267,25 @@ def _interaction_report(specs, scores):
     return report
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def _confirmation_report(specs, scores):
+    paired = []
+    for entry in specs:
+        item = scores[entry["name"]]
+        a = item["10.0"]["log_interaction"]
+        b = item["40.0"]["log_interaction"]
+        paired.append({"block": entry["block"], "log_interaction_10_us": a,
+                       "log_interaction_40_us": b,
+                       "difference": a - b if a is not None and b is not None
+                       else None})
+    differences = [item["difference"] for item in paired]
+    return {"blocks": paired,
+            "mean_paired_difference": (float(np.mean(differences))
+                                       if all(x is not None for x in differences)
+                                       else None)}
+
+
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        confirm=False):
     """Fresh loss scout, paired short-gap visits, references, and post scout."""
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
@@ -249,7 +317,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = program_specs(center, control)
+        specs = (confirmation_specs(center, control) if confirm else
+                 program_specs(center, control))
         grid = np.asarray(sorted((center, control)), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
@@ -261,7 +330,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 second = dc_lookup[condition["probe_ghz"]]
                 two_visit_segments(
                     compensation, load_us=LOAD_US,
-                    store_us=entry["store_us"], probe_us=PROBE_US,
+                    store_us=condition["store_us"], probe_us=PROBE_US,
                     second_amplitude=(second - park) / (first - park))
         base = ProductionResetSession.passive().apply(tls.BaseConfig)
         five.apply_verified_feedback_timing(base)
@@ -278,7 +347,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_tls_two_visit_memory_" +
+        session_id = (("q3_tls_two_visit_memory_confirm_" if confirm else
+                       "q3_tls_two_visit_memory_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -289,7 +359,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
         manifest = {
-            "schema": "q3.tls-two-visit-memory.v1", "status": "running",
+            "schema": ("q3.tls-two-visit-memory-confirm.v1" if confirm else
+                       "q3.tls-two-visit-memory.v1"), "status": "running",
             "session_id": session_id,
             "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
             "correction_json": str(correction),
@@ -297,7 +368,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             "scout_csv": str(scout), "selected": selected,
             "center_ghz": center, "control_ghz": control,
             "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-            "plan": plan(), "references": refs, "programs": specs,
+            "plan": plan(confirm=confirm), "references": refs,
+            "programs": specs,
         }
         protocol.checkpoint(path, manifest)
         print(f"[two-visit] manifest={path}", flush=True)
@@ -353,7 +425,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 acquire_ref(ref)
             for entry in specs:
                 shots = int(entry["shots"])
-                print(f"[two-visit] {entry['name']} {shots} x 8", flush=True)
+                records_per_shot = len(entry["conditions"])
+                print(f"[two-visit] {entry['name']} "
+                      f"{shots} x {records_per_shot}", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 entry["acquisition_started_at_utc"] = (
@@ -361,7 +435,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 started = time.monotonic()
                 records = _run_program(
                     soc, programs[entry["name"]],
-                    max(30.0, 8 * _block_timeout_s(base, shots)),
+                    max(30.0, records_per_shot * _block_timeout_s(base, shots)),
                     base, total_shots=shots)
                 entry["acquisition_elapsed_s"] = time.monotonic() - started
                 entry["acquisition_finished_at_utc"] = (
@@ -392,11 +466,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             for item in manifest["transfer_control"].values():
                 item["usable"] = resident.transfer_usable(
                     item["ground"], item["excited"])
-            scores = {entry["name"]: score({
-                cond["name"]: cond["excited_fraction_pre_axis"]
-                for cond in entry["conditions"]}) for entry in specs}
+            scores = {entry["name"]: score_entry(entry, confirm=confirm)
+                      for entry in specs}
             manifest["program_scores"] = scores
-            manifest["interaction_report"] = _interaction_report(specs, scores)
+            manifest["interaction_report"] = (
+                _confirmation_report(specs, scores) if confirm else
+                _interaction_report(specs, scores))
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**heralded.postselection_scout_parameters("post"),
@@ -415,7 +490,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 "complete" if manifest["post_readout_score"]["valid"] and
                 all(item["usable"] for item in
                     manifest["transfer_control"].values()) and
-                all(item["usable"] for item in scores.values()) and
+                all((all(x["usable"] for x in item.values()) if confirm else
+                     item["usable"]) for item in scores.values()) and
                 manifest["feature_stable"] else "complete_controls_unstable")
             protocol.checkpoint(path, manifest)
             print(f"[two-visit] {manifest['status']}: {path}", flush=True)
@@ -432,13 +508,15 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--data-root", default=str(localizer.DATA_ROOT))
     parser.add_argument("--correction-json")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(confirm=args.confirm), indent=2))
         return 0
-    run(data_root=args.data_root, correction_json=args.correction_json)
+    run(data_root=args.data_root, correction_json=args.correction_json,
+        confirm=args.confirm)
     return 0
 
 

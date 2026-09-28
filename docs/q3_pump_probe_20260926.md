@@ -3564,3 +3564,34 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSTwoVisitMemory --run
 ```
+
+The run completed at `q3_tls_two_visit_memory_20260928T202625Z_0092391e`.
+Its 4.102-GHz loss feature shifted by only +1 MHz after the science
+sequence; readout fidelity was 0.899/0.928 pre/post, and both park
+transfer controls passed. No positive excitation-retrieval interaction
+appeared. Classified-shot mean log interactions for storage times
+0.5, 2, 10, and 40 µs were +0.040, −0.116, −0.254, and +0.035.
+The 10-µs minus 40-µs difference was −0.290 with an exploratory
+shot-bootstrap 95% interval of [−0.583, −0.004]; this is borderline
+after inspecting four gaps. The unthresholded IQ agrees with the
+negative 10-µs interaction in one order but is near zero in the other.
+This is an extra-loss hint, not evidence of returned excitation or a
+confirmed TLS memory effect.
+
+The focused `--confirm` run measures 10- and 40-µs storage gaps in
+*the same* 16-subshot hardware shot: four first/second visit pairs,
+both preparations, and both gaps. Four blocks reverse the subshot
+order and which gap comes first, with 1200 logical shots per block.
+This directly tests the tentative 10-vs-40-µs difference under close
+temporal matching and saves raw IQ for every condition. The same
+fresh scout, feature/control qualification, readout and transfer
+references, and post scout remain in force. If the paired difference
+does not reproduce across blocks and in continuous IQ, abandon the
+memory claim rather than broadening the drift study.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSTwoVisitMemory --run --confirm
+```
