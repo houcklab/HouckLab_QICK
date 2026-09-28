@@ -2124,3 +2124,45 @@ nonstationarity precludes a stronger pooled claim, but does not by itself
 establish telegraph noise or identify its cause. A follow-up should interleave
 hot/cold controls on a shorter timescale and move the second probe ahead of
 the 40-us return/readout latency.
+
+## Target-resident pulse calibration
+
+The heralded sequence cannot test population lost during its approximately
+40-us corrected return and first readout. Before a shorter-gap hot/cold
+sequence, first verify that a microwave pulse can re-excite q3 **at the loss
+flux coordinate**. The experiment-only `TLSPumpProbeResidentDrive` runner
+finds the current feature with the same 81-point passive scout, then tests
+Gaussian pulses 20 us into a single compensated target visit. It also tests
+the 14-MHz lower flux flank. The pinned correction is checked to be flat
+through the Gaussian drive window. The pulse occupies the middle of the visit;
+the 40-us return occurs only after the pulse and a 0.1-us target dwell.
+There is one park readout per shot, with no feedback reset or intermediate
+readout. Ground/excited readout references are prepared immediately before
+readout, both before and after the scan. Separate short-return controls
+prepare the qubit excited **before** a 4-us target visit and verify that an
+excitation remains distinguishable through the same return and readout.
+
+At each site, seven drive detunings from -20 to +20 MHz use gains 1000, 3000,
+6000, 12000, 20000, and 30000 DAC, bracketed by zero-gain waveforms of the
+same duration. Each arm has 200 raw-IQ shots, saved separately under a
+manifest. Representative reference and high-gain frequency-edge programs
+are constructed before any acquisition. The post scout, frozen pre-run readout
+axis, and short-return
+controls check whether the result can be interpreted. A post-scout center
+shift above 2 MHz or a loss depth below 0.15 marks the controls unstable;
+the transfer control must retain at least 0.15 readout contrast before and
+after the sweep. This is a drive calibration, **not** a TLS
+saturation claim. Select a usable target pulse only after inspecting its
+contrast, frequency dependence, zero-drive brackets, flank response, and
+pre/post feature position. A drive null can still mean rapid relaxation from
+the target after the pulse; the short-return control only bounds this ambiguity.
+A later runner will interleave hot/cold loading
+and probe within one target visit, removing the first readout and return
+from the pump-to-probe gap.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPumpProbeResidentDrive --run
+```
