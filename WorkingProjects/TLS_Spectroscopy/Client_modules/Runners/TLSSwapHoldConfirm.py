@@ -30,6 +30,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 EARLY_US = 1.5
 LATE_US = 6.0
 SHOTS = 3000
+MAP_SHOTS = 1000
+MAP_RADIUS_MHZ = 8
 REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 CONDITION_NAMES = ("early_g", "early_e", "late_g", "late_e")
@@ -58,6 +60,44 @@ def program_specs(feature_ghz, control_ghz):
     return specs
 
 
+def flux_map_specs(feature_ghz, control_ghz):
+    """Sweep a fixed ±8-MHz grid in both directions, bracketing controls."""
+    frequencies = [round(float(feature_ghz) + 0.001 * offset, 3)
+                   for offset in range(-MAP_RADIUS_MHZ, MAP_RADIUS_MHZ + 1)]
+    specs = []
+    for repeat in (0, 1):
+        reverse = bool(repeat)
+        def append(name, site, flux):
+            conds = conditions(reverse=reverse)
+            specs.append({"name": name, "repeat": repeat, "site": site,
+                          "flux_ghz": float(flux), "shots": MAP_SHOTS,
+                          "order": [item["name"] for item in conds],
+                          "conditions": conds,
+                          "status": "pending"})
+        append(f"r{repeat}_control_pre", "control", control_ghz)
+        for index in (range(len(frequencies)) if not reverse
+                      else reversed(range(len(frequencies)))):
+            append(f"r{repeat}_f{index:02d}", "map", frequencies[index])
+        append(f"r{repeat}_control_post", "control", control_ghz)
+    return specs
+
+
+def flux_map_report(specs, scores):
+    report = {}
+    for repeat in (0, 1):
+        baseline = (scores[f"r{repeat}_control_pre"]["drop"] +
+                    scores[f"r{repeat}_control_post"]["drop"]) / 2.0
+        report[f"r{repeat}"] = [
+            {"flux_ghz": item["flux_ghz"], "drop": scores[item["name"]]["drop"],
+             "control_drop": baseline,
+             "excess_drop": scores[item["name"]]["drop"] - baseline,
+             "usable": scores[item["name"]]["usable"]}
+            for item in sorted((item for item in specs if item["repeat"] == repeat
+                                and item["site"] == "map"),
+                               key=lambda item: item["flux_ghz"])]
+    return report
+
+
 def split_records(records, order, *, shots):
     records = list(records)
     if len(order) != RECORDS_PER_SHOT or set(order) != set(CONDITION_NAMES):
@@ -83,7 +123,20 @@ def effect(feature, control):
     return float(feature["drop"] - control["drop"])
 
 
-def plan():
+def plan(*, flux_map=False):
+    if flux_map:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "feature_anchor_ghz": 4.127,
+                "map": "17 flux points, 1 MHz apart, centered on fresh lower feature",
+                "control": "clean 14-MHz lower flux point, before/after each sweep",
+                "dwells_us": [EARLY_US, LATE_US],
+                "conditions_per_shot": RECORDS_PER_SHOT,
+                "shots_per_program": MAP_SHOTS, "programs": 38,
+                "orders": ["ascending", "descending"],
+                "full_return_before_each_readout_us": 40.0,
+                "raw_iq_saved": True,
+                "primary_effect": "at each flux, early-minus-late hot-cold contrast "
+                                  "minus bracketing-control mean"}
     return {"hardware_access": False, "reset_mode": "passive",
             "feature_anchor_ghz": 4.127,
             "control": "clean 14-MHz lower flux point",
@@ -131,7 +184,8 @@ def _condition_configs(base, entry, dc_lookup):
         for cond in entry["conditions"]]
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        flux_map=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
@@ -162,7 +216,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        grid = np.asarray([center, control], dtype=float)
+        specs = (flux_map_specs(center, control) if flux_map else
+                 program_specs(center, control))
+        grid = np.asarray(sorted({item["flux_ghz"] for item in specs}), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
@@ -183,7 +239,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_tls_swap_hold_confirm_" +
+        session_id = (("q3_tls_swap_hold_flux_map_" if flux_map else
+                       "q3_tls_swap_hold_confirm_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -193,7 +250,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 probe.reference_arms(center, phase="post"))
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
-        manifest = {"schema": "q3.tls-swap-hold-confirm.v1",
+        manifest = {"schema": ("q3.tls-swap-hold-flux-map.v1" if flux_map else
+                               "q3.tls-swap-hold-confirm.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -201,8 +259,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "control_ghz": control,
                     "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-                    "plan": plan(), "references": refs,
-                    "programs": program_specs(center, control)}
+                    "plan": plan(flux_map=flux_map), "references": refs,
+                    "programs": specs}
         protocol.checkpoint(path, manifest)
         print(f"[swap-confirm] manifest={path}", flush=True)
         raw_refs = {}
@@ -211,7 +269,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             programs = {}
-            for entry in manifest["programs"]:
+            preflight = (manifest["programs"] if not flux_map else
+                         [manifest["programs"][i] for i in (0, 1, 17, 18, 19, 20, 36, 37)])
+            for entry in preflight:
                 cfgs = _condition_configs(base, entry, dc_lookup)
                 programs[entry["name"]] = AlternatingSwapHoldProgram(
                     soccfg, cfgs, bundle.payload, bundle.loop)
@@ -220,6 +280,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     soccfg, resident.arm_config(base, ref, dc_lookup),
                     bundle.payload, bundle.loop)
             manifest["preflight_complete"] = True
+            manifest["preflight_programs"] = list(programs)
             protocol.checkpoint(path, manifest)
 
             def acquire_ref(ref):
@@ -255,14 +316,20 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 print(f"[swap-confirm] {ref['name']}", flush=True)
                 acquire_ref(ref)
             for entry in manifest["programs"]:
-                print(f"[swap-confirm] {entry['name']} {SHOTS} x 4", flush=True)
+                shots = int(entry["shots"])
+                print(f"[swap-confirm] {entry['name']} {shots} x 4", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
+                program = programs.get(entry["name"])
+                if program is None:
+                    program = AlternatingSwapHoldProgram(
+                        soccfg, _condition_configs(base, entry, dc_lookup),
+                        bundle.payload, bundle.loop)
                 records = _run_program(
-                    soc, programs[entry["name"]],
-                    max(30.0, RECORDS_PER_SHOT * _block_timeout_s(base, SHOTS)),
-                    base, total_shots=SHOTS)
-                split = split_records(records, entry["order"], shots=SHOTS)
+                    soc, program,
+                    max(30.0, RECORDS_PER_SHOT * _block_timeout_s(base, shots)),
+                    base, total_shots=shots)
+                split = split_records(records, entry["order"], shots=shots)
                 for cond in entry["conditions"]:
                     subset = split[cond["name"]]
                     raw_path = folder / f"{entry['name']}_{cond['name']}.npz"
@@ -292,10 +359,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 for cond in entry["conditions"]})
                 for entry in manifest["programs"]}
             manifest["program_scores"] = scores
-            manifest["effect_report"] = {
-                f"r{repeat}": effect(scores[f"r{repeat}_feature"],
-                                     scores[f"r{repeat}_control"])
-                for repeat in (0, 1)}
+            if flux_map:
+                manifest["flux_map_report"] = flux_map_report(specs, scores)
+            else:
+                manifest["effect_report"] = {
+                    f"r{repeat}": effect(scores[f"r{repeat}_feature"],
+                                         scores[f"r{repeat}_control"])
+                    for repeat in (0, 1)}
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**adaptive.scout_parameters(phase="post"),
@@ -331,11 +401,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--flux-map", action="store_true",
+                        help="map the short/long excess loss across flux")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(flux_map=args.flux_map), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            flux_map=args.flux_map)
     return 0
 
 

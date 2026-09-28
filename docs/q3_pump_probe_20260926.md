@@ -2762,3 +2762,38 @@ On the measurement PC after stopping other acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run
 ```
+
+The confirmation run `q3_tls_swap_hold_confirm_20260928T072204Z_bcf25403`
+completed all four 3,000-shot, four-condition programs. The predeclared
+feature-minus-control extra 1.5-to-6-us loss was +0.1017 and +0.0643 in
+the forward/reverse orders, pooled +0.0830. Continuous IQ projected onto
+the pre-run ground/excited reference axis gave +0.1167/+0.0908, pooled
++0.1038 reference separations. Independently resampling 20-logical-shot
+blocks within each program gave pooled 95% intervals of about
+[+0.053,+0.114] classified and [+0.066,+0.141] continuous-IQ units.
+These intervals reflect shot noise within the acquired programs; they
+do not cover the observed frequency drift.
+The 400-shot readout references had fidelity 0.9075/0.9113 pre/post;
+transfer controls and all four preparation/ground-drift checks passed.
+The anchored lower feature remained visible but its selected center moved
+from 4.125 to 4.128 GHz, beyond the predeclared 2-MHz stability gate,
+so the manifest is `complete_controls_unstable`. The data support a
+repeatable frequency-local excess late loss at the measured point, but
+the shift prevents claiming a stationary resonant microscopic TLS.
+
+The next measurement maps the same predeclared 1.5-to-6-us contrast over
+17 frequencies spaced 1 MHz apart and centered on the new fresh lower
+feature. An ascending and descending sweep each have a clean control
+before and after them (38 programs total, 1,000 logical shots per
+program, four subshots per logical shot). The post-scout tracks movement
+again. A narrow extra-loss peak that follows the loss feature in both
+directions would strengthen the resonant-interaction interpretation;
+a broad or order-dependent signal would argue for ordinary drift or
+flux-dependent qubit relaxation.
+
+On the measurement PC after stopping other acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --flux-map
+```
