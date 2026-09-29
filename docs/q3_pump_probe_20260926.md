@@ -5116,3 +5116,31 @@ science point. Both views have matching return timing. This is a deliberate
 tradeoff: the |f⟩ population may decay during the 40-µs return. If the
 post-return reference contrast is too small, the mapped method cannot
 resolve this TLS interaction in its current form.
+
+The full-return mapped run,
+`q3_tls_dual_transition_loss_20260929T203054Z_214d4888` (commit
+`bf0b3974`), passed the independent **park** mapping audit: the mapped
+|f⟩ centroid moved 0.741 of the way toward direct |g⟩, and the two-view
+response matrix had condition number 1.97. The fresh five-point scout
+selected a bidirectional g–e loss line at 3.900 GHz (pooled depths
+0.281 combined, 0.310 up, 0.247 down); the predicted e–f matching bias
+was 4.080 GHz. All 18 offset/pass points acquired their raw short/long
+g/e/f direct and mapped shots. Every point nevertheless failed the
+predeclared local reference gate: its g/e ensemble separation was only
+3.34–4.37 SE, below the required 5 SE, although the g/f and e/f
+separations were 8.18–10.76 and 5.18–8.64 SE, respectively. The local
+matrix condition numbers were 2.88–5.87. The manifest correctly records
+all 18 points as unresolved.
+
+An exploratory reanalysis of the saved IQ, without relaxing that gate,
+finds no reproducible e–f-specific loss peak. For a *predefined* center
+(offsets −2, 0, +2 MHz) versus outer flanks (−8, −6, +6, +8 MHz), the
+two-view inferred extra |f⟩ loss differs by +0.030; a conditional
+3000-draw Gaussian shot-mean resampling interval is [−0.118, +0.182].
+The two reversed passes give −0.015 and +0.074, so even the signs do not
+replicate. This interval excludes neither a moderate effect nor zero and
+does not include serial drift or site-selection uncertainty. The 4.080-GHz
+g–e bias also had independent scout loss, making an e–f attribution harder.
+There is no defensible shared-TLS detection from this branch, and more
+shots with the same delayed-readout sequence are not justified by the
+observed profile.
