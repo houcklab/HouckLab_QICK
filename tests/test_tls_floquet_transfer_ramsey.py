@@ -1,6 +1,7 @@
 """Contracts for measuring q3 fast-flux transfer with park Ramsey phase."""
 
 import importlib
+import json
 
 import numpy as np
 import pytest
@@ -149,6 +150,39 @@ def test_park_ramsey_program_plays_ac_and_restores_exact_park():
     assert registers[-1]["style"] == "const"
     assert len([event for event in program.events
                 if isinstance(event, tuple) and event[0] == "pulse"]) == 2
+
+
+def test_compiled_memory_report_checkpoints_with_numpy_cycle_count():
+    module = experiment()
+
+    class NumpyCycleBase:
+        def __init__(self, cfg):
+            self.cfg = cfg
+            self.soccfg = {"gens": [{"fs": 6881.28, "f_fabric": 430.08,
+                                      "maxv": 32767, "maxv_scale": 1.0,
+                                      "maxlen": 65536}]}
+            self.initialize()
+
+        def initialize(self):
+            pass
+
+        def us2cycles(self, duration, **_kwargs):
+            return np.int64(round(duration * 430.08))
+
+        def add_pulse(self, **_kwargs):
+            pass
+
+    cfg = {"ff_ch": 0, "ff_park_gain": -25146,
+           "ff_gain": -25146, "ff_ramp_length": 4.0,
+           "ramsey_park_idle_only": True, "ramsey_echo": False,
+           "ramsey_flux_hold_us": .1,
+           "transfer_amplitude_dac": 1000,
+           "transfer_frequency_mhz": 20.0,
+           "transfer_static_offset_dac": 0}
+    program = module.make_program_class(NumpyCycleBase)(cfg)
+    checkpoint = {"preflight": [{"memory_report": program.memory_report,
+                                  "waveform_report": program.waveform_report}]}
+    json.dumps(checkpoint)
 
 
 def test_phase_report_uses_both_zero_ac_brackets_within_one_block():

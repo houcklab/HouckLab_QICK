@@ -188,8 +188,8 @@ def make_program_class(parent):
                 sample_rate_mhz=generator["fs"],
                 fabric_rate_mhz=generator["f_fabric"],
                 max_gain=ff_maxv(self, scaled=True))
-            park_ramp_cycles = self.us2cycles(
-                float(cfg["ff_ramp_length"]), gen_ch=cfg["ff_ch"])
+            park_ramp_cycles = int(self.us2cycles(
+                float(cfg["ff_ramp_length"]), gen_ch=cfg["ff_ch"]))
             samples_per_clock = int(report.get(
                 "samples_per_clock",
                 round(float(generator["fs"]) / float(generator["f_fabric"]))))
