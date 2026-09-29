@@ -5463,3 +5463,34 @@ loss-line-versus-control echo comparison.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFastSquarePilot --run --phase-only
 ```
+
+The phase-only run completed at
+`q3_echo_fast_square_phase_20260929T232207Z_1a22c113` with status
+`complete_calibrated`. The independent 45-ns midpoint and two reversed
+phase circles passed: fitted amplitudes were 0.454 and 0.482, phase drift
+4.6 degrees, and zero/π IQ references remained stable. This establishes
+square-pulse control **at 4.288 GHz only**.
+
+The next experiment is a blind, coarse Hahn-echo screen, rather than a
+loss-line selection. `TLSEchoSquareMap` visits all 126 frequencies from
+4.300 to 3.800 GHz at 4-MHz spacing. At every site it brackets local IQ
+with zero/π pulses, measures a four-phase two-π/2 control before and after
+the echo, then measures four final phases at total free-evolution delays
+0.3, 0.9, and 1.8 us. The π/2 and π square durations are the observed
+45 and 90.7 ns at gain 30000, with a drive 2.5 MHz above the flux-model
+frequency. A site is unresolved if its local pulse response or references
+are weak/unstable, or if its echo envelope is nonmonotonic. All shot IQ and
+site-level gates are saved. A standard five-point T1 scan runs afterward
+only to distinguish loss-limited echo dips from candidate excess
+dephasing; it does not choose where the echo scan runs. There is no
+runner-specific terminal progress output during the echo sweep.
+
+This first 4-MHz map is a screen, not an intrinsic TLS dephasing
+measurement. Any candidate hotspot needs a finer, repeated local echo
+scan with a simultaneous T1 comparison, particularly because the line
+may move during the full-band pass.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoSquareMap --run
+```
