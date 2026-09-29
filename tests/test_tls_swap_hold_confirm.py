@@ -167,6 +167,73 @@ def test_wide_anchor_requires_direct_wide_mode():
         module.plan(wide_anchor_ghz=3.992)
 
 
+def test_wide_anchor_can_target_narrow_dip_beside_another_loss():
+    module = experiment()
+    rows = []
+    for index in range(251):
+        frequency = round(3.8 + .002 * index, 3)
+        survival = .80
+        if frequency in (4.266, 4.268, 4.270):
+            survival = .35  # another loss inside the old 8-12 MHz flank
+        elif frequency == 4.278:
+            survival = .15
+        elif frequency in (4.276, 4.280):
+            survival = .45
+        elif frequency == 4.292:
+            survival = .55  # +14 MHz is not a clean control
+        p25 = .1 + .8 * survival
+        rows.append({"target_frequency_ghz": str(frequency),
+                     "P0": ".1", "P1": ".9", "Ps_25us": str(p25),
+                     "P0_scan_up": ".1", "P1_scan_up": ".9",
+                     "Ps_25us_scan_up": str(p25),
+                     "P0_scan_down": ".1", "P1_scan_down": ".9",
+                     "Ps_25us_scan_down": str(p25)})
+    with pytest.raises(ValueError, match="no qualified loss"):
+        module.swap.select_wide_candidate(rows, preferred_center=4.278)
+    selected = module.select_anchored_wide_candidate(
+        rows, preferred_center=4.278)
+    assert selected["center_ghz"] == 4.278
+    assert selected["control_ghz"] == 4.294
+    assert selected["selector"] == "wide_anchored_crowded_candidate"
+    post = module.select_crowded_wide_candidate(
+        rows, preferred_center=4.278,
+        preferred_control_ghz=selected["control_ghz"])
+    assert post["control_ghz"] == selected["control_ghz"]
+    shifted = [dict(row) for row in rows]
+    for row in shifted:
+        frequency = float(row["target_frequency_ghz"])
+        if frequency in (4.278, 4.280, 4.282):
+            survival = .15 if frequency == 4.280 else .45
+            for direction in ("", "_scan_up", "_scan_down"):
+                row["Ps_25us" + direction] = str(.1 + .8 * survival)
+    post_shifted = module.select_crowded_wide_candidate(
+        shifted, preferred_center=4.278,
+        preferred_control_ghz=selected["control_ghz"])
+    assert post_shifted["center_ghz"] == 4.280
+    assert post_shifted["control_ghz"] == 4.294
+
+
+def test_crowded_anchor_rejects_when_center_or_control_is_not_distinct():
+    module = experiment()
+    rows = []
+    for index in range(251):
+        frequency = round(3.8 + .002 * index, 3)
+        survival = .8
+        if frequency == 4.278:
+            survival = .7
+        if 4.290 <= frequency <= 4.298:
+            survival = .2
+        p25 = .1 + .8 * survival
+        rows.append({"target_frequency_ghz": str(frequency),
+                     "P0": ".1", "P1": ".9", "Ps_25us": str(p25),
+                     "P0_scan_up": ".1", "P1_scan_up": ".9",
+                     "Ps_25us_scan_up": str(p25),
+                     "P0_scan_down": ".1", "P1_scan_down": ".9",
+                     "Ps_25us_scan_down": str(p25)})
+    with pytest.raises(ValueError, match="no qualified anchored"):
+        module.select_anchored_wide_candidate(rows, preferred_center=4.278)
+
+
 def test_loss_dynamics_repeats_feature_control_in_reversed_shot_order(capsys):
     import json
     module = experiment()

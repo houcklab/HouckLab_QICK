@@ -580,6 +580,107 @@ def select_moving_lower_dip(rows):
     return swap.select_moving_lower_dip(rows)
 
 
+def select_crowded_wide_candidate(rows, *, preferred_center,
+                                  preferred_control_offset=None,
+                                  preferred_control_ghz=None):
+    """Resolve an anchored narrow dip despite another loss 8-12 MHz away."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    expected = {round(3.8 + .002 * index, 3) for index in range(251)}
+    if len(rows) != 251 or set(indexed) != expected:
+        raise ValueError("crowded anchor needs one complete 251-point scout")
+    offsets = ((0.0,) if preferred_control_ghz is not None else
+               (float(preferred_control_offset),)
+               if preferred_control_offset is not None else
+               (.014, .016, .018, -.014, -.016, -.018))
+    candidates = []
+    for center in sorted(indexed):
+        if abs(center - float(preferred_center)) > .004001:
+            continue
+        groups = {
+            "feature": [round(center + delta, 3)
+                        for delta in (-.002, 0, .002)],
+            "left": [round(center + delta, 3)
+                     for delta in (-.008, -.006, -.004)],
+            "right": [round(center + delta, 3)
+                      for delta in (.004, .006, .008)],
+        }
+        if any(f not in indexed for fs in groups.values() for f in fs):
+            continue
+        depths, feature_survival = {}, {}
+        for direction in ("", "up", "down"):
+            values = {name: [adaptive._survival(indexed[f], direction)
+                             for f in fs]
+                      for name, fs in groups.items()}
+            if any(not np.isfinite(value) for vs in values.values()
+                   for value in vs):
+                break
+            center_value = values["feature"][1]
+            if center_value >= min(values["feature"][0],
+                                   values["feature"][2]):
+                break
+            feature = float(np.mean(values["feature"]))
+            key = direction or "combined"
+            feature_survival[key] = feature
+            depths[key] = min(float(np.median(values["left"])),
+                              float(np.median(values["right"]))) - feature
+        if (len(depths) != 3 or depths["combined"] < .15 or
+                min(depths["up"], depths["down"]) < .08):
+            continue
+        for configured_offset in offsets:
+            control = (round(float(preferred_control_ghz), 3)
+                       if preferred_control_ghz is not None else
+                       round(center + configured_offset, 3))
+            offset = round(control - center, 3)
+            if abs(offset) < .012 - 1e-9 or abs(offset) > .020 + 1e-9:
+                continue
+            neighbors = [round(control + delta, 3)
+                         for delta in (-.002, 0, .002)]
+            if any(f not in indexed for f in neighbors):
+                continue
+            survivals, advantages = {}, {}
+            for direction in ("", "up", "down"):
+                values = [adaptive._survival(indexed[f], direction)
+                          for f in neighbors]
+                if not all(np.isfinite(value) for value in values):
+                    break
+                key = direction or "combined"
+                survivals[key] = values[1]
+                advantages[key] = values[1] - feature_survival[key]
+                if values[1] < .60 or np.median(values) < .58:
+                    break
+            if (len(advantages) != 3 or min(advantages.values()) < .15):
+                continue
+            candidates.append({
+                "center_ghz": center, "control_ghz": control,
+                "anchor_ghz": float(preferred_center),
+                "control_offset_ghz": offset,
+                "depth": depths["combined"],
+                "depth_scan_up": depths["up"],
+                "depth_scan_down": depths["down"],
+                "control_survival_advantage": advantages,
+                "control_min_survival": min(survivals.values()),
+                "selector": "wide_anchored_crowded_candidate"})
+    if not candidates:
+        raise ValueError("no qualified anchored narrow loss and clean control")
+    return max(candidates, key=lambda item: (
+        min(item["depth_scan_up"], item["depth_scan_down"]),
+        item["depth"], item["control_min_survival"]))
+
+
+def select_anchored_wide_candidate(rows, *, preferred_center,
+                                   preferred_control_offset=None):
+    """Preserve the isolated selector, then try a narrow anchored fallback."""
+    try:
+        return swap.select_wide_candidate(
+            rows, preferred_center=preferred_center,
+            preferred_control_offset=preferred_control_offset)
+    except ValueError:
+        return select_crowded_wide_candidate(
+            rows, preferred_center=preferred_center,
+            preferred_control_offset=preferred_control_offset)
+
+
 def split_records(records, order, *, shots):
     records = list(records)
     if len(order) != RECORDS_PER_SHOT or set(order) != set(CONDITION_NAMES):
@@ -651,7 +752,9 @@ def plan(*, flux_map=False, follow_moving_dip=False,
                             "test short-time exchange at a new isolated loss candidate"),
                 "feature_scout_ghz": [3.8, 4.3],
                 "excluded_prior_band_ghz": [4.08, 4.19],
-                "control": "fresh qualified clean ±14-MHz point",
+                "control": ("fresh qualified clean 14-18-MHz point"
+                            if wide_anchor_ghz is not None else
+                            "fresh qualified clean ±14-MHz point"),
                 "early_hold_us": WIDE_EARLY_US,
                 "later_holds_us": list(WIDE_LATER_US),
                 "conditions_per_shot": 8,
@@ -974,7 +1077,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         data_root=data_root, correction_json=correction,
         parameter_overrides={**scout_parameters,
                              "output_suffix": scout_suffix})
-    selector = (swap.select_wide_candidate if wide_within_shot else
+    selector = (select_anchored_wide_candidate
+                if wide_within_shot and wide_anchor_ghz is not None else
+                swap.select_wide_candidate if wide_within_shot else
                 heralded.select_postselection_feature if site_time_mode
                 else select_moving_lower_dip if follow_moving_dip else
                 lambda rows: swap.select_anchored_feature(
@@ -1309,9 +1414,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             try:
                 post_rows = read_scout(post_scout)
                 manifest["post_selected"] = (
-                    swap.select_wide_candidate(
+                    select_crowded_wide_candidate(
                         post_rows, preferred_center=center,
-                        preferred_control_offset=selected["control_offset_ghz"])
+                        preferred_control_ghz=control)
+                    if wide_within_shot and
+                    selected.get("selector") == "wide_anchored_crowded_candidate"
+                    else (select_anchored_wide_candidate
+                          if wide_anchor_ghz is not None else
+                          swap.select_wide_candidate)(
+                              post_rows, preferred_center=center,
+                              preferred_control_offset=selected["control_offset_ghz"])
                     if wide_within_shot else selector(post_rows))
                 if dual_mode:
                     manifest["post_upper_selected"] = (

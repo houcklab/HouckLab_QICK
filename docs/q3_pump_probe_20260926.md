@@ -4411,3 +4411,18 @@ motivate a coherent-swap claim; monotonic decay is ordinary loss.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot --wide-anchor-ghz 4.278
 ```
+
+The first anchored 4.278-GHz attempt produced only its fresh wide scout,
+`q3_2026_09_29/q3_01_54_31_TLS_SwapHold_Wide_WithinShot_Scout_pre_T1_5pt_vs_wall_clock_full.csv`;
+no science manifest or swap program was made. The 4.278-GHz point remained a
+sharp loss minimum (normalized 25-us survival 0.148, versus 0.526/0.372 at
+±2 MHz), but an additional loss around 4.268 GHz depressed the old
+8–12-MHz left-flank qualification. The anchored selector now falls back to
+strict *local* ±4–8-MHz flanks only if the original isolated selector fails.
+It still requires a bidirectional depth and a clean control 12–20 MHz away.
+The saved scout qualifies at 4.278 GHz with local depth 0.390 (0.319/0.376
+up/down) and control 4.294 GHz, whose worst directional normalized survival
+is 0.836. The post scout checks that same absolute control frequency rather
+than shifting its control when the line moves by one 2-MHz bin. The sequence,
+shot count, and physical criterion for a coherent-exchange claim are unchanged.
+Pull the revised branch and rerun the command above.
