@@ -4426,3 +4426,25 @@ is 0.836. The post scout checks that same absolute control frequency rather
 than shifting its control when the line moves by one 2-MHz bin. The sequence,
 shot count, and physical criterion for a coherent-exchange claim are unchanged.
 Pull the revised branch and rerun the command above.
+
+The rerun completed at
+`q3_tls_swap_hold_wide_within_shot_20260929T060604Z_cf493eba` on commit
+`66bddfee`. All 20 within-shot programs, eight references, and pre/post
+wide scouts completed. Readout fidelity was 0.841/0.869 and both park-transfer
+checks passed. The pre scout selected 4.276 GHz with a 4.290-GHz control;
+the post selector chose 4.272 GHz, a 4-MHz change beyond the 2-MHz stability
+gate. The 4.278-GHz dip itself was still visible afterward, but the nearby
+doublet's profile changed; the fixed 4.276-GHz visit therefore cannot be
+assumed to interrogate the same line throughout.
+
+The feature-minus-control extra-loss curve has no replicated nonmonotonic
+exchange. The classified 0.75-µs scores changed from +0.084 to −0.078 in
+the reversed block; at 1.5 µs they changed from +0.050 to −0.032. At 3–4 µs
+both blocks show some extra loss, which is compatible with ordinary decay and
+does not imply excitation retrieval. Shot-paired projected raw IQ has the
+same short-time sign reversals. Across the ten dwell points, forward/reverse
+score correlations are −0.095 for classified shots and −0.205 for raw IQ.
+Do not call this coherent qubit–TLS exchange or pursue a chevron at this site.
+Together with the earlier 3.992-GHz null and the inconclusive fast-flux
+calibration, this closes the present q3 direct-control sequence: a further
+same-style swap or modulation scan is not justified by these data.
