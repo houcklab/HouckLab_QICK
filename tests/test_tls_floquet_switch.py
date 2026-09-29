@@ -1,0 +1,143 @@
+"""Contracts for switching q3 loss within one target visit."""
+
+import importlib
+import json
+
+import numpy as np
+import pytest
+
+
+MODULE = "WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSwitch"
+
+
+def experiment():
+    return importlib.import_module(MODULE)
+
+
+def test_switch_waveforms_share_dc_and_equal_on_time_without_clipping():
+    module = experiment()
+    args = dict(segments=[(1.0, 1.8), (1.01, 1.8)],
+                park_gain=-25146, target_gain=-15000,
+                amplitude_dac=1000, modulation_mhz=30.0,
+                sample_rate_mhz=6881.28, fabric_rate_mhz=430.08,
+                cycles=1548, max_gain=32767)
+    waves = {name: module.switch_waveform(pattern=name, **args)[0]
+             for name in module.PATTERNS}
+    assert {len(wave) for wave in waves.values()} == {24768}
+    assert waves["off"][0] == waves["on"][0]
+    assert np.array_equal(waves["early"][:12384], waves["on"][:12384])
+    assert np.array_equal(waves["early"][12384:], waves["off"][12384:])
+    assert np.array_equal(waves["late"][:12384], waves["off"][:12384])
+    assert np.array_equal(waves["late"][12384:], waves["on"][12384:])
+    assert all(wave.min() >= -26146 and wave.max() <= -13000
+               for wave in waves.values())
+    assert sum(waves["early"] != waves["off"]) == \
+        sum(waves["late"] != waves["off"])
+
+
+def test_switch_specs_pair_patterns_and_reverse_order_after_fresh_scout():
+    module = experiment()
+    specs = module.program_specs(3.992, shots=8000)
+    assert [(s["repeat"], s["pair"]) for s in specs] == [
+        (0, "reference"), (0, "switch"),
+        (1, "switch"), (1, "reference")]
+    assert [s["order"] for s in specs] == [
+        ["off_g", "off_e", "on_g", "on_e"],
+        ["early_g", "early_e", "late_g", "late_e"],
+        ["late_e", "late_g", "early_e", "early_g"],
+        ["on_e", "on_g", "off_e", "off_g"]]
+    module.recenter_repeat(specs, center=3.994, repeat=1)
+    assert [s["flux_ghz"] for s in specs] == [3.992, 3.992, 3.994, 3.994]
+    assert all(c["post_drive_us"] == module.HOLD_US
+               for spec in specs for c in spec["conditions"])
+
+
+def test_switch_score_uses_hot_minus_cold_and_rejects_heating():
+    module = experiment()
+    values = {"off_g": .1, "off_e": .3,
+              "on_g": .11, "on_e": .43,
+              "early_g": .1, "early_e": .35,
+              "late_g": .1, "late_e": .38}
+    score = module.score_patterns(values)
+    assert score["on_minus_off_contrast"] == pytest.approx(.12)
+    assert score["late_minus_early_contrast"] == pytest.approx(.03)
+    assert score["ground_spread"] == pytest.approx(.01)
+    assert score["usable"] is True
+    values["late_g"] = .25
+    assert module.score_patterns(values)["usable"] is False
+
+
+def test_switch_plan_and_memory_fit_q3_generator(capsys):
+    module = experiment()
+    p = module.plan()
+    assert p["patterns"] == ["off", "on", "early", "late"]
+    assert p["modulation_frequency_mhz"] == 30.0
+    assert p["amplitude_dac"] == 1000
+    assert p["hold_us"] == 3.6
+    assert p["switch_us"] == 1.8
+    assert p["programs"] == 4
+    assert p["conditions_per_shot"] == 4
+    assert (2 * p["park_ramp_us"] + 2 * p["hold_us"]) * 6881.28 < 65536
+    assert module.main(["--plan"]) == 0
+    assert json.loads(capsys.readouterr().out)["hardware_access"] is False
+
+
+def test_switch_program_compiles_only_two_patterns_with_memory_guard(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(
+        module.alternating.ShotAlternatingResidentProgram,
+        "_declare_experiment", lambda self: None)
+    monkeypatch.setattr(module.modulated, "_target_segments",
+                        lambda _correction, *, pre_us, hold_us, recovery_us:
+                        ([(1.0, pre_us)], [(1.0, hold_us + .01)],
+                         [(1.0, recovery_us)]))
+    monkeypatch.setattr(module, "ff_maxv", lambda *_args, **_kw: 32767)
+    monkeypatch.setattr(module, "ff_envelope_samples", lambda *_args: 65536)
+    program = object.__new__(module.SwitchProgram)
+    program.cfg = {"ff_ch": 0, "ff_gain": -15000,
+                   "ff_park_gain": -25146}
+    program.soccfg = {"gens": [{"fs": 6881.28, "f_fabric": 430.08}]}
+    program.patterns = ("early", "late")
+    program._t1_ff_compensation = object()
+    program._t1_ff_settle_us = .5
+    program._t1_ff_predistortion_recovery_us = 40.
+    program._ff_ramp_cache = {(0, "up", 0, 6880),
+                              (0, "down", 0, 6880)}
+    program.us2cycles = lambda hold, **_kw: round(hold * 430.08)
+    added = []
+    program.add_pulse = lambda **kw: added.append(kw)
+    program._declare_experiment()
+    assert {row["name"] for row in added} == {
+        "q3_switch_early", "q3_switch_late"}
+    assert program.ff_envelope_report["total_samples"] == 2*24768 + 2*6880
+    assert program.ff_envelope_report["total_samples"] < 65536
+    assert all(row["idata"].dtype == np.int16 for row in added)
+
+
+def test_switch_program_plays_selected_waveform_then_full_return(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(module.modulated, "_target_segments",
+                        lambda _correction, *, pre_us, hold_us, recovery_us:
+                        ([(1.0, pre_us)], [(1.0, hold_us)],
+                         [(1.0, recovery_us)]))
+    events = []
+    monkeypatch.setattr(module.ff_pulse, "play_relative_compensation_segments",
+                        lambda _program, _park, _target, segments:
+                        events.append(("segments", segments)))
+    monkeypatch.setattr(module.ff_pulse, "play_hard_step",
+                        lambda _program, gain: events.append(("park", gain)))
+    monkeypatch.setattr(module, "ff_maxv", lambda *_args, **_kw: 32767)
+    program = object.__new__(module.SwitchProgram)
+    program.cfg = {"ff_ch": 0, "ff_park_gain": -25146,
+                   "ff_gain": -15000, "opx_resident_pre_us": .05,
+                   "opx_switch_pattern": "late"}
+    program._t1_ff_compensation = object()
+    program._t1_ff_settle_us = .5
+    program._t1_ff_predistortion_recovery_us = 40.
+    program.set_pulse_registers = lambda **kw: events.append(("registers", kw))
+    program.pulse = lambda **kw: events.append(("pulse", kw))
+    program.sync_all = lambda *_args: None
+    program._resident_excursion()
+    assert events[1][1]["waveform"] == "q3_switch_late"
+    assert events[-2] == ("segments", [(1.0, 40.)])
+    assert events[-1] == ("park", -25146.)

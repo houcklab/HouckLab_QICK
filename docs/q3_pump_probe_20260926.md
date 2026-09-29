@@ -4064,3 +4064,39 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run --pulse-gain-check
 ```
+
+The zero-AC pulse-gain check completed at
+`q3_ramsey_pulse_gain_check_20260929T020326Z_2a01074f` with status
+`complete_controls_unstable`. All 36 programs finished and raw IQ is saved.
+The park single-shot fidelity was 0.907 with assignment contrast 0.814;
+within-program g/e references remained well separated. None of the nine
+candidate pi/2 gains (2000–12000 DAC) gave a repeatable 0° versus 180°
+Ramsey contrast above the predeclared 0.25 gate. The largest single-block
+contrast was +0.080, and the corresponding reverse block was −0.050.
+The nominal 0° arms agreed within each program pair, so there is no evidence
+that selecting another gain in this range would repair the phase axis.
+Do not use the earlier AC Ramsey phase reports or infer flux-line transfer
+from them. This does not weaken the separately observed direct AC protection
+of the loss feature; it closes this particular calibration route.
+
+The next direct experiment uses the protective 30-MHz, 1000-DAC waveform to
+switch the loss interaction *during one target visit*. `TLSFloquetSwitch`
+scouts the current wide loss feature, then compares four equal 3.6-us visits:
+AC off, AC throughout, AC only during the first 1.8 us, and AC only during
+the last 1.8 us. Each pair of waveforms is interleaved with ground/excited
+preparations in a four-condition QICK shot; pair and condition order reverse
+after a midpoint scout. The half-on waveforms share the same corrected DC
+trajectory and contain equal numbers of AC cycles, with the switch at a sine
+zero crossing. A full 40-us corrected return precedes each readout, and raw
+IQ and compiled waveforms are saved. The off/full-on contrast establishes
+whether loss protection persists during this run. The first-half/last-half
+comparison probes its timing; a difference could reflect the changing DC
+correction or switching transients as well as defect memory, so it is not a
+standalone TLS-memory claim.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSwitch --run
+```
