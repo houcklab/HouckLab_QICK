@@ -35,12 +35,32 @@ RAMSEY_ARMS = ("g", "e", "i", "q")
 SHOTS_PER_ARM = 300
 PARK_CAL_SHOTS = 800
 PHASE_CHECK_SHOTS = 200
+PULSE_GAIN_CHECK_GAINS = (2000, 3000, 4000, 5000, 6000, 6750, 8000, 10000,
+                          12000)
 MIN_ASSIGNMENT_CONTRAST = 0.50
 MIN_RAMSEY_CONTRAST = 0.25
 MIN_RAMSEY_COHERENCE = 0.15
+MIN_PULSE_PHASE_CONTRAST = 0.25
 
 
-def plan(*, phase_check=False):
+def plan(*, phase_check=False, pulse_gain_check=False, pi2_gain=None):
+    if phase_check and pulse_gain_check:
+        raise ValueError("Ramsey diagnostic modes are exclusive")
+    if pi2_gain is not None and not 0 < int(pi2_gain) <= 32767:
+        raise ValueError("pi/2 gain must be within the qubit DAC range")
+    if pulse_gain_check and pi2_gain is not None:
+        raise ValueError("pi/2 gain override is incompatible with gain check")
+    if pulse_gain_check:
+        return {"hardware_access": False, "mode": "pulse_gain_check",
+                "bias": "q3 park", "reset_mode": "passive",
+                "pi2_gains": list(PULSE_GAIN_CHECK_GAINS),
+                "analysis_phases_deg": [0, 180],
+                "duration_us": 0.1, "blocks": 2,
+                "programs": len(pulse_gain_schedule()),
+                "shots_per_arm": PHASE_CHECK_SHOTS,
+                "park_calibration_shots": PARK_CAL_SHOTS,
+                "minimum_phase_contrast": MIN_PULSE_PHASE_CONTRAST,
+                "purpose": "find a reproducible zero-AC Ramsey phase axis"}
     if phase_check:
         return {"hardware_access": False, "mode": "phase_axis_check",
                 "bias": "q3 park", "reset_mode": "passive",
@@ -51,6 +71,7 @@ def plan(*, phase_check=False):
                 "programs": len(phase_check_schedule()),
                 "shots_per_arm": PHASE_CHECK_SHOTS,
                 "park_calibration_shots": PARK_CAL_SHOTS,
+                "qubit_pi2_gain": pi2_gain,
                 "purpose": "validate Ramsey phase control before AC transfer inference"}
     return {"hardware_access": False, "bias": "q3 park",
             "reset_mode": "passive", "frequencies_mhz": list(FREQUENCIES_MHZ),
@@ -60,6 +81,7 @@ def plan(*, phase_check=False):
             "ramsey_arms": list(RAMSEY_ARMS), "shots_per_arm": SHOTS_PER_ARM,
             "park_calibration_shots": PARK_CAL_SHOTS,
             "blocks": 2, "zero_ac_brackets_per_frequency_duration": 2,
+            "qubit_pi2_gain": pi2_gain,
             "raw_iq_saved": True,
             "purpose": "infer delivered fast-flux amplitude from park Ramsey phase",
             "interpretation": "transfer diagnostic, not independent TLS evidence"}
@@ -142,6 +164,28 @@ def phase_check_schedule():
         for block, rows in ((0, first), (1, list(reversed(first))))
         for row in rows
     ]
+
+
+def pulse_gain_schedule(*, gains=PULSE_GAIN_CHECK_GAINS):
+    """Compare same- and opposite-phase pulse pairs at zero AC."""
+    first = []
+    for gain in gains:
+        gain = int(gain)
+        if not 0 < gain <= 32767:
+            raise ValueError("pi/2 gain must be within the qubit DAC range")
+        for phase in (0, 180):
+            first.append({"pi2_gain": gain, "analysis_phase_deg": phase,
+                          "kind": "off", "frequency_mhz": 20.0,
+                          "amplitude_dac": 0, "static_offset_dac": 0,
+                          "duration_us": 0.1})
+    rows = [
+        {"name": f"b{block}_g{row['pi2_gain']}_p{row['analysis_phase_deg']}",
+         "block": block, **row, "status": "pending"}
+        for block, sequence in ((0, first), (1, list(reversed(first))))
+        for row in sequence]
+    if len({row["name"] for row in rows}) != len(rows):
+        raise ValueError("duplicate pulse-gain program names")
+    return rows
 
 
 def park_waveform(*, park_gain, amplitude_dac, frequency_mhz,
@@ -356,6 +400,48 @@ def phase_check_report(entries):
                          for record in group.values()), "blocks": blocks}
 
 
+def pulse_gain_report(entries):
+    """Choose a gain only when both reversed blocks resolve the same phase axis."""
+    rows = {(int(row["block"]), int(row["pi2_gain"]),
+             int(row["analysis_phase_deg"])): row for row in entries}
+    gains = sorted({key[1] for key in rows})
+    report = {}
+    for gain in gains:
+        blocks = {}
+        for block in (0, 1):
+            first = rows[(block, gain, 0)]["arms"]
+            opposite = rows[(block, gain, 180)]["arms"]
+            q0 = float(first["q"]["excited_fraction"])
+            q180 = float(opposite["q"]["excited_fraction"])
+            i0 = float(first["i"]["excited_fraction"])
+            i180 = float(opposite["i"]["excited_fraction"])
+            reference_contrast = min(
+                float(arms["e"]["excited_fraction"] -
+                      arms["g"]["excited_fraction"])
+                for arms in (first, opposite))
+            phase_contrast = q0 - q180
+            blocks[f"b{block}"] = {
+                "phase_contrast": phase_contrast,
+                "minimum_reference_contrast": reference_contrast,
+                "q0_minus_i0": q0 - i0,
+                "i0_minus_i180": i0 - i180,
+                "valid": bool(reference_contrast >= MIN_RAMSEY_CONTRAST and
+                              phase_contrast >= MIN_PULSE_PHASE_CONTRAST and
+                              abs(q0 - i0) <= 0.15 and
+                              abs(i0 - i180) <= 0.15)}
+        report[str(gain)] = {
+            "blocks": blocks,
+            "minimum_phase_contrast": min(
+                block["phase_contrast"] for block in blocks.values()),
+            "valid": all(block["valid"] for block in blocks.values())}
+    accepted = [gain for gain in gains if report[str(gain)]["valid"]]
+    selected = (max(accepted,
+                    key=lambda gain: report[str(gain)]["minimum_phase_contrast"])
+                if accepted else None)
+    return {"valid": selected is not None,
+            "selected_pi2_gain": selected, "gains": report}
+
+
 def acquire_entry(entry, *, soc, soccfg, base_cfg, program_class, acquire,
                   discriminate, calib_params, folder, shots, checkpoint=None):
     """Acquire all four arms for one burst and persist IQ before scoring it."""
@@ -374,6 +460,8 @@ def acquire_entry(entry, *, soc, soccfg, base_cfg, program_class, acquire,
                     "transfer_frequency_mhz": entry["frequency_mhz"],
                     "transfer_static_offset_dac": entry["static_offset_dac"],
                     "shots": int(shots), "reps": int(shots)})
+        if "pi2_gain" in entry:
+            cfg["qubit_pi2_gain"] = int(entry["pi2_gain"])
         if "ff_park_gain" in cfg:
             cfg["ff_gain"] = cfg["ff_park_gain"]
         program = program_class(soccfg, cfg)
@@ -420,8 +508,11 @@ def _json_value(value):
     raise TypeError(f"cannot serialize {type(value).__name__}")
 
 
-def run(*, data_root=localizer.DATA_ROOT, phase_check=False):
+def run(*, data_root=localizer.DATA_ROOT, phase_check=False,
+        pulse_gain_check=False, pi2_gain=None):
     """Run park-only Ramsey bursts after one checked single-shot calibration."""
+    run_plan = plan(phase_check=phase_check, pulse_gain_check=pulse_gain_check,
+                    pi2_gain=pi2_gain)
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
         TLSSpectroscopy as tls,
@@ -449,20 +540,25 @@ def run(*, data_root=localizer.DATA_ROOT, phase_check=False):
                  "ramsey_echo": False,
                  "qubit_pulse_style": "arb",
                  "relax_delay": 1000.0})
-    session_id = (("q3_ramsey_phase_check_" if phase_check else
+    if pi2_gain is not None:
+        base["qubit_pi2_gain"] = int(pi2_gain)
+    session_id = (("q3_ramsey_pulse_gain_check_" if pulse_gain_check else
+                   "q3_ramsey_phase_check_" if phase_check else
                    "q3_floquet_transfer_ramsey_") +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                   "_" + uuid.uuid4().hex[:8])
     folder = data_root / "q3" / session_id
     folder.mkdir(parents=True, exist_ok=False)
     path = folder / "manifest.json"
-    entries = phase_check_schedule() if phase_check else schedule()
-    shots = PHASE_CHECK_SHOTS if phase_check else SHOTS_PER_ARM
-    manifest = {"schema": ("q3.ramsey-phase-check.v1" if phase_check else
+    entries = (pulse_gain_schedule() if pulse_gain_check else
+               phase_check_schedule() if phase_check else schedule())
+    shots = PHASE_CHECK_SHOTS if phase_check or pulse_gain_check else SHOTS_PER_ARM
+    manifest = {"schema": ("q3.ramsey-pulse-gain-check.v1" if pulse_gain_check else
+                           "q3.ramsey-phase-check.v1" if phase_check else
                            "q3.floquet-transfer-ramsey.v1"),
                 "status": "running", "session_id": session_id,
                 "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
-                "plan": plan(phase_check=phase_check), "park_config": {
+                "plan": run_plan, "park_config": {
                     "ff_park_gain": base["ff_park_gain"],
                     "static_flux_fit_params": list(five.APPLE_FLUX_FIT_PARAMS),
                     "qubit_pi_freq_mhz": base["qubit_pi_freq"],
@@ -480,13 +576,15 @@ def run(*, data_root=localizer.DATA_ROOT, phase_check=False):
         # taking shots. QICK checks actual generator clocks and envelope memory.
         preflight = []
         for entry in entries[:len(entries) // 2]:
-            cfg = dict(base, ramsey_arm="q" if phase_check else "g",
+            cfg = dict(base, ramsey_arm="q" if phase_check or pulse_gain_check else "g",
                        ramsey_q_phase_deg=entry.get("analysis_phase_deg", 90),
                        shots=1, reps=1,
                        ramsey_flux_hold_us=entry["duration_us"],
                        transfer_amplitude_dac=entry["amplitude_dac"],
                        transfer_frequency_mhz=entry["frequency_mhz"],
                        transfer_static_offset_dac=entry["static_offset_dac"])
+            if "pi2_gain" in entry:
+                cfg["qubit_pi2_gain"] = int(entry["pi2_gain"])
             program = program_class(soccfg, cfg)
             report = program.waveform_report
             if (entry["kind"] == "ac" and
@@ -542,7 +640,16 @@ def run(*, data_root=localizer.DATA_ROOT, phase_check=False):
                 calib_params=ss.calib_params, folder=folder,
                 shots=shots,
                 checkpoint=lambda: protocol.checkpoint(path, manifest))
-        if phase_check:
+        if pulse_gain_check:
+            manifest["pulse_gain_report"] = pulse_gain_report(entries)
+            manifest["status"] = (
+                "complete" if manifest["pulse_gain_report"]["valid"] else
+                "complete_controls_unstable")
+            selected = manifest["pulse_gain_report"]["selected_pi2_gain"]
+            print(f"[transfer-Ramsey] pulse gain "
+                  f"{selected if selected is not None else 'unresolved'}",
+                  flush=True)
+        elif phase_check:
             manifest["phase_check_report"] = phase_check_report(entries)
             manifest["status"] = ("complete" if
                                   manifest["phase_check_report"]["valid"] else
@@ -575,13 +682,20 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
-    parser.add_argument("--phase-check", action="store_true")
+    diagnostic = parser.add_mutually_exclusive_group()
+    diagnostic.add_argument("--phase-check", action="store_true")
+    diagnostic.add_argument("--pulse-gain-check", action="store_true")
+    parser.add_argument("--pi2-gain", type=int)
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(phase_check=args.phase_check), indent=2))
+        print(json.dumps(plan(phase_check=args.phase_check,
+                              pulse_gain_check=args.pulse_gain_check,
+                              pi2_gain=args.pi2_gain), indent=2))
     else:
-        run(data_root=args.data_root, phase_check=args.phase_check)
+        run(data_root=args.data_root, phase_check=args.phase_check,
+            pulse_gain_check=args.pulse_gain_check,
+            pi2_gain=args.pi2_gain)
     return 0
 
 

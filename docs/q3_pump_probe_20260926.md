@@ -4019,3 +4019,48 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-scaling-check
 ```
+
+The scaling check completed at
+`q3_floquet_scaling_check_20260929T013725Z_38214cd1`. All 26 programs
+completed with usable within-program controls, pre/post readout fidelities
+0.898/0.905, and passing park-transfer references. The wide scouts selected
+3.994 GHz before the first block and 3.992 GHz at the midpoint and after the
+second block; the respective loss depths were 0.373, 0.496, and 0.286. The
+second block was recentered to 3.992 GHz. The feature remained usable, though
+the depth changed appreciably.
+
+Pooling both reversed blocks, the modulation-induced long-minus-short,
+hot-minus-cold survival changes at the equal *programmed* A/f = 50 DAC/MHz
+settings were +0.110 ± 0.012 at (10 MHz, 500 DAC), +0.124 ± 0.013 at
+(20, 1000), +0.112 ± 0.013 at (30, 1500), +0.103 ± 0.013 at (40, 2000),
+and +0.107 ± 0.013 at (50, 2500). The uncertainties are shot-level standard
+errors from the saved eight-condition IQ records, paired by QICK shot. These
+five responses are approximately flat, but that is not unique to A/f scaling:
+the fixed-1000-DAC series is also near +0.10–0.12 at 10–40 MHz, and the
+fixed-2000-DAC series remains protective over 10–50 MHz. The 1000-DAC,
+50-MHz setting changed from +0.001 ± 0.018 in the first block to
++0.100 ± 0.018 in the second, a 0.099 ± 0.025 block disagreement despite
+the global control gates passing. Thus the run strengthens the observation
+that fast flux controls loss, but it does not establish a unique J0/Floquet
+scaling law or a calibrated modulation index.
+
+The independent flux-transfer measurement is still limited by the failed
+zero-AC park Ramsey phase check. Before another AC Ramsey sweep,
+`TLSFloquetTransferRamsey --pulse-gain-check` tests two-pulse phase contrast
+at nine candidate pi/2 gains with zero AC and the same 0.1-us park-bias
+waveform as the failed check. Each gain is measured at second-pulse phases
+0° and 180° in two reversed orders; ground, pi-excited, and first-pulse
+controls accompany the Ramsey arm. A gain is accepted only if both blocks
+show at least 0.25 excited-fraction phase contrast with usable g/e reference,
+the two nominally identical 0° arms agree, and the 0° control does not drift
+between phase programs. Raw IQ and compiled waveforms are saved.
+This is a bounded phase-axis diagnostic, not a TLS-loss measurement; failure
+will rule out using this park Ramsey sequence for AC transfer until its pulse
+sequence is repaired.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run --pulse-gain-check
+```

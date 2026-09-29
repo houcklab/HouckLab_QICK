@@ -334,3 +334,103 @@ def test_phase_check_cli_plan_is_short_and_requires_no_hardware(capsys):
     assert printed["mode"] == "phase_axis_check"
     assert printed["programs"] == 32
     assert printed["shots_per_arm"] == 200
+
+
+def test_pulse_gain_schedule_reverses_order_and_keeps_zero_ac():
+    rows = experiment().pulse_gain_schedule(gains=(2000, 4000))
+    assert [(r["block"], r["pi2_gain"], r["analysis_phase_deg"])
+            for r in rows] == [
+                (0, 2000, 0), (0, 2000, 180),
+                (0, 4000, 0), (0, 4000, 180),
+                (1, 4000, 180), (1, 4000, 0),
+                (1, 2000, 180), (1, 2000, 0)]
+    assert all(r["amplitude_dac"] == 0 and r["static_offset_dac"] == 0
+               and r["duration_us"] == .1 for r in rows)
+    assert len({r["name"] for r in rows}) == len(rows)
+
+
+def test_pulse_gain_report_requires_reproduced_phase_contrast():
+    module = experiment()
+    rows = module.pulse_gain_schedule(gains=(2000, 4000))
+    for row in rows:
+        gain = row["pi2_gain"]
+        phase = row["analysis_phase_deg"]
+        q = ({2000: {.0: .62, 180: .27},
+              4000: {.0: .78, 180: .16}}[gain][phase])
+        i = {2000: .62, 4000: .78}[gain]
+        row["arms"] = {arm: {"excited_fraction": value}
+                       for arm, value in (("g", .10), ("e", .85),
+                                          ("i", i), ("q", q))}
+    report = module.pulse_gain_report(rows)
+    assert report["valid"] is True
+    assert report["selected_pi2_gain"] == 4000
+    assert report["gains"]["4000"]["minimum_phase_contrast"] == \
+        pytest.approx(.62)
+    for row in rows:
+        if row["block"] == 1 and row["pi2_gain"] == 4000:
+            row["arms"]["q"]["excited_fraction"] = .5
+    assert module.pulse_gain_report(rows)["selected_pi2_gain"] == 2000
+    for row in rows:
+        if row["block"] == 1 and row["pi2_gain"] == 2000:
+            row["arms"]["q"]["excited_fraction"] = .5
+    assert module.pulse_gain_report(rows)["valid"] is False
+
+
+def test_pulse_gain_report_rejects_program_drift_that_mimics_phase_axis():
+    module = experiment()
+    rows = module.pulse_gain_schedule(gains=(4000,))
+    for row in rows:
+        phase = row["analysis_phase_deg"]
+        row["arms"] = {arm: {"excited_fraction": value}
+                       for arm, value in (("g", .1), ("e", .85),
+                                          ("i", .8 if phase == 0 else .3),
+                                          ("q", .8 if phase == 0 else .3))}
+    assert module.pulse_gain_report(rows)["valid"] is False
+
+
+def test_pulse_gain_acquisition_overrides_only_pi2_gain(tmp_path):
+    module = experiment()
+    entry = module.pulse_gain_schedule(gains=(4000,))[0]
+    seen = []
+
+    class FakeProgram:
+        def __init__(self, _soccfg, cfg):
+            self.cfg = cfg
+            self.waveform_report = {}
+            self.memory_report = {}
+            self.park_transfer_waveform = np.arange(8, dtype=np.int16)
+            seen.append((cfg["qubit_pi_gain"], cfg["qubit_pi2_gain"],
+                         cfg["ramsey_q_phase_deg"]))
+
+    def acquire(program, _soc):
+        n = {"g": 1, "e": 9, "i": 5, "q": 8}[program.cfg["ramsey_arm"]]
+        iq = np.r_[np.ones(n), np.zeros(10 - n)]
+        return np.full(10, np.nan), np.full(10, np.nan), iq, np.zeros(10)
+
+    module.acquire_entry(
+        entry, soc=None, soccfg=None,
+        base_cfg={"qubit_pi_gain": 13500, "qubit_pi2_gain": 6750},
+        program_class=FakeProgram, acquire=acquire,
+        discriminate=lambda i, q, _cal: i > .5,
+        calib_params={}, folder=tmp_path, shots=10)
+    assert seen == [(13500, 4000, 0)] * 4
+
+
+def test_pulse_gain_check_cli_plan_is_hardware_free(capsys):
+    module = experiment()
+    assert module.main(["--plan", "--pulse-gain-check"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["mode"] == "pulse_gain_check"
+    assert printed["bias"] == "q3 park"
+    assert printed["programs"] == 4 * len(printed["pi2_gains"])
+
+
+def test_transfer_plan_accepts_selected_pi2_gain_and_rejects_bad_values(capsys):
+    module = experiment()
+    assert module.main(["--plan", "--phase-check", "--pi2-gain", "4000"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["qubit_pi2_gain"] == 4000
+    with pytest.raises(ValueError, match="pi/2 gain"):
+        module.plan(pi2_gain=0)
+    with pytest.raises(ValueError, match="gain check"):
+        module.plan(pulse_gain_check=True, pi2_gain=4000)
