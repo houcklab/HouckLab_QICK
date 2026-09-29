@@ -5144,3 +5144,5 @@ g–e bias also had independent scout loss, making an e–f attribution harder.
 There is no defensible shared-TLS detection from this branch, and more
 shots with the same delayed-readout sequence are not justified by the
 observed profile.
+
+![Exploratory two-pass e-f loss profile after full-return mapped readout](q3_dual_transition_shelved_v2_20260929.png)
