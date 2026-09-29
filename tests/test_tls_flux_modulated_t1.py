@@ -1,6 +1,7 @@
 """Contracts for an interleaved AC-flux loss comparison at q3."""
 
 import importlib
+import json
 
 import numpy as np
 import pytest
@@ -273,3 +274,59 @@ def test_compiled_ac_waveforms_use_each_programs_frequency(monkeypatch):
                     [32, 112] if requested == 20.0 else [64, 224])
         assert all(program.ac_reports[str(hold)]["actual_modulation_mhz"] ==
                    pytest.approx(requested, abs=.02) for hold in (1.6, 5.6))
+
+
+def test_scaling_check_plan_pairs_equal_index_with_fixed_amplitude_controls():
+    module = experiment()
+    p = module.plan(floquet_scaling_check=True)
+    pairs = [tuple(row) for row in p["frequency_amplitude_pairs_mhz_dac"]]
+    assert len(pairs) == 13
+    assert {(10., 500), (20., 1000), (30., 1500),
+            (40., 2000), (50., 2500)} <= set(pairs)
+    assert {(10., 1000), (50., 1000),
+            (10., 2000), (50., 2000)} <= set(pairs)
+    assert len(set(pairs)) == len(pairs)
+    assert p["programs"] == 26
+    assert p["shots_per_program"] == 4000
+    assert p["holds_us"] == [1.6, 5.6]
+    with pytest.raises(ValueError, match="exclusive"):
+        module.plan(floquet_scaling_check=True, floquet_frequency_sweep=True)
+
+
+def test_scaling_check_specs_reverse_exact_pairs_and_recenter_later_block():
+    module = experiment()
+    pairs = ((10., 500), (20., 1000), (50., 2500))
+    specs = module.program_specs(
+        3.992, settings=pairs, shots=4000,
+        sites=("feature",), holds_us=(1.6, 5.6), pre_us=.05)
+    assert [(row["modulation_frequency_mhz"], row["amplitude_dac"])
+            for row in specs] == list(pairs) + list(reversed(pairs))
+    assert [row["name"] for row in specs] == [
+        "r0_feature_a500_f10", "r0_feature_a1000_f20",
+        "r0_feature_a2500_f50", "r1_feature_a2500_f50",
+        "r1_feature_a1000_f20", "r1_feature_a500_f10"]
+    module.recenter_repeat(specs, center=3.994, repeat=1,
+                           holds_us=(1.6, 5.6), pre_us=.05)
+    assert [row["flux_ghz"] for row in specs] == [3.992]*3 + [3.994]*3
+
+
+def test_scaling_check_extreme_waveforms_have_integer_cycles_without_clipping():
+    module = experiment()
+    for frequency, amplitude, cycles in ((10., 500, 16), (50., 2500, 80)):
+        waveform, report = module.compensated_ac_waveform(
+            segments=[(1.0, 1.6)], park_gain=-25146,
+            target_gain=-14750, amplitude_gain=amplitude,
+            modulation_mhz=frequency, sample_rate_mhz=6881.28,
+            fabric_rate_mhz=430.08, cycles=688, max_gain=32767)
+        assert report["cycles_per_waveform"] == cycles
+        assert report["actual_modulation_mhz"] == pytest.approx(frequency,
+                                                                  abs=.02)
+        assert waveform.min() >= -17250
+        assert waveform.max() <= -12250
+
+
+def test_scaling_check_cli_plan_avoids_hardware(capsys):
+    assert experiment().main(["--plan", "--floquet-scaling-check"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["programs"] == 26
+    assert printed["frequency_amplitude_pairs_mhz_dac"][0] == [10.0, 500]

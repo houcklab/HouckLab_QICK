@@ -3987,3 +3987,35 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run --phase-check
 ```
+
+The phase-axis check completed at
+`q3_ramsey_phase_check_20260929T011802Z_48720713` with all 32
+programs and raw IQ. Park single-shot fidelity was 0.927, assignment
+contrast was 0.854, and every g/e preparation contrast remained
+usable. The zero-AC q-arm spans across second-pulse phases 0°, 90°,
+180°, and 270° were only 0.13 and 0.04 in the two reversed blocks,
+below the preregistered 0.25 minimum. The AC and +700-DAC static
+settings likewise showed little phase dependence. Thus the current
+park Ramsey sequence has **no demonstrated phase axis**; the earlier
+near-π jumps cannot be treated as measured AC phase or line transfer.
+Stop this calibration route rather than adjusting its threshold.
+
+The next direct loss run tests the modulation response at the fresh
+loss feature using 13 *programmed* frequency/amplitude pairs in two
+reversed blocks. Five pairs keep A/f = 50 DAC/MHz: (10,500),
+(20,1000), (30,1500), (40,2000), and (50,2500). Fixed-amplitude
+1000- and 2000-DAC controls cover 10–50 MHz, with duplicate pairs
+measured only once. Each program retains the successful within-shot
+AC off/on, ground/excited, 1.6-/5.6-µs loss comparison, and a fresh
+pre/mid/post wide scout. Similar effects along the diagonal with
+different fixed-amplitude behavior would motivate coherent control
+tests; a response set mainly by amplitude would favor time-averaged
+static loss. Unknown frequency-dependent line transfer and nearby
+loss sites still prevent a microscopic TLS or J0 interpretation.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-scaling-check
+```

@@ -65,6 +65,13 @@ SWEEP_SHOTS = 4000
 FREQUENCY_SWEEP_MHZ = (20.0, 30.0, 40.0)
 FREQUENCY_SWEEP_AMPLITUDES_DAC = (600, 1000, 1400, 2000)
 FREQUENCY_SWEEP_SHOTS = 4000
+SCALING_PAIRS_MHZ_DAC = (
+    (10.0, 500), (20.0, 1000), (30.0, 1500), (40.0, 2000),
+    (50.0, 2500),
+    (10.0, 1000), (30.0, 1000), (40.0, 1000), (50.0, 1000),
+    (10.0, 2000), (20.0, 2000), (30.0, 2000), (50.0, 2000),
+)
+SCALING_SHOTS = 4000
 
 
 def compensated_ac_waveform(*, segments, park_gain, target_gain,
@@ -139,10 +146,28 @@ def feature_specific_effect(feature, flank):
 
 
 def plan(*, focused=False, floquet_direct=False,
-         floquet_amplitude_sweep=False, floquet_frequency_sweep=False):
+         floquet_amplitude_sweep=False, floquet_frequency_sweep=False,
+         floquet_scaling_check=False):
     if sum((bool(focused), bool(floquet_direct),
-            bool(floquet_amplitude_sweep), bool(floquet_frequency_sweep))) > 1:
+            bool(floquet_amplitude_sweep), bool(floquet_frequency_sweep),
+            bool(floquet_scaling_check))) > 1:
         raise ValueError("modulation experiment modes are exclusive")
+    if floquet_scaling_check:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "site": "fresh 3.992-GHz loss feature",
+                "frequency_amplitude_pairs_mhz_dac": [list(pair) for pair in
+                                                      SCALING_PAIRS_MHZ_DAC],
+                "holds_us": list(DIRECT_HOLDS_US),
+                "pre_target_hold_us": DIRECT_PRE_US,
+                "park_ramp_us": PARK_RAMP_US,
+                "conditions_per_shot": RECORDS_PER_SHOT,
+                "programs": 2 * len(SCALING_PAIRS_MHZ_DAC),
+                "shots_per_program": SCALING_SHOTS,
+                "midpoint_feature_scout": True,
+                "full_return_before_readout_us": 40.0,
+                "raw_iq_saved": True,
+                "measurement": "direct loss at equal A/f and fixed-amplitude controls",
+                "interpretation": "compare response shapes; unknown line transfer prevents a J0 claim"}
     if floquet_frequency_sweep:
         return {"hardware_access": False, "reset_mode": "passive",
                 "site": "fresh 3.992-GHz loss feature",
@@ -327,41 +352,46 @@ class ModulatedT1Program(alternating.ShotAlternatingResidentProgram):
 
 def program_specs(center, *, amplitudes=AMPLITUDES_DAC, shots=SHOTS,
                   control_ghz=None, sites=("feature", "flank"),
-                  holds_us=HOLDS_US, pre_us=PRE_US, frequencies_mhz=None):
+                  holds_us=HOLDS_US, pre_us=PRE_US, frequencies_mhz=None,
+                  settings=None):
     flank = (round(float(center) + resident.FLANK_OFFSET_GHZ, 3)
              if control_ghz is None else round(float(control_ghz), 3))
     specs = []
+    if settings is not None and frequencies_mhz is not None:
+        raise ValueError("explicit frequency-amplitude pairs exclude a frequency grid")
     frequencies = ((MODULATION_MHZ,) if frequencies_mhz is None else
                    tuple(float(value) for value in frequencies_mhz))
-    if not frequencies or any(not np.isfinite(value) or value <= 0
-                              for value in frequencies):
+    pairs = (tuple((float(frequency), int(amplitude))
+                   for frequency, amplitude in settings)
+             if settings is not None else
+             tuple((frequency, int(amplitude)) for amplitude in amplitudes
+                   for frequency in frequencies))
+    if (not pairs or len(set(pairs)) != len(pairs) or
+            any(not np.isfinite(frequency) or frequency <= 0 or amplitude <= 0
+                for frequency, amplitude in pairs)):
         raise ValueError("frequency sweep needs positive finite frequencies")
     for repeat in (0, 1):
         ordered_sites = tuple((site, float(center) if site == "feature" else flank)
                               for site in sites)
-        ordered_amplitudes = tuple(amplitudes)
-        ordered_frequencies = frequencies
+        ordered_pairs = pairs
         if repeat:
-            ordered_sites, ordered_amplitudes = (
-                tuple(reversed(ordered_sites)),
-                tuple(reversed(ordered_amplitudes)))
-            ordered_frequencies = tuple(reversed(frequencies))
+            ordered_sites = tuple(reversed(ordered_sites))
+            ordered_pairs = tuple(reversed(pairs))
         for site, flux in ordered_sites:
-            for amplitude in ordered_amplitudes:
-                for frequency in ordered_frequencies:
-                    conds = conditions(flux, amplitude_dac=amplitude,
-                                       reverse=bool(repeat), holds_us=holds_us,
-                                       pre_us=pre_us)
-                    suffix = ("" if frequencies_mhz is None else
-                              f"_f{frequency:g}".replace(".", "p"))
-                    specs.append({"name": f"r{repeat}_{site}_a{amplitude}{suffix}",
-                                  "repeat": repeat, "site": site,
-                                  "flux_ghz": flux,
-                                  "amplitude_dac": amplitude,
-                                  "modulation_frequency_mhz": frequency,
-                                  "shots": int(shots),
-                                  "order": [c["name"] for c in conds],
-                                  "conditions": conds, "status": "pending"})
+            for frequency, amplitude in ordered_pairs:
+                conds = conditions(flux, amplitude_dac=amplitude,
+                                   reverse=bool(repeat), holds_us=holds_us,
+                                   pre_us=pre_us)
+                suffix = ("" if frequencies_mhz is None and settings is None else
+                          f"_f{frequency:g}".replace(".", "p"))
+                specs.append({"name": f"r{repeat}_{site}_a{amplitude}{suffix}",
+                              "repeat": repeat, "site": site,
+                              "flux_ghz": flux,
+                              "amplitude_dac": amplitude,
+                              "modulation_frequency_mhz": frequency,
+                              "shots": int(shots),
+                              "order": [c["name"] for c in conds],
+                              "conditions": conds, "status": "pending"})
     return specs
 
 
@@ -430,25 +460,33 @@ def _controls(scores):
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         focused=False, floquet_direct=False, floquet_amplitude_sweep=False,
-        floquet_frequency_sweep=False):
+        floquet_frequency_sweep=False, floquet_scaling_check=False):
     if sum((bool(focused), bool(floquet_direct),
-            bool(floquet_amplitude_sweep), bool(floquet_frequency_sweep))) > 1:
+            bool(floquet_amplitude_sweep), bool(floquet_frequency_sweep),
+            bool(floquet_scaling_check))) > 1:
         raise ValueError("modulation experiment modes are exclusive")
-    anchored = floquet_direct or floquet_amplitude_sweep or floquet_frequency_sweep
-    amplitudes = (FREQUENCY_SWEEP_AMPLITUDES_DAC if floquet_frequency_sweep else
+    anchored = (floquet_direct or floquet_amplitude_sweep or
+                floquet_frequency_sweep or floquet_scaling_check)
+    amplitudes = (tuple(sorted({amplitude for _, amplitude in
+                                SCALING_PAIRS_MHZ_DAC})) if floquet_scaling_check else
+                  FREQUENCY_SWEEP_AMPLITUDES_DAC if floquet_frequency_sweep else
                   SWEEP_AMPLITUDES_DAC if floquet_amplitude_sweep else
                   DIRECT_AMPLITUDES_DAC if floquet_direct else
                   (1600,) if focused else AMPLITUDES_DAC)
     frequencies = FREQUENCY_SWEEP_MHZ if floquet_frequency_sweep else None
+    settings = SCALING_PAIRS_MHZ_DAC if floquet_scaling_check else None
     holds = DIRECT_HOLDS_US if anchored else HOLDS_US
     pre_us = DIRECT_PRE_US if anchored else PRE_US
-    shots = (FREQUENCY_SWEEP_SHOTS if floquet_frequency_sweep else
+    shots = (SCALING_SHOTS if floquet_scaling_check else
+             FREQUENCY_SWEEP_SHOTS if floquet_frequency_sweep else
              SWEEP_SHOTS if floquet_amplitude_sweep else
              DIRECT_SHOTS if floquet_direct else 8000 if focused else SHOTS)
     midpoint = focused or anchored
-    sites = (("feature",) if floquet_amplitude_sweep or floquet_frequency_sweep
+    sites = (("feature",) if (floquet_amplitude_sweep or
+                             floquet_frequency_sweep or floquet_scaling_check)
              else ("feature", "flank"))
-    output_tag = ("TLS_Floquet_Frequency_Sweep" if floquet_frequency_sweep
+    output_tag = ("TLS_Floquet_Scaling_Check" if floquet_scaling_check
+                  else "TLS_Floquet_Frequency_Sweep" if floquet_frequency_sweep
                   else "TLS_Floquet_Amplitude_Sweep" if floquet_amplitude_sweep
                   else "TLS_Floquet_Direct_Loss" if floquet_direct
                   else "TLS_FluxModulated_T1")
@@ -510,7 +548,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for hold in holds:
             _target_segments(compensation, pre_us=pre_us + 0.5,
                              hold_us=hold, recovery_us=40.0)
-        session_id = (("q3_floquet_frequency_sweep_" if floquet_frequency_sweep
+        session_id = (("q3_floquet_scaling_check_" if floquet_scaling_check
+                       else "q3_floquet_frequency_sweep_" if floquet_frequency_sweep
                        else "q3_floquet_amplitude_sweep_" if floquet_amplitude_sweep
                        else "q3_floquet_direct_loss_" if floquet_direct else
                        "q3_flux_modulated_t1_") +
@@ -524,7 +563,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
             ref["status"] = "pending"
-        manifest = {"schema": ("q3.floquet-frequency-sweep.v1"
+        manifest = {"schema": ("q3.floquet-scaling-check.v1"
+                                if floquet_scaling_check else
+                                "q3.floquet-frequency-sweep.v1"
                                 if floquet_frequency_sweep else
                                 "q3.floquet-amplitude-sweep.v1"
                                 if floquet_amplitude_sweep else
@@ -540,13 +581,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     "realized_ghz": realized.tolist(),
                     "plan": plan(focused=focused, floquet_direct=floquet_direct,
                                  floquet_amplitude_sweep=floquet_amplitude_sweep,
-                                 floquet_frequency_sweep=floquet_frequency_sweep),
+                                 floquet_frequency_sweep=floquet_frequency_sweep,
+                                 floquet_scaling_check=floquet_scaling_check),
                     "references": refs,
                     "programs": program_specs(
                         center, amplitudes=amplitudes, shots=shots,
                         control_ghz=flank if anchored else None,
                         sites=sites, holds_us=holds, pre_us=pre_us,
-                        frequencies_mhz=frequencies)}
+                        frequencies_mhz=frequencies, settings=settings)}
         protocol.checkpoint(path, manifest)
         print(f"[mod-T1] manifest={path}", flush=True)
         raw_refs = {}
@@ -699,7 +741,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["program_scores"] = scores
             manifest["control_report"] = _controls(scores)
             effects = {}
-            if floquet_frequency_sweep:
+            if floquet_frequency_sweep or floquet_scaling_check:
                 for entry in manifest["programs"]:
                     effects[entry["name"]] = {
                         "modulation_frequency_mhz":
@@ -777,6 +819,8 @@ def main(argv=None):
                         help="repeat the direct 30-MHz loss test over ten AC amplitudes")
     parser.add_argument("--floquet-frequency-sweep", action="store_true",
                         help="compare the direct loss response at 20, 30, and 40 MHz")
+    parser.add_argument("--floquet-scaling-check", action="store_true",
+                        help="test equal A/f pairs against fixed-amplitude loss controls")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
@@ -784,13 +828,15 @@ def main(argv=None):
         print(json.dumps(plan(focused=args.focused,
                               floquet_direct=args.floquet_direct,
                               floquet_amplitude_sweep=args.floquet_amplitude_sweep,
-                              floquet_frequency_sweep=args.floquet_frequency_sweep),
+                              floquet_frequency_sweep=args.floquet_frequency_sweep,
+                              floquet_scaling_check=args.floquet_scaling_check),
                          indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             focused=args.focused, floquet_direct=args.floquet_direct,
             floquet_amplitude_sweep=args.floquet_amplitude_sweep,
-            floquet_frequency_sweep=args.floquet_frequency_sweep)
+            floquet_frequency_sweep=args.floquet_frequency_sweep,
+            floquet_scaling_check=args.floquet_scaling_check)
     return 0
 
 
