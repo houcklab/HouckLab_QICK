@@ -4183,3 +4183,56 @@ Floquet/TLS dynamics beyond a response to the flux-value distribution.
 The programmed histograms are identical; the delivered histograms need
 not be because the flux line filters their different spectra. Stop the
 phase-order branch here rather than varying another waveform detail.
+
+## J0-minimum amplitude pilot (prepared; no hardware result yet)
+
+The next experiment addresses a specific physical ambiguity in the AC
+protection data. A frequency sweep at fixed programmed `A/f_m` changes
+both Floquet sideband spacing and the width of the static flux excursion;
+ordinary averaging over a narrow static loss line can therefore mimic a
+falling residual rate. The discriminating pilot searches for a *local*
+loss minimum versus amplitude at one modulation frequency. In the
+weak-coupling Floquet model, carrier weight vanishes near the first
+`J0` zero, `beta=2.4048255577`, and rises again on either side. For one
+isolated Lorentzian loss line, simple time averaging decreases
+monotonically with excursion amplitude. Other loss sites, flux curvature,
+and an uncalibrated AC transfer can still complicate that comparison.
+
+`TLSFloquetJ0Pilot` uses a fresh corrected 3.8–4.3-GHz passive scout to
+select a locally qualified loss feature, preferring the recently observed
+4.106-GHz site if still present. A local *static* flux-fit slope converts
+`beta=1.8, 2.4048, 3.0` to estimated DAC amplitudes at each of 5 and
+10 MHz. These are predictions, **not delivered-AC calibration or a
+measured J0 zero**. Each of the six AC settings contains 4000 logical
+shots of eight complete visits: AC off/on × park-prepared ground/excited
+× 1.6/5.6-µs target dwell. Both hold times contain whole cycles at both
+frequencies and reuse the validated 65,536-sample waveform path. The
+early changing DC correction and the full 40-µs corrected return remain
+in place.
+
+Before and after each six-setting block, a 12-condition static program
+interleaves center and ±2-MHz visits × both holds × ground/excited
+preparations. A second wide scout recenters the reversed block, and a
+third scout follows it. All raw IQ, per-condition classified fractions,
+compiled AC waveforms, local static slope, and reference controls are
+saved in the manifest. The locally qualified feature is not guaranteed
+to be the only loss site over the entire ±30-MHz excursion; the saved
+wide scouts must be checked before any Floquet interpretation.
+
+The pilot succeeds scientifically only if both reversed blocks show an
+amplitude minimum near the *delivered* first zero after flux transfer is
+calibrated, static controls show a persistent line, and a model using
+the measured static line cannot explain the amplitude dependence.
+A missing minimum under the current static-slope estimate is
+inconclusive because AC transfer remains unknown. Only after a positive
+pilot should a denser 2.5–20-MHz residual-rate sweep be considered;
+that sweep would initially estimate an effective fast spectral width,
+not automatically a homogeneous TLS linewidth.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetJ0Pilot --plan
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetJ0Pilot --run
+```
