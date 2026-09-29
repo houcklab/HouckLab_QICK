@@ -5360,3 +5360,19 @@ sequence without a phase check. The runner's gate now fits the full phase
 circle so later runs are labeled correctly; the NAS manifest is unaltered.
 
 ![Park Rabi and phase-cycle calibration](q3_park_pi2_calibration_20260929.png)
+
+The next bounded run calibrates the **target-resident** pulse at 4.288 GHz,
+the exact site where the echo pilot had unresolved contrast.
+`TLSEchoTargetPi2Calibration` uses the same raw-IQ frequency, Rabi, and
+two-block phase checks as the successful park calibration, but every pulse
+is played during a 30-µs settled, corrected target visit; readout follows
+the full 40-µs return. It checks a ±10-MHz drive offset and gains up to
+30000 DAC. There is no new full-band scout and no reliance on the old park
+π pulse to define an excited-state readout reference. If a target pulse is
+found, its gain and drive offset apply at 4.288 GHz only; an echo map would
+still require a strategy for target-pulse calibration across the band.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoTargetPi2Calibration --run
+```

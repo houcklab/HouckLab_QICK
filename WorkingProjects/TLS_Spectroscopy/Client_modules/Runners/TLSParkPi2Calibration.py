@@ -1,8 +1,8 @@
-"""Calibrate q3's park pi/2 pulse without a TLS scout or an echo map.
+"""Calibrate q3's park or target-resident pi/2 pulse without a T1 scout.
 
-Single-pulse IQ displacement locates the current park drive frequency. A Rabi
-gain sweep finds pi and pi/2, and two opposed phase cycles test the pi/2.
-The existing park pi pulse is not used as a prerequisite for readout analysis.
+Single-pulse IQ displacement locates the drive frequency. A Rabi gain sweep
+finds pi and pi/2, and two opposed phase cycles test the pi/2. The existing
+park pi pulse is not used as a prerequisite for readout analysis.
 """
 
 import argparse
@@ -22,6 +22,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 OFFSETS_MHZ = (-6., -4., -2., 0., 2., 4., 6.)
 COARSE_GAINS = (6000, 12000, 18000)
+TARGET_OFFSETS_MHZ = (-10., -7.5, -5., -2.5, 0., 2.5, 5., 7.5, 10.)
+TARGET_COARSE_GAINS = (4000, 8000, 12000, 16000, 20000)
 RABI_GAINS = tuple(range(0, 30001, 1500))
 COARSE_SHOTS = 300
 CHECK_SHOTS = 400
@@ -30,7 +32,7 @@ CHECK_SHOTS = 400
 def choose_frequency(rows, *, baseline):
     """Find the largest single-pulse IQ displacement from the no-drive cloud."""
     if not rows:
-        raise ValueError("empty park frequency scan")
+        raise ValueError("empty pulse frequency scan")
     baseline = complex(baseline)
     candidates = []
     for row in rows:
@@ -135,12 +137,32 @@ def make_park_programs(parent):
     return ParkDriveProgram, ParkDoublePulseProgram
 
 
-def plan():
+def validate_target(target_ghz):
+    if target_ghz is None:
+        return None
+    target = float(target_ghz)
+    if not math.isfinite(target) or not 3.8 <= target <= 4.3:
+        raise ValueError("target must lie inside the q3 3.8–4.3 GHz band")
+    return target
+
+
+def select_programs(parent, *, target_ghz=None):
+    if validate_target(target_ghz) is None:
+        return make_park_programs(parent)
+    return parent, target_cal.make_double_pulse_program(parent)
+
+
+def plan(*, target_ghz=None):
+    target = validate_target(target_ghz)
     return {"hardware_access": False,
-            "purpose": "calibrate and independently phase-check park pi/2",
-            "bias": "q3 park", "reset_mode": "passive",
-            "frequency_offsets_mhz": list(OFFSETS_MHZ),
-            "coarse_gains": list(COARSE_GAINS),
+            "purpose": "calibrate and independently phase-check pi/2",
+            "bias": "q3 park" if target is None else
+                    f"{target:.3f} GHz target",
+            "reset_mode": "passive",
+            "frequency_offsets_mhz": list(OFFSETS_MHZ if target is None
+                                          else TARGET_OFFSETS_MHZ),
+            "coarse_gains": list(COARSE_GAINS if target is None
+                                 else TARGET_COARSE_GAINS),
             "rabi_gains": list(RABI_GAINS),
             "phase_check_deg": [0, 90, 180, 270],
             "readout": "raw IQ displacement, no existing pi calibration required",
@@ -148,14 +170,16 @@ def plan():
             "terminal": "no custom progress messages"}
 
 
-def run(*, data_root=None, correction_json=None):
+def run(*, data_root=None, correction_json=None, target_ghz=None):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
         TLSDualTransitionLoss as dual,
         TLSPumpProbeLocalizer as localizer,
         TLSPumpProbeResidentDrive as resident,
+        TLSPumpProbeWidePassiveScan as wide,
         TLSSpectroscopy as tls,
     )
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.ThreePointApplesToApples import _integer_dc_grid
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.integration import (
         _block_timeout_s, _run_program, runtime_bundle,
     )
@@ -163,6 +187,9 @@ def run(*, data_root=None, correction_json=None):
         ProductionResetSession,
     )
 
+    target_ghz = validate_target(target_ghz)
+    offsets = OFFSETS_MHZ if target_ghz is None else TARGET_OFFSETS_MHZ
+    coarse_gains = COARSE_GAINS if target_ghz is None else TARGET_COARSE_GAINS
     data_root = Path(data_root or localizer.DATA_ROOT)
     correction = localizer.checked_correction(data_root, correction_json)
     with localizer.scan_environment(correction):
@@ -176,6 +203,16 @@ def run(*, data_root=None, correction_json=None):
         park_mhz = float(base["qubit_pi_freq"])
         if not 4350. <= park_mhz <= 4380.:
             raise RuntimeError("q3 park drive is outside verified range")
+        if target_ghz is None:
+            site_ghz = park_mhz / 1000.
+            site_gain = park_gain
+            realized_ghz = site_ghz
+        else:
+            site_ghz = target_ghz
+            dc, realized = _integer_dc_grid(
+                wide.parameters(), np.asarray([site_ghz]), tls)
+            site_gain = int(dc[0])
+            realized_ghz = float(realized[0])
         base.update({"apply_flux_tail_compensation": True,
                      "flux_tail_compensation": tls._load_correction(
                          str(correction), str(data_root)),
@@ -191,7 +228,8 @@ def run(*, data_root=None, correction_json=None):
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.})
 
-        session_id = ("q3_park_pi2_calibration_" +
+        session_id = (("q3_park_pi2_calibration_" if target_ghz is None
+                       else "q3_target_pi2_calibration_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -204,31 +242,37 @@ def run(*, data_root=None, correction_json=None):
                 stderr=subprocess.DEVNULL).strip()
         except (OSError, subprocess.CalledProcessError):
             commit = "unknown"
-        manifest = {"schema": "q3.park-pi2-calibration.v1",
+        manifest = {"schema": ("q3.park-pi2-calibration.v1"
+                                if target_ghz is None else
+                                "q3.target-pi2-calibration.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": commit, "park_frequency_mhz": park_mhz,
                     "park_gain": park_gain,
+                    "site_frequency_ghz": site_ghz,
+                    "site_gain": site_gain,
+                    "realized_frequency_ghz": realized_ghz,
                     "pulse_sigma_us": float(base["sigma"]),
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
-                    "plan": plan(), "frequency_sweep": [],
+                    "plan": plan(target_ghz=target_ghz),
+                    "frequency_sweep": [],
                     "rabi_sweep": [], "phase_blocks": []}
         dual.checkpoint(manifest_path, manifest)
-        single_class, double_class = make_park_programs(
-            resident.ResidentDriveProgram)
+        single_class, double_class = select_programs(
+            resident.ResidentDriveProgram, target_ghz=target_ghz)
         try:
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
 
             def configuration(offset, gain, shots, second_phase=None):
-                arm = {"flux_ghz": park_mhz / 1000.,
-                       "drive_mhz": park_mhz + float(offset),
+                arm = {"flux_ghz": site_ghz,
+                       "drive_mhz": 1000 * site_ghz + float(offset),
                        "gain": int(gain), "reference_state": None,
                        "preparation_state": "g",
                        "pre_drive_us": 30., "post_drive_us": .1,
                        "shots": int(shots)}
                 cfg = resident.arm_config(
-                    base, arm, {park_mhz / 1000.: park_gain})
+                    base, arm, {site_ghz: site_gain})
                 if second_phase is not None:
                     cfg["rabi_second_phase_deg"] = int(second_phase)
                     cfg["ff_hold"] = 30. + .1 + 2 * (
@@ -250,9 +294,9 @@ def run(*, data_root=None, correction_json=None):
                                     q=[r.q for r in records])
                 return complex(np.mean(resident.record_iq(records)))
 
-            for offset in (OFFSETS_MHZ[0], OFFSETS_MHZ[-1]):
+            for offset in (offsets[0], offsets[-1]):
                 single_class(
-                    soccfg, configuration(offset, COARSE_GAINS[0],
+                    soccfg, configuration(offset, coarse_gains[0],
                                           COARSE_SHOTS),
                     bundle.payload, bundle.loop)
             double_class(soccfg, configuration(0, 6000, CHECK_SHOTS,
@@ -264,8 +308,8 @@ def run(*, data_root=None, correction_json=None):
             zero = acquire(0, 0, 600, "zero_pre.npz")
             manifest["zero_pre_iq"] = [zero.real, zero.imag]
             dual.checkpoint(manifest_path, manifest)
-            for offset in OFFSETS_MHZ:
-                for gain in COARSE_GAINS:
+            for offset in offsets:
+                for gain in coarse_gains:
                     value = acquire(offset, gain, COARSE_SHOTS,
                                     f"frequency_{offset:+05.1f}MHz_gain_{gain:05d}.npz")
                     manifest["frequency_sweep"].append({
@@ -277,7 +321,9 @@ def run(*, data_root=None, correction_json=None):
             manifest["chosen_frequency"] = choice
             dual.checkpoint(manifest_path, manifest)
             if not choice["valid"]:
-                manifest["status"] = "complete_no_park_drive"
+                manifest["status"] = ("complete_no_park_drive"
+                                      if target_ghz is None else
+                                      "complete_no_target_drive")
                 dual.checkpoint(manifest_path, manifest)
                 return manifest_path
 

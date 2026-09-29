@@ -87,3 +87,22 @@ def test_phase_cycle_rejects_rotating_or_collapsed_axis():
                                      ground=.043, pi=1.014)["valid"]
     assert not cal.phase_circle_gate(first, weak,
                                      ground=.043, pi=1.014)["valid"]
+
+
+def test_target_mode_uses_corrected_excursion_and_no_t1_scout():
+    p = cal.plan(target_ghz=4.288)
+    assert p["bias"] == "4.288 GHz target"
+    assert p["fresh_t1_scan"] is False
+    assert p["frequency_offsets_mhz"][0] == -10.
+
+    class Parent:
+        pass
+
+    single, double = cal.select_programs(Parent, target_ghz=4.288)
+    assert single is Parent
+    assert issubclass(double, Parent)
+
+
+def test_target_mode_rejects_out_of_band_frequency():
+    with pytest.raises(ValueError):
+        cal.plan(target_ghz=4.367)
