@@ -145,6 +145,116 @@ def test_f_is_prepared_at_park_and_read_before_return_tail_barrier():
     assert events.index(("barrier", 0)) < events.index("park_down")
 
 
+def test_shelved_readout_maps_states_after_return_prefix_before_readout():
+    program = object.__new__(dual.DualTransitionProgram)
+    program.cfg = {"dual_state": "f", "dual_mode": "science",
+                   "dual_readout_map": "shelved", "dual_hold_us": 10.,
+                   "dual_ef_gain": 11250, "qubit_ch": 1, "sigma": .03}
+    program.reset_config = SimpleNamespace(inter_shot_delay_us=500.)
+    program.reset_page = 0
+    program.reset_regs = {"i": 1, "q": 2, "address": 3}
+    events = []
+    program._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    program._set_payload_pulse = lambda **_: events.append("set_ge")
+    program._set_ef_pulse = lambda **_: events.append("set_ef")
+    program.pulse = lambda **_: events.append("ge")
+    program._ef_pulse = lambda **kw: events.append("ef")
+    program._wait_t1_payload = lambda **kw: events.append("visit")
+    program._measure_raw = lambda: events.append("readout")
+    program.memw = program.mathi = lambda *_: None
+    program.us2cycles = lambda us: us
+    program.sync_all = lambda us: events.append("barrier")
+    program.synci = lambda us: events.append("fixed_delay")
+    program._emit_body()
+    assert events.count("ef") == 1
+    visit = events.index("visit")
+    readout = events.index("readout")
+    assert events[visit + 1:readout] == ["set_ef", "ge", "set_ge",
+                                        "ge", "fixed_delay"]
+    assert "barrier" not in events[visit + 1:readout]
+
+
+def test_prompt_readout_overrides_five_point_pre_measure_sync():
+    cfg = {"opx_feedback_pre_measure_sync": True,
+           "opx_feedback_flush_mode": "off",
+           "flux_predistortion_overlap_payload_readout": True}
+    dual.configure_prompt_readout(cfg)
+    assert cfg["opx_feedback_pre_measure_sync"] is False
+    assert cfg["opx_feedback_flush_mode"] == "off"
+
+
+def test_science_program_rejects_a_return_tail_sync_before_readout():
+    cfg = {"opx_reset_scheme": "none", "opx_hard_flux_steps": True,
+           "opx_persistent_park": True, "dual_state": "f",
+           "dual_mode": "science",
+           "flux_predistortion_overlap_payload_readout": True,
+           "opx_feedback_pre_measure_sync": True}
+    with pytest.raises(ValueError, match="pre-measure sync"):
+        dual.DualTransitionProgram(None, cfg, None, None)
+
+
+def test_shelved_readout_resolves_f_when_direct_centroids_are_collinear():
+    rng = np.random.default_rng(123)
+    direct = {state: rng.normal(center, .3, 300) + 0j
+              for state, center in (("g", 0), ("e", 1), ("f", 2))}
+    mapped = {"g": rng.normal(1, .3, 300) + 0j,
+              "e": rng.normal(2, .3, 300) + 0j,
+              "f": rng.normal(0, .3, 300) + 0j}
+    references = {"identity": direct, "shelved": mapped}
+    report = dual.validate_shelved_references(references)
+    assert report["condition"] < 5
+    observed = {"identity": .35 * direct["e"] + .65 * direct["f"],
+                "shelved": .35 * mapped["e"] + .65 * mapped["f"]}
+    fit = dual.shelved_population(references, observed)
+    assert fit["f"] == pytest.approx(.65, abs=.03)
+    assert fit["e"] == pytest.approx(.35, abs=.03)
+
+
+def test_shelved_readout_rejects_unresolved_second_axis():
+    rng = np.random.default_rng(22)
+    direct = {s: rng.normal(c, .3, 300) + 0j
+              for s, c in (("g", 0), ("e", 1), ("f", 2))}
+    with pytest.raises(ValueError, match="shelved response"):
+        dual.validate_shelved_references({"identity": direct,
+                                          "shelved": direct})
+
+
+def test_shelved_fit_removes_a_matched_ground_iq_shift():
+    arrays = {"identity": {"g": np.zeros(200), "e": np.ones(200),
+                            "f": np.full(200, 2.)},
+              "shelved": {"g": np.ones(200), "e": np.full(200, 2.),
+                          "f": np.zeros(200)}}
+    long_ground = {name: arrays[name]["g"] + 3.0 for name in arrays}
+    long_f = {name: .4 * arrays[name]["e"] +
+             .6 * arrays[name]["f"] + 3.0 for name in arrays}
+    fit = dual.shelved_population(arrays, long_f, ground_shift=long_ground)
+    assert fit["f"] == pytest.approx(.6)
+    assert fit["e"] == pytest.approx(.4)
+
+
+def test_shelved_schedule_reverses_offsets_and_omits_ge_science():
+    rows = dual.shelved_schedule(3.95, -180.)
+    assert len(rows) == 2 * len(dual.OFFSETS_MHZ)
+    assert {row["transition"] for row in rows} == {"ef"}
+    assert rows[0]["bias_ge_ghz"] == pytest.approx(4.13)
+    assert [r["offset_mhz"] for r in rows if r["pass"] == 1] == list(
+        reversed(dual.OFFSETS_MHZ))
+
+
+def test_shelved_summary_does_not_promote_a_single_pass_peak():
+    points = []
+    for repeat in (0, 1):
+        for offset in dual.OFFSETS_MHZ:
+            points.append({"pass": repeat, "offset_mhz": offset,
+                           "status": "complete", "f_loss": .5 if offset == 4
+                           else .2, "e_control_f": .01})
+    result = dual.summarize_shelved_science(points)
+    peak = next(row for row in result["profile"] if row["offset_mhz"] == 4)
+    assert peak["passes"] == 2
+    assert peak["f_loss_mean"] == pytest.approx(.5)
+    assert peak["e_control_f_mean"] == pytest.approx(.01)
+
+
 def test_summary_compares_two_transitions_in_same_frequency_coordinate():
     points = []
     for repeat in (0, 1):

@@ -4982,7 +4982,13 @@ readout references, a 0.25 µs short dwell, a 10 µs long dwell, and a
 matched long-dwell ground control. Raw IQ and differential loss are saved
 after every arm. The readout begins after the 0.5 µs corrected return prefix
 while the 40 µs tail continues, retaining a chance to observe |f⟩ before
-it relaxes; the tail is complete before the next shot.
+it relaxes; the tail is complete before the next shot. This is the **intended
+and now enforced timing**. The first three runs below inherited the standard
+five-point `opx_feedback_pre_measure_sync=True` setting, which inserted an
+all-channel sync inside the readout call. Their readout actually waited until
+the full 40-µs flux tail completed. The experimental runner now explicitly
+sets this field to `False` after loading the five-point timing defaults;
+it retains the official ADC wait and raw-IQ collection.
 
 The e–f transition frequency at the excursion bias is inferred from the
 park-calibrated anharmonicity rather than measured locally. A coincident
@@ -5023,3 +5029,41 @@ The next run requires the entire shifted e–f bias window to have quiet
 0.738/0.662). One extra reference acquisition is now attempted if a
 single point misses the ensemble contrast gate; persistent failures are
 recorded as unresolved and the rest of the scan continues.
+
+The third run, `q3_tls_dual_transition_loss_20260929T192658Z_dfc59fe7`,
+completed all 36 science points. A fresh scout selected the 3.950-GHz line,
+with bidirectional 25-µs normalized depth 0.29–0.33. The e–f matching bias
+was 4.130 GHz, where g–e survival at the apparent e–f peak offsets +2/+4 MHz
+was 0.84/0.92 after 25 µs; this avoids the obvious shifted-bias loss that
+confounded the second run. The projected-IQ e–f loss peaked at +2/+4 MHz in
+both reversed-order passes: the mean over those offsets was 0.472 and 0.484,
+versus 0.248 and 0.090 over selected nearby flanks −6, −4, −2,
++6, +8 MHz. Their pooled peak-minus-flank difference is about 0.31 with
+conditional shot-noise SE about 0.10, but the peak offsets were chosen after
+seeing the data. See `q3_dual_transition_clean_bias_20260929.png`.
+
+Direct 2-D g/e/f IQ inversion of the saved shots does **not** robustly
+confirm the projected-IQ peak: it yields negative or near-zero inferred
+f-loss at +4 MHz in pass 0 and +2 MHz in pass 1. The nearly collinear state
+centroids make that inversion ill-conditioned, so this discrepancy neither
+proves nor rules out an e–f-coupled defect. The inherited 40-µs pre-readout
+sync is the stronger limitation: the reported peak is a **delayed** readout
+effect, not evidence of prompt e–f loss into the same TLS. The
+park-calibrated −180-MHz anharmonicity also remains an extrapolation at the
+4.130-GHz bias.
+
+The bounded follow-up is `TLSDualTransitionLoss --run --shelved-confirm`.
+It selects a fresh line with a quiet shifted bias and takes only e–f science
+arms, in two reversed-order passes. At each offset it acquires g/e/f
+references and long-dwell g/e/f data both directly and after an e–f then
+g–e park mapping. The mapping is scheduled with a fixed reference-time delay
+while the 40-µs flux correction tail is already playing; an all-channel
+sync before readout would wait out the tail and erase |f⟩. The two mapped
+IQ views allow a response-matrix estimate of f population, with the long-e
+arm explicitly testing e→g cascade/readout leakage. The run checkpoints all
+raw shots and remains silent apart from the standard SS-cal/five-point and
+hardware output. A positive result needs repeatable f-population loss on the
+line, low inferred f population in the long-e control, and a feature absent
+at nearby frequency controls. A null or failed response-matrix gate closes
+this particular two-transition claim without redefining a projected-IQ peak
+as a detection.

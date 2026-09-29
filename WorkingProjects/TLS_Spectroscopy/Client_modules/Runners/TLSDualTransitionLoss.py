@@ -76,7 +76,9 @@ def recent_ef_calibration(data_root, *, max_age_minutes=120):
                 continue
             document = json.loads(path.read_text(encoding="utf-8"))
             calibration = document.get("calibration", {})
-            if (document.get("schema") != "q3.tls-dual-transition-loss.v1"
+            if (document.get("schema") not in (
+                    "q3.tls-dual-transition-loss.v1",
+                    "q3.tls-dual-transition-shelved.v1")
                     or document.get("correction_sha256") != localizer.CORRECTION_SHA256
                     or calibration.get("status") != "passed"):
                 continue
@@ -176,6 +178,11 @@ def science_schedule(center_ghz, anharmonicity_mhz):
                                  "bias_ge_ghz": round(bias, 6),
                                  "status": "pending"})
     return schedule
+
+
+def shelved_schedule(center_ghz, anharmonicity_mhz):
+    return [row for row in science_schedule(center_ghz, anharmonicity_mhz)
+            if row["transition"] == "ef"]
 
 
 def iq(records):
@@ -294,6 +301,63 @@ def projected_differential_loss(short_ground, short_target, long_ground,
             "reference_contrast_iq": float(abs(axis_delta))}
 
 
+def _shelved_vector(blocks):
+    """Two complex mean IQ values as a four-real-coordinate response."""
+    means = [np.mean(np.asarray(blocks[name], dtype=complex))
+             for name in ("identity", "shelved")]
+    return np.asarray([part for value in means
+                       for part in (value.real, value.imag)], dtype=float)
+
+
+def _shelved_matrix(references):
+    columns = [_shelved_vector({name: references[name][state]
+                                for name in ("identity", "shelved")})
+               for state in ("g", "e", "f")]
+    return np.column_stack((columns[1] - columns[0],
+                            columns[2] - columns[0])), columns
+
+
+def validate_shelved_references(references):
+    """Require two independent ensemble IQ response directions."""
+    for name in ("identity", "shelved"):
+        for state in ("g", "e", "f"):
+            sample = np.asarray(references[name][state], dtype=complex).ravel()
+            if len(sample) < 100 or not np.all(np.isfinite(sample)):
+                raise ValueError("shelved response has incomplete references")
+    matrix, columns = _shelved_matrix(references)
+    condition = float(np.linalg.cond(matrix))
+    snrs = {}
+    for a, b in (("g", "e"), ("g", "f"), ("e", "f")):
+        ia, ib = ("g", "e", "f").index(a), ("g", "e", "f").index(b)
+        error = math.sqrt(sum(_standard_error(references[name][state]) ** 2
+                              for name in ("identity", "shelved")
+                              for state in (a, b)))
+        snrs[a + b] = float(np.linalg.norm(columns[ib] - columns[ia]) /
+                            max(error, 1e-12))
+    if (not math.isfinite(condition) or condition > 8.0
+            or min(snrs.values()) < 5.0):
+        raise ValueError("shelved response is rank-deficient or unresolved")
+    return {"valid": True, "condition": condition, "pair_snrs": snrs,
+            "centroids": {state: columns[index].tolist()
+                          for index, state in enumerate(("g", "e", "f"))}}
+
+
+def shelved_population(references, observed, *, ground_shift=None):
+    """Infer g/e/f populations from direct and permutation-mapped mean IQ."""
+    matrix, columns = _shelved_matrix(references)
+    target = _shelved_vector(observed)
+    if ground_shift is not None:
+        target -= (_shelved_vector(ground_shift) -
+                   _shelved_vector({name: references[name]["g"]
+                                    for name in ("identity", "shelved")}))
+    fit, *_ = np.linalg.lstsq(matrix, target - columns[0], rcond=None)
+    p_e, p_f = map(float, fit)
+    residual = float(np.linalg.norm(matrix @ fit - (target - columns[0])))
+    return {"g": float(1 - p_e - p_f), "e": p_e, "f": p_f,
+            "condition": float(np.linalg.cond(matrix)),
+            "residual_iq": residual}
+
+
 def summarize_science(points):
     """Keep each arm visible while giving a conservative peak-location comparison."""
     by_transition = {}
@@ -326,6 +390,26 @@ def summarize_science(points):
                     "positive identity requires independent local e-f calibration."}
 
 
+def summarize_shelved_science(points):
+    profile = []
+    for offset in OFFSETS_MHZ:
+        rows = [point for point in points
+                if point["offset_mhz"] == offset and point["status"] == "complete"]
+        profile.append({
+            "offset_mhz": offset, "passes": len(rows),
+            "f_loss_mean": (float(np.mean([row["f_loss"] for row in rows]))
+                            if rows else None),
+            "f_loss_passes": [float(row["f_loss"]) for row in rows],
+            "e_control_f_mean": (float(np.mean([row["e_control_f"] for row in rows]))
+                                 if rows else None),
+        })
+    return {"profile": profile,
+            "unresolved_points": sum(point["status"] != "complete"
+                                     for point in points),
+            "note": "Two-map f population is preparation-relative; the matching "
+                    "e-f frequency still uses park-calibrated anharmonicity."}
+
+
 class DualTransitionProgram(OPXResetT1Program):
     """Passive park preparation and prompt readout during corrected return."""
 
@@ -341,9 +425,14 @@ class DualTransitionProgram(OPXResetT1Program):
             raise ValueError("unknown qutrit preparation")
         if cfg["dual_mode"] not in ("park", "science"):
             raise ValueError("unknown dual-transition mode")
+        if cfg.get("dual_readout_map", "identity") not in ("identity", "shelved"):
+            raise ValueError("unknown dual-transition readout map")
         if cfg["dual_mode"] == "science" and not cfg.get(
                 "flux_predistortion_overlap_payload_readout"):
             raise ValueError("science readout must overlap the corrected return")
+        if cfg["dual_mode"] == "science" and cfg.get(
+                "opx_feedback_pre_measure_sync"):
+            raise ValueError("pre-measure sync would wait out the return tail")
         super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
 
     def _declare_experiment(self):
@@ -353,16 +442,33 @@ class DualTransitionProgram(OPXResetT1Program):
         super()._declare_experiment()
         add_qubit_gaussian(self, name="qubit_ef", drag_beta=0.0)
 
-    def _ef_pulse(self):
+    def _set_ef_pulse(self, *, gain):
         cfg = self.cfg
         self.set_pulse_registers(
             ch=cfg["qubit_ch"], style="arb",
             freq=self.freq2reg(float(cfg["dual_ef_freq_mhz"]),
                                gen_ch=cfg["qubit_ch"]),
             phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
-            gain=(int(cfg["dual_ef_gain"]) if cfg["dual_state"] == "f"
-                  else 0), waveform="qubit_ef")
+            gain=int(gain), waveform="qubit_ef")
+
+    def _ef_pulse(self):
+        self._set_ef_pulse(gain=(self.cfg["dual_ef_gain"]
+                                 if self.cfg["dual_state"] == "f" else 0))
         _pulse_pi_and_align(self)
+
+    def _shelve_readout(self):
+        # The compensated return tail is already scheduled on the flux DAC.
+        # sync_all would advance the reference time past that 40-us tail and
+        # erase f before readout. QICK's auto timestamps put the second pulse
+        # after the first on the same qubit channel. One fixed synci after
+        # both advances readout beyond their combined duration, not the tail.
+        cfg = self.cfg
+        mapping_us = 8.0 * float(cfg["sigma"]) + .04
+        self._set_ef_pulse(gain=cfg["dual_ef_gain"])
+        self.pulse(ch=cfg["qubit_ch"])
+        self._set_payload_pulse()
+        self.pulse(ch=cfg["qubit_ch"])
+        self.synci(self.us2cycles(mapping_us))
 
     def _emit_body(self):
         cfg = self.cfg
@@ -373,6 +479,8 @@ class DualTransitionProgram(OPXResetT1Program):
         self._ef_pulse()
         if cfg["dual_mode"] == "science":
             self._wait_t1_payload(hold_us=float(cfg["dual_hold_us"]))
+        if cfg.get("dual_readout_map", "identity") == "shelved":
+            self._shelve_readout()
         self._measure_raw()
         for name in ("i", "q"):
             self.memw(self.reset_page, self.reset_regs[name],
@@ -387,11 +495,13 @@ class DualTransitionProgram(OPXResetT1Program):
 
 
 def arm_config(base, *, state, ef_freq_mhz, ef_gain, shots,
-               mode="park", bias_ghz=None, dc_lookup=None, hold_us=SHORT_US):
+               mode="park", bias_ghz=None, dc_lookup=None, hold_us=SHORT_US,
+               readout_map="identity"):
     cfg = dict(base)
     cfg.update({"dual_state": state, "dual_mode": mode,
                 "dual_ef_freq_mhz": float(ef_freq_mhz),
                 "dual_ef_gain": int(ef_gain),
+                "dual_readout_map": readout_map,
                 "dual_hold_us": float(hold_us), "shots": int(shots),
                 "reps": int(shots), "ff_hold": float(hold_us)})
     if mode == "science":
@@ -401,19 +511,37 @@ def arm_config(base, *, state, ef_freq_mhz, ef_gain, shots,
     return cfg
 
 
-def plan():
+def configure_prompt_readout(cfg):
+    """Keep the readout inside the corrected return tail.
+
+    The standard five-point scan intentionally syncs every channel before
+    measuring. That sync would wait for this runner's 40-us flux tail and
+    invalidate its prompt f-state measurement.
+    """
+    if not cfg.get("flux_predistortion_overlap_payload_readout"):
+        raise ValueError("prompt readout requires overlapped return tail")
+    cfg["opx_feedback_pre_measure_sync"] = False
+    cfg["opx_feedback_flush_mode"] = "off"
+    return cfg
+
+
+def plan(*, shelved_confirm=False):
     return {"hardware_access": False, "reset": "passive",
             "calibration": "opposed e-f frequency scans, gain sweep, 0/pi/2pi audit",
             "scout": "one standard 3.8–4.3 GHz passive five-point scan",
-            "science": "interleaved g-e and e-f loss at matched transition frequencies",
+            "science": ("two-map e-f population with long e/g controls"
+                        if shelved_confirm else
+                        "interleaved g-e and e-f loss at matched transition frequencies"),
             "offsets_mhz": list(OFFSETS_MHZ),
             "dwells_us": [SHORT_US, LONG_US],
-            "readout": "park during 40-us corrected return tail; local IQ references",
+            "readout": ("direct and e-f/g-e mapped IQ during corrected return tail"
+                        if shelved_confirm else
+                        "park during 40-us corrected return tail; local IQ references"),
             "terminal": "new runner has no progress prints; NAS manifest has progress"}
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
-        reuse_recent_ef=False):
+        reuse_recent_ef=False, shelved_confirm=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     reused = None
@@ -430,12 +558,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
     folder = data_root / "q3" / session_id
     folder.mkdir(parents=True, exist_ok=False)
     path = folder / "manifest.json"
-    manifest = {"schema": "q3.tls-dual-transition-loss.v1",
+    manifest = {"schema": ("q3.tls-dual-transition-shelved.v1"
+                           if shelved_confirm else
+                           "q3.tls-dual-transition-loss.v1"),
                 "session_id": session_id, "status": "calibrating",
                 "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                 "correction_json": str(correction),
                 "correction_sha256": localizer.CORRECTION_SHA256,
-                "plan": plan(), "calibration": {}, "points": []}
+                "plan": plan(shelved_confirm=shelved_confirm),
+                "calibration": {}, "points": []}
     checkpoint(path, manifest)
     try:
         with localizer.scan_environment(correction):
@@ -474,14 +605,17 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                          "opx_reset_scheme": "none",
                          "opx_resident_dmem_stream": True,
                          "opx_inter_shot_delay_us": 500.0})
+            configure_prompt_readout(base)
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
 
             def acquire(name, *, state, freq, gain, mode="park", bias=None,
-                        lookup=None, hold=SHORT_US, shots=SHOTS):
+                        lookup=None, hold=SHORT_US, shots=SHOTS,
+                        readout_map="identity"):
                 cfg = arm_config(base, state=state, ef_freq_mhz=freq,
                                  ef_gain=gain, shots=shots, mode=mode,
-                                 bias_ghz=bias, dc_lookup=lookup, hold_us=hold)
+                                 bias_ghz=bias, dc_lookup=lookup, hold_us=hold,
+                                 readout_map=readout_map)
                 program = DualTransitionProgram(
                     soccfg, cfg, bundle.payload, bundle.loop)
                 records = _run_program(
@@ -593,7 +727,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             selected = select_eligible_feature(read_scout(scout),
                                                anharmonicity_mhz=alpha)
             manifest["selected"] = selected
-            schedule = science_schedule(selected["center_ghz"], alpha)
+            schedule = (shelved_schedule if shelved_confirm else
+                        science_schedule)(selected["center_ghz"], alpha)
             all_biases = np.asarray(sorted({row["bias_ge_ghz"] for row in schedule}))
             dc, realized = _integer_dc_grid(
                 {**wide.parameters(), "dc_min": -25000}, all_biases, tls)
@@ -610,6 +745,50 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 prefix = f"point_{index:03d}_{transition}"
                 point["status"] = "acquiring"
                 checkpoint(path, manifest)
+                if shelved_confirm:
+                    blocks = {hold: {mapping: {} for mapping in
+                                     ("identity", "shelved")}
+                              for hold in ("short", "long")}
+                    state_order = (("g", "e", "f") if point["pass"] == 0
+                                   else ("f", "e", "g"))
+                    map_order = (("identity", "shelved") if point["pass"] == 0
+                                 else ("shelved", "identity"))
+                    for hold_name, hold_us in (("short", SHORT_US),
+                                               ("long", LONG_US)):
+                        for state in state_order:
+                            for mapping in map_order:
+                                name = f"{prefix}_{hold_name}_{state}_{mapping}"
+                                values, raw = acquire(
+                                    name, state=state, freq=ef_frequency,
+                                    gain=ef_gain, mode="science", bias=bias,
+                                    lookup=lookup, hold=hold_us,
+                                    readout_map=mapping)
+                                blocks[hold_name][mapping][state] = values
+                                point.setdefault("raw_npz", {})[name] = raw
+                                checkpoint(path, manifest)
+                    try:
+                        point["reference_gate"] = validate_shelved_references(
+                            blocks["short"])
+                    except ValueError as exc:
+                        point["status"] = "unresolved_reference"
+                        point["reference_error"] = str(exc)
+                        checkpoint(path, manifest)
+                        continue
+                    long_ground = {mapping: blocks["long"][mapping]["g"]
+                                   for mapping in ("identity", "shelved")}
+                    def long_population(state):
+                        return shelved_population(
+                            blocks["short"],
+                            {mapping: blocks["long"][mapping][state]
+                             for mapping in ("identity", "shelved")},
+                            ground_shift=long_ground)
+                    point["long_f_population"] = long_population("f")
+                    point["long_e_population"] = long_population("e")
+                    point["f_loss"] = 1.0 - point["long_f_population"]["f"]
+                    point["e_control_f"] = point["long_e_population"]["f"]
+                    point["status"] = "complete"
+                    checkpoint(path, manifest)
+                    continue
                 refs = {}
                 ref_states = ("g", "e") if transition == "ge" else ("g", "e", "f")
                 for state in ref_states:
@@ -663,7 +842,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 point["differential_loss"] = point["mean_iq_loss"]["value"]
                 point["status"] = "complete"
                 checkpoint(path, manifest)
-            manifest["summary"] = summarize_science(schedule)
+            manifest["summary"] = (summarize_shelved_science(schedule)
+                                   if shelved_confirm else
+                                   summarize_science(schedule))
             manifest["status"] = ("complete_with_unresolved" if
                                   manifest["summary"]["unresolved_points"] else
                                   "complete")
@@ -685,12 +866,15 @@ def main(argv=None):
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--reuse-recent-ef", action="store_true",
                         help="reuse a recent passed e-f calibration, with a fresh 0/pi/2pi audit")
+    parser.add_argument("--shelved-confirm", action="store_true",
+                        help="measure f population with direct and mapped readout")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(shelved_confirm=args.shelved_confirm), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            reuse_recent_ef=args.reuse_recent_ef)
+            reuse_recent_ef=args.reuse_recent_ef,
+            shelved_confirm=args.shelved_confirm)
     return 0
 
 
