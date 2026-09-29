@@ -5332,3 +5332,10 @@ a separate prerequisite for the original target-resident echo map.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSParkPi2Calibration --run
 ```
+
+The first park-only attempt (`q3_park_pi2_calibration_20260929T222634Z_700f473b`)
+failed during program construction, before any shots: the inherited
+target-resident program required flux compensation even though park-to-park
+has zero flux step. The park-only program now plays its microwave pulses
+without entering that target-excursion path; its single- and double-pulse
+timings are checked locally. This failure contains no calibration data.

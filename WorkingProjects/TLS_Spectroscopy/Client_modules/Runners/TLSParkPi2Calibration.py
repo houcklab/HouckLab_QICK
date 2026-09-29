@@ -58,6 +58,40 @@ def fit_rabi_iq(rows):
     return target_cal.fit_rabi(converted)
 
 
+def make_park_programs(parent):
+    """Use the verified resident readout path without a nonexistent flux step."""
+    class ParkDriveProgram(parent):
+        def _resident_excursion(self):
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import _pulse_pi_and_align
+            cfg = self.cfg
+            self.sync_all(self.us2cycles(float(cfg["opx_resident_pre_us"])))
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb",
+                freq=self.freq2reg(float(cfg["opx_resident_freq_mhz"]),
+                                   gen_ch=cfg["qubit_ch"]),
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+                gain=int(cfg["opx_resident_gain"]), waveform="qubit")
+            _pulse_pi_and_align(self)
+            self.sync_all(self.us2cycles(float(cfg["opx_resident_post_us"])))
+
+    class ParkDoublePulseProgram(ParkDriveProgram):
+        def _resident_excursion(self):
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs import _pulse_pi_and_align
+            cfg = self.cfg
+            self.sync_all(self.us2cycles(float(cfg["opx_resident_pre_us"])))
+            for phase in (0, int(cfg["rabi_second_phase_deg"])):
+                self.set_pulse_registers(
+                    ch=cfg["qubit_ch"], style="arb",
+                    freq=self.freq2reg(float(cfg["opx_resident_freq_mhz"]),
+                                       gen_ch=cfg["qubit_ch"]),
+                    phase=self.deg2reg(phase, gen_ch=cfg["qubit_ch"]),
+                    gain=int(cfg["opx_resident_gain"]), waveform="qubit")
+                _pulse_pi_and_align(self)
+            self.sync_all(self.us2cycles(float(cfg["opx_resident_post_us"])))
+
+    return ParkDriveProgram, ParkDoublePulseProgram
+
+
 def plan():
     return {"hardware_access": False,
             "purpose": "calibrate and independently phase-check park pi/2",
@@ -137,7 +171,7 @@ def run(*, data_root=None, correction_json=None):
                     "plan": plan(), "frequency_sweep": [],
                     "rabi_sweep": [], "phase_blocks": []}
         dual.checkpoint(manifest_path, manifest)
-        double_class = target_cal.make_double_pulse_program(
+        single_class, double_class = make_park_programs(
             resident.ResidentDriveProgram)
         try:
             soc, soccfg = tls.makeProxy()
@@ -160,8 +194,8 @@ def run(*, data_root=None, correction_json=None):
 
             def acquire(offset, gain, shots, filename, second_phase=None):
                 cfg = configuration(offset, gain, shots, second_phase)
-                program_type = (resident.ResidentDriveProgram
-                                if second_phase is None else double_class)
+                program_type = (single_class if second_phase is None
+                                else double_class)
                 program = program_type(soccfg, cfg, bundle.payload, bundle.loop)
                 records = _run_program(
                     soc, program, max(30., _block_timeout_s(cfg, shots)),
@@ -174,7 +208,7 @@ def run(*, data_root=None, correction_json=None):
                 return complex(np.mean(resident.record_iq(records)))
 
             for offset in (OFFSETS_MHZ[0], OFFSETS_MHZ[-1]):
-                resident.ResidentDriveProgram(
+                single_class(
                     soccfg, configuration(offset, COARSE_GAINS[0],
                                           COARSE_SHOTS),
                     bundle.payload, bundle.loop)
