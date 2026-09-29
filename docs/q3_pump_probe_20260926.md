@@ -5268,3 +5268,40 @@ Run on the measurement PC after stopping other q3 acquisitions:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoDephasingMap --run
 ```
+
+The first echo-map attempt stopped at its quiet-site gate:
+`q3_echo_dephasing_map_20260929T220346Z_96f96c17` (commit `72251d9e`).
+The park echo produced reproducible 0.3-µs phase-cycle visibility 0.581 and
+0.611 in reversed orders, with readout-reference contrast 0.548. At the
+freshly selected quiet 4.288-GHz site, however, the 0.3-µs visibility was
+only 0.054 (continuous IQ projection gives about 0.147 of its reference
+separation). The fresh five-point T1 fit there was about 81 µs; energy loss
+over 0.3 µs cannot explain the missing echo. No band-map point was acquired.
+The result is **unresolved**: detuned or inaccurate target pulses and very
+fast dephasing are both possible. It cannot yet be called a dephasing hot
+spot.
+
+![Park echo phase contrast versus unresolved quiet-site pilot](q3_echo_pilot_20260929.png)
+
+Earlier resident-drive scans at 4.1–4.13 GHz found the strongest qubit response
+about 5 MHz above the flux-model frequency. The echo used zero detuning,
+and its 0.1-µs Gaussian pulses can be weak several MHz off resonance. That
+is a specific hypothesis for the quiet-site failure, not a measured
+frequency offset at 4.288 GHz. The next prerequisite is a **calibrated
+target π/2 pulse**; the echo's original area-scaled park pulse was never
+calibrated at target flux. `TLSEchoPulseCalibration` takes a fresh five-point
+scout, chooses one quiet site, and measures the response to one canonical
+0.2-µs-sigma Gaussian pulse across nine drive offsets (−10 to +10 MHz)
+and five coarse gains. At the strongest offset, it records a 0–30000-DAC
+Rabi gain sweep. A first π turnover and its rising half-height select
+candidate π and π/2 gains. Two target-resident π/2 pulses at relative
+phases 0°, 90°, 180°, and 270°, repeated in reverse acquisition order,
+must then show both inversion and cancellation. Ground and excited readout
+references bracket the sequence, and all raw IQ is saved. The runner stops
+without an echo map if any calibration check fails, and prints no custom
+progress messages.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoPulseCalibration --run
+```
