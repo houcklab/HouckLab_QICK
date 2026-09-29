@@ -78,6 +78,35 @@ def test_shelved_selector_can_keep_a_line_with_shifted_bias_loss():
     assert chosen["shifted_bias_min_25us_survival"] < .6
 
 
+def test_pooled_scout_survival_uses_group_contrast_when_one_row_is_weak():
+    rows = []
+    for contrast, survival in ((.10, .3), (.20, .4), (.20, .5)):
+        rows.append({"P0": ".1", "P1": str(.1 + contrast),
+                     "Ps_25us": str(.1 + contrast * survival)})
+    assert dual.pooled_group_survival(rows) == pytest.approx(.42)
+
+
+def test_shelved_selector_uses_pooled_bidirectional_profile():
+    rows = []
+    for mhz in range(3800, 4301, 2):
+        survival = .83 if abs(mhz - 3894) > 2 else .30
+        contrast = .18
+        if mhz in (3880, 3882, 3906):
+            contrast = .12  # ordinary per-frequency survival is undefined
+        row = {"target_frequency_ghz": f"{mhz / 1000:.3f}"}
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row.update({"P0" + suffix: ".1",
+                        "P1" + suffix: str(.1 + contrast),
+                        "Ps_10us" + suffix: str(.1 + contrast * survival),
+                        "Ps_25us" + suffix: str(.1 + contrast * survival)})
+        rows.append(row)
+    chosen = dual.select_eligible_feature(
+        rows, anharmonicity_mhz=-180.,
+        require_quiet_shifted_bias=False, pooled_readout=True)
+    assert abs(chosen["center_ghz"] - 3.894) <= .002
+    assert chosen["pooled_readout"] is True
+
+
 def test_ef_calibration_rejects_nonreturning_pulse():
     baseline = np.zeros(100, dtype=complex)
     pi = np.ones(100, dtype=complex)

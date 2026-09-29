@@ -96,8 +96,24 @@ def recent_ef_calibration(data_root, *, max_age_minutes=120):
     raise FileNotFoundError("no passed e-f calibration from the last 120 minutes")
 
 
+def pooled_group_survival(rows, direction=""):
+    """Pool P0/P1/P25 counts across adjacent flux points before normalizing."""
+    suffix = "" if not direction else "_scan_" + direction
+    try:
+        contrast = sum(float(row["P1" + suffix]) - float(row["P0" + suffix])
+                       for row in rows)
+        surviving = sum(float(row["Ps_25us" + suffix]) -
+                        float(row["P0" + suffix]) for row in rows)
+    except (KeyError, TypeError, ValueError):
+        return math.nan
+    if not math.isfinite(contrast) or contrast / len(rows) < .15:
+        return math.nan
+    return surviving / contrast
+
+
 def select_eligible_feature(rows, *, anharmonicity_mhz,
-                            require_quiet_shifted_bias=True):
+                            require_quiet_shifted_bias=True,
+                            pooled_readout=False):
     """Select g-e loss; one-axis analysis also needs a quiet e-f bias."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
     candidates = []
@@ -144,16 +160,26 @@ def select_eligible_feature(rows, *, anharmonicity_mhz,
             continue
         depths = {}
         for direction in ("", "up", "down"):
-            values = {name: [adaptive._survival(indexed[f], direction)
-                             for f in frequencies]
-                      for name, frequencies in groups.items()}
-            if any(not math.isfinite(value)
-                   for block in values.values() for value in block):
-                break
-            trough = float(np.mean(values["center"]))
-            depths[direction or "combined"] = min(
-                float(np.median(values["left"])) - trough,
-                float(np.median(values["right"])) - trough)
+            if pooled_readout:
+                values = {name: pooled_group_survival(
+                    [indexed[f] for f in frequencies], direction)
+                    for name, frequencies in groups.items()}
+                if not all(math.isfinite(value) for value in values.values()):
+                    break
+                trough = values["center"]
+                depths[direction or "combined"] = min(
+                    values["left"] - trough, values["right"] - trough)
+            else:
+                values = {name: [adaptive._survival(indexed[f], direction)
+                                 for f in frequencies]
+                          for name, frequencies in groups.items()}
+                if any(not math.isfinite(value)
+                       for block in values.values() for value in block):
+                    break
+                trough = float(np.mean(values["center"]))
+                depths[direction or "combined"] = min(
+                    float(np.median(values["left"])) - trough,
+                    float(np.median(values["right"])) - trough)
         if (len(depths) == 3 and depths["combined"] >= .14
                 and min(depths["up"], depths["down"]) >= .07):
             candidates.append({"center_ghz": center,
@@ -162,6 +188,7 @@ def select_eligible_feature(rows, *, anharmonicity_mhz,
                                    min(finite_10) if finite_10 else None),
                                "shifted_bias_min_25us_survival": (
                                    min(finite_25) if finite_25 else None),
+                               "pooled_readout": bool(pooled_readout),
                                "depths": depths})
     if not candidates:
         suffix = (" with a quiet shifted e-f bias"
@@ -735,7 +762,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["scout_csv"] = str(scout)
             selected = select_eligible_feature(
                 read_scout(scout), anharmonicity_mhz=alpha,
-                require_quiet_shifted_bias=not shelved_confirm)
+                require_quiet_shifted_bias=not shelved_confirm,
+                pooled_readout=shelved_confirm)
             manifest["selected"] = selected
             schedule = (shelved_schedule if shelved_confirm else
                         science_schedule)(selected["center_ghz"], alpha)

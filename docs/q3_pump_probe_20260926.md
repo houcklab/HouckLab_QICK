@@ -5080,3 +5080,18 @@ prerequisite for the two-map f-population measurement. The mapped mode now
 admits such a site while recording the shifted-bias scout values, and
 retains the long-e control at every science offset. The older one-axis
 mode keeps the quiet-bias gate unchanged.
+
+The next mapped attempt, `q3_tls_dual_transition_loss_20260929T200259Z_5e62cd92`,
+again passed the park e–f audit but stopped at site selection, with no
+science arms. Readout contrast in its wide scout weakened: the median
+combined P1−P0 contrast fell from 0.220 in the previous scout to 0.176,
+and 65/251 individual frequencies fell below the selector's 0.15 cutoff.
+Requiring every center and flank frequency to clear that cutoff therefore
+discarded the evident local loss structure. Pooling P0/P1/P25 counts
+across each three-frequency center or flank group keeps the same 0.15
+*group-average* contrast threshold and still requires bidirectional depth.
+Replaying this scout with that method selects 3.894 GHz, with normalized
+center-to-flank depth 0.318 combined, 0.289 up, and 0.347 down; its e–f
+bias is 4.074 GHz. This pooled selector applies only to the two-map f-state
+measurement. The older one-axis selector remains unchanged. This is a
+candidate for the next science run, not a retrospective e–f result.
