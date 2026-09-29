@@ -4550,3 +4550,46 @@ excitation. Because pulse-inversion controls were unstable, this is not a
 bound on the site's excitation capacity or recovery time. Do not repeat
 the same q3 blockade sequence without a new observable or a materially
 better validated pulse control.
+
+## Loss feature as a passive qubit-reset sink
+
+`TLSLossSinkReset` asks whether a persistent loss feature can be used as a
+cold, measurement-free reset channel. This is a practical population
+measurement, not a claim that the microscopic absorber is one TLS. The
+existing corrected single-visit QICK program is reused without changing
+production spectroscopy or feedback reset. A fresh 3.8–4.3-GHz five-point
+scout selects a bidirectional 25-us loss dip with a clean 12–20-MHz control;
+unlike earlier wide swap selectors, no 4.08–4.19-GHz exclusion applies.
+Candidate ranking uses the feature/control **10-us** survival difference so
+a very deep but slow 25-us dip is not automatically preferred.
+
+Twelve programs compare 0.1 us with 2, 5, 10, 20, 40, and 60 us in forward
+and reversed duration order. Each 800-shot program interleaves feature and
+quiet-control flux visits, ground and excited park preparations, and both
+holds within each logical shot. Each subshot has a complete 40-us corrected
+return before its one park readout and a 500-us passive inter-shot delay.
+Pre/post park readout and transfer references, raw IQ for every condition,
+timestamps, and pre/post wide scouts are saved. Every science program and
+reference program is compiled before the first science acquisition. The
+run aborts before science if the pre-transfer reference fails.
+
+The relevant observables are the final excited fractions from excited- and
+ground-prepared shots at both sites. A reset candidate must reduce the
+excited-prepared population at the feature **without raising** the
+ground-prepared population. A 0.1-us reference controls for site-dependent
+flux transients; the feature/control cooling difference is also reported
+after subtracting that short-hold offset. Classifier fractions are not
+absolute physical populations at the readout floor, so final reset fidelity
+requires raw-IQ and reference analysis. The 40-us return must count in any
+end-to-end latency claim. This first run uses a long inter-shot delay to
+characterize an initially cold sink; it cannot establish repeat-use
+performance. Only if it cools q3 enough to compete with the existing reset
+will a separate short-interval reload/stress sequence be justified.
+
+On the measurement PC, after stopping any other q3 acquisition:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --plan
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --run
+```
