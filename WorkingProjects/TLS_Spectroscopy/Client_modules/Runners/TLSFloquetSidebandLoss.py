@@ -28,6 +28,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 OFFSETS_MHZ = (-34, -32, -30, -28, -26, 0, 26, 28, 30, 32, 34)
+TRANSLATION_OFFSETS_MHZ = (-38, -36, -34, -32, -30, -28, -26, -24, -22, 0)
+TRANSLATION_FREQUENCIES_MHZ = (25.0, 35.0)
 MODULATION_MHZ = 30.0
 AMPLITUDE_DAC = 1000
 HOLDS_US = (1.6, 5.6)
@@ -37,12 +39,16 @@ REFERENCE_SHOTS = 400
 LABEL = "TLS_Floquet_Sideband_Loss"
 
 
-def plan():
+def plan(*, translation_check=False):
+    offsets = (TRANSLATION_OFFSETS_MHZ if translation_check else OFFSETS_MHZ)
     return {"hardware_access": False, "reset_mode": "passive",
-            "purpose": "look for mirrored narrow loss peaks at first Floquet sidebands",
+            "purpose": ("test whether lower loss sideband moves with modulation frequency"
+                        if translation_check else
+                        "look for mirrored narrow loss peaks at first Floquet sidebands"),
             "fresh_wide_scout": "3.8-4.3 GHz corrected five-point scan",
-            "offsets_mhz": list(OFFSETS_MHZ),
-            "modulation_mhz": MODULATION_MHZ,
+            "offsets_mhz": list(offsets),
+            "modulation_frequencies_mhz": (list(TRANSLATION_FREQUENCIES_MHZ)
+                                           if translation_check else [MODULATION_MHZ]),
             "amplitude_dac": AMPLITUDE_DAC,
             "holds_us": list(HOLDS_US),
             "pre_target_hold_us": PRE_US,
@@ -52,37 +58,50 @@ def plan():
             "raw_iq_and_compiled_waveforms_saved": True}
 
 
-def _entry(feature, offset, repeat, *, shots=SHOTS):
+def _entry(feature, offset, repeat, *, shots=SHOTS,
+           modulation_mhz=MODULATION_MHZ):
     target = round(float(feature) + offset / 1000.0, 3)
     conditions = modulated.conditions(
         target, amplitude_dac=AMPLITUDE_DAC,
         reverse=bool(repeat), holds_us=HOLDS_US, pre_us=PRE_US)
     label = "c" if offset == 0 else f"{'m' if offset < 0 else 'p'}{abs(offset)}"
-    return {"name": f"r{repeat}_{label}", "repeat": repeat,
+    prefix = (f"r{repeat}_f{modulation_mhz:g}_" if
+              modulation_mhz != MODULATION_MHZ else f"r{repeat}_")
+    return {"name": f"{prefix}{label}", "repeat": repeat,
             "feature_ghz": float(feature), "center_ghz": target,
-            "offset_mhz": offset, "shots": int(shots),
+            "offset_mhz": offset, "modulation_mhz": modulation_mhz,
+            "shots": int(shots),
             "order": [row["name"] for row in conditions],
             "conditions": conditions, "status": "pending"}
 
 
-def program_specs(feature, *, shots=SHOTS):
+def program_specs(feature, *, shots=SHOTS, translation_check=False):
     center = round(float(feature), 3)
-    if center + min(OFFSETS_MHZ) / 1000.0 < 3.8 or (
-            center + max(OFFSETS_MHZ) / 1000.0 > 4.3):
+    offsets = (TRANSLATION_OFFSETS_MHZ if translation_check else OFFSETS_MHZ)
+    frequencies = (TRANSLATION_FREQUENCIES_MHZ if translation_check else
+                   (MODULATION_MHZ,))
+    if center + min(offsets) / 1000.0 < 3.8 or (
+            center + max(offsets) / 1000.0 > 4.3):
         raise ValueError("sideband windows lie outside the 3.8-4.3 GHz wide scout")
-    return [_entry(center, offset, repeat, shots=shots)
+    settings = [(frequency, offset) for offset in offsets
+                for frequency in frequencies]
+    return [_entry(center, offset, repeat, shots=shots,
+                   modulation_mhz=frequency)
             for repeat in (0, 1)
-            for offset in (OFFSETS_MHZ if repeat == 0 else OFFSETS_MHZ[::-1])]
+            for frequency, offset in (settings if repeat == 0 else settings[::-1])]
 
 
 def recenter_repeat(specs, *, center, repeat):
     pending = [item for item in specs if item["repeat"] == repeat]
     if any(item["status"] != "pending" for item in pending):
         raise ValueError("cannot retarget an acquired sideband program")
-    program_specs(center, shots=pending[0]["shots"])
+    program_specs(center, shots=pending[0]["shots"],
+                  translation_check=(pending[0]["modulation_mhz"] !=
+                                     MODULATION_MHZ))
     for item in pending:
         item.update(_entry(center, item["offset_mhz"], repeat,
-                           shots=item["shots"]))
+                           shots=item["shots"],
+                           modulation_mhz=item["modulation_mhz"]))
 
 
 def _survival(row, direction):
@@ -124,7 +143,35 @@ def validate_sideband_windows(rows, feature):
             "usable": bool(usable)}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def validate_translation_window(rows, feature):
+    """Require a quiet lower flank over both predicted peak positions."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    if len(rows) != 251 or len(indexed) != 251:
+        raise ValueError("translation preflight needs a complete wide scout")
+    feature = round(float(feature), 3)
+    report = {}
+    for direction in ("", "up", "down"):
+        center = _survival(indexed[feature], direction)
+        values = [_survival(indexed[round(feature + off / 1000.0, 3)],
+                            direction)
+                  for off in TRANSLATION_OFFSETS_MHZ if off != 0]
+        label = direction or "combined"
+        report[f"{label}_median_survival"] = float(np.median(values))
+        report[f"{label}_min_survival"] = float(min(values))
+        report[f"{label}_advantage"] = float(np.median(values) - center)
+    report["usable"] = bool(
+        min(report[f"{direction}_median_survival"]
+            for direction in ("combined", "up", "down")) >= .60 and
+        min(report[f"{direction}_min_survival"]
+            for direction in ("combined", "up", "down")) >= .45 and
+        report["combined_advantage"] >= .15 and
+        min(report["up_advantage"], report["down_advantage"]) >= .08)
+    return report
+
+
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        translation_check=False):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five, TLSSpectroscopy as tls,
     )
@@ -139,29 +186,33 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
     )
 
     data_root = Path(data_root)
+    label = f"{LABEL}_Translation" if translation_check else LABEL
+    window_check = (validate_translation_window if translation_check else
+                    validate_sideband_windows)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**wide.parameters(),
-                             "output_suffix": f"{LABEL}_Scout_pre"})
+                             "output_suffix": f"{label}_Scout_pre"})
     scout_rows = swap.read_wide_scout(scout)
     selected = switch.select_switch_candidate(
         scout_rows, preferred_center=4.106)
     center = round(float(selected["center_ghz"]), 3)
-    specs = program_specs(center)
-    windows = validate_sideband_windows(scout_rows, center)
+    specs = program_specs(center, translation_check=translation_check)
+    first_block_size = len(specs) // 2
+    windows = window_check(scout_rows, center)
     if not windows["usable"]:
-        raise ValueError(f"fresh feature has occupied first-sideband windows: {windows}")
+        raise ValueError(f"fresh feature has occupied modulation windows: {windows}")
     print(f"[sideband-loss] feature={center:.3f} GHz; "
-          f"quiet-window advantages L={windows['left_advantage']:.3f} "
-          f"R={windows['right_advantage']:.3f}", flush=True)
+          f"window check={windows}", flush=True)
 
     with localizer.scan_environment(correction):
         if int(tls.BaseConfig["ff_park_gain"]) != -25146:
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        grid = np.asarray([item["center_ghz"] for item in specs[:11]])
+        grid = np.asarray(sorted({item["center_ghz"]
+                                  for item in specs[:first_block_size]}))
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
@@ -186,7 +237,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 compensation, pre_us=PRE_US + .5, hold_us=hold,
                 recovery_us=40.0)
 
-        session_id = ("q3_floquet_sideband_loss_" +
+        session_id = (("q3_floquet_sideband_translation_" if translation_check
+                       else "q3_floquet_sideband_loss_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -206,7 +258,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "center_ghz": center, "sideband_windows_pre": windows,
                     "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(), "references": refs,
+                    "plan": plan(translation_check=translation_check),
+                    "translation_check": bool(translation_check),
+                    "references": refs,
                     "programs": specs}
         protocol.checkpoint(path, manifest)
         print(f"[sideband-loss] manifest={path}", flush=True)
@@ -224,7 +278,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     soccfg, cfgs, bundle.payload, bundle.loop,
                     holds_us=HOLDS_US, pre_us=PRE_US,
                     allowed_amplitudes=(AMPLITUDE_DAC,),
-                    modulation_mhz=MODULATION_MHZ)
+                    modulation_mhz=entry["modulation_mhz"])
                 entry["waveform_reports"] = program.ac_reports
                 entry["ff_envelope_report"] = program.ff_envelope_report
                 for hold, samples in program.ac_waveforms.items():
@@ -233,7 +287,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     entry.setdefault("waveform_npz", {})[hold] = str(wave_path)
                 programs[entry["name"]] = program
 
-            for entry in specs[:11]:
+            for entry in specs[:first_block_size]:
                 compile_entry(entry)
             for ref in refs[:4]:
                 resident.ResidentDriveProgram(
@@ -282,23 +336,24 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     mid_scout = localizer.run(
                         data_root=data_root, correction_json=correction,
                         parameter_overrides={**wide.parameters(),
-                                             "output_suffix": f"{LABEL}_Scout_mid"})
+                                             "output_suffix": f"{label}_Scout_mid"})
                     mid_rows = swap.read_wide_scout(mid_scout)
                     mid_selected = switch.select_switch_candidate(
                         mid_rows, preferred_center=center)
                     mid_center = round(float(mid_selected["center_ghz"]), 3)
                     if abs(mid_center - center) > .004001:
                         raise RuntimeError("midpoint scout no longer selects the same loss site")
-                    mid_windows = validate_sideband_windows(mid_rows, mid_center)
+                    mid_windows = window_check(mid_rows, mid_center)
                     manifest.update({"mid_scout_csv": str(mid_scout),
                                      "mid_selected": mid_selected,
                                      "mid_center_ghz": mid_center,
                                      "sideband_windows_mid": mid_windows})
                     protocol.checkpoint(path, manifest)
                     if not mid_windows["usable"]:
-                        raise RuntimeError("first-sideband windows became occupied")
+                        raise RuntimeError("modulation windows became occupied")
                     recenter_repeat(specs, center=mid_center, repeat=1)
-                    mid_grid = np.asarray([x["center_ghz"] for x in specs[11:]])
+                    mid_grid = np.asarray(sorted({x["center_ghz"]
+                                                  for x in specs[first_block_size:]}))
                     mid_dc, mid_realized = _integer_dc_grid(
                         wide.parameters(), mid_grid, tls)
                     dc_lookup.update({float(f): int(g)
@@ -310,7 +365,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                         resident.ResidentDriveProgram(
                             soccfg, resident.arm_config(base, ref, dc_lookup),
                             bundle.payload, bundle.loop)
-                    for future in specs[11:]:
+                    for future in specs[first_block_size:]:
                         compile_entry(future)
                     manifest["preflight_complete"] = True
                     protocol.checkpoint(path, manifest)
@@ -365,13 +420,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**wide.parameters(),
-                                     "output_suffix": f"{LABEL}_Scout_post"})
+                                     "output_suffix": f"{label}_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 post_rows = swap.read_wide_scout(post_scout)
                 manifest["post_selected"] = switch.select_switch_candidate(
                     post_rows, preferred_center=manifest["mid_center_ghz"])
-                manifest["sideband_windows_post"] = validate_sideband_windows(
+                manifest["sideband_windows_post"] = window_check(
                     post_rows, manifest["post_selected"]["center_ghz"])
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
@@ -407,11 +462,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--translation-check", action="store_true",
+                        help="compare 25 and 35 MHz at fixed 1000-DAC amplitude")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(translation_check=args.translation_check), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            translation_check=args.translation_check)
     return 0
 
 

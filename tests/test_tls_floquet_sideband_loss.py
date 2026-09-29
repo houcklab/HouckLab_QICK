@@ -85,7 +85,10 @@ def test_sideband_scan_rejects_edges_outside_the_wide_scout():
         module.program_specs(3.820, shots=10)
 
 
-def test_30_mhz_corrected_waveforms_use_whole_cycles_and_fit_memory(monkeypatch):
+@pytest.mark.parametrize("modulation_mhz, expected_cycles", [
+    (25.0, [40, 140]), (30.0, [48, 168]), (35.0, [56, 196])])
+def test_corrected_waveforms_use_whole_cycles_and_fit_memory(
+        monkeypatch, modulation_mhz, expected_cycles):
     module = experiment()
     modulated = module.modulated
     monkeypatch.setattr(
@@ -104,7 +107,7 @@ def test_30_mhz_corrected_waveforms_use_whole_cycles_and_fit_memory(monkeypatch)
     program.holds_us = module.HOLDS_US
     program.pre_us = module.PRE_US
     program.ac_amplitude_dac = module.AMPLITUDE_DAC
-    program.modulation_mhz = module.MODULATION_MHZ
+    program.modulation_mhz = modulation_mhz
     program._t1_ff_compensation = object()
     program._t1_ff_settle_us = .5
     program._t1_ff_predistortion_recovery_us = 40.
@@ -113,7 +116,58 @@ def test_30_mhz_corrected_waveforms_use_whole_cycles_and_fit_memory(monkeypatch)
     program.add_pulse = lambda **_kw: None
     program._declare_experiment()
     assert [program.ac_reports[str(hold)]["cycles_per_waveform"]
-            for hold in module.HOLDS_US] == [48, 168]
+            for hold in module.HOLDS_US] == expected_cycles
     assert program.ff_envelope_report["total_samples"] < 65536
     assert all(np.max(np.abs(samples)) < 32767
                for samples in program.ac_waveforms.values())
+
+
+def test_translation_schedule_moves_drive_frequency_at_fixed_amplitude():
+    module = experiment()
+    specs = module.program_specs(4.108, shots=10, translation_check=True)
+    assert len(specs) == 40
+    assert [(x["modulation_mhz"], x["offset_mhz"]) for x in specs[:20]] == [
+        (frequency, offset)
+        for offset in (-38, -36, -34, -32, -30, -28, -26, -24, -22, 0)
+        for frequency in (25.0, 35.0)]
+    assert [(x["modulation_mhz"], x["offset_mhz"])
+            for x in specs[20:]] == [
+                (x["modulation_mhz"], x["offset_mhz"])
+                for x in reversed(specs[:20])]
+    assert {x["center_ghz"] for x in specs} == {
+        round(4.108 + offset / 1000, 3) for offset in
+        (-38, -36, -34, -32, -30, -28, -26, -24, -22, 0)}
+    assert all({c["modulation_amplitude_dac"] for c in x["conditions"]}
+               == {0, 1000} for x in specs)
+    assert module.plan(translation_check=True)["modulation_frequencies_mhz"] == [
+        25.0, 35.0]
+
+
+def test_translation_preflight_requires_clean_lower_frequency_window():
+    module = experiment()
+    rows = []
+    for i in range(251):
+        freq = round(3.8 + .002 * i, 3)
+        p25 = .25 if freq == 4.108 else .55
+        rows.append({"target_frequency_ghz": str(freq), "P0": ".10",
+                     "P1": ".65", "Ps_25us": str(p25),
+                     "P0_scan_up": ".10", "P1_scan_up": ".65",
+                     "Ps_25us_scan_up": str(p25), "P0_scan_down": ".10",
+                     "P1_scan_down": ".65", "Ps_25us_scan_down": str(p25)})
+    assert module.validate_translation_window(rows, 4.108)["usable"] is True
+    for row in rows:
+        if round(float(row["target_frequency_ghz"]), 3) == 4.074:
+            row["Ps_25us"] = ".23"
+            row["Ps_25us_scan_up"] = ".23"
+            row["Ps_25us_scan_down"] = ".23"
+    assert module.validate_translation_window(rows, 4.108)["usable"] is False
+
+
+def test_translation_second_block_recenters_both_drive_frequencies():
+    module = experiment()
+    specs = module.program_specs(4.108, shots=10, translation_check=True)
+    module.recenter_repeat(specs, center=4.110, repeat=1)
+    assert all(x["feature_ghz"] == 4.108 for x in specs[:20])
+    assert all(x["feature_ghz"] == 4.110 for x in specs[20:])
+    assert {x["modulation_mhz"] for x in specs[20:]} == {25.0, 35.0}
+    assert len({x["name"] for x in specs}) == len(specs)

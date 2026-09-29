@@ -4287,3 +4287,39 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSidebandLoss --run
 ```
+
+The sideband-loss run completed at
+`q3_floquet_sideband_loss_20260929T035711Z_afa35bc4`. All 22 programs and
+control checks completed. The selected 4.108-GHz loss feature persisted in
+the pre/mid/post scouts with depths 0.476/0.530/0.421. The shot-paired
+contrast score is positive when AC protects against decay over the additional
+4-us dwell, and negative when AC adds loss. At the loss center, the two blocks
+gave +0.051 and +0.085 (pooled +0.068, approximate 95% interval
++0.042 to +0.094). At the lower −30-MHz offset the pooled score was −0.035
+(approximate 95% interval −0.060 to −0.009); at the upper +30-MHz offset it
+was −0.044 (−0.070 to −0.019). The three nearest positions on each flank
+also have negative pooled scores. Raw projected IQ has the same signs, so the
+effect is not solely a classification-threshold artifact. The flank response
+is broad and the upper flank has another unmodulated loss feature nearby;
+this run establishes a reciprocal modulation response, not a unique Floquet
+mechanism or microscopic TLS identity.
+
+The focused follow-up is `TLSFloquetSidebandLoss --run --translation-check`.
+It compares 25 and 35 MHz at the **same programmed 1000-DAC amplitude**,
+interleaving the two drives at each 2-MHz-spaced qubit bias from −38 to
+−22 MHz below the freshly selected loss center, plus a center control.
+The second block reverses the full program order and recenters after a scout.
+The lower flank must remain quiet across both predicted peak positions; a
+pre/mid/post scout preflight rejects an occupied window. Other pulse timing,
+controls, raw-IQ recording, and passive reset are unchanged. A loss peak that
+moves by about 10 MHz with the drive frequency, while the center remains
+protected, would favor a sideband interpretation over static averaging at a
+fixed delivered excursion. Frequency-dependent flux-line transfer still
+needs measurement before calling that decisive.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSidebandLoss --run --translation-check
+```
