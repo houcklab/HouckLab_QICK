@@ -5433,3 +5433,33 @@ than relaxing its gate or launching the map.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFastSquarePilot --run
 ```
+
+The first square-pulse run is
+`q3_echo_fast_square_pilot_20260929T231147Z_0230fd65` on commit
+`75851bd6`. It completed the 14-duration sweep, five interleaved zero
+controls, and a repeat of the largest response. That response was 3205 IQ
+units initially and 2838 units on repeat, with axis cosine 0.9985. The
+duration sweep shows a first maximum near 90 ns, a near-zero response at
+180 ns, and a revival around 270 ns. A two-parameter weighted
+`A sin²(πt/(2tπ))` fit gives `tπ=90.7 ns`, `tπ/2=45.4 ns`, and χ²=12.6 for
+12 degrees of freedom. The saved 60-ns first point is already above the
+half-height, so the original interpolation gate labeled the manifest
+`complete_rabi_unresolved` and stopped before the phase cycles. That label
+describes a **scan-range error**, not a failure to drive Rabi oscillations.
+The raw data do not yet establish two-pulse coherence or echo visibility.
+
+![Target-resident square-pulse Rabi](q3_echo_fast_square_rabi_20260929.png)
+
+The revised Rabi fitter accepts a well-resolved turnover before the first
+half-height sample, with a full-curve residual and revival check.
+`--phase-only` re-fits the pinned saved sweep, measures three nearby
+40/45/50-ns π/2 candidates against bracketed zero/π references, then runs
+two reversed four-phase cycles if an independent midpoint is resolved.
+There is no new duration sweep, five-point scout, or wide echo map. Only a
+repeatable phase circle with stable local references licenses a later local
+loss-line-versus-control echo comparison.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFastSquarePilot --run --phase-only
+```

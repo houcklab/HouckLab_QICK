@@ -26,6 +26,35 @@ def test_duration_fit_rejects_monotonic_response():
     assert not pilot.fit_duration_rabi(rows)["valid"]
 
 
+def test_duration_fit_recovers_peak_before_first_half_height_sample():
+    measured = (.782, 1.012, 1.128, .737, .476, .155, .019,
+                .132, .753, .932, .424, .011, .321, .806)
+    rows = [{"duration_us": time, "response": response, "sem": .05}
+            for time, response in zip(pilot.DURATIONS_US, measured)]
+    fit = pilot.fit_duration_rabi(rows)
+    assert fit["valid"]
+    assert fit["pi_us"] == pytest.approx(.09, abs=.005)
+    assert fit["pi2_us"] == pytest.approx(.045, abs=.003)
+
+
+def test_phase_source_refits_pinned_completed_rabi_run():
+    rows = [{"duration_us": time,
+             "response": math.sin(math.pi * time / (2 * .09)) ** 2,
+             "sem": .05} for time in pilot.DURATIONS_US]
+    source = {"schema": "q3.echo-fast-square-pilot.v1",
+              "session_id": pilot.PHASE_SOURCE_SESSION,
+              "status": "complete_rabi_unresolved",
+              "code_commit": "75851bd64acfa073ae358cb392294c9940b17ef0",
+              "correction_sha256": pilot.localizer.CORRECTION_SHA256,
+              "target_frequency_ghz": 4.288,
+              "target_gain": -20130,
+              "drive_frequency_mhz": 4290.5,
+              "duration_sweep": rows}
+    assert pilot.validate_phase_source(source)[-1]["valid"]
+    with pytest.raises(ValueError):
+        pilot.validate_phase_source({**source, "status": "running"})
+
+
 def test_source_is_pinned_to_target_phase_run():
     source = {"schema": "q3.target-pi2-validation.v1",
               "status": "complete_controls_unstable",
@@ -99,3 +128,7 @@ def test_plan_has_no_wide_scout_or_echo_map():
     assert p["gain_dac"] == 30000
     assert not p["fresh_t1_scan"]
     assert not p["wide_echo_map"]
+    phase = pilot.plan(phase_only=True)
+    assert phase["pi2_durations_us"] == [.04, .045, .05]
+    assert not phase["duration_rescan"]
+    assert not phase["wide_echo_map"]

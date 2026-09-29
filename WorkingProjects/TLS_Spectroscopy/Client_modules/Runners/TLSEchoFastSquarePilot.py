@@ -27,6 +27,8 @@ DURATIONS_US = (.06, .08, .10, .12, .14, .16, .18, .20,
                 .24, .28, .32, .36, .40, .48)
 SHOTS = 1200
 PHASE_SHOTS = 1600
+PHASE_DURATIONS_US = (.04, .045, .05)
+PHASE_SOURCE_SESSION = "q3_echo_fast_square_pilot_20260929T231147Z_0230fd65"
 
 
 def validate_source(source):
@@ -46,6 +48,27 @@ def validate_source(source):
     return target, gain, drive
 
 
+def validate_phase_source(source):
+    if (source.get("schema") != "q3.echo-fast-square-pilot.v1" or
+            source.get("session_id") != PHASE_SOURCE_SESSION or
+            source.get("status") != "complete_rabi_unresolved" or
+            source.get("code_commit", "")[:8] != "75851bd6" or
+            source.get("correction_sha256") != localizer.CORRECTION_SHA256):
+        raise ValueError("phase-only source is not the pinned square Rabi run")
+    try:
+        target = float(source["target_frequency_ghz"])
+        gain = int(source["target_gain"])
+        drive = float(source["drive_frequency_mhz"])
+        fit = fit_duration_rabi(source["duration_sweep"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("phase-only source lacks measured Rabi data") from exc
+    if (target != 4.288 or gain != -20130 or drive != 4290.5 or
+            not fit["valid"] or not .08 <= fit["pi_us"] <= .11 or
+            not .04 <= fit["pi2_us"] <= .055):
+        raise ValueError("phase-only source does not support short pi/2")
+    return target, gain, drive, fit
+
+
 def interpolated_zero(anchors, position):
     for (left_at, left), (right_at, right) in zip(anchors, anchors[1:]):
         if left_at <= position <= right_at:
@@ -55,38 +78,39 @@ def interpolated_zero(anchors, position):
 
 
 def fit_duration_rabi(rows):
-    points = sorted((float(row["duration_us"]), float(row["response"]))
-                    for row in rows)
+    points = sorted((float(row["duration_us"]), float(row["response"]),
+                     float(row.get("sem", .05))) for row in rows)
     if (len(points) != len(DURATIONS_US) or
-            len({duration for duration, _ in points}) != len(points) or
-            any(not math.isfinite(value) for _, value in points)):
+            len({duration for duration, _, _ in points}) != len(points) or
+            any(not all(map(math.isfinite, point)) or point[2] <= 0
+                for point in points)):
         return {"valid": False, "reason": "incomplete duration sweep"}
-    times = [time for time, _ in points]
-    values = [value for _, value in points]
-    smooth = [values[0]] + [(.25 * values[i - 1] + .5 * values[i] +
-                            .25 * values[i + 1])
-                           for i in range(1, len(values) - 1)] + [values[-1]]
-    peaks = [i for i in range(3, len(points) - 2)
-             if times[i] <= .40 and smooth[i] >= smooth[i - 1] and
-             smooth[i] >= smooth[i + 1] and smooth[i] >= .65 and
-             smooth[i] - min(smooth[i + 1:i + 3]) >= .12]
-    if not peaks:
-        return {"valid": False, "reason": "no resolved first pi turnover"}
-    index = peaks[0]
-    pi_us, height = times[index], values[index]
-    half = height / 2
-    for j in range(1, index + 1):
-        lower, upper = values[j - 1], values[j]
-        if lower <= half <= upper and upper > lower:
-            pi2_us = times[j - 1] + (half - lower) * (
-                times[j] - times[j - 1]) / (upper - lower)
-            break
-    else:
-        return {"valid": False, "reason": "no rising half-height crossing"}
-    if not .35 <= pi2_us / pi_us <= .65:
-        return {"valid": False, "reason": "pi/2 timing inconsistent"}
-    return {"valid": True, "pi_us": pi_us, "pi2_us": pi2_us,
-            "peak_response": height, "half_level": half}
+    times = np.asarray([row[0] for row in points])
+    values = np.asarray([row[1] for row in points])
+    sem = np.asarray([row[2] for row in points])
+    weights = 1 / sem ** 2
+    candidates = np.linspace(.08, .40, 3201)
+    basis = np.sin(np.pi * times[None, :] /
+                   (2 * candidates[:, None])) ** 2
+    amplitude = (np.sum(weights * basis * values, axis=1) /
+                 np.sum(weights * basis ** 2, axis=1))
+    chi2 = np.sum(weights * (amplitude[:, None] * basis - values) ** 2,
+                  axis=1)
+    best = int(np.argmin(chi2))
+    pi_us = float(candidates[best])
+    height = float(amplitude[best])
+    post_peak = values[times >= 1.5 * pi_us]
+    peak_sample = values[abs(times - pi_us) <= .03]
+    valid = bool(.04 <= pi_us / 2 <= .20 and height >= .65 and
+                 peak_sample.size and np.max(peak_sample) >= .65 and
+                 post_peak.size and np.min(post_peak) <= .70 * height and
+                 chi2[best] / (len(points) - 2) <= 4)
+    if not valid:
+        return {"valid": False, "reason": "Rabi model lacks a resolved turnover",
+                "pi_us": pi_us, "chi2": float(chi2[best])}
+    return {"valid": True, "pi_us": pi_us, "pi2_us": pi_us / 2,
+            "peak_response": height, "half_level": height / 2,
+            "chi2": float(chi2[best]), "degrees_of_freedom": len(points) - 2}
 
 
 def score_reference_bracket(ground_before, pi_before, ground_after, pi_after):
@@ -171,7 +195,19 @@ def make_program(parent):
     return FastSquareProgram
 
 
-def plan():
+def plan(*, phase_only=False):
+    if phase_only:
+        return {"hardware_access": False,
+                "purpose": "test square-pulse phase contrast at 4.288 GHz",
+                "source_session": PHASE_SOURCE_SESSION,
+                "target_ghz": 4.288, "drive_mhz": 4290.5,
+                "gain_dac": GAIN_DAC,
+                "pi2_durations_us": list(PHASE_DURATIONS_US),
+                "shots_per_arm": PHASE_SHOTS,
+                "phase_blocks": 2, "reset_mode": "passive",
+                "fresh_t1_scan": False, "duration_rescan": False,
+                "wide_echo_map": False,
+                "terminal": "no custom progress messages"}
     return {"hardware_access": False,
             "purpose": "check fast target-resident pulses before local echo",
             "target_ghz": 4.288, "drive_mhz": 4290.5,
@@ -183,7 +219,8 @@ def plan():
             "terminal": "no custom progress messages"}
 
 
-def run(*, data_root=None, correction_json=None, source_manifest=None):
+def run(*, data_root=None, correction_json=None, source_manifest=None,
+        phase_only=False):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
         TLSDualTransitionLoss as dual,
@@ -200,14 +237,22 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
     data_root = Path(data_root or localizer.DATA_ROOT)
     correction = localizer.checked_correction(data_root, correction_json)
     if source_manifest is None:
-        matches = sorted((data_root / "q3").glob(
-            "q3_target_pi2_validation_*/manifest.json"))
-        if not matches:
-            raise FileNotFoundError("no target phase validation on NAS")
-        source_manifest = matches[-1]
+        if phase_only:
+            source_manifest = (data_root / "q3" / PHASE_SOURCE_SESSION /
+                               "manifest.json")
+        else:
+            matches = sorted((data_root / "q3").glob(
+                "q3_target_pi2_validation_*/manifest.json"))
+            if not matches:
+                raise FileNotFoundError("no target phase validation on NAS")
+            source_manifest = matches[-1]
     source_manifest = Path(source_manifest)
     source = json.loads(source_manifest.read_text(encoding="utf-8"))
-    target, source_gain, drive = validate_source(source)
+    if phase_only:
+        target, source_gain, drive, phase_fit = validate_phase_source(source)
+    else:
+        target, source_gain, drive = validate_source(source)
+        phase_fit = None
 
     with localizer.scan_environment(correction):
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
@@ -235,7 +280,8 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.})
-        session_id = ("q3_echo_fast_square_pilot_" +
+        session_id = (("q3_echo_fast_square_phase_" if phase_only else
+                       "q3_echo_fast_square_pilot_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -248,7 +294,8 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
                 stderr=subprocess.DEVNULL).strip()
         except (OSError, subprocess.CalledProcessError):
             commit = "unknown"
-        manifest = {"schema": "q3.echo-fast-square-pilot.v1",
+        manifest = {"schema": ("q3.echo-fast-square-phase.v1" if phase_only
+                               else "q3.echo-fast-square-pilot.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": commit,
                     "source_manifest": str(source_manifest),
@@ -259,8 +306,10 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
                     "gain_dac": GAIN_DAC,
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
-                    "plan": plan(), "duration_sweep": [],
+                    "plan": plan(phase_only=phase_only), "duration_sweep": [],
                     "phase_blocks": [], "phase_brackets": []}
+        if phase_fit is not None:
+            manifest["source_rabi_refit"] = phase_fit
         dual.checkpoint(path, manifest)
         program_class = make_program(resident.ResidentDriveProgram)
         try:
@@ -296,13 +345,102 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
                                     q=[r.q for r in records])
                 return iq
 
-            program_class(soccfg, configuration(DURATIONS_US[0], SHOTS),
+            def collect_phase_cycles(pi_us, pi2_us):
+                zero_before = acquire(pi2_us, PHASE_SHOTS,
+                                       "zero_b0_pre.npz", gain=0, phase=0)
+                pi_before = acquire(pi_us, PHASE_SHOTS, "pi_b0_pre.npz")
+                brackets_valid = True
+                for block, phases in enumerate(((0, 90, 180, 270),
+                                                (270, 180, 90, 0))):
+                    raw = [(phase, acquire(
+                        pi2_us, PHASE_SHOTS,
+                        f"phase_block_{block}_phase_{phase}.npz",
+                        phase=phase)) for phase in phases]
+                    zero_after = acquire(pi2_us, PHASE_SHOTS,
+                                          f"zero_b{block}_post.npz",
+                                          gain=0, phase=0)
+                    pi_after = acquire(pi_us, PHASE_SHOTS,
+                                        f"pi_b{block}_post.npz")
+                    refs = (zero_before.mean(), pi_before.mean(),
+                            zero_after.mean(), pi_after.mean())
+                    bracket = score_reference_bracket(*refs)
+                    brackets_valid &= bracket["valid"]
+                    values = {}
+                    for position, (phase, iq) in enumerate(raw):
+                        values[phase] = bracketed_response(
+                            iq.mean(), *refs, fraction=(position + 1) / 5)
+                    manifest["phase_blocks"].append(values)
+                    manifest["phase_brackets"].append({
+                        **bracket,
+                        "reference_iq": [[float(z.real), float(z.imag)]
+                                         for z in refs]})
+                    dual.checkpoint(path, manifest)
+                    zero_before, pi_before = zero_after, pi_after
+                gate = calibration.phase_circle_gate(
+                    *manifest["phase_blocks"], ground=0., pi=1.)
+                manifest["two_pulse_gate"] = gate
+                manifest["status"] = (
+                    "complete_calibrated" if gate["valid"] and brackets_valid
+                    else "complete_controls_unstable")
+                dual.checkpoint(path, manifest)
+                return path
+
+            first_duration = (.04 if phase_only else DURATIONS_US[0])
+            last_duration = (.05 if phase_only else DURATIONS_US[-1])
+            program_class(soccfg, configuration(first_duration, SHOTS),
                           bundle.payload, bundle.loop)
-            program_class(soccfg, configuration(DURATIONS_US[-1], SHOTS,
+            program_class(soccfg, configuration(last_duration, SHOTS,
                                                  phase=180),
                           bundle.payload, bundle.loop)
             manifest["compiled_pulse_edges"] = True
             dual.checkpoint(path, manifest)
+
+            if phase_only:
+                pi_us = phase_fit["pi_us"]
+                zero_before = acquire(pi_us, PHASE_SHOTS,
+                                       "zero_local_pre.npz", gain=0)
+                pi_before = acquire(pi_us, PHASE_SHOTS,
+                                     "pi_local_pre.npz")
+                local = [(duration, acquire(
+                    duration, PHASE_SHOTS,
+                    f"pi2_local_{round(duration * 1000):03d}ns.npz"))
+                         for duration in PHASE_DURATIONS_US]
+                zero_after = acquire(pi_us, PHASE_SHOTS,
+                                      "zero_local_post.npz", gain=0)
+                pi_after = acquire(pi_us, PHASE_SHOTS,
+                                    "pi_local_post.npz")
+                refs = (zero_before.mean(), pi_before.mean(),
+                        zero_after.mean(), pi_after.mean())
+                bracket = score_reference_bracket(*refs)
+                manifest["local_reference_bracket"] = bracket
+                if not bracket["valid"]:
+                    manifest["status"] = "complete_controls_unstable"
+                    dual.checkpoint(path, manifest)
+                    return path
+                candidates = []
+                for position, (duration, iq) in enumerate(local):
+                    fraction = (position + 1) / 4
+                    value = bracketed_response(iq.mean(), *refs,
+                                               fraction=fraction)
+                    contrast = ((1 - fraction) * (refs[1] - refs[0]) +
+                                fraction * (refs[3] - refs[2]))
+                    projected = (np.real(iq * np.conj(contrast)) /
+                                 abs(contrast) ** 2)
+                    sem = float(np.std(projected, ddof=1) /
+                                math.sqrt(iq.size))
+                    candidates.append({"duration_us": duration,
+                                       "response": value, "shot_sem": sem})
+                manifest["local_pi2_check"] = candidates
+                chosen = min(candidates,
+                             key=lambda row: abs(row["response"] - .5))
+                manifest["chosen_pi2"] = chosen
+                dual.checkpoint(path, manifest)
+                if abs(chosen["response"] - .5) > max(
+                        .15, 2.5 * chosen["shot_sem"]):
+                    manifest["status"] = "complete_midpoint_unstable"
+                    dual.checkpoint(path, manifest)
+                    return path
+                return collect_phase_cycles(pi_us, chosen["duration_us"])
 
             step = 0
             zero = acquire(.28, SHOTS, "zero_sweep_0.npz", gain=0)
@@ -397,45 +535,7 @@ def run(*, data_root=None, correction_json=None, source_manifest=None):
                 dual.checkpoint(path, manifest)
                 return path
 
-            zero_before = acquire(fit["pi2_us"], PHASE_SHOTS,
-                                   "zero_b0_pre.npz", gain=0, phase=0)
-            pi_before = acquire(fit["pi_us"], PHASE_SHOTS,
-                                 "pi_b0_pre.npz")
-            brackets_valid = True
-            for block, phases in enumerate(((0, 90, 180, 270),
-                                            (270, 180, 90, 0))):
-                raw = [(phase, acquire(
-                    fit["pi2_us"], PHASE_SHOTS,
-                    f"phase_block_{block}_phase_{phase}.npz",
-                    phase=phase)) for phase in phases]
-                zero_after = acquire(fit["pi2_us"], PHASE_SHOTS,
-                                      f"zero_b{block}_post.npz",
-                                      gain=0, phase=0)
-                pi_after = acquire(fit["pi_us"], PHASE_SHOTS,
-                                    f"pi_b{block}_post.npz")
-                refs = (zero_before.mean(), pi_before.mean(),
-                        zero_after.mean(), pi_after.mean())
-                bracket = score_reference_bracket(*refs)
-                brackets_valid &= bracket["valid"]
-                values = {}
-                for position, (phase, iq) in enumerate(raw):
-                    values[phase] = bracketed_response(
-                        iq.mean(), *refs, fraction=(position + 1) / 5)
-                manifest["phase_blocks"].append(values)
-                manifest["phase_brackets"].append({
-                    **bracket,
-                    "reference_iq": [[float(z.real), float(z.imag)]
-                                     for z in refs]})
-                dual.checkpoint(path, manifest)
-                zero_before, pi_before = zero_after, pi_after
-            gate = calibration.phase_circle_gate(
-                *manifest["phase_blocks"], ground=0., pi=1.)
-            manifest["two_pulse_gate"] = gate
-            manifest["status"] = ("complete_calibrated" if gate["valid"] and
-                                  brackets_valid else
-                                  "complete_controls_unstable")
-            dual.checkpoint(path, manifest)
-            return path
+            return collect_phase_cycles(fit["pi_us"], fit["pi2_us"])
         except BaseException as exc:
             manifest["status"] = "failed"
             manifest["error"] = f"{type(exc).__name__}: {exc}"
@@ -451,13 +551,16 @@ def main(argv=None):
     parser.add_argument("--data-root")
     parser.add_argument("--correction-json")
     parser.add_argument("--source-manifest")
+    parser.add_argument("--phase-only", action="store_true",
+                        help="continue the pinned square Rabi run at pi/2")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(phase_only=args.phase_only), indent=2))
     else:
         run(data_root=args.data_root,
             correction_json=args.correction_json,
-            source_manifest=args.source_manifest)
+            source_manifest=args.source_manifest,
+            phase_only=args.phase_only)
     return 0
 
 
