@@ -5228,3 +5228,43 @@ instantaneous-square-wave ±20-MHz carrier prediction under a fixed line,
 but the fast analog edge response and within-run line motion are unknown.
 Repeating the same pilot without an independent fast-edge measurement is
 not justified.
+
+## Target-resident Hahn-echo dephasing map (2026-09-29)
+
+`TLSEchoDephasingMap` scans the same 3.800–4.300-GHz, 2-MHz grid as the
+five-point T1 measurement. A fresh passive-reset, corrected five-point scout
+provides the T1 comparison. At each echo site q3 starts in its ground state,
+spends 30 µs at the target so the flux correction settles, then receives a
+0.1-µs-sigma π/2 pulse, τ/2 idle, π pulse, τ/2 idle, and an analysis π/2 pulse,
+all at the target frequency. The broad target pulses use twice the calibrated
+park gains, preserving the Gaussian pulse area. The final pulse is phase
+cycled through 0°, 90°, 180°, and 270° for τ = 0.3 and 1.8 µs. The magnitude
+of the two quadratures removes the large deterministic phase accumulated at
+different flux biases. One corrected 40-µs return precedes the only readout.
+
+This sequence deliberately puts all three coherent pulses at the target.
+The existing round-trip Ramsey echo puts the middle π pulse at park after a
+flux return; the q3 flux tail can detune that pulse, especially for the
+large excursions needed to cover the band. The settled-target version avoids
+that failure mode but tests whether a broad target pulse is usable. A parked
+phase cycle, repeated in reverse order, and a quiet-site target pilot must
+pass before the 251-point map starts. A failed check is saved to the manifest
+and stops the science scan. Raw IQ is saved per frequency, and the scan writes
+no custom terminal progress messages.
+
+For each frequency, the ratio of phase-cycle visibility at 0.3 and 1.8 µs
+estimates an **effective Hahn-echo decay rate**. Points without short-delay
+contrast are labeled unresolved, so failed target pulses cannot be called
+dephasing hotspots. The fresh scout's 2-µs survival gives an approximate
+Γ₁/2 comparison. A reproducible resolved echo-rate peak with no corresponding
+T1 loss would motivate a local, higher-shot delay sweep and a control at the
+same frequency slope. This first map does not by itself identify a TLS or
+yield a flux-noise amplitude: pulse fidelity, target-frequency calibration,
+and residual flux dynamics still limit that inference.
+
+Run on the measurement PC after stopping other q3 acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoDephasingMap --run
+```
