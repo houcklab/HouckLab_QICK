@@ -4526,3 +4526,27 @@ program, keeping all four site pairs and g/e preparations in each program
 while placing π and sham in adjacent order-balanced programs. This reduces
 the unrolled instruction count without changing the compensated waveform
 or the number of shots per physical arm.
+
+The memory-safe rerun,
+`q3_tls_second_quantum_blockade_20260929T071251Z_e7e12851`, completed all
+32 science programs. The selected feature stayed at 4.276 GHz before and
+after the run; its quiet control was 4.290 GHz. Readout fidelity was 0.836
+before and 0.865 after, and both park-transfer checks passed. The runner
+reported `complete_controls_unstable`: the quiet-site π/sham inversion check
+missed the tight ±5% gate for one phase at 2 us and three phases at 10 us.
+The 10-us park-only inversion calibration passed that gate for all four
+phases, while the 2-us 90° phase narrowly missed it.
+
+The primary four-phase-averaged π blockade excess was +0.021 and −0.026
+in the two reversed 2-us cycles. Their mean was −0.003 with a paired-shot
+bootstrap 95% interval of [−0.027, +0.020]. At 10 us the cycles were
++0.044 and −0.006, mean +0.019 [−0.005, +0.044]. The one positive 10-us
+cycle is not replicated and has the wrong gap dependence for a short-lived
+blockade. Projecting the unthresholded IQ onto the readout axis gives the
+same nonreplicating pattern (two-cycle means −0.021 at 2 us and +0.022 at
+10 us, both intervals spanning zero). Sham means were near zero at both
+gaps. These data provide no evidence that the loss site blocks a second
+excitation. Because pulse-inversion controls were unstable, this is not a
+bound on the site's excitation capacity or recovery time. Do not repeat
+the same q3 blockade sequence without a new observable or a materially
+better validated pulse control.
