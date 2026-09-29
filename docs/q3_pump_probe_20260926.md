@@ -3956,3 +3956,34 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run
 ```
+
+The first transfer-Ramsey attempt stopped during preflight before any
+shots because a NumPy cycle count could not be written to JSON. Commit
+`ebea9927` converts that count to a Python integer. The rerun at
+`q3_floquet_transfer_ramsey_20260929T010112Z_2a18e65a` completed all
+92 settings and saved raw IQ. Park single-shot fidelity was 0.921 and
+assignment contrast was 0.841. The software marked 65 of 68 phase
+contrasts valid, but this validity gate is insufficient: the two
+intended Ramsey quadratures have nearly identical excited fractions
+across the 92 settings (correlation 0.991; mean absolute difference
+0.026). The reported near-π flips at high AC amplitude therefore do
+not establish a calibrated AC phase or delivered flux amplitude.
+The 100-ns +700-DAC static pulse also changed the apparent phase by
+about π while the −700-DAC pulse did not, despite the saved static
+flux fit predicting similar frequency shifts for both. We will not
+fit flux-line transfer from these phase reports until the second-pulse
+phase axis is independently checked.
+
+`--phase-check` repeats zero AC, +700-DAC static, and 1700-DAC AC
+at 20 and 40 MHz with second-pulse phases 0°, 90°, 180°, and 270°.
+Two reversed blocks, local ground/excited references, and raw IQ are
+saved. The zero-AC phase fringe must have at least 0.25 excited-
+fraction span; the 0° q arm must also agree with the independent i
+arm. This is a bounded readout of the phase axis, not a new TLS claim.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run --phase-check
+```

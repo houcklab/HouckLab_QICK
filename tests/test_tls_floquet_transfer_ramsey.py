@@ -264,3 +264,73 @@ def test_low_contrast_entry_keeps_raw_iq_and_marks_phase_invalid(tmp_path):
     assert "contrast" in result["signal"]["error"]
     assert all((tmp_path / f"{entry['name']}_{arm}.npz").exists()
                for arm in ("g", "e", "i", "q"))
+
+
+def test_phase_check_schedule_repeats_analysis_phases_in_reversed_blocks():
+    rows = experiment().phase_check_schedule()
+    assert len(rows) == 32
+    assert len({row["name"] for row in rows}) == 32
+    assert [row["analysis_phase_deg"] for row in rows[:4]] == [0, 90, 180, 270]
+    assert rows[0]["kind"] == "off"
+    assert rows[4]["kind"] == "static"
+    assert rows[8]["frequency_mhz"] == 20.0
+    assert rows[12]["frequency_mhz"] == 40.0
+    assert rows[16]["block"] == 1
+    assert rows[16]["name"].endswith("f40_a1700_p270")
+    assert all(row["duration_us"] == .1 for row in rows)
+
+
+def test_phase_check_acquisition_forwards_second_pulse_phase(tmp_path):
+    module = experiment()
+    entry = module.phase_check_schedule()[2]
+    seen = {}
+
+    class FakeProgram:
+        def __init__(self, _soccfg, cfg):
+            seen[cfg["ramsey_arm"]] = cfg["ramsey_q_phase_deg"]
+            self.cfg = cfg
+            self.waveform_report = {}
+            self.memory_report = {}
+            self.park_transfer_waveform = np.arange(8, dtype=np.int16)
+
+    def acquire(program, _soc):
+        n = {"g": 1, "e": 9, "i": 5, "q": 5}[program.cfg["ramsey_arm"]]
+        iq = np.r_[np.ones(n), np.zeros(10 - n)]
+        return np.full(10, np.nan), np.full(10, np.nan), iq, np.zeros(10)
+
+    module.acquire_entry(
+        entry, soc=None, soccfg=None, base_cfg={},
+        program_class=FakeProgram, acquire=acquire,
+        discriminate=lambda i, q, _cal: i > .5,
+        calib_params={}, folder=tmp_path, shots=10)
+    assert seen == {"g": 180, "e": 180, "i": 180, "q": 180}
+
+
+def test_phase_check_report_separates_phase_shift_from_flat_off_axis():
+    module = experiment()
+    rows = module.phase_check_schedule()
+    for row in rows:
+        phi = 0.0 if row["kind"] == "off" else .4
+        theta = np.deg2rad(row["analysis_phase_deg"])
+        q = .5 + .3 * np.cos(theta - phi)
+        row["arms"] = {arm: {"excited_fraction": value}
+                       for arm, value in (("g", .1), ("e", .9),
+                                          ("i", .8), ("q", q))}
+    report = module.phase_check_report(rows)
+    assert report["valid"] is True
+    assert report["blocks"]["b0"]["off"]["fringe_span"] == pytest.approx(.6)
+    assert report["blocks"]["b0"]["f20_a1700"]["phase_relative_off_rad"] == \
+        pytest.approx(.4)
+    for row in rows:
+        if row["kind"] == "off":
+            row["arms"]["q"]["excited_fraction"] = .5
+    assert module.phase_check_report(rows)["valid"] is False
+
+
+def test_phase_check_cli_plan_is_short_and_requires_no_hardware(capsys):
+    module = experiment()
+    assert module.main(["--plan", "--phase-check"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["mode"] == "phase_axis_check"
+    assert printed["programs"] == 32
+    assert printed["shots_per_arm"] == 200

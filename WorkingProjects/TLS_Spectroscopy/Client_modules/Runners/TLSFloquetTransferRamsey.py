@@ -34,12 +34,24 @@ STATIC_OFFSETS_DAC = (-700, 700)
 RAMSEY_ARMS = ("g", "e", "i", "q")
 SHOTS_PER_ARM = 300
 PARK_CAL_SHOTS = 800
+PHASE_CHECK_SHOTS = 200
 MIN_ASSIGNMENT_CONTRAST = 0.50
 MIN_RAMSEY_CONTRAST = 0.25
 MIN_RAMSEY_COHERENCE = 0.15
 
 
-def plan():
+def plan(*, phase_check=False):
+    if phase_check:
+        return {"hardware_access": False, "mode": "phase_axis_check",
+                "bias": "q3 park", "reset_mode": "passive",
+                "analysis_phases_deg": [0, 90, 180, 270],
+                "conditions": ["off", "static_p700", "f20_a1700",
+                               "f40_a1700"],
+                "duration_us": 0.1, "blocks": 2,
+                "programs": len(phase_check_schedule()),
+                "shots_per_arm": PHASE_CHECK_SHOTS,
+                "park_calibration_shots": PARK_CAL_SHOTS,
+                "purpose": "validate Ramsey phase control before AC transfer inference"}
     return {"hardware_access": False, "bias": "q3 park",
             "reset_mode": "passive", "frequencies_mhz": list(FREQUENCIES_MHZ),
             "amplitudes_dac": list(AMPLITUDES_DAC),
@@ -107,6 +119,29 @@ def schedule(*, frequencies_mhz=FREQUENCIES_MHZ,
     if len({row["name"] for row in result}) != len(result):
         raise ValueError("duplicate Ramsey program names")
     return result
+
+
+def phase_check_schedule():
+    """Short phase-axis validation at park, with reversed program order."""
+    conditions = (
+        ("off", "off", 20.0, 0, 0),
+        ("static_p700", "static", 0.0, 0, 700),
+        ("f20_a1700", "ac", 20.0, 1700, 0),
+        ("f40_a1700", "ac", 40.0, 1700, 0),
+    )
+    first = [
+        {"condition": label, "kind": kind, "frequency_mhz": frequency,
+         "amplitude_dac": amplitude, "static_offset_dac": offset,
+         "duration_us": 0.1, "analysis_phase_deg": phase}
+        for label, kind, frequency, amplitude, offset in conditions
+        for phase in (0, 90, 180, 270)
+    ]
+    return [
+        {"name": f"b{block}_{row['condition']}_p{row['analysis_phase_deg']}",
+         "block": block, **row, "status": "pending"}
+        for block, rows in ((0, first), (1, list(reversed(first))))
+        for row in rows
+    ]
 
 
 def park_waveform(*, park_gain, amplitude_dac, frequency_mhz,
@@ -269,6 +304,58 @@ def phase_report(entries):
     return report
 
 
+def phase_check_report(entries):
+    """Fit the four analysis phases and test whether the off fringe exists."""
+    blocks = {}
+    for block in (0, 1):
+        conditions = {}
+        for condition in ("off", "static_p700", "f20_a1700", "f40_a1700"):
+            rows = {entry["analysis_phase_deg"]: entry for entry in entries
+                    if entry["block"] == block and
+                    entry["condition"] == condition}
+            if set(rows) != {0, 90, 180, 270}:
+                raise ValueError(f"incomplete phase check: b{block} {condition}")
+            q_values = {}
+            contrasts = []
+            for phase, row in rows.items():
+                fractions = {arm: float(row["arms"][arm]["excited_fraction"])
+                             for arm in RAMSEY_ARMS}
+                contrast = fractions["e"] - fractions["g"]
+                contrasts.append(contrast)
+                q_values[phase] = fractions["q"]
+            a = (q_values[0] - q_values[180]) / 2.0
+            b = (q_values[90] - q_values[270]) / 2.0
+            axis = complex(a, b)
+            q0_i_difference = (q_values[0] - float(
+                rows[0]["arms"]["i"]["excited_fraction"]))
+            conditions[condition] = {
+                "q_excited_by_phase_deg": {str(k): float(v)
+                                           for k, v in q_values.items()},
+                "min_reference_contrast": float(min(contrasts)),
+                "fringe_span": float(max(q_values.values()) - min(q_values.values())),
+                "fringe_amplitude": float(abs(axis)),
+                "fringe_phase_rad": float(np.angle(axis)),
+                "q0_minus_i0": float(q0_i_difference),
+                "valid": bool(min(contrasts) >= MIN_RAMSEY_CONTRAST and
+                              abs(q0_i_difference) <= 0.15)}
+        off = conditions["off"]
+        off_axis = complex(
+            (off["q_excited_by_phase_deg"]["0"] -
+             off["q_excited_by_phase_deg"]["180"]) / 2.0,
+            (off["q_excited_by_phase_deg"]["90"] -
+             off["q_excited_by_phase_deg"]["270"]) / 2.0)
+        off["valid"] = bool(off["valid"] and off["fringe_span"] >= 0.25)
+        for condition, record in conditions.items():
+            record["phase_relative_off_rad"] = (
+                float(np.angle(np.exp(1j * record["fringe_phase_rad"]) *
+                               np.conj(off_axis)))
+                if off["valid"] and record["valid"] and
+                   record["fringe_amplitude"] >= 0.05 else None)
+        blocks[f"b{block}"] = conditions
+    return {"valid": all(record["valid"] for group in blocks.values()
+                         for record in group.values()), "blocks": blocks}
+
+
 def acquire_entry(entry, *, soc, soccfg, base_cfg, program_class, acquire,
                   discriminate, calib_params, folder, shots, checkpoint=None):
     """Acquire all four arms for one burst and persist IQ before scoring it."""
@@ -281,6 +368,7 @@ def acquire_entry(entry, *, soc, soccfg, base_cfg, program_class, acquire,
         cfg = dict(base_cfg)
         cfg.update({"ramsey_arm": arm, "ramsey_park_idle_only": True,
                     "ramsey_echo": False,
+                    "ramsey_q_phase_deg": entry.get("analysis_phase_deg", 90),
                     "ramsey_flux_hold_us": entry["duration_us"],
                     "transfer_amplitude_dac": entry["amplitude_dac"],
                     "transfer_frequency_mhz": entry["frequency_mhz"],
@@ -332,7 +420,7 @@ def _json_value(value):
     raise TypeError(f"cannot serialize {type(value).__name__}")
 
 
-def run(*, data_root=localizer.DATA_ROOT):
+def run(*, data_root=localizer.DATA_ROOT, phase_check=False):
     """Run park-only Ramsey bursts after one checked single-shot calibration."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
@@ -361,17 +449,20 @@ def run(*, data_root=localizer.DATA_ROOT):
                  "ramsey_echo": False,
                  "qubit_pulse_style": "arb",
                  "relax_delay": 1000.0})
-    session_id = ("q3_floquet_transfer_ramsey_" +
+    session_id = (("q3_ramsey_phase_check_" if phase_check else
+                   "q3_floquet_transfer_ramsey_") +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                   "_" + uuid.uuid4().hex[:8])
     folder = data_root / "q3" / session_id
     folder.mkdir(parents=True, exist_ok=False)
     path = folder / "manifest.json"
-    entries = schedule()
-    manifest = {"schema": "q3.floquet-transfer-ramsey.v1",
+    entries = phase_check_schedule() if phase_check else schedule()
+    shots = PHASE_CHECK_SHOTS if phase_check else SHOTS_PER_ARM
+    manifest = {"schema": ("q3.ramsey-phase-check.v1" if phase_check else
+                           "q3.floquet-transfer-ramsey.v1"),
                 "status": "running", "session_id": session_id,
                 "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
-                "plan": plan(), "park_config": {
+                "plan": plan(phase_check=phase_check), "park_config": {
                     "ff_park_gain": base["ff_park_gain"],
                     "static_flux_fit_params": list(five.APPLE_FLUX_FIT_PARAMS),
                     "qubit_pi_freq_mhz": base["qubit_pi_freq"],
@@ -389,7 +480,9 @@ def run(*, data_root=localizer.DATA_ROOT):
         # taking shots. QICK checks actual generator clocks and envelope memory.
         preflight = []
         for entry in entries[:len(entries) // 2]:
-            cfg = dict(base, ramsey_arm="g", shots=1, reps=1,
+            cfg = dict(base, ramsey_arm="q" if phase_check else "g",
+                       ramsey_q_phase_deg=entry.get("analysis_phase_deg", 90),
+                       shots=1, reps=1,
                        ramsey_flux_hold_us=entry["duration_us"],
                        transfer_amplitude_dac=entry["amplitude_dac"],
                        transfer_frequency_mhz=entry["frequency_mhz"],
@@ -447,18 +540,28 @@ def run(*, data_root=localizer.DATA_ROOT):
                     prog, proxy, load_pulses=True, progress=False),
                 discriminate=discriminate_shots,
                 calib_params=ss.calib_params, folder=folder,
-                shots=SHOTS_PER_ARM,
+                shots=shots,
                 checkpoint=lambda: protocol.checkpoint(path, manifest))
-        manifest["phase_report"] = phase_report(entries)
-        valid = sum(item["valid"] for item in manifest["phase_report"].values())
-        manifest["valid_phase_count"] = valid
-        manifest["total_phase_count"] = len(manifest["phase_report"])
-        manifest["status"] = ("complete" if valid == len(manifest["phase_report"])
-                              else "complete_controls_unstable")
+        if phase_check:
+            manifest["phase_check_report"] = phase_check_report(entries)
+            manifest["status"] = ("complete" if
+                                  manifest["phase_check_report"]["valid"] else
+                                  "complete_controls_unstable")
+            print(f"[transfer-Ramsey] phase axis "
+                  f"{'valid' if manifest['phase_check_report']['valid'] else 'invalid'}",
+                  flush=True)
+        else:
+            manifest["phase_report"] = phase_report(entries)
+            valid = sum(item["valid"] for item in manifest["phase_report"].values())
+            manifest["valid_phase_count"] = valid
+            manifest["total_phase_count"] = len(manifest["phase_report"])
+            manifest["status"] = ("complete" if
+                                  valid == len(manifest["phase_report"]) else
+                                  "complete_controls_unstable")
+            print(f"[transfer-Ramsey] {valid}/{manifest['total_phase_count']} "
+                  "phase contrasts", flush=True)
         protocol.checkpoint(path, manifest)
-        print(f"[transfer-Ramsey] {manifest['status']}: "
-              f"{valid}/{manifest['total_phase_count']} phase contrasts; {path}",
-              flush=True)
+        print(f"[transfer-Ramsey] {manifest['status']}: {path}", flush=True)
         return path
     except BaseException as exc:
         manifest["status"] = "failed"
@@ -472,12 +575,13 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--phase-check", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(phase_check=args.phase_check), indent=2))
     else:
-        run(data_root=args.data_root)
+        run(data_root=args.data_root, phase_check=args.phase_check)
     return 0
 
 
