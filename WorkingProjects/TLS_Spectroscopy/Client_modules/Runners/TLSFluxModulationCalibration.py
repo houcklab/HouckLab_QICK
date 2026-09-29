@@ -1,9 +1,12 @@
-"""Measure q3's response to a 30-MHz waveform on the fast-flux line.
+"""Measure q3's qubit sidebands under fast-flux modulation.
 
 This is a transfer pilot, not a modulated-T1 or TLS-saturation measurement.
-A passive loss scout chooses a current feature; sideband spectroscopy runs at
-its 14-MHz lower flank. The existing target-resident Gaussian qubit pulse and
+A passive loss scout chooses a current feature; the original 30-MHz mode runs
+at its 14-MHz lower flank. The existing target-resident Gaussian qubit pulse and
 the AC flux waveform play simultaneously after the corrected target settle.
+The --frequency-response mode uses a wide scout and 20/30/40-MHz waveforms
+at a quiet site separated from the current loss feature. It saves sideband
+spectra for an on-chip amplitude estimate; it does not itself test TLS loss.
 Each readout follows the complete 40-us corrected return. Ground/excited
 references, unmodulated spectra, a repeated carrier and pre/post scouts bound
 readout and frequency drift. Raw IQ and the actual compiled waveform are saved.
@@ -29,9 +32,13 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
     TLSPumpProbeProtocolCheck as protocol,
     TLSPumpProbeResidentDrive as resident,
     TLSPumpProbeWidePassiveScan as wide,
+    TLSFloquetSwitch as switch,
+    TLSSwapHoldPilot as swap,
 )
 MODULATION_MHZ = 30.0
 AMPLITUDES_DAC = (0, 800, 1600)
+RESPONSE_FREQUENCIES_MHZ = (20.0, 30.0, 40.0)
+RESPONSE_AMPLITUDES_DAC = (0, 800)
 PROBE_GAIN_DAC = 6000
 SHOTS = 600
 REFERENCE_SHOTS = 400
@@ -88,7 +95,23 @@ def sideband_grid(carrier_mhz, *, modulation_mhz=MODULATION_MHZ):
             for order in (-1, 0, 1) for offset in (-4.0, -2.0, 0.0, 2.0, 4.0)]
 
 
-def plan():
+def plan(*, frequency_response=False):
+    if frequency_response:
+        return {"hardware_access": False, "stage": "calibration_only",
+                "purpose": "measure on-chip fast-flux amplitude from qubit sidebands",
+                "reset_mode": "passive", "scout_ghz": [3.8, 4.3],
+                "site": "quiet flank 60-100 MHz from fresh loss",
+                "modulation_frequencies_mhz": list(RESPONSE_FREQUENCIES_MHZ),
+                "modulation_amplitudes_dac": list(RESPONSE_AMPLITUDES_DAC),
+                "waveform_window_us": 0.8,
+                "qubit_pulse_gain_dac": PROBE_GAIN_DAC,
+                "qubit_pulse": "existing target-resident 4-sigma Gaussian",
+                "carrier_scan_points": 17,
+                "sideband_scan_points_per_frequency": 30,
+                "shots_per_point": SHOTS, "raw_iq_saved": True,
+                "full_return_before_readout_us": 40.0,
+                "abort_if_carrier_excess_below": 0.08,
+                "note": __doc__}
     return {"hardware_access": False,
             "purpose": "calibrate fast-flux transfer from qubit sidebands",
             "reset_mode": "passive", "site": "fresh loss feature minus 14 MHz",
@@ -134,7 +157,7 @@ class ModulatedResidentProgram(resident.ResidentDriveProgram):
             fabric_rate_mhz=generator["f_fabric"], cycles=cycles,
             baseline_gain=baseline,
             amplitude_gain=cfg["opx_modulation_amplitude_dac"],
-            modulation_mhz=MODULATION_MHZ,
+            modulation_mhz=cfg.get("opx_modulation_mhz", MODULATION_MHZ),
             max_gain=ff_maxv(self, scaled=True))
         if len(waveform) > ff_envelope_samples(self):
             raise ValueError("AC flux waveform exceeds this generator's envelope memory")
@@ -186,18 +209,95 @@ def _reference(name, state, flank):
             "status": "pending"}
 
 
-def _arm(name, flank, freq, amplitude, *, shots=SHOTS):
-    return {"name": name, "flux_ghz": flank, "drive_mhz": float(freq),
+def _arm(name, flank, freq, amplitude, *, shots=SHOTS,
+         modulation_mhz=MODULATION_MHZ, order=None, offset_mhz=None):
+    result = {"name": name, "flux_ghz": flank, "drive_mhz": float(freq),
             "gain": PROBE_GAIN_DAC, "reference_state": None,
             "preparation_state": "g", "pre_drive_us": SETTLE_US,
             "post_drive_us": POST_US, "shots": int(shots),
-            "modulation_amplitude_dac": int(amplitude), "status": "pending"}
+            "modulation_amplitude_dac": int(amplitude),
+            "modulation_mhz": float(modulation_mhz), "status": "pending"}
+    if order is not None:
+        result["order"] = int(order)
+    if offset_mhz is not None:
+        result["offset_mhz"] = float(offset_mhz)
+    return result
 
 
 def _program_config(base, arm, dc_lookup):
     cfg = resident.arm_config(base, arm, dc_lookup)
     cfg["opx_modulation_amplitude_dac"] = arm["modulation_amplitude_dac"]
+    cfg["opx_modulation_mhz"] = arm.get("modulation_mhz", MODULATION_MHZ)
     return cfg
+
+
+def frequency_response_arms(site_ghz, carrier_mhz):
+    """Interleave AC-off/on at each carrier and sideband detuning."""
+    arms = []
+    for order in (-1, 0, 1):
+        for offset in (-4.0, -2.0, 0.0, 2.0, 4.0):
+            for rate in RESPONSE_FREQUENCIES_MHZ:
+                frequency = round(float(carrier_mhz) + order * rate + offset, 3)
+                amplitudes = (RESPONSE_AMPLITUDES_DAC if len(arms) % 4 == 0
+                              else tuple(reversed(RESPONSE_AMPLITUDES_DAC)))
+                for amplitude in amplitudes:
+                    arms.append(_arm(
+                        f"f{int(rate)}_n{order:+d}_d{int(offset):+d}_a{amplitude}",
+                        site_ghz, frequency, amplitude,
+                        modulation_mhz=rate, order=order, offset_mhz=offset))
+    return arms
+
+
+def select_frequency_response_site(rows, center_ghz):
+    """Choose a quiet 60-100-MHz flank in both wide-scout scan directions."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    expected = {round(3.8 + .002 * index, 3) for index in range(251)}
+    if len(rows) != 251 or set(indexed) != expected:
+        raise ValueError("frequency-response site needs a complete wide scout")
+    candidates = []
+    for distance_mhz in (60, 80, 100):
+        for sign in (-1, 1):
+            site = round(float(center_ghz) + sign * distance_mhz / 1000, 3)
+            sampled = [round(site + delta / 1000.0, 3)
+                       for delta in (-40, -30, -20, 0, 20, 30, 40)]
+            if any(f not in indexed for f in sampled):
+                continue
+            survivals = [adaptive._survival(indexed[f], direction)
+                         for f in sampled for direction in ("", "up", "down")]
+            if not all(math.isfinite(value) for value in survivals):
+                continue
+            candidates.append({"site_ghz": site,
+                               "distance_mhz": distance_mhz,
+                               "sampled_ghz": sampled,
+                               "min_survival": min(survivals),
+                               "median_survival": float(np.median(survivals))})
+    if not candidates:
+        raise ValueError("no complete quiet-flank sampling window")
+    chosen = max(candidates, key=lambda item: (item["min_survival"],
+                                               item["median_survival"],
+                                               -item["distance_mhz"]))
+    if chosen["min_survival"] < 0.50:
+        raise ValueError("no quiet 60-100-MHz calibration window")
+    return chosen
+
+
+def select_frequency_response_candidate(rows, *, preferred_center=4.118):
+    """Select a fresh loss site only when a quiet calibration site exists."""
+    site_reports = {}
+
+    def has_site(candidate):
+        center = candidate["center_ghz"]
+        if center not in site_reports:
+            try:
+                site_reports[center] = select_frequency_response_site(rows, center)
+            except ValueError:
+                return False
+        return True
+
+    selected = switch.select_switch_candidate(
+        rows, preferred_center=preferred_center, candidate_filter=has_site)
+    return selected, site_reports[selected["center_ghz"]]
 
 
 def _save_records(folder, arm, records, axis=None):
@@ -209,16 +309,26 @@ def _save_records(folder, arm, records, axis=None):
         arm["excited_fraction_pre_axis"] = resident.classify(records, axis)
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        frequency_response=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    scout_parameters = (wide.parameters() if frequency_response
+                        else adaptive.scout_parameters(phase="pre"))
+    suffix = ("TLS_FluxModulation_Frequency_Response_Scout_pre"
+              if frequency_response else "TLS_FluxModulation_Calibration_Scout_pre")
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**adaptive.scout_parameters(phase="pre"),
-                             "output_suffix": "TLS_FluxModulation_Calibration_Scout_pre"})
-    selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
+        parameter_overrides={**scout_parameters, "output_suffix": suffix})
+    if frequency_response:
+        scout_rows = swap.read_wide_scout(scout)
+        selected, site_report = select_frequency_response_candidate(scout_rows)
+    else:
+        selected = adaptive.select_loss_feature(adaptive.read_scout(scout))
+        site_report = None
     center = round(float(selected["center_ghz"]), 3)
-    flank = round(center + resident.FLANK_OFFSET_GHZ, 3)
+    flank = (float(site_report["site_ghz"]) if frequency_response
+             else round(center + resident.FLANK_OFFSET_GHZ, 3))
     print(f"[flux-mod] feature={center:.3f} GHz; calibration flank={flank:.3f} GHz",
           flush=True)
 
@@ -262,7 +372,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         resident.resident_segments(
             compensation, pre_us=SETTLE_US + ff_pulse.flux_settle_us(base),
             pulse_us=pulse_us, post_us=POST_US, recovery_us=40.0)
-        session_id = ("q3_flux_modulation_calibration_" +
+        session_id = (("q3_flux_modulation_frequency_response_"
+                       if frequency_response else "q3_flux_modulation_calibration_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -274,15 +385,19 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 _reference("ref_e_post", "e", flank)]
         carrier = [_arm(f"carrier_{i:02d}", flank, f, 0)
                    for i, f in enumerate(carrier_grid(1000.0 * flank + 5.0))]
-        manifest = {"schema": "q3.flux-modulation-calibration.v1",
+        manifest = {"schema": ("q3.flux-modulation-frequency-response.v1"
+                               if frequency_response else
+                               "q3.flux-modulation-calibration.v1"),
                     "status": "running", "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
                     "correction_sha256": localizer.CORRECTION_SHA256,
                     "scout_csv": str(scout), "selected": selected,
+                    "calibration_site_report": site_report,
                     "flank_ghz": flank, "dc_gain": int(dc[0]),
                     "realized_ghz": float(realized[0]),
-                    "plan": plan(), "references": refs,
+                    "plan": plan(frequency_response=frequency_response),
+                    "references": refs,
                     "carrier_arms": carrier, "sideband_arms": []}
         protocol.checkpoint(path, manifest)
         print(f"[flux-mod] manifest={path}", flush=True)
@@ -299,16 +414,30 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
 
             # Fail on waveform memory, DAC clipping, QICK compile, or correction
             # timing before collecting the first reference shot.
-            for representative in (refs[0], carrier[len(carrier)//2],
-                                   _arm("preflight_max", flank, flank*1000+5,
-                                        max(AMPLITUDES_DAC))):
+            preflight = [refs[0], carrier[len(carrier)//2]]
+            if frequency_response:
+                preflight.extend(_arm(
+                    f"preflight_{int(rate)}", flank, flank*1000+5, 800,
+                    modulation_mhz=rate)
+                    for rate in RESPONSE_FREQUENCIES_MHZ)
+            else:
+                preflight.append(_arm("preflight_max", flank, flank*1000+5,
+                                      max(AMPLITUDES_DAC)))
+            for representative in preflight:
                 _, program = compile_arm(representative)
-                if representative["name"] == "preflight_max":
+                if representative["name"].startswith("preflight_"):
                     report = program.modulation_waveform_report
-                    manifest["waveform_report"] = report
-                    wave_path = folder / "compiled_flux_waveform.npz"
+                    manifest.setdefault("waveform_reports", {})[
+                        representative["name"]] = report
+                    if not frequency_response:
+                        manifest["waveform_report"] = report
+                    wave_path = folder / ("compiled_flux_waveform_" +
+                                          representative["name"] + ".npz")
                     np.savez_compressed(wave_path, idata=program.modulation_waveform)
-                    manifest["waveform_npz"] = str(wave_path)
+                    manifest.setdefault("waveform_npz_by_rate", {})[
+                        representative["name"]] = str(wave_path)
+                    if not frequency_response:
+                        manifest["waveform_npz"] = str(wave_path)
             manifest["preflight_complete"] = True
             protocol.checkpoint(path, manifest)
 
@@ -354,19 +483,27 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             print(f"[flux-mod] carrier={best['drive_mhz']:.1f} MHz; "
                   f"excess={manifest['carrier_excess']:.3f}", flush=True)
 
-            frequencies = sideband_grid(best["drive_mhz"])
-            sideband_arms = []
-            for index, freq in enumerate(frequencies):
-                amplitudes = AMPLITUDES_DAC if index % 2 == 0 else tuple(reversed(AMPLITUDES_DAC))
-                for amplitude in amplitudes:
-                    sideband_arms.append(_arm(
-                        f"sideband_{index:02d}_a{amplitude}", flank, freq, amplitude))
+            if frequency_response:
+                sideband_arms = frequency_response_arms(
+                    flank, best["drive_mhz"])
+            else:
+                frequencies = sideband_grid(best["drive_mhz"])
+                sideband_arms = []
+                for index, freq in enumerate(frequencies):
+                    amplitudes = (AMPLITUDES_DAC if index % 2 == 0
+                                  else tuple(reversed(AMPLITUDES_DAC)))
+                    for amplitude in amplitudes:
+                        sideband_arms.append(_arm(
+                            f"sideband_{index:02d}_a{amplitude}",
+                            flank, freq, amplitude))
             manifest["sideband_arms"] = sideband_arms
             protocol.checkpoint(path, manifest)
             for index, arm in enumerate(sideband_arms, 1):
                 acquire(arm)
                 print(f"[flux-mod] {index}/{len(sideband_arms)} "
-                      f"{arm['drive_mhz']:.1f} MHz A={arm['modulation_amplitude_dac']} "
+                      f"{arm['drive_mhz']:.1f} MHz "
+                      f"f={arm['modulation_mhz']:.0f} MHz "
+                      f"A={arm['modulation_amplitude_dac']} "
                       f"P={arm['excited_fraction_pre_axis']:.3f}", flush=True)
             repeated = _arm("carrier_repeat", flank, best["drive_mhz"], 0)
             manifest["carrier_repeat"] = repeated
@@ -380,17 +517,32 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             manifest["carrier_repeat_excess"] = (
                 repeated["excited_fraction_pre_axis"] -
                 resident.classify(raw_refs["ref_g_post"], axis))
+            post_parameters = (wide.parameters() if frequency_response
+                               else adaptive.scout_parameters(phase="post"))
+            post_suffix = ("TLS_FluxModulation_Frequency_Response_Scout_post"
+                           if frequency_response else
+                           "TLS_FluxModulation_Calibration_Scout_post")
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**adaptive.scout_parameters(phase="post"),
-                                     "output_suffix": "TLS_FluxModulation_Calibration_Scout_post"})
+                parameter_overrides={**post_parameters,
+                                     "output_suffix": post_suffix})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = adaptive.select_loss_feature(
-                    adaptive.read_scout(post_scout))
+                if frequency_response:
+                    manifest["post_selected"] = switch.select_switch_candidate(
+                        swap.read_wide_scout(post_scout),
+                        preferred_center=center,
+                        candidate_filter=lambda item: abs(
+                            item["center_ghz"] - center) <= .004001)
+                else:
+                    manifest["post_selected"] = adaptive.select_loss_feature(
+                        adaptive.read_scout(post_scout))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = (
+                bool(abs(1000.0 * (manifest["post_selected"]["center_ghz"] -
+                                    center)) <= 4.0 + 1e-6)
+                if frequency_response and "post_selected" in manifest else
                 resident.feature_stable(selected, manifest["post_selected"])
                 if "post_selected" in manifest else False)
             valid = (manifest["post_readout_score"]["valid"] and
@@ -413,13 +565,16 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--frequency-response", action="store_true",
+                        help="wide-scout 20/30/40-MHz on-chip sideband calibration")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(frequency_response=args.frequency_response), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            frequency_response=args.frequency_response)
     return 0
 
 

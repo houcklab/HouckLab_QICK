@@ -4354,3 +4354,27 @@ not independently calibrated and may sweep through the selected loss line,
 so neither center protection nor the one-block flank pattern establishes
 Floquet sidebands or direct TLS-state control. Do not repeat this high-amplitude
 translation protocol as a decisive test.
+
+### 20/30/40-MHz on-chip flux-response calibration (next run)
+
+The unresolved issue is whether the programmed DAC swing is small enough to
+keep the qubit away from the TLS while a first sideband reaches it. The earlier
+30-MHz sideband pilot resolved peaks, but did not establish a measured
+frequency-dependent delivered swing. Before another TLS-loss comparison, run
+one calibration-only attempt. A fresh 3.8–4.3-GHz scout selects a current loss
+feature and a quiet site 60–100 MHz away. At that site, a resident qubit pulse
+and 800-DAC AC flux run together at 20, 30, and 40 MHz. Paired AC-off spectra
+cover the carrier and both first sidebands, with scan rates interleaved to
+limit drift bias. The 0.8-us waveform has 16, 24, or 32 complete cycles;
+compiled samples, raw IQ, pre/post references, and wide scouts are saved.
+The initial carrier must resolve before sideband acquisition. This run does
+not claim TLS saturation or a linewidth measurement. Analyze the spectra and
+their controls first; proceed to an off-resonant, small-excursion TLS test
+only if the on-chip transfer is bounded well enough to exclude direct
+frequency crossing. A null or unstable calibration closes this modulation
+route rather than prompting repeated calibration scans.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulationCalibration --run --frequency-response
+```
