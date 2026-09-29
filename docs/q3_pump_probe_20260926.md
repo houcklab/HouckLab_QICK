@@ -4784,3 +4784,20 @@ until two separated sites pass the higher-shot gate. Replaying the third
 scout ranks 4.116, 3.896, and 4.148 GHz; a failed 3.896-GHz profile would
 allow testing 4.148 GHz without another wide scan. The fresh scout and
 all original controls remain mandatory in the next run.
+
+The fourth passive attempt, `q3_tls_millisecond_sentinel_passive_20260929T150151Z_17b19a8d`,
+executed the fallback profiles and stopped at the profile gate. The readout
+axis fidelity was 0.874 and the C ground/excited transfer was 0.553. The
+fresh scout queued 3.950, 3.968, and 4.148 GHz. After 20 cycles each, the
+normalized measured center-to-edge contrasts were 0.130, 0.185, and
+0.097. The 3.968-GHz fit centered at 3.9656 GHz, outside the inner ±2-MHz
+profile guard; a recentered profile might characterize this individual
+line, but its separation from the 3.950-GHz fit is only 15.1 MHz. The
+4.148-GHz fit collapsed to an unresolved 0.29-MHz width with its fitted
+depth against the 1.5 bound, and the measured contrast failed. No
+science/pilot/null stream has been acquired in any of the four attempts.
+The 20-cycle profiles show a changing and currently insufficient set of
+qualified, separated lines. Do not keep rerunning the unchanged two-line
+sentinel or relax the separation and contrast gates merely to get a
+stream; the line-specific versus common qubit-frequency jitter comparison
+would no longer satisfy this protocol's stated result criterion.
