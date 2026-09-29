@@ -103,7 +103,8 @@ def checked_correction(data_root, correction_json=None):
     return correction
 
 
-def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
+def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None,
+        announce=True):
     """Run the baseline protocol, optionally with a follow-up runner's grid."""
     p = {**parameters(), **(parameter_overrides or {})}
     data_root = Path(data_root)
@@ -127,11 +128,12 @@ def run(*, data_root=DATA_ROOT, correction_json=None, parameter_overrides=None):
         original = runner.P6_5PT_APPLES_TO_APPLES
         runner.P6_5PT_APPLES_TO_APPLES = {**original, **p}
         try:
-            print(f"Starting {p['output_suffix']}: {p['max_runs']} passes, "
-                  f"{p['freq_min_ghz']:g}-{p['freq_max_ghz']:g} GHz, "
-                  f"delays={p['decay_delays_us']} us.", flush=True)
-            print(f"Native correction ON (SHA256 {CORRECTION_SHA256}); 40 us return.", flush=True)
-            print(f"Output root: {data_root / 'q3'}", flush=True)
+            if announce:
+                print(f"Starting {p['output_suffix']}: {p['max_runs']} passes, "
+                      f"{p['freq_min_ghz']:g}-{p['freq_max_ghz']:g} GHz, "
+                      f"delays={p['decay_delays_us']} us.", flush=True)
+                print(f"Native correction ON (SHA256 {CORRECTION_SHA256}); 40 us return.", flush=True)
+                print(f"Output root: {data_root / 'q3'}", flush=True)
             return runner.main()
         finally:
             runner.P6_5PT_APPLES_TO_APPLES = original

@@ -461,7 +461,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**wide.parameters(),
-                                     "output_suffix": "TLS_Dual_Transition_Scout"})
+                                     "output_suffix": "TLS_Dual_Transition_Scout"},
+                announce=False)
             manifest["scout_csv"] = str(scout)
             selected = select_eligible_feature(read_scout(scout),
                                                anharmonicity_mhz=alpha)
