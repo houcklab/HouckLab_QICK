@@ -171,3 +171,34 @@ def test_translation_second_block_recenters_both_drive_frequencies():
     assert all(x["feature_ghz"] == 4.110 for x in specs[20:])
     assert {x["modulation_mhz"] for x in specs[20:]} == {25.0, 35.0}
     assert len({x["name"] for x in specs}) == len(specs)
+
+
+def test_translation_selects_qualified_feature_with_clean_window():
+    module = experiment()
+    rows = []
+    for i in range(251):
+        freq = round(3.8 + .002 * i, 3)
+        survival = .8
+        if 3.950 <= freq <= 3.954:
+            survival = .2
+        elif 4.118 <= freq <= 4.122:
+            survival = .35
+        elif freq == 3.916:
+            survival = .35
+        p25 = .1 + .8 * survival
+        rows.append({"target_frequency_ghz": str(freq), "P0": ".1",
+                     "P1": ".9", "Ps_25us": str(p25),
+                     "P0_scan_up": ".1", "P1_scan_up": ".9",
+                     "Ps_25us_scan_up": str(p25), "P0_scan_down": ".1",
+                     "P1_scan_down": ".9", "Ps_25us_scan_down": str(p25)})
+    unfiltered = module.switch.select_switch_candidate(
+        rows, preferred_center=4.106)
+    assert abs(unfiltered["center_ghz"] - 3.952) <= .002
+    selected = module.switch.select_switch_candidate(
+        rows, preferred_center=4.106,
+        candidate_filter=lambda item: module.validate_translation_window(
+            rows, item["center_ghz"])["usable"])
+    assert abs(selected["center_ghz"] - 4.120) <= .002
+    assert abs(module.select_candidate(
+        rows, preferred_center=4.106,
+        translation_check=True)["center_ghz"] - 4.120) <= .002

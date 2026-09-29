@@ -82,7 +82,8 @@ def plan(*, phase_order=False):
     return result
 
 
-def select_switch_candidate(rows, *, preferred_center=3.992):
+def select_switch_candidate(rows, *, preferred_center=3.992,
+                            candidate_filter=None):
     """Prefer the old feature, then follow the strongest qualified wide dip."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
                for row in rows}
@@ -132,8 +133,10 @@ def select_switch_candidate(rows, *, preferred_center=3.992):
                 "depth_scan_down": depths["down"],
                 "control_survival_advantage": advantages,
                 "selector": "wide_fresh_switch_candidate"})
+    if candidate_filter is not None:
+        candidates = [item for item in candidates if candidate_filter(item)]
     if not candidates:
-        raise ValueError("no qualified loss feature in the 3.8-4.3 GHz scan")
+        raise ValueError("no qualified loss feature with a usable modulation window")
     nearby = [item for item in candidates
               if abs(item["center_ghz"] - float(preferred_center)) <= .004001]
     pool = nearby or candidates

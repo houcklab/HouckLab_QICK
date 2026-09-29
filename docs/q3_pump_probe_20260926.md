@@ -4323,3 +4323,14 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSidebandLoss --run --translation-check
 ```
+
+The first translation attempt made only its fresh wide scout, at
+`q3_2026_09_29/q3_00_25_33_TLS_Floquet_Sideband_Loss_Translation_Scout_pre_T1_5pt_vs_wall_clock_full.csv`.
+The automatic selector chose a 3.952-GHz loss feature, but its lower flank
+failed the quiet-window preflight: the down-scan survival at −36 MHz was
+0.437 versus the 0.45 minimum. No modulation program or session manifest was
+created. The same scout contains a qualified 4.120-GHz feature with a usable
+lower window. Candidate selection now applies the window check before ranking
+features, rather than aborting when the strongest candidate fails. The
+original preflight threshold is unchanged; another fresh scout is still
+required before acquisition.

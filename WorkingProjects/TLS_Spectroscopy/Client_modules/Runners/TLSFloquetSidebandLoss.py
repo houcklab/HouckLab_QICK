@@ -170,6 +170,19 @@ def validate_translation_window(rows, feature):
     return report
 
 
+def select_candidate(rows, *, preferred_center, translation_check=False):
+    candidate_filter = None
+    if translation_check:
+        candidate_filter = lambda item: (
+            round(item["center_ghz"] +
+                  min(TRANSLATION_OFFSETS_MHZ) / 1000.0, 3) >= 3.8 and
+            validate_translation_window(
+                rows, item["center_ghz"])["usable"])
+    return switch.select_switch_candidate(
+        rows, preferred_center=preferred_center,
+        candidate_filter=candidate_filter)
+
+
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         translation_check=False):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -189,14 +202,15 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
     label = f"{LABEL}_Translation" if translation_check else LABEL
     window_check = (validate_translation_window if translation_check else
                     validate_sideband_windows)
+
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**wide.parameters(),
                              "output_suffix": f"{label}_Scout_pre"})
     scout_rows = swap.read_wide_scout(scout)
-    selected = switch.select_switch_candidate(
-        scout_rows, preferred_center=4.106)
+    selected = select_candidate(scout_rows, preferred_center=4.106,
+                                translation_check=translation_check)
     center = round(float(selected["center_ghz"]), 3)
     specs = program_specs(center, translation_check=translation_check)
     first_block_size = len(specs) // 2
@@ -338,8 +352,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                         parameter_overrides={**wide.parameters(),
                                              "output_suffix": f"{label}_Scout_mid"})
                     mid_rows = swap.read_wide_scout(mid_scout)
-                    mid_selected = switch.select_switch_candidate(
-                        mid_rows, preferred_center=center)
+                    mid_selected = select_candidate(
+                        mid_rows, preferred_center=center,
+                        translation_check=translation_check)
                     mid_center = round(float(mid_selected["center_ghz"]), 3)
                     if abs(mid_center - center) > .004001:
                         raise RuntimeError("midpoint scout no longer selects the same loss site")
@@ -424,8 +439,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 post_rows = swap.read_wide_scout(post_scout)
-                manifest["post_selected"] = switch.select_switch_candidate(
-                    post_rows, preferred_center=manifest["mid_center_ghz"])
+                manifest["post_selected"] = select_candidate(
+                    post_rows, preferred_center=manifest["mid_center_ghz"],
+                    translation_check=translation_check)
                 manifest["sideband_windows_post"] = window_check(
                     post_rows, manifest["post_selected"]["center_ghz"])
             except ValueError as exc:
