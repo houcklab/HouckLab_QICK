@@ -4654,6 +4654,56 @@ while retaining the exact reversed acquisition order. The regression test
 checks this case. A new scout is required on rerun; the old location is not
 assumed stable.
 
+The corrected run completed all 12 science programs at
+`q3_tls_cold_spot_confirm_20260929T160552Z_7f21d1d1`. The pre scout selected
+4.276 GHz with a 4.292-GHz control; pre/post readout fidelities were
+0.916/0.901 and park-transfer controls passed. At 100 us, the
+baseline-adjusted ground-prepared feature-minus-park difference was -0.058
+in classified fraction (simple paired-shot bootstrap 95% interval
+[-0.087, -0.029]); the two reversed blocks gave -0.053 and -0.064, and
+projected raw IQ agreed. The 50-us feature-minus-park difference was -0.039
+[-0.071, -0.009]. Excited-prepared population relaxed much faster on the
+line than at park or the control. These are **candidate cold-spot dynamics**.
+
+The post scout still shows loss around 4.274–4.276 GHz, but the 4.292-GHz
+control's normalized 25-us survival dropped from 0.849 to 0.600, and the
+up-scan loss minimum shifted about 2 MHz. The preregistered site/control
+gate therefore failed (`complete_controls_unstable`). No rates or
+effective temperature are claimed from this run. A longer, narrower
+confirmation needs clean controls on both sides and must test whether
+ground- and excited-prepared curves converge, rather than merely showing
+faster relaxation of residual excitation.
+
+![Ground- and excited-prepared fractions in the cold-spot confirmation](q3_cold_spot_confirm_20260929.png)
+
+### Late-population test with two flanks
+
+`TLSLossSinkReset --plateau` makes the next cold-spot question narrower:
+does the line lead to a lower **late population**, or does it only shorten
+the time required to reach the same population? A fresh 3.8–4.3-GHz scout
+selects one early-loss line only if it has independently quiet lower and
+upper controls, each with a clean five-point pre-scout neighborhood. The
+science sequence visits feature, both flanks, and a matched no-excursion
+park arm at 0.1 us and 200, 500, or 1000 us. Ground/excited preparations
+and all four sites are interleaved within each shot (16 subshots); the
+second block reverses order. All return to park for 40 us before readout.
+The post scout allows the line to move by one 2-MHz grid step but requires
+both original controls to remain locally quiet. Pre/post readout and
+park-transfer references are required as before.
+
+The decisive comparison is the 500–1000-us g/e convergence at each site.
+A lower feature plateau than park **and both flanks**, reproduced in both
+orders and projected raw IQ with the controls passing, would support a
+colder effective environment at the line. If the curves converge to the
+same value, the earlier effect was faster relaxation of residual excitation.
+Even a positive result would not calibrate absolute TLS temperature.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --plan --plateau
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --run --plateau
+```
+
 ## Weak-site delayed-afterglow screen
 
 `TLSWeakAfterglowScreen` tests a different possibility: a less conspicuous

@@ -220,3 +220,76 @@ def test_cold_spot_plan_has_no_absolute_temperature_claim(capsys):
     assert plan["conditions_per_shot"] == 12
     assert plan["later_holds_us"][-1] == 200
     assert "temperature" in plan["interpretation"]
+
+
+def test_plateau_selector_requires_clean_flanks_on_both_sides():
+    module = experiment()
+    rows = scout_rows()
+    selected = module.select_plateau_candidate(rows)
+    assert selected["center_ghz"] == pytest.approx(4.094)
+    assert selected["lower_control_ghz"] < selected["center_ghz"]
+    assert selected["upper_control_ghz"] > selected["center_ghz"]
+    assert selected["lower_control_ghz"] != selected["upper_control_ghz"]
+
+    for row in rows:
+        if 4.106 <= float(row["target_frequency_ghz"]) <= 4.12:
+            for suffix in ("", "_scan_up", "_scan_down"):
+                row[f"Ps_25us{suffix}"] = ".3"
+    selected = module.select_plateau_candidate(rows)
+    assert selected["center_ghz"] != pytest.approx(4.094)
+
+
+def test_plateau_post_gate_tolerates_one_grid_step_but_rejects_dirty_flank():
+    module = experiment()
+    rows = scout_rows()
+    selected = module.select_plateau_candidate(rows)
+    assert module.assess_plateau_post(rows, selected)["valid"] is True
+    upper = selected["upper_control_ghz"]
+    for row in rows:
+        if float(row["target_frequency_ghz"]) == upper:
+            for suffix in ("", "_scan_up", "_scan_down"):
+                row[f"Ps_25us{suffix}"] = ".3"
+    assert module.assess_plateau_post(rows, selected)["valid"] is False
+
+
+def test_plateau_schedule_interleaves_four_sites_and_reverses_order():
+    module = experiment()
+    specs = module.plateau_specs(4.094, 4.078, 4.114)
+    assert [item["hold_us"] for item in specs] == [200, 500, 1000, 1000, 500, 200]
+    assert all(len(item["conditions"]) == 16 for item in specs)
+    assert all(item["shots"] == 800 for item in specs)
+    assert specs[-1]["order"] == list(reversed(specs[2]["order"]))
+    names = {item["name"] for item in specs[0]["conditions"]}
+    assert names == {f"{site}_{dwell}_{state}"
+                     for site in ("feature", "lower", "upper", "park")
+                     for dwell in ("early", "late") for state in ("g", "e")}
+
+
+def test_plateau_program_uses_flux_anchor_even_when_park_is_first(monkeypatch):
+    module = experiment()
+    entry = module.plateau_specs(4.094, 4.078, 4.114)[3]
+    assert entry["conditions"][0]["site"] == "park"
+    configs = module.cold_spot_configs(
+        {"sigma": .2, "ff_park_gain": -25146}, entry,
+        {4.094: -15878, 4.078: -16111, 4.114: -15444})
+    seen = []
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, soccfg, cfg, payload, loop:
+                        seen.append(dict(cfg)))
+    program = module.PlateauProgram(None, configs, None, None)
+    assert program.conditions_per_shot == 16
+    assert seen[0]["ff_gain"] != seen[0]["ff_park_gain"]
+    assert seen[0]["reps"] == 16 * 800
+
+
+def test_plateau_split_and_plan():
+    module = experiment()
+    order = module.plateau_specs(4.094, 4.078, 4.114)[0]["order"]
+    records = list(range(32))
+    assert module.split_plateau_records(records, order, shots=2)[order[0]] == [0, 16]
+    with pytest.raises(ValueError, match="incomplete"):
+        module.split_plateau_records(records[:-1], order, shots=2)
+    plan = module.plan(plateau=True)
+    assert plan["conditions_per_shot"] == 16
+    assert plan["later_holds_us"] == [200.0, 500.0, 1000.0]
+    assert plan["hardware_access"] is False
