@@ -4593,3 +4593,57 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --plan
 Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --run
 ```
+
+The September 29 loss-sink run completed at
+`q3_tls_loss_sink_reset_20260929T074309Z_171a3feb` on commit `4e6484c3`.
+The pre/post scouts selected the same 4.092-GHz feature and 4.076-GHz
+control; all 12 science programs and readout/transfer references passed.
+Pooled over the two reversed 800-shot blocks, an excited-prepared qubit had
+classified excited fractions of 0.474/0.651 at feature/control after 10 us,
+and 0.319/0.573 after 40 us. Ground-prepared fractions at 40 us were
+0.114/0.159, so the feature did not produce extra heating. This is
+reproducible site-localized cooling, but not a competitive fast reset: even
+the 40-us hold plus 40-us corrected return left a large gap to the measured
+ground floor. The 60-us hold still left 0.255 versus a 0.110 ground floor.
+No repeat-use stress test is justified for this reset branch.
+
+## Weak-site delayed-afterglow screen
+
+`TLSWeakAfterglowScreen` tests a different possibility: a less conspicuous
+loss site may store excitation for hundreds of microseconds even though the
+strong q3 lines have shown no replicated short-gap return. A fresh 3.8–4.3-GHz
+passive wide scout shortlists at most three bidirectional weak dips with a
+10-us loading advantage and a quiet 14–20-MHz control. The repeatedly tested
+3.982–4.010, 4.080–4.190 and 4.270–4.290-GHz regions are excluded from this
+exploratory screen. Each shortlisted region gets a 45-point, 1-MHz local
+rescan over ±22 MHz before the actual pump/probe frequency is fixed. A failed
+local rescan is recorded and skipped; no science runs if all fail.
+
+For each accepted site, a park π or zero-gain π is followed by a 10-us
+corrected feature or control visit. After the full 40-us return and first
+park readout, a ground-prepared qubit makes a second 10-us visit to the
+feature and is read out again. Three complete subshots—cold-on, hot-on,
+hot-off—are interleaved in each hardware shot. The added waits after the
+first readout are 100, 300 and 1000 us; the second block reverses both
+condition and wait order. Six hundred logical shots per program and a
+5-ms gap after each three-arm group limit cross-shot carryover. Pre/mid/post
+reference bundles, every paired raw IQ record, and a post wide scout are
+saved. The old production scan and active-reset code paths are unchanged.
+
+A *screen candidate* requires at least 100 confidently ground-heralded shots
+per condition, hot-on minus both cold-on and hot-off ≥0.04 in both reversed
+blocks, agreeing signs in unthresholded IQ, stable reference axes, and a
+still-present loss feature with a quiet original control after the run.
+This is a deliberately conservative **screen**, not a TLS discovery rule.
+The first readout can itself affect later populations, as the September 27
+readout-memory control showed; a positive candidate needs local frequency
+refinement and a follow-up without that readout confound. A null only bounds
+return after the 40-us return and first readout, not earlier memory.
+
+On the measurement PC, after stopping other q3 acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfterglowScreen --plan
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfterglowScreen --run
+```
