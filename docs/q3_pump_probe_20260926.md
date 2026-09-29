@@ -4114,3 +4114,48 @@ otherwise follows the strongest qualified feature anywhere in the wide scan.
 This is a new site for the switch experiment, not evidence that the old
 3.992-GHz feature moved to 4.106 GHz. A fresh pre-scout is required before
 running the switch patterns.
+
+The completed switch run is
+`q3_floquet_switch_20260929T023010Z_04a17b72` (commit `1f911e37`).
+All four science programs completed at 4.106 GHz; pre/mid/post scouts
+selected 4.106 GHz with depths 0.426/0.605/0.570. Pre/post readout
+fidelities were 0.855/0.885; park-transfer controls and both program
+quality gates passed. Full-visit modulation increased the ground-corrected
+excited fraction over AC-off by +0.0534 ± 0.0096 and +0.0609 ± 0.0093
+in the two reversed blocks (shot-paired standard errors). The pooled
+effect is +0.0573 ± 0.0067, approximate 95% interval [+0.044, +0.070].
+Continuous, unthresholded IQ gives the same positive sign in both blocks.
+Late-half minus early-half modulation was +0.0044 ± 0.0096 and
++0.0024 ± 0.0092, pooled +0.0033 ± 0.0066 with approximate 95% interval
+[-0.0097, +0.0163]. The IQ timing comparison is also near zero. Thus this
+fresh loss feature shows reproducible flux-modulation protection, with no
+resolved early/late timing effect. The result controls qubit loss; it does
+not establish a microscopic TLS identity or memory.
+
+The next bounded comparison tests whether the *order* of flux samples
+matters. `TLSFloquetSwitch --phase-order` pairs ordinary continuous
+30-MHz sine modulation against a waveform that flips sine phase by pi at
+whole-cycle boundaries in a fixed, balanced 108-cycle pattern. Both have
+the same programmed AC sample histogram, duration, nominal amplitude,
+and DC correction. Each hardware shot pairs continuous/scrambled g/e visits;
+separate within-shot off/on programs verify that ordinary protection is
+still present. Program order reverses after a fresh midpoint scout, and
+raw IQ plus compiled waveforms are saved. A replicated ordering effect
+would contradict a model based *only* on the programmed frequency
+histogram. The delivered flux waveform may differ because the line filters
+the two spectra differently, so it would not alone prove coherent
+Floquet/TLS dynamics. A null would bound order sensitivity at this
+amplitude, dwell, and site; it would not exclude coherent physics in
+general.
+Treat an ordering effect as credible only if it has the same sign in both
+reversed blocks, the pooled shot-paired 95% interval excludes zero, the
+ordinary on/off protection remains positive in both blocks, and readout,
+park transfer, and feature-stability controls pass. The two on references
+are also reported separately to expose drift between programs.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSwitch --run --phase-order
+```

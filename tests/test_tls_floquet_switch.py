@@ -70,6 +70,29 @@ def test_switch_waveforms_share_dc_and_equal_on_time_without_clipping():
         sum(waves["late"] != waves["off"])
 
 
+def test_phase_scramble_preserves_cycle_amplitude_and_changes_order():
+    module = experiment()
+    args = dict(segments=[(1.0, 1.8), (1.01, 1.8)],
+                park_gain=-25146, target_gain=-15000,
+                amplitude_dac=1000, modulation_mhz=30.0,
+                sample_rate_mhz=6881.28, fabric_rate_mhz=430.08,
+                cycles=1548, max_gain=32767)
+    off, _ = module.switch_waveform(pattern="off", **args)
+    on, _ = module.switch_waveform(pattern="on", **args)
+    scrambled, report = module.switch_waveform(
+        pattern="phase_scrambled", **args)
+    signs = report["phase_signs"]
+    assert len(signs) == report["cycles_per_waveform"] == 108
+    assert signs.count(1) == signs.count(-1) == 54
+    assert np.array_equal(scrambled - off, (on - off) *
+                          np.asarray(signs)[np.arange(len(on)) * 108 // len(on)])
+    assert not np.array_equal(scrambled, on)
+    assert np.max(np.abs(scrambled)) <= 32767
+    assert abs(np.mean(scrambled - off) - np.mean(on - off)) < 1
+    assert abs(np.std(scrambled - off) - np.std(on - off)) < 1
+    assert np.array_equal(np.sort(scrambled - off), np.sort(on - off))
+
+
 def test_switch_specs_pair_patterns_and_reverse_order_after_fresh_scout():
     module = experiment()
     specs = module.program_specs(3.992, shots=8000)
@@ -85,6 +108,29 @@ def test_switch_specs_pair_patterns_and_reverse_order_after_fresh_scout():
     assert [s["flux_ghz"] for s in specs] == [3.992, 3.992, 3.994, 3.994]
     assert all(c["post_drive_us"] == module.HOLD_US
                for spec in specs for c in spec["conditions"])
+
+
+def test_phase_order_specs_and_score():
+    module = experiment()
+    specs = module.program_specs(4.106, shots=8000, phase_order=True)
+    assert [(s["repeat"], s["pair"], s["patterns"]) for s in specs] == [
+        (0, "reference", ["off", "on"]),
+        (0, "phase", ["on", "phase_scrambled"]),
+        (1, "phase", ["on", "phase_scrambled"]),
+        (1, "reference", ["off", "on"])]
+    values = {"off_g": .1, "off_e": .5,
+              "on_g": .1, "on_e": .56,
+              "phase_scrambled_g": .1, "phase_scrambled_e": .53}
+    score = module.score_phase_patterns(values)
+    assert score["on_minus_off_contrast"] == pytest.approx(.06)
+    assert score["scrambled_minus_on_contrast"] == pytest.approx(-.03)
+    assert score["usable"] is True
+    phase_values = {"on_g": .1, "on_e": .50,
+                    "phase_scrambled_g": .1,
+                    "phase_scrambled_e": .53}
+    paired = module.score_phase_patterns(values, phase_values)
+    assert paired["on_minus_off_contrast"] == pytest.approx(.06)
+    assert paired["scrambled_minus_on_contrast"] == pytest.approx(.03)
 
 
 def test_switch_score_uses_hot_minus_cold_and_rejects_heating():
@@ -115,9 +161,16 @@ def test_switch_plan_and_memory_fit_q3_generator(capsys):
     assert (2 * p["park_ramp_us"] + 2 * p["hold_us"]) * 6881.28 < 65536
     assert module.main(["--plan"]) == 0
     assert json.loads(capsys.readouterr().out)["hardware_access"] is False
+    assert module.main(["--plan", "--phase-order"]) == 0
+    phase_plan = json.loads(capsys.readouterr().out)
+    assert phase_plan["patterns"] == ["off", "on", "phase_scrambled"]
+    assert phase_plan["phase_scramble_seed"] == 260929
 
 
-def test_switch_program_compiles_only_two_patterns_with_memory_guard(monkeypatch):
+@pytest.mark.parametrize("patterns", [("early", "late"),
+                                      ("on", "phase_scrambled")])
+def test_switch_program_compiles_only_two_patterns_with_memory_guard(
+        monkeypatch, patterns):
     module = experiment()
     monkeypatch.setattr(
         module.alternating.ShotAlternatingResidentProgram,
@@ -132,7 +185,7 @@ def test_switch_program_compiles_only_two_patterns_with_memory_guard(monkeypatch
     program.cfg = {"ff_ch": 0, "ff_gain": -15000,
                    "ff_park_gain": -25146}
     program.soccfg = {"gens": [{"fs": 6881.28, "f_fabric": 430.08}]}
-    program.patterns = ("early", "late")
+    program.patterns = patterns
     program._t1_ff_compensation = object()
     program._t1_ff_settle_us = .5
     program._t1_ff_predistortion_recovery_us = 40.
@@ -143,7 +196,7 @@ def test_switch_program_compiles_only_two_patterns_with_memory_guard(monkeypatch
     program.add_pulse = lambda **kw: added.append(kw)
     program._declare_experiment()
     assert {row["name"] for row in added} == {
-        "q3_switch_early", "q3_switch_late"}
+        f"q3_switch_{pattern}" for pattern in patterns}
     assert program.ff_envelope_report["total_samples"] == 2*24768 + 2*6880
     assert program.ff_envelope_report["total_samples"] < 65536
     assert all(row["idata"].dtype == np.int16 for row in added)

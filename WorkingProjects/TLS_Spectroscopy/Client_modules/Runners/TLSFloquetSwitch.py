@@ -37,6 +37,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 
 PATTERNS = ("off", "on", "early", "late")
+PHASE_PATTERNS = ("off", "on", "phase_scrambled")
 HOLD_US = 3.6
 SWITCH_US = 1.8
 PRE_US = 0.05
@@ -48,13 +49,15 @@ REFERENCE_SHOTS = 400
 RECORDS_PER_SHOT = 4
 
 
-def plan():
-    return {"hardware_access": False, "reset_mode": "passive",
-            "site": "fresh qualified 3.8-4.3-GHz loss feature; prefer 3.992 GHz",
-            "patterns": list(PATTERNS),
+def plan(*, phase_order=False):
+    result = {"hardware_access": False, "reset_mode": "passive",
+            "site": ("fresh qualified 3.8-4.3-GHz loss feature; prefer 4.106 GHz"
+                     if phase_order else
+                     "fresh qualified 3.8-4.3-GHz loss feature; prefer 3.992 GHz"),
+            "patterns": list(PHASE_PATTERNS if phase_order else PATTERNS),
             "modulation_frequency_mhz": MODULATION_MHZ,
             "amplitude_dac": AMPLITUDE_DAC,
-            "hold_us": HOLD_US, "switch_us": SWITCH_US,
+            "hold_us": HOLD_US,
             "pre_target_hold_us": PRE_US,
             "park_ramp_us": PARK_RAMP_US,
             "programs": 4, "conditions_per_shot": RECORDS_PER_SHOT,
@@ -62,10 +65,21 @@ def plan():
             "midpoint_feature_scout": True,
             "full_return_before_readout_us": 40.0,
             "raw_iq_saved": True,
-            "measurement": "equal-duration AC off/on and early/late loss at a fresh feature",
-            "interpretation": "early-versus-late probes temporal response; "
-                              "DC correction and transients remain alternatives "
-                              "to TLS memory"}
+            "measurement": ("equal-duration AC off/on and phase-order comparison"
+                            if phase_order else
+                            "equal-duration AC off/on and early/late loss at a fresh feature"),
+            "interpretation": ("phase order versus matched programmed AC histogram; "
+                               "unknown flux-line transfer remains an alternative"
+                               if phase_order else
+                               "early-versus-late probes temporal response; "
+                               "DC correction and transients remain alternatives "
+                               "to TLS memory")}
+    if phase_order:
+        result["phase_scramble_seed"] = 260929
+        result["phase_scramble_rule"] = "balanced 0/pi phase per 30-MHz cycle"
+    else:
+        result["switch_us"] = SWITCH_US
+    return result
 
 
 def select_switch_candidate(rows, *, preferred_center=3.992):
@@ -132,7 +146,7 @@ def switch_waveform(*, pattern, segments, park_gain, target_gain,
                     amplitude_dac, modulation_mhz, sample_rate_mhz,
                     fabric_rate_mhz, cycles, max_gain):
     """Compile a correction-matched AC pattern with a zero-crossing switch."""
-    if pattern not in PATTERNS:
+    if pattern not in (*PATTERNS, "phase_scrambled"):
         raise ValueError(f"unknown AC switch pattern {pattern!r}")
     kwargs = dict(segments=segments, park_gain=park_gain,
                   target_gain=target_gain, modulation_mhz=modulation_mhz,
@@ -148,19 +162,40 @@ def switch_waveform(*, pattern, segments, park_gain, target_gain,
     midpoint = len(dc) // 2
     if abs(int(ac[midpoint]) - int(dc[midpoint])) > 1:
         raise ValueError("AC switch is not at a zero crossing")
-    result = {"off": dc, "on": ac,
-              "early": np.concatenate((ac[:midpoint], dc[midpoint:])),
-              "late": np.concatenate((dc[:midpoint], ac[midpoint:]))}[pattern]
+    phase_signs = None
+    if pattern == "phase_scrambled":
+        ncycles = int(ac_report["cycles_per_waveform"])
+        if ncycles != 108:
+            raise ValueError("phase-order check expects 108 complete cycles")
+        phase_signs = np.ones(ncycles, dtype=int)
+        phase_signs[np.random.default_rng(260929).permutation(ncycles)
+                    [:ncycles // 2]] = -1
+        index = np.arange(len(dc), dtype=np.int64) * ncycles // len(dc)
+        values = dc.astype(np.int64) + (ac.astype(np.int64) - dc) * phase_signs[index]
+        if np.max(np.abs(values)) > min(float(max_gain), 32767.0):
+            raise ValueError("phase-scrambled waveform exceeds fast-flux DAC range")
+        scrambled = values.astype(np.int16)
+    waveforms = {"off": dc, "on": ac,
+                 "early": np.concatenate((ac[:midpoint], dc[midpoint:])),
+                 "late": np.concatenate((dc[:midpoint], ac[midpoint:]))}
+    if phase_signs is not None:
+        waveforms["phase_scrambled"] = scrambled
+    result = waveforms[pattern]
     report = dict(ac_report, pattern=pattern, switch_sample=midpoint,
                   on_samples=(0 if pattern == "off" else len(dc)
-                              if pattern == "on" else midpoint),
+                              if pattern in ("on", "phase_scrambled") else midpoint),
                   dc_waveform_min=dc_report["waveform_min"],
                   dc_waveform_max=dc_report["waveform_max"])
+    if phase_signs is not None:
+        report["phase_signs"] = phase_signs.tolist()
+        report["waveform_min"] = int(result.min())
+        report["waveform_max"] = int(result.max())
     return result, report
 
 
 def conditions(center, patterns, *, reverse=False):
-    if len(patterns) != 2 or any(pattern not in PATTERNS for pattern in patterns):
+    if len(patterns) != 2 or any(pattern not in (*PATTERNS, "phase_scrambled")
+                                 for pattern in patterns):
         raise ValueError("each switch program needs two declared patterns")
     rows = [
         {"name": f"{pattern}_{state}", "flux_ghz": float(center),
@@ -172,12 +207,13 @@ def conditions(center, patterns, *, reverse=False):
     return list(reversed(rows)) if reverse else rows
 
 
-def program_specs(center, *, shots=SHOTS):
+def program_specs(center, *, shots=SHOTS, phase_order=False):
     specs = []
-    for repeat, pairs in ((0, (("reference", ("off", "on")),
-                               ("switch", ("early", "late")))),
-                          (1, (("switch", ("early", "late")),
-                               ("reference", ("off", "on"))))):
+    secondary = ("phase", ("on", "phase_scrambled")) if phase_order else (
+        "switch", ("early", "late"))
+    reference = ("reference", ("off", "on"))
+    for repeat, pairs in ((0, (reference, secondary)),
+                          (1, (secondary, reference))):
         for pair, patterns in pairs:
             rows = conditions(center, patterns, reverse=bool(repeat))
             specs.append({"name": f"r{repeat}_{pair}", "repeat": repeat,
@@ -225,6 +261,29 @@ def score_patterns(fractions):
             "usable": bool(min(contrasts.values()) >= 0.05 and spread <= 0.10)}
 
 
+def score_phase_patterns(reference_fractions, phase_fractions=None):
+    if phase_fractions is None:
+        phase_fractions = reference_fractions
+    x = {pattern: {
+        state: float(source[f"{name}_{state}"])
+        for state in ("g", "e")}
+        for pattern, name, source in (
+            ("off", "off", reference_fractions),
+            ("on", "on", reference_fractions),
+            ("phase_on", "on", phase_fractions),
+            ("phase_scrambled", "phase_scrambled", phase_fractions))}
+    contrasts = {pattern: item["e"] - item["g"]
+                 for pattern, item in x.items()}
+    grounds = [item["g"] for item in x.values()]
+    spread = max(grounds) - min(grounds)
+    return {"contrasts": contrasts,
+            "on_minus_off_contrast": contrasts["on"] - contrasts["off"],
+            "scrambled_minus_on_contrast": (contrasts["phase_scrambled"] -
+                                            contrasts["phase_on"]),
+            "ground_spread": spread,
+            "usable": bool(min(contrasts.values()) >= 0.05 and spread <= 0.10)}
+
+
 class SwitchProgram(alternating.ShotAlternatingResidentProgram):
     """Four complete target visits per shot, with two sampled AC patterns."""
 
@@ -242,7 +301,8 @@ class SwitchProgram(alternating.ShotAlternatingResidentProgram):
         observed = {(cfg["opx_switch_pattern"],
                      cfg["opx_resident_preparation_state"]) for cfg in cfgs}
         if (len(patterns) != 2 or set(patterns) not in
-                ({"off", "on"}, {"early", "late"}) or
+                ({"off", "on"}, {"early", "late"},
+                 {"on", "phase_scrambled"}) or
                 observed != {(pattern, state) for pattern in patterns
                              for state in ("g", "e")} or
                 any(int(cfg["opx_resident_gain"]) != 0 for cfg in cfgs) or
@@ -330,7 +390,8 @@ def _condition_configs(base, spec, dc_lookup):
     return cfgs
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        phase_order=False):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five, TLSSpectroscopy as tls,
     )
@@ -346,14 +407,17 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
 
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    label = "TLS_Floquet_Phase_Order" if phase_order else "TLS_Floquet_Switch"
+    tag = "floquet-phase-order" if phase_order else "floquet-switch"
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
         parameter_overrides={**wide.parameters(),
-                             "output_suffix": "TLS_Floquet_Switch_Scout_pre"})
+                             "output_suffix": f"{label}_Scout_pre"})
     selected = select_switch_candidate(
-        swap.read_wide_scout(scout), preferred_center=3.992)
+        swap.read_wide_scout(scout),
+        preferred_center=4.106 if phase_order else 3.992)
     center = round(float(selected["center_ghz"]), 3)
-    print(f"[floquet-switch] feature={center:.3f} GHz", flush=True)
+    print(f"[{tag}] feature={center:.3f} GHz", flush=True)
 
     with localizer.scan_environment(correction):
         if int(tls.BaseConfig["ff_park_gain"]) != -25146:
@@ -383,7 +447,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         modulated._target_segments(
             compensation, pre_us=PRE_US + 0.5,
             hold_us=HOLD_US, recovery_us=40.0)
-        session_id = ("q3_floquet_switch_" +
+        session_id = (("q3_floquet_phase_order_" if phase_order
+                       else "q3_floquet_switch_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -394,7 +459,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         for ref in refs:
             ref["shots"] = REFERENCE_SHOTS
             ref["status"] = "pending"
-        manifest = {"schema": "q3.floquet-switch.v1", "status": "running",
+        manifest = {"schema": ("q3.floquet-phase-order.v1" if phase_order else
+                                "q3.floquet-switch.v1"), "status": "running",
                     "session_id": session_id,
                     "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
                     "correction_json": str(correction),
@@ -402,10 +468,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     "scout_csv": str(scout), "selected": selected,
                     "center_ghz": center, "dc_lookup": dc_lookup,
                     "realized_ghz": realized.tolist(),
-                    "plan": plan(), "references": refs,
-                    "programs": program_specs(center)}
+                    "plan": plan(phase_order=phase_order), "references": refs,
+                    "programs": program_specs(center, phase_order=phase_order)}
         protocol.checkpoint(path, manifest)
-        print(f"[floquet-switch] manifest={path}", flush=True)
+        print(f"[{tag}] manifest={path}", flush=True)
         raw_refs = {}
         axis = None
         try:
@@ -465,14 +531,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 protocol.checkpoint(path, manifest)
 
             for ref in refs[:4]:
-                print(f"[floquet-switch] {ref['name']}", flush=True)
+                print(f"[{tag}] {ref['name']}", flush=True)
                 acquire_ref(ref)
             for entry in manifest["programs"]:
                 if entry["repeat"] == 1 and "mid_selected" not in manifest:
                     mid_scout = localizer.run(
                         data_root=data_root, correction_json=correction,
                         parameter_overrides={**wide.parameters(),
-                                             "output_suffix": "TLS_Floquet_Switch_Scout_mid"})
+                                             "output_suffix": f"{label}_Scout_mid"})
                     mid_selected = select_switch_candidate(
                         swap.read_wide_scout(mid_scout),
                         preferred_center=center)
@@ -496,9 +562,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                         compile_entry(future)
                     manifest["preflight_complete"] = True
                     protocol.checkpoint(path, manifest)
-                    print(f"[floquet-switch] midpoint feature={mid_center:.3f} GHz",
+                    print(f"[{tag}] midpoint feature={mid_center:.3f} GHz",
                           flush=True)
-                print(f"[floquet-switch] {entry['name']} {entry['shots']} x 4",
+                print(f"[{tag}] {entry['name']} {entry['shots']} x 4",
                       flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
@@ -520,7 +586,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 entry["status"] = "complete"
                 protocol.checkpoint(path, manifest)
             for ref in refs[4:]:
-                print(f"[floquet-switch] {ref['name']}", flush=True)
+                print(f"[{tag}] {ref['name']}", flush=True)
                 acquire_ref(ref)
             manifest["post_readout_score"] = resident.score_axis(
                 axis, resident.record_iq(raw_refs["ref_g_post"]),
@@ -536,18 +602,22 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     item["ground"], item["excited"])
             block_scores = {}
             for repeat in (0, 1):
-                fractions = {}
-                for entry in manifest["programs"]:
-                    if entry["repeat"] == repeat:
-                        fractions.update({
-                            c["name"]: c["excited_fraction_pre_axis"]
-                            for c in entry["conditions"]})
-                block_scores[f"r{repeat}"] = score_patterns(fractions)
+                entries = {entry["pair"]: {
+                    c["name"]: c["excited_fraction_pre_axis"]
+                    for c in entry["conditions"]}
+                    for entry in manifest["programs"]
+                    if entry["repeat"] == repeat}
+                if phase_order:
+                    block_scores[f"r{repeat}"] = score_phase_patterns(
+                        entries["reference"], entries["phase"])
+                else:
+                    block_scores[f"r{repeat}"] = score_patterns({
+                        **entries["reference"], **entries["switch"]})
             manifest["effect_report"] = block_scores
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides={**wide.parameters(),
-                                     "output_suffix": "TLS_Floquet_Switch_Scout_post"})
+                                     "output_suffix": f"{label}_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = select_switch_candidate(
@@ -569,7 +639,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      manifest["feature_stable"])
             manifest["status"] = "complete" if valid else "complete_controls_unstable"
             protocol.checkpoint(path, manifest)
-            print(f"[floquet-switch] {manifest['status']}: {path}", flush=True)
+            print(f"[{tag}] {manifest['status']}: {path}", flush=True)
             return path
         except BaseException as exc:
             manifest["status"] = "failed"
@@ -583,13 +653,16 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--run", action="store_true")
+    parser.add_argument("--phase-order", action="store_true",
+                        help="compare continuous and cycle-phase-scrambled AC")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(phase_order=args.phase_order), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            phase_order=args.phase_order)
     return 0
 
 
