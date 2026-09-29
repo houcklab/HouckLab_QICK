@@ -3920,3 +3920,39 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulatedT1 --run --floquet-frequency-sweep
 ```
+
+The frequency sweep completed at
+`q3_floquet_frequency_sweep_20260928T235331Z_62e4ec6c` (24 programs,
+two reversed orders). All three scouts located a 3.992-GHz feature;
+readout fidelity was 0.889 before and 0.895 after, and the program
+controls passed. For 20/30/40 MHz, the pooled modulation-induced
+survival changes at 1000 DAC were +0.1366/+0.1326/+0.0949 (shot-level
+SE about 0.013); at 2000 DAC they were +0.0297/+0.0993/+0.1011.
+Thus the 2000-minus-1000 contrast was −0.1069 ± 0.0182 at 20 MHz
+but +0.0062 ± 0.0183 at 40 MHz, an interaction of +0.1131 ± 0.0258.
+Both reversed orders and continuous IQ support that frequency-dependent
+shape. The result is evidence for controllable qubit loss, but line
+transfer versus frequency is uncalibrated and microscopic TLS control
+or coherent Floquet suppression remains unproven.
+
+The next run measures the fast-flux amplitude reaching q3 independently
+of the loss feature. A 100- or 200-ns, integer-cycle 20/30/40-MHz sine
+plays at the 4.367-GHz park bias between two park-frequency Ramsey
+π/2 pulses. Five amplitudes (600, 1000, 1400, 1700, 2000 DAC) are
+bracketed by zero-AC programs; ±700-DAC constant bursts provide
+local phase controls. Ground and excited arms accompany each pair of
+Ramsey quadratures, and the entire schedule is reversed once. The
+runner compiles every waveform before taking data, checks park
+single-shot contrast, and saves all raw IQ, waveforms, program reports,
+and the static flux fit. The observed phase versus the static flux
+curve can then constrain effective AC amplitude, including the 20-
+versus-40-MHz transfer difference. A short park Ramsey measurement
+cannot by itself distinguish filter ringing from nonlinear flux
+response, so we will inspect both duration and static controls.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetTransferRamsey --run
+```
