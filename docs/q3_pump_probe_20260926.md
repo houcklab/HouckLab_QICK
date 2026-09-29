@@ -5376,3 +5376,27 @@ still require a strategy for target-pulse calibration across the band.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoTargetPi2Calibration --run
 ```
+
+The target run (`q3_target_pi2_calibration_20260929T223917Z_0e7f4ab8`)
+found a reproducible maximum at 4.288 GHz + 2.5 MHz: the chosen coarse arm
+displaced raw IQ by 1158 units and its repeat by 916 units along almost
+the same axis (cosine 0.995). Its 21-point Rabi sweep had a first maximum
+near 18000 DAC and an estimated π/2 gain of 8174 DAC. It stopped at its
+single-point midpoint gate before any phase cycle: the independent response
+was 0.854, versus a sweep-derived midpoint 0.667. The independent point's
+shot SEM alone was 0.164 in these normalized units; the 0.187 difference is
+not significant, and the fixed 0.15 cutoff was too tight for this weaker
+target readout. The source run does not establish a target π/2 pulse yet.
+
+`TLSEchoTargetPi2Validate` reuses that measured drive frequency and DAC
+without repeating the broad frequency or Rabi sweeps. It brackets the
+candidate gain with five 1600-shot arms, checks an independently measured
+half-height point using its uncertainty, then takes two 1600-shot four-phase
+cycles and zero/π end controls. A phase-circle fit allows a fixed phase
+offset but requires stable contrast across the reversed blocks. The only
+outcome that licenses a target echo pilot is `complete_calibrated`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoTargetPi2Validate --run
+```
