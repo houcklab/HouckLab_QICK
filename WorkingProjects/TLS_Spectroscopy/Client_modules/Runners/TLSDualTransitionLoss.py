@@ -387,7 +387,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         reuse_recent_ef=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
-    reused = recent_ef_calibration(data_root) if reuse_recent_ef else None
+    reused = None
+    if reuse_recent_ef:
+        try:
+            reused = recent_ef_calibration(data_root)
+        except FileNotFoundError:
+            # An old calibration is not a reason to abort before science.
+            # The ordinary opposed scans below supply a fresh replacement.
+            pass
     session_id = ("q3_tls_dual_transition_loss_" +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                   "_" + uuid.uuid4().hex[:8])

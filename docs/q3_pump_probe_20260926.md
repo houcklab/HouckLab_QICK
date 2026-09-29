@@ -5005,3 +5005,4 @@ mean-IQ contrast above 5 SE overall and 3 SE in each half, and estimates
 loss by projecting short/long IQ means along the local preparation axis with
 matched ground-drift subtraction. `--reuse-recent-ef` can reuse this passed
 park pulse for two hours, but repeats a fresh 0/π/2π audit and wide scout.
+After two hours it falls back to the complete e–f calibration.
