@@ -5183,8 +5183,8 @@ five-point, and hardware output appears on the terminal.
 The prespecified comparison is the apparent decay rate of each hop above
 the mean rate of its static endpoints, divided by the center's rate above
 the *same* static-endpoint mean. The eligible ±10-, ±20-, and ±40-MHz
-series tests the predicted decrease with excursion. A reproducible positive ±20-MHz
-effect, with a resolved center, stable line, quiet static endpoints,
+series tests the predicted decrease with excursion. A reproducible
+positive ±20-MHz effect, with a resolved center, stable line, quiet static endpoints,
 and no ground-arm heating would motivate independent measurement of
 the delivered 20-MHz square-wave edges. It alone would not demonstrate
 coherence of a microscopic TLS or prove that the qubit never passed
@@ -5196,3 +5196,35 @@ On the measurement PC, after stopping any other q3 acquisition:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPhantomResonance --run
 ```
+
+The pilot completed at `q3_phantom_resonance_20260929T211914Z_a6d81116`
+(commit `b42ec3f9`). The pre/mid wide scouts selected a loss line at
+4.204 GHz, but the post scout found it at 4.212 GHz, so the manifest
+correctly marked the overall controls unstable. The ±10-MHz arm was
+omitted because the pre-scout +10-MHz endpoint fell just below its
+quiet-site threshold; all 16 ±20/±40-MHz programs and all readout and
+transfer references completed. Readout-reference fidelities were
+0.798 before and 0.806 afterward; both transfer contrasts passed.
+
+For the ±20-MHz static-endpoint background, the center's extra apparent
+decay rate was +0.0228 [95% shot-only interval +0.0006, +0.0452] /µs
+in the first block and +0.0523 [+0.0302, +0.0743] /µs in the reversed
+block. The square hop's extra rate was −0.0027 [−0.0296, +0.0235] /µs
+and −0.0107 [−0.0363, +0.0145] /µs, respectively. Thus the positive
+phantom-loss effect was not observed. At ±40 MHz, the hop's extra rates
+were +0.0072 [−0.0197, +0.0341] and −0.0061 [−0.0317, +0.0198]
+/µs; both include zero and change sign. The intervals use a Gaussian
+resampling of the saved interleaved g/e shot covariance within each program
+covariance, but do not include flux-line transfer uncertainty, site
+selection, or the observed 8-MHz line motion. The compiled square-wave
+commands had 72 cycles over the 3.599-µs long hold and fit within the
+65,536-sample envelope memory. Their analog delivery remains unmeasured.
+
+![Phantom-resonance scout motion and endpoint-subtracted rates](q3_phantom_resonance_20260929.png)
+
+This is a null pilot for the proposed phantom resonance, not a bound on
+the intrinsic TLS coupling. The second block alone disfavors the ideal
+instantaneous-square-wave ±20-MHz carrier prediction under a fixed line,
+but the fast analog edge response and within-run line motion are unknown.
+Repeating the same pilot without an independent fast-edge measurement is
+not justified.
