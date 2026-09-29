@@ -1,7 +1,9 @@
 """Regression tests for the q3 two-transition loss experiment."""
 
 import importlib
+import json
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 import numpy as np
 import pytest
@@ -65,8 +67,28 @@ def test_f_reference_must_be_resolved_from_both_lower_states():
         dual.validate_site_references(g, e, e)
 
 
+def test_ensemble_reference_passes_despite_overlapping_single_shot_clouds():
+    rng = np.random.default_rng(91)
+    ground = rng.normal(0, 2.2, 500) + 0j
+    excited = rng.normal(1.0, 2.2, 500) + 0j
+    report = dual.validate_site_references(ground, excited)
+    assert report["valid"]
+    assert report["ge_fidelity"] < .7
+    assert report["ge_mean_contrast_snr"] >= 5
+
+
 def test_long_dwell_ground_drift_is_removed_from_target_loss():
     assert dual.differential_loss(.88, .55, .04, .08) == pytest.approx(.37)
+
+
+def test_mean_iq_loss_uses_local_preparation_axis_and_ground_control():
+    short_g = np.full(100, 1 + 0j)
+    short_e = np.full(100, 5 + 0j)
+    long_g = np.full(100, 1.4 + 0j)
+    long_e = np.full(100, 3.4 + 0j)
+    measured = dual.projected_differential_loss(
+        short_g, short_e, long_g, long_e, baseline_iq=short_g)
+    assert measured["value"] == pytest.approx(.5)
 
 
 def test_local_classifier_finds_f_population_separately_from_e():
@@ -111,3 +133,20 @@ def test_summary_compares_two_transitions_in_same_frequency_coordinate():
     result = dual.summarize_science(points)
     assert result["peak_offset_mhz"] == {"ge": 2, "ef": 2}
     assert result["peak_separation_mhz"] == 0
+
+
+def test_reuse_accepts_recent_passed_ef_calibration_from_failed_science(tmp_path):
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    folder = tmp_path / "q3" / f"q3_tls_dual_transition_loss_{stamp}_12345678"
+    folder.mkdir(parents=True)
+    path = folder / "manifest.json"
+    path.write_text(json.dumps({
+        "schema": "q3.tls-dual-transition-loss.v1", "status": "failed",
+        "correction_sha256": dual.localizer.CORRECTION_SHA256,
+        "calibration": {"status": "passed", "park_ge_mhz": 4367.292,
+                        "ef_frequency_mhz": 4187.292, "ef_pi_gain": 11250},
+    }))
+    result = dual.recent_ef_calibration(tmp_path)
+    assert result["ef_frequency_mhz"] == 4187.292
+    assert result["ef_pi_gain"] == 11250
+    assert result["source_manifest"] == str(path)

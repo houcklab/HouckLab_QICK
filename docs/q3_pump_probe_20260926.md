@@ -4990,3 +4990,18 @@ peak is therefore suggestive but cannot establish exact line identity
 until the local e–f frequency is calibrated. An absent peak is also
 inconclusive if that extrapolation misses by more than the ±8 MHz scan.
 The new runner does not print progress; its manifest records each step.
+
+The first run, `q3_tls_dual_transition_loss_20260929T185615Z_8a4867a9`,
+calibrated the park e–f transition at 4187.292 MHz with π gain 11250 and
+passed a fresh 0/π/2π audit. Its scout selected a deep 4.018-GHz loss line
+(bidirectional normalized depth about 0.42). It stopped after the first
+short-dwell g/e reference because the code demanded at least 70% *single-shot*
+readout assignment at the prompt-return point. Saved IQ shows a 0.617
+held-out single-shot fidelity but a 7.91-SE **difference of the ensemble
+means**, reproduced in both halves of the 300-shot reference. The experiment
+measures ensemble decay, so the 70% assignment gate was the wrong criterion;
+this run contains no long-dwell or e–f science data. The runner now requires
+mean-IQ contrast above 5 SE overall and 3 SE in each half, and estimates
+loss by projecting short/long IQ means along the local preparation axis with
+matched ground-drift subtraction. `--reuse-recent-ef` can reuse this passed
+park pulse for two hours, but repeats a fresh 0/π/2π audit and wide scout.

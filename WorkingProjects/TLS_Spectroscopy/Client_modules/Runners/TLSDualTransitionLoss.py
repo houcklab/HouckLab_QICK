@@ -61,6 +61,39 @@ def read_scout(path):
     return rows
 
 
+def recent_ef_calibration(data_root, *, max_age_minutes=120):
+    """Find a recent passed park calibration, even if its science run stopped."""
+    now = datetime.now(timezone.utc)
+    folders = sorted((Path(data_root) / "q3").glob(
+        "q3_tls_dual_transition_loss_*/manifest.json"), reverse=True)
+    for path in folders:
+        try:
+            stamp = path.parent.name.rsplit("_", 2)[-2]
+            started = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(
+                tzinfo=timezone.utc)
+            age_minutes = (now - started).total_seconds() / 60.0
+            if not 0 <= age_minutes <= max_age_minutes:
+                continue
+            document = json.loads(path.read_text(encoding="utf-8"))
+            calibration = document.get("calibration", {})
+            if (document.get("schema") != "q3.tls-dual-transition-loss.v1"
+                    or document.get("correction_sha256") != localizer.CORRECTION_SHA256
+                    or calibration.get("status") != "passed"):
+                continue
+            frequency = float(calibration["ef_frequency_mhz"])
+            gain = int(calibration["ef_pi_gain"])
+            park_ge = float(calibration["park_ge_mhz"])
+            if (not 4000 < frequency < 4300 or not 1000 <= gain <= 16000
+                    or not -250 < frequency - park_ge < -100):
+                continue
+            return {"ef_frequency_mhz": frequency, "ef_pi_gain": gain,
+                    "park_ge_mhz": park_ge, "source_manifest": str(path),
+                    "age_minutes": age_minutes}
+        except (ValueError, TypeError, KeyError, OSError, json.JSONDecodeError):
+            continue
+    raise FileNotFoundError("no passed e-f calibration from the last 120 minutes")
+
+
 def select_eligible_feature(rows, *, anharmonicity_mhz):
     """Require bidirectional 25-us loss and room for the corresponding e-f bias."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
@@ -160,15 +193,37 @@ def validate_site_references(ground, excited, second=None):
         predictions = np.argmin(abs(held[:, None] - centers[None, :]), axis=1)
         correct.append(float(np.mean(predictions == index)))
     ge = .5 * (correct[0] + correct[1])
-    if ge < .7:
-        raise ValueError("g/e readout at target bias is unresolved")
+    def contrast_snr(first, second):
+        delta = np.mean(second) - np.mean(first)
+        if not np.isfinite(delta) or abs(delta) < 1e-9:
+            return 0., [0., 0.]
+        axis = np.conj(delta / abs(delta))
+        def block_snr(a, b):
+            x, y = np.real(a * axis), np.real(b * axis)
+            error = math.sqrt(np.var(x, ddof=1) / len(x) +
+                              np.var(y, ddof=1) / len(y))
+            return float((np.mean(y) - np.mean(x)) / max(error, 1e-12))
+        overall = block_snr(first, second)
+        halfway = min(len(first), len(second)) // 2
+        halves = [block_snr(first[:halfway], second[:halfway]),
+                  block_snr(first[-halfway:], second[-halfway:])]
+        return overall, halves
+
+    ge_snr, ge_halves = contrast_snr(blocks[0], blocks[1])
+    if ge_snr < 5 or min(ge_halves) < 3:
+        raise ValueError("g/e ensemble readout at target bias is unresolved")
     report = {"valid": True, "ge_fidelity": ge,
+              "ge_mean_contrast_snr": ge_snr,
+              "ge_half_snrs": ge_halves,
               "correct_by_state": correct,
               "centroids": [[float(c.real), float(c.imag)] for c in centers]}
     if second is not None:
         f = correct[2]
         report["f_vs_e_fidelity"] = .5 * (correct[1] + f)
-        if f < .7 or report["f_vs_e_fidelity"] < .7:
+        ef_snr, ef_halves = contrast_snr(blocks[1], blocks[2])
+        report["ef_mean_contrast_snr"] = ef_snr
+        report["ef_half_snrs"] = ef_halves
+        if ef_snr < 5 or min(ef_halves) < 3:
             raise ValueError("f readout at target bias is unresolved")
     return report
 
@@ -190,6 +245,26 @@ def differential_loss(short_target, long_target, short_ground, long_ground):
     if any(not math.isfinite(v) or not 0 <= v <= 1 for v in values):
         raise ValueError("differential loss needs four valid fractions")
     return values[0] - values[1] - values[2] + values[3]
+
+
+def projected_differential_loss(short_ground, short_target, long_ground,
+                                long_target, *, baseline_iq):
+    """Use a resolved ensemble IQ axis without demanding shot classification."""
+    sg, st, lg, lt, baseline = [np.asarray(values, dtype=complex).ravel()
+                                for values in (short_ground, short_target,
+                                               long_ground, long_target,
+                                               baseline_iq)]
+    axis_delta = np.mean(st) - np.mean(baseline)
+    if not np.isfinite(axis_delta) or abs(axis_delta) < 1e-9:
+        raise ValueError("local IQ contrast is zero")
+    axis = np.conj(axis_delta) / abs(axis_delta) ** 2
+    projected = [np.real(values * axis) for values in (sg, st, lg, lt)]
+    value = (np.mean(projected[1]) - np.mean(projected[3]) -
+             np.mean(projected[0]) + np.mean(projected[2]))
+    variance = sum(np.var(values, ddof=1) / len(values)
+                   for values in projected)
+    return {"value": float(value), "se_conditional": float(math.sqrt(variance)),
+            "reference_contrast_iq": float(abs(axis_delta))}
 
 
 def summarize_science(points):
@@ -308,9 +383,11 @@ def plan():
             "terminal": "new runner has no progress prints; NAS manifest has progress"}
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        reuse_recent_ef=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    reused = recent_ef_calibration(data_root) if reuse_recent_ef else None
     session_id = ("q3_tls_dual_transition_loss_" +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                   "_" + uuid.uuid4().hex[:8])
@@ -383,63 +460,76 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
 
             park_ge = float(base["qubit_pi_freq"])
             ef_prior = park_ge + float(base["qubit_anharmonicity_mhz"])
-            # Opposed scans distinguish an e-f line from monotonic baseline drift.
-            spectra = []
+            if reused is not None and abs(reused["park_ge_mhz"] - park_ge) > .1:
+                raise RuntimeError("park frequency changed since e-f calibration")
             reference_e, ref_path = acquire(
                 "park_e_reference", state="e", freq=ef_prior,
                 gain=0, shots=REFERENCE_SHOTS)
             manifest["calibration"]["park_e_reference_npz"] = ref_path
             checkpoint(path, manifest)
-            for repeat, offsets in enumerate((EF_SPEC_OFFSETS_MHZ,
-                                              tuple(reversed(EF_SPEC_OFFSETS_MHZ)))):
-                response = []
-                for offset in offsets:
-                    frequency = ef_prior + offset
-                    name = f"ef_spec_r{repeat}_{offset:+d}".replace("+", "p").replace("-", "m")
-                    values, raw = acquire(name, state="f", freq=frequency,
-                                          gain=EF_SPEC_GAIN, shots=SHOTS)
-                    response.append({"frequency_mhz": frequency,
-                                     "mean_i": float(np.mean(values.real)),
-                                     "mean_q": float(np.mean(values.imag)),
-                                     "se": _standard_error(values),
-                                     "raw_npz": raw})
-                    manifest["calibration"]["spectra"] = spectra + [response]
+            if reused is not None:
+                ef_frequency = reused["ef_frequency_mhz"]
+                ef_gain = reused["ef_pi_gain"]
+                manifest["calibration"]["reused_from"] = reused
+                checkpoint(path, manifest)
+            else:
+                # Opposed scans distinguish an e-f line from monotonic drift.
+                spectra = []
+                for repeat, offsets in enumerate((
+                        EF_SPEC_OFFSETS_MHZ,
+                        tuple(reversed(EF_SPEC_OFFSETS_MHZ)))):
+                    response = []
+                    for offset in offsets:
+                        frequency = ef_prior + offset
+                        name = f"ef_spec_r{repeat}_{offset:+d}".replace(
+                            "+", "p").replace("-", "m")
+                        values, raw = acquire(name, state="f", freq=frequency,
+                                              gain=EF_SPEC_GAIN, shots=SHOTS)
+                        response.append({"frequency_mhz": frequency,
+                                         "mean_i": float(np.mean(values.real)),
+                                         "mean_q": float(np.mean(values.imag)),
+                                         "se": _standard_error(values),
+                                         "raw_npz": raw})
+                        manifest["calibration"]["spectra"] = spectra + [response]
+                        checkpoint(path, manifest)
+                    spectra.append(response)
+                def strongest(spectrum):
+                    return max(spectrum, key=lambda row:
+                               abs(complex(row["mean_i"], row["mean_q"]) -
+                                   np.mean(reference_e)))
+                peaks = [strongest(spectrum) for spectrum in spectra]
+                if abs(peaks[0]["frequency_mhz"] - peaks[1]["frequency_mhz"]) > 2.01:
+                    raise RuntimeError("e-f line did not reproduce in opposed scans")
+                for spectrum, peak in zip(spectra, peaks):
+                    baseline = .5 * (
+                        complex(spectrum[0]["mean_i"], spectrum[0]["mean_q"]) +
+                        complex(spectrum[-1]["mean_i"], spectrum[-1]["mean_q"]))
+                    peak_mean = complex(peak["mean_i"], peak["mean_q"])
+                    if abs(peak_mean - baseline) < max(
+                            4 * float(peak["se"]),
+                            .20 * abs(peak_mean - np.mean(reference_e))):
+                        raise RuntimeError("e-f spectroscopy lacks a resolved peak")
+                ef_frequency = .5 * (peaks[0]["frequency_mhz"] +
+                                     peaks[1]["frequency_mhz"])
+                if not ef_prior - 25 <= ef_frequency <= ef_prior + 25:
+                    raise RuntimeError("e-f line at scan boundary")
+                gains = []
+                for gain in EF_GAINS:
+                    values, raw = acquire(f"ef_gain_{gain}", state="f",
+                                          freq=ef_frequency, gain=gain)
+                    gains.append({"gain": gain,
+                                  "mean_i": float(np.mean(values.real)),
+                                  "mean_q": float(np.mean(values.imag)),
+                                  "raw_npz": raw})
+                    manifest["calibration"]["gain_scan"] = gains
                     checkpoint(path, manifest)
-                spectra.append(response)
-            def strongest(spectrum):
-                return max(spectrum, key=lambda row:
+                best = max(gains, key=lambda row:
                            abs(complex(row["mean_i"], row["mean_q"]) -
                                np.mean(reference_e)))
-            peaks = [strongest(spectrum) for spectrum in spectra]
-            if abs(peaks[0]["frequency_mhz"] - peaks[1]["frequency_mhz"]) > 2.01:
-                raise RuntimeError("e-f line did not reproduce in opposed scans")
-            for spectrum, peak in zip(spectra, peaks):
-                baseline = .5 * (
-                    complex(spectrum[0]["mean_i"], spectrum[0]["mean_q"]) +
-                    complex(spectrum[-1]["mean_i"], spectrum[-1]["mean_q"]))
-                peak_mean = complex(peak["mean_i"], peak["mean_q"])
-                if abs(peak_mean - baseline) < max(4 * float(peak["se"]),
-                                                  .20 * abs(peak_mean - np.mean(reference_e))):
-                    raise RuntimeError("e-f spectroscopy lacks a resolved peak")
-            ef_frequency = .5 * (peaks[0]["frequency_mhz"] +
-                                 peaks[1]["frequency_mhz"])
-            if not ef_prior - 25 <= ef_frequency <= ef_prior + 25:
-                raise RuntimeError("e-f line at scan boundary")
-            gains = []
-            for gain in EF_GAINS:
-                values, raw = acquire(f"ef_gain_{gain}", state="f",
-                                      freq=ef_frequency, gain=gain)
-                gains.append({"gain": gain, "mean_i": float(np.mean(values.real)),
-                              "mean_q": float(np.mean(values.imag)),
-                              "raw_npz": raw})
-                manifest["calibration"]["gain_scan"] = gains
-                checkpoint(path, manifest)
-            best = max(gains, key=lambda row:
-                       abs(complex(row["mean_i"], row["mean_q"]) -
-                           np.mean(reference_e)))
-            ef_gain = int(best["gain"])
-            if ef_gain in (EF_GAINS[0], EF_GAINS[-1]) or 2 * ef_gain > 32767:
-                raise RuntimeError("e-f pi gain is unresolved or 2pi exceeds DAC range")
+                ef_gain = int(best["gain"])
+                if (ef_gain in (EF_GAINS[0], EF_GAINS[-1])
+                        or 2 * ef_gain > 32767):
+                    raise RuntimeError("e-f pi gain is unresolved or 2pi exceeds DAC range")
             pi, pi_path = acquire("ef_audit_pi", state="f", freq=ef_frequency,
                                   gain=ef_gain, shots=REFERENCE_SHOTS)
             twice, twice_path = acquire("ef_audit_2pi", state="f",
@@ -511,20 +601,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                                                    float(np.mean(refs[state].imag))]
                 point["long_target_mean_iq"] = [float(np.mean(values.real)),
                                                   float(np.mean(values.imag))]
-                fractions = {
-                    "short_target": target_fraction(refs[state],
-                                                    point["reference_gate"], state),
-                    "long_target": target_fraction(values,
-                                                   point["reference_gate"], state),
-                    "short_ground": target_fraction(refs["g"],
-                                                    point["reference_gate"], state),
-                    "long_ground": target_fraction(ground_long,
-                                                   point["reference_gate"], state),
-                }
-                point["target_fractions"] = fractions
-                point["differential_loss"] = differential_loss(
-                    fractions["short_target"], fractions["long_target"],
-                    fractions["short_ground"], fractions["long_ground"])
+                point["mean_iq_loss"] = projected_differential_loss(
+                    refs["g"], refs[state], ground_long, values,
+                    baseline_iq=refs["g" if transition == "ge" else "e"])
+                point["differential_loss"] = point["mean_iq_loss"]["value"]
                 point["status"] = "complete"
                 checkpoint(path, manifest)
             manifest["summary"] = summarize_science(schedule)
@@ -545,11 +625,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=localizer.DATA_ROOT)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--reuse-recent-ef", action="store_true",
+                        help="reuse a recent passed e-f calibration, with a fresh 0/pi/2pi audit")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            reuse_recent_ef=args.reuse_recent_ef)
     return 0
 
 
