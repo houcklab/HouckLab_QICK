@@ -4647,3 +4647,89 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfterglowScreen --plan
 Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfterglowScreen --run
 ```
+
+## q3 millisecond loss-flank sentinel (September 29)
+
+The weak-site delayed-afterglow run above was **paused before acquisition** at
+the user's request. Its code remains on `tls-spectroscopy`; a one-time
+reminder is scheduled for 12 hours later. The immediate experiment is the
+millisecond sentinel: measure the motion of a strong *loss line* itself using
+an eight-subshot, palindromic stream and frozen single-shot readout axis.
+This studies loss-line dynamics, not direct TLS excitation or saturation.
+
+`TLSMillisecondSentinel` begins with a fresh, passive 3.8–4.3-GHz scout. It
+requires two qualified lines at least 20 MHz apart, prefers the 4.0947-GHz
+family for line A if still present, and requires a quiet control C. Both
+lines receive 20 repeated seven-point ±6-MHz local profiles with 25-µs
+excited-state visits. A Lorentzian fit supplies the center and half-width;
+the measured ±6-MHz-to-center contrast must be at least 0.15 and the fit
+residual must be small. The runner
+stops before the long stream if a site, reference, profile, or timing gate
+fails, and retains the completed scout/profile files and manifest.
+
+Each science hardware shot visits `[A−, A+, B−, C, C, B−, A+, A−]` for 25 µs
+after a park π pulse, with the pinned corrected 40-µs return and one park
+readout per subshot. A− and A+ are placed at the fitted center ±HWHM/√3
+with individually inverted *integer* flux DAC gains; B is placed on its
+lower-frequency flank. The passive setting retains the established 500-µs
+recovery between subshots. A 64-shot pilot estimates shot cadence, followed
+by 12 approximately five-second science chunks. After each is an eight-arm
+calibration with ±0.5-MHz dithers at all three flanks plus ground/excited
+park readout references. Three final chunks move A−, A+, and B to distinct
+quiet windows. Pre/post frozen-axis and transfer references, post profiles,
+and a post wide scout close the run. All raw IQ and shot order are saved.
+The 100-shot dither estimates are deliberately not gated one chunk at a
+time: their Bernoulli uncertainty is comparable to the expected slope.
+The run pools all interleaved dither records, requires each signed slope
+to exceed three standard errors, and uses the pooled slope for position
+conversion while retaining each local readout reference and raw record.
+
+The optional `--reset dump` mode adds a 60-µs visit to the strong loss line
+*after* every readout. It requires `--passive-manifest` pointing to a
+completed, control-valid passive pass with the same correction. It is not
+the first acquisition command; its own readout references and static
+profiles must pass before any fast-mode interpretation.
+
+Two corrections to the proposed analysis are essential. First, QICK's
+resident data-memory stream pauses at bank handshakes, so a global fixed
+period does not give correct timestamps. The runner records the host UTC
+time of every completed **hardware shot**, retains pauses, and marks shots
+whose host callbacks bunch within 0.5 ms. These times are polling-limited, and individual
+subshots have ordered positions but no hardware timestamp. The offline
+analysis uses those irregular times and caps its science band by both shot
+cadence and measured host jitter. The A-position estimator has one combined
+value per hardware shot, so the passive pass does **not** promise a 1-ms
+position measurement or a 200-Hz A-position band. Second, the ± flank
+calibration slopes are signed and opposite: line displacement is the
+*average* of the two flank signals divided by their signed line-shift
+slopes, not their difference after signed division.
+
+`TLSMillisecondSentinelAnalyze` saves a JSON report, derived-stream NPZ,
+and a four-panel PNG. It computes binary and continuous-IQ position proxies,
+gap-aware spectra/cross-spectra, Allan deviation only where enough adjacent
+bins exist, lag statistics, an exploratory one-/two-/three-state Gaussian
+HMM, and a penalized Gaussian-block change-point cross-check. Each chunk's
+predicted Bernoulli white-noise PSD is subtracted before comparing the
+science and quiet-null bands. A line-specific candidate also needs
+significant negative A−/A+ cross-spectrum in both temporal halves and
+valid closing controls. The raw exploratory spectra remain available if
+a line moved. Shared A/B motion is
+reported as possible common qubit-frequency motion, **not** automatically
+identified as flux noise. Pulse-tube attribution requires an independently
+measured frequency supplied with `--pt-frequency-hz`; the repository does
+not document the q3 fridge head frequency. No PT frequency is inferred from
+the same target spectrum being tested.
+
+Initial measurement-PC command, only after other q3 acquisitions stop:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSMillisecondSentinel --plan
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSMillisecondSentinel --run
+```
+
+The standalone analysis can be run after a completed manifest exists:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSMillisecondSentinelAnalyze "Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/<session_id>/manifest.json"
+```
