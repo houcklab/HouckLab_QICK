@@ -4184,7 +4184,7 @@ The programmed histograms are identical; the delivered histograms need
 not be because the flux line filters their different spectra. Stop the
 phase-order branch here rather than varying another waveform detail.
 
-## J0-minimum amplitude pilot (prepared; no hardware result yet)
+## J0-minimum amplitude pilot
 
 The next experiment addresses a specific physical ambiguity in the AC
 protection data. A frequency sweep at fixed programmed `A/f_m` changes
@@ -4235,4 +4235,55 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetJ0Pilot --plan
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetJ0Pilot --run
+```
+
+The pilot completed at `q3_floquet_j0_pilot_20260929T032620Z_b3a7e043`
+with status `complete`; all 16 programs, three wide scouts, readout references,
+and park-transfer controls passed. The fresh feature was selected at 4.104 GHz
+before and between blocks and 4.106 GHz afterward; qualified wide-scout depths
+were 0.452/0.305/0.453. The pre/post readout fidelities were 0.893/0.867.
+The two modulation frequencies used estimated beta targets 1.8, 2.405, and
+3.0, based only on a static flux slope of 0.05837 MHz/DAC. Delivered AC beta
+remains unknown.
+
+There is **no replicated J0-shaped minimum** in the 1.6–5.6-us apparent loss
+rates. At 5 MHz the AC-on rate falls with programmed amplitude in block 1 but
+rises in block 2. At 10 MHz the AC-on rates are nearly flat across the three
+amplitudes, while the AC-off rate at the largest setting rises to 0.042 and
+0.071/us in blocks 1 and 2, respectively; thus the large on/off difference at
+that setting is dominated by a changing local loss baseline. Static center
+profiles also change: their 1.6–5.6-us apparent rates are approximately
+0.018, 0.053, 0.010, and 0.019/us at block-1 pre/post and block-2 pre/post.
+The wide scouts independently show a persistent 25-us loss feature, but that
+does not guarantee a stable, high-contrast 4-us local rate. Classified shots
+and unthresholded IQ show the same qualitative trends. Do not turn this run
+into an intrinsic-linewidth estimate or treat the nominal 2.405 point as a
+measured J0 zero.
+
+The next direct test uses a response already demonstrated at 30 MHz and
+1000 DAC, where modulation protected the selected 4.1-GHz loss feature.
+`TLSFloquetSidebandLoss` asks whether the *same* modulation induces narrow
+loss peaks at qubit biases 30 MHz below and above that feature. A fresh
+corrected 3.8–4.3-GHz scout selects the current qualified feature; its
+±26..34-MHz windows must be quiet in the unmodulated 25-us scan. The target
+frequencies are the center and five 2-MHz-spaced points around each first
+sideband. Each 4000-shot program interleaves AC off/on, 1.6/5.6-us dwells,
+and park-prepared ground/excited states. The second block reverses the
+frequency order and recenters after a midpoint scout. Pre/post readout and
+transfer references, all raw IQ, compiled waveforms, and a post scout are
+saved. The experiment is passive-reset and uses the same pinned correction
+and 40-us return. A mirrored, localized excess-loss pair, with positive
+center protection and stable controls, would support a frequency-selective
+sideband mechanism more strongly than the J0-amplitude pilot. It would still
+not identify a microscopic TLS or alone exclude a static-averaging turning
+point if the *delivered* swing happens to be about 30 MHz. Flux-line transfer
+and other resonances remain possible confounds. A null at the sidebands would
+limit this mechanism at the tested amplitude and dwell, not erase the
+previously replicated center protection.
+
+On the measurement PC:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSidebandLoss --run
 ```
