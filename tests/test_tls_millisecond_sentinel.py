@@ -44,6 +44,18 @@ def test_site_selector_stops_without_second_line_or_complete_scout():
         subject().select_sites(wide_rows()[:-1])
 
 
+def test_quiet_control_survives_one_directional_low_outlier():
+    model = subject()
+    rows = wide_rows()
+    # A single direction's low-count outlier should not veto an otherwise
+    # flat 11-frequency control window.
+    row = next(row for row in rows if float(row["target_frequency_ghz"]) == 4.060)
+    row["Ps_25us_scan_up"] = str(.1 + .8*.65)
+    selected = model.select_sites(rows)
+    assert selected["C"]["center_ghz"] == pytest.approx(4.060)
+    assert len(model.select_null_sites(rows, selected)) == 3
+
+
 def test_static_profile_recovers_center_width_and_signed_flanks():
     model = subject()
     frequency_mhz = np.arange(4088., 4102.1, 2.)
@@ -240,9 +252,10 @@ def test_null_sites_are_quiet_and_distinct_from_science_sites():
 def test_null_window_excludes_a_stray_loss_eight_mhz_away():
     model = subject()
     rows = wide_rows()
-    stray = next(row for row in rows if row["target_frequency_ghz"] == "3.908")
-    for suffix in ("", "_scan_up", "_scan_down"):
-        stray[f"Ps_25us{suffix}"] = ".70"
+    for target in (3.906, 3.908, 3.910):
+        stray = next(row for row in rows if float(row["target_frequency_ghz"]) == target)
+        for suffix in ("", "_scan_up", "_scan_down"):
+            stray[f"Ps_25us{suffix}"] = ".42"
     selected = model.select_sites(rows)
     nulls = model.select_null_sites(rows, selected)
     assert all(abs(ghz-3.908) >= .010-1e-9 for ghz in nulls.values())

@@ -4733,3 +4733,19 @@ The standalone analysis can be run after a completed manifest exists:
 ```bash
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSMillisecondSentinelAnalyze "Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/<session_id>/manifest.json"
 ```
+
+The first passive attempt, `q3_tls_millisecond_sentinel_passive_20260929T100651Z_ce58a340`,
+stopped at site selection after the scout and collected no sentinel shots.
+The scout contained a strong bidirectional loss at 4.134 GHz and a second
+candidate at 4.026 GHz. The initial control gate demanded that every one
+of 33 normalized survival estimates in an 11-frequency, three-direction
+window exceed 0.75. That was incompatible with the actual quiet-region
+baseline and its 125-shot directional fluctuations: the 4.260-GHz center
+had about 0.89 survival, yet one directional neighbor fell near 0.65.
+The revised gate requires each directional window median to exceed 0.68,
+each frequency's median across directions to exceed 0.58, and the center
+median to exceed 0.62. This tolerates an isolated noisy estimate while
+still vetoing a reproducible narrow loss. Replaying the saved scout through
+the revised selector qualifies A=4.134, B=4.026, C=4.072 GHz and three
+separated quiet null windows (4.008, 4.218, 4.250 GHz). The next acquisition
+must still repeat a fresh scout and all static-profile/reference gates.

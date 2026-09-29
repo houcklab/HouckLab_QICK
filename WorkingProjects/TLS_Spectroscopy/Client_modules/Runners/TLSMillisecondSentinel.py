@@ -37,6 +37,29 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.programs i
 PREFERRED_A_GHZ = 4.0947
 
 
+def _quiet_window(indexed, center):
+    """Reject reproducible narrow loss without vetoing one noisy direction."""
+    neighbors = [round(center + .002*i, 3) for i in range(-5, 6)]
+    if any(frequency not in indexed for frequency in neighbors):
+        return None
+    values = np.asarray([
+        [weak._survival(indexed[frequency], 25, suffix)
+         for frequency in neighbors]
+        for suffix in ("", "_scan_up", "_scan_down")], dtype=float)
+    if not np.all(np.isfinite(values)):
+        return None
+    directional_floor = float(np.min(np.median(values, axis=1)))
+    frequency_floor = float(np.min(np.median(values, axis=0)))
+    center_survival = float(np.median(values[:, 5]))
+    if (directional_floor < .68 or frequency_floor < .58 or
+            center_survival < .62):
+        return None
+    return {"directional_median_floor": directional_floor,
+            "frequency_median_floor": frequency_floor,
+            "center_survival": center_survival,
+            "min_survival": float(np.min(values))}
+
+
 def select_sites(rows):
     """Return strong, bidirectional A/B loss lines and one quiet C site."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
@@ -89,17 +112,13 @@ def select_sites(rows):
         if (not 3.83 <= center <= 4.27 or
                 min(abs(center - x["center_ghz"]) for x in candidate_lines) < .010):
             continue
-        neighbors = [round(center + .002 * i, 3) for i in range(-5, 6)]
-        if any(f not in indexed for f in neighbors):
-            continue
-        values = [weak._survival(indexed[f], 25, suffix)
-                  for f in neighbors for suffix in ("", "_scan_up", "_scan_down")]
-        if all(math.isfinite(x) and x >= .75 for x in values):
-            controls.append({"center_ghz": center, "min_survival": min(values)})
+        metrics = _quiet_window(indexed, center)
+        if metrics is not None:
+            controls.append({"center_ghz": center, **metrics})
     if not controls:
         raise ValueError("no clean control at least 10 MHz from loss sites")
     c = min(controls, key=lambda x: (abs(x["center_ghz"] - 4.060),
-                                     -x["min_survival"]))
+                                     -x["directional_median_floor"]))
     return {"A": a, "B": b, "C": c}
 
 
@@ -433,15 +452,10 @@ def select_null_sites(rows, selected):
                 continue
             if min(abs(frequency - old) for old in excluded + chosen) < .010:
                 continue
-            neighbors = [round(frequency + .002*i, 3)
-                         for i in range(-5, 6)]
-            if any(f not in indexed for f in neighbors):
-                continue
-            survival = [weak._survival(indexed[f], 25, suffix)
-                        for f in neighbors
-                        for suffix in ("", "_scan_up", "_scan_down")]
-            if all(math.isfinite(x) and x >= .78 for x in survival):
-                choices.append((abs(frequency-anchor), -min(survival), frequency))
+            metrics = _quiet_window(indexed, frequency)
+            if metrics is not None:
+                choices.append((abs(frequency-anchor),
+                                -metrics["directional_median_floor"], frequency))
         if not choices:
             raise ValueError("no three distinct quiet null-pass windows")
         chosen.append(min(choices)[2])
