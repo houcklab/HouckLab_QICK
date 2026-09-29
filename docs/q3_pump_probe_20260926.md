@@ -5053,7 +5053,7 @@ park-calibrated −180-MHz anharmonicity also remains an extrapolation at the
 4.130-GHz bias.
 
 The bounded follow-up is `TLSDualTransitionLoss --run --shelved-confirm`.
-It selects a fresh line with a quiet shifted bias and takes only e–f science
+It selects a fresh bidirectional line and takes only e–f science
 arms, in two reversed-order passes. At each offset it acquires g/e/f
 references and long-dwell g/e/f data both directly and after an e–f then
 g–e park mapping. The mapping is scheduled with a fixed reference-time delay
@@ -5067,3 +5067,16 @@ line, low inferred f population in the long-e control, and a feature absent
 at nearby frequency controls. A null or failed response-matrix gate closes
 this particular two-transition claim without redefining a projected-IQ peak
 as a detection.
+
+The first mapped attempt, `q3_tls_dual_transition_loss_20260929T195349Z_80192d29`,
+passed its reused park e–f 0/π/2π audit but stopped after the fresh scout:
+the one-axis selector still demanded a quiet g–e window at the shifted e–f
+bias. The scout retained a strong bidirectional line at 3.952 GHz (depths
+0.231 combined, 0.448 up, 0.288 down), but its e–f bias 4.132 GHz contained
+separate g–e loss (minimum 10-/25-µs normalized survival 0.639/0.482
+across the science window). No mapped science arms ran. That quiet-bias gate
+was essential when only a projected IQ axis was available; it is not a
+prerequisite for the two-map f-population measurement. The mapped mode now
+admits such a site while recording the shifted-bias scout values, and
+retains the long-e control at every science offset. The older one-axis
+mode keeps the quiet-bias gate unchanged.

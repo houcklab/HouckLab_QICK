@@ -56,6 +56,28 @@ def test_selector_avoids_ge_loss_at_the_shifted_ef_bias():
     assert chosen["shifted_bias_min_10us_survival"] >= .65
 
 
+def test_shelved_selector_can_keep_a_line_with_shifted_bias_loss():
+    rows = []
+    for mhz in range(3800, 4301, 2):
+        survival = .9
+        if abs(mhz - 3950) <= 2:
+            survival = .3
+        if abs(mhz - 4130) <= 2:
+            survival = .45
+        row = {"target_frequency_ghz": f"{mhz / 1000:.3f}"}
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row.update({"P0" + suffix: ".1", "P1" + suffix: ".9",
+                        "Ps_10us" + suffix: str(.1 + .8 * survival),
+                        "Ps_25us" + suffix: str(.1 + .8 * survival)})
+        rows.append(row)
+    with pytest.raises(ValueError, match="quiet shifted"):
+        dual.select_eligible_feature(rows, anharmonicity_mhz=-180.)
+    chosen = dual.select_eligible_feature(
+        rows, anharmonicity_mhz=-180., require_quiet_shifted_bias=False)
+    assert chosen["center_ghz"] == pytest.approx(3.95)
+    assert chosen["shifted_bias_min_25us_survival"] < .6
+
+
 def test_ef_calibration_rejects_nonreturning_pulse():
     baseline = np.zeros(100, dtype=complex)
     pi = np.ones(100, dtype=complex)

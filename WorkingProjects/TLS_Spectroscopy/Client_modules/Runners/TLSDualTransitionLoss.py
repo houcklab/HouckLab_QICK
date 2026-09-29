@@ -96,8 +96,9 @@ def recent_ef_calibration(data_root, *, max_age_minutes=120):
     raise FileNotFoundError("no passed e-f calibration from the last 120 minutes")
 
 
-def select_eligible_feature(rows, *, anharmonicity_mhz):
-    """Require loss at g-e and a quiet g-e window at the shifted e-f bias."""
+def select_eligible_feature(rows, *, anharmonicity_mhz,
+                            require_quiet_shifted_bias=True):
+    """Select g-e loss; one-axis analysis also needs a quiet e-f bias."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
     candidates = []
     for center in sorted(indexed):
@@ -126,8 +127,12 @@ def select_eligible_feature(rows, *, anharmonicity_mhz):
             except (KeyError, TypeError, ValueError, ZeroDivisionError):
                 value = math.nan
             quiet_10.append(value)
-        if (not all(math.isfinite(value) for value in quiet_10 + quiet_25)
-                or min(quiet_10) < .65 or min(quiet_25) < .60):
+        finite_10 = [value for value in quiet_10 if math.isfinite(value)]
+        finite_25 = [value for value in quiet_25 if math.isfinite(value)]
+        if (require_quiet_shifted_bias and
+                (len(finite_10) != len(quiet_10)
+                 or len(finite_25) != len(quiet_25)
+                 or min(finite_10) < .65 or min(finite_25) < .60)):
             continue
         groups = {
             "center": [round(center + .002 * k, 3) for k in (-1, 0, 1)],
@@ -153,11 +158,15 @@ def select_eligible_feature(rows, *, anharmonicity_mhz):
                 and min(depths["up"], depths["down"]) >= .07):
             candidates.append({"center_ghz": center,
                                "ef_bias_ghz": round(ef_bias, 6),
-                               "shifted_bias_min_10us_survival": min(quiet_10),
-                               "shifted_bias_min_25us_survival": min(quiet_25),
+                               "shifted_bias_min_10us_survival": (
+                                   min(finite_10) if finite_10 else None),
+                               "shifted_bias_min_25us_survival": (
+                                   min(finite_25) if finite_25 else None),
                                "depths": depths})
     if not candidates:
-        raise ValueError("no bidirectional loss line with a quiet shifted e-f bias")
+        suffix = (" with a quiet shifted e-f bias"
+                  if require_quiet_shifted_bias else "")
+        raise ValueError("no bidirectional loss line" + suffix)
     return max(candidates, key=lambda row: (
         min(row["depths"]["up"], row["depths"]["down"]),
         row["depths"]["combined"]))
@@ -724,8 +733,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                                      "output_suffix": "TLS_Dual_Transition_Scout"},
                 announce=False)
             manifest["scout_csv"] = str(scout)
-            selected = select_eligible_feature(read_scout(scout),
-                                               anharmonicity_mhz=alpha)
+            selected = select_eligible_feature(
+                read_scout(scout), anharmonicity_mhz=alpha,
+                require_quiet_shifted_bias=not shelved_confirm)
             manifest["selected"] = selected
             schedule = (shelved_schedule if shelved_confirm else
                         science_schedule)(selected["center_ghz"], alpha)
