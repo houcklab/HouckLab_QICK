@@ -241,6 +241,20 @@ def test_plateau_selector_uses_two_flanks_when_available():
     assert selected["upper_control_ghz"] is None
 
 
+def test_plateau_selector_accepts_a_two_mhz_shifted_loss_minimum():
+    module = experiment()
+    rows = scout_rows(early_loss=False)
+    for row in rows:
+        frequency = float(row["target_frequency_ghz"])
+        if frequency in (4.276, 4.278, 4.280):
+            survival = {4.276: .43, 4.278: .32, 4.280: .84}[frequency]
+            for suffix in ("", "_scan_up", "_scan_down"):
+                row[f"Ps_25us{suffix}"] = str(.1 + .8 * survival)
+    selected = module.select_plateau_candidate(rows)
+    assert selected["center_ghz"] == pytest.approx(4.278)
+    assert selected["lower_control_ghz"] is not None
+
+
 def test_plateau_post_gate_tolerates_one_grid_step_but_rejects_dirty_flank():
     module = experiment()
     rows = scout_rows()

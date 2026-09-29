@@ -4705,6 +4705,12 @@ remained strong, but a separate loss around 4.288–4.290 GHz occupied the
 upper flank. The initial two-flank gate stopped before any science shots.
 The revised selector accepts the clean 4.258-GHz lower control and park,
 using 12 interleaved subshots; it still includes both flanks when available.
+The next attempt produced only the 12:51:22 pre scout. A real minimum
+remained at 4.276–4.278 GHz with clean lower controls, but the up/down
+profile shifted by one 2-MHz bin and the old three-point mean/local-minimum
+criterion rejected it before science. The plateau selector now tests the
+minimum within ±2 MHz in each scan direction against local flank medians;
+replaying that scout selects 4.278 GHz and a clean 4.262-GHz lower control.
 
 ```bash
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy

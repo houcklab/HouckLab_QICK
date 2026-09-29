@@ -116,6 +116,41 @@ def _flank_quality(indexed, center, control, *, guard=False,
     return min(margins)
 
 
+def _plateau_loss_feature(indexed, center):
+    """Qualify a narrow dip while tolerating a one-bin directional shift."""
+    groups = {
+        "feature": [round(center + delta, 3)
+                    for delta in (-.002, 0, .002)],
+        "left": [round(center + delta, 3)
+                 for delta in (-.008, -.006, -.004)],
+        "right": [round(center + delta, 3)
+                  for delta in (.004, .006, .008)],
+    }
+    if any(f not in indexed for group in groups.values() for f in group):
+        return None
+    depths = {}
+    for suffix, direction in (("", "combined"), ("_scan_up", "up"),
+                              ("_scan_down", "down")):
+        values = {name: [_normalized_scout_survival(indexed[f], 25, suffix)
+                         for f in frequencies]
+                  for name, frequencies in groups.items()}
+        if not all(math.isfinite(value) for group in values.values()
+                   for value in group):
+            return None
+        if direction == "combined" and values["feature"][1] > min(
+                values["feature"]) + 1e-9:
+            return None
+        feature = min(values["feature"])
+        depths[direction] = min(np.median(values["left"]),
+                                np.median(values["right"])) - feature
+    if depths["combined"] < .15 or min(depths["up"], depths["down"]) < .08:
+        return None
+    return {"center_ghz": center, "anchor_ghz": center,
+            "depth": float(depths["combined"]),
+            "depth_scan_up": float(depths["up"]),
+            "depth_scan_down": float(depths["down"])}
+
+
 def select_plateau_candidate(rows):
     """Find one early-loss line and all independently qualified flanks."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
@@ -125,16 +160,12 @@ def select_plateau_candidate(rows):
         raise ValueError("plateau candidate needs a complete 251-point scout")
     candidates = {}
     for anchor in sorted(indexed):
-        if not 3.824 <= anchor <= 4.276:
+        if not 3.824 <= anchor <= 4.288:
             continue
-        try:
-            selected = confirm.select_crowded_wide_candidate(
-                rows, preferred_center=anchor)
-        except ValueError:
+        selected = _plateau_loss_feature(indexed, anchor)
+        if selected is None:
             continue
         center = selected["center_ghz"]
-        if center in candidates:
-            continue
         flanks = {}
         for side in (-1, 1):
             choices = []
@@ -156,7 +187,7 @@ def select_plateau_candidate(rows):
             continue
         primary = flanks.get(-1, flanks.get(1))
         candidates[center] = {
-            **selected, "qualifier_control_ghz": selected["control_ghz"],
+            **selected,
             "control_ghz": primary,
             "control_offset_ghz": round(primary - center, 3),
             "lower_control_ghz": flanks.get(-1),
@@ -166,7 +197,7 @@ def select_plateau_candidate(rows):
             "flank_min_survival": min(
                 _flank_quality(indexed, center, control, guard=True)
                 for control in flanks.values()),
-            "selector": "two_flank_early_loss_plateau_candidate",
+            "selector": "shift_tolerant_early_loss_plateau_candidate",
         }
     if not candidates:
         raise ValueError("no early-loss feature with a clean flank")
