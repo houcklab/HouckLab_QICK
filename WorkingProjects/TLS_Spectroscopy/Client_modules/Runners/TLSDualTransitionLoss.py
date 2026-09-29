@@ -95,12 +95,37 @@ def recent_ef_calibration(data_root, *, max_age_minutes=120):
 
 
 def select_eligible_feature(rows, *, anharmonicity_mhz):
-    """Require bidirectional 25-us loss and room for the corresponding e-f bias."""
+    """Require loss at g-e and a quiet g-e window at the shifted e-f bias."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
     candidates = []
     for center in sorted(indexed):
         ef_bias = center - anharmonicity_mhz / 1000.0
         if not 3.82 <= center <= 4.155 or ef_bias > 4.345:
+            continue
+        # A separate g-e loss line at the e-f matching bias can turn an
+        # f→e→g cascade into an apparent f-loss peak. Demand a quiet 10-us
+        # and 25-us g-e background across the entire science window.
+        shifted = []
+        for offset in OFFSETS_MHZ:
+            requested = ef_bias + offset / 1000.0
+            nearest = round(3.8 + .002 * round((requested - 3.8) / .002), 3)
+            if abs(nearest - requested) > .00101 or nearest not in indexed:
+                break
+            shifted.append(indexed[nearest])
+        if len(shifted) != len(OFFSETS_MHZ):
+            continue
+        quiet_25 = [adaptive._survival(row) for row in shifted]
+        quiet_10 = []
+        for row in shifted:
+            try:
+                p0, p1, ps = (float(row[key]) for key in
+                              ("P0", "P1", "Ps_10us"))
+                value = (ps - p0) / (p1 - p0) if p1 - p0 >= .15 else math.nan
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                value = math.nan
+            quiet_10.append(value)
+        if (not all(math.isfinite(value) for value in quiet_10 + quiet_25)
+                or min(quiet_10) < .65 or min(quiet_25) < .60):
             continue
         groups = {
             "center": [round(center + .002 * k, 3) for k in (-1, 0, 1)],
@@ -126,9 +151,11 @@ def select_eligible_feature(rows, *, anharmonicity_mhz):
                 and min(depths["up"], depths["down"]) >= .07):
             candidates.append({"center_ghz": center,
                                "ef_bias_ghz": round(ef_bias, 6),
+                               "shifted_bias_min_10us_survival": min(quiet_10),
+                               "shifted_bias_min_25us_survival": min(quiet_25),
                                "depths": depths})
     if not candidates:
-        raise ValueError("no accessible bidirectional loss line in wide scout")
+        raise ValueError("no bidirectional loss line with a quiet shifted e-f bias")
     return max(candidates, key=lambda row: (
         min(row["depths"]["up"], row["depths"]["down"]),
         row["depths"]["combined"]))
@@ -277,18 +304,20 @@ def summarize_science(points):
                        if point["transition"] == transition
                        and point["offset_mhz"] == offset
                        and point["status"] == "complete"]
-            if len(matched) != 2:
-                raise ValueError("science summary needs two completed passes")
             rows.append({"offset_mhz": offset,
-                         "mean_differential_loss": float(np.mean(
-                             [point["differential_loss"] for point in matched])),
+                         "completed_passes": len(matched),
+                         "mean_differential_loss": (float(np.mean(
+                             [point["differential_loss"] for point in matched]))
+                             if matched else None),
                          "pass_values": [float(point["differential_loss"])
                                          for point in matched]})
         by_transition[transition] = rows
-    peak = {transition: max(rows, key=lambda row:
-                            row["mean_differential_loss"])
+    peak = {transition: max((row for row in rows if row["completed_passes"]),
+                            key=lambda row: row["mean_differential_loss"])
             for transition, rows in by_transition.items()}
     return {"profiles": by_transition,
+            "unresolved_points": sum(point["status"] != "complete"
+                                     for point in points),
             "peak_offset_mhz": {key: value["offset_mhz"]
                                 for key, value in peak.items()},
             "peak_separation_mhz": abs(peak["ge"]["offset_mhz"] -
@@ -591,8 +620,28 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     refs[state] = values
                     point[f"short_{state}_npz"] = raw
                     checkpoint(path, manifest)
-                point["reference_gate"] = validate_site_references(
-                    refs["g"], refs["e"], refs.get("f"))
+                try:
+                    point["reference_gate"] = validate_site_references(
+                        refs["g"], refs["e"], refs.get("f"))
+                except ValueError:
+                    # One extra independent reference block can distinguish
+                    # a noisy half-block from a genuinely unresolved state.
+                    for state in ref_states:
+                        retry, raw = acquire(
+                            f"{prefix}_short_{state}_retry", state=state,
+                            freq=ef_frequency, gain=ef_gain, mode="science",
+                            bias=bias, lookup=lookup, hold=SHORT_US)
+                        refs[state] = np.concatenate((refs[state], retry))
+                        point[f"short_{state}_retry_npz"] = raw
+                        checkpoint(path, manifest)
+                    try:
+                        point["reference_gate"] = validate_site_references(
+                            refs["g"], refs["e"], refs.get("f"))
+                    except ValueError as exc:
+                        point["status"] = "unresolved_reference"
+                        point["reference_error"] = str(exc)
+                        checkpoint(path, manifest)
+                        continue
                 state = "e" if transition == "ge" else "f"
                 ground_long, ground_raw = acquire(
                     f"{prefix}_long_g", state="g",
@@ -615,7 +664,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 point["status"] = "complete"
                 checkpoint(path, manifest)
             manifest["summary"] = summarize_science(schedule)
-            manifest["status"] = "complete"
+            manifest["status"] = ("complete_with_unresolved" if
+                                  manifest["summary"]["unresolved_points"] else
+                                  "complete")
             checkpoint(path, manifest)
             return path
     except BaseException as exc:

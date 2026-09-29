@@ -26,11 +26,34 @@ def test_eligible_scout_selects_bidirectional_low_line_not_high_line():
         row = {"target_frequency_ghz": f"{frequency:.3f}"}
         for suffix in ("", "_scan_up", "_scan_down"):
             row.update({"P0" + suffix: "0.10", "P1" + suffix: "0.90",
+                        "Ps_10us" + suffix: str(.1 + .8 * survival),
                         "Ps_25us" + suffix: str(.1 + .8 * survival)})
         rows.append(row)
     chosen = dual.select_eligible_feature(rows, anharmonicity_mhz=-180)
     assert chosen["center_ghz"] == pytest.approx(4.1)
     assert chosen["ef_bias_ghz"] == pytest.approx(4.28)
+
+
+def test_selector_avoids_ge_loss_at_the_shifted_ef_bias():
+    rows = []
+    for mhz in range(3800, 4301, 2):
+        survival = .9
+        if abs(mhz - 4020) <= 2:
+            survival = .35
+        if abs(mhz - 4076) <= 2:
+            survival = .48
+        # A second g-e feature at the 4.020-GHz line's e-f matching bias.
+        if abs(mhz - 4204) <= 2:
+            survival = .28
+        row = {"target_frequency_ghz": f"{mhz / 1000:.3f}"}
+        for suffix in ("", "_scan_up", "_scan_down"):
+            row.update({"P0" + suffix: ".1", "P1" + suffix: ".9",
+                        "Ps_10us" + suffix: str(.1 + .8 * survival),
+                        "Ps_25us" + suffix: str(.1 + .8 * survival)})
+        rows.append(row)
+    chosen = dual.select_eligible_feature(rows, anharmonicity_mhz=-180)
+    assert chosen["center_ghz"] == pytest.approx(4.076)
+    assert chosen["shifted_bias_min_10us_survival"] >= .65
 
 
 def test_ef_calibration_rejects_nonreturning_pulse():
@@ -133,6 +156,23 @@ def test_summary_compares_two_transitions_in_same_frequency_coordinate():
     result = dual.summarize_science(points)
     assert result["peak_offset_mhz"] == {"ge": 2, "ef": 2}
     assert result["peak_separation_mhz"] == 0
+
+
+def test_summary_records_one_missing_reference_without_discarding_other_pass():
+    points = []
+    for repeat in (0, 1):
+        for transition in ("ge", "ef"):
+            for offset in dual.OFFSETS_MHZ:
+                status = ("unresolved_reference" if repeat == 1 and
+                          transition == "ge" and offset == 0 else "complete")
+                points.append({"pass": repeat, "transition": transition,
+                               "offset_mhz": offset, "status": status,
+                               "differential_loss": .25 if offset == 2 else .05})
+    result = dual.summarize_science(points)
+    center = next(row for row in result["profiles"]["ge"]
+                  if row["offset_mhz"] == 0)
+    assert center["completed_passes"] == 1
+    assert result["unresolved_points"] == 1
 
 
 def test_reuse_accepts_recent_passed_ef_calibration_from_failed_science(tmp_path):

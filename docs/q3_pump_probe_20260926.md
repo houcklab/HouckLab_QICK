@@ -5006,3 +5006,20 @@ loss by projecting short/long IQ means along the local preparation axis with
 matched ground-drift subtraction. `--reuse-recent-ef` can reuse this passed
 park pulse for two hours, but repeats a fresh 0/π/2π audit and wide scout.
 After two hours it falls back to the complete e–f calibration.
+
+The second run, `q3_tls_dual_transition_loss_20260929T191204Z_f0e68d0b`,
+re-audited the e–f pulse and acquired 35/36 science points before the last
+g–e reference missed the 3-SE half-block gate by about 0.06 SE. The apparent
+e–f loss profile peaks near a predicted transition frequency of 4.024 GHz
+in both passes. This is **not yet evidence of a shared TLS**: the wide scout
+also has a separate g–e loss line at the corresponding *bias* around
+4.204 GHz. Its 25-µs survival drops to 0.268, versus 0.7–0.96 at many
+nearby points. The e–f IQ profile follows that shifted-bias g–e trough,
+and the three direct-readout centroids are too nearly collinear for a stable
+g/e/f population inversion. See `q3_dual_transition_pilot_20260929.png`.
+The next run requires the entire shifted e–f bias window to have quiet
+10- and 25-µs g–e survival. Replaying the latest scout selects the
+4.076-GHz loss line (shifted bias 4.256 GHz; minimum 10-/25-µs survival
+0.738/0.662). One extra reference acquisition is now attempted if a
+single point misses the ensemble contrast gate; persistent failures are
+recorded as unresolved and the rest of the scan continues.
