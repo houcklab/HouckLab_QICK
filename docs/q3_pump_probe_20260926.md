@@ -4455,25 +4455,47 @@ The earlier two-visit memory sequence did not re-excite the qubit between
 visits. A null energy-return signal therefore leaves a different question
 open: after a loss feature accepts one excitation, can it accept another?
 `TLSSecondQuantumBlockade` tests this with one corrected waveform and one
-final readout. It prepares q3 in g or e at park, visits a freshly located
-4.1-GHz loss feature or its qualified quiet control for 1.5 us, waits at
+final readout. A fresh 3.8–4.3-GHz scout prefers the recent 4.276-GHz loss
+region and falls back to another qualified wide-band loss if it has moved.
+It prepares q3 in g or e at park, visits the selected loss feature or its
+qualified quiet control for 1.5 us, waits at
 park for 2 or 10 us, and visits the feature or control for another 1.5 us.
 The middle park pulse is a normal pi or a time-matched zero-gain sham,
 scheduled during the compensated park gap, 0.5 us after the first return.
 There is no intermediate readout or active reset. The usual 40-us
 compensated recovery occurs **after** both visits.
 
-Each of four programs interleaves all 16 combinations of first/second
+Each of 16 science programs interleaves all 16 combinations of first/second
 site, initial g/e, and middle pi/sham within the same hardware shot,
-with 1200 logical shots. Two gap orders reverse the conditions. Raw IQ
+with 1200 logical shots. The middle pi runs at 0°, 90°, 180°, and 270°
+phase in each gap and gap order; the second cycle reverses phase and
+condition order. Two additional park-only calibration programs interleave
+g/e × pi/sham × all four phases at each gap, with 3000 shots per arm. A
+clearly failed direct inversion check stops the science acquisition; a
+borderline check permits raw-data collection but marks the final controls
+unstable. Raw IQ
 for each arm and pre/post readout and flux scouts are saved. For each
 middle-pulse state, the memoryless two-state prediction for the g/e
 contrast at feature/feature is `C_fc * C_cf / C_cc`, using the other
 three site pairs acquired alongside it. The reported blockade excess
-is `C_ff - C_fc*C_cf/C_cc`; the pi-minus-sham difference is the focused
-test. Crucially the score remains defined if a real blockade reverses
+is `C_ff - C_fc*C_cf/C_cc`. The **primary test** first averages each arm's
+classified fraction across the four pi phases, then computes this residual
+for each gap and cycle. Averaging four ideal cardinal pi rotations removes
+coherence carried by the qubit between visits; without it a memoryless
+coherent qubit response could mimic blockade. The sham and single-phase
+residuals are diagnostics, not the primary score. The score remains defined
+if a real blockade reverses
 the feature/feature contrast. Control-pair contrasts must retain their
-expected signs and magnitude before any score is interpreted.
+expected signs and magnitude before any score is interpreted. The run also
+aborts before science acquisition if the pre-run park-transfer control fails.
+For each gap and pi phase, the quiet/quiet arms from both cycles check that
+the middle pulse actually inverts the g/e contrast: the pi-to-sham contrast
+ratio must be between −1.05 and −0.95. Failing this gate makes a positive
+residual uninterpretable because an under-rotated qubit pulse can leave a
+coherent-qubit false signal. A direct park calibration guards against a
+false angle check caused by coherent visits to the nominally quiet site.
+Neither check fully reproduces the flux history of the first feature visit,
+so a small positive residual alone is not a TLS claim.
 
 A positive, replicated short-gap pi excess that weakens at 10 us and is
 absent in sham would be a candidate saturation effect. Flux-history
@@ -4486,5 +4508,5 @@ On the measurement PC after other acquisitions have stopped:
 ```bash
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --plan
-python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --run
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --run
 ```

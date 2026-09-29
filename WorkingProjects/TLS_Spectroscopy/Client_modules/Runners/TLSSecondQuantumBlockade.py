@@ -4,6 +4,7 @@ The first visit prepares a possible environmental excitation. A timed park pi
 pulse flips the qubit before a second visit, all within one continuously
 predistorted flux waveform and before the only readout. A zero-gain middle
 pulse and four first/second-site pairs provide a memoryless-process control.
+The middle pi is phase-cycled to erase coherence retained by the qubit itself.
 This experimental runner does not change production spectroscopy or reset.
 """
 
@@ -19,12 +20,13 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
-    TLSPumpProbeHeralded as heralded,
     TLSPumpProbeLocalizer as localizer,
     TLSPumpProbeProtocolCheck as protocol,
     TLSPumpProbeResidentDrive as resident,
     TLSPumpProbeResidentProbe as probe,
     TLSPumpProbeWidePassiveScan as wide,
+    TLSSwapHoldConfirm as confirm,
+    TLSSwapHoldPilot as swap,
     TLSTwoVisitMemory as memory,
 )
 
@@ -32,36 +34,58 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 LOAD_US = 1.5
 PROBE_US = 1.5
 GAPS_US = (2.0, 10.0)
+MIDDLE_PHASES_DEG = (0.0, 90.0, 180.0, 270.0)
 PARK_SETTLE_BEFORE_PI_US = 0.5
 RECOVERY_US = 40.0
 SHOTS = 1200
+CALIBRATION_SHOTS = 3000
 REFERENCE_SHOTS = 400
 PAIRS = ("ff", "fc", "cf", "cc")
 CONDITION_NAMES = tuple(
     f"{pair}_{state}_{pulse}" for pair in PAIRS for state in ("g", "e")
     for pulse in ("sham", "pi"))
+CALIBRATION_NAMES = tuple(
+    f"phase{int(phase)}_{state}_{pulse}"
+    for phase in MIDDLE_PHASES_DEG for state in ("g", "e")
+    for pulse in ("sham", "pi"))
+RECENT_FEATURE_ANCHOR_GHZ = 4.276
+
+
+def select_fresh_feature(rows, *, anchor_ghz=RECENT_FEATURE_ANCHOR_GHZ):
+    """Prefer the last loss region; use another qualified wide site if needed."""
+    try:
+        return confirm.select_anchored_wide_candidate(
+            rows, preferred_center=anchor_ghz)
+    except ValueError:
+        return swap.select_wide_candidate(rows)
 
 
 def program_specs(feature_ghz, control_ghz):
     sites = {"f": float(feature_ghz), "c": float(control_ghz)}
     specs = []
-    for repeat in (0, 1):
-        gaps = GAPS_US if not repeat else tuple(reversed(GAPS_US))
+    for cycle in (0, 1):
+        gaps = GAPS_US if not cycle else tuple(reversed(GAPS_US))
         for gap in gaps:
-            conditions = [
-                {"name": f"{pair}_{state}_{'pi' if middle else 'sham'}",
-                 "load_site": pair[0], "probe_site": pair[1],
-                 "load_ghz": sites[pair[0]], "probe_ghz": sites[pair[1]],
-                 "state": state, "middle_pi": middle,
-                 "load_us": LOAD_US, "gap_us": gap, "probe_us": PROBE_US}
-                for pair in PAIRS for state in ("g", "e")
-                for middle in (False, True)]
-            if repeat:
-                conditions.reverse()
-            specs.append({"name": f"gap{gap:g}_r{repeat}",
-                          "gap_us": gap, "repeat": repeat,
-                          "shots": SHOTS, "order": [c["name"] for c in conditions],
-                          "conditions": conditions, "status": "pending"})
+            phases = (MIDDLE_PHASES_DEG if not cycle
+                      else tuple(reversed(MIDDLE_PHASES_DEG)))
+            for phase_deg in phases:
+                conditions = [
+                    {"name": f"{pair}_{state}_{'pi' if middle else 'sham'}",
+                     "load_site": pair[0], "probe_site": pair[1],
+                     "load_ghz": sites[pair[0]], "probe_ghz": sites[pair[1]],
+                     "state": state, "middle_pi": middle,
+                     "middle_phase_deg": phase_deg,
+                     "load_us": LOAD_US, "gap_us": gap, "probe_us": PROBE_US}
+                    for pair in PAIRS for state in ("g", "e")
+                    for middle in (False, True)]
+                if cycle:
+                    conditions.reverse()
+                specs.append({"name": f"gap{gap:g}_cycle{cycle}_phase{int(phase_deg)}",
+                              "gap_us": gap, "cycle": cycle,
+                              "middle_phase_deg": phase_deg,
+                              "shots": SHOTS,
+                              "order": [c["name"] for c in conditions],
+                              "conditions": conditions, "status": "pending"})
     return specs
 
 
@@ -74,6 +98,118 @@ def split_records(records, order, *, shots):
     return {name: records[index::len(order)] for index, name in enumerate(order)}
 
 
+def calibration_specs():
+    specs = []
+    for gap in GAPS_US:
+        conditions = [
+            {"name": f"phase{int(phase)}_{state}_{pulse}",
+             "phase_deg": phase, "state": state, "middle_pi": pulse == "pi",
+             "gap_us": gap}
+            for phase in MIDDLE_PHASES_DEG for state in ("g", "e")
+            for pulse in ("sham", "pi")]
+        specs.append({"name": f"park_middle_gap{gap:g}", "gap_us": gap,
+                      "conditions": conditions, "order": [c["name"] for c in conditions],
+                      "shots": CALIBRATION_SHOTS, "status": "pending"})
+    return specs
+
+
+def split_calibration_records(records, order, *, shots):
+    records = list(records)
+    if len(order) != 16 or set(order) != set(CALIBRATION_NAMES):
+        raise ValueError("invalid park middle-pulse calibration order")
+    if len(records) != len(order) * int(shots):
+        raise ValueError("incomplete park middle-pulse calibration IQ")
+    return {name: records[index::len(order)] for index, name in enumerate(order)}
+
+
+def calibration_config(base, condition, control_ghz, dc_lookup, *, shots):
+    cfg = resident.arm_config(
+        base, {"flux_ghz": control_ghz, "drive_mhz": 1000.0 * control_ghz,
+               "gain": 0, "reference_state": None,
+               "preparation_state": condition["state"],
+               "pre_drive_us": .05, "post_drive_us": .05, "shots": shots},
+        dc_lookup)
+    cfg["ff_gain"] = int(cfg["ff_park_gain"])
+    cfg["opx_middle_pi"] = bool(condition["middle_pi"])
+    cfg["opx_middle_phase_deg"] = float(condition["phase_deg"])
+    cfg["opx_store_us"] = float(condition["gap_us"])
+    return cfg
+
+
+class ParkMiddleCalibrationProgram(memory.TwoVisitProgram):
+    """Interleaved park-only population check of the actual middle pulse."""
+
+    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
+        configs = [dict(cfg) for cfg in condition_cfgs]
+        if len(configs) != 16:
+            raise ValueError("park middle-pulse calibration needs sixteen conditions")
+        common = ("ff_park_gain", "shots", "opx_store_us")
+        if any(any(cfg[key] != configs[0][key] for key in common)
+               for cfg in configs[1:]):
+            raise ValueError("park middle-pulse calibration timing differs")
+        observed = {(float(cfg["opx_middle_phase_deg"]),
+                     cfg["opx_resident_preparation_state"],
+                     bool(cfg["opx_middle_pi"])) for cfg in configs}
+        expected = {(phase, state, middle)
+                    for phase in MIDDLE_PHASES_DEG for state in ("g", "e")
+                    for middle in (False, True)}
+        if observed != expected:
+            raise ValueError("park middle-pulse calibration arms incomplete")
+        pulse_us = 4.0 * float(configs[0]["sigma"])
+        if PARK_SETTLE_BEFORE_PI_US + pulse_us + .01 > configs[0]["opx_store_us"]:
+            raise ValueError("park middle pulse exceeds gap")
+        self.conditions_per_shot = 16
+        self.logical_shots = int(configs[0]["shots"])
+        self.condition_cfgs = configs
+        run_cfg = dict(configs[0], reps=16 * self.logical_shots)
+        resident.ResidentDriveProgram.__init__(
+            self, soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _resident_excursion(self):
+        cfg = self.cfg
+        self.sync_all(0)
+        frequency = cfg.get("qubit_pi_freq")
+        if frequency is None:
+            frequency = cfg["qubit_freq"]
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"], style="arb",
+            freq=self.freq2reg(float(frequency), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(float(cfg["opx_middle_phase_deg"]),
+                               gen_ch=cfg["qubit_ch"]),
+            gain=int(cfg["qubit_pi_gain"] if cfg["opx_middle_pi"] else 0),
+            waveform="qubit")
+        self.pulse(ch=cfg["qubit_ch"],
+                   t=self.us2cycles(LOAD_US + PARK_SETTLE_BEFORE_PI_US))
+        self.sync_all(0)
+        remaining_us = (float(cfg["opx_store_us"]) - PARK_SETTLE_BEFORE_PI_US -
+                        4.0 * float(cfg["sigma"]) + PROBE_US)
+        self.sync_all(self.us2cycles(remaining_us))
+
+
+def calibration_score(entry):
+    fractions = {c["name"]: c["excited_fraction_pre_axis"]
+                 for c in entry["conditions"]}
+    phases = {}
+    for phase in MIDDLE_PHASES_DEG:
+        label = f"phase{int(phase)}"
+        sham = (fractions[f"{label}_e_sham"] -
+                fractions[f"{label}_g_sham"])
+        middle = (fractions[f"{label}_e_pi"] -
+                  fractions[f"{label}_g_pi"])
+        ratio = -middle / sham if sham > 0 else None
+        phases[str(phase)] = {
+            "sham_contrast": float(sham), "pi_contrast": float(middle),
+            "inversion_ratio": float(ratio) if ratio is not None else None,
+            "usable": bool(sham >= .20 and ratio is not None and
+                           .90 <= ratio <= 1.10),
+            "tight_inversion": bool(sham >= .20 and ratio is not None and
+                                    .95 <= ratio <= 1.05)}
+    return {"phases": phases,
+            "usable": all(item["usable"] for item in phases.values()),
+            "tight_inversion": all(item["tight_inversion"]
+                                   for item in phases.values())}
+
+
 def arm_config(base, condition, dc_lookup, *, shots=SHOTS):
     cfg = memory.arm_config(base, {
         "load_ghz": condition["load_ghz"],
@@ -84,6 +220,7 @@ def arm_config(base, condition, dc_lookup, *, shots=SHOTS):
         "probe_us": condition["probe_us"],
     }, dc_lookup, shots=shots)
     cfg["opx_middle_pi"] = bool(condition["middle_pi"])
+    cfg["opx_middle_phase_deg"] = float(condition["middle_phase_deg"])
     return cfg
 
 
@@ -95,7 +232,7 @@ class BlockadeProgram(memory.TwoVisitProgram):
         if len(configs) != 16:
             raise ValueError("blockade requires sixteen interleaved conditions")
         common = ("ff_park_gain", "shots", "opx_load_us", "opx_store_us",
-                  "opx_probe_us")
+                  "opx_probe_us", "opx_middle_phase_deg")
         if any(any(cfg[key] != configs[0][key] for key in common)
                for cfg in configs[1:]):
             raise ValueError("blockade conditions must share shot and visit timing")
@@ -109,6 +246,8 @@ class BlockadeProgram(memory.TwoVisitProgram):
         if len(gains) != 2 or observed != expected:
             raise ValueError("blockade conditions must span four visit pairs, "
                              "g/e, and pi/sham")
+        if float(configs[0]["opx_middle_phase_deg"]) not in MIDDLE_PHASES_DEG:
+            raise ValueError("middle-pulse phase must be a cardinal angle")
         pulse_us = 4.0 * float(configs[0]["sigma"])
         if (PARK_SETTLE_BEFORE_PI_US + pulse_us + 0.01 >
                 float(configs[0]["opx_store_us"])):
@@ -149,7 +288,16 @@ class BlockadeProgram(memory.TwoVisitProgram):
         # Set the second microwave pulse before scheduling flux, then place it
         # at an explicit tProc time. Both channels run concurrently. Scheduling
         # it first gives the tProc time to enqueue the future pi pulse.
-        self._set_payload_pulse(gain=None if cfg["opx_middle_pi"] else 0)
+        frequency = cfg.get("qubit_pi_freq")
+        if frequency is None:
+            frequency = cfg["qubit_freq"]
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"], style="arb",
+            freq=self.freq2reg(float(frequency), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(float(cfg["opx_middle_phase_deg"]),
+                               gen_ch=cfg["qubit_ch"]),
+            gain=int(cfg["qubit_pi_gain"] if cfg["opx_middle_pi"] else 0),
+            waveform="qubit")
         self.pulse(ch=cfg["qubit_ch"],
                    t=self.us2cycles(load_us + PARK_SETTLE_BEFORE_PI_US))
         ff_pulse.play_relative_compensation_segments(
@@ -162,11 +310,12 @@ class BlockadeProgram(memory.TwoVisitProgram):
 
 
 def score(fractions):
-    """A Markovian two-state qubit channel factorizes across visit sites.
+    """Score population factorization across visit sites.
 
-    The middle pi reverses the g/e contrast sign. An occupied, saturable
-    feature raises ff_e_pi, making the factorization residual positive even
-    if the ff contrast itself changes sign.
+    For the pi arm this null applies after averaging four ideal cardinal pi
+    phases: the phase cycle removes qubit coherence carried between visits.
+    Individual pi-phase and sham scores are diagnostics, not the primary test. An
+    occupied, saturable feature can raise ff_e_pi and the pi residual.
     No microscopic TLS inference is made from this score alone.
     """
     contrasts = {}
@@ -176,9 +325,13 @@ def score(fractions):
                         fractions[f"{pair}_g_{pulse}"])
             for pair in PAIRS}
     controls = ("fc", "cf", "cc")
+    quiet_sham = contrasts["sham"]["cc"]
+    quiet_inversion = (-contrasts["pi"]["cc"] / quiet_sham
+                       if quiet_sham > 0 else None)
     usable = all(contrasts["sham"][pair] >= .08 and
                  contrasts["pi"][pair] <= -.08 for pair in controls)
     result = {"contrasts": contrasts, "usable": bool(usable),
+              "quiet_middle_inversion_ratio": quiet_inversion,
               "pi_blockade_excess": None,
               "sham_blockade_excess": None,
               "pi_minus_sham_blockade_excess": None}
@@ -198,21 +351,68 @@ def score_entry(entry):
                   for c in entry["conditions"]})
 
 
-def report(specs, scores):
-    result = {}
+def report(specs):
+    result = {"usable": True,
+              "primary_score": "phase-averaged pi blockade excess"}
     for gap in GAPS_US:
-        entries = [entry for entry in specs if entry["gap_us"] == gap]
-        values = [scores[entry["name"]]["pi_minus_sham_blockade_excess"]
-                  for entry in entries]
+        gap_entries = [entry for entry in specs if entry["gap_us"] == gap]
+        phase_calibration = {}
+        for phase in MIDDLE_PHASES_DEG:
+            same_phase = [entry for entry in gap_entries
+                          if entry["middle_phase_deg"] == phase]
+            if len(same_phase) != 2:
+                raise ValueError("blockade report requires two cycles per phase")
+            quiet = {}
+            for pulse in ("sham", "pi"):
+                means = {}
+                for state in ("e", "g"):
+                    name = f"cc_{state}_{pulse}"
+                    means[state] = float(np.mean([
+                        next(c["excited_fraction_pre_axis"]
+                             for c in entry["conditions"]
+                             if c["name"] == name)
+                        for entry in same_phase]))
+                quiet[pulse] = means["e"] - means["g"]
+            ratio = (-quiet["pi"] / quiet["sham"]
+                     if quiet["sham"] > 0 else None)
+            phase_calibration[str(phase)] = {
+                "quiet_middle_inversion_ratio": ratio,
+                "usable": bool(ratio is not None and .95 <= ratio <= 1.05)}
+        cycle_scores = []
+        for cycle in (0, 1):
+            entries = [entry for entry in specs
+                       if entry["gap_us"] == gap and entry["cycle"] == cycle]
+            phases = {entry["middle_phase_deg"] for entry in entries}
+            if len(entries) != len(MIDDLE_PHASES_DEG) or phases != set(MIDDLE_PHASES_DEG):
+                raise ValueError("blockade report requires all middle-pulse phases")
+            # Average observed fractions, not nonlinear scores. Four ideal
+            # cardinal pi rotations remove the qubit's transverse coherence.
+            fractions = {
+                name: float(np.mean([
+                    next(c["excited_fraction_pre_axis"]
+                         for c in entry["conditions"] if c["name"] == name)
+                    for entry in entries]))
+                for name in CONDITION_NAMES}
+            cycle_scores.append(score(fractions))
+        values = [item["pi_blockade_excess"] for item in cycle_scores]
         result[str(gap)] = {
-            "repeat_scores": values,
-            "mean_score": (float(np.mean(values))
-                           if all(value is not None for value in values)
-                           else None),
+            "cycle_scores": cycle_scores,
+            "phase_calibration": phase_calibration,
+            "mean_pi_excess": (float(np.mean(values))
+                               if all(value is not None for value in values)
+                               else None),
             "same_positive_sign": bool(all(value is not None and value > 0
                                            for value in values)),
         }
+        result["usable"] &= (all(item["usable"] for item in cycle_scores) and
+                              all(item["usable"]
+                                  for item in phase_calibration.values()))
     return result
+
+
+def validate_pre_transfer(fractions):
+    if not resident.transfer_usable(fractions["ground"], fractions["excited"]):
+        raise RuntimeError(f"pre-run transfer control failed: {fractions}")
 
 
 def plan():
@@ -222,13 +422,20 @@ def plan():
             "gaps_us": list(GAPS_US),
             "middle_pulse": "park pi or matched zero-gain sham",
             "middle_pulse_start_after_first_return_us": PARK_SETTLE_BEFORE_PI_US,
+            "fresh_scout_ghz": [3.8, 4.3],
+            "recent_feature_anchor_ghz": RECENT_FEATURE_ANCHOR_GHZ,
             "intermediate_readouts": 0,
-            "conditions_per_shot": 16, "programs": 4,
+            "conditions_per_shot": 16, "programs": 16,
+            "park_middle_calibration_programs": 2,
+            "park_middle_calibration_shots": CALIBRATION_SHOTS,
             "shots_per_program": SHOTS,
-            "control": "four visit pairs x initial g/e x middle pi/sham",
-            "primary_score": "pi minus sham nonfactorization of g/e contrast",
-            "interpretation": "positive short-gap score with controls is a "
-                              "candidate one-excitation blockade, not TLS proof"}
+            "control": "four visit pairs x initial g/e x middle pi/sham; "
+                       "middle pi phase-cycled at 0/90/180/270 degrees",
+            "primary_score": "phase-averaged pi nonfactorization of g/e contrast",
+            "interpretation": "a positive short-gap score is a candidate only "
+                              "if direct park pulse and quiet-site inversion "
+                              "checks pass; flux-history and coherent-qubit "
+                              "alternatives remain, so this is not TLS proof"}
 
 
 def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
@@ -236,10 +443,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
         data_root=data_root, correction_json=correction,
-        parameter_overrides={**heralded.postselection_scout_parameters("pre"),
+        parameter_overrides={**wide.parameters(),
                              "output_suffix": "TLS_Second_Quantum_Blockade_Scout_pre"})
-    selected = heralded.select_postselection_feature(
-        heralded.read_postselection_scout(scout))
+    selected = select_fresh_feature(swap.read_wide_scout(scout))
     center, control = selected["center_ghz"], selected["control_ghz"]
     print(f"[blockade] feature={center:.3f} GHz; "
           f"control={control:.3f} GHz", flush=True)
@@ -263,6 +469,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
         specs = program_specs(center, control)
+        park_calibrations = calibration_specs()
         grid = np.asarray(sorted((center, control)), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
@@ -310,7 +517,9 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             "scout_csv": str(scout), "selected": selected,
             "center_ghz": center, "control_ghz": control,
             "dc_lookup": dc_lookup, "realized_ghz": realized.tolist(),
-            "plan": plan(), "references": refs, "programs": specs,
+            "plan": plan(), "references": refs,
+            "park_middle_calibrations": park_calibrations,
+            "programs": specs,
         }
         protocol.checkpoint(path, manifest)
         print(f"[blockade] manifest={path}", flush=True)
@@ -324,6 +533,13 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 configs = [arm_config(base, c, dc_lookup, shots=entry["shots"])
                            for c in entry["conditions"]]
                 programs[entry["name"]] = BlockadeProgram(
+                    soccfg, configs, bundle.payload, bundle.loop)
+            calibration_programs = {}
+            for entry in park_calibrations:
+                configs = [calibration_config(
+                    base, c, control, dc_lookup, shots=entry["shots"])
+                    for c in entry["conditions"]]
+                calibration_programs[entry["name"]] = ParkMiddleCalibrationProgram(
                     soccfg, configs, bundle.payload, bundle.loop)
             for ref in refs:
                 resident.ResidentDriveProgram(
@@ -365,6 +581,38 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             for ref in refs[:4]:
                 print(f"[blockade] {ref['name']}", flush=True)
                 acquire_ref(ref)
+            pre_transfer = {
+                "ground": resident.classify(raw_refs["ref_transfer_g_pre"], axis),
+                "excited": resident.classify(raw_refs["ref_transfer_e_pre"], axis)}
+            validate_pre_transfer(pre_transfer)
+            pre_transfer["usable"] = True
+            manifest["pre_transfer_control"] = pre_transfer
+            protocol.checkpoint(path, manifest)
+            for entry in park_calibrations:
+                shots = int(entry["shots"])
+                print(f"[blockade] {entry['name']} {shots} x 16", flush=True)
+                entry["status"] = "acquiring"
+                protocol.checkpoint(path, manifest)
+                records = _run_program(
+                    soc, calibration_programs[entry["name"]],
+                    max(30.0, 16 * _block_timeout_s(base, shots)),
+                    base, total_shots=shots)
+                split = split_calibration_records(
+                    records, entry["order"], shots=shots)
+                for cond in entry["conditions"]:
+                    subset = split[cond["name"]]
+                    raw_path = folder / f"{entry['name']}_{cond['name']}.npz"
+                    np.savez_compressed(raw_path, i=[r.i for r in subset],
+                                        q=[r.q for r in subset])
+                    cond["raw_npz"] = str(raw_path)
+                    cond["excited_fraction_pre_axis"] = resident.classify(
+                        subset, axis)
+                entry["score"] = calibration_score(entry)
+                entry["status"] = "complete"
+                protocol.checkpoint(path, manifest)
+                if not entry["score"]["usable"]:
+                    raise RuntimeError(
+                        f"park middle-pulse calibration failed: {entry['score']}")
             for entry in specs:
                 shots = int(entry["shots"])
                 print(f"[blockade] {entry['name']} {shots} x 16", flush=True)
@@ -408,26 +656,33 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 item["usable"] = resident.transfer_usable(
                     item["ground"], item["excited"])
             scores = {entry["name"]: entry["score"] for entry in specs}
-            manifest["blockade_report"] = report(specs, scores)
+            manifest["blockade_report"] = report(specs)
             post_scout = localizer.run(
                 data_root=data_root, correction_json=correction,
-                parameter_overrides={**heralded.postselection_scout_parameters("post"),
+                parameter_overrides={**wide.parameters(),
                                      "output_suffix": "TLS_Second_Quantum_Blockade_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
                 manifest["post_selected"] = (
-                    heralded.select_postselection_feature(
-                        heralded.read_postselection_scout(post_scout)))
+                    confirm.select_anchored_wide_candidate(
+                        swap.read_wide_scout(post_scout),
+                        preferred_center=center,
+                        preferred_control_offset=round(control - center, 3)))
             except ValueError as exc:
                 manifest["post_selection_error"] = str(exc)
             manifest["feature_stable"] = bool(
                 "post_selected" in manifest and
-                resident.feature_stable(selected, manifest["post_selected"]))
+                resident.feature_stable(selected, manifest["post_selected"]) and
+                abs(1000.0 * (control - manifest["post_selected"]["control_ghz"]))
+                <= 2.0 + 1e-6)
             manifest["status"] = (
                 "complete" if manifest["post_readout_score"]["valid"] and
                 all(item["usable"] for item in
                     manifest["transfer_control"].values()) and
+                all(entry["score"]["tight_inversion"]
+                    for entry in park_calibrations) and
                 all(item["usable"] for item in scores.values()) and
+                manifest["blockade_report"]["usable"] and
                 manifest["feature_stable"] else "complete_controls_unstable")
             protocol.checkpoint(path, manifest)
             print(f"[blockade] {manifest['status']}: {path}", flush=True)
