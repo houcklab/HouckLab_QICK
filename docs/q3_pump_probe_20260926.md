@@ -4968,3 +4968,25 @@ qualified, separated lines. Do not keep rerunning the unchanged two-line
 sentinel or relax the separation and contrast gates merely to get a
 stream; the line-specific versus common qubit-frequency jitter comparison
 would no longer satisfy this protocol's stated result criterion.
+
+### Dual-transition loss probe (prepared 2026-09-29)
+
+`TLSDualTransitionLoss.py` is an experimental, passive-reset test of one
+freshly selected q3 loss line through both g–e and e–f relaxation. It first
+calibrates a park e–f pulse by opposed frequency scans and a 0/π/2π IQ
+return audit. A standard wide five-point scout then picks a bidirectional
+loss line below 4.155 GHz so the e–f matching bias remains reachable.
+The science loop interleaves g–e and e–f offsets in transition-frequency
+coordinates and reverses order on its second pass. Each point has local
+readout references, a 0.25 µs short dwell, a 10 µs long dwell, and a
+matched long-dwell ground control. Raw IQ and differential loss are saved
+after every arm. The readout begins after the 0.5 µs corrected return prefix
+while the 40 µs tail continues, retaining a chance to observe |f⟩ before
+it relaxes; the tail is complete before the next shot.
+
+The e–f transition frequency at the excursion bias is inferred from the
+park-calibrated anharmonicity rather than measured locally. A coincident
+peak is therefore suggestive but cannot establish exact line identity
+until the local e–f frequency is calibrated. An absent peak is also
+inconclusive if that extrapolation misses by more than the ±8 MHz scan.
+The new runner does not print progress; its manifest records each step.
