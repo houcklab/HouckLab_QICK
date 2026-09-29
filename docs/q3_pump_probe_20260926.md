@@ -4749,3 +4749,19 @@ still vetoing a reproducible narrow loss. Replaying the saved scout through
 the revised selector qualifies A=4.134, B=4.026, C=4.072 GHz and three
 separated quiet null windows (4.008, 4.218, 4.250 GHz). The next acquisition
 must still repeat a fresh scout and all static-profile/reference gates.
+
+The next attempt, `q3_tls_millisecond_sentinel_passive_20260929T143223Z_2c2c15e3`,
+also stopped after its scout, before sentinel shots. It showed two substantial
+loss troughs at 4.112 and 4.142 GHz, 30 MHz apart. The earlier selector
+rejected 4.112 GHz because the down-scan lowest bin shifted 2 MHz relative
+to the combined minimum, despite bidirectional depths of 0.476 and 0.385.
+Site qualification now requires a local minimum in the combined scan and
+positive depth in both directions; the 20-cycle static profile is still
+the decisive fit and contrast gate. Replaying this scout selects A=4.112,
+B=4.142, C=4.092 GHz, plus null windows at 4.166, 4.178, and 4.250 GHz.
+The same saved scout exposed a profile-gate mistake: the seven measured
+points are ±6 MHz about the *scout* center, while the fitted center can
+land between bins. Their actual outer points now set measured edge-to-center
+contrast, with the fitted center constrained to the inner ±2 MHz. Both
+scout-based seven-point fits pass provisionally (measured contrasts 0.187
+and 0.168); the fresh higher-shot profiles on the next run remain required.

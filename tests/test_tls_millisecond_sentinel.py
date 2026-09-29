@@ -56,6 +56,21 @@ def test_quiet_control_survives_one_directional_low_outlier():
     assert len(model.select_null_sites(rows, selected)) == 3
 
 
+def test_site_selector_allows_two_mhz_directional_minimum_shift():
+    rows = wide_rows()
+    # On a bidirectional scan, the same broad line may have its lowest
+    # directional bin one grid point away while combined loss stays centered.
+    center = next(row for row in rows
+                  if float(row["target_frequency_ghz"]) == 4.132)
+    right = next(row for row in rows
+                 if float(row["target_frequency_ghz"]) == 4.134)
+    center["Ps_25us_scan_down"] = str(.1 + .8*.64)
+    right["Ps_25us_scan_down"] = str(.1 + .8*.62)
+    selected = subject().select_sites(rows)
+    assert selected["A"]["center_ghz"] == pytest.approx(4.094)
+    assert selected["B"]["center_ghz"] == pytest.approx(4.132)
+
+
 def test_static_profile_recovers_center_width_and_signed_flanks():
     model = subject()
     frequency_mhz = np.arange(4088., 4102.1, 2.)
@@ -77,6 +92,18 @@ def test_static_profile_gate_rejects_weak_contrast():
     survival = .80 - .04 / (1 + ((frequency_mhz - 4094.7) / 2.3) ** 2)
     fit = model.fit_static_profile(frequency_mhz, survival)
     assert model.profile_gate(fit)["passed"] is False
+
+
+def test_profile_gate_uses_measured_scan_edges_when_fit_center_moves_one_bin():
+    model = subject()
+    frequency = np.arange(4106., 4118.1, 2.)
+    # Seven actual scanner bins remain the measurement, even if fitting
+    # places the continuous center between the last two interior bins.
+    survival = np.array([.577, .629, .353, .265, .278, .285, .466])
+    fit = model.fit_static_profile(frequency, survival)
+    assert 4113. < fit["center_mhz"] < 4114.
+    assert fit["measured_contrast_6mhz"] >= .15
+    assert model.profile_gate(fit)["passed"] is True
 
 
 def test_static_profile_gate_uses_measured_not_only_fitted_contrast():

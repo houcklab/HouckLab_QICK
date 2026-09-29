@@ -84,8 +84,9 @@ def select_sites(rows):
                               for f in fs] for label, fs in groups.items()}
             if any(not math.isfinite(v) for vs in values.values() for v in vs):
                 break
-            if values["center"][1] >= min(values["center"][0],
-                                             values["center"][2]):
+            if (name == "combined" and
+                    values["center"][1] >= min(values["center"][0],
+                                                values["center"][2])):
                 break
             depths[name] = min(float(np.median(values["left"])),
                                float(np.median(values["right"]))) - float(
@@ -151,16 +152,13 @@ def fit_static_profile(frequency_mhz, survival):
     flanks = [_loss_lorentzian(center + offset, *params) for offset in (-6, 6)]
     contrast = float(min(flanks) - near)
     rmse = float(np.sqrt(np.mean((values - _loss_lorentzian(frequency, *params))**2)))
-    sample_tolerance = max(1.5, .5*float(np.max(np.diff(frequency)))+.5)
-    sample_indices = [int(np.argmin(abs(frequency-target)))
-                      for target in (center-6, center, center+6)]
-    measured_contrast = (float(min(values[sample_indices[0]],
-                                   values[sample_indices[2]]) -
-                               values[sample_indices[1]])
-                         if all(abs(frequency[index]-target) <= sample_tolerance
-                                for index, target in zip(
-                                    sample_indices, (center-6, center, center+6)))
-                         else float("nan"))
+    # The acquired seven-point grid is ±6 MHz about the *scout* center.
+    # Its edge samples remain measured controls if the fitted center moves
+    # within the inner ±2-MHz guard; do not demand fictitious new samples
+    # exactly 6 MHz from that continuous fitted center.
+    center_index = int(np.argmin(abs(frequency-center)))
+    measured_contrast = float(min(values[0], values[-1])-
+                              values[center_index])
     return {"background": background, "depth": depth,
             "center_mhz": center, "hwhm_mhz": width,
             "contrast_6mhz": contrast, "fit_rmse": rmse,
