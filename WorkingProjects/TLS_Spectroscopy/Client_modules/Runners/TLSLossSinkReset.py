@@ -173,7 +173,11 @@ class ColdSpotProgram(confirm.EightSiteSwapHoldProgram):
         self.conditions_per_shot = 12
         self.logical_shots = int(configs[0]["shots"])
         self.condition_cfgs = configs
-        run_cfg = dict(configs[0], reps=12 * self.logical_shots)
+        # OPX initializes its flux correction from the constructor config.
+        # Reversed streams start with a park arm, which would disable it.
+        stepping_cfg = next(cfg for cfg in configs
+                            if int(cfg["ff_gain"]) != int(cfg["ff_park_gain"]))
+        run_cfg = dict(stepping_cfg, reps=12 * self.logical_shots)
         resident.ResidentDriveProgram.__init__(
             self, soccfg, run_cfg, payload_calibration, loop_calibration)
 

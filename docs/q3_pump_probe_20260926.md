@@ -4644,6 +4644,16 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSink
 Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --run --cold-spot
 ```
 
+The first attempt, `q3_tls_cold_spot_confirm_20260929T154944Z_97ccad43`,
+selected a fresh 4.196-GHz line with a 4.210-GHz control but stopped during
+QICK program preflight, before any science or reference shots. The reversed
+block begins with the park arm; using that arm as the program's constructor
+configuration caused the OPX base class to omit flux compensation for the
+later feature/control arms. The runner now initializes from a stepping arm
+while retaining the exact reversed acquisition order. The regression test
+checks this case. A new scout is required on rerun; the old location is not
+assumed stable.
+
 ## Weak-site delayed-afterglow screen
 
 `TLSWeakAfterglowScreen` tests a different possibility: a less conspicuous

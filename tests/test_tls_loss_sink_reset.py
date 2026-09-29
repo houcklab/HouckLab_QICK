@@ -168,6 +168,23 @@ def test_cold_spot_park_dwell_waits_without_flux_pulses(monkeypatch):
     assert waits == [24000]
 
 
+def test_reversed_cold_spot_initializes_from_a_flux_stepping_arm(monkeypatch):
+    module = experiment()
+    entry = module.cold_spot_specs(4.092, 4.076)[6]
+    assert entry["conditions"][0]["site"] == "park"
+    configs = module.cold_spot_configs(
+        {"sigma": .2, "ff_park_gain": -25146}, entry,
+        {4.092: -15878, 4.076: -16111})
+    seen = []
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, soccfg, cfg, payload, loop:
+                        seen.append(dict(cfg)))
+    program = module.ColdSpotProgram(None, configs, None, None)
+    assert seen[0]["ff_gain"] != seen[0]["ff_park_gain"]
+    assert seen[0]["reps"] == 9600
+    assert program.condition_cfgs[0]["ff_gain"] == -25146
+
+
 def test_cold_spot_score_subtracts_initial_site_offset():
     fractions = {
         "feature_early_g": .17, "feature_early_e": .70,
