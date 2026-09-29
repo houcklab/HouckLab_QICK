@@ -4100,3 +4100,17 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSwitch --run
 ```
+
+The first switch attempt stopped after its pre-scout, before any switch-pattern
+shots. That 251-point scan is saved as
+`q3_22_19_05_TLS_Floquet_Switch_Scout_pre_T1_5pt_vs_wall_clock_full.csv`.
+The previously studied 3.992-GHz site no longer passed the isolated-loss
+gate; the selector borrowed from the swap experiment also excluded the
+entire 4.080–4.190-GHz band. The saved scan contains a much stronger,
+bidirectional candidate near 4.106 GHz (normalized 25-us survival depth
+0.434; scan-up/down depths 0.445/0.395; selected 4.092-GHz control advantage
+0.510). The switch selector now favors 3.992 GHz if it remains qualified,
+otherwise follows the strongest qualified feature anywhere in the wide scan.
+This is a new site for the switch experiment, not evidence that the old
+3.992-GHz feature moved to 4.106 GHz. A fresh pre-scout is required before
+running the switch patterns.

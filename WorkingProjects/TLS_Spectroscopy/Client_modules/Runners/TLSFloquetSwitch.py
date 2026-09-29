@@ -11,8 +11,10 @@ within-visit memory; it does not establish a microscopic TLS identity.
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
+from statistics import mean, median
 import uuid
 
 import numpy as np
@@ -22,6 +24,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.PulseFunctions impo
     ff_envelope_samples, ff_maxv,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
+    TLSPumpProbeAdaptiveParkPump as adaptive,
     TLSPumpProbeLocalizer as localizer,
     TLSPumpProbeProtocolCheck as protocol,
     TLSPumpProbeResidentDrive as resident,
@@ -47,7 +50,7 @@ RECORDS_PER_SHOT = 4
 
 def plan():
     return {"hardware_access": False, "reset_mode": "passive",
-            "site": "fresh 3.992-GHz loss feature",
+            "site": "fresh qualified 3.8-4.3-GHz loss feature; prefer 3.992 GHz",
             "patterns": list(PATTERNS),
             "modulation_frequency_mhz": MODULATION_MHZ,
             "amplitude_dac": AMPLITUDE_DAC,
@@ -63,6 +66,66 @@ def plan():
             "interpretation": "early-versus-late probes temporal response; "
                               "DC correction and transients remain alternatives "
                               "to TLS memory"}
+
+
+def select_switch_candidate(rows, *, preferred_center=3.992):
+    """Prefer the old feature, then follow the strongest qualified wide dip."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row
+               for row in rows}
+    expected = {round(3.800 + .002 * index, 3) for index in range(251)}
+    if len(rows) != 251 or set(indexed) != expected:
+        raise ValueError("switch candidate needs one complete 251-point scout")
+    candidates = []
+    for center in sorted(indexed):
+        groups = {
+            "feature": [round(center + .002 * step, 3)
+                        for step in (-1, 0, 1)],
+            "left": [round(center + .002 * step, 3)
+                     for step in (-6, -5, -4)],
+            "right": [round(center + .002 * step, 3)
+                      for step in (4, 5, 6)]}
+        if any(frequency not in indexed for group in groups.values()
+               for frequency in group):
+            continue
+        for offset in (-.014, .014):
+            control = [round(center + offset + .002 * step, 3)
+                       for step in (-1, 0, 1)]
+            if any(frequency not in indexed for frequency in control):
+                continue
+            sites = {**groups, "control": control}
+            depths, advantages = {}, {}
+            for direction in ("", "up", "down"):
+                values = {name: [adaptive._survival(indexed[f], direction)
+                                 for f in frequencies]
+                          for name, frequencies in sites.items()}
+                if any(not math.isfinite(value) for group in values.values()
+                       for value in group):
+                    break
+                feature = mean(values["feature"])
+                depths[direction or "combined"] = (
+                    min(median(values["left"]), median(values["right"])) -
+                    feature)
+                advantages[direction or "combined"] = (
+                    mean(values["control"]) - feature)
+            if (len(depths) != 3 or depths["combined"] < .15 or
+                    min(depths["up"], depths["down"]) < .08 or
+                    min(advantages.values()) < .15):
+                continue
+            candidates.append({
+                "center_ghz": center, "control_ghz": round(center + offset, 3),
+                "depth": depths["combined"],
+                "depth_scan_up": depths["up"],
+                "depth_scan_down": depths["down"],
+                "control_survival_advantage": advantages,
+                "selector": "wide_fresh_switch_candidate"})
+    if not candidates:
+        raise ValueError("no qualified loss feature in the 3.8-4.3 GHz scan")
+    nearby = [item for item in candidates
+              if abs(item["center_ghz"] - float(preferred_center)) <= .004001]
+    pool = nearby or candidates
+    return max(pool, key=lambda item: (min(item["depth_scan_up"],
+                                          item["depth_scan_down"]),
+                                       item["depth"]))
 
 
 def switch_waveform(*, pattern, segments, park_gain, target_gain,
@@ -287,7 +350,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         data_root=data_root, correction_json=correction,
         parameter_overrides={**wide.parameters(),
                              "output_suffix": "TLS_Floquet_Switch_Scout_pre"})
-    selected = swap.select_wide_candidate(
+    selected = select_switch_candidate(
         swap.read_wide_scout(scout), preferred_center=3.992)
     center = round(float(selected["center_ghz"]), 3)
     print(f"[floquet-switch] feature={center:.3f} GHz", flush=True)
@@ -410,7 +473,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                         data_root=data_root, correction_json=correction,
                         parameter_overrides={**wide.parameters(),
                                              "output_suffix": "TLS_Floquet_Switch_Scout_mid"})
-                    mid_selected = swap.select_wide_candidate(
+                    mid_selected = select_switch_candidate(
                         swap.read_wide_scout(mid_scout),
                         preferred_center=center)
                     mid_center = round(float(mid_selected["center_ghz"]), 3)
@@ -487,7 +550,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                                      "output_suffix": "TLS_Floquet_Switch_Scout_post"})
             manifest["post_scout_csv"] = str(post_scout)
             try:
-                manifest["post_selected"] = swap.select_wide_candidate(
+                manifest["post_selected"] = select_switch_candidate(
                     swap.read_wide_scout(post_scout),
                     preferred_center=manifest["mid_center_ghz"])
             except ValueError as exc:

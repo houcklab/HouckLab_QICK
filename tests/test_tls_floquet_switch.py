@@ -14,6 +14,41 @@ def experiment():
     return importlib.import_module(MODULE)
 
 
+def _synthetic_wide_rows(*, dips):
+    rows = []
+    for index in range(251):
+        frequency = round(3.8 + .002 * index, 3)
+        survival = .75
+        for center, depth in dips:
+            if abs(frequency - center) <= .002001:
+                survival -= depth
+        rows.append({"target_frequency_ghz": frequency,
+                     "survival": survival})
+    return rows
+
+
+def test_switch_selector_prefers_old_feature_when_it_is_still_qualified(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(module.adaptive, "_survival",
+                        lambda row, _direction="": row["survival"])
+    rows = _synthetic_wide_rows(dips=((3.992, .3), (4.106, .5)))
+    selected = module.select_switch_candidate(rows, preferred_center=3.992)
+    assert abs(selected["center_ghz"] - 3.992) <= .004
+
+
+def test_switch_selector_follows_strong_fresh_4p1_feature(monkeypatch):
+    module = experiment()
+    monkeypatch.setattr(module.adaptive, "_survival",
+                        lambda row, _direction="": row["survival"])
+    rows = _synthetic_wide_rows(dips=((4.106, .5), (3.942, .2)))
+    selected = module.select_switch_candidate(rows, preferred_center=3.992)
+    assert selected["center_ghz"] == pytest.approx(4.106)
+    assert selected["depth"] > .4
+    with pytest.raises(ValueError, match="no qualified loss"):
+        module.select_switch_candidate(_synthetic_wide_rows(dips=()),
+                                       preferred_center=3.992)
+
+
 def test_switch_waveforms_share_dc_and_equal_on_time_without_clipping():
     module = experiment()
     args = dict(segments=[(1.0, 1.8), (1.01, 1.8)],
