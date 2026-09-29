@@ -4712,6 +4712,38 @@ criterion rejected it before science. The plateau selector now tests the
 minimum within ±2 MHz in each scan direction against local flank medians;
 replaying that scout selects 4.278 GHz and a clean 4.262-GHz lower control.
 
+The completed science run is
+`q3_tls_cold_spot_plateau_20260929T172047Z_e6e07aeb` (commit
+`35bdc82e`). All six 800-shot, 12-condition programs and both reversed
+blocks completed. A fresh scout selected a 4.218-GHz loss feature and a
+4.242-GHz upper control. The feature remained at 4.218 GHz in the post
+scout (25-us normalized survival 0.504 pre, 0.471 post), and the pre/post
+readout fidelities were 0.884/0.873 with valid park-transfer references.
+The upper control, however, dropped from 0.798 to 0.655 combined survival;
+its up-scan post value was 0.567. The recorded status is consequently
+`complete_controls_unstable`.
+
+Pooled across orders, the ground-prepared classified excited fractions at
+200/500/1000 us were 0.092/0.081/0.091 on the feature, 0.087/0.074/0.091
+at the upper site, and 0.110/0.103/0.086 at park. The corresponding
+excited-prepared fractions were 0.198/0.101/0.076, 0.168/0.081/0.074,
+and 0.313/0.146/0.096. At 500 us the feature-minus-park ground difference
+was -0.023 (simple paired-shot bootstrap 95% interval [-0.044, -0.003]),
+but the upper site showed comparable or stronger cooling. At 1000 us the
+feature-minus-park ground difference was +0.005 [-0.014, +0.025]; projected
+raw IQ gave -0.006 [-0.032, +0.021] in pre-reference-normalized units.
+Both g/e contrasts have almost vanished by then. These intervals are
+exploratory shot-level estimates and do not model slow serial drift.
+
+This run supports faster transient relaxation on a flux excursion but
+**does not support a lower line-specific plateau**. The 4.242-GHz control
+became lossy, and the late classified fractions are near or below the
+pre/post ground-reference false-excitation floor (~0.12–0.13), so they
+cannot establish an absolute population or defect temperature. Do not
+repeat this plateau protocol simply to chase a nominal cold-spot value.
+
+![Late-population cold-spot comparison](q3_cold_spot_plateau_20260929.png)
+
 ```bash
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --plan --plateau
