@@ -5146,3 +5146,53 @@ shots with the same delayed-readout sequence are not justified by the
 observed profile.
 
 ![Exploratory two-pass e-f loss profile after full-return mapped readout](q3_dual_transition_shelved_v2_20260929.png)
+
+### Square-hop phantom-resonance pilot
+
+`TLSPhantomResonance` tests whether a line can absorb from a qubit whose
+*commanded dwell frequencies* alternate between two off-line values.
+The ideal instantaneous 50%-duty square wave has central Floquet weight
+`[sin(x)/x]²` with `x=π A/(2 f_h)`, where `A` is the peak frequency excursion and
+`f_h=20 MHz` is the **complete-cycle** rate. Its narrow-line excess-loss
+weights at `A=10`, `20`, and `40 MHz` would be about 0.811, 0.405, and
+zero. These are predictions for an ideal delivered waveform, not calibrated predictions
+for the q3 flux line. Actual flux transitions necessarily pass the center,
+and the installed 500-ns-first-bin tail correction does not resolve the
+25-ns square-wave half-period. A positive pilot calls for independent
+fast-edge verification before a Floquet interpretation.
+
+One fresh corrected 3.8–4.3-GHz five-point scout selects a bidirectional
+line only if its 10-µs early loss is resolved and the pooled ±20- and
+±40-MHz 25-µs endpoint neighborhoods are quiet. It adds the ±10-MHz arm
+only if both of those endpoints are also quiet, recording the decision
+in the manifest. The science programs compare a static center hold against
+20-MHz full-cycle hops at the eligible ±10, ±20, and ±40 MHz excursions,
+with both static endpoints at each excursion. Every pair interleaves
+ground and excited park preparations in one four-condition QICK shot.
+The two holds are 0.4 and 3.6 µs (8 and 72 nominal full cycles); the
+second block reverses program/subshot order and starting hop polarity
+after a midpoint scout. The 3.6-µs long hold keeps two correction-matched
+flux envelopes plus park ramps within q3's 65,536-sample generator memory;
+the originally suggested 5.6-µs pair would not fit. Each program uses
+4,000 logical shots (16 or 24 programs). Pre/mid/post scouts, pre/post
+readout and transfer references, all raw IQ, the exact programmed
+waveforms, and realized
+static endpoint DAC coordinates are saved. Only ordinary calibration,
+five-point, and hardware output appears on the terminal.
+
+The prespecified comparison is the apparent decay rate of each hop above
+the mean rate of its static endpoints, divided by the center's rate above
+the *same* static-endpoint mean. The eligible ±10-, ±20-, and ±40-MHz
+series tests the predicted decrease with excursion. A reproducible positive ±20-MHz
+effect, with a resolved center, stable line, quiet static endpoints,
+and no ground-arm heating would motivate independent measurement of
+the delivered 20-MHz square-wave edges. It alone would not demonstrate
+coherence of a microscopic TLS or prove that the qubit never passed
+through the line.
+
+On the measurement PC, after stopping any other q3 acquisition:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSPhantomResonance --run
+```
