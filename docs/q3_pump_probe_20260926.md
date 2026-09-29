@@ -5339,3 +5339,24 @@ target-resident program required flux compensation even though park-to-park
 has zero flux step. The park-only program now plays its microwave pulses
 without entering that target-excursion path; its single- and double-pulse
 timings are checked locally. This failure contains no calibration data.
+
+The next park run (`q3_park_pi2_calibration_20260929T223007Z_7464f640`,
+commit `41638ab3`) reached every measurement. The strongest repeated park
+response was at the installed 4367.292-MHz drive, with no frequency offset;
+the Rabi curve's first peak was 13500 DAC and its rising half-height was
+7993 DAC for a 0.2-µs-sigma Gaussian. The independently measured one-pulse
+response at 7993 was 0.608 in units where the Rabi-derived half-height was
+0.528. The two 400-shot-per-phase cycles were strongly sinusoidal: fitted
+centers 0.514 and 0.486, amplitudes 0.493 and 0.452, and maxima at 37.9°
+and 37.0°. Zero- and π-drive end checks were stable. The original manifest
+says `complete_controls_unstable` because its gate assumed the sinusoid's
+maximum had to be at programmed phase 0°; it rejected the unequal 90° and
+270° arms. That assumption is inappropriate for a fixed inter-pulse phase
+offset. A retrospective phase-circle gate accepts both blocks, with a mean
+peak phase of 37.4° and only 0.9° inter-block drift. The saved IQ therefore
+supports a calibrated **park** π/2 pulse at gain 7993. The 37° phase offset
+belongs to this pulse spacing and should not be transplanted to another
+sequence without a phase check. The runner's gate now fits the full phase
+circle so later runs are labeled correctly; the NAS manifest is unaltered.
+
+![Park Rabi and phase-cycle calibration](q3_park_pi2_calibration_20260929.png)

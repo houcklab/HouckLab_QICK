@@ -58,6 +58,49 @@ def fit_rabi_iq(rows):
     return target_cal.fit_rabi(converted)
 
 
+def phase_circle_gate(first, second, *, ground, pi):
+    """Validate a four-phase cycle without assuming its maximum is at zero.
+
+    The relative phase includes a fixed delay between the two pulses.  Its
+    offset may be nonzero, but the circle's radius and phase must repeat.
+    """
+    def fit(block):
+        values = {int(key): float(value) for key, value in block.items()}
+        if set(values) != {0, 90, 180, 270}:
+            raise ValueError("phase cycle requires four cardinal phases")
+        center = sum(values.values()) / 4
+        x = (values[0] - values[180]) / 2
+        y = (values[90] - values[270]) / 2
+        amplitude = math.hypot(x, y)
+        return {"center": center, "amplitude": amplitude,
+                "phase_offset_deg": math.degrees(math.atan2(y, x)),
+                "maximum": center + amplitude,
+                "minimum": center - amplitude}
+
+    a, b = fit(first), fit(second)
+    phase_a = math.radians(a["phase_offset_deg"])
+    phase_b = math.radians(b["phase_offset_deg"])
+    drift = math.degrees(abs(math.atan2(math.sin(phase_a - phase_b),
+                                        math.cos(phase_a - phase_b))))
+    mean_phase = math.degrees(math.atan2(math.sin(phase_a) +
+                                        math.sin(phase_b),
+                                        math.cos(phase_a) +
+                                        math.cos(phase_b)))
+    valid = bool(float(pi) - float(ground) >= .3 and
+                 all(math.isfinite(v) for fit_result in (a, b)
+                     for v in fit_result.values()) and
+                 all(fit_result["amplitude"] >= .25 and
+                     abs(fit_result["maximum"] - pi) <= .20 and
+                     abs(fit_result["minimum"] - ground) <= .20
+                     for fit_result in (a, b)) and
+                 abs(a["center"] - b["center"]) <= .12 and
+                 abs(a["amplitude"] - b["amplitude"]) <= .15 and
+                 drift <= 15.)
+    return {"valid": valid, "first": a, "reversed": b,
+            "phase_drift_deg": drift,
+            "phase_offset_deg": mean_phase}
+
+
 def make_park_programs(parent):
     """Use the verified resident readout path without a nonexistent flux step."""
     class ParkDriveProgram(parent):
@@ -304,7 +347,7 @@ def run(*, data_root=None, correction_json=None):
                     values[phase] = response(value)
                 manifest["phase_blocks"].append(values)
                 dual.checkpoint(manifest_path, manifest)
-            gate = target_cal.two_pulse_gate(
+            gate = phase_circle_gate(
                 *manifest["phase_blocks"],
                 ground=fit["baseline_fraction"],
                 pi=fit["peak_fraction"])

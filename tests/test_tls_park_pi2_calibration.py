@@ -67,3 +67,23 @@ def test_park_pulses_do_not_require_flux_step_compensation(monkeypatch):
     assert [event[0] for event in events].count("pulse") == 2
     assert [event[1]["phase"] for event in events
             if event[0] == "register"] == [0, 180]
+
+
+def test_phase_cycle_accepts_repeatable_rotated_axis():
+    first = {0: .904, 90: .817, 180: .125, 270: .211}
+    second = {270: .237, 180: .103, 90: .781, 0: .825}
+    result = cal.phase_circle_gate(first, second, ground=.043, pi=1.014)
+    assert result["valid"]
+    assert result["phase_offset_deg"] == pytest.approx(37.4, abs=1.)
+    assert result["first"]["amplitude"] > .45
+    assert result["reversed"]["amplitude"] > .40
+
+
+def test_phase_cycle_rejects_rotating_or_collapsed_axis():
+    first = {0: .904, 90: .817, 180: .125, 270: .211}
+    rotated = {0: .52, 90: .96, 180: .48, 270: .04}
+    weak = {0: .55, 90: .52, 180: .48, 270: .45}
+    assert not cal.phase_circle_gate(first, rotated,
+                                     ground=.043, pi=1.014)["valid"]
+    assert not cal.phase_circle_gate(first, weak,
+                                     ground=.043, pi=1.014)["valid"]
