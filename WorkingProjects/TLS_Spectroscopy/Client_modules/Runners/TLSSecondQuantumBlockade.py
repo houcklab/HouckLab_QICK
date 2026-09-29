@@ -69,29 +69,36 @@ def program_specs(feature_ghz, control_ghz):
             phases = (MIDDLE_PHASES_DEG if not cycle
                       else tuple(reversed(MIDDLE_PHASES_DEG)))
             for phase_deg in phases:
-                conditions = [
-                    {"name": f"{pair}_{state}_{'pi' if middle else 'sham'}",
-                     "load_site": pair[0], "probe_site": pair[1],
-                     "load_ghz": sites[pair[0]], "probe_ghz": sites[pair[1]],
-                     "state": state, "middle_pi": middle,
-                     "middle_phase_deg": phase_deg,
-                     "load_us": LOAD_US, "gap_us": gap, "probe_us": PROBE_US}
-                    for pair in PAIRS for state in ("g", "e")
-                    for middle in (False, True)]
-                if cycle:
-                    conditions.reverse()
-                specs.append({"name": f"gap{gap:g}_cycle{cycle}_phase{int(phase_deg)}",
-                              "gap_us": gap, "cycle": cycle,
-                              "middle_phase_deg": phase_deg,
-                              "shots": SHOTS,
-                              "order": [c["name"] for c in conditions],
-                              "conditions": conditions, "status": "pending"})
+                pulse_order = (False, True) if not cycle else (True, False)
+                for middle in pulse_order:
+                    pulse_name = "pi" if middle else "sham"
+                    conditions = [
+                        {"name": f"{pair}_{state}_{pulse_name}",
+                         "load_site": pair[0], "probe_site": pair[1],
+                         "load_ghz": sites[pair[0]], "probe_ghz": sites[pair[1]],
+                         "state": state, "middle_pi": middle,
+                         "middle_phase_deg": phase_deg,
+                         "load_us": LOAD_US, "gap_us": gap, "probe_us": PROBE_US}
+                        for pair in PAIRS for state in ("g", "e")]
+                    if cycle:
+                        conditions.reverse()
+                    specs.append({
+                        "name": (f"gap{gap:g}_cycle{cycle}_phase{int(phase_deg)}_"
+                                 f"{pulse_name}"),
+                        "gap_us": gap, "cycle": cycle,
+                        "middle_phase_deg": phase_deg, "middle_pi": middle,
+                        "shots": SHOTS,
+                        "order": [c["name"] for c in conditions],
+                        "conditions": conditions, "status": "pending"})
     return specs
 
 
 def split_records(records, order, *, shots):
     records = list(records)
-    if len(order) != 16 or set(order) != set(CONDITION_NAMES):
+    valid_orders = ({f"{pair}_{state}_{pulse}" for pair in PAIRS
+                     for state in ("g", "e")}
+                    for pulse in ("sham", "pi"))
+    if len(order) != 8 or set(order) not in valid_orders:
         raise ValueError("invalid blockade stream order")
     if len(records) != len(order) * int(shots):
         raise ValueError("incomplete blockade IQ stream")
@@ -229,8 +236,8 @@ class BlockadeProgram(memory.TwoVisitProgram):
 
     def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
         configs = [dict(cfg) for cfg in condition_cfgs]
-        if len(configs) != 16:
-            raise ValueError("blockade requires sixteen interleaved conditions")
+        if len(configs) != 8:
+            raise ValueError("blockade requires eight interleaved conditions")
         common = ("ff_park_gain", "shots", "opx_load_us", "opx_store_us",
                   "opx_probe_us", "opx_middle_phase_deg")
         if any(any(cfg[key] != configs[0][key] for key in common)
@@ -240,24 +247,25 @@ class BlockadeProgram(memory.TwoVisitProgram):
         observed = {(int(cfg["ff_gain"]), int(cfg["opx_probe_ff_gain"]),
                      cfg["opx_resident_preparation_state"],
                      bool(cfg["opx_middle_pi"])) for cfg in configs}
+        middle_states = {bool(cfg["opx_middle_pi"]) for cfg in configs}
         expected = {(a, b, state, middle)
                     for a in gains for b in gains for state in ("g", "e")
-                    for middle in (False, True)}
-        if len(gains) != 2 or observed != expected:
-            raise ValueError("blockade conditions must span four visit pairs, "
-                             "g/e, and pi/sham")
+                    for middle in middle_states}
+        if len(gains) != 2 or len(middle_states) != 1 or observed != expected:
+            raise ValueError("blockade conditions must span four visit pairs "
+                             "and g/e at one middle-pulse setting")
         if float(configs[0]["opx_middle_phase_deg"]) not in MIDDLE_PHASES_DEG:
             raise ValueError("middle-pulse phase must be a cardinal angle")
         pulse_us = 4.0 * float(configs[0]["sigma"])
         if (PARK_SETTLE_BEFORE_PI_US + pulse_us + 0.01 >
                 float(configs[0]["opx_store_us"])):
             raise ValueError("park pi pulse does not fit inside compensated gap")
-        self.conditions_per_shot = 16
+        self.conditions_per_shot = 8
         self.logical_shots = int(configs[0]["shots"])
         if self.logical_shots <= 0:
             raise ValueError("logical shot count must be positive")
         self.condition_cfgs = configs
-        run_cfg = dict(configs[0], reps=16 * self.logical_shots)
+        run_cfg = dict(configs[0], reps=8 * self.logical_shots)
         resident.ResidentDriveProgram.__init__(
             self, soccfg, run_cfg, payload_calibration, loop_calibration)
 
@@ -347,8 +355,23 @@ def score(fractions):
 
 
 def score_entry(entry):
-    return score({c["name"]: c["excited_fraction_pre_axis"]
-                  for c in entry["conditions"]})
+    fractions = {c["name"]: c["excited_fraction_pre_axis"]
+                 for c in entry["conditions"]}
+    pulse_name = "pi" if entry["middle_pi"] else "sham"
+    contrasts = {
+        pair: float(fractions[f"{pair}_e_{pulse_name}"] -
+                    fractions[f"{pair}_g_{pulse_name}"])
+        for pair in PAIRS}
+    controls = ("fc", "cf", "cc")
+    usable = (all(contrasts[pair] <= -.08 for pair in controls)
+              if entry["middle_pi"] else
+              all(contrasts[pair] >= .08 for pair in controls))
+    return {"contrasts": contrasts, "usable": bool(usable)}
+
+
+def condition_fraction(entry, name):
+    return next(c["excited_fraction_pre_axis"] for c in entry["conditions"]
+                if c["name"] == name)
 
 
 def report(specs):
@@ -360,18 +383,22 @@ def report(specs):
         for phase in MIDDLE_PHASES_DEG:
             same_phase = [entry for entry in gap_entries
                           if entry["middle_phase_deg"] == phase]
-            if len(same_phase) != 2:
-                raise ValueError("blockade report requires two cycles per phase")
+            observed = {(entry["cycle"], entry["middle_pi"])
+                        for entry in same_phase}
+            if len(same_phase) != 4 or observed != {
+                    (cycle, middle) for cycle in (0, 1)
+                    for middle in (False, True)}:
+                raise ValueError("blockade report requires both cycles and pulses per phase")
             quiet = {}
             for pulse in ("sham", "pi"):
+                same_pulse = [entry for entry in same_phase
+                              if entry["middle_pi"] == (pulse == "pi")]
                 means = {}
                 for state in ("e", "g"):
                     name = f"cc_{state}_{pulse}"
                     means[state] = float(np.mean([
-                        next(c["excited_fraction_pre_axis"]
-                             for c in entry["conditions"]
-                             if c["name"] == name)
-                        for entry in same_phase]))
+                        condition_fraction(entry, name)
+                        for entry in same_pulse]))
                 quiet[pulse] = means["e"] - means["g"]
             ratio = (-quiet["pi"] / quiet["sham"]
                      if quiet["sham"] > 0 else None)
@@ -382,16 +409,19 @@ def report(specs):
         for cycle in (0, 1):
             entries = [entry for entry in specs
                        if entry["gap_us"] == gap and entry["cycle"] == cycle]
-            phases = {entry["middle_phase_deg"] for entry in entries}
-            if len(entries) != len(MIDDLE_PHASES_DEG) or phases != set(MIDDLE_PHASES_DEG):
-                raise ValueError("blockade report requires all middle-pulse phases")
+            combinations = {(entry["middle_phase_deg"], entry["middle_pi"])
+                            for entry in entries}
+            expected = {(phase, middle) for phase in MIDDLE_PHASES_DEG
+                        for middle in (False, True)}
+            if len(entries) != len(expected) or combinations != expected:
+                raise ValueError("blockade report requires all phases and pulses")
             # Average observed fractions, not nonlinear scores. Four ideal
             # cardinal pi rotations remove the qubit's transverse coherence.
             fractions = {
                 name: float(np.mean([
-                    next(c["excited_fraction_pre_axis"]
-                         for c in entry["conditions"] if c["name"] == name)
-                    for entry in entries]))
+                    condition_fraction(entry, name)
+                    for entry in entries
+                    if entry["middle_pi"] == name.endswith("_pi")]))
                 for name in CONDITION_NAMES}
             cycle_scores.append(score(fractions))
         values = [item["pi_blockade_excess"] for item in cycle_scores]
@@ -425,11 +455,12 @@ def plan():
             "fresh_scout_ghz": [3.8, 4.3],
             "recent_feature_anchor_ghz": RECENT_FEATURE_ANCHOR_GHZ,
             "intermediate_readouts": 0,
-            "conditions_per_shot": 16, "programs": 16,
+            "conditions_per_shot": 8, "programs": 32,
             "park_middle_calibration_programs": 2,
             "park_middle_calibration_shots": CALIBRATION_SHOTS,
             "shots_per_program": SHOTS,
-            "control": "four visit pairs x initial g/e x middle pi/sham; "
+            "control": "each program interleaves four visit pairs x initial g/e; "
+                       "pi and sham are separate, order-balanced programs; "
                        "middle pi phase-cycled at 0/90/180/270 degrees",
             "primary_score": "phase-averaged pi nonfactorization of g/e contrast",
             "interpretation": "a positive short-gap score is a candidate only "
@@ -509,7 +540,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         for ref in refs:
             ref.update(shots=REFERENCE_SHOTS, status="pending")
         manifest = {
-            "schema": "q3.tls-second-quantum-blockade.v1",
+            "schema": "q3.tls-second-quantum-blockade.v2",
             "status": "running", "session_id": session_id,
             "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
             "correction_json": str(correction),
@@ -615,7 +646,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                         f"park middle-pulse calibration failed: {entry['score']}")
             for entry in specs:
                 shots = int(entry["shots"])
-                print(f"[blockade] {entry['name']} {shots} x 16", flush=True)
+                print(f"[blockade] {entry['name']} {shots} x 8", flush=True)
                 entry["status"] = "acquiring"
                 protocol.checkpoint(path, manifest)
                 entry["acquisition_started_at_utc"] = (
@@ -623,7 +654,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 started = time.monotonic()
                 records = _run_program(
                     soc, programs[entry["name"]],
-                    max(30.0, 16 * _block_timeout_s(base, shots)),
+                    max(30.0, 8 * _block_timeout_s(base, shots)),
                     base, total_shots=shots)
                 entry["acquisition_elapsed_s"] = time.monotonic() - started
                 entry["acquisition_finished_at_utc"] = (

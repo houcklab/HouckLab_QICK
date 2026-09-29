@@ -4465,9 +4465,10 @@ scheduled during the compensated park gap, 0.5 us after the first return.
 There is no intermediate readout or active reset. The usual 40-us
 compensated recovery occurs **after** both visits.
 
-Each of 16 science programs interleaves all 16 combinations of first/second
-site, initial g/e, and middle pi/sham within the same hardware shot,
-with 1200 logical shots. The middle pi runs at 0°, 90°, 180°, and 270°
+Each of 32 science programs interleaves all eight combinations of first/second
+site and initial g/e within the same hardware shot, with 1200 logical shots.
+The middle pi and sham are separate adjacent programs, balanced over the
+reversed acquisition cycle. The middle pi runs at 0°, 90°, 180°, and 270°
 phase in each gap and gap order; the second cycle reverses phase and
 condition order. Two additional park-only calibration programs interleave
 g/e × pi/sham × all four phases at each gap, with 3000 shots per arm. A
@@ -4510,3 +4511,18 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --plan
 Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --run
 ```
+
+The first run, `q3_tls_second_quantum_blockade_20260929T065939Z_124a2740`,
+selected the 4.276-GHz loss feature and 4.290-GHz control (bidirectional
+depths 0.189/0.154). The pre-run transfer fractions were 0.08/0.59. Both
+park-only calibration blocks completed, although the 2-us block's four
+inversion ratios (0.918–0.965) did not all meet the tighter ±5% gate. The
+first four 2-us science phases completed; their pooled π nonfactorization
+residual was −0.021. This is one acquisition cycle only and not a blockade
+result. The next 10-us science program failed during upload with a NumPy
+shape mismatch (16,694 into 16,384), consistent with tProc program-memory
+overflow. The runner now uses eight instead of 16 science conditions per
+program, keeping all four site pairs and g/e preparations in each program
+while placing π and sham in adjacent order-balanced programs. This reduces
+the unrolled instruction count without changing the compensated waveform
+or the number of shots per physical arm.

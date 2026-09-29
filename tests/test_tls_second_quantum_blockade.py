@@ -17,27 +17,35 @@ def test_middle_pulse_crosses_all_visit_pairs_preparations_and_gains():
     module = experiment()
     specs = module.program_specs(4.106, 4.092)
     assert [entry["gap_us"] for entry in specs] == [
-        2.0] * 4 + [10.0] * 8 + [2.0] * 4
-    assert [entry["middle_phase_deg"] for entry in specs] == [
-        0.0, 90.0, 180.0, 270.0] * 2 + [270.0, 180.0, 90.0, 0.0] * 2
-    assert all(len(entry["conditions"]) == 16 for entry in specs)
+        2.0] * 8 + [10.0] * 16 + [2.0] * 8
+    assert [entry["middle_phase_deg"] for entry in specs] == (
+        [phase for phase in (0.0, 90.0, 180.0, 270.0)
+         for _ in range(2)] * 2 +
+        [phase for phase in (270.0, 180.0, 90.0, 0.0)
+         for _ in range(2)] * 2)
+    assert all(len(entry["conditions"]) == 8 for entry in specs)
+    assert {entry["middle_pi"] for entry in specs} == {False, True}
+    assert all({c["middle_pi"] for c in entry["conditions"]} ==
+               {entry["middle_pi"]} for entry in specs)
+    assert [entry["middle_pi"] for entry in specs[:2]] == [False, True]
+    assert [entry["middle_pi"] for entry in specs[16:18]] == [True, False]
     assert {tuple(c[key] for key in ("load_site", "probe_site", "state", "middle_pi"))
             for c in specs[0]["conditions"]} == {
-        (first, second, state, middle)
+        (first, second, state, False)
         for first in "fc" for second in "fc" for state in "ge"
-        for middle in (False, True)}
-    assert specs[8]["order"] == list(reversed(specs[4]["order"]))
-    split = module.split_records(list(range(32)), specs[0]["order"], shots=2)
-    assert split[specs[0]["order"][0]] == [0, 16]
+    }
+    assert specs[17]["order"] == list(reversed(specs[8]["order"]))
+    split = module.split_records(list(range(16)), specs[0]["order"], shots=2)
+    assert split[specs[0]["order"][0]] == [0, 8]
     with pytest.raises(ValueError, match="incomplete"):
-        module.split_records(list(range(31)), specs[0]["order"], shots=2)
+        module.split_records(list(range(15)), specs[0]["order"], shots=2)
 
 
 @pytest.mark.parametrize("program_index, condition_name, expected_gain, expected_phase", [
-    (0, "ff_e_pi", 13500, 0.0),
-    (1, "ff_e_pi", 13500, 90.0),
-    (2, "ff_e_pi", 13500, 180.0),
-    (3, "ff_e_sham", 0, 270.0),
+    (1, "ff_e_pi", 13500, 0.0),
+    (3, "ff_e_pi", 13500, 90.0),
+    (5, "ff_e_pi", 13500, 180.0),
+    (6, "ff_e_sham", 0, 270.0),
 ])
 def test_middle_pi_is_scheduled_inside_continuously_compensated_park_gap(
         monkeypatch, program_index, condition_name, expected_gain, expected_phase):
@@ -244,6 +252,6 @@ def test_plan_exposes_one_measurement_only_and_no_intermediate_readout(capsys):
     assert plan["probe_us"] == 1.5
     assert plan["gaps_us"] == [2.0, 10.0]
     assert plan["intermediate_readouts"] == 0
-    assert plan["conditions_per_shot"] == 16
-    assert plan["programs"] == 16
+    assert plan["conditions_per_shot"] == 8
+    assert plan["programs"] == 32
     assert plan["park_middle_calibration_programs"] == 2
