@@ -4648,11 +4648,35 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfte
 Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSWeakAfterglowScreen --run
 ```
 
+The weak-site delayed-afterglow run was paused initially, then resumed on
+September 29. Session `q3_tls_weak_afterglow_screen_20260929T151524Z_a9b946e8`
+completed all six 600-shot science programs at the sole fresh candidate,
+4.026 GHz (4.010-GHz loading control). The fine scout had a normalized
+25-us loss depth of 0.257; pre/mid/post readout references passed. After
+confident-ground heralding, pooled reversed-order final excited fractions
+for cold-on / hot-on / hot-off were 0.162 / 0.171 / 0.213 at 100 us,
+0.122 / 0.137 / 0.129 at 300 us, and 0.063 / 0.052 / 0.109 at 1000 us.
+Hot-on never exceeds **both** controls consistently in the two orders or
+unthresholded IQ. Several individual hot arms had fewer than the preset
+100 accepted heralds, so some block-level scores are unavailable.
+
+The post scout still shows the 4.026-GHz loss dip, now deeper (combined
+25-us depth 0.263 versus 0.121 in the pre wide scout), so it did **not**
+simply disappear. The strict weak-site stability gate rejected it because
+post depth exceeded its 0.24 weak-site ceiling and the 10-us early advantage
+was 0.017 in one scan direction versus 0.256 in the other. The manifest
+therefore says `complete_controls_uncertain`. This run provides no evidence
+of delayed energy return after the 40-us return, first readout, and
+100–1000-us added waits; it is not a clean bound on a stationary site's
+return probability. The earlier readout-free two-visit confirmation at a
+stronger line also found no reproducible 0.5–40-us memory. The afterglow
+screen should not be repeated unchanged.
+
+![Ground-heralded final excited fractions for the weak-site afterglow screen](q3_weak_afterglow_20260929.png)
+
 ## q3 millisecond loss-flank sentinel (September 29)
 
-The weak-site delayed-afterglow run above was **paused before acquisition** at
-the user's request. Its code remains on `tls-spectroscopy`; a one-time
-reminder is scheduled for 12 hours later. The immediate experiment is the
+The intervening experiment after the initial afterglow pause was the
 millisecond sentinel: measure the motion of a strong *loss line* itself using
 an eight-subshot, palindromic stream and frozen single-shot readout axis.
 This studies loss-line dynamics, not direct TLS excitation or saturation.
