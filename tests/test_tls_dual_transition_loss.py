@@ -196,10 +196,11 @@ def test_f_is_prepared_at_park_and_read_before_return_tail_barrier():
     assert events.index(("barrier", 0)) < events.index("park_down")
 
 
-def test_shelved_readout_maps_states_after_return_prefix_before_readout():
+def test_shelved_readout_waits_for_full_return_then_maps_before_readout():
     program = object.__new__(dual.DualTransitionProgram)
     program.cfg = {"dual_state": "f", "dual_mode": "science",
                    "dual_readout_map": "shelved", "dual_hold_us": 10.,
+                   "dual_full_return_readout": True,
                    "dual_ef_gain": 11250, "qubit_ch": 1, "sigma": .03}
     program.reset_config = SimpleNamespace(inter_shot_delay_us=500.)
     program.reset_page = 0
@@ -220,9 +221,44 @@ def test_shelved_readout_maps_states_after_return_prefix_before_readout():
     assert events.count("ef") == 1
     visit = events.index("visit")
     readout = events.index("readout")
-    assert events[visit + 1:readout] == ["set_ef", "ge", "set_ge",
-                                        "ge", "fixed_delay"]
-    assert "barrier" not in events[visit + 1:readout]
+    assert events[visit + 1:readout] == ["barrier", "set_ef", "ge",
+                                        "barrier", "set_ge", "ge", "barrier"]
+
+
+def test_full_return_identity_waits_the_same_tail_as_mapped_arm():
+    program = object.__new__(dual.DualTransitionProgram)
+    program.cfg = {"dual_state": "f", "dual_mode": "science",
+                   "dual_readout_map": "identity", "dual_hold_us": 10.,
+                   "dual_full_return_readout": True, "qubit_ch": 1}
+    program.reset_config = SimpleNamespace(inter_shot_delay_us=500.)
+    program.reset_page = 0
+    program.reset_regs = {"i": 1, "q": 2, "address": 3}
+    events = []
+    program._shot_park_callbacks = lambda: (lambda: None, lambda: None)
+    program._set_payload_pulse = lambda **_: None
+    program.pulse = lambda **_: None
+    program._ef_pulse = lambda: None
+    program._wait_t1_payload = lambda **kw: events.append("visit")
+    program._measure_raw = lambda: events.append("readout")
+    program.memw = program.mathi = lambda *_: None
+    program.us2cycles = lambda us: us
+    program.sync_all = lambda us: events.append("barrier")
+    program._emit_body()
+    visit = events.index("visit")
+    assert events[visit:visit + 3] == ["visit", "barrier", "readout"]
+
+
+def test_mapping_audit_rejects_an_unchanged_f_cloud():
+    direct = {"g": np.zeros(200), "e": np.ones(200),
+              "f": np.full(200, 2.)}
+    unchanged = {state: values.copy() for state, values in direct.items()}
+    with pytest.raises(ValueError, match="f-state mapping"):
+        dual.validate_mapping_permutation(
+            {"identity": direct, "shelved": unchanged})
+    mapped = {"g": np.ones(200), "e": np.full(200, 2.),
+              "f": np.zeros(200)}
+    assert dual.validate_mapping_permutation(
+        {"identity": direct, "shelved": mapped})["f_to_g_fraction"] > .8
 
 
 def test_prompt_readout_overrides_five_point_pre_measure_sync():

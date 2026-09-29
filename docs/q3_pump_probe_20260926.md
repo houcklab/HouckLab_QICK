@@ -5095,3 +5095,24 @@ center-to-flank depth 0.318 combined, 0.289 up, and 0.347 down; its e–f
 bias is 4.074 GHz. This pooled selector applies only to the two-map f-state
 measurement. The older one-axis selector remains unchanged. This is a
 candidate for the next science run, not a retrospective e–f result.
+
+The following mapped run,
+`q3_tls_dual_transition_loss_20260929T201232Z_e4de5bad`, completed all
+18 offsets/passes, but only 6 passed the original two-view matrix gate.
+Those six are **not valid e–f loss detections**. The saved direct and mapped
+IQ references show that mapping failed to permute the prepared |f⟩ state:
+at every point the mapped |f⟩ centroid moved less than 0.24 of the direct
+|f⟩–|g⟩ separation toward |g⟩, usually less than 0.1. A rank/condition
+gate alone can accept noise in that situation and yield unphysical state
+populations. The original two-view values therefore cannot support a
+shared-defect claim.
+
+The next mapped run waits for the full corrected flux return in both its
+direct and mapped arms, then applies the e–f and g–e mapping pulses at park
+with all-channel alignment between them. It first verifies the permutation
+on park g/e/f references, before a wide scout; it also requires the local
+short-dwell |f⟩ centroid to move at least halfway toward |g⟩ at every
+science point. Both views have matching return timing. This is a deliberate
+tradeoff: the |f⟩ population may decay during the 40-µs return. If the
+post-return reference contrast is too small, the mapped method cannot
+resolve this TLS interaction in its current form.
