@@ -4448,3 +4448,43 @@ Do not call this coherent qubit–TLS exchange or pursue a chevron at this site.
 Together with the earlier 3.992-GHz null and the inconclusive fast-flux
 calibration, this closes the present q3 direct-control sequence: a further
 same-style swap or modulation scan is not justified by these data.
+
+## Second-quantum blockade test
+
+The earlier two-visit memory sequence did not re-excite the qubit between
+visits. A null energy-return signal therefore leaves a different question
+open: after a loss feature accepts one excitation, can it accept another?
+`TLSSecondQuantumBlockade` tests this with one corrected waveform and one
+final readout. It prepares q3 in g or e at park, visits a freshly located
+4.1-GHz loss feature or its qualified quiet control for 1.5 us, waits at
+park for 2 or 10 us, and visits the feature or control for another 1.5 us.
+The middle park pulse is a normal pi or a time-matched zero-gain sham,
+scheduled during the compensated park gap, 0.5 us after the first return.
+There is no intermediate readout or active reset. The usual 40-us
+compensated recovery occurs **after** both visits.
+
+Each of four programs interleaves all 16 combinations of first/second
+site, initial g/e, and middle pi/sham within the same hardware shot,
+with 1200 logical shots. Two gap orders reverse the conditions. Raw IQ
+for each arm and pre/post readout and flux scouts are saved. For each
+middle-pulse state, the memoryless two-state prediction for the g/e
+contrast at feature/feature is `C_fc * C_cf / C_cc`, using the other
+three site pairs acquired alongside it. The reported blockade excess
+is `C_ff - C_fc*C_cf/C_cc`; the pi-minus-sham difference is the focused
+test. Crucially the score remains defined if a real blockade reverses
+the feature/feature contrast. Control-pair contrasts must retain their
+expected signs and magnitude before any score is interpreted.
+
+A positive, replicated short-gap pi excess that weakens at 10 us and is
+absent in sham would be a candidate saturation effect. Flux-history
+changes, qubit-pulse errors, and non-TLS memory remain alternative
+explanations; a null does not exclude an incoherent or rapidly relaxing
+TLS. The run stops if the fresh loss selector or readout controls fail.
+
+On the measurement PC after other acquisitions have stopped:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --plan
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSecondQuantumBlockade --run
+```
