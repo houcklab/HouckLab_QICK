@@ -4334,3 +4334,23 @@ lower window. Candidate selection now applies the window check before ranking
 features, rather than aborting when the strongest candidate fails. The
 original preflight threshold is unchanged; another fresh scout is still
 required before acquisition.
+
+The rerun saved a partial first block at
+`q3_floquet_sideband_translation_20260929T043902Z_26ac206a` and stopped
+after its midpoint scout. The pre scout selected 4.118 GHz and its lower
+window passed; all 20 first-block programs, 4000 paired shots each, completed
+with valid within-program controls. At the center, the 25/35-MHz AC scores
+were +0.066/+0.113 (positive means less loss). The strongest extra loss was
+at offsets −22 MHz for 25-MHz modulation (−0.070 ± 0.020 shot-level SE) and
+−32 MHz for 35-MHz modulation (−0.084 ± 0.019), with raw projected IQ of
+the same sign. These one-block extrema are exploratory, not a replicated
+10-MHz sideband translation. The midpoint wide scout still showed loss around
+4.116–4.118 GHz, but an up-scan point in its lower window had normalized
+survival 0.404, below the 0.45 preflight minimum. Filtering out that local
+site caused the generic candidate selector to pick a distant 4.278-GHz loss
+feature; the 4-MHz same-site guard correctly stopped the second block. No
+post scout or post references were acquired. At 1000 DAC, the AC excursion is
+not independently calibrated and may sweep through the selected loss line,
+so neither center protection nor the one-block flank pattern establishes
+Floquet sidebands or direct TLS-state control. Do not repeat this high-amplitude
+translation protocol as a decisive test.
