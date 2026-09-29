@@ -4607,6 +4607,43 @@ the 40-us hold plus 40-us corrected return left a large gap to the measured
 ground floor. The 60-us hold still left 0.255 versus a 0.110 ground floor.
 No repeat-use stress test is justified for this reset branch.
 
+### Ground-state cold-spot confirmation
+
+The same run contains an exploratory ground-prepared signal: at 40 us the
+classified excited fractions were 0.114 on the 4.092-GHz line and 0.159 at
+the 4.076-GHz control, compared with 0.168 and 0.169 at 0.1 us. Both
+acquisition orders and projected raw IQ have the same sign. The paired
+40-us change after subtracting the 0.1-us site offset was -0.040, with a
+simple shot-bootstrap 95% interval [-0.075, -0.005]; at 60 us the analogous
+interval included zero. The endpoint contrast is promising but does not by
+itself prove that the loss site's equilibrium environment is colder: faster
+relaxation of residual excitation toward the same equilibrium could look
+similar. The existing 40-us return also changes what is observed at park.
+
+`TLSLossSinkReset --cold-spot` is a focused replication. One fresh
+3.8–4.3-GHz scout selects a qualified early-loss feature and quiet control.
+Each of 12 programs interleaves **feature, control, and no-excursion park**
+at 0.1 us and one of 2, 10, 25, 50, 100, or 200 us, with both ground and
+excited park preparations: 12 complete subshots per logical shot, 800
+logical shots per program. Dwell order and subshot order reverse in the
+second block. Every flux visit uses the pinned correction and full 40-us
+return; the park arm waits the matched time without sending a flux step.
+The pre/post scouts, readout/transfer references, timestamps, and paired
+raw IQ are saved. Analysis first asks whether the baseline-subtracted
+ground-prepared reduction reproduces against **both** comparators in both
+orders, then fits g/e curves only if the feature and readout controls pass.
+An absolute defect temperature is **not** obtained from these readouts;
+that would need a calibrated population measurement and a model of the
+return interval.
+
+On the measurement PC, after stopping other q3 acquisitions:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --plan --cold-spot
+Q3_CODE_COMMIT=$(git rev-parse HEAD) python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSLossSinkReset --run --cold-spot
+```
+
 ## Weak-site delayed-afterglow screen
 
 `TLSWeakAfterglowScreen` tests a different possibility: a less conspicuous

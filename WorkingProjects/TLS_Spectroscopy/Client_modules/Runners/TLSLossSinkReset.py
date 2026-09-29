@@ -31,6 +31,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
 
 REFERENCE_HOLD_US = .1
 HOLDS_US = (2.0, 5.0, 10.0, 20.0, 40.0, 60.0)
+COLD_SPOT_HOLDS_US = (2.0, 10.0, 25.0, 50.0, 100.0, 200.0)
 SHOTS = 800
 REFERENCE_SHOTS = 400
 RETURN_US = 40.0
@@ -114,6 +115,106 @@ def program_specs(feature_ghz, control_ghz):
     return specs
 
 
+def cold_spot_specs(feature_ghz, control_ghz):
+    """Match a no-excursion park arm to each feature/control dwell."""
+    specs = []
+    for cycle in (0, 1):
+        holds = COLD_SPOT_HOLDS_US if cycle == 0 else tuple(reversed(COLD_SPOT_HOLDS_US))
+        for hold in holds:
+            conditions = [
+                {"name": f"{site}_{dwell}_{state}", "site": site,
+                 "flux_ghz": float(frequency), "hold_us": duration,
+                 "state": state}
+                for site, frequency in (("feature", feature_ghz),
+                                        ("control", control_ghz),
+                                        ("park", feature_ghz))
+                for dwell, duration in (("early", REFERENCE_HOLD_US),
+                                        ("late", hold))
+                for state in ("g", "e")]
+            if cycle:
+                conditions.reverse()
+            label = f"{hold:g}".replace(".", "p")
+            specs.append({"name": f"cold_r{cycle}_t{label}", "cycle": cycle,
+                          "hold_us": hold, "shots": SHOTS,
+                          "flux_ghz": float(feature_ghz),
+                          "order": [item["name"] for item in conditions],
+                          "conditions": conditions, "status": "pending"})
+    return specs
+
+
+def cold_spot_configs(base, entry, dc_lookup):
+    configs = confirm._condition_configs(base, entry, dc_lookup)
+    for arm, cfg in zip(entry["conditions"], configs):
+        if arm["site"] == "park":
+            cfg["ff_gain"] = int(base["ff_park_gain"])
+    return configs
+
+
+class ColdSpotProgram(confirm.EightSiteSwapHoldProgram):
+    """Twelve complete feature/control/park subshots per logical shot."""
+
+    def __init__(self, soccfg, condition_cfgs, payload_calibration, loop_calibration):
+        configs = [dict(cfg) for cfg in condition_cfgs]
+        if len(configs) != 12:
+            raise ValueError("cold-spot program needs twelve conditions")
+        common = ("ff_park_gain", "shots", "reps")
+        if any(any(cfg[key] != configs[0][key] for key in common)
+               for cfg in configs[1:]):
+            raise ValueError("cold-spot subshots must share park and shots")
+        observed = {(int(cfg["ff_gain"]), float(cfg["opx_swap_hold_us"]),
+                     cfg["opx_resident_preparation_state"]) for cfg in configs}
+        gains = {item[0] for item in observed}
+        holds = {item[1] for item in observed}
+        if (len(gains) != 3 or len(holds) != 2 or
+                int(configs[0]["ff_park_gain"]) not in gains or
+                observed != {(gain, hold, state) for gain in gains
+                             for hold in holds for state in ("g", "e")}):
+            raise ValueError("cold-spot subshots must cover three sites, two dwells, g/e")
+        self.conditions_per_shot = 12
+        self.logical_shots = int(configs[0]["shots"])
+        self.condition_cfgs = configs
+        run_cfg = dict(configs[0], reps=12 * self.logical_shots)
+        resident.ResidentDriveProgram.__init__(
+            self, soccfg, run_cfg, payload_calibration, loop_calibration)
+
+    def _resident_excursion(self):
+        if int(self.cfg["ff_gain"]) == int(self.cfg["ff_park_gain"]):
+            self.sync_all(self.us2cycles(
+                float(self.cfg["opx_swap_hold_us"]) + RETURN_US))
+        else:
+            swap.SwapHoldProgram._resident_excursion(self)
+
+
+def split_cold_spot_records(records, order, *, shots):
+    expected = {f"{site}_{dwell}_{state}"
+                for site in ("feature", "control", "park")
+                for dwell in ("early", "late") for state in ("g", "e")}
+    records = list(records)
+    if len(order) != 12 or set(order) != expected:
+        raise ValueError("invalid twelve-condition cold-spot order")
+    if len(records) != 12 * int(shots):
+        raise ValueError("incomplete twelve-condition cold-spot stream")
+    return {name: records[index::12] for index, name in enumerate(order)}
+
+
+def score_cold_spot(fractions):
+    values = {name: float(fractions[name]) for name in (
+        f"{site}_{dwell}_{state}" for site in ("feature", "control", "park")
+        for dwell in ("early", "late") for state in ("g", "e"))}
+    def ground_increment(site):
+        return values[f"{site}_late_g"] - values[f"{site}_early_g"]
+    return {
+        "fractions": values,
+        "ground_feature_control_increment": (
+            ground_increment("feature") - ground_increment("control")),
+        "ground_feature_park_increment": (
+            ground_increment("feature") - ground_increment("park")),
+        "late_contrast": {site: values[f"{site}_late_e"] -
+                          values[f"{site}_late_g"]
+                          for site in ("feature", "control", "park")},
+    }
+
+
 def score_reset(fractions):
     values = {name: float(value) for name, value in fractions.items()}
     feature = {dwell: {state: values[f"feature_{dwell}_{state}"]
@@ -143,7 +244,24 @@ def score_reset(fractions):
     }
 
 
-def plan():
+def plan(*, cold_spot=False):
+    if cold_spot:
+        return {"hardware_access": False, "reset_mode": "passive",
+                "purpose": "confirm feature-local reduction of ground-prepared excitation",
+                "scout_range_ghz": [3.8, 4.3],
+                "selection": "one fresh bidirectional early-loss line and quiet control",
+                "sites": ["feature", "control", "park_no_excursion"],
+                "reference_hold_us": REFERENCE_HOLD_US,
+                "later_holds_us": list(COLD_SPOT_HOLDS_US),
+                "conditions_per_shot": 12, "shots_per_program": SHOTS,
+                "programs": 2 * len(COLD_SPOT_HOLDS_US),
+                "condition_order": "feature/control/park, g/e, reference/test; "
+                                   "reversed in second cycle",
+                "full_return_before_readout_us": RETURN_US,
+                "raw_iq_saved": True,
+                "interpretation": "report baseline-corrected ground-state effect and "
+                                  "g/e relaxation curves; no absolute temperature "
+                                  "without return and population calibration"}
     return {"hardware_access": False, "reset_mode": "passive",
             "purpose": "test a fresh loss feature as a measurement-free reset sink",
             "scout_range_ghz": [3.8, 4.3],
@@ -180,7 +298,8 @@ def _normalized_iq(records, axis, ground_iq, excited_iq):
                   ground) / (excited - ground))
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
+        cold_spot=False):
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     scout = localizer.run(
@@ -212,12 +331,14 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             raise RuntimeError("q3 park gain differs from verified configuration")
         tls.QUBIT, tls.SET_YOKO, tls.outerFolder = "q3", False, str(data_root)
         five.install_scan_calibration(tls)
-        specs = program_specs(center, control)
+        specs = (cold_spot_specs(center, control) if cold_spot else
+                 program_specs(center, control))
         grid = np.asarray([center, control], dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
         compensation = tls._load_correction(str(correction), str(data_root))
-        for hold in (REFERENCE_HOLD_US, *HOLDS_US):
+        for hold in (REFERENCE_HOLD_US, *(COLD_SPOT_HOLDS_US if cold_spot
+                                         else HOLDS_US)):
             swap.swap_segments(compensation, hold_us=hold)
         base = ProductionResetSession.passive().apply(tls.BaseConfig)
         five.apply_verified_feedback_timing(base)
@@ -234,7 +355,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                      "opx_reset_scheme": "none",
                      "opx_resident_dmem_stream": True,
                      "opx_inter_shot_delay_us": 500.0})
-        session_id = ("q3_tls_loss_sink_reset_" +
+        session_id = (("q3_tls_cold_spot_confirm_" if cold_spot else
+                       "q3_tls_loss_sink_reset_") +
                       datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                       "_" + uuid.uuid4().hex[:8])
         folder = data_root / "q3" / session_id
@@ -242,7 +364,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
         path = folder / "manifest.json"
         references = _reference_arms(center)
         manifest = {
-            "schema": "q3.tls-loss-sink-reset.v1", "status": "running",
+            "schema": ("q3.tls-cold-spot-confirm.v1" if cold_spot else
+                       "q3.tls-loss-sink-reset.v1"), "status": "running",
             "session_id": session_id,
             "code_commit": os.environ.get("Q3_CODE_COMMIT", "unknown"),
             "correction_json": str(correction),
@@ -250,7 +373,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             "scout_csv": str(scout), "selected": selected,
             "center_ghz": center, "control_ghz": control,
             "dc_lookup": {str(f): g for f, g in dc_lookup.items()},
-            "realized_ghz": realized.tolist(), "plan": plan(),
+            "realized_ghz": realized.tolist(), "plan": plan(cold_spot=cold_spot),
             "references": references, "programs": specs,
         }
         protocol.checkpoint(path, manifest)
@@ -262,8 +385,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
             bundle = runtime_bundle(base)
             programs = {}
             for entry in specs:
-                cfgs = confirm._condition_configs(base, entry, dc_lookup)
-                programs[entry["name"]] = confirm.EightSiteSwapHoldProgram(
+                cfgs = (cold_spot_configs(base, entry, dc_lookup) if cold_spot
+                        else confirm._condition_configs(base, entry, dc_lookup))
+                program_class = (ColdSpotProgram if cold_spot else
+                                 confirm.EightSiteSwapHoldProgram)
+                programs[entry["name"]] = program_class(
                     soccfg, cfgs, bundle.payload, bundle.loop)
             for reference in references:
                 resident.ResidentDriveProgram(
@@ -319,17 +445,20 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                     datetime.now(timezone.utc).isoformat())
                 protocol.checkpoint(path, manifest)
                 print(f"[loss-sink-reset] {entry['name']} "
-                      f"{entry['shots']} x 8", flush=True)
+                      f"{entry['shots']} x {len(entry['order'])}", flush=True)
                 start = time.monotonic()
                 records = _run_program(
                     soc, programs[entry["name"]],
-                    max(30.0, 8 * _block_timeout_s(base, entry["shots"])),
+                    max(30.0, len(entry["order"]) *
+                        _block_timeout_s(base, entry["shots"])),
                     base, total_shots=entry["shots"])
                 entry["acquisition_elapsed_s"] = time.monotonic() - start
                 entry["acquisition_finished_at_utc"] = (
                     datetime.now(timezone.utc).isoformat())
-                split = confirm.split_eight_records(
-                    records, entry["order"], shots=entry["shots"])
+                split = (split_cold_spot_records(records, entry["order"],
+                                                 shots=entry["shots"])
+                         if cold_spot else confirm.split_eight_records(
+                             records, entry["order"], shots=entry["shots"]))
                 for condition in entry["conditions"]:
                     subset = split[condition["name"]]
                     raw_path = folder / f"{entry['name']}_{condition['name']}.npz"
@@ -340,9 +469,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                         subset, axis)
                     condition["projected_iq_pre_axis"] = _normalized_iq(
                         subset, axis, ground_iq, excited_iq)
-                entry["score"] = score_reset({
+                fractions = {
                     condition["name"]: condition["excited_fraction_pre_axis"]
-                    for condition in entry["conditions"]})
+                    for condition in entry["conditions"]}
+                entry["score"] = (score_cold_spot(fractions) if cold_spot else
+                                  score_reset(fractions))
                 entry["status"] = "complete"
                 protocol.checkpoint(path, manifest)
 
@@ -382,7 +513,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None):
                 manifest["post_readout_score"]["valid"] and
                 all(item["usable"] for item in
                     manifest["transfer_control"].values()) and
-                all(entry["score"]["control_usable"] for entry in specs))
+                (cold_spot or all(entry["score"]["control_usable"]
+                                  for entry in specs)))
             manifest["status"] = (
                 "complete" if manifest["feature_stable"] and
                 manifest["control_usable"] else "complete_controls_unstable")
@@ -404,11 +536,14 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", default=str(localizer.DATA_ROOT))
     parser.add_argument("--correction-json")
+    parser.add_argument("--cold-spot", action="store_true",
+                        help="confirm ground-prepared cooling with a park control")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(cold_spot=args.cold_spot), indent=2))
         return 0
-    run(data_root=args.data_root, correction_json=args.correction_json)
+    run(data_root=args.data_root, correction_json=args.correction_json,
+        cold_spot=args.cold_spot)
     return 0
 
 
