@@ -5400,3 +5400,36 @@ outcome that licenses a target echo pilot is `complete_calibrated`.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoTargetPi2Validate --run
 ```
+
+The high-shot target validation completed at
+`q3_target_pi2_validation_20260929T224432Z_b1a0820d` with status
+`complete_controls_unstable`. Its one-pulse gain response rose through the
+local sweep, but the two reverse-order phase cycles had amplitudes 0.101 and
+0.317 in pre-reference-normalized units and their fitted phase shifted by
+25 degrees. The end zero and π references also drifted. Averaging the two
+blocks gives a weak nonzero phase signal of about 0.21 (shot-bootstrap 95%
+interval about 0.12–0.30), but not the repeatable π/2 control needed for an
+echo-rate map. The wide dephasing map must not run with these Gaussian
+target pulses.
+
+`TLSEchoFastSquarePilot` makes one bounded check of whether pulse duration is
+the problem at the **same quiet 4.288-GHz site**, using its previously
+measured 4290.5-MHz drive. The original 0.2-us-sigma Gaussian lasts 0.8 us;
+at gain 30000, a square π pulse should have a rough area-equivalent duration
+near 0.29 us and π/2 near 0.14 us. These are predictions, not assumed
+calibrations. Fourteen durations span 0.06–0.48 us, with interleaved zero
+controls and a repeated first turnover. Only a resolved turnover and an
+independent half-height check allow two forward/reversed, four-phase cycles.
+Zero/π reference pairs bracket each cycle so linear readout drift cannot
+masquerade as phase contrast. All raw IQ and a manifest are saved; there is
+no fresh 5-point scan, TLS selection, or wide echo map, and no runner-specific
+terminal messages. A passing phase test would justify designing a **local**
+loss-line versus clean-control echo comparison with separately calibrated
+pulses at both sites. It would not validate π/2 pulses across 3.8–4.3 GHz.
+If phase contrast remains weak, stop the target-resident echo route rather
+than relaxing its gate or launching the map.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFastSquarePilot --run
+```
