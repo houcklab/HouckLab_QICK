@@ -4378,3 +4378,36 @@ route rather than prompting repeated calibration scans.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFluxModulationCalibration --run --frequency-response
 ```
+
+The calibration completed at
+`q3_flux_modulation_frequency_response_20260929T053817Z_baed808b`.
+The fresh wide scouts selected a separate 4.278-GHz loss feature before the
+spectra and 4.276 GHz afterward; the qualified depths were 0.160 and 0.319.
+The quiet spectroscopy site was 4.218 GHz. All 90 interleaved AC-off/on
+sideband arms completed, and the readout-reference fidelities were 0.831
+before and 0.869 afterward. The unmodulated carrier at 4221 MHz had only
+0.084 excited-fraction contrast above ground (0.103 on the repeat). Neither
+the classified fractions nor projected raw IQ show a resolved first sideband
+at ±20, ±30, or ±40 MHz with 800-DAC modulation. Across each five-point
+sideband window, projected-IQ AC-on minus AC-off changes are of order
+0.00–0.03 in pre-reference-normalized units, with about 0.013 shot-level
+standard error per window. The weak carrier and absent sidebands do not yield
+a defensible delivered-amplitude bound. The one-attempt calibration gate is
+therefore inconclusive; do not use it to claim a small qubit excursion or
+interpret the earlier high-amplitude protection as Floquet-specific. Stop
+the modulation route here.
+
+The 4.278/4.276-GHz feature itself meets the existing bidirectional
+wide-scout isolation and ±14-MHz-control criteria in both scans. It is a
+new, directly testable loss candidate, outside the two candidate families
+already given null swap maps. The next run uses the existing within-shot
+ground/excited 0.1–6-µs exchange trace, anchored at 4.278 GHz but freshly
+relocalized within ±4 MHz. Feature and control visits are interleaved within
+each shot, and order reverses across the two blocks. Only a replicated,
+nonmonotonic feature-specific response in both orders and raw IQ would
+motivate a coherent-swap claim; monotonic decay is ordinary loss.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSwapHoldConfirm --run --wide-within-shot --wide-anchor-ghz 4.278
+```
