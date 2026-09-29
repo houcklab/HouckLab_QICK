@@ -4159,3 +4159,27 @@ On the measurement PC:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFloquetSwitch --run --phase-order
 ```
+
+The phase-order run completed at
+`q3_floquet_phase_order_20260929T024744Z_8417f58e` (commit `b659e51b`).
+All four science programs and the pre/mid/post scouts completed. The
+qualified loss center was 4.104/4.106/4.104 GHz with depths
+0.466/0.492/0.556. Readout fidelity was 0.903/0.896 before/after; park
+transfer, feature-stability, and within-program quality controls passed.
+Ordinary continuous 30-MHz modulation improved ground-corrected excited
+survival over AC-off by +0.0919 ± 0.0096 in the first block and
++0.0423 ± 0.0091 in the reversed block (shot-paired standard errors).
+The protection remained positive, although its size changed appreciably
+as the selected center moved by 2 MHz within a narrow loss profile.
+
+Phase-scrambled minus continuous modulation gave +0.0011 ± 0.0095 and
+−0.0071 ± 0.0090 in the two blocks; pooled −0.0032 ± 0.0065, approximate
+95% interval [−0.0160, +0.0096]. Unthresholded IQ also gives near-zero
+differences (+0.0041 ± 0.0127 and −0.0004 ± 0.0121 in pre-reference
+normalized units). The two on references agreed within each block.
+Thus this run reproduces AC protection but detects no dependence on the
+tested cycle-phase order. It gives no positive evidence of coherent
+Floquet/TLS dynamics beyond a response to the flux-value distribution.
+The programmed histograms are identical; the delivered histograms need
+not be because the flux line filters their different spectra. Stop the
+phase-order branch here rather than varying another waveform detail.
