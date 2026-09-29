@@ -117,7 +117,7 @@ def _flank_quality(indexed, center, control, *, guard=False,
 
 
 def select_plateau_candidate(rows):
-    """Find one early-loss line with separately qualified lower/upper flanks."""
+    """Find one early-loss line and all independently qualified flanks."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row
                for row in rows}
     expected = {round(3.8 + .002 * index, 3) for index in range(251)}
@@ -145,7 +145,7 @@ def select_plateau_candidate(rows):
                     choices.append((quality, -offset_mhz, control))
             if choices:
                 flanks[side] = max(choices)[2]
-        if len(flanks) != 2:
+        if not flanks:
             continue
         early_advantage = min(
             _normalized_scout_survival(indexed[f], 10, suffix) -
@@ -154,12 +154,14 @@ def select_plateau_candidate(rows):
             for suffix in ("", "_scan_up", "_scan_down"))
         if early_advantage < .10:
             continue
+        primary = flanks.get(-1, flanks.get(1))
         candidates[center] = {
             **selected, "qualifier_control_ghz": selected["control_ghz"],
-            "control_ghz": flanks[-1],
-            "control_offset_ghz": round(flanks[-1] - center, 3),
-            "lower_control_ghz": flanks[-1],
-            "upper_control_ghz": flanks[1],
+            "control_ghz": primary,
+            "control_offset_ghz": round(primary - center, 3),
+            "lower_control_ghz": flanks.get(-1),
+            "upper_control_ghz": flanks.get(1),
+            "flank_count": len(flanks),
             "early_advantage": early_advantage,
             "flank_min_survival": min(
                 _flank_quality(indexed, center, control, guard=True)
@@ -167,10 +169,11 @@ def select_plateau_candidate(rows):
             "selector": "two_flank_early_loss_plateau_candidate",
         }
     if not candidates:
-        raise ValueError("no early-loss feature with two clean flanks")
+        raise ValueError("no early-loss feature with a clean flank")
     return max(candidates.values(), key=lambda item: (
         item["early_advantage"],
         min(item["depth_scan_up"], item["depth_scan_down"]),
+        item["flank_count"],
         item["flank_min_survival"]))
 
 
@@ -193,13 +196,16 @@ def assess_plateau_post(rows, selected):
     flank_quality = {}
     for side, key in (("lower", "lower_control_ghz"),
                       ("upper", "upper_control_ghz")):
-        control = selected[key]
+        control = selected.get(key)
+        if control is None:
+            continue
         # Use the weakest of the three directional feature minima when
         # evaluating the original control, rather than reselecting a site.
         quality = _flank_quality(indexed, center, control,
                                  require_early=False)
         flank_quality[side] = quality
-    quiet = all(value is not None for value in flank_quality.values())
+    quiet = bool(flank_quality) and all(
+        value is not None for value in flank_quality.values())
     valid = (quiet and
              all(abs(f - center) <= .002001 for f, _ in minima.values()) and
              all(value < .60 for _, value in minima.values()) and
@@ -265,6 +271,14 @@ def cold_spot_specs(feature_ghz, control_ghz):
 
 def plateau_specs(feature_ghz, lower_ghz, upper_ghz):
     """Four matched sites in every shot, with late dwells to test the limit."""
+    if lower_ghz is None and upper_ghz is None:
+        raise ValueError("plateau needs at least one clean flank")
+    sites = [("feature", feature_ghz)]
+    if lower_ghz is not None:
+        sites.append(("lower", lower_ghz))
+    if upper_ghz is not None:
+        sites.append(("upper", upper_ghz))
+    sites.append(("park", feature_ghz))
     specs = []
     for cycle in (0, 1):
         holds = (PLATEAU_HOLDS_US if cycle == 0 else
@@ -274,10 +288,7 @@ def plateau_specs(feature_ghz, lower_ghz, upper_ghz):
                 {"name": f"{site}_{dwell}_{state}", "site": site,
                  "flux_ghz": float(frequency), "hold_us": duration,
                  "state": state}
-                for site, frequency in (("feature", feature_ghz),
-                                        ("lower", lower_ghz),
-                                        ("upper", upper_ghz),
-                                        ("park", feature_ghz))
+                for site, frequency in sites
                 for dwell, duration in (("early", REFERENCE_HOLD_US),
                                         ("late", hold))
                 for state in ("g", "e")]
@@ -382,29 +393,38 @@ def split_cold_spot_records(records, order, *, shots):
 
 
 def split_plateau_records(records, order, *, shots):
+    sites = {name.split("_", 1)[0] for name in order}
+    if not ({"feature", "park"} <= sites and
+            sites <= {"feature", "lower", "upper", "park"} and
+            bool(sites & {"lower", "upper"})):
+        raise ValueError("invalid plateau site set")
     expected = {f"{site}_{dwell}_{state}"
-                for site in ("feature", "lower", "upper", "park")
+                for site in sites
                 for dwell in ("early", "late") for state in ("g", "e")}
     records = list(records)
-    if len(order) != 16 or set(order) != expected:
-        raise ValueError("invalid sixteen-condition plateau order")
-    if len(records) != 16 * int(shots):
-        raise ValueError("incomplete sixteen-condition plateau stream")
-    return {name: records[index::16] for index, name in enumerate(order)}
+    if len(order) != len(expected) or set(order) != expected:
+        raise ValueError("invalid plateau condition order")
+    if len(records) != len(order) * int(shots):
+        raise ValueError("incomplete plateau stream")
+    return {name: records[index::len(order)]
+            for index, name in enumerate(order)}
 
 
 def score_plateau(fractions):
+    sites = ("feature", "lower", "upper", "park")
+    sites = tuple(site for site in sites
+                  if f"{site}_early_g" in fractions)
     values = {name: float(fractions[name]) for name in (
         f"{site}_{dwell}_{state}"
-        for site in ("feature", "lower", "upper", "park")
+        for site in sites
         for dwell in ("early", "late") for state in ("g", "e"))}
     return {"fractions": values,
             "late_contrast": {site: values[f"{site}_late_e"] -
                               values[f"{site}_late_g"]
-                              for site in ("feature", "lower", "upper", "park")},
+                              for site in sites},
             "ground_increment": {site: values[f"{site}_late_g"] -
                                  values[f"{site}_early_g"]
-                                 for site in ("feature", "lower", "upper", "park")}}
+                                 for site in sites}}
 
 
 def score_cold_spot(fractions):
@@ -459,16 +479,18 @@ def plan(*, cold_spot=False, plateau=False):
         return {"hardware_access": False, "reset_mode": "passive",
                 "purpose": "test whether the line changes late population, not just relaxation rate",
                 "scout_range_ghz": [3.8, 4.3],
-                "selection": "one fresh early-loss line with separate quiet lower/upper flanks",
-                "sites": ["feature", "lower_flank", "upper_flank", "park_no_excursion"],
+                "selection": "one fresh early-loss line with at least one locally quiet flank",
+                "sites": ["feature", "one_or_two_flanks", "park_no_excursion"],
                 "reference_hold_us": REFERENCE_HOLD_US,
                 "later_holds_us": list(PLATEAU_HOLDS_US),
-                "conditions_per_shot": 16, "shots_per_program": SHOTS,
+                "conditions_per_shot": [12, 16], "shots_per_program": SHOTS,
                 "programs": 2 * len(PLATEAU_HOLDS_US),
-                "condition_order": "four sites, g/e, reference/test; reversed in block two",
+                "condition_order": "feature, available flank(s), park; g/e and "
+                                   "reference/test; reversed in block two",
                 "full_return_before_readout_us": RETURN_US,
                 "raw_iq_saved": True,
-                "interpretation": "compare long-time g/e convergence at feature and both flanks; "
+                "interpretation": "compare long-time g/e convergence at feature, "
+                                  "available flank(s), and park; "
                                   "no defect temperature claim without population calibration"}
     if cold_spot:
         return {"hardware_access": False, "reset_mode": "passive",
@@ -540,10 +562,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
     center = float(selected["center_ghz"])
     control = float(selected["control_ghz"])
     if plateau:
-        lower = float(selected["lower_control_ghz"])
-        upper = float(selected["upper_control_ghz"])
+        lower = (float(selected["lower_control_ghz"])
+                 if selected["lower_control_ghz"] is not None else None)
+        upper = (float(selected["upper_control_ghz"])
+                 if selected["upper_control_ghz"] is not None else None)
         print(f"[loss-sink-reset] feature={center:.3f} GHz; "
-              f"quiet flanks={lower:.3f}, {upper:.3f} GHz; "
+              f"quiet flank(s)={lower}, {upper} GHz; "
               f"10-us advantage={selected['early_advantage']:.3f}", flush=True)
     else:
         print(f"[loss-sink-reset] feature={center:.3f} GHz; "
@@ -571,7 +595,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         specs = (plateau_specs(center, lower, upper) if plateau else
                  cold_spot_specs(center, control) if cold_spot else
                  program_specs(center, control))
-        grid = np.asarray(([center, lower, upper] if plateau else
+        grid = np.asarray(([center] + [f for f in (lower, upper)
+                                      if f is not None] if plateau else
                            [center, control]), dtype=float)
         dc, realized = _integer_dc_grid(wide.parameters(), grid, tls)
         dc_lookup = {float(f): int(g) for f, g in zip(grid, dc)}
@@ -620,7 +645,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             "references": references, "programs": specs,
         }
         if plateau:
-            manifest["controls_ghz"] = {"lower": lower, "upper": upper}
+            manifest["controls_ghz"] = {
+                side: frequency for side, frequency in
+                (("lower", lower), ("upper", upper))
+                if frequency is not None}
         protocol.checkpoint(path, manifest)
         print(f"[loss-sink-reset] manifest={path}", flush=True)
         raw_references = {}
@@ -633,8 +661,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 cfgs = (cold_spot_configs(base, entry, dc_lookup)
                         if cold_spot or plateau
                         else confirm._condition_configs(base, entry, dc_lookup))
-                program_class = (PlateauProgram if plateau else
+                program_class = (PlateauProgram if plateau and
+                                 len(entry["order"]) == 16 else
                                  ColdSpotProgram if cold_spot else
+                                 ColdSpotProgram if plateau else
                                  confirm.EightSiteSwapHoldProgram)
                 programs[entry["name"]] = program_class(
                     soccfg, cfgs, bundle.payload, bundle.loop)

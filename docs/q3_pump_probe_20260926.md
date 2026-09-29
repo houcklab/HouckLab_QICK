@@ -4681,22 +4681,30 @@ faster relaxation of residual excitation.
 `TLSLossSinkReset --plateau` makes the next cold-spot question narrower:
 does the line lead to a lower **late population**, or does it only shorten
 the time required to reach the same population? A fresh 3.8–4.3-GHz scout
-selects one early-loss line only if it has independently quiet lower and
-upper controls, each with a clean five-point pre-scout neighborhood. The
-science sequence visits feature, both flanks, and a matched no-excursion
-park arm at 0.1 us and 200, 500, or 1000 us. Ground/excited preparations
-and all four sites are interleaved within each shot (16 subshots); the
-second block reverses order. All return to park for 40 us before readout.
-The post scout allows the line to move by one 2-MHz grid step but requires
-both original controls to remain locally quiet. Pre/post readout and
+selects one early-loss line only if it has at least one independently quiet
+flank with a clean five-point pre-scout neighborhood. A second flank is
+included when available. The science sequence visits the feature, one or
+two flanks, and a matched no-excursion park arm at 0.1 us and 200, 500,
+or 1000 us. Ground/excited preparations and all sites are interleaved
+within each shot (12 or 16 subshots); the second block reverses order. All
+return to park for 40 us before readout. The post scout allows the line to
+move by one 2-MHz grid step but requires the original control site(s) to
+remain locally quiet. Pre/post readout and
 park-transfer references are required as before.
 
 The decisive comparison is the 500–1000-us g/e convergence at each site.
-A lower feature plateau than park **and both flanks**, reproduced in both
+A lower feature plateau than park **and the clean flank(s)**, reproduced in both
 orders and projected raw IQ with the controls passing, would support a
 colder effective environment at the line. If the curves converge to the
 same value, the earlier effect was faster relaxation of residual excitation.
 Even a positive result would not calibrate absolute TLS temperature.
+
+The first plateau attempt produced only the pre scout,
+`q3_12_41_16_TLS_Cold_Spot_Plateau_Scout_pre`: the same 4.276-GHz line
+remained strong, but a separate loss around 4.288–4.290 GHz occupied the
+upper flank. The initial two-flank gate stopped before any science shots.
+The revised selector accepts the clean 4.258-GHz lower control and park,
+using 12 interleaved subshots; it still includes both flanks when available.
 
 ```bash
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy

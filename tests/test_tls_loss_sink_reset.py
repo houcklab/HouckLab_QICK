@@ -222,7 +222,7 @@ def test_cold_spot_plan_has_no_absolute_temperature_claim(capsys):
     assert "temperature" in plan["interpretation"]
 
 
-def test_plateau_selector_requires_clean_flanks_on_both_sides():
+def test_plateau_selector_uses_two_flanks_when_available():
     module = experiment()
     rows = scout_rows()
     selected = module.select_plateau_candidate(rows)
@@ -236,7 +236,9 @@ def test_plateau_selector_requires_clean_flanks_on_both_sides():
             for suffix in ("", "_scan_up", "_scan_down"):
                 row[f"Ps_25us{suffix}"] = ".3"
     selected = module.select_plateau_candidate(rows)
-    assert selected["center_ghz"] != pytest.approx(4.094)
+    assert selected["center_ghz"] == pytest.approx(4.094)
+    assert selected["lower_control_ghz"] < selected["center_ghz"]
+    assert selected["upper_control_ghz"] is None
 
 
 def test_plateau_post_gate_tolerates_one_grid_step_but_rejects_dirty_flank():
@@ -252,6 +254,18 @@ def test_plateau_post_gate_tolerates_one_grid_step_but_rejects_dirty_flank():
     assert module.assess_plateau_post(rows, selected)["valid"] is False
 
 
+def test_plateau_post_gate_handles_one_sided_control():
+    module = experiment()
+    rows = scout_rows()
+    for row in rows:
+        if 4.106 <= float(row["target_frequency_ghz"]) <= 4.12:
+            for suffix in ("", "_scan_up", "_scan_down"):
+                row[f"Ps_25us{suffix}"] = ".3"
+    selected = module.select_plateau_candidate(rows)
+    assert selected["upper_control_ghz"] is None
+    assert module.assess_plateau_post(rows, selected)["valid"] is True
+
+
 def test_plateau_schedule_interleaves_four_sites_and_reverses_order():
     module = experiment()
     specs = module.plateau_specs(4.094, 4.078, 4.114)
@@ -263,6 +277,16 @@ def test_plateau_schedule_interleaves_four_sites_and_reverses_order():
     assert names == {f"{site}_{dwell}_{state}"
                      for site in ("feature", "lower", "upper", "park")
                      for dwell in ("early", "late") for state in ("g", "e")}
+
+
+def test_plateau_schedule_works_with_one_clean_flank():
+    module = experiment()
+    specs = module.plateau_specs(4.276, 4.258, None)
+    assert all(len(item["conditions"]) == 12 for item in specs)
+    assert {item["site"] for item in specs[0]["conditions"]} == {
+        "feature", "lower", "park"}
+    order = specs[0]["order"]
+    assert len(module.split_plateau_records(list(range(24)), order, shots=2)) == 12
 
 
 def test_plateau_program_uses_flux_anchor_even_when_park_is_first(monkeypatch):
@@ -282,6 +306,22 @@ def test_plateau_program_uses_flux_anchor_even_when_park_is_first(monkeypatch):
     assert seen[0]["reps"] == 16 * 800
 
 
+def test_one_flank_plateau_compiles_as_twelve_arm_program(monkeypatch):
+    module = experiment()
+    entry = module.plateau_specs(4.276, 4.258, None)[3]
+    configs = module.cold_spot_configs(
+        {"sigma": .2, "ff_park_gain": -25146}, entry,
+        {4.276: -15878, 4.258: -16111})
+    seen = []
+    monkeypatch.setattr(module.resident.ResidentDriveProgram, "__init__",
+                        lambda self, soccfg, cfg, payload, loop:
+                        seen.append(dict(cfg)))
+    program = module.ColdSpotProgram(None, configs, None, None)
+    assert program.conditions_per_shot == 12
+    assert seen[0]["ff_gain"] != seen[0]["ff_park_gain"]
+    assert seen[0]["reps"] == 12 * 800
+
+
 def test_plateau_split_and_plan():
     module = experiment()
     order = module.plateau_specs(4.094, 4.078, 4.114)[0]["order"]
@@ -290,6 +330,6 @@ def test_plateau_split_and_plan():
     with pytest.raises(ValueError, match="incomplete"):
         module.split_plateau_records(records[:-1], order, shots=2)
     plan = module.plan(plateau=True)
-    assert plan["conditions_per_shot"] == 16
+    assert plan["conditions_per_shot"] == [12, 16]
     assert plan["later_holds_us"] == [200.0, 500.0, 1000.0]
     assert plan["hardware_access"] is False
