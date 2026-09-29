@@ -5305,3 +5305,30 @@ progress messages.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoPulseCalibration --run
 ```
+
+That target calibration stopped before its frequency sweep:
+`q3_echo_pi2_calibration_20260929T221943Z_cc8a106f` selected 4.266 GHz
+from the fresh scout, but that point had an invalid five-point T1 fit.
+Its 400-shot resident-program readout references had fidelity 0.691 and
+assignment contrast 0.3825, just below their gates. No π/2 gain was measured.
+The ground IQ cloud was similar to the preceding echo run, while the excited
+reference moved substantially; the saved data do not identify whether the
+existing park π preparation, readout, or return dynamics caused that change.
+Repeating a whole-band scout would not answer the pulse question.
+
+`TLSParkPi2Calibration` is the smaller prerequisite. It remains at q3's
+verified park bias throughout and starts with a no-drive raw-IQ baseline,
+not an excited reference made with the possibly mistuned old π pulse. It
+scans ±6 MHz around the installed park drive with three gains, confirms the
+selected response, takes a full 0–30000-DAC Rabi gain curve, and validates
+the derived π/2 gain using two opposite-order, four-phase double-pulse
+cycles. Zero-drive and π responses at the end test drift. It saves every raw
+IQ arm and stops if the Rabi turnover or phase cycle is unresolved. It does
+not locate a TLS, acquire a five-point scan, or run an echo map. Even a passed
+park calibration does not establish a target-resident π/2 pulse; that remains
+a separate prerequisite for the original target-resident echo map.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSParkPi2Calibration --run
+```
