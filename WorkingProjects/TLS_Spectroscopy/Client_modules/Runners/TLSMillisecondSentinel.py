@@ -60,8 +60,8 @@ def _quiet_window(indexed, center):
             "min_survival": float(np.min(values))}
 
 
-def select_sites(rows):
-    """Return strong, bidirectional A/B loss lines and one quiet C site."""
+def ranked_scout_candidates(rows):
+    """Rank distinct broad troughs; a 20-cycle profile decides persistence."""
     indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
     expected = {round(3.8 + .002 * i, 3) for i in range(251)}
     if len(rows) != 251 or set(indexed) != expected:
@@ -84,30 +84,47 @@ def select_sites(rows):
                               for f in fs] for label, fs in groups.items()}
             if any(not math.isfinite(v) for vs in values.values() for v in vs):
                 break
-            if (name == "combined" and
-                    values["center"][1] >= min(values["center"][0],
-                                                values["center"][2])):
-                break
             depths[name] = min(float(np.median(values["left"])),
                                float(np.median(values["right"]))) - float(
                                    np.mean(values["center"]))
         if (len(depths) == 3 and depths["combined"] >= .12 and
                 min(depths["up"], depths["down"]) >= .08):
-            candidate_lines.append({"center_ghz": center, "depth": depths["combined"],
-                                    "depth_scan_up": depths["up"],
-                                    "depth_scan_down": depths["down"]})
+            frequency = [round(1000*center + 2*i, 1) for i in range(-3, 4)]
+            profile = fit_or_reject_profile(
+                frequency,
+                [weak._survival(indexed[round(target/1000, 3)], 25)
+                 for target in frequency])
+            if profile["gate"]["passed"]:
+                candidate_lines.append({
+                    "center_ghz": center, "depth": depths["combined"],
+                    "depth_scan_up": depths["up"],
+                    "depth_scan_down": depths["down"],
+                    "scout_profile_contrast": profile["fit"]["measured_contrast_6mhz"]})
+    ranked = sorted(candidate_lines,
+                    key=lambda x: min(x["depth_scan_up"], x["depth_scan_down"]),
+                    reverse=True)
+    separated = []
+    for candidate in ranked:
+        if all(abs(candidate["center_ghz"]-old["center_ghz"]) >= .008-1e-9
+               for old in separated):
+            separated.append(candidate)
+    return separated
+
+
+def select_sites(rows):
+    """Return provisional A/B scout lines and one quiet C site."""
+    indexed = {round(float(row["target_frequency_ghz"]), 3): row for row in rows}
+    candidate_lines = ranked_scout_candidates(rows)
     if not candidate_lines:
         raise ValueError("no qualified first loss line")
     near_preferred = [x for x in candidate_lines if
                       abs(x["center_ghz"] - PREFERRED_A_GHZ) <= .006]
-    a = max(near_preferred or candidate_lines,
-            key=lambda x: min(x["depth_scan_up"], x["depth_scan_down"]))
+    a = (near_preferred or candidate_lines)[0]
     alternatives = [x for x in candidate_lines if
                     abs(x["center_ghz"] - a["center_ghz"]) >= .020 - 1e-9]
     if not alternatives:
         raise ValueError("no qualified second loss line at least 20 MHz from first")
-    b = max(alternatives,
-            key=lambda x: min(x["depth_scan_up"], x["depth_scan_down"]))
+    b = alternatives[0]
     controls = []
     for center in sorted(indexed):
         if (not 3.83 <= center <= 4.27 or
@@ -192,6 +209,27 @@ def fit_or_reject_profile(frequency_mhz, survival):
         return {"fit": None, "gate": {"passed": False},
                 "gate_error": str(exc)}
     return {"fit": fit, "gate": profile_gate(fit)}
+
+
+def normalize_profile_survival(raw_fraction, *, ground, excited):
+    """Match the wide scout's normalized e-survival convention."""
+    span = float(excited)-float(ground)
+    if not math.isfinite(span) or span < .15:
+        raise ValueError("profile readout transfer is too small to normalize")
+    return (np.asarray(raw_fraction, dtype=float)-float(ground))/span
+
+
+def append_qualified_profile(accepted, candidate, profile_key, report):
+    """Keep separated, high-shot profiles in scout priority order."""
+    if not report["gate"]["passed"]:
+        return False
+    fit = report["fit"]
+    if any(abs(fit["center_mhz"]-item["fit"]["center_mhz"]) < 20.0
+           for item in accepted):
+        return False
+    accepted.append({"candidate": candidate, "fit": fit,
+                     "profile_key": profile_key})
+    return True
 
 
 def make_flanks(profile):
@@ -639,7 +677,7 @@ def _compile_program(soccfg, base, bundle, conditions, *, shots,
 def _run_profile(soc, soccfg, base, bundle, *, line_name, coarse_mhz,
                  control, inverse_gain, axis, folder, manifest,
                  manifest_path, run_program, reset_mode, dump_gain_dac,
-                 phase="pre"):
+                 transfer_levels, phase="pre"):
     report = {"line": line_name, "coarse_center_mhz": coarse_mhz,
               "cycles": [], "status": "running"}
     manifest.setdefault("profiles", {})[f"{line_name}_{phase}"] = report
@@ -666,7 +704,12 @@ def _run_profile(soc, soccfg, base, bundle, *, line_name, coarse_mhz,
         protocol.checkpoint(manifest_path, manifest)
     frequency = sorted(by_frequency)
     average = [float(np.mean(by_frequency[f])) for f in frequency]
-    report.update(fit_or_reject_profile(frequency, average))
+    normalized = normalize_profile_survival(
+        average, ground=transfer_levels["g"], excited=transfer_levels["e"])
+    report["raw_excited_fractions"] = average
+    report["normalized_survival"] = normalized.tolist()
+    report["reference_transfer"] = dict(transfer_levels)
+    report.update(fit_or_reject_profile(frequency, normalized))
     report["status"] = "complete"
     protocol.checkpoint(manifest_path, manifest)
     return report
@@ -765,6 +808,12 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
         scout_rows = swap.read_wide_scout(pre_scout)
         protocol.checkpoint(manifest_path, manifest)
         try:
+            candidate_queue = ranked_scout_candidates(scout_rows)
+            candidate_queue.sort(
+                key=lambda item: (abs(item["center_ghz"]-PREFERRED_A_GHZ) <= .006,
+                                  min(item["depth_scan_up"],
+                                      item["depth_scan_down"])),
+                reverse=True)
             selected = select_sites(scout_rows)
             null_sites = select_null_sites(scout_rows, selected)
         except ValueError as exc:
@@ -773,6 +822,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
             protocol.checkpoint(manifest_path, manifest)
             return manifest_path
         manifest["selected"] = selected
+        manifest["scout_candidate_queue"] = candidate_queue[:6]
         manifest["null_sites_ghz"] = null_sites
         protocol.checkpoint(manifest_path, manifest)
         print(f"[ms-sentinel] A={selected['A']['center_ghz']:.3f} "
@@ -810,21 +860,41 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                 protocol.checkpoint(manifest_path, manifest)
                 return manifest_path
 
-            for name in ("A", "B"):
+            accepted = []
+            for index, candidate in enumerate(candidate_queue[:6]):
+                profile_name = f"candidate_{index:02d}"
                 _run_profile(
-                    soc, soccfg, base, bundle, line_name=name,
-                    coarse_mhz=1000*float(selected[name]["center_ghz"]),
+                    soc, soccfg, base, bundle, line_name=profile_name,
+                    coarse_mhz=1000*float(candidate["center_ghz"]),
                     control=control, inverse_gain=inverse, axis=axis,
                     folder=folder, manifest=manifest, manifest_path=manifest_path,
                     run_program=_run_program, reset_mode=reset_mode,
-                    dump_gain_dac=dump_gain)
-            fits = {name: manifest["profiles"][f"{name}_pre"]["fit"]
-                    for name in ("A", "B")}
-            if not all(manifest["profiles"][f"{name}_pre"]["gate"]["passed"]
-                       for name in ("A", "B")):
+                    dump_gain_dac=dump_gain,
+                    transfer_levels=reference["transfer"])
+                report = manifest["profiles"][f"{profile_name}_pre"]
+                append_qualified_profile(
+                    accepted, candidate, f"{profile_name}_pre", report)
+                if len(accepted) == 2:
+                    break
+            if len(accepted) < 2:
                 manifest["status"] = "stopped_profile_gate"
+                manifest["gate_error"] = (
+                    "fewer than two separated, normalized-contrast-qualified "
+                    "profiles among the first six scout candidates")
                 protocol.checkpoint(manifest_path, manifest)
                 return manifest_path
+            selected = {"A": accepted[0]["candidate"],
+                        "B": accepted[1]["candidate"], "C": selected["C"]}
+            fits = {"A": accepted[0]["fit"], "B": accepted[1]["fit"]}
+            manifest["selected"] = selected
+            manifest["pre_profile_keys"] = {"A": accepted[0]["profile_key"],
+                                            "B": accepted[1]["profile_key"]}
+            null_sites = select_null_sites(scout_rows, selected)
+            manifest["null_sites_ghz"] = null_sites
+            protocol.checkpoint(manifest_path, manifest)
+            print(f"[ms-sentinel] qualified A={fits['A']['center_mhz']:.2f} "
+                  f"B={fits['B']['center_mhz']:.2f} MHz after "
+                  f"{len(manifest['profiles'])} pre-profiles", flush=True)
             if abs(fits["A"]["center_mhz"]-fits["B"]["center_mhz"]) < 20.0:
                 manifest["status"] = "stopped_profile_gate"
                 manifest["gate_error"] = "A/B fitted centers are less than 20 MHz apart"
@@ -935,7 +1005,10 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None,
                     control=control, inverse_gain=inverse, axis=axis,
                     folder=folder, manifest=manifest, manifest_path=manifest_path,
                     run_program=_run_program, reset_mode=reset_mode,
-                    dump_gain_dac=dump_gain, phase="post")
+                    dump_gain_dac=dump_gain,
+                    transfer_levels=(reference_post["transfer"]
+                                     if reference_post["transfer"]["usable"]
+                                     else reference["transfer"]), phase="post")
             post_scout = localizer.run(
                 data_root=root, correction_json=correction,
                 parameter_overrides={**wide.parameters(),

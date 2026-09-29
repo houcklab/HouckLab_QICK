@@ -4765,3 +4765,22 @@ land between bins. Their actual outer points now set measured edge-to-center
 contrast, with the fitted center constrained to the inner ±2 MHz. Both
 scout-based seven-point fits pass provisionally (measured contrasts 0.187
 and 0.168); the fresh higher-shot profiles on the next run remain required.
+
+The third attempt, `q3_tls_millisecond_sentinel_passive_20260929T144839Z_df50be8c`,
+passed readout calibration (fidelity 0.846 and ground/excited transfer 0.543)
+but stopped after both 20-cycle profiles. Its scout chose 3.896 and 3.966
+GHz; their *raw* readout-fraction edge contrasts were only 0.051 and 0.095,
+so neither passed the earlier raw 0.15 gate. No sentinel shots were taken.
+There are two distinct issues. The scout uses `(Ps25−P0)/(P1−P0)`, whereas
+the profile gate used unnormalized classified fractions; applying one 0.15
+threshold to both was inconsistent. Profiles now normalize by the frozen
+pre/post C ground/excited transfer before fitting. The 3.896-GHz profile
+then has normalized contrast 0.094 and still fails; 3.966 GHz reaches
+about 0.175. Separately, the same scout showed a more promising 4.116-GHz
+trough, but a strict center-bin condition prevented its selection. The
+runner now ranks distinct broad, bidirectional troughs that have a
+provisional seven-point contrast, then profiles up to six in priority order
+until two separated sites pass the higher-shot gate. Replaying the third
+scout ranks 4.116, 3.896, and 4.148 GHz; a failed 3.896-GHz profile would
+allow testing 4.148 GHz without another wide scan. The fresh scout and
+all original controls remain mandatory in the next run.

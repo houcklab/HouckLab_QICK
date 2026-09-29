@@ -71,6 +71,47 @@ def test_site_selector_allows_two_mhz_directional_minimum_shift():
     assert selected["B"]["center_ghz"] == pytest.approx(4.132)
 
 
+def test_ranked_scout_candidates_keep_one_center_per_line():
+    model = subject()
+    candidates = model.ranked_scout_candidates(wide_rows())
+    assert candidates[0]["center_ghz"] == pytest.approx(4.094)
+    assert candidates[1]["center_ghz"] == pytest.approx(4.132)
+    assert all(abs(a["center_ghz"]-b["center_ghz"]) >= .008-1e-9
+               for index, a in enumerate(candidates) for b in candidates[index+1:])
+
+
+def test_static_profile_normalizes_measured_readout_contrast():
+    model = subject()
+    frequency = np.arange(4088., 4100.1, 2.)
+    true_survival = .82-.3/(1+((frequency-4094.)/2.)**2)
+    raw_fraction = .1+.5*true_survival
+    normalized = model.normalize_profile_survival(raw_fraction,
+                                                   ground=.1, excited=.6)
+    assert normalized == pytest.approx(true_survival)
+    assert model.fit_or_reject_profile(frequency, normalized)["gate"]["passed"]
+
+
+def test_profile_fallback_skips_failed_and_overlapping_candidates():
+    model = subject()
+    accepted = []
+    rejected = {"gate": {"passed": False}, "fit": None}
+    assert not model.append_qualified_profile(
+        accepted, {"center_ghz": 3.896}, "P0_pre", rejected)
+    passed = {"gate": {"passed": True},
+              "fit": {"center_mhz": 4116., "hwhm_mhz": 2.}}
+    assert model.append_qualified_profile(
+        accepted, {"center_ghz": 4.116}, "P1_pre", passed)
+    assert not model.append_qualified_profile(
+        accepted, {"center_ghz": 4.128}, "P2_pre",
+        {"gate": {"passed": True},
+         "fit": {"center_mhz": 4128., "hwhm_mhz": 2.}})
+    assert model.append_qualified_profile(
+        accepted, {"center_ghz": 4.148}, "P3_pre",
+        {"gate": {"passed": True},
+         "fit": {"center_mhz": 4148., "hwhm_mhz": 2.}})
+    assert [entry["profile_key"] for entry in accepted] == ["P1_pre", "P3_pre"]
+
+
 def test_static_profile_recovers_center_width_and_signed_flanks():
     model = subject()
     frequency_mhz = np.arange(4088., 4102.1, 2.)
