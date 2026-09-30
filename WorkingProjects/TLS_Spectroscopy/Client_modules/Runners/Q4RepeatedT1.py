@@ -192,10 +192,71 @@ def calibrate_reset(soc, soccfg, output, index):
         return {'bundle': bundle.to_dict(), 'file': str(folder / 'calibration.json')}
 
 
+def reuse_reset_waveform(program):
+    """Alias identical q4 envelopes before any reset address is compiled.
+
+    QICK 0.2.133's generator manager and loader share this pulse table. Both
+    names may load the same samples at the same address without using a second
+    55040-sample slot. Do not replace a differently shaped reset waveform.
+    """
+    pulses = program.pulses[int(program.cfg['qubit_ch'])]
+    payload, reset = pulses['qubit'], pulses['qubit_reset']
+    if not np.array_equal(payload['data'], reset['data']):
+        raise ValueError('q4 waveform reuse requires identical preparation and reset envelopes')
+    pulses['qubit_reset'] = payload
+
+
+def make_t1_program():
+    from ..active_reset_OPX.programs import OPXResetT1SweepProgram
+
+    class Q4T1SweepProgram(OPXResetT1SweepProgram):
+        def _declare_experiment(self):
+            super()._declare_experiment()
+            reuse_reset_waveform(self)
+
+    return Q4T1SweepProgram
+
+
+def validate_waveform_memory(program):
+    """Check addressed sample ranges as well as instruction-memory capacity."""
+    report = []
+    for ch, pulses in enumerate(program.pulses):
+        capacity = int(program.soccfg['gens'][ch]['maxlen'])
+        used = 0
+        for name, pulse in pulses.items():
+            start = int(pulse['addr'])
+            end = start + len(pulse['data'])
+            if start < 0 or end > capacity:
+                raise ValueError(f'channel {ch} {name}: waveform memory range '
+                                 f'{start}..{end} exceeds {capacity} samples')
+            used = max(used, end)
+        report.append({'channel': ch, 'used_samples': used,
+                       'capacity_samples': capacity})
+    return report
+
+
+def acquire_curve_iq(soc, program, cfg, progress):
+    """Run the exact preflighted program through the existing DMem transport."""
+    from ..active_reset_OPX.integration import _run_program, _block_timeout_s
+    delays = program.cfg['opx_t1_delays_us']
+    shots = int(program.cfg['opx_t1_shots'])
+    timing_cfg = dict(cfg, ff_hold=max(delays))
+    records = _run_program(soc, program,
+                           _block_timeout_s(timing_cfg, shots * len(delays)),
+                           cfg, total_shots=shots, progress=progress)
+    cycles = int(program.us2cycles(cfg['read_length'], ro_ch=cfg['ro_chs'][0]))
+    i_values = np.array([r.final_i for r in records], dtype=float)
+    q_values = np.array([r.final_q for r in records], dtype=float)
+    return (i_values.reshape(shots, len(delays)).T / cycles,
+            q_values.reshape(shots, len(delays)).T / cycles,
+            {'shots_per_point': shots, 'points': len(delays), 'blocks': 1,
+             'resident_stream': True, 'records': len(records),
+             'order': 'shot_delay', 'read_length_cycles': cycles})
+
+
 def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
     from ..active_reset_OPX.integration import (
-        acquire_t1_sweep_iq, classify_payload_iq, runtime_bundle)
-    from ..active_reset_OPX.programs import OPXResetT1SweepProgram
+        classify_payload_iq, runtime_bundle)
     from ..Experiments.mCoherence import _fit_exp_decay
     from tqdm import tqdm
     import matplotlib.pyplot as plt
@@ -210,11 +271,15 @@ def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
     compile_cfg = dict(cfg, opx_t1_shots=cfg['shots'],
                        opx_t1_delays_us=delays.tolist(),
                        opx_resident_dmem_stream=True)
-    program = OPXResetT1SweepProgram(soccfg, compile_cfg, bundle.payload, bundle.loop)
+    program = make_t1_program()(soccfg, compile_cfg, bundle.payload, bundle.loop)
     words = len(program.compile())
     capacity = int(soccfg['tprocs'][0]['pmem_size'])
     if words > capacity:
         raise RuntimeError(f'T1 program needs {words} instructions; capacity={capacity}')
+    memory = validate_waveform_memory(program)
+    save_json(stem.with_suffix('.preflight.json'), {
+        'program_instructions': words, 'program_capacity': capacity,
+        'waveform_memory': memory, 'reset_reuses_preparation_envelope': True})
     with tqdm(total=71000, desc=f'T1 {index}', unit='shot', disable=not progress,
               bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} '
                          '[{elapsed} elapsed, ETA {remaining}]') as bar:
@@ -222,9 +287,7 @@ def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
             # Stream progress counts full 71-delay passes, not individual IQs.
             bar.update(int(done) * len(delays) - bar.n)
         try:
-            i_values, q_values, telemetry = acquire_t1_sweep_iq(
-                soc, soccfg, cfg, delays_us=delays, shots=1000,
-                reset_scheme='opx_unbounded', progress=update)
+            i_values, q_values, telemetry = acquire_curve_iq(soc, program, cfg, update)
         except BaseException as exc:
             partial = getattr(exc, 'partial_records', [])
             if partial:
@@ -252,6 +315,7 @@ def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
               'raw_file': str(stem.with_suffix('.npz')),
               'calibration_file': calibration['file'],
               'program_instructions': words, 'program_capacity': capacity,
+              'waveform_memory': memory,
               'delays_us': delays.tolist(), 'population_pe': pe.tolist()}
     save_json(stem.with_suffix('.json'), result)
     fig, ax = plt.subplots(figsize=(7, 4), constrained_layout=True)
