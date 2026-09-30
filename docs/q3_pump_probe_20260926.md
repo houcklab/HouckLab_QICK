@@ -5494,3 +5494,43 @@ may move during the full-band pass.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoSquareMap --run
 ```
+
+The blind run completed at
+`q3_echo_square_map_20260929T233639Z_7eda1cdb` with all 126 sites and
+the subsequent 251-site five-point T1 context scan. Only 25 echo sites
+passed local pulse/readout checks; 47 had unstable two-pulse controls,
+51 had insufficient zero/π IQ reference contrast, and three showed a
+nonmonotonic three-delay echo envelope. In particular, the π reference
+collapsed across much of 4.08–4.12 GHz. This sweep cannot identify or
+exclude dephasing hotspots in that unresolved part of the band.
+
+For the 12 control-valid sites with a valid later T1 fit, median apparent
+echo decay rate was about 0.524/us versus median relaxation-limited
+`1/(2*T1)` of 0.0077/us. The comparison suggests substantial loss of
+coherent contrast beyond ordinary T1, but the different pulse sequences,
+non-simultaneous T1 context, and possible pulse errors prevent an
+intrinsic dephasing-rate claim. At 4.212 GHz the three measured echo
+visibilities were 0.856, 0.659, and 0.141 for 0.3, 0.9, and 1.8 us,
+giving an endpoint rate 1.20/us. The 4.208-GHz neighbor gave 0.55/us;
+a shot-IQ bootstrap gave a broad 95% interval of about 0.02–1.55/us for
+their difference before accounting for searching many sites. The later
+T1 scan found a narrow loss dip near 4.210 GHz (T1 14 us there; 24 us at
+4.212 GHz), but it is too slow to explain the apparent echo decay by
+itself. This is a lead for a repeated delay trace, not a verified TLS
+dephasing hotspot.
+
+![Completed blind echo map and T1 context](q3_echo_square_complete_20260929.png)
+
+`TLSEchoFocusedTrace` repeats fixed sites 4.200–4.220 GHz around that
+lead, plus 4.232 and 4.284 GHz controls. Each site gets two reversed
+blocks, seven echo delays from 0.15 to 2.6 us, and four final-pulse
+phases per delay. Local one-pulse half/π/twice-π checks and phase cycles
+before/after the echo test the fixed square-pulse calibration at each
+frequency. Narrow five-point T1 scans before and after track any moving
+loss line but do not select or gate the echo sites. The run saves every
+shot's IQ and emits no custom progress messages.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run
+```
