@@ -5678,3 +5678,102 @@ constant at coefficient 1.0221692712219028 over 30.5–31.9107 us.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --population-check
 ```
+
+### Population contrast survives while echo decays, September 30
+
+`q3_echo_population_check_20260930T045711Z_c3a869fd`, acquired under
+`2862e968`, completed all 144 arms (1600 IQ records each). All three
+blocks passed the bracketed IQ, one-pulse turnover, two-pulse phase,
+and repeated short-echo controls. Recalculation from the raw NPZ files
+reproduces the saved projections within 4e-16. The five executed source
+hashes agree with this checkout after accounting for Windows CRLF.
+The saved board clocks are 430.08 MHz for the tProcessor and both used
+generators. Each echo and population pair used the same requested flux
+visit and correction.
+
+At the 1.2-us programmed delay, relative to 0.08 us:
+
+| Block | Echo visibility ratio | Population contrast ratio | Relaxation-only echo benchmark |
+| --- | --- | --- | --- |
+| 1 | 0.392 | 1.002 | 1.001 |
+| 2 | 0.409 | 1.001 | 1.001 |
+| 3 | 0.358 | 0.816 | 0.904 |
+
+The mean echo ratio is **0.386**, versus a mean square-root population
+benchmark of **0.968**. A 2000-draw bootstrap of consecutive 50-shot
+IQ groups, including the shared bracket references, gives conditional
+95% intervals [0.344, 0.434] and [0.943, 0.995], respectively. These are
+within-arm sampling intervals, not bounds on between-arm drift or
+systematic errors. Repeat 2 has a visibly different intermediate-delay
+shape; do not fit all three curves with a single precise exponential.
+
+![Echo decay versus matched population contrast](q3_echo_population_20260930.png)
+
+This is useful evidence: stationary two-level energy relaxation alone
+cannot account for the observed echo attenuation. It supports continuing
+the phase-coherence investigation. The population controls do not contain
+the middle pi pulse and therefore do not exclude rotation errors,
+pulse-induced leakage/loss, or coherent exchange. This is not yet an
+intrinsic pure-dephasing rate or a TLS-specific hotspot. Linear IQ
+contrast ratios slightly above one are estimator fluctuations and should
+not be interpreted as literal probabilities above one. The horizontal
+axis is the programmed added echo delay; legacy finite pulses/guards
+add approximately 0.1557 us to the first-to-last pi/2 center separation,
+with a few additional nanoseconds of clock rounding.
+
+### Matched-time refocusing comparison at 4.288 GHz
+
+The next bounded run stays at the same validated frequency and compares:
+
+- Hahn X: X pi/2, X pi at the middle, analysis pi/2.
+- Hahn Y: X pi/2, Y pi at the middle, analysis pi/2.
+- CPMG2 Y: X pi/2, Y pi at one-quarter and three-quarters, analysis pi/2.
+
+Every analysis pulse cycles through 0/90/180/270 degrees. Comparing
+Hahn X with Hahn Y tests the pulse-axis dependence; comparing Hahn Y
+with CPMG2 Y tests an extra refocusing pulse without changing that axis.
+This follows the pulse-control motivation in
+[Bylander et al.](https://arxiv.org/html/1101.4707v1), without assuming
+its noise model applies to q3.
+
+`TLSEchoFocusedTrace --run --refocus-check` uses three blocks of 1600
+shots per arm, interleaves the three sequences at every phase/time, rotates
+their acquisition order between blocks, and reverses delay/phase order in
+the middle block. Each block retains the readout/pulse checks and repeats
+the shortest phase circle for **each** sequence. The expected fixed
+180-degree phase difference between Hahn X and the Y sequences is not a
+drift failure: sentinels compare each sequence only with itself.
+
+The new standalone pulse builder accounts for finite pulse widths on the
+actual board clock. Realized first-to-last pi/2 center separations are
+0.353423, 0.455729, 0.651042, 0.948661 and 1.348586 us. The pi/2 and pi
+pulses are 19 and 39 ticks; the final guard is four ticks. All three
+sequences have identical start/end times and corrected flux envelopes.
+The smallest CPMG gaps are 9/37/9 ticks, safely positive. The longest
+science window is 1.402065 us and remains on the constant correction
+segment before the 32-us edge. Per-arm metadata includes realized pulse
+starts, centers, widths, gaps, phases and flux-window timing.
+
+Analyze absolute visibility and early-normalized curves together; the
+latter alone could conceal an extra-pulse penalty. A repeatable CPMG2
+improvement with valid controls would support recoverable phase contrast,
+while pulse errors and deterministic phase evolution would still need
+consideration. It is a test toward a trustworthy local T2 map, not a
+replacement of Hahn T2 by a different filter's decay time. There is no
+T1 scout, loss-site gate, or custom progress output. The production TLS
+and active-reset code are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --refocus-check
+```
+
+Verification before release: **1173 tests passed** in `tests/`, including
+the full 258-acquisition offline refocusing run and checks that legacy
+population mode still acquires its 144 arms. An independent audit also
+compiled all 15 sequence/time combinations with the real resident parent,
+saved board configuration and pinned QICK 0.2.133 source. That temporary
+local compile required a NumPy-2 compatibility cast inside the downloaded
+QICK source; no QICK or measurement-PC dependency was changed. The
+compiled elapsed values match the timing report. No hardware was accessed
+from the development machine.

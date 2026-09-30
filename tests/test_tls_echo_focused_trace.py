@@ -245,7 +245,8 @@ def test_source_hashes_identify_actual_file_bytes(tmp_path):
         str(source): "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
 
 
-def test_population_run_saves_every_paired_arm_and_exact_config_without_scouts(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["population_check", "refocus_check"])
+def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, monkeypatch, mode):
     """Replace hardware boundaries; exercise the real run, analysis, and files."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSDualTransitionLoss
 
@@ -283,7 +284,10 @@ def test_population_run_saves_every_paired_arm_and_exact_config_without_scouts(t
 
     def acquire(_soc, program, _timeout, cfg, *, total_shots):
         assert total_shots == 1600
-        if "echo_delay_us" in cfg:
+        if "refocus_elapsed_us" in cfg:
+            response = .5 + .49 * math.exp(-cfg["refocus_elapsed_us"] / 2) * math.cos(
+                math.radians(cfg["echo_phase_deg"]))
+        elif "echo_delay_us" in cfg:
             response = .5 + .45 * math.exp(-cfg["echo_delay_us"]) * math.cos(
                 math.radians(cfg["echo_phase_deg"]))
         elif cfg["opx_resident_gain"] == 0:
@@ -316,20 +320,27 @@ def test_population_run_saves_every_paired_arm_and_exact_config_without_scouts(t
     install(f"{prefix}.production", ProductionResetSession=SimpleNamespace(
         passive=lambda: SimpleNamespace(apply=dict)))
 
-    path = focused.run(data_root=tmp_path, population_check=True)
+    path = focused.run(data_root=tmp_path, **{mode: True})
     manifest = json.loads(path.read_text())
-    assert manifest["status"] == "complete_population_check"
+    assert manifest["status"] == "complete_" + mode
     assert manifest["valid_site_blocks"] == 3
     metadata = json.loads(Path(manifest["acquisition_metadata_json"]).read_text())
     assert metadata["board_configuration"] == {"clock_mhz": 384.}
-    assert len(metadata["source_file_sha256"]) == 5
+    assert len(metadata["source_file_sha256"]) == (5 if mode == "population_check" else 6)
     assert metadata["effective_base_config"]["opx_inter_shot_delay_us"] == 500.
-    assert len(metadata["acquisitions"]) == 144
+    assert len(metadata["acquisitions"]) == (144 if mode == "population_check" else 258)
     for block in manifest["blocks"]:
         with np.load(block["sites"][0]["raw_npz"]) as raw:
-            assert len(raw.files) == 96
-            assert len(raw["pop_e_1200ns_i"]) == 1600
-        assert block["sites"][0]["population_comparison"]["valid"]
+            assert len(raw.files) == (96 if mode == "population_check" else 172)
+            if mode == "population_check":
+                assert len(raw["pop_e_1200ns_i"]) == 1600
+            else:
+                assert len(raw["cpmg2_y_1350ns_270_i"]) == 1600
+        if mode == "population_check":
+            assert block["sites"][0]["population_comparison"]["valid"]
+        else:
+            assert all(block["sites"][0]["sequence_valid"].values())
+            assert len(block["sites"][0]["refocus_comparison"]["by_requested_elapsed_us"]) == 5
     for arm in metadata["acquisitions"]:
         assert arm["status"] == "complete"
         assert arm["started_at_utc"] <= arm["finished_at_utc"]
@@ -337,3 +348,50 @@ def test_population_run_saves_every_paired_arm_and_exact_config_without_scouts(t
         assert cfg["compiled_marker"] == 7
         if arm["kind"] in ("pop_g", "pop_e", "echo"):
             assert cfg["ff_hold"] == pytest.approx(30.3107 + arm["delay_us"])
+        if mode == "refocus_check" and arm["kind"] in focused.refocus.SEQUENCES:
+            assert cfg["refocus_elapsed_us"] == arm["delay_us"]
+            assert cfg["refocus_sequence"] == arm["kind"]
+            assert cfg["echo_phase_deg"] == arm["phase_deg"]
+
+
+def test_refocus_plan_stays_at_validated_point_and_has_no_scout(capsys):
+    p = focused.plan(refocus_check=True)
+    assert p['sites_ghz'] == [4.288]
+    assert p['sequences'] == ['hahn_x', 'hahn_y', 'cpmg2_y']
+    assert p['t1_scans'] is None
+    assert p['matched_pi2_center_elapsed_time']
+    assert p['shots_per_arm'] == 1600
+    for mode in ('single_point', 'local_map', 'population_check'):
+        with pytest.raises(ValueError):
+            focused.run(refocus_check=True, **{mode: True})
+    assert focused.main(['--plan', '--refocus-check']) == 0
+    assert json.loads(capsys.readouterr().out)['sequences'] == p['sequences']
+
+
+def test_refocus_schedule_interleaves_protocols_and_balances_order():
+    schedules = [focused.refocus_schedule(b) for b in range(3)]
+    assert len(schedules[0]) == 60
+    assert len(set(schedules[0])) == 60
+    assert set(schedules[0]) == set(schedules[1]) == set(schedules[2])
+    # Every phase/delay group tests all three protocols consecutively.
+    for schedule in schedules:
+        for i in range(0, len(schedule), 3):
+            group = schedule[i:i+3]
+            assert len({(t, p) for _, t, p in group}) == 1
+            assert {s for s, _, _ in group} == {'hahn_x', 'hahn_y', 'cpmg2_y'}
+    assert schedules[0][0][1] < schedules[1][0][1]
+    assert [schedule[0][0] for schedule in schedules] == ['hahn_x','hahn_y','cpmg2_y']
+
+
+def test_refocus_report_retains_raw_visibility_to_expose_pulse_penalty():
+    times = (.35, .455, .65, .95, 1.35)
+    amplitudes = {'hahn_x': .85, 'hahn_y': .80, 'cpmg2_y': .60}
+    cycles = {name: {t: {0: .5+a*math.exp(-t)/2, 90: .5,
+                        180: .5-a*math.exp(-t)/2, 270: .5}
+                     for t in times} for name,a in amplitudes.items()}
+    report = focused.refocus_report(cycles)
+    row = report['by_requested_elapsed_us'][times[-1]]
+    assert row['cpmg2_minus_hahn_y_visibility'] < 0
+    assert row['normalized']['cpmg2_y'] == pytest.approx(row['normalized']['hahn_y'])
+    assert row['visibility']['cpmg2_y'] == pytest.approx(.6*math.exp(-1.35))
+    assert 'intrinsic_t2' not in report

@@ -8,6 +8,8 @@ The --local-map mode repeats five nearby frequencies with model-free echo
 crossings. Neither T1 scan selects or gates the echo sites. All modes save IQ.
 The --population-check mode interleaves a short 4.288-GHz echo trace with
 ground/excited survival controls matched to each target-visit duration.
+The --refocus-check mode compares Hahn X, Hahn Y and CPMG2 Y at matched
+elapsed times at the same validated frequency, without a T1 scout.
 """
 
 import argparse
@@ -24,6 +26,7 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
     TLSEchoFastSquarePilot as fast,
+    TLSEchoRefocusProgram as refocus,
     TLSEchoSquareMap as square,
     TLSPumpProbeLocalizer as localizer,
 )
@@ -50,6 +53,40 @@ POPULATION_SITE_GHZ = 4.288
 POPULATION_DELAYS_US = (.08, .3, .5, .8, 1.2)
 POPULATION_SHOTS = 1600
 POPULATION_BLOCKS = 3
+
+
+def refocus_schedule(block):
+    """Compare all filters next to each other, rotating order across blocks."""
+    if not isinstance(block, int) or block < 0:
+        raise ValueError("block index must be a nonnegative integer")
+    times = refocus.TIMES_US if block % 2 == 0 else tuple(reversed(refocus.TIMES_US))
+    phases = PHASES_DEG if block % 2 == 0 else tuple(reversed(PHASES_DEG))
+    offset = block % len(refocus.SEQUENCES)
+    sequences = refocus.SEQUENCES[offset:] + refocus.SEQUENCES[:offset]
+    return [(sequence, elapsed, phase) for elapsed in times
+            for phase in phases for sequence in sequences]
+
+
+def refocus_report(cycles):
+    """Preserve absolute contrast as well as each filter's early-normalized trace."""
+    if set(cycles) != set(refocus.SEQUENCES) or any(
+            set(values) != set(refocus.TIMES_US) for values in cycles.values()):
+        raise ValueError("refocus report needs every planned filter and elapsed time")
+    visibility = {name: {t: square.phase_visibility(values)["visibility"]
+                         for t, values in trace.items()}
+                  for name, trace in cycles.items()}
+    rows = {}
+    for elapsed in refocus.TIMES_US:
+        raw = {name: trace[elapsed] for name, trace in visibility.items()}
+        normalized = {name: raw[name] / trace[refocus.TIMES_US[0]]
+                      if trace[refocus.TIMES_US[0]] > 0 else None
+                      for name, trace in visibility.items()}
+        rows[elapsed] = {"visibility": raw, "normalized": normalized,
+                         "hahn_y_minus_hahn_x_visibility": raw["hahn_y"] - raw["hahn_x"],
+                         "cpmg2_minus_hahn_y_visibility": raw["cpmg2_y"] - raw["hahn_y"]}
+    return {"by_requested_elapsed_us": rows,
+            "timing_axis": "first-to-last pi/2 center separation; realized times saved per program",
+            "interpretation": "A repeatable CPMG2 gain supports recoverable phase contrast; pulse and deterministic phase errors remain possible."}
 
 
 def population_schedule(block):
@@ -318,9 +355,26 @@ def scout_parameters(phase):
             "output_suffix": f"TLS_Echo_Focused_Trace_{phase}_T1"}
 
 
-def plan(*, single_point=False, local_map=False, population_check=False):
-    if sum(map(bool, (single_point, local_map, population_check))) > 1:
+def plan(*, single_point=False, local_map=False, population_check=False, refocus_check=False):
+    if sum(map(bool, (single_point, local_map, population_check, refocus_check))) > 1:
         raise ValueError("choose one echo mode")
+    if refocus_check:
+        return {"hardware_access": False,
+                "purpose": "single-frequency Hahn X / Hahn Y / CPMG2 Y comparison",
+                "sites_ghz": [POPULATION_SITE_GHZ],
+                "sequences": list(refocus.SEQUENCES),
+                "requested_pi2_center_elapsed_us": list(refocus.TIMES_US),
+                "phase_cycle_deg": list(PHASES_DEG),
+                "shots_per_arm": POPULATION_SHOTS,
+                "reversed_blocks": POPULATION_BLOCKS,
+                "matched_pi2_center_elapsed_time": True,
+                "same_flux_envelope_for_all_filters": True,
+                "filters_interleaved_with_rotating_order": True,
+                "short_sentinel_each_filter": True,
+                "strictly_constant_correction_during_science": True,
+                "metric": "raw and early-normalized four-phase visibility",
+                "t1_scans": None, "native_corrected_return_us": 40.,
+                "terminal": "no custom progress messages"}
     if population_check:
         return {"hardware_access": False,
                 "purpose": "single-frequency echo with matched population survival",
@@ -381,8 +435,8 @@ def plan(*, single_point=False, local_map=False, population_check=False):
 
 
 def run(*, data_root=None, correction_json=None,
-        single_point=False, local_map=False, population_check=False):
-    if sum(map(bool, (single_point, local_map, population_check))) > 1:
+        single_point=False, local_map=False, population_check=False, refocus_check=False):
+    if sum(map(bool, (single_point, local_map, population_check, refocus_check))) > 1:
         raise ValueError("choose one echo mode")
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
@@ -407,18 +461,21 @@ def run(*, data_root=None, correction_json=None,
                                "manifest.json")
         validate_single_point_source(json.loads(
             focused_source_path.read_text(encoding="utf-8")))
-    sites = ((POPULATION_SITE_GHZ,) if population_check else
+    audit_enabled = population_check or refocus_check
+    sites = ((POPULATION_SITE_GHZ,) if audit_enabled else
              LOCAL_MAP_SITES_GHZ if local_map else
              (SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
-    delays = (POPULATION_DELAYS_US if population_check else
+    delays = (refocus.TIMES_US if refocus_check else
+              POPULATION_DELAYS_US if population_check else
               SINGLE_DELAYS_US if (single_point or local_map) else DELAYS_US)
-    shots = (POPULATION_SHOTS if population_check else
+    shots = (POPULATION_SHOTS if audit_enabled else
              LOCAL_MAP_SHOTS if local_map else
              SINGLE_SHOTS if single_point else SHOTS)
-    blocks = (POPULATION_BLOCKS if population_check else
+    blocks = (POPULATION_BLOCKS if audit_enabled else
               LOCAL_MAP_BLOCKS if local_map else
               SINGLE_BLOCKS if single_point else 2)
-    session_id = (("q3_echo_population_check_" if population_check else
+    session_id = (("q3_echo_refocus_check_" if refocus_check else
+                   "q3_echo_population_check_" if population_check else
                    "q3_echo_local_map_" if local_map else
                    "q3_echo_single_point_" if single_point else
                    "q3_echo_focused_trace_") +
@@ -434,7 +491,8 @@ def run(*, data_root=None, correction_json=None,
             stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
-    manifest = {"schema": ("q3.echo-population-check.v1" if population_check else
+    manifest = {"schema": ("q3.echo-refocus-check.v1" if refocus_check else
+                            "q3.echo-population-check.v1" if population_check else
                             "q3.echo-local-map.v1" if local_map else
                             "q3.echo-single-point.v1" if single_point else
                             "q3.echo-focused-trace.v1"), "status": "running",
@@ -443,13 +501,13 @@ def run(*, data_root=None, correction_json=None,
                 "correction_json": str(correction),
                 "correction_sha256": localizer.CORRECTION_SHA256,
                 "plan": plan(single_point=single_point, local_map=local_map,
-                             population_check=population_check),
+                             population_check=population_check, refocus_check=refocus_check),
                 "blocks": []}
     if focused_source_path is not None:
         manifest["focused_source_manifest"] = str(focused_source_path)
     dual.checkpoint(path, manifest)
     try:
-        if not (single_point or local_map or population_check):
+        if not (single_point or local_map or audit_enabled):
             manifest["t1_pre_csv"] = str(localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides=scout_parameters("pre"), announce=False))
@@ -480,16 +538,17 @@ def run(*, data_root=None, correction_json=None,
                          "opx_reset_scheme": "none",
                          "opx_resident_dmem_stream": True,
                          "opx_inter_shot_delay_us": 500.})
-            if population_check:
+            if audit_enabled:
                 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
                 manifest["population_correction_window"] = validate_population_correction(
                     ff_pulse.load_compensation(base),
                     settle_us=base["flux_settle_time_us"])
             control_class = fast.make_program(resident.ResidentDriveProgram)
             echo_class = square.make_echo_program(resident.ResidentDriveProgram)
+            refocus_class = refocus.make_program(resident.ResidentDriveProgram) if refocus_check else None
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
-            if population_check:
+            if audit_enabled:
                 config_folder = folder / "program_configs"
                 config_folder.mkdir()
                 audit_path = folder / "acquisition_metadata.json"
@@ -499,6 +558,8 @@ def run(*, data_root=None, correction_json=None,
                              __file__, fast.__file__, square.__file__,
                              resident.__file__, ff_pulse.__file__]),
                          "acquisitions": []}
+                if refocus_check:
+                    audit["source_file_sha256"].update(source_file_sha256([refocus.__file__]))
                 manifest["acquisition_metadata_json"] = str(audit_path)
                 dual.checkpoint(audit_path, audit)
 
@@ -511,7 +572,13 @@ def run(*, data_root=None, correction_json=None,
                        "preparation_state": "g", "pre_drive_us": PRE_US,
                        "post_drive_us": POST_US, "shots": shots}
                 cfg = resident.arm_config(base, arm, dc_lookup)
-                if kind in ("pop_g", "pop_e"):
+                if kind in refocus.SEQUENCES:
+                    cfg["refocus_elapsed_us"] = float(delay)
+                    cfg["refocus_sequence"] = kind
+                    cfg["echo_phase_deg"] = int(phase)
+                    # Exact clock-quantized window is recorded by the pulse builder.
+                    cfg["ff_hold"] = PRE_US + POST_US + delay + PI2_US + .01
+                elif kind in ("pop_g", "pop_e"):
                     cfg = population_config(cfg, kind, delay)
                 elif kind == "echo":
                     cfg["echo_delay_us"] = float(delay)
@@ -530,16 +597,21 @@ def run(*, data_root=None, correction_json=None,
                                       (cfg["fast_pulse_us"] + .01))
                 return cfg
 
-            compile_arms = [("control", None), ("echo", delays[0]),
-                            ("echo", delays[-1])]
+            def program_class(kind):
+                return (refocus_class if kind in refocus.SEQUENCES else
+                        echo_class if kind == "echo" else control_class)
+
+            compile_arms = ([("control", None)] +
+                            [(kind, delay) for kind in refocus.SEQUENCES
+                             for delay in delays]) if refocus_check else [
+                                 ("control", None), ("echo", delays[0]), ("echo", delays[-1])]
             if population_check:
                 compile_arms.extend((kind, delay) for kind in ("pop_g", "pop_e")
                                     for delay in (delays[0], delays[-1]))
             for frequency in dict.fromkeys((sites[0], sites[-1])):
                 for kind, delay in compile_arms:
                     cfg = configuration(frequency, kind, phase=270, delay=delay)
-                    (echo_class if kind == "echo" else control_class)(
-                        soccfg, cfg, bundle.payload, bundle.loop)
+                    program_class(kind)(soccfg, cfg, bundle.payload, bundle.loop)
             manifest["compiled_edges"] = True
             dual.checkpoint(path, manifest)
 
@@ -547,11 +619,10 @@ def run(*, data_root=None, correction_json=None,
                         duration=None, label=None):
                 cfg = configuration(frequency, kind, phase=phase,
                                     delay=delay, duration=duration)
-                program = (echo_class if kind == "echo" else control_class)(
-                    soccfg, cfg, bundle.payload, bundle.loop)
-                if population_check:
+                program = program_class(kind)(soccfg, cfg, bundle.payload, bundle.loop)
+                if audit_enabled:
                     if label is None:
-                        raise ValueError("population-check acquisition needs an IQ label")
+                        raise ValueError("audited acquisition needs an IQ label")
                     config_path = config_folder / f"block{block}_{label}.json"
                     config_path.write_text(json.dumps(
                         json_safe(program.cfg), indent=2, allow_nan=False) + "\n",
@@ -559,7 +630,7 @@ def run(*, data_root=None, correction_json=None,
                     acquisition = {
                         "block": block, "frequency_ghz": frequency,
                         "label": label, "kind": kind, "delay_us": delay,
-                        "phase_deg": phase if kind in ("echo", "control") else None,
+                        "phase_deg": phase if kind in ("echo", "control", *refocus.SEQUENCES) else None,
                         "program_class": type(program).__name__,
                         "program_config_json": str(config_path),
                         "raw_npz": str(folder / f"block{block}_{round(1000*frequency)}MHz.npz"),
@@ -573,16 +644,16 @@ def run(*, data_root=None, correction_json=None,
                         soc, program, max(30., _block_timeout_s(cfg, shots)),
                         cfg, total_shots=shots)
                 except BaseException as exc:
-                    if population_check:
+                    if audit_enabled:
                         acquisition["status"] = "failed"
                         acquisition["error"] = f"{type(exc).__name__}: {exc}"
                     raise
                 else:
-                    if population_check:
+                    if audit_enabled:
                         acquisition["records_received"] = len(records)
                         acquisition["status"] = "complete" if len(records) == shots else "incomplete"
                 finally:
-                    if population_check:
+                    if audit_enabled:
                         acquisition["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
                         acquisition["elapsed_s"] = time.monotonic() - started
                         dual.checkpoint(audit_path, audit)
@@ -613,7 +684,11 @@ def run(*, data_root=None, correction_json=None,
                     take("rabi_twice", "pi", duration=TWO_PI_US)
                     for phase in entry["control_pre_phases"]:
                         take(f"control_pre_{phase}", "control", phase=phase)
-                    if population_check:
+                    if refocus_check:
+                        for kind, delay, phase in refocus_schedule(block):
+                            take(f"{kind}_{round(delay*1000)}ns_{phase}", kind,
+                                 phase=phase, delay=delay)
+                    elif population_check:
                         for kind, delay, phase in population_schedule(block):
                             label = f"{kind}_{round(delay*1000)}ns"
                             if kind == "echo":
@@ -623,7 +698,12 @@ def run(*, data_root=None, correction_json=None,
                         for delay, phase in entry["echo_arms"]:
                             take(f"echo_{round(delay * 1000)}ns_{phase}", "echo",
                                  phase=phase, delay=delay)
-                    if single_point or local_map or population_check:
+                    if refocus_check:
+                        for phase in entry["control_post_phases"]:
+                            for kind in refocus.SEQUENCES:
+                                take(f"sentinel_{kind}_{phase}", kind,
+                                     phase=phase, delay=delays[0])
+                    elif single_point or local_map or population_check:
                         for phase in entry["control_post_phases"]:
                             take(f"sentinel_{round(delays[0]*1000)}ns_{phase}",
                                  "echo", phase=phase, delay=delays[0])
@@ -658,40 +738,67 @@ def run(*, data_root=None, correction_json=None,
                             for label in ("control_pre", "control_post")}
                         point["control_gate"] = square.control_stability_gate(
                             controls["control_pre"], controls["control_post"])
-                        cycles = {delay: {
-                            phase: responses[f"echo_{round(delay*1000)}ns_{phase}"]
-                            for phase in PHASES_DEG} for delay in delays}
-                        point["rabi_responses"] = {
-                            "half": responses["rabi_half"],
-                            "twice": responses["rabi_twice"]}
-                        point["control_phases"] = controls
-                        point["echo_phases"] = cycles
-                        point["trace"] = trace_report(cycles, delays=delays)
-                        if single_point or local_map or population_check:
-                            sentinel = {phase: responses[
-                                f"sentinel_{round(delays[0]*1000)}ns_{phase}"]
-                                for phase in PHASES_DEG}
-                            point["sentinel_phases"] = sentinel
-                            point["short_echo_gate"] = short_echo_gate(
-                                cycles[delays[0]], sentinel)
-                        point["status"] = (
-                            "valid_controls" if point["rabi_gate"]["valid"] and
-                            point["control_gate"]["valid"] and
-                            (not (single_point or local_map or population_check) or
-                             point["short_echo_gate"]["valid"]) else
-                            "unresolved_local_control")
-                        if population_check:
-                            populations = {delay: {state: responses[
-                                f"pop_{state}_{round(delay*1000)}ns"]
-                                for state in ("g", "e")} for delay in delays}
-                            point["population_comparison"] = population_report(cycles, populations)
-                            if (point["status"] == "valid_controls" and
-                                    not point["population_comparison"]["valid"]):
-                                point["status"] = "unresolved_population_control"
+                        if refocus_check:
+                            point["control_phases"] = controls
+                            cycles = {kind: {delay: {phase: responses[
+                                f"{kind}_{round(delay*1000)}ns_{phase}"]
+                                for phase in PHASES_DEG} for delay in delays}
+                                for kind in refocus.SEQUENCES}
+                            sentinels = {kind: {phase: responses[f"sentinel_{kind}_{phase}"]
+                                                for phase in PHASES_DEG}
+                                         for kind in refocus.SEQUENCES}
+                            point["refocus_phases"] = cycles
+                            point["sentinel_phases"] = sentinels
+                            point["refocus_comparison"] = refocus_report(cycles)
+                            point["short_echo_gates"] = {kind: short_echo_gate(
+                                cycles[kind][delays[0]], sentinels[kind])
+                                for kind in refocus.SEQUENCES}
+                            common_valid = point["rabi_gate"]["valid"] and point["control_gate"]["valid"]
+                            point["sequence_valid"] = {kind: common_valid and gate["valid"]
+                                                       for kind, gate in point["short_echo_gates"].items()}
+                            point["status"] = ("valid_controls" if all(point["sequence_valid"].values())
+                                               else "unresolved_local_control")
+                        else:
+                            cycles = {delay: {
+                                phase: responses[f"echo_{round(delay*1000)}ns_{phase}"]
+                                for phase in PHASES_DEG} for delay in delays}
+                            point["rabi_responses"] = {
+                                "half": responses["rabi_half"],
+                                "twice": responses["rabi_twice"]}
+                            point["control_phases"] = controls
+                            point["echo_phases"] = cycles
+                            point["trace"] = trace_report(cycles, delays=delays)
+                            if single_point or local_map or population_check:
+                                sentinel = {phase: responses[
+                                    f"sentinel_{round(delays[0]*1000)}ns_{phase}"]
+                                    for phase in PHASES_DEG}
+                                point["sentinel_phases"] = sentinel
+                                point["short_echo_gate"] = short_echo_gate(
+                                    cycles[delays[0]], sentinel)
+                            point["status"] = (
+                                "valid_controls" if point["rabi_gate"]["valid"] and
+                                point["control_gate"]["valid"] and
+                                (not (single_point or local_map or population_check) or
+                                 point["short_echo_gate"]["valid"]) else
+                                "unresolved_local_control")
+                            if population_check:
+                                populations = {delay: {state: responses[
+                                    f"pop_{state}_{round(delay*1000)}ns"]
+                                    for state in ("g", "e")} for delay in delays}
+                                point["population_comparison"] = population_report(cycles, populations)
+                                if (point["status"] == "valid_controls" and
+                                        not point["population_comparison"]["valid"]):
+                                    point["status"] = "unresolved_population_control"
                     block_entry["sites"].append(point)
                     dual.checkpoint(path, manifest)
 
-        if single_point:
+        if refocus_check:
+            manifest["refocus_assessment"] = {
+                "valid_blocks_by_sequence": {kind: sum(site.get("sequence_valid", {}).get(kind, False)
+                    for block in manifest["blocks"] for site in block["sites"])
+                    for kind in refocus.SEQUENCES},
+                "intrinsic_pure_dephasing_inferred": False}
+        elif single_point:
             manifest["single_point_assessment"] = assess_single_point(
                 manifest["blocks"])
         elif local_map:
@@ -710,7 +817,8 @@ def run(*, data_root=None, correction_json=None,
         manifest["valid_site_blocks"] = sum(
             site["status"] == "valid_controls"
             for block in manifest["blocks"] for site in block["sites"])
-        manifest["status"] = ("complete_population_check" if population_check else
+        manifest["status"] = ("complete_refocus_check" if refocus_check else
+                              "complete_population_check" if population_check else
                               "complete_local_map" if local_map else
                               "complete_repeatable_echo" if single_point and
                               manifest["single_point_assessment"]["repeatable"]
@@ -739,15 +847,18 @@ def main(argv=None):
                         help="map five nearby flux-ramp echoes with local checks")
     experiment.add_argument("--population-check", action="store_true",
                         help="compare one short echo trace with matched population survival")
+    experiment.add_argument("--refocus-check", action="store_true",
+                        help="compare Hahn X, Hahn Y, and CPMG2 at matched elapsed times")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(single_point=args.single_point,
                               local_map=args.local_map,
-                              population_check=args.population_check), indent=2))
+                              population_check=args.population_check,
+                              refocus_check=args.refocus_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             single_point=args.single_point, local_map=args.local_map,
-            population_check=args.population_check)
+            population_check=args.population_check, refocus_check=args.refocus_check)
     return 0
 
 
