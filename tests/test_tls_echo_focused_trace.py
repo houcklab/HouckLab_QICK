@@ -245,7 +245,7 @@ def test_source_hashes_identify_actual_file_bytes(tmp_path):
         str(source): "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
 
 
-@pytest.mark.parametrize("mode", ["population_check", "refocus_check"])
+@pytest.mark.parametrize("mode", ["population_check", "refocus_check", "refocus_decay"])
 def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, monkeypatch, mode):
     """Replace hardware boundaries; exercise the real run, analysis, and files."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSDualTransitionLoss
@@ -284,7 +284,9 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
 
     def acquire(_soc, program, _timeout, cfg, *, total_shots):
         assert total_shots == 1600
-        if "refocus_elapsed_us" in cfg:
+        if cfg.get("refocus_sequence") == "late_control":
+            response = .5 + .45 * math.cos(math.radians(cfg["echo_phase_deg"]))
+        elif "refocus_elapsed_us" in cfg:
             response = .5 + .49 * math.exp(-cfg["refocus_elapsed_us"] / 2) * math.cos(
                 math.radians(cfg["echo_phase_deg"]))
         elif "echo_delay_us" in cfg:
@@ -328,10 +330,10 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
     assert metadata["board_configuration"] == {"clock_mhz": 384.}
     assert len(metadata["source_file_sha256"]) == (5 if mode == "population_check" else 6)
     assert metadata["effective_base_config"]["opx_inter_shot_delay_us"] == 500.
-    assert len(metadata["acquisitions"]) == (144 if mode == "population_check" else 258)
+    assert len(metadata["acquisitions"]) == {"population_check": 144, "refocus_check": 258, "refocus_decay": 294}[mode]
     for block in manifest["blocks"]:
         with np.load(block["sites"][0]["raw_npz"]) as raw:
-            assert len(raw.files) == (96 if mode == "population_check" else 172)
+            assert len(raw.files) == {"population_check": 96, "refocus_check": 172, "refocus_decay": 196}[mode]
             if mode == "population_check":
                 assert len(raw["pop_e_1200ns_i"]) == 1600
             else:
@@ -340,7 +342,14 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
             assert block["sites"][0]["population_comparison"]["valid"]
         else:
             assert all(block["sites"][0]["sequence_valid"].values())
-            assert len(block["sites"][0]["refocus_comparison"]["by_requested_elapsed_us"]) == 5
+            assert len(block["sites"][0]["refocus_comparison"]["by_requested_elapsed_us"]) == (8 if mode == "refocus_decay" else 5)
+    if mode == "refocus_decay":
+        for block in manifest["blocks"]:
+            site = block["sites"][0]
+            assert site["late_control_gate"]["valid"]
+            assert all(g["valid"] for g in site["bridge_gates"].values())
+        assert sum(a["kind"].startswith("bridge_") for a in metadata["acquisitions"]) == 24
+        assert sum(a["kind"] == "late_control" for a in metadata["acquisitions"]) == 12
     for arm in metadata["acquisitions"]:
         assert arm["status"] == "complete"
         assert arm["started_at_utc"] <= arm["finished_at_utc"]
@@ -348,7 +357,7 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
         assert cfg["compiled_marker"] == 7
         if arm["kind"] in ("pop_g", "pop_e", "echo"):
             assert cfg["ff_hold"] == pytest.approx(30.3107 + arm["delay_us"])
-        if mode == "refocus_check" and arm["kind"] in focused.refocus.SEQUENCES:
+        if mode in ("refocus_check", "refocus_decay") and arm["kind"] in focused.refocus.SEQUENCES:
             assert cfg["refocus_elapsed_us"] == arm["delay_us"]
             assert cfg["refocus_sequence"] == arm["kind"]
             assert cfg["echo_phase_deg"] == arm["phase_deg"]
@@ -395,3 +404,37 @@ def test_refocus_report_retains_raw_visibility_to_expose_pulse_penalty():
     assert row['normalized']['cpmg2_y'] == pytest.approx(row['normalized']['hahn_y'])
     assert row['visibility']['cpmg2_y'] == pytest.approx(.6*math.exp(-1.35))
     assert 'intrinsic_t2' not in report
+
+
+def test_decay_plan_extends_one_validated_site_without_scout(capsys):
+    p = focused.plan(refocus_decay=True)
+    assert p['sites_ghz'] == [4.288]
+    assert p['sequences'] == ['hahn_y', 'cpmg2_y']
+    assert p['requested_pi2_center_elapsed_us'][-1] == 4.2
+    assert p['t1_scans'] is None
+    assert p['concurrent_flux_correction']
+    assert p['late_projection_control']
+    with pytest.raises(ValueError):
+        focused.run(refocus_check=True, refocus_decay=True)
+    assert focused.main(['--plan', '--refocus-decay']) == 0
+    assert json.loads(capsys.readouterr().out)['concurrent_flux_correction']
+
+
+def test_decay_schedule_keeps_legacy_overlap_next_to_new_sequence():
+    for block in range(3):
+        schedule = focused.decay_schedule(block)
+        assert len(schedule) == 72
+        assert len(set(schedule)) == 72
+        for i, (kind,t,phase) in enumerate(schedule):
+            if kind.startswith('bridge_'):
+                assert t == 1.35
+                assert schedule[i-1] == (kind.removeprefix('bridge_'),t,phase)
+        assert {t for kind,t,phase in schedule if not kind.startswith('bridge_')} == {.35,.65,.95,1.35,1.8,2.4,3.2,4.2}
+
+
+def test_bridge_gate_compares_same_filter_not_hahn_to_cpmg():
+    current = {0: .7, 90: .5, 180: .3, 270: .5}
+    old = {0: .71, 90: .5, 180: .29, 270: .5}
+    assert focused.bridge_gate(current, old)['valid']
+    assert not focused.bridge_gate(current, {0:.55,90:.5,180:.45,270:.5})['valid']
+    assert not focused.bridge_gate(current, {0:.3,90:.5,180:.7,270:.5})['valid']

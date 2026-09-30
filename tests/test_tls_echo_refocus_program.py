@@ -118,11 +118,12 @@ class Recorder(Clock):
     def set_pulse_registers(self, **kwargs):
         self.registers[kwargs["ch"]] = kwargs
 
-    def pulse(self, ch):
+    def pulse(self, ch, t='auto'):
         register = dict(self.registers[ch])
-        start = self.time + self.ends[ch]
+        relative_start = self.ends[ch] if t == 'auto' else t
+        start = self.time + relative_start
         self.pulses.append({**register, "start": start})
-        self.ends[ch] += register["length"]
+        self.ends[ch] = relative_start + register["length"]
 
     def sync_all(self, value):
         self.waits.append(value)
@@ -178,3 +179,98 @@ def test_missing_correction_or_target_excursion_is_rejected(qick_sink):
         with pytest.raises(ValueError):
             program._resident_excursion()
         assert program.pulses == []
+
+
+@pytest.mark.parametrize('elapsed', [.35, .65, .95, 1.35, 1.8, 2.4, 3.2, 4.2])
+@pytest.mark.parametrize('phase', [0, 90, 180, 270])
+def test_decay_concurrent_flux_preserves_exact_microwave_timing(elapsed, phase, qick_sink):
+    refocus = module()
+    envelopes = []
+    for sequence in refocus.DECAY_SEQUENCES:
+        program = refocus.make_decay_program(Recorder)(sequence, elapsed, phase)
+        program._t1_ff_compensation = {
+            'segment_edges_ns': [0., 30000., 32000., 34000., 40000., 80000.],
+            'multipliers': [1.03, 1.02, 1.01, 1., 1., 1.]}
+        program._resident_excursion()
+        timing = program.cfg['refocus_timing']
+        microwave = [p for p in program.pulses if p['ch'] == 1]
+        assert [p['start'] - timing['science_start_cycles'] for p in microwave] == timing['pulse_starts_cycles']
+        assert [p['length'] for p in microwave] == timing['pulse_lengths_cycles']
+        assert [p['phase'] for p in microwave] == timing['pulse_phases_deg']
+        assert min(timing['gaps_cycles']) >= 4
+        assert timing['elapsed_us'] == pytest.approx(timing['elapsed_cycles'] / 430.08)
+        assert timing['science_end_us'] < timing['target_hold_us']
+        assert program.waits == [0, 0, 0]  # never synchronize inside the train
+        flux = [p for p in program.pulses if p['ch'] == 3]
+        saved = timing['science_and_post_flux_events']
+        emitted = [p for p in flux if timing['science_start_cycles'] <= p['start'] < timing['target_hold_cycles']]
+        assert [(p['start'] - timing['science_start_cycles'], p['length'], p['gain']) for p in emitted] == [
+            (p['start_cycles'], p['length_cycles'], p['gain_dac']) for p in saved]
+        if elapsed == 4.2:
+            assert len(saved) == 3
+            assert [p['coefficient'] for p in saved] == [1.02, 1.01, 1.]
+            assert [p['start_cycles'] for p in saved] == [0, round(1.5 * 430.08), round(1.5 * 430.08) + round(2. * 430.08)]
+            assert saved[-1]['start_cycles'] < timing['pulse_starts_cycles'][-1]
+        envelopes.append((flux, program.time))
+    assert envelopes[0] == envelopes[1]
+
+
+def _command_values(program, channel):
+    """Evaluate the physical held-output waveform, including implicit holds."""
+    pulses = sorted((p for p in program.pulses if p['ch'] == channel), key=lambda p: p['start'])
+    values = [None] * program.time
+    for i, pulse in enumerate(pulses):
+        end = pulses[i + 1]['start'] if i + 1 < len(pulses) else program.time
+        values[pulse['start']:end] = [pulse['gain']] * (end - pulse['start'])
+    return values
+
+
+@pytest.mark.parametrize('sequence', ['hahn_y', 'cpmg2_y'])
+def test_decay_overlap_has_same_physical_flux_and_pulses_as_old_builder(sequence, qick_sink):
+    refocus = module()
+    old = refocus.make_program(Recorder)(sequence, 1.35, 180)
+    new = refocus.make_decay_program(Recorder)(sequence, 1.35, 180)
+    old._resident_excursion()
+    new._resident_excursion()
+    assert old.time == new.time
+    assert _command_values(old, 3) == _command_values(new, 3)
+    assert [p for p in old.pulses if p['ch'] == 1] == [p for p in new.pulses if p['ch'] == 1]
+
+
+def test_decay_late_projection_control_matches_final_pulse_and_flux(qick_sink):
+    refocus = module()
+    late = refocus.make_decay_program(Recorder)('late_control', 4.2, 270)
+    main = refocus.make_decay_program(Recorder)('cpmg2_y', 4.2, 270)
+    late._resident_excursion()
+    main._resident_excursion()
+    control_timing = late.cfg['refocus_timing']
+    main_timing = main.cfg['refocus_timing']
+    assert control_timing['window_cycles'] == main_timing['window_cycles']
+    assert control_timing['pulse_starts_cycles'][-1] == main_timing['pulse_starts_cycles'][-1]
+    assert control_timing['elapsed_cycles'] == 23
+    assert control_timing['placement_elapsed_cycles'] == main_timing['elapsed_cycles']
+    assert control_timing['pulse_lengths_cycles'] == [19, 19]
+    assert control_timing['pulse_phases_deg'] == [0, 270]
+    assert control_timing['gaps_cycles'] == [4]
+    assert _command_values(late, 3) == _command_values(main, 3)
+
+
+def test_decay_limits_clocks_and_inputs_preserve_old_bounds(qick_sink):
+    refocus = module()
+    assert refocus.DECAY_TIMES_US == (.35, .65, .95, 1.35, 1.8, 2.4, 3.2, 4.2)
+    assert refocus.DECAY_SEQUENCES == ('hahn_y', 'cpmg2_y')
+    for elapsed in (.08, .2, 4.3, math.nan):
+        with pytest.raises(ValueError):
+            refocus.decay_timing_report(Clock(), elapsed, 'cpmg2_y')
+    for sequence in ('hahn_x', 'ramsey'):
+        with pytest.raises(ValueError):
+            refocus.decay_timing_report(Clock(), 1.35, sequence)
+    with pytest.raises(ValueError):
+        refocus.timing_report(Clock(), 4.2, 'cpmg2_y')
+
+    class OtherClock(Clock):
+        def cycles2us(self, value, gen_ch=None):
+            return value / (384. if gen_ch == 3 else 430.08)
+
+    with pytest.raises(ValueError, match='clock'):
+        refocus.decay_timing_report(OtherClock(), 4.2, 'cpmg2_y')

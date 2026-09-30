@@ -5777,3 +5777,95 @@ local compile required a NumPy-2 compatibility cast inside the downloaded
 QICK source; no QICK or measurement-PC dependency was changed. The
 compiled elapsed values match the timing report. No hardware was accessed
 from the development machine.
+
+### Two refocusing pulses preserve more contrast, September 30
+
+`q3_echo_refocus_check_20260930T051540Z_5bf26954` completed all 258
+acquisitions under `27e6db7d`, with 1600 records per arm. Every sequence
+passed its controls in every block. Independent raw-IQ recalculation
+agrees with the saved phase projections to floating-point precision.
+The six source hashes match the saved Windows files after CRLF conversion.
+
+At the longest realized center-to-center elapsed time, **1.348586 us**:
+
+| Block | Hahn X, normalized | Hahn Y, normalized | CPMG2 Y, normalized |
+| --- | --- | --- | --- |
+| 1 | 0.347 | 0.437 | 0.787 |
+| 2 | 0.444 | 0.457 | 0.632 |
+| 3 | 0.476 | 0.434 | 0.663 |
+| Mean | 0.422 | 0.443 | 0.694 |
+
+The CPMG2 benefit remains in absolute visibility: means are **0.685**
+for CPMG2, **0.386** for Hahn Y and **0.389** for Hahn X. Changing the
+single refocusing pulse from X to Y does not explain the endpoint gain.
+A 2000-draw bootstrap of consecutive 50-shot groups, including bracket
+reference uncertainty, gives a conditional 95% interval **[0.189, 0.313]**
+for the mean normalized CPMG2-minus-Hahn-Y gain. Each individual block's
+interval is positive: [0.237, 0.472], [0.076, 0.276], [0.127, 0.324].
+These quantify sampling uncertainty; they do not include slow drift or
+systematic pulse/calibration errors. The intermediate 0.65-us point does
+not show a consistent normalized benefit, so do not describe the gain as
+uniform at every elapsed time.
+
+![Matched-time refocusing comparison](q3_echo_refocus_20260930.png)
+
+This establishes a repeatable recovery of phase contrast with an extra
+refocusing pulse. It is a positive control result for the flux-ramp
+coherence program. It does **not** yet identify a TLS dephasing hotspot,
+a stochastic-noise mechanism, or a numerical CPMG T2. Finite pulse errors,
+deterministic detuning and the extra driven interval remain possible
+contributors. Some phase-circle centers/opposite-phase sums move, and
+projected visibility can exceed one on the IQ-reference scale. Preserve
+raw contrasts and controls rather than treating those values as calibrated
+absolute populations. CPMG2 has not reached 1/e within this short window.
+
+### Extend the single-point decay before returning to the local map
+
+`TLSEchoFocusedTrace --run --refocus-decay` keeps the validated 4.288-GHz
+point and compares Hahn Y with CPMG2 Y at requested elapsed times
+**0.35, 0.65, 0.95, 1.35, 1.8, 2.4, 3.2 and 4.2 us**. Three blocks,
+1600 shots per arm, four analysis phases, reversed delay order and
+interleaved sequences remain. The purpose is to bracket each decay and
+measure its shape before applying the protocol over a narrow frequency
+interval. No T1 scout or loss-site selection runs.
+
+The longer window crosses native correction edges at 32 and 34 us.
+The new opt-in builder therefore queues the **entire corrected flux
+waveform** while microwave pulses run at explicit clock timestamps.
+It does not freeze the flux command during the long echo, and it does
+not synchronize to the end of the queued flux tail between microwave
+pulses. One common end synchronization precedes the corrected return.
+Hahn and CPMG share the full flux envelope and elapsed time. Actual
+microwave and flux-event timings are saved in every program configuration.
+The original short builder and all older modes retain their behavior.
+
+Two checks are embedded in the same acquisition:
+
+- At 1.35 us, each phase/filter is immediately followed by the original
+  short builder. A bridge gate checks old/new visibility ratios 0.65–1.35,
+  phase disagreement at most 25 degrees and both visibilities at least
+  0.20. This catches a playback-path difference without aborting or
+  discarding the remaining measurements.
+- At the longest hold, an adjacent pi/2 pair ends at exactly the same
+  final-pulse time as the science sequence. Its phase circle checks
+  whether the projection pulse remains usable later in the flux visit.
+  The standard phase-circle gate applies; a failed late control marks the
+  long-trace interpretation unresolved while preserving all raw IQ.
+
+There are 294 acquisitions, normally about five to ten minutes. The
+runner adds no custom progress output. Production spectroscopy and active
+reset code are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --refocus-decay
+```
+
+Release verification: **1213 tests passed** in `tests/`, including the
+294-acquisition offline run, legacy-mode regression coverage, correction
+edges during the microwave train, matched envelopes, and short-builder
+waveform equivalence. All 68 new science/late-control programs compiled
+against the saved board using the pinned QICK source (460–479 instructions).
+The independent review found no blocking issue. The overlap thresholds are
+screening criteria; analyze the overlap's raw-IQ uncertainty before claiming
+quantitative equivalence with the older playback implementation.
