@@ -6793,3 +6793,93 @@ zero-noise and static-offset references and fresh phase-visibility checks;
 do not reuse the earlier failed park-Ramsey transfer inference. That new
 calibration is a design task, not an already validated or pushed hardware
 command. No acquisition code changes accompany this result entry.
+
+### Next bounded run: even-phase response to slow versus fast flux offsets
+
+`TLSNoiseFluxResponse --run` implements the authorized on-chip flux-response
+check at the previously calibrated **4.288-GHz** target (resident drive
+4290.5 MHz, gain 30000, square π/2 = 19 fabric clocks, π = 39 clocks).
+It uses explicit scoped q3 settings and does not require a TLS scout. It
+starts with fresh passive SS calibration and an adjacent-pulse phase circle,
+π/2 population and 2π control; it stops after this control if unresolved.
+The same controls and another SS calibration bracket the completed run.
+
+Sequence, with one readout per subshot:
+
+1. Passive park preparation, then the pinned compensated step to the target.
+2. A target-resident Hahn-Y echo: π/2 at phase 0, centered π at 90°, final
+   π/2 at 0/90/180/270°. First-to-last pulse-center spacing is 580 fabric
+   clocks = 1.34859 µs. All three microwave pulses are outside the commanded
+   flux-offset window, with at least 32 fabric clocks of guard.
+3. In the first free interval, apply either a constant offset for **128
+   clocks = 297.62 ns**, or eight balanced **16-clock = 37.20-ns** chips.
+   Each frozen fast waveform and its exact polarity inverse are acquired
+   within the same hardware loop. Constant positive/negative offsets give
+   the slow reference. Across the two polarities, the entire DAC-code
+   histograms match exactly because this window has constant DC correction.
+4. Repeat at **64, 250 and 375 DAC**, and two offset placements separated
+   by 32 clocks = 74.40 ns. The higher amplitudes provide phase sensitivity;
+   extrapolation to the original small TLS-test excursion is an assumption.
+5. Complete the compensated 40-µs return and read out at park. Resident g/e
+   references accompany every program; allow 1000 µs passive washout between
+   all subshots. No active reset or herald-selection is used.
+
+The correction is checked, not flattened. Its constant 30–32-µs segment
+contains the entire science window: pre-delay 29.51 µs plus 0.5-µs settle,
+823 clocks = 1.91360 µs of queued echo/offset playback, then 0.05 µs post.
+All commands are timestamped. After setting the unchanged initial DC level,
+microwave events are queued first, followed by the remaining flux edges.
+Separate instruction-cost checks enforce both the earliest microwave and
+first offset deadlines, including `safe_regwi` expansions into bitwise and
+arithmetic instructions. The correction and calibration-source hashes are
+pinned; raw IQ, every science-window fabric-clock waveform, pulse timing, board config,
+source snapshots, and both readout-calibration analyses are saved.
+
+Four complete blocks use four frozen seeds, with randomized setting order,
+interleaved polarity/analysis phases, and zero-offset echo references before
+and after each block. Total: **58 programs, 326,400 probes**, approximately
+**8–15 minutes**. Terminal output retains ordinary calibration output plus
+one progress bar with ETA; per-setting details go to the manifest.
+
+The measured quantity is the **even phase**, formed separately for each
+seed as half the principal argument of the positive/negative phase sum
+relative to its interpolated zero-offset echo. It is modulo π; there is
+no model-driven unwrap. Both raw polarity circles, visibility, uncertainty
+and off-reference drift remain available. All four blocks must pass the
+phase gates; failing seeds are not silently dropped. A failed final pulse
+control invalidates the inference but retains all measured phases. The
+250/375-DAC amplitude-squared consistency check flags a possible scaling or
+branch problem without resolving that ambiguity automatically.
+
+**Limits fixed before acquisition:** this is a signed, echo-weighted
+response including pulse tails, not total delivered flux power or a unique
+bandwidth/transfer function. Away from the sweet spot, even line distortion
+or rectification can contribute through the linear frequency slope, along
+with the desired curvature response. Amplitude-squared scaling alone does
+not separate them; agreement between the two placements does not prove an
+absence of tails. No automatic delivered-gain or filtering certificate is
+produced. A short linear pulse-area Ramsey check was rejected because pulse
+tails can preserve its area despite filtering. Nonlinear phase metrology is
+inspired by [Rol et al., arXiv:1907.04818](https://arxiv.org/abs/1907.04818),
+but this polarity-paired echo away from the sweet spot is an adaptation,
+not an already validated Cryoscope reconstruction.
+
+Offline verification uses the actual QICK 0.2.133 compiler and saved board,
+correction and readout calibration. All 58 programs compile, with at most
+4567 instructions and at least **64 fabric clocks** of checked queue margin.
+Waveforms reconstruct exactly from their constant segments, fit memory,
+and avoid clipping. A full 326,400-probe synthetic acquisition exercises
+stream-bank decoding, NAS-style files, phase recovery, plotting, post-readout
+reanalysis, and restoration of an initially supplied q4 configuration.
+The ten focused tests cover timing, polarity pairing, phase wrapping,
+missing/low-visibility data, failure of the final pulse control, and
+non-censoring of failed seeds. The full suite passes **1317 tests**. An
+additional synthetic failed-control run stops before science and saves its
+raw IQ, summary and completion metadata. Independent read-only review found
+no remaining consequential timing, readout or analysis fault. These checks
+do not validate hardware fidelity.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSNoiseFluxResponse --run
+```
