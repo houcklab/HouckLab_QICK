@@ -5564,3 +5564,41 @@ diagnostic criterion, not proof of a microscopic dephasing mechanism.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --single-point
 ```
+
+### Four-block single-point echo and local map, September 30
+
+The completed single-point run was
+`q3_echo_single_point_20260930T002056Z_296cd873`. It used the older
+`720d7c2c` code and therefore measured **4.288 GHz**, before the
+subsequent target change to 4.284 GHz reached the measurement PC. All
+four blocks passed the bracketed IQ, one-pulse, two-pulse phase, and
+repeated short-echo checks. Their direct, interpolated 1/e visibility
+crossings were **2.70, 2.71, 2.81, and 2.50 us**. The 4-us visibility
+was only 0.07–0.15 of the first-delay visibility in each block. The
+phase-circle data and the repeated short-echo sentinels make this a
+credible flux-ramp echo measurement at one frequency.
+
+The manifest status `complete_echo_unresolved` comes from the old
+single-exponential gate: two of four log-fit RMS values were 0.278 and
+0.254, just above its 0.25 cutoff. The traces show an early plateau and
+are not described well by one exponential; the fitted rates of
+0.463–0.625/us should not be presented as a precise T2. The directly
+measured 1/e crossing is more stable here. It is an **effective echo
+visibility time**, which can contain T1 loss as well as dephasing; it
+does not establish a TLS dephasing hotspot.
+
+![Four replicated q3 Hahn-echo traces at 4.288 GHz](q3_echo_single_point_4288_20260930.png)
+
+The next bounded experiment is a five-frequency local map at
+4.280–4.296 GHz in 4-MHz steps, three reversed blocks, nine delays,
+and 1200 shots per phase. Each site retains its own pulse and drift
+controls. It reports the full four-phase trace and an interpolated 1/e
+crossing when at least two blocks pass and agree within 20%; it does
+not require an exponential shape. No T1 scout or loss-site selection
+gates the map. This is a method-validation map over a small band, not
+yet a claim about the 4.21-GHz candidate.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --local-map
+```

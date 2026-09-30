@@ -1,10 +1,11 @@
-"""Validate one flux-ramp echo or repeat the q3 4.21-GHz candidate.
+"""Validate flux-ramp echoes at one site or over a small frequency range.
 
 The --single-point mode first tests a 4.284-GHz corrected flux visit in
 four reversed blocks, including a repeated short-delay echo sentinel.
 The later default mode covers fixed sites around the blind-map candidate
 and two quieter controls, with narrow five-point scans before and after.
-Neither T1 scan selects or gates the echo sites. Both modes save raw IQ.
+The --local-map mode repeats five nearby frequencies with model-free echo
+crossings. Neither T1 scan selects or gates the echo sites. All modes save IQ.
 """
 
 import argparse
@@ -38,6 +39,9 @@ SINGLE_DELAYS_US = (.08, .15, .3, .5, .8, 1.2, 1.8, 2.6, 4.)
 SINGLE_SHOTS = 1600
 SINGLE_BLOCKS = 4
 SINGLE_SOURCE_SESSION = "q3_echo_focused_trace_20260930T001018Z_fdc72d98"
+LOCAL_MAP_SITES_GHZ = (4.280, 4.284, 4.288, 4.292, 4.296)
+LOCAL_MAP_SHOTS = 1200
+LOCAL_MAP_BLOCKS = 3
 
 
 def schedule(block, *, sites=SITES_GHZ, delays=DELAYS_US):
@@ -71,7 +75,9 @@ def trace_report(cycles, *, delays=DELAYS_US):
     revivals = sum(b - a > .10 for a, b in zip(ordered, ordered[1:]))
     usable = [(delay, value) for delay, value in zip(delays, ordered)
               if .06 <= value <= 2.]
-    report = {"visibility": visibilities, "revival_count": revivals,
+    report = {"visibility": visibilities,
+              "one_over_e": one_over_e_crossing(dict(zip(delays, ordered))),
+              "revival_count": revivals,
               "fit_points": len(usable)}
     if len(usable) < 4:
         report["status"] = "insufficient_echo_contrast"
@@ -85,6 +91,29 @@ def trace_report(cycles, *, delays=DELAYS_US):
                    "t2_echo_us": float(-1 / slope) if slope < 0 else None,
                    "log_fit_rms": float(np.sqrt(np.mean(residual ** 2)))})
     return report
+
+
+def one_over_e_crossing(visibility_by_delay):
+    """Interpolate the first unambiguous 1/e crossing, without a decay fit."""
+    pairs = sorted((float(delay), float(value))
+                   for delay, value in visibility_by_delay.items())
+    if (len(pairs) < 2 or any(not math.isfinite(t) or
+                             not math.isfinite(v) or v < 0 for t, v in pairs)
+            or any(b[0] <= a[0] for a, b in zip(pairs, pairs[1:]))
+            or pairs[0][1] < .55):
+        return {"valid": False, "reason": "invalid or weak early visibility"}
+    threshold = pairs[0][1] / math.e
+    states = [value >= threshold for _, value in pairs]
+    transitions = [index for index in range(1, len(states))
+                   if states[index] != states[index-1]]
+    if len(transitions) != 1 or states[transitions[0]]:
+        return {"valid": False, "reason": "unbracketed or ambiguous crossing"}
+    index = transitions[0]
+    left_t, left_v = pairs[index - 1]
+    right_t, right_v = pairs[index]
+    time_us = left_t + (threshold-left_v)*(right_t-left_t)/(right_v-left_v)
+    return {"valid": True, "time_us": float(time_us),
+            "bracket_us": [left_t, right_t], "threshold": threshold}
 
 
 def short_echo_gate(first_cycle, repeated_cycle):
@@ -119,6 +148,27 @@ def assess_single_point(blocks):
             "rate_coefficient_of_variation": rate_cv}
 
 
+def assess_local_map(blocks):
+    sites = {}
+    for frequency in LOCAL_MAP_SITES_GHZ:
+        crossings = [site["trace"]["one_over_e"]["time_us"]
+                     for block in blocks for site in block["sites"]
+                     if site["frequency_ghz"] == frequency and
+                     site["status"] == "valid_controls" and
+                     site["trace"]["one_over_e"]["valid"]]
+        cv = (float(np.std(crossings, ddof=1)/np.mean(crossings))
+              if len(crossings) >= 2 else None)
+        resolved = len(crossings) >= 2 and cv <= .20
+        sites[f"{frequency:.3f}"] = {
+            "status": "resolved" if resolved else "unresolved",
+            "valid_blocks": len(crossings), "crossings_us": crossings,
+            "mean_crossing_us": float(np.mean(crossings)) if crossings else None,
+            "coefficient_of_variation": cv}
+    return {"sites": sites, "resolved_sites": sum(
+        site["status"] == "resolved" for site in sites.values()),
+        "total_sites": len(sites)}
+
+
 def validate_single_point_source(source):
     if (source.get("schema") != "q3.echo-focused-trace.v1" or
             source.get("session_id") != SINGLE_SOURCE_SESSION or
@@ -146,7 +196,24 @@ def scout_parameters(phase):
             "output_suffix": f"TLS_Echo_Focused_Trace_{phase}_T1"}
 
 
-def plan(*, single_point=False):
+def plan(*, single_point=False, local_map=False):
+    if single_point and local_map:
+        raise ValueError("choose one echo mode")
+    if local_map:
+        return {"hardware_access": False,
+                "purpose": "replicated local flux-ramp echo map",
+                "sites_ghz": list(LOCAL_MAP_SITES_GHZ),
+                "delays_us": list(SINGLE_DELAYS_US),
+                "phase_cycle_deg": list(PHASES_DEG),
+                "shots_per_arm": LOCAL_MAP_SHOTS,
+                "reversed_blocks": LOCAL_MAP_BLOCKS,
+                "one_pulse_half_and_two_pi_checks_at_each_site": True,
+                "two_pulse_phase_controls_before_and_after_echo": True,
+                "short_echo_sentinel_repeated_each_site": True,
+                "metric": "interpolated 1/e echo visibility crossing",
+                "t1_scans": None,
+                "native_corrected_return_us": 40.,
+                "terminal": "no custom progress messages"}
     if single_point:
         return {"hardware_access": False,
                 "purpose": "validate a repeatable flux-ramp Hahn echo at 4.284 GHz",
@@ -174,7 +241,10 @@ def plan(*, single_point=False):
             "terminal": "no custom progress messages"}
 
 
-def run(*, data_root=None, correction_json=None, single_point=False):
+def run(*, data_root=None, correction_json=None,
+        single_point=False, local_map=False):
+    if single_point and local_map:
+        raise ValueError("choose one echo mode")
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
         TLSDualTransitionLoss as dual,
@@ -198,11 +268,15 @@ def run(*, data_root=None, correction_json=None, single_point=False):
                                "manifest.json")
         validate_single_point_source(json.loads(
             focused_source_path.read_text(encoding="utf-8")))
-    sites = ((SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
-    delays = SINGLE_DELAYS_US if single_point else DELAYS_US
-    shots = SINGLE_SHOTS if single_point else SHOTS
-    blocks = SINGLE_BLOCKS if single_point else 2
-    session_id = (("q3_echo_single_point_" if single_point else
+    sites = (LOCAL_MAP_SITES_GHZ if local_map else
+             (SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
+    delays = SINGLE_DELAYS_US if (single_point or local_map) else DELAYS_US
+    shots = (LOCAL_MAP_SHOTS if local_map else
+             SINGLE_SHOTS if single_point else SHOTS)
+    blocks = (LOCAL_MAP_BLOCKS if local_map else
+              SINGLE_BLOCKS if single_point else 2)
+    session_id = (("q3_echo_local_map_" if local_map else
+                   "q3_echo_single_point_" if single_point else
                    "q3_echo_focused_trace_") +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
                   "_" + uuid.uuid4().hex[:8])
@@ -216,18 +290,20 @@ def run(*, data_root=None, correction_json=None, single_point=False):
             stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
-    manifest = {"schema": ("q3.echo-single-point.v1" if single_point else
+    manifest = {"schema": ("q3.echo-local-map.v1" if local_map else
+                            "q3.echo-single-point.v1" if single_point else
                             "q3.echo-focused-trace.v1"), "status": "running",
                 "session_id": session_id, "code_commit": commit,
                 "source_manifest": str(source_path),
                 "correction_json": str(correction),
                 "correction_sha256": localizer.CORRECTION_SHA256,
-                "plan": plan(single_point=single_point), "blocks": []}
+                "plan": plan(single_point=single_point, local_map=local_map),
+                "blocks": []}
     if focused_source_path is not None:
         manifest["focused_source_manifest"] = str(focused_source_path)
     dual.checkpoint(path, manifest)
     try:
-        if not single_point:
+        if not (single_point or local_map):
             manifest["t1_pre_csv"] = str(localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides=scout_parameters("pre"), announce=False))
@@ -338,7 +414,7 @@ def run(*, data_root=None, correction_json=None, single_point=False):
                     for delay, phase in entry["echo_arms"]:
                         take(f"echo_{round(delay * 1000)}ns_{phase}", "echo",
                              phase=phase, delay=delay)
-                    if single_point:
+                    if single_point or local_map:
                         for phase in entry["control_post_phases"]:
                             take(f"sentinel_{round(delays[0]*1000)}ns_{phase}",
                                  "echo", phase=phase, delay=delays[0])
@@ -382,7 +458,7 @@ def run(*, data_root=None, correction_json=None, single_point=False):
                         point["control_phases"] = controls
                         point["echo_phases"] = cycles
                         point["trace"] = trace_report(cycles, delays=delays)
-                        if single_point:
+                        if single_point or local_map:
                             sentinel = {phase: responses[
                                 f"sentinel_{round(delays[0]*1000)}ns_{phase}"]
                                 for phase in PHASES_DEG}
@@ -392,7 +468,7 @@ def run(*, data_root=None, correction_json=None, single_point=False):
                         point["status"] = (
                             "valid_controls" if point["rabi_gate"]["valid"] and
                             point["control_gate"]["valid"] and
-                            (not single_point or
+                            (not (single_point or local_map) or
                              point["short_echo_gate"]["valid"]) else
                             "unresolved_local_control")
                     block_entry["sites"].append(point)
@@ -401,6 +477,9 @@ def run(*, data_root=None, correction_json=None, single_point=False):
         if single_point:
             manifest["single_point_assessment"] = assess_single_point(
                 manifest["blocks"])
+        elif local_map:
+            manifest["local_map_assessment"] = assess_local_map(
+                manifest["blocks"])
         else:
             manifest["t1_post_csv"] = str(localizer.run(
                 data_root=data_root, correction_json=correction,
@@ -408,7 +487,8 @@ def run(*, data_root=None, correction_json=None, single_point=False):
         manifest["valid_site_blocks"] = sum(
             site["status"] == "valid_controls"
             for block in manifest["blocks"] for site in block["sites"])
-        manifest["status"] = ("complete_repeatable_echo" if single_point and
+        manifest["status"] = ("complete_local_map" if local_map else
+                              "complete_repeatable_echo" if single_point and
                               manifest["single_point_assessment"]["repeatable"]
                               else "complete_echo_unresolved" if single_point
                               else "complete")
@@ -430,12 +510,15 @@ def main(argv=None):
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--single-point", action="store_true",
                         help="validate one 4.284-GHz flux-ramp echo before mapping")
+    parser.add_argument("--local-map", action="store_true",
+                        help="map five nearby flux-ramp echoes with local checks")
     args = parser.parse_args(argv)
     if args.plan:
-        print(json.dumps(plan(single_point=args.single_point), indent=2))
+        print(json.dumps(plan(single_point=args.single_point,
+                              local_map=args.local_map), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            single_point=args.single_point)
+            single_point=args.single_point, local_map=args.local_map)
     return 0
 
 
