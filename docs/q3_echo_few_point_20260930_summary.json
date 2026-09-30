@@ -1,0 +1,2553 @@
+{
+  "session_id": "q3_echo_few_point_20260930T071413Z_5ff77c82",
+  "code_commit": "eeca9d4fabf27df8882cc449adc702feb53b48eb",
+  "status": "complete_few_point_screen",
+  "elapsed_seconds": 199.083327,
+  "frequency_range_ghz": [
+    4.25,
+    4.3
+  ],
+  "step_mhz": 0.5,
+  "sites": 101,
+  "valid_sites": 100,
+  "shots_per_condition": 200,
+  "conditions": 12,
+  "acquisitions": 140,
+  "all_acquisitions_complete": true,
+  "all_site_shapes_200_by_12": true,
+  "maximum_raw_visibility_recalculation_error": 3.3306690738754696e-16,
+  "saved_analysis_source_matches_local_LF_or_CRLF": true,
+  "metric": "Noise-corrected four-phase Hahn visibility at 1.35 us divided by 0.35 us; a coherence screen, not a fitted intrinsic T2.",
+  "median_ratio_standard_error": 0.11842644398365543,
+  "median_ratio_interval_width": 0.46367703379323877,
+  "long_contrast_individually_resolved_sites": 35,
+  "anchors": [
+    {
+      "label": "pre",
+      "frequency_ghz": 4.288,
+      "valid": true,
+      "ratio": 0.42459807034708136,
+      "ratio_ci95": [
+        0.20657199224947573,
+        0.7492627394960981
+      ],
+      "ratio_standard_error": 0.13591429298547225
+    },
+    {
+      "label": "mid",
+      "frequency_ghz": 4.288,
+      "valid": true,
+      "ratio": 0.4095032236775024,
+      "ratio_ci95": [
+        0.19459082353415405,
+        0.6184402370285534
+      ],
+      "ratio_standard_error": 0.10890217488834494
+    },
+    {
+      "label": "post",
+      "frequency_ghz": 4.288,
+      "valid": true,
+      "ratio": 0.38028250828275756,
+      "ratio_ci95": [
+        0.1873285218085859,
+        0.595861585942121
+      ],
+      "ratio_standard_error": 0.10679960019804806
+    }
+  ],
+  "bridge": {
+    "batched": 0.42459807034708136,
+    "individual": 0.23839149487699263,
+    "individual_minus_batched": -0.18620657547008873,
+    "difference_ci95": [
+      -0.5440953778154741,
+      0.15761107547780254
+    ],
+    "difference_bootstrap_standard_error": 0.17739331518133297,
+    "draws": 10000,
+    "seed": 99381,
+    "resampling": "Shared readout references; whole-cycle rows for batch; independent columns for separately acquired individual conditions.",
+    "interpretation": "Current comparison is statistically compatible. Earlier failed attempt had a significant discrepancy; equivalence is not established by this one comparison."
+  },
+  "exploratory_background_check": {
+    "intercept_at_4p275": 0.3630879855889131,
+    "slope_per_mhz": 0.003801775382663258,
+    "conditional_standard_errors": [
+      0.01214704719384234,
+      0.0008480914877980435
+    ],
+    "chi_squared": 96.84356963900402,
+    "degrees_of_freedom": 98,
+    "conditional_pvalue": 0.5140559065116069,
+    "lowest_residual_frequency_ghz": 4.276,
+    "lowest_standardized_residual": -2.6349403880554743,
+    "approximate_one_sided_bonferroni_pvalue": 0.42076030400797537,
+    "scope": "Exploratory smooth-background comparison using conditional ratio errors. Ignores non-Gaussianity, correlations, drift and pulse systematics; does not establish intrinsic dephasing or a hotspot."
+  },
+  "prior_full_map": [
+    {
+      "frequency_ghz": 4.28,
+      "ratio_mean": 0.38326940143375093,
+      "ratio_repeat_sd": 0.05820700904867037,
+      "n": 3
+    },
+    {
+      "frequency_ghz": 4.284,
+      "ratio_mean": 0.3893362212076105,
+      "ratio_repeat_sd": 0.033664651884585145,
+      "n": 3
+    },
+    {
+      "frequency_ghz": 4.288,
+      "ratio_mean": 0.43476512038905657,
+      "ratio_repeat_sd": 0.07423730681045577,
+      "n": 3
+    },
+    {
+      "frequency_ghz": 4.292,
+      "ratio_mean": 0.4011284782611942,
+      "ratio_repeat_sd": 0.045882819903967136,
+      "n": 3
+    },
+    {
+      "frequency_ghz": 4.296,
+      "ratio_mean": 0.4321596943042069,
+      "ratio_repeat_sd": 0.025393704766811097,
+      "n": 3
+    }
+  ],
+  "prior_session": "q3_echo_refocus_map_20260930T060121Z_bf0d77fa",
+  "points": [
+    {
+      "frequency_ghz": 4.3,
+      "realized_frequency_ghz": 4.299987656273552,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.39619189238453334,
+      "ratio_before_masking": 0.3961918923845333,
+      "raw_ratio": 0.41970987005545923,
+      "ratio_ci95": [
+        0.1737686849752205,
+        0.6942277731446737
+      ],
+      "ratio_standard_error": 0.13060300776995595,
+      "short_visibility": 0.8159126120412903,
+      "long_visibility": 0.3424465763764602,
+      "late_visibility": 0.9783833626727184,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.2995,
+      "realized_frequency_ghz": 4.299489027848782,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4167298865273242,
+      "ratio_before_masking": 0.41672988652732423,
+      "raw_ratio": 0.43130488354731544,
+      "ratio_ci95": [
+        0.26371685823777713,
+        0.6019108285789917
+      ],
+      "ratio_standard_error": 0.08936703659585274,
+      "short_visibility": 0.9108470177016957,
+      "long_visibility": 0.3928527668992494,
+      "late_visibility": 1.070672042057008,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.299,
+      "realized_frequency_ghz": 4.2989885335204665,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.44603153946249346,
+      "ratio_before_masking": 0.4460315394624933,
+      "raw_ratio": 0.4629198568618756,
+      "ratio_ci95": [
+        0.24265940807809835,
+        0.6642268742834192
+      ],
+      "ratio_standard_error": 0.10796869824436231,
+      "short_visibility": 0.8785858733291773,
+      "long_visibility": 0.40671484672240854,
+      "late_visibility": 1.0089624881856487,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.2985,
+      "realized_frequency_ghz": 4.2984861731188335,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5803723681942237,
+      "ratio_before_masking": 0.5803723681942236,
+      "raw_ratio": 0.5924568294727615,
+      "ratio_ci95": [
+        0.4048532166764486,
+        0.8251499066124025
+      ],
+      "ratio_standard_error": 0.11123986354883382,
+      "short_visibility": 0.8502937255866675,
+      "long_visibility": 0.5037623247816592,
+      "late_visibility": 1.0416332604363199,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.298,
+      "realized_frequency_ghz": 4.298011658529626,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.38134570071394885,
+      "ratio_before_masking": 0.38134570071394885,
+      "raw_ratio": 0.40144507227996756,
+      "ratio_ci95": [
+        0.20376041664527464,
+        0.6019729109734551
+      ],
+      "ratio_standard_error": 0.10659187363411328,
+      "short_visibility": 0.907970317427116,
+      "long_visibility": 0.36450020970759367,
+      "late_visibility": 1.0132345410001313,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.2975,
+      "realized_frequency_ghz": 4.297505675269551,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4541627862441161,
+      "ratio_before_masking": 0.45416278624411593,
+      "raw_ratio": 0.4687253365941092,
+      "ratio_ci95": [
+        0.2737057591696284,
+        0.6815730367524322
+      ],
+      "ratio_standard_error": 0.10350224298535574,
+      "short_visibility": 0.9187349372513921,
+      "long_visibility": 0.4306343427039264,
+      "late_visibility": 0.944925236109574,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.297,
+      "realized_frequency_ghz": 4.296997825442714,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4248277239442418,
+      "ratio_before_masking": 0.4248277239442418,
+      "raw_ratio": 0.44204458551957315,
+      "ratio_ci95": [
+        0.20882042639020204,
+        0.6669442849203695
+      ],
+      "ratio_standard_error": 0.11481786207005194,
+      "short_visibility": 0.8691045411782531,
+      "long_visibility": 0.3841829566783197,
+      "late_visibility": 1.1271879661839448,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.2965,
+      "realized_frequency_ghz": 4.296488108883335,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6725677297118672,
+      "ratio_before_masking": 0.6725677297118668,
+      "raw_ratio": 0.6829266265225097,
+      "ratio_ci95": [
+        0.42506548498345587,
+        0.981787483797193
+      ],
+      "ratio_standard_error": 0.14173282281474067,
+      "short_visibility": 0.7297707867251639,
+      "long_visibility": 0.4983799015128939,
+      "late_visibility": 0.99353452216189,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.296,
+      "realized_frequency_ghz": 4.296006670252899,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4332519687236975,
+      "ratio_before_masking": 0.4332519687236975,
+      "raw_ratio": 0.4535356690430739,
+      "ratio_ci95": [
+        0.2290000095935653,
+        0.6885056060820615
+      ],
+      "ratio_standard_error": 0.11838442902962805,
+      "short_visibility": 0.7859267301425138,
+      "long_visibility": 0.35644580537402043,
+      "late_visibility": 0.8960352035901947,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.2955,
+      "realized_frequency_ghz": 4.2954933295667255,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.27527909744835566,
+      "ratio_before_masking": 0.2752790974483556,
+      "raw_ratio": 0.3026857277754076,
+      "ratio_ci95": [
+        0.007864881215428663,
+        0.5074422773947083
+      ],
+      "ratio_standard_error": 0.11427987006400248,
+      "short_visibility": 0.857386253174977,
+      "long_visibility": 0.25951858202689776,
+      "late_visibility": 0.9171498320184508,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9980111512136293,
+        "center_movement_over_separation": 0.042871018397294014,
+        "separation_ratio": 0.9729362571529396
+      }
+    },
+    {
+      "frequency_ghz": 4.295,
+      "realized_frequency_ghz": 4.295008479703788,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5929549664800404,
+      "ratio_before_masking": 0.5929549664800404,
+      "raw_ratio": 0.6016721068414373,
+      "ratio_ci95": [
+        0.40536880664348085,
+        0.866127140170337
+      ],
+      "ratio_standard_error": 0.11067032577844473,
+      "short_visibility": 0.849507836738474,
+      "long_visibility": 0.5111251699087495,
+      "late_visibility": 0.9705737583333691,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.2945,
+      "realized_frequency_ghz": 4.294491514277172,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4092073626018408,
+      "ratio_before_masking": 0.4092073626018408,
+      "raw_ratio": 0.4298218718744672,
+      "ratio_ci95": [
+        0.19920178749106746,
+        0.6572571852663635
+      ],
+      "ratio_standard_error": 0.11572423942180436,
+      "short_visibility": 0.8203057696886772,
+      "long_visibility": 0.3525853614370128,
+      "late_visibility": 0.9979494170474021,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.294,
+      "realized_frequency_ghz": 4.294003252607588,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6229406186189415,
+      "ratio_before_masking": 0.6229406186189415,
+      "raw_ratio": 0.6353421154327832,
+      "ratio_ci95": [
+        0.426881953259792,
+        0.9288912095068238
+      ],
+      "ratio_standard_error": 0.12544849283127685,
+      "short_visibility": 0.8121994764306872,
+      "long_visibility": 0.5160245335088718,
+      "late_visibility": 0.8992168133935048,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.2935,
+      "realized_frequency_ghz": 4.293513336524073,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.523661549982155,
+      "ratio_before_masking": 0.523661549982155,
+      "raw_ratio": 0.5372307636572905,
+      "ratio_ci95": [
+        0.36483621153871115,
+        0.7548533269556661
+      ],
+      "ratio_standard_error": 0.10631427366190428,
+      "short_visibility": 0.8358231270276428,
+      "long_visibility": 0.44902989681548516,
+      "late_visibility": 0.9401230920387406,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.293,
+      "realized_frequency_ghz": 4.29299098779051,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.30245109110298957,
+      "ratio_before_masking": 0.3024510911029897,
+      "raw_ratio": 0.32682270909248273,
+      "ratio_ci95": [
+        0.11403121262294649,
+        0.5248162713589599
+      ],
+      "ratio_standard_error": 0.1043088236497365,
+      "short_visibility": 0.8796825581370712,
+      "long_visibility": 0.2875002367917631,
+      "late_visibility": 0.9703697857592711,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.2925,
+      "realized_frequency_ghz": 4.292497659060311,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3817960015626711,
+      "ratio_before_masking": 0.3817960015626711,
+      "raw_ratio": 0.40631516925132405,
+      "ratio_ci95": [
+        0.16063476217434647,
+        0.6195865236266106
+      ],
+      "ratio_standard_error": 0.11785622100413264,
+      "short_visibility": 0.8226415148951398,
+      "long_visibility": 0.33425172635778433,
+      "late_visibility": 0.8276286270194083,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.292,
+      "realized_frequency_ghz": 4.292002675512478,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.38146036328003546,
+      "ratio_before_masking": 0.38146036328003546,
+      "raw_ratio": 0.40008967988279664,
+      "ratio_ci95": [
+        0.20386947506784436,
+        0.5991597027886528
+      ],
+      "ratio_standard_error": 0.09881571235277138,
+      "short_visibility": 0.8957802609758576,
+      "long_visibility": 0.3583924378591589,
+      "late_visibility": 0.9970850565673868,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.2915,
+      "realized_frequency_ghz": 4.2915060370167355,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5222072403604358,
+      "ratio_before_masking": 0.5222072403604359,
+      "raw_ratio": 0.5361378871213989,
+      "ratio_ci95": [
+        0.30075209620173593,
+        0.7746799872745225
+      ],
+      "ratio_standard_error": 0.12292216701508635,
+      "short_visibility": 0.7841396282149875,
+      "long_visibility": 0.42040696347934264,
+      "late_visibility": 0.7709351532633891,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.291,
+      "realized_frequency_ghz": 4.2910077434435605,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5547006483347803,
+      "ratio_before_masking": 0.5547006483347802,
+      "raw_ratio": 0.5675838445878056,
+      "ratio_ci95": [
+        0.36737049684910733,
+        0.7995882899646424
+      ],
+      "ratio_standard_error": 0.11045891782899053,
+      "short_visibility": 0.8328605916744729,
+      "long_visibility": 0.47271821662827185,
+      "late_visibility": 0.9118545048110993,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.2905,
+      "realized_frequency_ghz": 4.290507794664187,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.47762035712844814,
+      "ratio_before_masking": 0.47762035712844797,
+      "raw_ratio": 0.4933102152665504,
+      "ratio_ci95": [
+        0.2845881600055759,
+        0.711451983257009
+      ],
+      "ratio_standard_error": 0.11145404165924963,
+      "short_visibility": 0.8519071203804467,
+      "long_visibility": 0.4202544849419851,
+      "late_visibility": 0.8700324449801878,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996252213611558,
+        "center_movement_over_separation": 0.03849210638500262,
+        "separation_ratio": 1.0173215391956112
+      }
+    },
+    {
+      "frequency_ghz": 4.29,
+      "realized_frequency_ghz": 4.290006190550594,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3467282542701435,
+      "ratio_before_masking": 0.3467282542701436,
+      "raw_ratio": 0.36880524835781575,
+      "ratio_ci95": [
+        0.13265900447267204,
+        0.5803540532260834
+      ],
+      "ratio_standard_error": 0.11292097397754952,
+      "short_visibility": 0.9313470291614808,
+      "long_visibility": 0.3434856723972139,
+      "late_visibility": 0.9216542280193005,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.2895,
+      "realized_frequency_ghz": 4.289502930975512,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.46872894719453656,
+      "ratio_before_masking": 0.4687289471945366,
+      "raw_ratio": 0.4858038003785466,
+      "ratio_ci95": [
+        0.2650600176783856,
+        0.7255682714606606
+      ],
+      "ratio_standard_error": 0.11773957675204996,
+      "short_visibility": 0.7899438102735736,
+      "long_visibility": 0.3837577051164117,
+      "late_visibility": 0.69856814833778,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.289,
+      "realized_frequency_ghz": 4.288998015812415,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4470681178813497,
+      "ratio_before_masking": 0.4470681178813497,
+      "raw_ratio": 0.45913067416194864,
+      "ratio_ci95": [
+        0.2756028645855899,
+        0.6382136269653126
+      ],
+      "ratio_standard_error": 0.088263729777587,
+      "short_visibility": 1.0216096580237708,
+      "long_visibility": 0.46905233101881166,
+      "late_visibility": 0.9835364626759733,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.2885,
+      "realized_frequency_ghz": 4.288491444935515,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.30998542946636715,
+      "ratio_before_masking": 0.30998542946636715,
+      "raw_ratio": 0.33738570921151845,
+      "ratio_ci95": [
+        0.10931524906107457,
+        0.5428770952850963
+      ],
+      "ratio_standard_error": 0.11429417622988779,
+      "short_visibility": 0.8458637605080325,
+      "long_visibility": 0.28538234473532453,
+      "late_visibility": 1.0206203891811372,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.288,
+      "realized_frequency_ghz": 4.288015030902759,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.20704396361099844,
+      "ratio_before_masking": 0.20704396361099847,
+      "raw_ratio": 0.25374112171979585,
+      "ratio_ci95": [
+        0.0,
+        0.49045768525419575
+      ],
+      "ratio_standard_error": 0.13433383436289525,
+      "short_visibility": 0.7988470817110955,
+      "long_visibility": 0.2027003545959588,
+      "late_visibility": 0.9103615407570967,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.2875,
+      "realized_frequency_ghz": 4.287505251725176,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2922975159271575,
+      "ratio_before_masking": 0.29229751592715764,
+      "raw_ratio": 0.3150600250337294,
+      "ratio_ci95": [
+        0.14763272957335874,
+        0.47400942896743675
+      ],
+      "ratio_standard_error": 0.08547475684865145,
+      "short_visibility": 0.9650646055695227,
+      "long_visibility": 0.30405327878990007,
+      "late_visibility": 0.876284777310481,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.287,
+      "realized_frequency_ghz": 4.2869938164685575,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.35784415992544666,
+      "ratio_before_masking": 0.35784415992544655,
+      "raw_ratio": 0.38966719849539594,
+      "ratio_ci95": [
+        0.11651614803868056,
+        0.6515047496610546
+      ],
+      "ratio_standard_error": 0.13362004466779467,
+      "short_visibility": 0.7583344649438172,
+      "long_visibility": 0.2954980664771622,
+      "late_visibility": 0.8906508494255801,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.2865,
+      "realized_frequency_ghz": 4.2865128417500244,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.430460053655708,
+      "ratio_before_masking": 0.430460053655708,
+      "raw_ratio": 0.4525673274372515,
+      "ratio_ci95": [
+        0.1990687956922132,
+        0.6828424449039294
+      ],
+      "ratio_standard_error": 0.12281033111104664,
+      "short_visibility": 0.7582614603860324,
+      "long_visibility": 0.343164362625574,
+      "late_visibility": 0.8394243857596254,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.286,
+      "realized_frequency_ghz": 4.285998197491205,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.37205734271396057,
+      "ratio_before_masking": 0.3720573427139607,
+      "raw_ratio": 0.40049627066379717,
+      "ratio_ci95": [
+        0.1684323260937783,
+        0.6303238314996775
+      ],
+      "ratio_standard_error": 0.12103932687384862,
+      "short_visibility": 0.7245671202103406,
+      "long_visibility": 0.29018642948984874,
+      "late_visibility": 0.9383120353353801,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.2855,
+      "realized_frequency_ghz": 4.285514214118715,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.386976929166581,
+      "ratio_before_masking": 0.38697692916658116,
+      "raw_ratio": 0.4110343711202735,
+      "ratio_ci95": [
+        0.16601282597588937,
+        0.6186676087848175
+      ],
+      "ratio_standard_error": 0.12142051724189094,
+      "short_visibility": 0.7860424753362409,
+      "long_visibility": 0.323090474523655,
+      "late_visibility": 1.0385235665042383,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999252934657803,
+        "center_movement_over_separation": 0.03006894408696957,
+        "separation_ratio": 0.9464986129850217
+      }
+    },
+    {
+      "frequency_ghz": 4.285,
+      "realized_frequency_ghz": 4.284996360401649,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4112856820487546,
+      "ratio_before_masking": 0.41128568204875454,
+      "raw_ratio": 0.4298670051059316,
+      "ratio_ci95": [
+        0.20919601922985454,
+        0.6802086630951782
+      ],
+      "ratio_standard_error": 0.1172999246870335,
+      "short_visibility": 0.909189286359672,
+      "long_visibility": 0.3908304756018314,
+      "late_visibility": 0.8641370117019197,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.2845,
+      "realized_frequency_ghz": 4.284509367950124,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.35612132320157447,
+      "ratio_before_masking": 0.3561213232015745,
+      "raw_ratio": 0.3800606053313974,
+      "ratio_ci95": [
+        0.16702788108299607,
+        0.5919899400214822
+      ],
+      "ratio_standard_error": 0.10931612487449496,
+      "short_visibility": 0.8873057467465255,
+      "long_visibility": 0.33722995922251214,
+      "late_visibility": 0.9203874125749569,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.284,
+      "realized_frequency_ghz": 4.283988304324015,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.36271267685475145,
+      "ratio_before_masking": 0.3627126768547514,
+      "raw_ratio": 0.38608454359951083,
+      "ratio_ci95": [
+        0.14200730723059166,
+        0.5991535635519725
+      ],
+      "ratio_standard_error": 0.11514424236594537,
+      "short_visibility": 0.8601219455731197,
+      "long_visibility": 0.3320797887965212,
+      "late_visibility": 0.9716827872727721,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.2835,
+      "realized_frequency_ghz": 4.283498302373277,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.282980253675379,
+      "ratio_before_masking": 0.282980253675379,
+      "raw_ratio": 0.3079030311551832,
+      "ratio_ci95": [
+        0.0954577686133934,
+        0.49268429961348753
+      ],
+      "ratio_standard_error": 0.10413980455090051,
+      "short_visibility": 1.0370395205138123,
+      "long_visibility": 0.3193076117939206,
+      "late_visibility": 1.0034502187698715,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.283,
+      "realized_frequency_ghz": 4.28300684406385,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.24203489999673616,
+      "ratio_before_masking": 0.24203489999673614,
+      "raw_ratio": 0.2809202814403429,
+      "ratio_ci95": [
+        0.0,
+        0.5101733264401385
+      ],
+      "ratio_standard_error": 0.1180908638333495,
+      "short_visibility": 0.9253120212045023,
+      "long_visibility": 0.2599389134169013,
+      "late_visibility": 0.8920941551598466,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.2825,
+      "realized_frequency_ghz": 4.282513929299045,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6932285459590692,
+      "ratio_before_masking": 0.6932285459590692,
+      "raw_ratio": 0.7051720965132653,
+      "ratio_ci95": [
+        0.48383313888801693,
+        1.011310516087956
+      ],
+      "ratio_standard_error": 0.1449531471785297,
+      "short_visibility": 0.7490478640918908,
+      "long_visibility": 0.5282076527104621,
+      "late_visibility": 0.8619171353675882,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.282,
+      "realized_frequency_ghz": 4.281986548104124,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5737690769982885,
+      "ratio_before_masking": 0.5737690769982885,
+      "raw_ratio": 0.588050070053615,
+      "ratio_ci95": [
+        0.38263572668808654,
+        0.8464446950385863
+      ],
+      "ratio_standard_error": 0.12438011491632128,
+      "short_visibility": 0.8528015284351698,
+      "long_visibility": 0.5014899985381315,
+      "late_visibility": 1.0516586051657004,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.2815,
+      "realized_frequency_ghz": 4.281490623027494,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4364657188695595,
+      "ratio_before_masking": 0.4364657188695595,
+      "raw_ratio": 0.4519362856573761,
+      "ratio_ci95": [
+        0.25808721385648187,
+        0.616380592701121
+      ],
+      "ratio_standard_error": 0.09767270707102783,
+      "short_visibility": 0.9865711670791502,
+      "long_visibility": 0.44586730878641373,
+      "late_visibility": 0.9040141183573598,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.281,
+      "realized_frequency_ghz": 4.280993241202381,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3094402175714497,
+      "ratio_before_masking": 0.30944021757144974,
+      "raw_ratio": 0.33029735337357957,
+      "ratio_ci95": [
+        0.13086001241765838,
+        0.5075260275476061
+      ],
+      "ratio_standard_error": 0.09599327533588062,
+      "short_visibility": 1.0644994652092405,
+      "long_visibility": 0.35160135602620307,
+      "late_visibility": 1.0205323671932551,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.2805,
+      "realized_frequency_ghz": 4.28049440253431,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2867560347933604,
+      "ratio_before_masking": 0.2867560347933604,
+      "raw_ratio": 0.3133886848328152,
+      "ratio_ci95": [
+        0.1104414805710548,
+        0.5133633256440062
+      ],
+      "ratio_standard_error": 0.10851053377566162,
+      "short_visibility": 0.9595452706614215,
+      "long_visibility": 0.3007106304101306,
+      "late_visibility": 0.9641793941931399,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9977713992010729,
+        "center_movement_over_separation": 0.09030587601904153,
+        "separation_ratio": 0.8837406227430011
+      }
+    },
+    {
+      "frequency_ghz": 4.28,
+      "realized_frequency_ghz": 4.279994106929346,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6372458957558323,
+      "ratio_before_masking": 0.6372458957558323,
+      "raw_ratio": 0.6526184636159852,
+      "ratio_ci95": [
+        0.3873941247185166,
+        0.982866082718907
+      ],
+      "ratio_standard_error": 0.15702357368372058,
+      "short_visibility": 0.8434965363788884,
+      "long_visibility": 0.5504814136369951,
+      "late_visibility": 1.0203486433595748,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.2795,
+      "realized_frequency_ghz": 4.2794923542940895,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4995399524525301,
+      "ratio_before_masking": 0.4995399524525301,
+      "raw_ratio": 0.5159892524007601,
+      "ratio_ci95": [
+        0.2657552923146523,
+        0.7699609491485623
+      ],
+      "ratio_standard_error": 0.12528787077484582,
+      "short_visibility": 0.9441199006513927,
+      "long_visibility": 0.487155721713792,
+      "late_visibility": 1.103089695087907,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.279,
+      "realized_frequency_ghz": 4.27898914453568,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5170450194495337,
+      "ratio_before_masking": 0.5170450194495337,
+      "raw_ratio": 0.5302630433549435,
+      "ratio_ci95": [
+        0.3089216736520236,
+        0.8080310507031216
+      ],
+      "ratio_standard_error": 0.12106276740723969,
+      "short_visibility": 0.9602156717272177,
+      "long_visibility": 0.5091668843671858,
+      "late_visibility": 0.9877655989023338,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.2785,
+      "realized_frequency_ghz": 4.278484477561787,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4015718556526328,
+      "ratio_before_masking": 0.4015718556526329,
+      "raw_ratio": 0.42081666441470866,
+      "ratio_ci95": [
+        0.20496179455253957,
+        0.647024565436009
+      ],
+      "ratio_standard_error": 0.11437968669124159,
+      "short_visibility": 0.960782920578824,
+      "long_visibility": 0.40431346386460276,
+      "late_visibility": 1.0832996174467409,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.278,
+      "realized_frequency_ghz": 4.278012140239643,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.28427687575748545,
+      "ratio_before_masking": 0.28427687575748556,
+      "raw_ratio": 0.3088131591889475,
+      "ratio_ci95": [
+        0.09041060107317504,
+        0.4591085169252099
+      ],
+      "ratio_standard_error": 0.09470527452621934,
+      "short_visibility": 1.1357228411707527,
+      "long_visibility": 0.35072615854498745,
+      "late_visibility": 1.1009386813394086,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.2775,
+      "realized_frequency_ghz": 4.2775046557226615,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4915647300012397,
+      "ratio_before_masking": 0.4915647300012397,
+      "raw_ratio": 0.5071589521042994,
+      "ratio_ci95": [
+        0.27619756435543036,
+        0.7210123960819081
+      ],
+      "ratio_standard_error": 0.11027184906433816,
+      "short_visibility": 1.0168488165137695,
+      "long_visibility": 0.5157039802316203,
+      "late_visibility": 0.9763341222037083,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.277,
+      "realized_frequency_ghz": 4.276995713722433,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.30627139723562,
+      "ratio_before_masking": 0.3062713972356201,
+      "raw_ratio": 0.3326936009439512,
+      "ratio_ci95": [
+        0.09051203384530522,
+        0.5501964673091903
+      ],
+      "ratio_standard_error": 0.11240464743489653,
+      "short_visibility": 0.97824992249045,
+      "long_visibility": 0.32545748933648894,
+      "late_visibility": 1.0065897651422795,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.2765,
+      "realized_frequency_ghz": 4.276485314148712,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3614093144705036,
+      "ratio_before_masking": 0.3614093144705036,
+      "raw_ratio": 0.38271134276855767,
+      "ratio_ci95": [
+        0.14245042639050634,
+        0.5969410096675536
+      ],
+      "ratio_standard_error": 0.11169835672904149,
+      "short_visibility": 0.9529912294410611,
+      "long_visibility": 0.3647205530660471,
+      "late_visibility": 1.124489367292644,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.276,
+      "realized_frequency_ghz": 4.276007626078888,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.0820048077194438,
+      "ratio_before_masking": 0.08200480771944386,
+      "raw_ratio": 0.15867437623560446,
+      "ratio_ci95": [
+        0.0,
+        0.3617911558007466
+      ],
+      "ratio_standard_error": 0.10811817775595638,
+      "short_visibility": 0.9952856403215136,
+      "long_visibility": 0.15792632815427038,
+      "late_visibility": 1.0060715487849583,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.2755,
+      "realized_frequency_ghz": 4.275494408275806,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.41053686217185104,
+      "ratio_before_masking": 0.41053686217185104,
+      "raw_ratio": 0.42813066061540905,
+      "ratio_ci95": [
+        0.23096917197631153,
+        0.6118953782679936
+      ],
+      "ratio_standard_error": 0.10336762942557996,
+      "short_visibility": 1.0214573588611096,
+      "long_visibility": 0.4373172138396778,
+      "late_visibility": 1.054306085450763,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9996251742900908,
+        "center_movement_over_separation": 0.024597896880867363,
+        "separation_ratio": 1.0279740526062457
+      }
+    },
+    {
+      "frequency_ghz": 4.275,
+      "realized_frequency_ghz": 4.275014089703401,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6117825390586358,
+      "ratio_before_masking": 0.6117825390586358,
+      "raw_ratio": 0.6277058471583431,
+      "ratio_ci95": [
+        0.37030442658094564,
+        0.8918565169964385
+      ],
+      "ratio_standard_error": 0.13663458281986518,
+      "short_visibility": 0.7440143863231817,
+      "long_visibility": 0.4670221806649875,
+      "late_visibility": 0.9028151678364943,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.2745,
+      "realized_frequency_ghz": 4.274498053339386,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.32830415978133637,
+      "ratio_before_masking": 0.32830415978133637,
+      "raw_ratio": 0.35111595842749943,
+      "ratio_ci95": [
+        0.11522062037669431,
+        0.5255426834950538
+      ],
+      "ratio_standard_error": 0.10469264910747356,
+      "short_visibility": 0.9353847976344792,
+      "long_visibility": 0.3284285297199428,
+      "late_visibility": 0.8663259594166691,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.274,
+      "realized_frequency_ghz": 4.2740151039566845,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5307486771445304,
+      "ratio_before_masking": 0.5307486771445304,
+      "raw_ratio": 0.5444789337646251,
+      "ratio_ci95": [
+        0.3156186271333021,
+        0.7791637263692799
+      ],
+      "ratio_standard_error": 0.11951689647358553,
+      "short_visibility": 0.8545942141684192,
+      "long_visibility": 0.46530854653183856,
+      "late_visibility": 0.9181433832625915,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.2735,
+      "realized_frequency_ghz": 4.273496248703917,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.49012596745493975,
+      "ratio_before_masking": 0.4901259674549398,
+      "raw_ratio": 0.5036459377410051,
+      "ratio_ci95": [
+        0.3244723880700527,
+        0.7041865204822116
+      ],
+      "ratio_standard_error": 0.09984772709230033,
+      "short_visibility": 0.9378899372083553,
+      "long_visibility": 0.47236445692315454,
+      "late_visibility": 1.053161227257383,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.273,
+      "realized_frequency_ghz": 4.273010668206701,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.23063674547104693,
+      "ratio_before_masking": 0.23063674547104693,
+      "raw_ratio": 0.27216291918685903,
+      "ratio_ci95": [
+        0.0,
+        0.507866265131526
+      ],
+      "ratio_standard_error": 0.12858905061764533,
+      "short_visibility": 0.8467190967756586,
+      "long_visibility": 0.23044554110972384,
+      "late_visibility": 1.0280097068737262,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.2725,
+      "realized_frequency_ghz": 4.272488993741095,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.49966156964930647,
+      "ratio_before_masking": 0.49966156964930664,
+      "raw_ratio": 0.5227684403194351,
+      "ratio_ci95": [
+        0.2562235563347102,
+        0.8165897072700731
+      ],
+      "ratio_standard_error": 0.13915149930220116,
+      "short_visibility": 0.6953701626325214,
+      "long_visibility": 0.3635175753640752,
+      "late_visibility": 0.938434138771129,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.272,
+      "realized_frequency_ghz": 4.272000781828617,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4192531983273217,
+      "ratio_before_masking": 0.4192531983273218,
+      "raw_ratio": 0.43854163732411977,
+      "ratio_ci95": [
+        0.21194620149778237,
+        0.6674633744851354
+      ],
+      "ratio_standard_error": 0.11832226895389544,
+      "short_visibility": 0.8693312659507407,
+      "long_visibility": 0.3812379567470877,
+      "late_visibility": 1.0298054230992844,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.2715,
+      "realized_frequency_ghz": 4.27151129947112,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3072347315661482,
+      "ratio_before_masking": 0.30723473156614817,
+      "raw_ratio": 0.34079223737243525,
+      "ratio_ci95": [
+        0.0,
+        0.5506782275309402
+      ],
+      "ratio_standard_error": 0.13006213003274955,
+      "short_visibility": 0.8441289477756825,
+      "long_visibility": 0.2876725927433143,
+      "late_visibility": 0.9347960749751901,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.271,
+      "realized_frequency_ghz": 4.27098544420476,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.31164613332103774,
+      "ratio_before_masking": 0.3116461333210378,
+      "raw_ratio": 0.3469054467949334,
+      "ratio_ci95": [
+        0.0,
+        0.5949757261971342
+      ],
+      "ratio_standard_error": 0.13617597317674332,
+      "short_visibility": 0.846494353609089,
+      "long_visibility": 0.2936535019481494,
+      "late_visibility": 0.9067508684566172,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.2705,
+      "realized_frequency_ghz": 4.270493329992412,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.32672606652161823,
+      "ratio_before_masking": 0.32672606652161823,
+      "raw_ratio": 0.35542162481689826,
+      "ratio_ci95": [
+        0.05768832707442497,
+        0.5566738365404282
+      ],
+      "ratio_standard_error": 0.12407058134322073,
+      "short_visibility": 0.8272291611596904,
+      "long_visibility": 0.29401513255529693,
+      "late_visibility": 1.0011775077568215,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9978107146213384,
+        "center_movement_over_separation": 0.09808797763738843,
+        "separation_ratio": 1.1459959142885416
+      }
+    },
+    {
+      "frequency_ghz": 4.27,
+      "realized_frequency_ghz": 4.269999945124651,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5127124767331542,
+      "ratio_before_masking": 0.5127124767331542,
+      "raw_ratio": 0.5366053293089218,
+      "ratio_ci95": [
+        0.2668406159076676,
+        0.8212792110391781
+      ],
+      "ratio_standard_error": 0.1543884464873945,
+      "short_visibility": 0.6896907629339879,
+      "long_visibility": 0.37009173896551406,
+      "late_visibility": 0.7898318262963285,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.2695,
+      "realized_frequency_ghz": 4.269505289533753,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.19637715853386334,
+      "ratio_before_masking": 0.1963771585338634,
+      "raw_ratio": 0.23666165224722693,
+      "ratio_ci95": [
+        0.0,
+        0.418334494575543
+      ],
+      "ratio_standard_error": 0.1173327966394613,
+      "short_visibility": 0.890033765639961,
+      "long_visibility": 0.21063686153217437,
+      "late_visibility": 0.925384812443144,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.269,
+      "realized_frequency_ghz": 4.269009363152385,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3672510986972766,
+      "ratio_before_masking": 0.36725109869727673,
+      "raw_ratio": 0.396113885898557,
+      "ratio_ci95": [
+        0.1357735334691805,
+        0.6393096254443262
+      ],
+      "ratio_standard_error": 0.12778418518896945,
+      "short_visibility": 0.7348882918213396,
+      "long_visibility": 0.2910994569747037,
+      "late_visibility": 0.9745617090893184,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.2685,
+      "realized_frequency_ghz": 4.268512165913587,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5177267565253727,
+      "ratio_before_masking": 0.5177267565253728,
+      "raw_ratio": 0.5410597614076817,
+      "ratio_ci95": [
+        0.25195523640442347,
+        0.8574837463368944
+      ],
+      "ratio_standard_error": 0.16437526759271964,
+      "short_visibility": 0.6633339421712663,
+      "long_visibility": 0.35890330448480234,
+      "late_visibility": 0.8950693665179246,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.268,
+      "realized_frequency_ghz": 4.268013697750782,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.6539387536792517,
+      "ratio_before_masking": 0.6539387536792517,
+      "raw_ratio": 0.6649864048555088,
+      "ratio_ci95": [
+        0.4055222394407087,
+        0.966862969572375
+      ],
+      "ratio_standard_error": 0.14434546287237912,
+      "short_visibility": 0.6902618272857922,
+      "long_visibility": 0.4590147309357731,
+      "late_visibility": 0.8799361088521669,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.2675,
+      "realized_frequency_ghz": 4.267513958597773,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.474566206867163,
+      "ratio_before_masking": 0.4745662068671629,
+      "raw_ratio": 0.5047921705172905,
+      "ratio_ci95": [
+        0.1892384097651258,
+        0.8078611689037319
+      ],
+      "ratio_standard_error": 0.15489729804696786,
+      "short_visibility": 0.6136887698455009,
+      "long_visibility": 0.3097852861523963,
+      "late_visibility": 0.7748061655229496,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.267,
+      "realized_frequency_ghz": 4.2670129483887385,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3612747765588172,
+      "ratio_before_masking": 0.3612747765588172,
+      "raw_ratio": 0.38848708055091796,
+      "ratio_ci95": [
+        0.14049841610493213,
+        0.5801398702324162
+      ],
+      "ratio_standard_error": 0.11487437397532967,
+      "short_visibility": 0.7950690423692132,
+      "long_visibility": 0.30887405110642974,
+      "late_visibility": 0.8438430735028731,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.2665,
+      "realized_frequency_ghz": 4.266510667058233,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2233366635761257,
+      "ratio_before_masking": 0.22333666357612578,
+      "raw_ratio": 0.2753086625778995,
+      "ratio_ci95": [
+        0.0,
+        0.488380437047178
+      ],
+      "ratio_standard_error": 0.13461747371888552,
+      "short_visibility": 0.7649997230545211,
+      "long_visibility": 0.21061105062660374,
+      "late_visibility": 0.9141170413199147,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.266,
+      "realized_frequency_ghz": 4.266007114541188,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.1546122212650851,
+      "ratio_before_masking": 0.1546122212650851,
+      "raw_ratio": 0.20769637642011252,
+      "ratio_ci95": [
+        0.0,
+        0.41276357248188833
+      ],
+      "ratio_standard_error": 0.11527972817225855,
+      "short_visibility": 0.8548798657625158,
+      "long_visibility": 0.17755545039338674,
+      "late_visibility": 0.8939483788304821,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.2655,
+      "realized_frequency_ghz": 4.2655022907729085,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2833806633425896,
+      "ratio_before_masking": 0.2833806633425896,
+      "raw_ratio": 0.3171021540180359,
+      "ratio_ci95": [
+        0.0,
+        0.5177619398533756
+      ],
+      "ratio_standard_error": 0.11819495955533449,
+      "short_visibility": 0.8546339958002849,
+      "long_visibility": 0.2710062809653114,
+      "late_visibility": 0.9887001158285135,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9976450401494432,
+        "center_movement_over_separation": 0.06720396714487795,
+        "separation_ratio": 0.9287545426714537
+      }
+    },
+    {
+      "frequency_ghz": 4.265,
+      "realized_frequency_ghz": 4.264996195689072,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.29454014151757046,
+      "ratio_before_masking": 0.29454014151757046,
+      "raw_ratio": 0.3345053125255835,
+      "ratio_ci95": [
+        0.0,
+        0.6230481737744566
+      ],
+      "ratio_standard_error": 0.1510003519399954,
+      "short_visibility": 0.7370165296708902,
+      "long_visibility": 0.2465359445940821,
+      "late_visibility": 0.9619083289847026,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.2645,
+      "realized_frequency_ghz": 4.264488829225731,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3757857177790855,
+      "ratio_before_masking": 0.3757857177790856,
+      "raw_ratio": 0.4008055632862434,
+      "ratio_ci95": [
+        0.1689450833766629,
+        0.6489577341858275
+      ],
+      "ratio_standard_error": 0.11846845893768282,
+      "short_visibility": 0.8189659022685591,
+      "long_visibility": 0.3282460897709765,
+      "late_visibility": 0.819749093295918,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.264,
+      "realized_frequency_ghz": 4.26401656476489,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.40489361808813573,
+      "ratio_before_masking": 0.40489361808813573,
+      "raw_ratio": 0.43368933108031943,
+      "ratio_ci95": [
+        0.11748467330246294,
+        0.7334083244768279
+      ],
+      "ratio_standard_error": 0.15806841114118206,
+      "short_visibility": 0.7193596741218485,
+      "long_visibility": 0.31197861587606107,
+      "late_visibility": 0.8764166545776211,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.2635,
+      "realized_frequency_ghz": 4.263506746176137,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.22908767416247175,
+      "ratio_before_masking": 0.22908767416247175,
+      "raw_ratio": 0.2668582279752156,
+      "ratio_ci95": [
+        0.0,
+        0.4532433809028875
+      ],
+      "ratio_standard_error": 0.11890982457885013,
+      "short_visibility": 0.8938084126309764,
+      "long_visibility": 0.23852012914404266,
+      "late_visibility": 0.9206055986183987,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.263,
+      "realized_frequency_ghz": 4.262995656022731,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.21592006066735675,
+      "ratio_before_masking": 0.21592006066735675,
+      "raw_ratio": 0.2536284591845455,
+      "ratio_ci95": [
+        0.0,
+        0.4574858533277659
+      ],
+      "ratio_standard_error": 0.11743544619290033,
+      "short_visibility": 0.852833786387168,
+      "long_visibility": 0.21630291918189926,
+      "late_visibility": 0.8288779224132908,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.2625,
+      "realized_frequency_ghz": 4.262483294242172,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3160526895663691,
+      "ratio_before_masking": 0.3160526895663691,
+      "raw_ratio": 0.3544227037658031,
+      "ratio_ci95": [
+        0.0,
+        0.6035260056348222
+      ],
+      "ratio_standard_error": 0.15268964731383325,
+      "short_visibility": 0.707158561269133,
+      "long_visibility": 0.25063304927614144,
+      "late_visibility": 0.8217017160832586,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.262,
+      "realized_frequency_ghz": 4.262006391052008,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.47711262290141987,
+      "ratio_before_masking": 0.47711262290141987,
+      "raw_ratio": 0.5028890870130874,
+      "ratio_ci95": [
+        0.21666908200659865,
+        0.8134785647927554
+      ],
+      "ratio_standard_error": 0.14844587904743348,
+      "short_visibility": 0.6949247440534337,
+      "long_visibility": 0.3494700700798347,
+      "late_visibility": 0.7468386897069402,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.2615,
+      "realized_frequency_ghz": 4.26149157667252,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.48456785066473895,
+      "ratio_before_masking": 0.48456785066473895,
+      "raw_ratio": 0.5060379380235316,
+      "ratio_ci95": [
+        0.256749816124492,
+        0.7505763117067241
+      ],
+      "ratio_standard_error": 0.1301661937552418,
+      "short_visibility": 0.7417955583230568,
+      "long_visibility": 0.375376694768814,
+      "late_visibility": 0.8135294998522508,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.261,
+      "realized_frequency_ghz": 4.261012395962684,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2255390358808689,
+      "ratio_before_masking": 0.22553903588086896,
+      "raw_ratio": 0.26404141576859697,
+      "ratio_ci95": [
+        0.0,
+        0.4658109785182893
+      ],
+      "ratio_standard_error": 0.11816190861840487,
+      "short_visibility": 0.8420532281275456,
+      "long_visibility": 0.22233692650731451,
+      "late_visibility": 0.8492828771168796,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.2605,
+      "realized_frequency_ghz": 4.260495128755802,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.10130192694614315,
+      "ratio_before_masking": 0.10130192694614315,
+      "raw_ratio": 0.16420878927452318,
+      "ratio_ci95": [
+        0.0,
+        0.3379058516331012
+      ],
+      "ratio_standard_error": 0.10440769276887307,
+      "short_visibility": 0.9490583446053191,
+      "long_visibility": 0.15584372171852265,
+      "late_visibility": 1.0513234681987758,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9998738752021441,
+        "center_movement_over_separation": 0.05369439310603125,
+        "separation_ratio": 1.0937885290300737
+      }
+    },
+    {
+      "frequency_ghz": 4.26,
+      "realized_frequency_ghz": 4.260013670315362,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.41021983137308793,
+      "ratio_before_masking": 0.41021983137308793,
+      "raw_ratio": 0.4405309764733064,
+      "ratio_ci95": [
+        0.15453486476176298,
+        0.7632154609978564
+      ],
+      "ratio_standard_error": 0.14884728549427623,
+      "short_visibility": 0.7340766521231356,
+      "long_visibility": 0.32338350436606056,
+      "late_visibility": 0.847549545896565,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.2595,
+      "realized_frequency_ghz": 4.25949395005523,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.25840688434334264,
+      "ratio_before_masking": 0.25840688434334264,
+      "raw_ratio": 0.29478359780752494,
+      "ratio_ci95": [
+        0.0,
+        0.5437626518267038
+      ],
+      "ratio_standard_error": 0.12842453869462128,
+      "short_visibility": 0.8237072614173268,
+      "long_visibility": 0.2428153900607831,
+      "late_visibility": 0.8064602717287179,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.259,
+      "realized_frequency_ghz": 4.259010213675668,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.22705508097919005,
+      "ratio_before_masking": 0.22705508097919008,
+      "raw_ratio": 0.27270222437198827,
+      "ratio_ci95": [
+        0.0,
+        0.4918097998871222
+      ],
+      "ratio_standard_error": 0.13398372839417375,
+      "short_visibility": 0.8451543263752569,
+      "long_visibility": 0.23047546474014188,
+      "late_visibility": 0.9406205888817682,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.2585,
+      "realized_frequency_ghz": 4.258488040139026,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.1586124717793754,
+      "ratio_before_masking": 0.1586124717793754,
+      "raw_ratio": 0.20826225851371627,
+      "ratio_ci95": [
+        0.0,
+        0.3992574833222041
+      ],
+      "ratio_standard_error": 0.11223669887979197,
+      "short_visibility": 0.890966962965322,
+      "long_visibility": 0.18555479196826458,
+      "late_visibility": 0.9286408491939793,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.258,
+      "realized_frequency_ghz": 4.2580020256142275,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.22856327880159646,
+      "ratio_before_masking": 0.2285632788015965,
+      "raw_ratio": 0.2936302684375801,
+      "ratio_ci95": [
+        0.0,
+        0.5728007904798282
+      ],
+      "ratio_standard_error": 0.15851640139371118,
+      "short_visibility": 0.6832546189121884,
+      "long_visibility": 0.2006242371624024,
+      "late_visibility": 0.9485484677965927,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.2575,
+      "realized_frequency_ghz": 4.25751491413188,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3955276077163263,
+      "ratio_before_masking": 0.39552760771632617,
+      "raw_ratio": 0.41688232406414827,
+      "ratio_ci95": [
+        0.18384288192938977,
+        0.6332687837938891
+      ],
+      "ratio_standard_error": 0.1117693789301453,
+      "short_visibility": 0.8391785436858732,
+      "long_visibility": 0.3498387015965341,
+      "late_visibility": 0.9447902392713966,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.257,
+      "realized_frequency_ghz": 4.256989105706636,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.1363894521769412,
+      "ratio_before_masking": 0.13638945217694118,
+      "raw_ratio": 0.20629916916716806,
+      "ratio_ci95": [
+        0.0,
+        0.40484797364619246
+      ],
+      "ratio_standard_error": 0.13222830550133186,
+      "short_visibility": 0.8270122105973539,
+      "long_visibility": 0.17061193193733712,
+      "late_visibility": 0.8662404585598577,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.2565,
+      "realized_frequency_ghz": 4.256499715778091,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.16001186122432534,
+      "ratio_before_masking": 0.16001186122432526,
+      "raw_ratio": 0.2360651849665197,
+      "ratio_ci95": [
+        0.0,
+        0.5155194758597057
+      ],
+      "ratio_standard_error": 0.15114730385038305,
+      "short_visibility": 0.7327236016065521,
+      "long_visibility": 0.1729705325425852,
+      "late_visibility": 0.9178883954948008,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.256,
+      "realized_frequency_ghz": 4.2560092287483435,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.34576826048158993,
+      "ratio_before_masking": 0.34576826048158993,
+      "raw_ratio": 0.39039732536158855,
+      "ratio_ci95": [
+        0.0,
+        0.7388165830039019
+      ],
+      "ratio_standard_error": 0.17634226222271013,
+      "short_visibility": 0.6248931481316953,
+      "long_visibility": 0.2439566136673968,
+      "late_visibility": 0.784796369337565,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.2555,
+      "realized_frequency_ghz": 4.255517644571248,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.2611358124354792,
+      "ratio_before_masking": 0.2611358124354792,
+      "raw_ratio": 0.29723447601215985,
+      "ratio_ci95": [
+        0.07323673783720512,
+        0.4859840349319343
+      ],
+      "ratio_standard_error": 0.11250486966134587,
+      "short_visibility": 0.8684703421679157,
+      "long_visibility": 0.2581393270863816,
+      "late_visibility": 0.7106372434765564,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9947435785380637,
+        "center_movement_over_separation": 0.14328801917472872,
+        "separation_ratio": 0.8406238261608092
+      }
+    },
+    {
+      "frequency_ghz": 4.255,
+      "realized_frequency_ghz": 4.254987019186786,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.19992238196151568,
+      "ratio_before_masking": 0.19992238196151568,
+      "raw_ratio": 0.2598635012588229,
+      "ratio_ci95": [
+        0.0,
+        0.5122184858839692
+      ],
+      "ratio_standard_error": 0.1399216401101087,
+      "short_visibility": 0.7653882668624924,
+      "long_visibility": 0.19889647484930956,
+      "late_visibility": 0.8612500508158898,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.2545,
+      "realized_frequency_ghz": 4.254493156172729,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.13042499121057807,
+      "ratio_before_masking": 0.13042499121057813,
+      "raw_ratio": 0.18525546209482713,
+      "ratio_ci95": [
+        0.0,
+        0.35763476746904765
+      ],
+      "ratio_standard_error": 0.10374722617343532,
+      "short_visibility": 0.9878360987981442,
+      "long_visibility": 0.18300203295680154,
+      "late_visibility": 0.8482735672784537,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.254,
+      "realized_frequency_ghz": 4.253998195870976,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3513853418507099,
+      "ratio_before_masking": 0.3513853418507098,
+      "raw_ratio": 0.38195439496844186,
+      "ratio_ci95": [
+        0.09889291761887635,
+        0.6088884006859437
+      ],
+      "ratio_standard_error": 0.1268111558223823,
+      "short_visibility": 0.8351707919495325,
+      "long_visibility": 0.3189971545343981,
+      "late_visibility": 1.0529326207449734,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.2535,
+      "realized_frequency_ghz": 4.253502138236448,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5358556938559196,
+      "ratio_before_masking": 0.5358556938559198,
+      "raw_ratio": 0.5572154182301304,
+      "ratio_ci95": [
+        0.2523273336568908,
+        0.8789666838556236
+      ],
+      "ratio_standard_error": 0.15974042533203206,
+      "short_visibility": 0.7657055093071526,
+      "long_visibility": 0.4266629156097002,
+      "late_visibility": 0.8609682217580893,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.253,
+      "realized_frequency_ghz": 4.253004983224327,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.5930113475994353,
+      "ratio_before_masking": 0.5930113475994353,
+      "raw_ratio": 0.6122628226261928,
+      "ratio_ci95": [
+        0.3249874774049717,
+        0.9575611405653283
+      ],
+      "ratio_standard_error": 0.16876900402429604,
+      "short_visibility": 0.6811597061165338,
+      "long_visibility": 0.4170487643261369,
+      "late_visibility": 0.8078974558152192,
+      "long_signal_resolved": true,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.2525,
+      "realized_frequency_ghz": 4.252506730790053,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.39752212376443713,
+      "ratio_before_masking": 0.3975221237644372,
+      "raw_ratio": 0.4245110713287811,
+      "ratio_ci95": [
+        0.16327469107492254,
+        0.6469463375817811
+      ],
+      "ratio_standard_error": 0.12521111976379723,
+      "short_visibility": 0.7837378321323581,
+      "long_visibility": 0.33270538675940375,
+      "late_visibility": 0.7586139461695313,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.252,
+      "realized_frequency_ghz": 4.252007380889326,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.3416961758745665,
+      "ratio_before_masking": 0.3416961758745665,
+      "raw_ratio": 0.389917261800073,
+      "ratio_ci95": [
+        0.0,
+        0.6911558250259175
+      ],
+      "ratio_standard_error": 0.1659642353386188,
+      "short_visibility": 0.6615302002832593,
+      "long_visibility": 0.25794204429250234,
+      "late_visibility": 0.9611581525047865,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.2515,
+      "realized_frequency_ghz": 4.251506933478107,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.4475014455485966,
+      "ratio_before_masking": 0.4475014455485966,
+      "raw_ratio": 0.47229305845183234,
+      "ratio_ci95": [
+        0.137119029369334,
+        0.769052683733164
+      ],
+      "ratio_standard_error": 0.15160512274424434,
+      "short_visibility": 0.741538297391983,
+      "long_visibility": 0.350223390434424,
+      "late_visibility": 0.8579710841654303,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.251,
+      "realized_frequency_ghz": 4.251005388512612,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.24514148770859256,
+      "ratio_before_masking": 0.24514148770859265,
+      "raw_ratio": 0.2874146945949262,
+      "ratio_ci95": [
+        0.0,
+        0.5035665221341189
+      ],
+      "ratio_standard_error": 0.13110622603647767,
+      "short_visibility": 0.8247117680380562,
+      "long_visibility": 0.23703428093949958,
+      "late_visibility": 0.9402123541085653,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.2505,
+      "realized_frequency_ghz": 4.2505027459493165,
+      "valid": true,
+      "reasons": [],
+      "ratio": 0.25312489134054367,
+      "ratio_before_masking": 0.2531248913405436,
+      "raw_ratio": 0.30170125180669755,
+      "ratio_ci95": [
+        0.0,
+        0.5835409017895646
+      ],
+      "ratio_standard_error": 0.15304270677617773,
+      "short_visibility": 0.7741763686924634,
+      "long_visibility": 0.23356997955367964,
+      "late_visibility": 0.8797891060152698,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.997700461155605,
+        "center_movement_over_separation": 0.14530406767712464,
+        "separation_ratio": 1.1051466743223066
+      }
+    },
+    {
+      "frequency_ghz": 4.25,
+      "realized_frequency_ghz": 4.249999005744951,
+      "valid": false,
+      "reasons": [
+        "short echo contrast unresolved or below control threshold"
+      ],
+      "ratio": null,
+      "ratio_before_masking": 0.056075830176434416,
+      "raw_ratio": 0.2599716572798471,
+      "ratio_ci95": null,
+      "ratio_standard_error": 0.19288286880280459,
+      "short_visibility": 0.5182309168859246,
+      "long_visibility": 0.13472535031648855,
+      "late_visibility": 0.6999854981328836,
+      "long_signal_resolved": false,
+      "reference_stability": {
+        "valid": true,
+        "axis_cosine": 0.9999958196610553,
+        "center_movement_over_separation": 0.027631181302708425,
+        "separation_ratio": 1.0086175022652786
+      }
+    }
+  ],
+  "conclusions": [
+    "A 101-point dense screen completed in 3m19s; 100 points passed controls.",
+    "The three anchors are compatible within their uncertainty. The current bridge is compatible but does not settle the earlier discrepancy.",
+    "There is no established narrow coherence hotspot: individual errors are large, and the deepest isolated point is unremarkable after testing 100 valid frequencies.",
+    "Contrast trends downward toward lower frequency, but pulse-control contrast also decreases and frequency is confounded with time in this descending pass.",
+    "Repeat in reverse order before claiming a frequency feature; follow repeatable candidates with full decays."
+  ]
+}

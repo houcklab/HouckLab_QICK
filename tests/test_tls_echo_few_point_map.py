@@ -12,6 +12,30 @@ def module():
     return importlib.import_module('WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFewPointMap')
 
 
+
+class RecordingProgress:
+    """Observe public progress events without depending on terminal formatting."""
+
+    def __init__(self):
+        self.updates = []
+        self.descriptions = []
+        self.postfixes = []
+        self.closed = False
+
+    def set_postfix_str(self, text, refresh=True):
+        self.postfixes.append(text)
+
+    def set_description_str(self, text, refresh=True):
+        self.descriptions.append(text)
+
+    def update(self, count):
+        assert not self.closed
+        self.updates.append(count)
+
+    def close(self):
+        assert not self.closed
+        self.closed = True
+
 def test_first_screen_is_bounded_dense_and_phase_cycled(capsys):
     m = module()
     p = m.plan()
@@ -21,6 +45,7 @@ def test_first_screen_is_bounded_dense_and_phase_cycled(capsys):
     assert np.diff(grid) == pytest.approx(np.full(100, -.0005))
     assert p['shots_per_condition'] == 200
     assert p['conditions_per_cycle'] == 12
+    assert p['total_readouts'] == 261600
     assert p['echo_elapsed_us'] == [.35, 1.35]
     assert p['anchor_ghz'] == 4.288
     assert p['t1_scans'] is None
@@ -40,6 +65,12 @@ def test_submegahertz_site_keys_never_collide():
 def test_whole_first_screen_preserves_raw_data_checks_and_unique_configs(tmp_path, monkeypatch, capsys):
     m = module()
     calls = []
+    progress = RecordingProgress()
+    enabled = []
+    def progress_factory(show):
+        enabled.append(show)
+        return progress
+    monkeypatch.setattr(m, '_progress_bar', progress_factory)
     compiled = []
     rng = np.random.default_rng(22)
 
@@ -108,11 +139,24 @@ def test_whole_first_screen_preserves_raw_data_checks_and_unique_configs(tmp_pat
     assert saved['batching_bridge']['batched']['ratio'] == pytest.approx(.45, abs=.06)
     assert saved['batching_bridge']['individual']['ratio'] == pytest.approx(.45, abs=.06)
     assert Path(saved['summary_csv']).is_file()
+    assert enabled == [True]
+    assert progress.updates == [c['shots'] * (12 if c['kind'] == 'batch' else 1)
+                                for c in calls]
+    assert sum(progress.updates) == saved['plan']['total_readouts'] == 261600
+    assert progress.closed
+    assert 'complete' in progress.descriptions[-1].lower()
+    assert not any('stopped' in text.lower() for text in progress.descriptions)
     assert capsys.readouterr().out == ''
 
 
 def test_incomplete_batch_is_saved_as_failure_and_never_called_complete(tmp_path, monkeypatch):
     m = module()
+    progress = RecordingProgress()
+    enabled = []
+    def progress_factory(show):
+        enabled.append(show)
+        return progress
+    monkeypatch.setattr(m, '_progress_bar', progress_factory)
     correction = tmp_path/'correction.json'
     correction.write_text('{}')
     monkeypatch.setattr(m.localizer, 'checked_correction', lambda *_: correction)
@@ -125,13 +169,19 @@ def test_incomplete_batch_is_saved_as_failure_and_never_called_complete(tmp_path
             metadata={}, realized_frequency={f:f for f in (*m.frequency_grid(),4.288)})
     monkeypatch.setattr(m, '_hardware_session', hardware)
     with pytest.raises(RuntimeError, match='incomplete'):
-        m.run(data_root=tmp_path)
+        m.run(data_root=tmp_path, show_progress=False)
+    assert enabled == [False]
     manifests = list(tmp_path.glob('q3/q3_echo_few_point_*/manifest.json'))
     assert len(manifests) == 1
     saved = json.loads(manifests[0].read_text())
     assert saved['status'] == 'failed'
     assert saved['acquisitions'][-1]['status'] == 'incomplete'
     assert Path(saved['acquisitions'][-1]['raw_npz']).is_file()
+    assert 800 <= sum(progress.updates) < 3200
+    assert 2400 not in progress.updates  # The incomplete batch cannot count as full.
+    assert progress.closed
+    assert 'stopped' in progress.descriptions[-1].lower()
+    assert not any('complete' in text.lower() for text in progress.descriptions)
 
 
 def test_nonfinite_second_reference_bracket_has_json_safe_failure():

@@ -42,11 +42,26 @@ def site_key(index, frequency):
     return f"site{index:03d}_{round(frequency * 1_000_000)}kHz"
 
 
+def total_readouts():
+    points = len(frequency_grid())
+    brackets = (points + REFERENCE_EVERY - 1) // REFERENCE_EVERY + 1
+    return (points + 3) * SHOTS * 12 + 12 * SHOTS + brackets * 2 * REFERENCE_SHOTS
+
+
+def _progress_bar(enabled):
+    from tqdm import tqdm
+    return tqdm(total=total_readouts(), desc="Echo screen", unit="readout",
+                disable=not enabled, dynamic_ncols=True, mininterval=.25,
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} readouts "
+                           "[{elapsed} elapsed, ETA {remaining}]{postfix}")
+
+
 def plan():
     return {"hardware_access": False, "frequency_min_ghz": 4.250,
             "frequency_max_ghz": 4.300, "frequency_step_mhz": .5,
             "frequency_count": len(frequency_grid()), "scan_order": "descending",
             "shots_per_condition": SHOTS, "conditions_per_cycle": 12,
+            "total_readouts": total_readouts(),
             "echo_elapsed_us": [.35, 1.35], "phase_cycle_deg": [0, 90, 180, 270],
             "late_pulse_control_elapsed_us": 1.35,
             "reference_every_points": REFERENCE_EVERY,
@@ -56,7 +71,7 @@ def plan():
             "reset_mode": "passive", "relax_us_per_subshot": 500.,
             "corrected_return_us": 40., "t1_scans": None,
             "full_decay_fit": False, "metric": "long/short phase-cycle visibility",
-            "terminal": "no custom progress messages",
+            "terminal": "one progress bar with elapsed time, ETA and acquisition stage; --quiet disables it",
             "estimated_runtime_minutes": [4, 7]}
 
 
@@ -188,7 +203,7 @@ def _write_csv(path, sites):
                 "status": a["status"], "reasons": "; ".join(a.get("reasons", []))})
 
 
-def run(*, data_root=None, correction_json=None):
+def run(*, data_root=None, correction_json=None, show_progress=True):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         TLSDualTransitionLoss as dual,
         TLSEchoFewPointProgram as batch,
@@ -213,13 +228,22 @@ def run(*, data_root=None, correction_json=None):
                 "sites": [], "anchors": [], "references": [], "acquisitions": [],
                 "summary_csv": str(folder / "contrast_vs_frequency.csv")}
     dual.checkpoint(path, manifest)
+    progress = _progress_bar(show_progress)
+    completed_sites = 0
     try:
+        progress.set_postfix_str("setup; 0/101 frequencies")
         with _hardware_session(data_root, correction) as hw:
             manifest["hardware_metadata"] = hw.metadata
             manifest["analysis_source_sha256"] = focused.source_file_sha256([analysis.__file__])
             dual.checkpoint(path, manifest)
 
             def measure(label, frequency, kind, shots, condition=None):
+                nonlocal completed_sites
+                stage = (f"{frequency:.4f} GHz" if label.startswith("site") else
+                         "readout reference" if kind in ("ground", "excited") else
+                         "pulse comparison" if kind == "individual" else
+                         label.replace("_", " "))
+                progress.set_postfix_str(f"{stage}; {completed_sites}/101 frequencies")
                 program = hw.build(frequency, kind, shots, condition=condition)
                 config_path = folder / "program_configs" / (label + ".json")
                 config_path.write_text(json.dumps(focused.json_safe(program.cfg), indent=2,
@@ -241,6 +265,10 @@ def run(*, data_root=None, correction_json=None):
                         record["status"] = "incomplete"
                         raise RuntimeError(f"incomplete few-point acquisition: expected {expected}, got {iq.shape}")
                     record["status"] = "complete"
+                    if label.startswith("site"):
+                        completed_sites += 1
+                    progress.set_postfix_str(f"{stage}; {completed_sites}/101 frequencies", refresh=False)
+                    progress.update(shots * (12 if kind == "batch" else 1))
                     return iq, record
                 except BaseException as exc:
                     if record["status"] == "running":
@@ -320,12 +348,16 @@ def run(*, data_root=None, correction_json=None):
         manifest["status"] = "complete_few_point_screen"
         manifest["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
         dual.checkpoint(path, manifest)
+        progress.set_description_str("Echo screen complete")
         return path
     except BaseException as exc:
+        progress.set_description_str("Echo screen stopped")
         manifest["status"] = "failed"
         manifest["error"] = f"{type(exc).__name__}: {exc}"
         dual.checkpoint(path, manifest)
         raise
+    finally:
+        progress.close()
 
 
 def main(argv=None):
@@ -335,11 +367,13 @@ def main(argv=None):
     action.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--correction-json", type=Path)
+    parser.add_argument("--quiet", action="store_true", help="disable the elapsed-time and ETA progress bar")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json)
+        run(data_root=args.data_root, correction_json=args.correction_json,
+            show_progress=not args.quiet)
     return 0
 
 

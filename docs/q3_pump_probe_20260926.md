@@ -6122,3 +6122,66 @@ records (one new test), giving **1257 distinct passing tests** across the
 suite and focused verification. Independent review additionally exercised
 the real session/build path at all 101 DAC settings; maximum frequency
 rounding error was 0.017645 MHz. Production files remain unchanged.
+
+### Completed first fast screen and terminal progress, September 30
+
+`q3_echo_few_point_20260930T071413Z_5ff77c82` completed under `eeca9d4f`
+in **199.083 seconds (3m19s)**: all 101 frequencies and all 140
+acquisitions were saved. Raw shapes were independently verified: 104
+arrays of 200x12 IQ values, 24 reference arrays of 400 values, and 12
+individual comparison arrays of 200 values. All seven hardware-source
+hashes match the recorded commit after Windows newline normalization.
+
+**100/101 frequencies passed the local controls.** Only 4.250 GHz failed
+the short-echo visibility threshold; no reference bracket failed its
+stability check. This demonstrates a minutes-scale dense contrast screen
+with broad local-control coverage, not an intrinsic T2 measurement.
+
+The three 4.288-GHz anchor ratios are 0.425, 0.410, and 0.380, with
+conditional 95% intervals [0.207, 0.749], [0.195, 0.618], and
+[0.187, 0.596]. They agree within sampling uncertainty. The current
+individual-program comparison is 0.238 [0.000, 0.498], also compatible
+with the batched anchor at this precision. A previous incomplete attempt
+(`070611Z_8313cc75`) had a discrepant long-echo comparison; do not treat
+one compatible comparison as a precision equivalence calibration.
+
+The two earlier few-point attempts saved no map: one recorded
+KeyboardInterrupt and the next a zero-progress timeout. The saved
+exception alone does not establish who or what generated the interrupt;
+the user explicitly reported not pressing Ctrl+C. The newer completed
+run is the result to analyze.
+
+The user requested a progress bar and ETA for future runs, superseding
+the earlier fully quiet preference. `TLSEchoFewPointMap` now shows one
+updating progress line with acquisition stage, completed frequencies,
+elapsed time and ETA. Progress is weighted by the actual **261600
+readouts**, so short references and full 12-condition batches are not
+counted as equal-duration work. Completion is labeled only after the
+final manifest is saved; failures close the display as stopped.
+`--quiet` restores the prior display behavior. Future experimental
+runners should use a concise progress/ETA display without per-condition
+log messages. No pulse, timing, calibration or analysis settings changed
+for this display update.
+
+The normal run command is unchanged after pulling the branch. The
+already-completed measurement does not need repeating to enable the bar.
+
+![Completed few-point echo screen](q3_echo_few_point_20260930.png)
+
+The map's individual points remain noisy: median conditional ratio
+standard error is 0.118, and median 95% interval width is 0.464. No
+convincing narrow hotspot is established. The low point at 4.276 GHz
+is not compelling after screening 101 frequencies. A broad lower-frequency
+reduction accompanies lower short/late control contrast; frequency and
+time are confounded in this descending scan. The clean next scientific
+check is a reversed repeat of the same band before expansion.
+
+The detailed JSON records the raw checks, intervals, exploratory
+background comparison and its limitations. Current bridge difference
+(individual minus batched) is -0.186 with shared-reference bootstrap
+95% interval [-0.544,+0.158]. Raw visibility reconstruction agrees with
+the saved analysis to 3.33e-16.
+
+Progress-display verification: **1257 tests passed** in the complete
+`tests/` suite, including success/failure progress accounting. An offline
+terminal check confirmed the elapsed/ETA display.
