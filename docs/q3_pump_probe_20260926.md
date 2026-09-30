@@ -6185,3 +6185,85 @@ the saved analysis to 3.33e-16.
 Progress-display verification: **1257 tests passed** in the complete
 `tests/` suite, including success/failure progress accounting. An offline
 terminal check confirmed the elapsed/ETA display.
+
+## 2026-09-30: finite q3 quasiparticle-pumping screen
+
+The user chose experiment #2 from the pulse-sequence shortlist and explicitly
+specified **q3**, after stopping q4's continuous T1 acquisition. The new
+`Q3QuasiparticlePumping` runner has independent q3 settings: 4367.292 MHz,
+Gaussian sigma 0.2 us, pi gain 13500, readout 6933.026 MHz, flux park -25146.
+The park pi agrees with the September 29 park calibration documented above.
+It does not import `initialize.py` or local overrides, so q4 settings cannot
+silently enter this experiment. Fresh readout/reset calibration is mandatory.
+No production runner, shared active-reset code, q4 runner, or initialization
+file changes are part of this implementation.
+
+The question is whether repeated excitation and relaxation changes q3's
+subsequent relaxation, inspired by [quasiparticle pumping](https://arxiv.org/abs/1612.08462).
+It is a conditioning screen at park, not a TLS scan or an identification of
+quasiparticles. There are five arms: matched idle, 4 and 20 spaced pi pulses,
+and 4 and 20 pulses grouped into adjacent +pi/-pi pairs. Every arm occupies
+601 us. Spaced pulses start 30 us apart; small trains use the final four slots
+of the twenty-slot window. Pair controls have the same envelope, gain, pulse
+count and final pulse time as their corresponding train, with a 40-ns gap
+between adjacent envelopes. They test microwave exposure with much less
+qubit excitation; their cancellation is not assumed perfect.
+
+Each cell is: 2 ms passive washout; readout plus active reset; 10 us ringdown;
+conditioning; readout plus active reset; 10 us ringdown; zero-gain or pi
+preparation; variable delay; readout plus reset. Both preparations consume
+the same envelope duration. q3 stays at park throughout. All ten arm/state
+combinations are interleaved within each hardware cycle. Four blocks change
+their order, and delays are permuted within each block. The nine delays are
+0.1, 2, 5, 15, 30, 60, 120, 250 and 500 us. Each block has 250 shots per
+arm/state/delay: 1000 pooled shots, 90,000 probes total. Expected wall time is
+roughly 5–10 minutes, including fresh pre/post calibration and host overhead.
+A single normal progress bar reports elapsed time and ETA.
+
+Raw accumulator IQ and all three reset records are saved for every cell,
+alongside board configuration, effective config, source snapshots/hashes,
+compiled memory checks, condition order and acquisition timestamps. Partial
+timeout data are retained when available. Acquisition errors stop the run;
+Ctrl+C aborts hardware before any NAS save. Calibration and measurement both
+explicitly select q3's verified `official_wait_all` feedback timing, pre-readout
+sync, no flush readout and 10-us accumulator wait.
+
+Analysis retains separate g/e traces and fits their difference with a free
+amplitude. This avoids interpreting an initial-population change as a T1
+change. A simple exponential is only a descriptor, with uncertainty and shape
+diagnostics. The model-free comparison is the area under the contrast curve
+normalized at 0.1 us, paired by block against idle and equal-count controls;
+its uncertainty includes normalization covariance and uses the larger of
+shot noise and observed block scatter. Raw curves and `relaxation.png` remain
+available if a fit is invalid. Reclassification using the post-run calibration
+is saved separately as a readout-drift sensitivity check.
+
+The main limitation is the feedback between conditioning and probing: its
+readouts, extra pi pulses and arm-dependent latency can change the bath or
+erase a short-lived effect. The conditioned-stage reset telemetry must be
+examined before attributing a positive result to quasiparticles. A null only
+constrains an effect surviving this sequence. Initial short-delay contrast,
+paired-control excitation, block consistency, and pre/post readout stability
+must also be checked before interpreting the pooled comparison.
+
+Offline verification used QICK 0.2.133 with the saved q3 board and actual q3
+classifier coefficients. All four condition orders compile to 3635/8192
+instruction words; drive envelopes use 11008/65536 samples and flux envelopes
+55040/65536. The actual loader accepted their addressed ranges in an offline
+memory check. A complete synthetic run exercised all 90,000 probes, 24-word
+cell decoding across stream-bank boundaries, NAS-format files, progress
+accounting, pre/post classification and plotting. It recovered injected
+50-us control and 100-us conditioned decays as 49.90 and 99.63 us. These are
+software checks, not hardware measurements of this new sequence.
+
+The complete regression suite passed: **1288 tests**, including 11 new tests
+for q3 settings, matched schedules, ordering, decoding, analysis and abort/save
+ordering. Independent review found the delayed-abort issue described above;
+the local runner now stops hardware immediately before error persistence.
+
+After stopping q4, run:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping --run
+```
