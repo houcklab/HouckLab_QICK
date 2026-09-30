@@ -179,3 +179,34 @@ def test_const_issue_budget_counts_set_fetch_and_rejects_unverified_opcodes(nois
     assert noise.const_issue_cycles([{'name':'regwi'}]*5+[{'name':'set'}])==14
     with pytest.raises(ValueError,match='unverified'):
         noise.const_issue_cycles([{'name':'regwi'},{'name':'mathi'},{'name':'set'}])
+
+
+def test_confirmation_uses_fresh_seeds_without_changing_exposure_or_order(noise):
+    first=noise.tasks(4.042,-16,fabric_mhz=430.08,long_hold=True)
+    confirm=noise.tasks(4.042,-16,fabric_mhz=430.08,long_hold=True,seed_offset=100)
+    assert {t['seed'] for t in confirm}==set(range(100,108))
+    assert [(t['offset_mhz'],t['core_cycles'],t['conditions']) for t in first]==[
+        (t['offset_mhz'],t['core_cycles'],t['conditions']) for t in confirm]
+    for pattern in ('fast','slow'):
+        a=noise.noise_signs(4352,pattern,seed=0)
+        b=noise.noise_signs(4352,pattern,seed=100)
+        assert not np.array_equal(a,b)
+        np.testing.assert_array_equal(np.sort(a),np.sort(b))
+    with pytest.raises(ValueError,match='seed'):
+        noise.tasks(4.042,-16,fabric_mhz=430.08,seed_offset=-1)
+
+
+def test_anchor_keeps_confirmation_near_original_feature(noise):
+    rows=[]
+    for mhz in range(3800,4301,2):
+        rate=.01+.12/(1+((mhz-4044)/2)**2)+.22/(1+((mhz-4160)/2)**2)
+        r={'target_frequency_ghz':mhz/1000}
+        for suffix in ('','_scan_up','_scan_down'):
+            r['P0'+suffix]=.1;r['P1'+suffix]=.9
+            for t in (10,25):r[f'Ps_{t}us'+suffix]=.1+.8*np.exp(-t*rate)
+        rows.append(r)
+    assert noise.select_candidate(rows)['center_ghz']==pytest.approx(4.160)
+    assert noise.select_candidate(rows,anchor_ghz=4.044)['center_ghz']==pytest.approx(4.044)
+    assert noise.select_candidate(rows,anchor_ghz=4.250) is None
+    with pytest.raises(ValueError,match='anchor'):
+        noise.plan(anchor_ghz=float('nan'))

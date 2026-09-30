@@ -6616,3 +6616,104 @@ initialization or q4 code changes accompany this follow-up.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold
 ```
+
+### Longer controlled-noise window: resolved loss-profile change; repeat near this band
+
+NAS session `q3_controlled_noise_long_20260930T220058Z_0c80bdd1`, acquired at
+`499d9686`, completed all 128 programs and 384,000 probes in **10 min 20 s**
+(22:00:58–22:11:18 UTC). The scout selected **4.042 GHz**, with a quieter
+comparison at **4.026 GHz**. The largest sampled no-noise rate was at
+**4.044 GHz**. This is a different loss band from the preceding 4.142 GHz
+session; do not pool the sessions or attribute the changed result solely to
+the longer hold.
+
+Finite-window contrast-decay rates, per us, with 1-SE uncertainties:
+
+| Frequency and role | Off | Slow noise | Fast noise | Fast minus slow |
+| --- | --- | --- | --- | --- |
+| 4.026 GHz, quiet comparison | 0.0020 ± 0.0022 | 0.0085 ± 0.0031 | 0.0065 ± 0.0037 | −0.0020 ± 0.0033 |
+| 4.038 GHz, lower flank | 0.0135 ± 0.0039 | 0.0320 ± 0.0047 | 0.0146 ± 0.0036 | **−0.0174 ± 0.0039** |
+| 4.042 GHz, scout center | 0.0476 ± 0.0067 | 0.0414 ± 0.0040 | 0.0441 ± 0.0037 | +0.0027 ± 0.0052 |
+| 4.044 GHz, sampled peak | 0.0613 ± 0.0036 | 0.0354 ± 0.0056 | 0.0518 ± 0.0054 | **+0.0165 ± 0.0049** |
+
+At the sampled peak, slow noise reduces this rate by **42%** relative to off.
+The paired slow-minus-off difference is **−0.0259 ± 0.0042 per us**. At the
+lower flank, slow-minus-off is **+0.0185 ± 0.0052 per us**. Thus the response
+is a reshaping of the measured loss profile, with lower peak loss and higher
+flank loss. These are two-hold contrast-decay estimates, not full T1 fits or
+intrinsic defect linewidths.
+
+With matched-block covariance, the spatial contrast
+`(fast − slow at 4.044) − (fast − slow at 4.038)` is **+0.0338 ± 0.0060 per us**.
+The fast-minus-slow sign is positive at the peak and negative at the flank in
+**all eight threshold-classified blocks**, using either pre- or post-run
+classification. Slow-minus-off is negative in all eight peak blocks and
+positive in seven of eight flank blocks. Continuous-IQ projection reproduces
+the pooled pattern; its flank fast-minus-slow sign agrees in seven of eight
+blocks. The pattern is also visible separately in the first and second four
+blocks, despite changes in the off profile. These are eight realizations
+within one session, not eight independent replications.
+
+Post-run classification gives peak fast-minus-slow **+0.0161 ± 0.0043** and
+flank **−0.0181 ± 0.0037 per us**. Payload-reference fidelity was **0.909 before
+and 0.911 after**. The quiet comparison has no resolved fast-minus-slow
+difference. Peak and flank were highlighted after observing this run, so
+their uncertainties are pointwise/exploratory, not a prespecified global
+discovery test. An exploratory block bootstrap gives a 31–56% interval for
+the peak's fractional reduction; it is not an independently confirmed bound.
+
+![Controlled frequency noise: longer-window result](q3_controlled_noise_long_20260930.png)
+
+Audit: all 128 raw arrays have shape `(3000, 2)`; all 768 saved arm
+probabilities reproduce exactly, and both summaries agree within numerical
+tolerance. All three source snapshots match the acquisition commit. Every
+saved constant-segment list reconstructs its waveform exactly, without
+clipping, with the intended durations, equal additive offset histograms and
+at least two clocks of issue margin. Only 8/128 slow/fast pairs have identical
+**full DAC-code** histograms, because the reordered offsets cross the common
+time-dependent DC correction differently. Equal delivered frequency
+distributions have not been established. Frozen raw files, executable audits,
+JSON reports and inspected PNG/PDF figures are under
+`~/.codex/visualizations/2026/09/30/q3-controlled-noise-long/`.
+
+**Conclusion:** this setup resolves a noise-dependent loss-profile change.
+It does not establish TLS saturation, microscopic defect modification,
+coherent Floquet physics, a Zeno effect, motional narrowing or intrinsic
+linewidth. Different filtering of the slow and fast flux waveforms, and their
+ordering relative to the DC correction, remain possible explanations.
+
+**Next: one repeat with new realizations near this loss band.**
+`--anchor-ghz 4.044` restricts the fresh scout's qualified candidate centers to
+±8 MHz of that frequency, without falling back to another band.
+`--seed-offset 100` uses seeds 100–107. The same long-mode pulse sequence,
+condition order, exposure and 384,000-probe schedule are retained. If this
+band has no qualified candidate, the run records that outcome and stops
+normally. No shared production, initialization, reset or q4 settings change.
+
+Before acquiring the repeat, freeze the primary spatial comparison:
+`D = (fast − slow at scout center +2 MHz) − (fast − slow at scout center −4 MHz)`.
+This maps the two sites from the present result to the newly selected scout
+center. Report D using paired-block covariance and the shot-noise floor;
+use a two-sided 95% t interval with seven degrees of freedom. A confirmation
+claim requires a positive lower interval bound, positive fast-minus-slow at
++2 MHz, negative fast-minus-slow at −4 MHz, and the same qualitative result
+with post-run classification. Report the quiet comparison and no-noise
+profile alongside it. If the loss profile no longer covers those sites, or
+the primary contrast fails, label this comparison unconfirmed; do not replace
+it with whichever neighboring points look strongest. Other sampled sites
+remain secondary. An independently confirmed response would justify the
+separate on-chip transfer calibration needed to investigate its mechanism.
+
+Verification: **1307 tests passed**, including 15 controlled-noise tests.
+All 128 fresh-seed long-mode programs compile against the saved board, with
+maxima of **4115/8192 instruction words** and **13760/65536 flux envelope
+samples**. A full offline 384,000-probe synthetic acquisition passes decoding,
+saving, plotting and pre/post reclassification, and restores the original q4
+configuration after scoped q3 setup. Read-only code review found no
+consequential issue and requested the prespecified comparison above.
+Allow approximately **12–20 minutes** including scout and NAS overhead.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold --anchor-ghz 4.044 --seed-offset 100
+```

@@ -31,9 +31,19 @@ BLOCKS, SHOTS = 8, 500
 PRE_US = .05
 
 
-def plan(*, long_hold=False):
+def _validate_request(anchor_ghz=None,seed_offset=0):
+    if anchor_ghz is not None and (not math.isfinite(anchor_ghz) or not 3.8<=anchor_ghz<=4.3):
+        raise ValueError('anchor must be a finite frequency in the 3.8–4.3 GHz band')
+    if not isinstance(seed_offset,(int,np.integer)) or not 0<=seed_offset<=1000000:
+        raise ValueError('seed offset must be an integer from 0 to 1000000')
+
+
+def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0):
+    _validate_request(anchor_ghz,seed_offset)
     cores=LONG_CORE_CYCLES if long_hold else CORE_CYCLES
     return dict(qubit='q3', scout_ghz=[3.8, 4.3], scout_step_mhz=2.,
+                anchor_ghz=anchor_ghz,anchor_radius_mhz=8. if anchor_ghz is not None else None,
+                seed_offset=int(seed_offset),
                 offsets_mhz=list(OFFSETS_MHZ), control='quieter of ±16 MHz',
                 programmed_excursion_mhz=AMPLITUDE_MHZ,
                 chip_cycles=CHIP_CYCLES, core_cycles=list(cores),
@@ -139,8 +149,9 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
                       correction_note='same DC correction; AC transfer is uncalibrated')
 
 
-def select_candidate(rows):
+def select_candidate(rows,*,anchor_ghz=None):
     """One bidirectionally visible site; no second-line or empty-band gate."""
+    _validate_request(anchor_ghz)
     indexed={round(float(r['target_frequency_ghz']),3):r for r in rows}
     def survival(f,t,suffix=''):
         nearby=[indexed.get(round(f+d,3)) for d in (-.002,0,.002)]
@@ -153,6 +164,7 @@ def select_candidate(rows):
     candidates=[]
     for f in sorted(indexed):
         if not 3.824<=f<=4.276: continue
+        if anchor_ghz is not None and abs(f-anchor_ghz)>.008000001: continue
         depths=[]
         for suffix in ('','_scan_up','_scan_down'):
             for t in (10,25):
@@ -166,7 +178,8 @@ def select_candidate(rows):
     return max(candidates,key=lambda c:c['depth_10us']+.25*c['depth_25us']) if candidates else None
 
 
-def tasks(center, control_offset, *, fabric_mhz, long_hold=False):
+def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0):
+    _validate_request(seed_offset=seed_offset)
     offsets=(*OFFSETS_MHZ,int(control_offset))
     if len(set(offsets))!=8: raise ValueError('control must be separate from local profile')
     result=[]
@@ -180,7 +193,7 @@ def tasks(center, control_offset, *, fabric_mhz, long_hold=False):
         for off,core in settings:
             index=len(result)
             result.append(dict(name=f'b{block:02d}_p{index:03d}',index=index,block=block,
-                               seed=block,offset_mhz=float(off),
+                               seed=int(seed_offset)+block,offset_mhz=float(off),
                                frequency_ghz=round(center+off/1000,6),core_cycles=core,
                                playback='const_segments' if long_hold else 'arb',
                                hold_us=(core+2*GUARD_CYCLES)/fabric_mhz,shots=SHOTS,
@@ -324,14 +337,16 @@ def preflight(program):
                 record_words=program.record_words)
 
 
-def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_hold=False):
+def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_hold=False,
+        anchor_ghz=None,seed_offset=0):
+    request=plan(long_hold=long_hold,anchor_ghz=anchor_ghz,seed_offset=seed_offset)
     data_root=Path(data_root)
     correction=localizer.checked_correction(data_root,correction_json)
     prefix='q3_controlled_noise_long_' if long_hold else 'q3_controlled_noise_'
     folder=data_root/'q3'/(prefix+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path=folder/'manifest.json'
-    manifest=dict(schema='q3.controlled-noise.v1',status='scouting',plan=plan(long_hold=long_hold),completed=[],
+    manifest=dict(schema='q3.controlled-noise.v1',status='scouting',plan=request,completed=[],
                   created_at=datetime.now(timezone.utc).isoformat(),correction_sha256=localizer.CORRECTION_SHA256)
     manifest['commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=Path(__file__).parent,text=True).strip()
     for name in ('TLSControlledNoise.py','TLSControlledNoiseProgram.py','Q3QuasiparticlePumping.py'):
@@ -354,7 +369,7 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
             scout=localizer.run(data_root=data_root,correction_json=correction,
                                 parameter_overrides={**wide.parameters(),'output_suffix':'TLS_Controlled_Noise_Scout'},announce=False)
             manifest['scout_csv']=str(scout)
-            selected=select_candidate(dual.read_scout(scout))
+            selected=select_candidate(dual.read_scout(scout),anchor_ghz=anchor_ghz)
             manifest['selected']=selected
             if selected is None:
                 manifest.update(status='complete_no_qualified_feature',completed_at=datetime.now(timezone.utc).isoformat())
@@ -368,7 +383,7 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
             cfg=science_config(bundle,tls,compensation)
             qp.save_json(folder/'config.json',cfg)
             run_tasks=tasks(center,selected['control_offset_mhz'],fabric_mhz=soccfg['gens'][cfg['ff_ch']]['f_fabric'],
-                            long_hold=long_hold)
+                            long_hold=long_hold,seed_offset=seed_offset)
             requested=sorted({round(t['frequency_ghz']+o/1000,6) for t in run_tasks for o in (-AMPLITUDE_MHZ,0,AMPLITUDE_MHZ)})
             gains,realized=_integer_dc_grid(wide.parameters(),np.asarray(requested),tls)
             lookup=dict(zip(requested,map(int,gains)))
@@ -449,10 +464,14 @@ def main(argv=None):
     parser.add_argument('--correction-json')
     parser.add_argument('--quiet',action='store_true')
     parser.add_argument('--long-hold',action='store_true',help='1.265/10.193-us comparison using constant flux segments')
+    parser.add_argument('--anchor-ghz',type=float,help='select a fresh loss site within ±8 MHz of this frequency')
+    parser.add_argument('--seed-offset',type=int,default=0,help='first noise-realization seed (0–1000000)')
     args=parser.parse_args(argv)
     if args.run: run(data_root=args.data_root,correction_json=args.correction_json,
-                     progress=not args.quiet,long_hold=args.long_hold)
-    else: print(json.dumps(plan(long_hold=args.long_hold),indent=2))
+                     progress=not args.quiet,long_hold=args.long_hold,
+                     anchor_ghz=args.anchor_ghz,seed_offset=args.seed_offset)
+    else: print(json.dumps(plan(long_hold=args.long_hold,anchor_ghz=args.anchor_ghz,
+                               seed_offset=args.seed_offset),indent=2))
     return 0
 
 
