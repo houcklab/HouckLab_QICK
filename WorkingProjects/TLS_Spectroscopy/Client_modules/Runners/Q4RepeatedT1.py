@@ -49,16 +49,19 @@ def base_config():
     }
 
 
-def delays_us():
-    return np.geomspace(1.0, 1500.0, 71)
+def delays_us(max_delay_us=2000.0):
+    if not math.isfinite(max_delay_us) or max_delay_us <= 1.0:
+        raise ValueError('max_delay_us must be finite and greater than 1 us')
+    return np.geomspace(1.0, max_delay_us, 71)
 
 
-def plan():
+def plan(*, max_delay_us=2000.0, hours=12.0, max_runs=None):
     return {
         'qubit': 'q4', 'reset_mode': 'opx_unbounded',
         'qubit_frequency_mhz': 4367.760, 'readout_frequency_mhz': 7026.520,
-        'shots_per_delay': 1000, 'delays_us': delays_us().tolist(),
+        'shots_per_delay': 1000, 'delays_us': delays_us(max_delay_us).tolist(),
         'spacing': 'logarithmic', 'default_hours': 12.0,
+        'hours': hours, 'max_runs': max_runs,
         'recalibration_minutes': 30.0, 'flux_gain': 0,
     }
 
@@ -111,16 +114,18 @@ SUMMARY_FIELDS = ('index', 'started_at', 'elapsed_s', 'duration_s',
 
 
 def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
-                 clock=time.monotonic):
+                 max_delay_us=2000.0, clock=time.monotonic):
     """Finish each curve, checkpoint it, and stop on any acquisition failure."""
-    if not math.isfinite(hours) or hours <= 0:
-        raise ValueError('hours must be positive and finite')
+    if hours is not None and (not math.isfinite(hours) or hours <= 0):
+        raise ValueError('hours must be positive and finite, or None for no limit')
     if max_runs is not None and max_runs <= 0:
         raise ValueError('max_runs must be positive')
+    run_plan = plan(max_delay_us=max_delay_us, hours=hours, max_runs=max_runs)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     started = clock()
-    manifest = {**plan(), 'hours': hours, 'max_runs': max_runs,
+    deadline = math.inf if hours is None else started + hours * 3600
+    manifest = {**run_plan,
                 'started_at': datetime.now(timezone.utc).isoformat(),
                 'status': 'running', 'runs': [], 'current_run': None}
     path = output / 'manifest.json'
@@ -131,7 +136,7 @@ def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
             writer = csv.DictWriter(stream, fieldnames=SUMMARY_FIELDS, extrasaction='ignore')
             writer.writeheader()
             stream.flush()
-            while clock() - started < hours * 3600:
+            while clock() < deadline:
                 index = len(manifest['runs']) + 1
                 if max_runs is not None and index > max_runs:
                     break
@@ -142,7 +147,7 @@ def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
                     calibration_id += 1
                     calibration = calibrate(calibration_id)
                     calibrated_at = clock()
-                if clock() - started >= hours * 3600:
+                if clock() >= deadline:
                     break
                 manifest['stage'] = 'T1'
                 save_json(path, manifest)
@@ -254,7 +259,8 @@ def acquire_curve_iq(soc, program, cfg, progress):
              'order': 'shot_delay', 'read_length_cycles': cycles})
 
 
-def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
+def measure_curve(soc, soccfg, output, index, calibration, *, progress=True,
+                  max_delay_us=2000.0):
     from ..active_reset_OPX.integration import (
         classify_payload_iq, runtime_bundle)
     from ..Experiments.mCoherence import _fit_exp_decay
@@ -263,7 +269,7 @@ def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
 
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    cfg, delays = measurement_config(calibration['bundle']), delays_us()
+    cfg, delays = measurement_config(calibration['bundle']), delays_us(max_delay_us)
     stem = Path(output) / f'run_{index:06d}'
     save_json(stem.with_suffix('.config.json'), cfg)
     # Check with the current classifier coefficients before loading hardware.
@@ -335,9 +341,13 @@ def measure_curve(soc, soccfg, output, index, calibration, *, progress=True):
     return result
 
 
-def run(*, data_root=DATA_ROOT, hours=12.0, max_runs=None, progress=True):
-    if not math.isfinite(hours) or hours <= 0 or (max_runs is not None and max_runs <= 0):
-        raise ValueError('hours and max_runs must be positive')
+def run(*, data_root=DATA_ROOT, hours=12.0, max_runs=None, progress=True,
+        max_delay_us=2000.0):
+    if hours is not None and (not math.isfinite(hours) or hours <= 0):
+        raise ValueError('hours must be positive and finite, or None for no limit')
+    if max_runs is not None and max_runs <= 0:
+        raise ValueError('max_runs must be positive')
+    run_plan = plan(max_delay_us=max_delay_us, hours=hours, max_runs=max_runs)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     output = Path(data_root) / 'q4' / f'q4_repeated_t1_{stamp}_{uuid.uuid4().hex[:8]}'
     output.mkdir(parents=True)
@@ -346,8 +356,7 @@ def run(*, data_root=DATA_ROOT, hours=12.0, max_runs=None, progress=True):
     save_json(output / 'requested_config.json', base_config())
     revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent,
                               capture_output=True, text=True, check=True).stdout.strip()
-    save_json(output / 'plan.json', {**plan(), 'hours': hours, 'max_runs': max_runs,
-                                    'commit': revision})
+    save_json(output / 'plan.json', {**run_plan, 'commit': revision})
     print(f'q4 repeated T1: {output}', flush=True)
     import matplotlib
     matplotlib.use('Agg')
@@ -357,10 +366,11 @@ def run(*, data_root=DATA_ROOT, hours=12.0, max_runs=None, progress=True):
     save_json(output / 'board_configuration.json', soccfg.get_cfg())
     try:
         result = collect_runs(
-            output, hours=hours, max_runs=max_runs,
+            output, hours=hours, max_runs=max_runs, max_delay_us=max_delay_us,
             calibrate=lambda index: calibrate_reset(soc, soccfg, output, index),
             measure=lambda index, cal: measure_curve(
-                soc, soccfg, output, index, cal, progress=progress))
+                soc, soccfg, output, index, cal, progress=progress,
+                max_delay_us=max_delay_us))
     finally:
         # Includes Ctrl+C, which the shared acquisition layer does not catch.
         _safe_abort(soc)
@@ -374,15 +384,20 @@ def main(argv=None):
     action.add_argument('--run', action='store_true')
     action.add_argument('--plan', action='store_true')
     parser.add_argument('--data-root', default=DATA_ROOT)
-    parser.add_argument('--hours', type=float, default=12.0)
+    duration = parser.add_mutually_exclusive_group()
+    duration.add_argument('--hours', type=float, default=12.0)
+    duration.add_argument('--forever', dest='hours', action='store_const', const=None,
+                          help='repeat until Ctrl+C or an acquisition error')
     parser.add_argument('--max-runs', type=int)
+    parser.add_argument('--max-delay-us', type=float, default=2000.0)
     parser.add_argument('--quiet', action='store_true', help='hide progress bars')
     args = parser.parse_args(argv)
     if args.run:
         run(data_root=args.data_root, hours=args.hours, max_runs=args.max_runs,
-            progress=not args.quiet)
+            progress=not args.quiet, max_delay_us=args.max_delay_us)
     else:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(max_delay_us=args.max_delay_us, hours=args.hours,
+                              max_runs=args.max_runs), indent=2))
     return 0
 
 

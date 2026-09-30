@@ -20,7 +20,7 @@ def test_q4_plan_is_independent_of_q3_initialization(capsys):
     assert p['shots_per_delay'] == 1000
     assert len(p['delays_us']) == 71
     assert p['delays_us'][0] == 1.0
-    assert p['delays_us'][-1] == 1500.0
+    assert p['delays_us'][-1] == 2000.0
     assert np.all(np.diff(p['delays_us']) > 0)
     cfg = m.base_config()
     assert (cfg['qubit_pi_freq'], cfg['read_pulse_freq']) == (4367.760, 7026.520)
@@ -188,3 +188,50 @@ def test_acquisition_runs_preflighted_program_and_decodes_shot_major_iq(monkeypa
     np.testing.assert_array_equal(i, [[1., 3.], [2., 4.]])
     np.testing.assert_array_equal(q, [[-1., -3.], [-2., -4.]])
     assert telemetry['records'] == 4 and telemetry['read_length_cycles'] == 2
+
+
+def test_forever_has_no_twelve_hour_cutoff_and_preserves_data_on_interrupt(tmp_path):
+    m = module()
+    clock = [0.0]
+    attempted = []
+
+    def measure(index, _):
+        attempted.append(index)
+        if index == 3:
+            raise KeyboardInterrupt()
+        clock[0] += 13 * 3600
+        return {'index': index, 'T1_us': 410.0}
+
+    with pytest.raises(KeyboardInterrupt):
+        m.collect_runs(tmp_path, hours=None, calibrate=lambda _: {},
+                       measure=measure, clock=lambda: clock[0])
+    assert attempted == [1, 2, 3]
+    saved = json.loads((tmp_path / 'manifest.json').read_text())
+    assert saved['hours'] is None
+    assert len(saved['runs']) == 2
+    assert saved['status'] == 'interrupted'
+    assert saved['delays_us'][-1] == 2000.0
+
+
+def test_forever_plan_records_actual_delay_and_no_time_limit(capsys):
+    m = module()
+    m.main(['--plan', '--forever', '--max-delay-us', '2000'])
+    p = json.loads(capsys.readouterr().out)
+    assert p['hours'] is None and p['max_runs'] is None
+    assert p['delays_us'][-1] == 2000.0
+    assert len(p['delays_us']) == 71
+
+
+def test_explicit_delay_limit_is_saved_and_single_curve_limit_still_works(tmp_path):
+    m = module()
+    result = m.collect_runs(tmp_path, hours=None, max_runs=1, max_delay_us=1500,
+                            calibrate=lambda _: {},
+                            measure=lambda i, _: {'index': i, 'T1_us': 410.0})
+    assert len(result['runs']) == 1
+    assert result['delays_us'][-1] == 1500.0
+
+
+@pytest.mark.parametrize('delay', [0, 1, -20, float('inf'), float('nan')])
+def test_invalid_delay_limit_rejected_before_acquisition(delay):
+    with pytest.raises(ValueError):
+        module().delays_us(delay)
