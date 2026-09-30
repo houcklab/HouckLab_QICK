@@ -6717,3 +6717,79 @@ Allow approximately **12–20 minutes** including scout and NAS overhead.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold --anchor-ghz 4.044 --seed-offset 100
 ```
+
+### Anchored controlled-noise repeat: prespecified profile contrast confirmed
+
+`q3_controlled_noise_long_20260930T222753Z_e932655b` at commit `d529ac22`
+completed all **128 programs and 384,000 probes** in **10 min 20 s**
+(22:27:53–22:38:13 UTC). The anchor remained 4.044 GHz and seeds were
+100–107. The fresh scout selected **4.044 GHz**, 2 MHz above the previous
+scout center, and chose **4.060 GHz** as the quiet comparison. The sampled
+off-profile maximum stayed at **4.044 GHz**. The profiles are analyzed
+within each session, without pooling the sessions.
+
+The comparison fixed before acquisition therefore uses **4.046 GHz**
+(scout +2 MHz) and **4.040 GHz** (scout −4 MHz). It does not substitute the
+observed 4.044-GHz maximum for the prescribed upper site.
+
+| Readout classification | D (per us, ±1 SE) | Paired-block 95% t7 interval |
+| --- | --- | --- |
+| Pre-run | **+0.04200 ± 0.00801** | **[+0.02305, +0.06094]** |
+| Post-run | **+0.04001 ± 0.00791** | **[+0.02129, +0.05872]** |
+
+Here `D = (fast − slow at 4.046) − (fast − slow at 4.040)`, retaining
+cross-site/block covariance and the shot-noise variance floor. The required
+pooled constituent signs also hold: upper fast-minus-slow is **+0.02535 ±
+0.00477 per us**, lower is **−0.01664 ± 0.00449 per us**. Post-classification
+values are +0.02311 and −0.01689. Thus **the prespecified confirmation rule
+passes**. The upper sign agrees in 8/8 blocks and the lower sign in 7/8;
+D is positive in 7/8 blocks, using either classifier. Do not describe this
+as all-eight-block agreement. Both half-run profiles retain the pattern.
+
+The observed peak at 4.044 GHz is a secondary descriptive comparison:
+
+| Noise | Finite-window rate (per us, ±1 SE) |
+| --- | --- |
+| Off | 0.06166 ± 0.00385 |
+| Slow | 0.03126 ± 0.00258 |
+| Fast | 0.05301 ± 0.00385 |
+
+Slow-minus-off at this peak is **−0.03040 ± 0.00488 per us**, a **49.3%**
+reduction, compared with 42.3% in the first session. This is an estimated
+two-hold contrast-decay rate reduction, not a full fitted T1 or proof of TLS
+saturation. The lower-flank slow-minus-off difference at 4.040 GHz is
+**+0.02545 ± 0.00383 per us**. At the quiet 4.060-GHz site, fast-minus-slow is
+**−0.00097 ± 0.00308 per us**, unresolved; post-classification is similarly
+−0.00133 ± 0.00310. Continuous-IQ projection reproduces the pooled spatial
+pattern independently of threshold selection.
+
+![Controlled-noise profile confirmation](q3_controlled_noise_confirmation_20260930.png)
+
+Audit: all 384,000 records were reclassified from raw IQ; every saved pre-run
+arm probability agrees exactly and both complete summaries agree within
+numerical tolerance. Readout-reference fidelity is **0.9185 before / 0.9095
+after**. Three source snapshots match the commit and saved hashes. All 128
+waveform files reconstruct from their constant segments with correct duration,
+no clipping, equal additive-offset exposure and at least two clocks of issue
+margin. **None** of the 128 slow/fast pairs has identical full DAC-code
+histograms; ordering relative to the shared time-varying correction remains
+relevant. The new seeds, hardware playback and initial passive waits match
+the intended repeat. Independent read-only review reproduced the primary
+statistics and found no consequential audit issue.
+
+Frozen run files, raw-IQ and waveform audits, prespecified statistics,
+continuous-IQ sensitivity results, and inspected PNG/PDF figures are in
+`~/.codex/visualizations/2026/09/30/q3-controlled-noise-confirm/`.
+
+**Interpretation and next step:** a noise-dependent loss-profile change has
+reproduced with a fresh set of waveforms and an evaluation fixed before the
+repeat. This establishes reproducibility of the measured response in this
+setup. It does not show that the defect itself was saturated or permanently
+changed, or separate dynamical coupling effects from flux-line filtering and
+DC-correction correlations. The next useful task is an independent on-chip
+measurement of the delivered slow/fast flux response, using the verified
+target-resident phase-control sequence as the starting point. It must include
+zero-noise and static-offset references and fresh phase-visibility checks;
+do not reuse the earlier failed park-Ramsey transfer inference. That new
+calibration is a design task, not an already validated or pushed hardware
+command. No acquisition code changes accompany this result entry.
