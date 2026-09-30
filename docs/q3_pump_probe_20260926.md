@@ -6403,3 +6403,103 @@ science records, source snapshots, calibration files, an executable
 `analyze_result.py`, the audit JSON, and PNG/PDF plots. The plot was inspected
 after rendering. Normalized-curve error bars include the shared-denominator
 variance; exponential fitting uses the original unnormalized contrast.
+
+### Next ranked experiment: controlled frequency noise across one loss feature
+
+After closing the tested quasiparticle-pumping protocol, proceed to #3 in the
+agreed sequence (#2 pumping, #3 controlled noise, #4 spin locking). The question
+is whether the temporal structure of applied frequency noise changes the
+loss profile beyond its programmed frequency exposure. This is an intervention
+during the loss interaction; it does not require stored TLS population,
+coherent qubit–TLS swaps, or a second qualified defect.
+
+`TLSControlledNoise` first takes one ordinary passive 3.8–4.3 GHz five-point
+scout at 2 MHz spacing and selects one loss site visible in both scan
+directions. It then acquires a local comparison without further site-selection
+gates: offsets −8, −4, −2, 0, +2, +4 and +8 MHz, plus the quieter scout point
+at either −16 or +16 MHz. The latter is a comparison point, not a certified
+defect-free background. The scout must show local loss contrast; absence of a
+qualified site is recorded as a completed screen with no science acquisition,
+without automatically repeating scouts. Modest subsequent line movement does
+not abort the local scan; the off arm records its evolving profile.
+
+Each science cell is:
+
+1. Wait 1000 us at q3 park, then apply no pi or the calibrated park pi.
+2. Step to the target with the pinned DC compensation and 0.55 us arrival/prehold.
+3. Hold with off, slow, or fast frequency noise, using the same corrected DC
+   samples in every arm and nominal excursions of ±4 MHz from the static flux
+   curve. The two noise patterns have exactly equal positive/negative exposure
+   and identical zero-valued boundary guards.
+4. Execute the full corrected 40 us return and read out once at park.
+
+There is no feedback or intermediate readout in the science sequence. Labels
+`g`/`e` mean no-pi/pi preparations rather than heralded states. All six
+pattern/preparation combinations are interleaved within a hardware shot;
+ordering rotates between blocks. Eight balanced pseudorandom realizations
+are used, each repeated for 500 shots per condition. This is a frozen-noise
+ensemble, not a fresh noise trajectory on each shot. Sites and hold durations
+are shuffled within blocks. On the saved 430.08 MHz generator fabric clock,
+the chip widths are 37.202 ns and 297.619 ns, and the two total noise holds
+(including guards) are 1.264881 us and 3.645833 us. All actual clocks, integer
+gains, realized static frequencies, waveforms and compiler diagnostics are saved.
+
+There are 128 programs and 384,000 science probes. The initial duration estimate
+is 12–20 minutes including scout, calibration and NAS overhead. Apart from
+ordinary calibration/scout output, the runner displays one progress bar with
+elapsed time and ETA, without custom per-point experiment messages.
+
+Analysis uses preparation contrast C = P(pi) − P(no pi), and reports the
+finite-window rate log(Cshort/Clong)/(tlong−tshort). It is a descriptive decay
+rate under each noise ensemble, not an assertion of exponential decay or an
+intrinsic T1. Each rate and the primary fast-minus-slow difference use the same
+complete seed blocks, pooling contrast before taking logarithms. Weak-contrast
+seeds remain in the pool: discarding them would preferentially discard strong
+decay and could reverse the apparent effect. Uncertainties are the larger of
+binomial shot errors and propagated between-block contrast covariance, including
+paired fast/slow covariance. Pooled unresolved contrast is marked unresolved.
+Per-seed results are retained as diagnostics. All raw IQ is also reclassified
+with an independent post-run readout reference as a calibration sensitivity check.
+
+In an instantaneous static-rate model, exactly equal delivered frequency
+histograms give equal integrated decay. A structured spectral-overlap model can
+give different profiles for the two temporal patterns. Ideal waveform overlap
+calculations with MHz-wide Lorentzians give a plausible center/shoulder difference
+for these parameters. However, the fast flux transfer has **not** been calibrated
+for this waveform: equal commanded histograms do not establish equal on-chip
+histograms. A repeatable positive result would justify that follow-up calibration;
+it would not alone establish a Zeno effect, coherent defect dynamics, or exclude
+ordinary frequency averaging of differently filtered waveforms. The conceptual
+dephasing/bath-overlap precedent is
+[Harrington et al., arXiv:1703.08371](https://arxiv.org/abs/1703.08371), whose
+engineered-bath experiment is distinct from this candidate TLS experiment.
+
+Implementation is confined to two new runners and their tests. q3 settings
+are supplied explicitly in a scoped context and restored afterward, so a q4
+`initialize.py` on the PC cannot silently redirect this run. No initialization,
+production TLS, active-reset or q4 runner code changes are required. Envelope
+memory requires a 1 us startup/shutdown park ramp, as in prior modulation
+runners; the correction metadata records a 4 us calibration-context ramp.
+This known difference is saved in the manifest and compiler log. The target
+hard steps retain the pinned correction, and every science cell has a 1000 us
+park wait. The off waveform is encoded as constant segments to fit the same
+DC samples plus both noise envelopes in QICK memory; any sub-three-clock DC
+sliver merger is shared across arms and explicitly recorded.
+
+Verification before release: **1302 tests passed**, including ten new runner
+tests. All 128 programs compile against the saved q3 board and actual readout
+classifier, with a maximum of 1947/8192 instruction words and 63936/65536 flux
+envelope samples. The offline check exercises the actual envelope loader and
+requires six final IQ records and no reset-pulse emission per logical shot.
+A full 384,000-probe synthetic run passes stream-bank decoding, source/raw/
+summary saving, plotting and post-reference reclassification; its plot was
+visually inspected. The scoped configuration restores a simulated q4 setup
+afterward. Independent review caught contrast-dependent seed censoring;
+the regression test now retains all eight seeds in a case where censoring
+would reverse the effect's sign. Re-review found no remaining consequential
+analysis issue. These are software checks, not a completed device measurement.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run
+```
