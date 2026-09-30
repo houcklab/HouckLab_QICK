@@ -6042,3 +6042,83 @@ and 1181 remaining tests. The lower-band plan was also inspected through
 the CLI. Independent review found no blocking issue; the original map
 grid and all acquisition schedules remain unchanged unless the new option
 is selected.
+
+### First dense few-point Hahn screen, September 30
+
+The user requested a 50-MHz demonstration before expanding the fast screen.
+`TLSEchoFewPointMap` covers **4.300 down to 4.250 GHz in 0.5-MHz steps**
+(101 frequencies), overlapping the successful full map. It deliberately
+measures a screening contrast, not a fitted or intrinsic T2. No T1 scout
+or loss-site selection is performed.
+
+At every frequency, one hardware cycle interleaves short Hahn Y
+(0.35 us), longer Hahn Y (1.35 us), and a late adjacent-pi/2 control
+(at the long echo's final-pulse time), at final phases 0/90/180/270 degrees.
+There are **200 cycles, 12 subshots per cycle**, each independently
+returned through the complete 40-us correction and passively relaxed
+for 500 us. The physics/timing builder is the same concurrent-correction
+builder used for the successful full map. Batching removes repeated
+program uploads; it does not shorten the physical relaxation.
+
+Expected runtime is **4–7 minutes**, including reference/control overhead;
+this is an estimate to verify on the first hardware run. The 101-point
+science pass plus three anchors, the 12-arm individual comparison, and
+24 reference acquisitions total **261600 readouts in 140 acquisitions**.
+Every IQ record and exact compiled configuration is saved. Names contain
+integer kHz and a site index so adjacent half-MHz points cannot overwrite
+one another. The normal grid announcement now receives the actual
+0.5-MHz step. No custom progress prints are introduced.
+
+The first demonstration includes:
+
+- Ground/pi reference brackets at 4.288 GHz, 400 shots per state, before
+  and after each ten-point group; pooled references have an independent
+  axis/center stability check.
+- Repeated batched 4.288-GHz anchors before, halfway through, and after
+  the scan.
+- All twelve individual-program measurements at the initial anchor,
+  to compare directly with the batched acquisition on current hardware.
+- Short-echo and late-control contrast/SNR checks at every frequency;
+  non-sinusoidal four-phase records are flagged. A low long-echo amplitude
+  is a possible signal and is not itself a rejection criterion.
+
+The primary map is long/short four-phase visibility, with a moment
+correction for the positive magnitude noise floor. Raw ratios remain
+available. Four-phase information prevents coherent phase rotation from
+masquerading as lost visibility. Shared-cycle and shared-reference
+bootstrap intervals quantify conditional sampling noise only; they do
+not establish stability or control the false-positive rate across the
+whole scan. Failed controls retain raw data and mark the point unresolved;
+reference drift also masks the accepted ratio. The scan continues past
+these local failures. An acquisition or hardware exception still stops
+the run and saves a failed manifest. Complete cycles recovered from a
+stream timeout are also archived before propagating the exception.
+
+Short/late controls do not fully calibrate the refocusing pi pulse, or
+separate T1 from dephasing. Any dip needs repetition and full curves.
+Before expanding, inspect the batched/individual comparison, repeated
+anchors, control coverage, and overlap with 4.280–4.296 GHz. Completion
+alone is not a claim that the fast method has been demonstrated.
+
+Offline compilation against the actual saved QICK 0.2.133 board and
+correction at 4.250, 4.288 and 4.300 GHz uses **4920–4952 of 8192
+instructions**. Independent review found all 36 batched subshot flux,
+microwave and readout instruction sequences identical to independently
+compiled single-arm programs. Each cycle writes 24 IQ words. Both stream
+banks fit in 4096-word DMem: 84 cycles per bank and a final 32 cycles.
+This validates compilation/scheduling, not yet hardware performance.
+
+Only the three new experimental few-point modules, their tests and this
+notebook are changed. Production spectroscopy and active reset are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFewPointMap --run
+```
+
+Release verification: the complete suite passed **1256 tests**. The final
+seven-test runner recheck also passed after adding recovery of timeout
+records (one new test), giving **1257 distinct passing tests** across the
+suite and focused verification. Independent review additionally exercised
+the real session/build path at all 101 DAC settings; maximum frequency
+rounding error was 0.017645 MHz. Production files remain unchanged.
