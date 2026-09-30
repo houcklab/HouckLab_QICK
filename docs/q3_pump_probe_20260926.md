@@ -6343,3 +6343,63 @@ requested no-pi labeling is included in the plot and per-condition metadata.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping --run --feedback-free
 ```
+
+### Completed feedback-free pumping screen: no resolved benefit
+
+NAS session `q3_quasiparticle_pumping_feedback_free_20260930T200556Z_8206de0f`,
+commit `fabdf758`, completed all 36 acquisitions and 90,000 probes in 4 min
+41 s. The saved plan confirms feedback-free mode, with 50 us fixed recovery
+after the conditioning window and approximately 79.2 us from the final pump
+pulse to probe preparation. Both saved sources match the committed runner
+after newline normalization. All 36 raw arrays have shape (2500, 2).
+Independent decoding and classification reproduce every saved probability
+exactly; complete pre/post summaries reproduce within numerical fit tolerance.
+
+| Conditioning | Fitted decay time (us, 1 SE) |
+| --- | --- |
+| Idle | 81.7 ± 3.5 |
+| 4 spaced pi pulses | 80.9 ± 5.7 |
+| 4 paired pulses | 78.1 ± 4.2 |
+| 20 spaced pi pulses | 84.2 ± 7.4 |
+| 20 paired pulses | 82.7 ± 4.7 |
+
+Every fitted curve passes the runner's shape/precision checks. The fitted
+amplitudes are free, so reduced initial contrast is not counted as faster
+relaxation. The block-paired normalized-area differences also show no benefit:
+four pulses minus idle is −4.0 ± 8.2 us, twenty minus idle is −7.7 ± 12.4 us,
+and twenty minus its paired control is −6.7 ± 11.6 us. The twenty-pulse
+comparisons change sign across blocks. Area differences are model-free curve
+descriptors, not differences in fitted T1.
+
+Payload reference peak fidelity is 0.898 before and 0.9045 after. Applying
+the post-run classifier to all saved science IQ gives idle 77.1 ± 3.3 us,
+four pulses 85.7 ± 6.1 us and twenty pulses 86.8 ± 8.2 us. The corresponding
+twenty-minus-idle area difference is +2.7 ± 12.4 us: still unresolved. These
+axis-dependent shifts are a sensitivity check, not additional independent
+measurements. Do not pool the earlier active-reset run with this mode or
+attribute the between-run change in baseline T1 to pumping.
+
+At the shortest delay the classified no-pi excitation is 0.046 for idle,
+0.214 after four spaced pulses, 0.218 after twenty, and 0.123/0.151 for the
+paired controls. Conditioning therefore changes the starting population, but
+its subsequent decay does not show a resolved rate change. These are
+readout-floor-inclusive fractions; they do not by themselves establish bath
+heating, quasiparticle generation or a calibrated thermodynamic temperature.
+Pair cancellation is imperfect, as anticipated in the protocol.
+
+![Feedback-free q3 pumping result](q3_quasiparticle_pumping_feedback_free_20260930.png)
+
+**Decision: stop this tested pumping protocol.** Two doses, paired exposure
+controls and removal of intermediate feedback have produced no reproducible
+T1 improvement. A further identical repeat is not justified by the current
+signal. This conclusion applies to these pulse trains at q3 park and effects
+surviving approximately 80 us; it does not exclude faster transient changes,
+small effects below the present sensitivity, or quasiparticles in general.
+No acquisition or shared production code changes accompany this analysis.
+
+The local frozen analysis at
+`~/.codex/visualizations/2026/09/30/q3-qp-feedback-free/` includes all raw
+science records, source snapshots, calibration files, an executable
+`analyze_result.py`, the audit JSON, and PNG/PDF plots. The plot was inspected
+after rendering. Normalized-curve error bars include the shared-denominator
+variance; exponential fitting uses the original unnormalized contrast.
