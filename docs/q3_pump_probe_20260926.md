@@ -6503,3 +6503,31 @@ analysis issue. These are software checks, not a completed device measurement.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run
 ```
+
+### September 30, 20:56 UTC: pumping repeat received instead of controlled noise
+
+The next completed NAS session was
+`q3_quasiparticle_pumping_feedback_free_20260930T205649Z_4b67dea5`, running
+commit `7ea028e1`. The new code had been pulled, but the saved sources and
+manifest identify another feedback-free quasiparticle-pumping acquisition.
+It completed all 36 programs and 90,000 probes, finishing at 21:01:30 UTC.
+No controlled-noise session was visible in the q3 directory at this check.
+
+Raw-IQ reclassification reproduces every saved probability exactly and both
+saved summaries within numerical fit tolerance; source snapshots match the
+committed pumping runner. Fitted T1 values (us, 1 SE) are idle **57.3 ± 3.7**,
+four spaced pulses **61.1 ± 4.7**, four paired pulses **60.4 ± 5.0**, twenty
+spaced pulses **65.0 ± 5.8**, and twenty paired pulses **57.4 ± 4.0**.
+The primary paired normalized-area differences are 10.4 ± 9.2 us for four
+pulses minus idle and 13.3 ± 9.8 us for twenty minus idle. There is no clear
+pumping benefit. The baseline changed from the earlier session, so it should
+not be interpreted as a between-session treatment effect.
+
+Payload reference fidelity was 0.894 before and 0.875 after. Post-reference
+classification gives a marginal four-minus-idle area difference of 20.0 ±
+8.5 us, while fitted T1 remains unresolved and the other comparisons do not
+establish an effect. This classifier-sensitive indication does not justify
+reopening the pumping protocol. Continue to the already-pushed controlled-noise
+experiment. Frozen raw files, calibration snapshots, reproducible audit and
+inspected PNG/PDF plots are saved locally under
+`~/.codex/visualizations/2026/09/30/q3-qp-feedback-free-repeat/`.
