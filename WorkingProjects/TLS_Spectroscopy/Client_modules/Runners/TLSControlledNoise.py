@@ -24,19 +24,23 @@ PATTERNS = ('off', 'slow', 'fast')
 OFFSETS_MHZ = (-8, -4, -2, 0, 2, 4, 8)
 AMPLITUDE_MHZ = 4.
 CORE_CYCLES = (512, 1536)
+LONG_CORE_CYCLES = (512, 4352)
 GUARD_CYCLES = 16
 CHIP_CYCLES = {'fast': 16, 'slow': 128}
 BLOCKS, SHOTS = 8, 500
 PRE_US = .05
 
 
-def plan():
+def plan(*, long_hold=False):
+    cores=LONG_CORE_CYCLES if long_hold else CORE_CYCLES
     return dict(qubit='q3', scout_ghz=[3.8, 4.3], scout_step_mhz=2.,
                 offsets_mhz=list(OFFSETS_MHZ), control='quieter of ±16 MHz',
                 programmed_excursion_mhz=AMPLITUDE_MHZ,
-                chip_cycles=CHIP_CYCLES, core_cycles=list(CORE_CYCLES),
+                chip_cycles=CHIP_CYCLES, core_cycles=list(cores),
+                long_hold=bool(long_hold),
+                playback='const_segments' if long_hold else 'arb',
                 zero_guard_cycles_each_end=GUARD_CYCLES,
-                expected_holds_us=[(c+2*GUARD_CYCLES)/430.08 for c in CORE_CYCLES],
+                expected_holds_us=[(c+2*GUARD_CYCLES)/430.08 for c in cores],
                 noise_ensemble='eight frozen balanced realizations, repeated per hardware shot',
                 blocks=BLOCKS, shots_per_condition_per_block=SHOTS,
                 science_programs=128, total_science_probes=384000,
@@ -63,7 +67,7 @@ def q3_context(tls, data_root):
 
 
 def noise_signs(core_cycles, pattern, *, seed):
-    if pattern not in CHIP_CYCLES or core_cycles not in CORE_CYCLES:
+    if pattern not in CHIP_CYCLES or core_cycles not in (*CORE_CYCLES,*LONG_CORE_CYCLES):
         raise ValueError('invalid noise pattern or duration')
     chip=CHIP_CYCLES[pattern]
     count=core_cycles//chip
@@ -74,7 +78,7 @@ def noise_signs(core_cycles, pattern, *, seed):
 
 
 def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
-              fabric_mhz, samples_per_clock, max_gain, seed):
+              fabric_mhz, samples_per_clock, max_gain, seed, dc_tick_quantum=1):
     """Common correction on fabric ticks; additive endpoint offsets, no clipping.
 
     The off arm uses lossless run-length encoding of the SAME DC samples as
@@ -92,6 +96,11 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
         raise ValueError('correction does not cover noise duration')
     ix=np.minimum(np.searchsorted(np.cumsum(lengths),t,side='right'),len(levels)-1)
     dc=np.rint(float(park_gain)+levels[ix]*(target_gain-park_gain)).astype(np.int64)
+    if dc_tick_quantum not in (1,16): raise ValueError('unsupported DC clock quantum')
+    original_dc=dc.copy()
+    # Long holds use constant segments. Align DC boundaries to the fastest
+    # noise chip so no segment is shorter than the tProc can issue it.
+    dc=np.repeat(dc[::dc_tick_quantum],dc_tick_quantum)[:n]
     edges=np.r_[0,np.flatnonzero(np.diff(dc))+1,n]
     # axis_signal_gen_v4 constant pulses require at least three fabric clocks.
     # Remove sub-three-clock DC slivers identically in every arm, recording it.
@@ -104,7 +113,7 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
     off=[(int(dc[a]),int(b-a)) for a,b in zip(edges[:-1],edges[1:])]
     if any(count<3 for _,count in off):
         raise ValueError('DC correction contains an unplayable short segment')
-    values={}; reports={}
+    values={}; reports={}; pattern_segments={}
     for pattern in ('slow','fast'):
         signs=noise_signs(core_cycles,pattern,seed=seed)
         offset=np.where(signs<0,endpoint_gains[0]-target_gain,
@@ -113,6 +122,8 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
         if not np.all(np.isfinite(code)) or np.max(np.abs(code))>min(max_gain,32767):
             raise ValueError('noise command exceeds DAC range')
         values[pattern]=np.repeat(code.astype(np.int16),int(samples_per_clock))
+        edges=np.r_[0,np.flatnonzero(np.diff(code))+1,n]
+        pattern_segments[pattern]=[(int(code[a]),int(b-a)) for a,b in zip(edges[:-1],edges[1:])]
         reports[pattern]=dict(chip_us=CHIP_CYCLES[pattern]/fabric_mhz,
                               switches=int(np.count_nonzero(np.diff(signs))),
                               positive_cycles=int(np.sum(signs==1)),
@@ -121,6 +132,9 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
     if np.max(np.abs(dc))>min(max_gain,32767):
         raise ValueError('DC command exceeds DAC range')
     return values,dict(duration_us=n/fabric_mhz,cycles=n,off_segments=off,
+                      pattern_segments=pattern_segments,
+                      dc_tick_quantum=dc_tick_quantum,
+                      dc_quantization_changed_cycles=int(np.count_nonzero(dc!=original_dc)),
                       dc_sliver_cycles_merged=merged, patterns=reports,
                       correction_note='same DC correction; AC transfer is uncalibrated')
 
@@ -152,12 +166,12 @@ def select_candidate(rows):
     return max(candidates,key=lambda c:c['depth_10us']+.25*c['depth_25us']) if candidates else None
 
 
-def tasks(center, control_offset, *, fabric_mhz):
+def tasks(center, control_offset, *, fabric_mhz, long_hold=False):
     offsets=(*OFFSETS_MHZ,int(control_offset))
     if len(set(offsets))!=8: raise ValueError('control must be separate from local profile')
     result=[]
     for block in range(BLOCKS):
-        settings=[(off,core) for off in offsets for core in CORE_CYCLES]
+        settings=[(off,core) for off in offsets for core in (LONG_CORE_CYCLES if long_hold else CORE_CYCLES)]
         np.random.default_rng(300930+block).shuffle(settings)
         patterns=list(PATTERNS)
         patterns=patterns[block%3:]+patterns[:block%3]
@@ -168,6 +182,7 @@ def tasks(center, control_offset, *, fabric_mhz):
             result.append(dict(name=f'b{block:02d}_p{index:03d}',index=index,block=block,
                                seed=block,offset_mhz=float(off),
                                frequency_ghz=round(center+off/1000,6),core_cycles=core,
+                               playback='const_segments' if long_hold else 'arb',
                                hold_us=(core+2*GUARD_CYCLES)/fabric_mhz,shots=SHOTS,
                                conditions=[dict(pattern=p,state=s) for p in patterns for s in states]))
     return result
@@ -283,6 +298,18 @@ def science_config(bundle, tls, compensation):
     return cfg
 
 
+def const_issue_cycles(instructions):
+    """tProc v1 ctrl.sv: regwi=2 clocks; set=4 including FETCH (no FIFO stall).
+
+    Restrict this fast path to the verified register-write/output opcodes.
+    https://github.com/openquantumhardware/qick/blob/main/firmware/ip/axis_tproc64x32_x8_v1/src/ctrl.sv
+    """
+    costs={'regwi':2,'set':4}
+    if any(i['name'] not in costs for i in instructions):
+        raise ValueError('unverified opcode in constant noise issue sequence')
+    return sum(costs[i['name']] for i in instructions)
+
+
 def preflight(program):
     instructions=len(program.compile())
     capacity=int(program.soccfg['tprocs'][0]['pmem_size'])
@@ -297,13 +324,14 @@ def preflight(program):
                 record_words=program.record_words)
 
 
-def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True):
+def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_hold=False):
     data_root=Path(data_root)
     correction=localizer.checked_correction(data_root,correction_json)
-    folder=data_root/'q3'/('q3_controlled_noise_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
+    prefix='q3_controlled_noise_long_' if long_hold else 'q3_controlled_noise_'
+    folder=data_root/'q3'/(prefix+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path=folder/'manifest.json'
-    manifest=dict(schema='q3.controlled-noise.v1',status='scouting',plan=plan(),completed=[],
+    manifest=dict(schema='q3.controlled-noise.v1',status='scouting',plan=plan(long_hold=long_hold),completed=[],
                   created_at=datetime.now(timezone.utc).isoformat(),correction_sha256=localizer.CORRECTION_SHA256)
     manifest['commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=Path(__file__).parent,text=True).strip()
     for name in ('TLSControlledNoise.py','TLSControlledNoiseProgram.py','Q3QuasiparticlePumping.py'):
@@ -339,7 +367,8 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True):
             compensation=tls._load_correction(str(correction),str(data_root))
             cfg=science_config(bundle,tls,compensation)
             qp.save_json(folder/'config.json',cfg)
-            run_tasks=tasks(center,selected['control_offset_mhz'],fabric_mhz=soccfg['gens'][cfg['ff_ch']]['f_fabric'])
+            run_tasks=tasks(center,selected['control_offset_mhz'],fabric_mhz=soccfg['gens'][cfg['ff_ch']]['f_fabric'],
+                            long_hold=long_hold)
             requested=sorted({round(t['frequency_ghz']+o/1000,6) for t in run_tasks for o in (-AMPLITUDE_MHZ,0,AMPLITUDE_MHZ)})
             gains,realized=_integer_dc_grid(wide.parameters(),np.asarray(requested),tls)
             lookup=dict(zip(requested,map(int,gains)))
@@ -370,8 +399,10 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True):
                 for task in run_tasks:
                     manifest['current']=task;qp.save_json(path,manifest)
                     program=build(task)
+                    info=preflight(program)
                     stem=folder/task['name']
-                    qp.save_json(stem.with_suffix('.json'),dict(task=task,config=program.cfg,waveform_report=program.waveform_report))
+                    qp.save_json(stem.with_suffix('.json'),dict(task=task,config=program.cfg,
+                                                               preflight=info,waveform_report=program.waveform_report))
                     np.savez_compressed(folder/(task['name']+'_waveforms.npz'),**program.waveforms)
                     offset=task['index']*SHOTS*6
                     def update(done,total): bar.update(offset+int(done)*6-bar.n)
@@ -417,9 +448,11 @@ def main(argv=None):
     parser.add_argument('--data-root',default=str(localizer.DATA_ROOT))
     parser.add_argument('--correction-json')
     parser.add_argument('--quiet',action='store_true')
+    parser.add_argument('--long-hold',action='store_true',help='1.265/10.193-us comparison using constant flux segments')
     args=parser.parse_args(argv)
-    if args.run: run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet)
-    else: print(json.dumps(plan(),indent=2))
+    if args.run: run(data_root=args.data_root,correction_json=args.correction_json,
+                     progress=not args.quiet,long_hold=args.long_hold)
+    else: print(json.dumps(plan(long_hold=args.long_hold),indent=2))
     return 0
 
 

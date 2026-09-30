@@ -6531,3 +6531,88 @@ reopening the pumping protocol. Continue to the already-pushed controlled-noise
 experiment. Frozen raw files, calibration snapshots, reproducible audit and
 inspected PNG/PDF plots are saved locally under
 `~/.codex/visualizations/2026/09/30/q3-qp-feedback-free-repeat/`.
+
+### Completed controlled-noise comparison: no resolved temporal-noise effect
+
+NAS session `q3_controlled_noise_20260930T211042Z_2c999402` (commit `f8cb6499`)
+completed all 128 acquisitions and 384,000 science probes in 10 min 18 s.
+The scout selected 4.142 GHz; the acquired no-noise profile has its largest
+sampled rate at 4.144 GHz. This loss remains visible in both halves of the
+science run: off rates 0.082 ± 0.025 and 0.081 ± 0.044 per us, respectively.
+The comparison therefore obtained data at a persistent loss site rather than
+failing a selection/calibration gate.
+
+At 4.144 GHz, the finite-window rates (per us, 1 SE) are:
+
+| Noise | Rate |
+| --- | --- |
+| Off | 0.0814 ± 0.0235 |
+| Slow | 0.0701 ± 0.0182 |
+| Fast | 0.0826 ± 0.0173 |
+
+The primary fast-minus-slow difference there is **+0.0125 ± 0.0254 per us**.
+At the original scout center, 4.142 GHz, it is −0.0516 ± 0.0271 per us, but
+the quieter 4.126 GHz comparison also gives −0.0417 ± 0.0214. Subtracting that
+comparison with matched-block covariance gives **−0.0099 ± 0.0331 per us** at
+4.142 GHz. No individual primary fast-minus-slow difference exceeds two standard
+errors across the eight sampled frequencies with the pre-run classifier.
+These are multiple, correlated comparisons, not independent discoveries.
+The negative noisy estimates are retained with uncertainty; they are not
+interpreted as negative physical decay.
+
+Post-run classification changes the center difference to −0.0559 ± 0.0252
+per us and the peak difference to +0.0132 ± 0.0254. This leaves the conclusion
+unchanged. Payload-reference peak fidelity is 0.883 before and 0.893 after.
+Independent raw reclassification reproduces all 768 saved arm probabilities
+exactly and both complete summaries within floating-point tolerance. All three
+source snapshots match the run commit; all 128 raw arrays have shape (3000, 2).
+Every saved waveform pair has equal additive noise-offset exposure, correct
+duration and no DAC clipping. The **full** DAC-code histograms are not identical:
+different noise orderings traverse the common time-dependent DC correction at
+different times. Equal programmed offsets are verified; equal delivered
+frequency distributions still require an on-chip transfer check if a signal
+is found. No causal Floquet/Zeno interpretation follows from this run.
+
+![Controlled frequency noise: first result](q3_controlled_noise_20260930.png)
+
+**Decision: inconclusive; one longer-window follow-up is justified.** The
+1.265–3.646 us interval leaves roughly 0.02–0.03 per us uncertainty in the
+comparison, so this does not exclude a useful smaller rate change. The full
+frozen run, executable audit, JSON report, primary PNG/PDF and block-resolved
+diagnostic plot are under
+`~/.codex/visualizations/2026/09/30/q3-controlled-noise/`.
+
+The `--long-hold` follow-up keeps the 1.264881 us short hold and extends the long
+hold to **10.193452 us**, preserving the ±4 MHz programmed swing, 37.202/297.619 ns
+chips, eight sites, eight realizations, preparation controls, passive washout,
+full return, pre/post classification and finite 384,000-probe schedule. It
+scouts afresh rather than assuming 4.144 GHz remains the correct center.
+
+Both short and long holds in this mode use constant flux segments for every
+arm, bypassing the envelope-memory limit. The shared DC correction boundaries
+are delayed to a common 16-fabric-clock grid (at most 15 clocks, 34.9 ns).
+Reconstruction of the segment lists reproduces the saved sample arrays exactly.
+The minimum segment is 16 clocks. On the verified v4 generator with equal
+tProc/generator clocks, each segment emits five `regwi` and one `set`:
+the [QICK v1 control RTL](https://github.com/openquantumhardware/qick/blob/main/firmware/ip/axis_tproc64x32_x8_v1/src/ctrl.sv)
+gives 14 issue clocks, leaving two clocks of margin. The check charges opcodes
+explicitly, rejects unverified opcodes/clock configurations, and saves the actual
+margin. Every acquisition is checked for instruction and envelope capacity.
+This changes the playback and DC-edge quantization relative to the first run;
+do not pool rates across the two modes as though the pulse sequences were
+identical. The temporal comparison remains internal to each mode.
+
+Verification: **1305 tests passed**, including 13 controlled-noise tests.
+All 128 long-mode programs compile with the saved board and the completed
+run's classifier; maxima are 4151/8192 instruction words and 13760/65536 flux
+envelope samples. A complete 384,000-probe synthetic run passes decoding,
+saving, plotting and pre/post reclassification. The original mode also passes
+all 128 offline compilations and its complete synthetic acquisition. Independent
+review identified and confirmed the correction from a generic instruction
+estimate to the explicit 14-clock issue budget. No shared production, reset,
+initialization or q4 code changes accompany this follow-up.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold
+```

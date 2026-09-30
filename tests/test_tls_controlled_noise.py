@@ -147,3 +147,35 @@ def test_strong_decay_seeds_are_not_dropped_from_the_effect(noise):
     effect=point['fast_minus_slow']
     assert effect['valid'] and effect['blocks']==8
     assert effect['rate_difference_per_us']>.1
+
+
+def test_long_hold_keeps_noise_exposure_with_playable_constant_segments(noise):
+    waves, report = noise.waveforms(
+        segments=[(.9,.3),(1.,20.)],park_gain=-1000,target_gain=-500,
+        endpoint_gains=(-540,-460),core_cycles=4352,fabric_mhz=430.08,
+        samples_per_clock=16,max_gain=1000,seed=3,dc_tick_quantum=16)
+    assert report['duration_us']==pytest.approx(4384/430.08)
+    dc=np.concatenate([np.full(n,g) for g,n in report['off_segments']])
+    for pattern in ('slow','fast'):
+        segments=report['pattern_segments'][pattern]
+        assert min(n for _,n in segments)>=16
+        rebuilt=np.repeat(np.concatenate([np.full(n,g) for g,n in segments]),16)
+        np.testing.assert_array_equal(rebuilt,waves[pattern])
+    np.testing.assert_array_equal(np.sort(waves['fast'][::16]-dc),
+                                  np.sort(waves['slow'][::16]-dc))
+
+
+def test_long_hold_plan_and_tasks_agree(noise):
+    plan=noise.plan(long_hold=True)
+    tasks=noise.tasks(4.1,16,fabric_mhz=430.08,long_hold=True)
+    assert len(tasks)==plan['science_programs']==128
+    assert {t['core_cycles'] for t in tasks}=={512,4352}
+    assert {t['playback'] for t in tasks}=={'const_segments'}
+    assert max(t['hold_us'] for t in tasks)>10
+    assert sum(t['shots']*len(t['conditions']) for t in tasks)==384000
+
+
+def test_const_issue_budget_counts_set_fetch_and_rejects_unverified_opcodes(noise):
+    assert noise.const_issue_cycles([{'name':'regwi'}]*5+[{'name':'set'}])==14
+    with pytest.raises(ValueError,match='unverified'):
+        noise.const_issue_cycles([{'name':'regwi'},{'name':'mathi'},{'name':'set'}])
