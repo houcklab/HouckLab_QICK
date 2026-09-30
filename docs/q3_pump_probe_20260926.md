@@ -5534,3 +5534,23 @@ shot's IQ and emits no custom progress messages.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run
 ```
+
+Before running the eight-site follow-up, validate the flux-ramp echo
+sequence at the already phase-calibrated quiet **4.288-GHz** point. The
+blind map had a nonmonotonic three-delay trace there despite strong
+two-pulse control, so this is a necessary sequence-level test rather
+than another search for a TLS. `TLSEchoFocusedTrace --run --single-point`
+runs four blocks with reversed delay/phase order, nine delays from 0.08
+to 4 us, and 1600 IQ shots per phase. Each block brackets the trace with
+zero/π IQ references, a one-pulse π/2 and 2π turnover check, and
+two-pulse phase cycles. It repeats the 0.08-us three-pulse echo at the
+end of the block to expose within-block drift. No T1 scout or site
+selection runs. The manifest calls an echo repeatable only when at least
+three blocks pass the controls, their rates agree within 25% coefficient
+of variation, and the delay traces are close to exponential. This is a
+diagnostic criterion, not proof of a microscopic dephasing mechanism.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --single-point
+```
