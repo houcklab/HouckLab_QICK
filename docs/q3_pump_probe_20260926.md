@@ -5869,3 +5869,86 @@ against the saved board using the pinned QICK source (460–479 instructions).
 The independent review found no blocking issue. The overlap thresholds are
 screening criteria; analyze the overlap's raw-IQ uncertainty before claiming
 quantitative equivalence with the older playback implementation.
+
+### Extended echoes reach 1/e reproducibly, September 30
+
+`q3_echo_refocus_decay_20260930T053227Z_3ce8cb27` completed all 294
+acquisitions under `5be8bae2`, 1600 records per arm, in about 5m19s.
+Every raw array is finite, all six saved source hashes match after
+Windows CRLF conversion, and independent raw-IQ projections reproduce
+the saved values to floating-point precision. Hahn and CPMG share the
+realized elapsed times and full flux envelope through the 32/34-us
+correction edges. All three late-pulse phase controls passed, with
+visibility **0.958, 0.989 and 1.004** on the IQ-reference scale.
+
+Both curves now cross 1/e of their first measured visibility. The
+horizontal coordinate is the actual separation of the first and last
+pi/2 centers; the reference point is **0.353423 us**.
+
+| Block | Hahn crossing (us) | Hahn accepted? | CPMG2 crossing (us) | CPMG2 accepted? |
+| --- | --- | --- | --- | --- |
+| 1 | 1.343 | No: bridge mismatch | 2.466 | Yes |
+| 2 | 1.441 | Yes | 2.532 | Yes |
+| 3 | 1.457 | Yes | 2.539 | Yes |
+
+Accepted means are **1.449 us for Hahn** and **2.512 us for CPMG2**.
+These are interpolated elapsed coordinates where visibility is 1/e of
+the 0.353-us reference, not fitted exponential T2 or intrinsic dephasing
+times. Measured from that reference point, the corresponding intervals
+are 1.095 and 2.159 us. Do not quote their ratio as an established
+intrinsic-T2 improvement. The separation supports the earlier observation
+that the extra refocusing pulse preserves measurable coherence contrast.
+
+A 2000-draw bootstrap of consecutive 50-shot IQ groups, including shared
+bracket references, gives conditional 95% crossing intervals of
+[1.299, 1.589] and [1.300, 1.625] us for the two accepted Hahn blocks;
+CPMG2 intervals are [2.242, 2.694], [2.275, 2.849] and [2.296, 2.753] us.
+These capture within-arm sampling uncertainty, not slow drift, systematic
+errors, or uncertainty in linear interpolation between sampled times.
+The close repeat means must not be mistaken for a percent-level total
+error bar. Phase-cycle magnitudes acquire a positive noise floor near
+zero; the 1/e crossings occur well above that floor.
+
+![Extended paired echo decay and replicated crossings](q3_echo_refocus_decay_20260930.png)
+
+The first Hahn block remains excluded under the predeclared bridge gate.
+At the 1.35-us overlap, the old/new visibility ratio was **1.400**, beyond
+the 1.35 limit. The raw visibility difference is +0.118 with conditional
+95% interval [+0.016, +0.224], so this is not dismissed as a harmless
+threshold crossing. The other two Hahn bridges and all three CPMG bridges
+passed; their conditional difference intervals include zero. The failed
+trace is retained as gray dashed data. No gate was relaxed and no new
+calibration-only run is required to use the accepted repeats.
+
+### Return to a controlled local frequency map
+
+`TLSEchoFocusedTrace --run --refocus-map` applies these same full Hahn-Y
+and CPMG2-Y decays at **4.280, 4.284, 4.288, 4.292 and 4.296 GHz**.
+This is a fixed grid with no T1 scout or loss-site selection. Three blocks
+reverse the site/delay/phase order and retain 1600 records per arm. All
+readout, pulse, short-sentinel, legacy-overlap and late-projection checks
+remain local to each site. Failed controls mark the affected sequence
+unresolved and retain the data while the rest of the map continues.
+
+The map takes approximately **25–30 minutes**: 15 site-blocks and 1470
+acquisitions. It saves a separate raw NPZ for each site/block and a unique
+program-configuration file for every arm, including frequency in the
+filename. This prevents the single-site configuration names from
+silently overwriting earlier frequencies. The final assessment reports
+accepted counts separately for each frequency and sequence.
+
+The goal is a trustworthy narrow-band coherence-versus-frequency plot,
+with full decay shapes and uncertainty, before expanding the frequency
+range or claiming a dephasing hotspot. No custom terminal progress
+messages are added. Production spectroscopy and active reset are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --refocus-map
+```
+
+Release verification: **1215 tests passed** across `tests/` (34 focused
+runner tests, including all 1470 simulated map acquisitions and unique
+configuration provenance, plus the remaining 1181 tests). The independent
+review found no blocking issue. No pulse-builder, production spectroscopy,
+or active-reset changes were needed for this map extension.

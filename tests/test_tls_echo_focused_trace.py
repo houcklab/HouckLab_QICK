@@ -245,7 +245,7 @@ def test_source_hashes_identify_actual_file_bytes(tmp_path):
         str(source): "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
 
 
-@pytest.mark.parametrize("mode", ["population_check", "refocus_check", "refocus_decay"])
+@pytest.mark.parametrize("mode", ["population_check", "refocus_check", "refocus_decay", "refocus_map"])
 def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, monkeypatch, mode):
     """Replace hardware boundaries; exercise the real run, analysis, and files."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSDualTransitionLoss
@@ -314,7 +314,9 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
             _load_correction=lambda *_: correction,
             makeProxy=lambda: (SimpleNamespace(get_cfg=lambda: {"clock_mhz": np.float64(384.)}), {}))
     install(f"{focused.__package__}.ThreePointApplesToApples",
-            _integer_dc_grid=lambda _p, sites, _tls: (np.array([-20130]), sites))
+            _integer_dc_grid=lambda _p, sites, _tls: (
+                np.array([-20130 + round((frequency - 4.288) * 100000)
+                          for frequency in sites]), sites))
     prefix = "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX"
     install(f"{prefix}.integration", _run_program=acquire,
             _block_timeout_s=lambda *_: 30.,
@@ -325,39 +327,63 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
     path = focused.run(data_root=tmp_path, **{mode: True})
     manifest = json.loads(path.read_text())
     assert manifest["status"] == "complete_" + mode
-    assert manifest["valid_site_blocks"] == 3
+    sites = list(focused.LOCAL_MAP_SITES_GHZ) if mode == "refocus_map" else [4.288]
+    assert manifest["valid_site_blocks"] == 3 * len(sites)
     metadata = json.loads(Path(manifest["acquisition_metadata_json"]).read_text())
     assert metadata["board_configuration"] == {"clock_mhz": 384.}
     assert len(metadata["source_file_sha256"]) == (5 if mode == "population_check" else 6)
     assert metadata["effective_base_config"]["opx_inter_shot_delay_us"] == 500.
-    assert len(metadata["acquisitions"]) == {"population_check": 144, "refocus_check": 258, "refocus_decay": 294}[mode]
+    expected_acquisitions = {"population_check": 144, "refocus_check": 258,
+                             "refocus_decay": 294, "refocus_map": 1470}[mode]
+    assert len(metadata["acquisitions"]) == expected_acquisitions
+    if mode == "refocus_map":
+        assessment = manifest["refocus_map_assessment"]
+        assert assessment["total_site_blocks"] == 15
+        assert not assessment["intrinsic_pure_dephasing_inferred"]
+        assert set(assessment["sites"]) == {f"{frequency:.3f}" for frequency in sites}
+        assert all(site["total_blocks"] == 3 and
+                   site["valid_blocks_by_sequence"] == {"hahn_y": 3, "cpmg2_y": 3}
+                   for site in assessment["sites"].values())
+        assert "refocus_assessment" not in manifest
+    config_paths = [arm["program_config_json"] for arm in metadata["acquisitions"]]
+    assert len(set(config_paths)) == expected_acquisitions
+    assert len(list((path.parent / "program_configs").glob("*.json"))) == expected_acquisitions
+    assert len(list(path.parent.glob("block*_*.npz"))) == 3 * len(sites)
     for block in manifest["blocks"]:
-        with np.load(block["sites"][0]["raw_npz"]) as raw:
-            assert len(raw.files) == {"population_check": 96, "refocus_check": 172, "refocus_decay": 196}[mode]
+        assert [site["frequency_ghz"] for site in block["sites"]] == (
+            sites if block["index"] % 2 == 0 else list(reversed(sites)))
+        for site in block["sites"]:
+            with np.load(site["raw_npz"]) as raw:
+                assert len(raw.files) == {"population_check": 96, "refocus_check": 172,
+                                          "refocus_decay": 196, "refocus_map": 196}[mode]
+                assert all(raw[key].shape == (1600,) for key in raw.files)
+                if mode == "population_check":
+                    assert len(raw["pop_e_1200ns_i"]) == 1600
+                else:
+                    assert len(raw["cpmg2_y_1350ns_270_i"]) == 1600
             if mode == "population_check":
-                assert len(raw["pop_e_1200ns_i"]) == 1600
+                assert site["population_comparison"]["valid"]
             else:
-                assert len(raw["cpmg2_y_1350ns_270_i"]) == 1600
-        if mode == "population_check":
-            assert block["sites"][0]["population_comparison"]["valid"]
-        else:
-            assert all(block["sites"][0]["sequence_valid"].values())
-            assert len(block["sites"][0]["refocus_comparison"]["by_requested_elapsed_us"]) == (8 if mode == "refocus_decay" else 5)
-    if mode == "refocus_decay":
+                assert all(site["sequence_valid"].values())
+                assert len(site["refocus_comparison"]["by_requested_elapsed_us"]) == (
+                    8 if mode in ("refocus_decay", "refocus_map") else 5)
+    if mode in ("refocus_decay", "refocus_map"):
         for block in manifest["blocks"]:
-            site = block["sites"][0]
-            assert site["late_control_gate"]["valid"]
-            assert all(g["valid"] for g in site["bridge_gates"].values())
-        assert sum(a["kind"].startswith("bridge_") for a in metadata["acquisitions"]) == 24
-        assert sum(a["kind"] == "late_control" for a in metadata["acquisitions"]) == 12
+            for site in block["sites"]:
+                assert site["late_control_gate"]["valid"]
+                assert all(g["valid"] for g in site["bridge_gates"].values())
+        assert sum(a["kind"].startswith("bridge_") for a in metadata["acquisitions"]) == 24 * len(sites)
+        assert sum(a["kind"] == "late_control" for a in metadata["acquisitions"]) == 12 * len(sites)
     for arm in metadata["acquisitions"]:
         assert arm["status"] == "complete"
         assert arm["started_at_utc"] <= arm["finished_at_utc"]
         cfg = json.loads(Path(arm["program_config_json"]).read_text())
         assert cfg["compiled_marker"] == 7
+        assert cfg["opx_resident_freq_mhz"] == pytest.approx(1000 * arm["frequency_ghz"] + 2.5)
+        assert cfg["ff_gain"] == -20130 + round((arm["frequency_ghz"] - 4.288) * 100000)
         if arm["kind"] in ("pop_g", "pop_e", "echo"):
             assert cfg["ff_hold"] == pytest.approx(30.3107 + arm["delay_us"])
-        if mode in ("refocus_check", "refocus_decay") and arm["kind"] in focused.refocus.SEQUENCES:
+        if mode in ("refocus_check", "refocus_decay", "refocus_map") and arm["kind"] in focused.refocus.SEQUENCES:
             assert cfg["refocus_elapsed_us"] == arm["delay_us"]
             assert cfg["refocus_sequence"] == arm["kind"]
             assert cfg["echo_phase_deg"] == arm["phase_deg"]
@@ -418,6 +444,24 @@ def test_decay_plan_extends_one_validated_site_without_scout(capsys):
         focused.run(refocus_check=True, refocus_decay=True)
     assert focused.main(['--plan', '--refocus-decay']) == 0
     assert json.loads(capsys.readouterr().out)['concurrent_flux_correction']
+
+
+def test_refocus_map_repeats_full_paired_traces_at_five_fixed_sites_without_scout(capsys):
+    p = focused.plan(refocus_map=True)
+    assert p['sites_ghz'] == [4.280, 4.284, 4.288, 4.292, 4.296]
+    assert p['sequences'] == ['hahn_y', 'cpmg2_y']
+    assert p['requested_pi2_center_elapsed_us'] == [.35, .65, .95, 1.35, 1.8, 2.4, 3.2, 4.2]
+    assert p['shots_per_arm'] == 1600
+    assert p['reversed_blocks'] == 3
+    assert p['t1_scans'] is None
+    assert p['concurrent_flux_correction']
+    assert p['late_projection_control']
+    assert p['legacy_playback_overlap_us'] == 1.35
+    for other_mode in ('single_point', 'local_map', 'population_check', 'refocus_check', 'refocus_decay'):
+        with pytest.raises(ValueError):
+            focused.run(refocus_map=True, **{other_mode: True})
+    assert focused.main(['--plan', '--refocus-map']) == 0
+    assert json.loads(capsys.readouterr().out)['sites_ghz'] == p['sites_ghz']
 
 
 def test_decay_schedule_keeps_legacy_overlap_next_to_new_sequence():

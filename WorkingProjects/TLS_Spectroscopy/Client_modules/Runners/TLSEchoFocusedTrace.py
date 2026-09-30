@@ -12,6 +12,7 @@ The --refocus-check mode compares Hahn X, Hahn Y and CPMG2 Y at matched
 elapsed times at the same validated frequency, without a T1 scout.
 The --refocus-decay mode extends Hahn Y and CPMG2 Y to 4.2 us with the
 full flux correction playing concurrently, plus overlap and late-pulse checks.
+The --refocus-map mode repeats those paired decays across five nearby sites.
 """
 
 import argparse
@@ -382,9 +383,16 @@ def scout_parameters(phase):
             "output_suffix": f"TLS_Echo_Focused_Trace_{phase}_T1"}
 
 
-def plan(*, single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False):
-    if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay))) > 1:
+def plan(*, single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False):
+    if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay, refocus_map))) > 1:
         raise ValueError("choose one echo mode")
+    if refocus_map:
+        return {**plan(refocus_decay=True),
+                "purpose": "replicated local map of full Hahn Y and CPMG2 Y decays",
+                "sites_ghz": list(LOCAL_MAP_SITES_GHZ),
+                "frequency_selection": "fixed grid; no T1 or loss-site selection",
+                "controls_at_every_site": True,
+                "unique_program_config_per_site_arm": True}
     if refocus_decay:
         return {"hardware_access": False,
                 "purpose": "measure full Hahn Y and CPMG2 Y decay at the validated point",
@@ -479,8 +487,8 @@ def plan(*, single_point=False, local_map=False, population_check=False, refocus
 
 
 def run(*, data_root=None, correction_json=None,
-        single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False):
-    if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay))) > 1:
+        single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False):
+    if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay, refocus_map))) > 1:
         raise ValueError("choose one echo mode")
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
@@ -505,13 +513,15 @@ def run(*, data_root=None, correction_json=None,
                                "manifest.json")
         validate_single_point_source(json.loads(
             focused_source_path.read_text(encoding="utf-8")))
-    refocusing = refocus_check or refocus_decay
-    sequences = refocus.DECAY_SEQUENCES if refocus_decay else refocus.SEQUENCES
+    extended_refocus = refocus_decay or refocus_map
+    refocusing = refocus_check or extended_refocus
+    sequences = refocus.DECAY_SEQUENCES if extended_refocus else refocus.SEQUENCES
     audit_enabled = population_check or refocusing
-    sites = ((POPULATION_SITE_GHZ,) if audit_enabled else
+    sites = (LOCAL_MAP_SITES_GHZ if refocus_map else
+             (POPULATION_SITE_GHZ,) if audit_enabled else
              LOCAL_MAP_SITES_GHZ if local_map else
              (SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
-    delays = (refocus.DECAY_TIMES_US if refocus_decay else
+    delays = (refocus.DECAY_TIMES_US if extended_refocus else
               refocus.TIMES_US if refocus_check else
               POPULATION_DELAYS_US if population_check else
               SINGLE_DELAYS_US if (single_point or local_map) else DELAYS_US)
@@ -521,7 +531,8 @@ def run(*, data_root=None, correction_json=None,
     blocks = (POPULATION_BLOCKS if audit_enabled else
               LOCAL_MAP_BLOCKS if local_map else
               SINGLE_BLOCKS if single_point else 2)
-    session_id = (("q3_echo_refocus_decay_" if refocus_decay else
+    session_id = (("q3_echo_refocus_map_" if refocus_map else
+                   "q3_echo_refocus_decay_" if refocus_decay else
                    "q3_echo_refocus_check_" if refocus_check else
                    "q3_echo_population_check_" if population_check else
                    "q3_echo_local_map_" if local_map else
@@ -539,7 +550,8 @@ def run(*, data_root=None, correction_json=None,
             stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
-    manifest = {"schema": ("q3.echo-refocus-decay.v1" if refocus_decay else
+    manifest = {"schema": ("q3.echo-refocus-map.v1" if refocus_map else
+                            "q3.echo-refocus-decay.v1" if refocus_decay else
                             "q3.echo-refocus-check.v1" if refocus_check else
                             "q3.echo-population-check.v1" if population_check else
                             "q3.echo-local-map.v1" if local_map else
@@ -551,7 +563,7 @@ def run(*, data_root=None, correction_json=None,
                 "correction_sha256": localizer.CORRECTION_SHA256,
                 "plan": plan(single_point=single_point, local_map=local_map,
                              population_check=population_check, refocus_check=refocus_check,
-                             refocus_decay=refocus_decay),
+                             refocus_decay=refocus_decay, refocus_map=refocus_map),
                 "blocks": []}
     if focused_source_path is not None:
         manifest["focused_source_manifest"] = str(focused_source_path)
@@ -590,7 +602,7 @@ def run(*, data_root=None, correction_json=None,
                          "opx_inter_shot_delay_us": 500.})
             if audit_enabled:
                 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
-                if not refocus_decay:
+                if not extended_refocus:
                     manifest["population_correction_window"] = validate_population_correction(
                         ff_pulse.load_compensation(base),
                         settle_us=base["flux_settle_time_us"])
@@ -599,7 +611,7 @@ def run(*, data_root=None, correction_json=None,
             control_class = fast.make_program(resident.ResidentDriveProgram)
             echo_class = square.make_echo_program(resident.ResidentDriveProgram)
             refocus_class = refocus.make_program(resident.ResidentDriveProgram) if refocusing else None
-            decay_class = refocus.make_decay_program(resident.ResidentDriveProgram) if refocus_decay else None
+            decay_class = refocus.make_decay_program(resident.ResidentDriveProgram) if extended_refocus else None
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
             if audit_enabled:
@@ -655,14 +667,14 @@ def run(*, data_root=None, correction_json=None,
                 if kind.startswith("bridge_"):
                     return refocus_class
                 if kind in refocus.SEQUENCES or kind == "late_control":
-                    return decay_class if refocus_decay else refocus_class
+                    return decay_class if extended_refocus else refocus_class
                 return echo_class if kind == "echo" else control_class
 
             compile_arms = ([("control", None)] +
                             [(kind, delay) for kind in sequences
                              for delay in delays]) if refocusing else [
                                  ("control", None), ("echo", delays[0]), ("echo", delays[-1])]
-            if refocus_decay:
+            if extended_refocus:
                 compile_arms.extend(("bridge_" + kind, 1.35) for kind in sequences)
                 compile_arms.append(("late_control", delays[-1]))
             if population_check:
@@ -683,7 +695,8 @@ def run(*, data_root=None, correction_json=None,
                 if audit_enabled:
                     if label is None:
                         raise ValueError("audited acquisition needs an IQ label")
-                    config_path = config_folder / f"block{block}_{label}.json"
+                    site_key = f"_{round(1000*frequency)}MHz" if refocus_map else ""
+                    config_path = config_folder / f"block{block}{site_key}_{label}.json"
                     config_path.write_text(json.dumps(
                         json_safe(program.cfg), indent=2, allow_nan=False) + "\n",
                         encoding="utf-8")
@@ -745,7 +758,7 @@ def run(*, data_root=None, correction_json=None,
                     for phase in entry["control_pre_phases"]:
                         take(f"control_pre_{phase}", "control", phase=phase)
                     if refocusing:
-                        arms = decay_schedule(block) if refocus_decay else refocus_schedule(block)
+                        arms = decay_schedule(block) if extended_refocus else refocus_schedule(block)
                         for kind, delay, phase in arms:
                             take(f"{kind}_{round(delay*1000)}ns_{phase}", kind,
                                  phase=phase, delay=delay)
@@ -768,7 +781,7 @@ def run(*, data_root=None, correction_json=None,
                         for phase in entry["control_post_phases"]:
                             take(f"sentinel_{round(delays[0]*1000)}ns_{phase}",
                                  "echo", phase=phase, delay=delays[0])
-                    if refocus_decay:
+                    if extended_refocus:
                         for phase in entry["control_post_phases"]:
                             take(f"late_control_{phase}", "late_control", phase=phase, delay=delays[-1])
                     for phase in entry["control_post_phases"]:
@@ -820,7 +833,7 @@ def run(*, data_root=None, correction_json=None,
                             common_valid = point["rabi_gate"]["valid"] and point["control_gate"]["valid"]
                             point["sequence_valid"] = {kind: common_valid and gate["valid"]
                                                        for kind, gate in point["short_echo_gates"].items()}
-                            if refocus_decay:
+                            if extended_refocus:
                                 bridges = {kind: {phase: responses[f"bridge_{kind}_1350ns_{phase}"]
                                                    for phase in PHASES_DEG} for kind in sequences}
                                 late = {phase: responses[f"late_control_{phase}"] for phase in PHASES_DEG}
@@ -868,7 +881,19 @@ def run(*, data_root=None, correction_json=None,
                     block_entry["sites"].append(point)
                     dual.checkpoint(path, manifest)
 
-        if refocusing:
+        if refocus_map:
+            manifest["refocus_map_assessment"] = {
+                "sites": {f"{frequency:.3f}": {
+                    "valid_blocks_by_sequence": {kind: sum(
+                        site.get("sequence_valid", {}).get(kind, False)
+                        for block in manifest["blocks"] for site in block["sites"]
+                        if site["frequency_ghz"] == frequency) for kind in sequences},
+                    "total_blocks": sum(site["frequency_ghz"] == frequency
+                        for block in manifest["blocks"] for site in block["sites"])}
+                    for frequency in sites},
+                "total_site_blocks": sum(len(block["sites"]) for block in manifest["blocks"]),
+                "intrinsic_pure_dephasing_inferred": False}
+        elif refocusing:
             manifest["refocus_assessment"] = {
                 "valid_blocks_by_sequence": {kind: sum(site.get("sequence_valid", {}).get(kind, False)
                     for block in manifest["blocks"] for site in block["sites"])
@@ -893,7 +918,8 @@ def run(*, data_root=None, correction_json=None,
         manifest["valid_site_blocks"] = sum(
             site["status"] == "valid_controls"
             for block in manifest["blocks"] for site in block["sites"])
-        manifest["status"] = ("complete_refocus_decay" if refocus_decay else
+        manifest["status"] = ("complete_refocus_map" if refocus_map else
+                              "complete_refocus_decay" if refocus_decay else
                               "complete_refocus_check" if refocus_check else
                               "complete_population_check" if population_check else
                               "complete_local_map" if local_map else
@@ -928,18 +954,21 @@ def main(argv=None):
                         help="compare Hahn X, Hahn Y, and CPMG2 at matched elapsed times")
     experiment.add_argument("--refocus-decay", action="store_true",
                         help="extend Hahn Y and CPMG2 to 4.2 us with full concurrent correction")
+    experiment.add_argument("--refocus-map", action="store_true",
+                        help="map paired full Hahn/CPMG decay over five fixed nearby frequencies")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(single_point=args.single_point,
                               local_map=args.local_map,
                               population_check=args.population_check,
                               refocus_check=args.refocus_check,
-                              refocus_decay=args.refocus_decay), indent=2))
+                              refocus_decay=args.refocus_decay,
+                              refocus_map=args.refocus_map), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             single_point=args.single_point, local_map=args.local_map,
             population_check=args.population_check, refocus_check=args.refocus_check,
-            refocus_decay=args.refocus_decay)
+            refocus_decay=args.refocus_decay, refocus_map=args.refocus_map)
     return 0
 
 
