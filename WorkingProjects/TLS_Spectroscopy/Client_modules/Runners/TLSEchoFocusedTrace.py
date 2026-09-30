@@ -1,6 +1,6 @@
 """Validate one flux-ramp echo or repeat the q3 4.21-GHz candidate.
 
-The --single-point mode first tests a 4.288-GHz corrected flux visit in
+The --single-point mode first tests a 4.284-GHz corrected flux visit in
 four reversed blocks, including a repeated short-delay echo sentinel.
 The later default mode covers fixed sites around the blind-map candidate
 and two quieter controls, with narrow five-point scans before and after.
@@ -33,10 +33,11 @@ POST_US = square.POST_US
 PI_US = square.PI_US
 PI2_US = square.PI2_US
 TWO_PI_US = 2 * PI_US
-SINGLE_SITE_GHZ = 4.288
+SINGLE_SITE_GHZ = 4.284
 SINGLE_DELAYS_US = (.08, .15, .3, .5, .8, 1.2, 1.8, 2.6, 4.)
 SINGLE_SHOTS = 1600
 SINGLE_BLOCKS = 4
+SINGLE_SOURCE_SESSION = "q3_echo_focused_trace_20260930T001018Z_fdc72d98"
 
 
 def schedule(block, *, sites=SITES_GHZ, delays=DELAYS_US):
@@ -118,6 +119,24 @@ def assess_single_point(blocks):
             "rate_coefficient_of_variation": rate_cv}
 
 
+def validate_single_point_source(source):
+    if (source.get("schema") != "q3.echo-focused-trace.v1" or
+            source.get("session_id") != SINGLE_SOURCE_SESSION or
+            source.get("status") != "complete" or
+            source.get("code_commit", "")[:8] != "f7c12262" or
+            source.get("correction_sha256") != localizer.CORRECTION_SHA256 or
+            len(source.get("blocks", [])) != 2):
+        raise ValueError("single-point source must be the pinned focused run")
+    for block in source["blocks"]:
+        matches = [site for site in block.get("sites", [])
+                   if site.get("frequency_ghz") == SINGLE_SITE_GHZ]
+        if (len(matches) != 1 or matches[0].get("status") != "valid_controls" or
+                not matches[0].get("rabi_gate", {}).get("valid") or
+                not matches[0].get("control_gate", {}).get("valid") or
+                not float(matches[0].get("trace", {}).get("rate_per_us", 0)) > 0):
+            raise ValueError("source lacks two control-valid 4.284-GHz echoes")
+
+
 def scout_parameters(phase):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         TLSPumpProbeWidePassiveScan as wide,
@@ -130,7 +149,7 @@ def scout_parameters(phase):
 def plan(*, single_point=False):
     if single_point:
         return {"hardware_access": False,
-                "purpose": "validate a repeatable flux-ramp Hahn echo at 4.288 GHz",
+                "purpose": "validate a repeatable flux-ramp Hahn echo at 4.284 GHz",
                 "sites_ghz": [SINGLE_SITE_GHZ],
                 "delays_us": list(SINGLE_DELAYS_US),
                 "phase_cycle_deg": list(PHASES_DEG),
@@ -173,6 +192,12 @@ def run(*, data_root=None, correction_json=None, single_point=False):
     correction = localizer.checked_correction(data_root, correction_json)
     source_path = data_root / "q3" / square.SOURCE_SESSION / "manifest.json"
     square.validate_source(json.loads(source_path.read_text(encoding="utf-8")))
+    focused_source_path = None
+    if single_point:
+        focused_source_path = (data_root / "q3" / SINGLE_SOURCE_SESSION /
+                               "manifest.json")
+        validate_single_point_source(json.loads(
+            focused_source_path.read_text(encoding="utf-8")))
     sites = ((SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
     delays = SINGLE_DELAYS_US if single_point else DELAYS_US
     shots = SINGLE_SHOTS if single_point else SHOTS
@@ -198,6 +223,8 @@ def run(*, data_root=None, correction_json=None, single_point=False):
                 "correction_json": str(correction),
                 "correction_sha256": localizer.CORRECTION_SHA256,
                 "plan": plan(single_point=single_point), "blocks": []}
+    if focused_source_path is not None:
+        manifest["focused_source_manifest"] = str(focused_source_path)
     dual.checkpoint(path, manifest)
     try:
         if not single_point:
@@ -402,7 +429,7 @@ def main(argv=None):
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--correction-json", type=Path)
     parser.add_argument("--single-point", action="store_true",
-                        help="validate one 4.288-GHz flux-ramp echo before mapping")
+                        help="validate one 4.284-GHz flux-ramp echo before mapping")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(single_point=args.single_point), indent=2))

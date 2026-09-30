@@ -42,13 +42,13 @@ def test_trace_report_fits_decay_but_flags_revival():
     assert focused.trace_report(cycles)["revival_count"] >= 1
 
 
-def test_single_point_schedule_reverses_four_blocks_at_4288():
-    assert focused.SINGLE_SITE_GHZ == 4.288
+def test_single_point_schedule_reverses_four_blocks_at_4284():
+    assert focused.SINGLE_SITE_GHZ == 4.284
     assert focused.SINGLE_DELAYS_US[0] < .15
     assert focused.SINGLE_DELAYS_US[-1] >= 4.
-    first = focused.schedule(0, sites=(4.288,),
+    first = focused.schedule(0, sites=(4.284,),
                              delays=focused.SINGLE_DELAYS_US)
-    last = focused.schedule(3, sites=(4.288,),
+    last = focused.schedule(3, sites=(4.284,),
                             delays=focused.SINGLE_DELAYS_US)
     assert first[0]["echo_arms"][0] == (focused.SINGLE_DELAYS_US[0], 0)
     assert last[0]["echo_arms"][0] == (focused.SINGLE_DELAYS_US[-1], 270)
@@ -64,9 +64,24 @@ def test_short_echo_sentinel_requires_repeatable_visibility_and_phase():
 
 def test_single_point_plan_has_no_t1_scout_and_four_repeats():
     plan = focused.plan(single_point=True)
-    assert plan["sites_ghz"] == [4.288]
+    assert plan["sites_ghz"] == [4.284]
     assert plan["reversed_blocks"] == 4
     assert plan["t1_scans"] is None
+
+
+def test_single_point_source_requires_two_valid_4284_blocks():
+    site = {"frequency_ghz": 4.284, "status": "valid_controls",
+            "rabi_gate": {"valid": True}, "control_gate": {"valid": True},
+            "trace": {"rate_per_us": .5}}
+    source = {"schema": "q3.echo-focused-trace.v1", "status": "complete",
+              "session_id": focused.SINGLE_SOURCE_SESSION,
+              "code_commit": "f7c12262" + "0" * 32,
+              "correction_sha256": focused.localizer.CORRECTION_SHA256,
+              "blocks": [{"sites": [site]}, {"sites": [site]}]}
+    focused.validate_single_point_source(source)
+    source["blocks"][1] = {"sites": [{**site, "status": "unresolved_local_control"}]}
+    with pytest.raises(ValueError):
+        focused.validate_single_point_source(source)
 
 
 def test_single_point_assessment_requires_repeated_consistent_echo():

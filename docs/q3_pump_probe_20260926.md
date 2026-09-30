@@ -5535,11 +5535,21 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run
 ```
 
-Before running the eight-site follow-up, validate the flux-ramp echo
-sequence at the already phase-calibrated quiet **4.288-GHz** point. The
-blind map had a nonmonotonic three-delay trace there despite strong
-two-pulse control, so this is a necessary sequence-level test rather
-than another search for a TLS. `TLSEchoFocusedTrace --run --single-point`
+The eight-site focused run completed at
+`q3_echo_focused_trace_20260930T001018Z_fdc72d98`. Only six of its 16
+site-blocks passed every local check. The proposed 4.212-GHz peak did
+not repeat: apparent seven-delay rates were 0.536 and 0.609/us, and the
+2π response failed the local pulse gate in both blocks. The T1 loss
+center moved from about 4.210 GHz in the pre-scan to 4.208 GHz in the
+post-scan, so these data do not settle whether the defect itself has a
+dephasing signature. The useful control site is **4.284 GHz**: both
+reversed blocks passed the reference, one-pulse, and phase-circle gates,
+with apparent rates 0.456 and 0.579/us. Those are encouraging but are
+only two repeats; the first trace has a broad short-delay plateau.
+
+Before another frequency map, validate the flux-ramp echo sequence at
+that empirically control-valid **4.284-GHz** point.
+`TLSEchoFocusedTrace --run --single-point`
 runs four blocks with reversed delay/phase order, nine delays from 0.08
 to 4 us, and 1600 IQ shots per phase. Each block brackets the trace with
 zero/π IQ references, a one-pulse π/2 and 2π turnover check, and
