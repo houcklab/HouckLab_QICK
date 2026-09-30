@@ -1,0 +1,94 @@
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.local_settings import (
+    apply_local_overrides,
+)
+
+
+FF_CH = 3
+
+FF_Qubits = {
+    str(1): {'channel': FF_CH, 'delay_time': 0.0},
+}
+
+
+BaseConfig = {
+    "res_ch": 0,
+    "qubit_ch": 1,
+    "ff_ch": FF_CH,
+    "ro_chs": [0],
+    "nqz": 2,
+    "qubit_nqz": 2,
+    "ff_nqz": 1,
+    "mixer_freq": 0.0,
+    "cavity_LO": 0,
+
+    "reps": 1000,
+    "relax_delay": 1000,
+    "flux_settle_time_us": 0.5,
+    "ff_ramp_length": 4.0,
+    "adc_trig_offset": 0.5,
+    "res_phase": 165.0,
+
+    "read_pulse_style": "const",
+    "read_length": 3.5,
+    "readout_guard_us": 1.0,
+    "readout_thermalization_us": 10.0,
+    "read_pulse_gain": 1880,
+    "read_pulse_freq": 6933.026,
+
+    "qubit_pulse_style": "arb",
+    "qubit_freq": 4367.292,
+    "qubit_pi_freq": 4367.292,
+    "qubit_pi_gain": 13500,
+    "qubit_pi2_gain": 6750,
+    "qubit_drag_beta": 0.0,
+    "qubit_anharmonicity_mhz": -180.0,
+    "qubit_gain": 14000,
+    "qubit_length": 0.25,
+    "sigma": 0.2,
+    "flat_top_length": None,
+
+    "reset_read_delay_us": 2.0,
+    "reset_meas_syncdelay_us": 10.0,
+    "reset_max_iters": 3,
+
+    "ff_park_gain": -25146,
+    "ff_park_settle_us": 1.0,
+    "FF_Qubits": FF_Qubits,
+
+    "trig_buffer_start": 0.02,
+    "trig_buffer_end": 0.02,
+    "trig_delay": 0.082,
+    "use_switch": False,
+
+    "cavity_winding_freq": 0,
+    "cavity_winding_offset": 0,
+}
+
+
+FLUX_FIT_PARAMS = [
+    4.02378901539,
+    0.449998775338,
+    50575.939402,
+    -17654.3599163,
+    0.369350889718,
+    -4.72847424324e-05,
+]
+
+RESONATOR_FIT_PARAMS = [6929532609.626256, 102183842.77558708, 12.457027141606355, 0.18504287441157935, 60361.19628170067, -25581.578015529918, 0.18012547035756307]
+
+FF_STEP_TARGET_GAIN = 8000
+
+outerFolder = 'Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC'
+
+LOCAL_OVERRIDE_KEYS = (
+    "FF_CH",
+    "FF_Qubits",
+    "BaseConfig",
+    "FLUX_FIT_PARAMS",
+    "RESONATOR_FIT_PARAMS",
+    "FF_STEP_TARGET_GAIN",
+    "outerFolder",
+)
+
+apply_local_overrides(globals(), __file__, LOCAL_OVERRIDE_KEYS)

@@ -1,0 +1,52 @@
+{
+  "res_ch": 0,
+  "qubit_ch": 1,
+  "ff_ch": 3,
+  "ro_chs": [
+    0
+  ],
+  "nqz": 2,
+  "qubit_nqz": 2,
+  "ff_nqz": 1,
+  "mixer_freq": 0.0,
+  "cavity_LO": 0,
+  "reps": 1000,
+  "relax_delay": 1800,
+  "flux_settle_time_us": 0.5,
+  "ff_ramp_length": 4.0,
+  "adc_trig_offset": 0.5,
+  "res_phase": 165.0,
+  "read_pulse_style": "const",
+  "read_length": 5.0,
+  "readout_guard_us": 1.0,
+  "read_pulse_gain": 1880,
+  "read_pulse_freq": 7026.52,
+  "qubit_pulse_style": "arb",
+  "qubit_freq": 4367.76,
+  "qubit_pi_freq": 4367.76,
+  "qubit_pi_gain": 32000,
+  "qubit_pi2_gain": 16000,
+  "qubit_drag_beta": 0.0,
+  "qubit_anharmonicity_mhz": -180.0,
+  "qubit_gain": 32000,
+  "qubit_length": 0.25,
+  "sigma": 2.0,
+  "flat_top_length": null,
+  "reset_read_delay_us": 2.0,
+  "reset_meas_syncdelay_us": 2.0,
+  "reset_max_iters": 3,
+  "ff_park_gain": 0,
+  "ff_park_settle_us": 1.0,
+  "FF_Qubits": {
+    "1": {
+      "channel": 3,
+      "delay_time": 0.0
+    }
+  },
+  "trig_buffer_start": 0.02,
+  "trig_buffer_end": 0.02,
+  "trig_delay": 0.082,
+  "use_switch": false,
+  "cavity_winding_freq": 0,
+  "cavity_winding_offset": 0
+}
