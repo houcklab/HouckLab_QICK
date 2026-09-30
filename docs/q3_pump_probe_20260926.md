@@ -5952,3 +5952,93 @@ runner tests, including all 1470 simulated map acquisitions and unique
 configuration provenance, plus the remaining 1181 tests). The independent
 review found no blocking issue. No pulse-builder, production spectroscopy,
 or active-reset changes were needed for this map extension.
+
+### Completed paired coherence map, September 30
+
+`q3_echo_refocus_map_20260930T060121Z_bf0d77fa` completed under
+`8d4bf73c` in **28m30s**. All **1470 acquisitions** contain 1600 records;
+all **15 site visits and 30 decay traces** passed the unchanged controls.
+No trace was excluded. There are 1470 unique saved program configurations.
+All six executed source hashes match the repository after Windows CRLF
+normalization. Independent raw-IQ reanalysis reproduces the saved phase
+projections to **4.5e-16**.
+
+The elapsed times, science windows, total visits and full flux waveform
+match between Hahn and CPMG in every one of 480 paired science cases.
+Readout axes remain stable (cosine >=0.9985), pre/post phase-circle drift
+is at most 8.04 degrees, pi/2 responses span 0.460–0.601, 2pi responses
+span -0.018–0.098, and late-pulse visibility spans 0.826–1.063.
+
+| Frequency (GHz) | Hahn crossing (us), mean ± repeat SD | CPMG2 crossing (us), mean ± repeat SD |
+| --- | --- | --- |
+| 4.280 | 1.378 ± 0.092 | 2.523 ± 0.037 |
+| 4.284 | 1.393 ± 0.061 | 2.529 ± 0.164 |
+| 4.288 | 1.453 ± 0.105 | 2.493 ± 0.136 |
+| 4.292 | 1.433 ± 0.087 | 2.392 ± 0.153 |
+| 4.296 | 1.517 ± 0.077 | 2.630 ± 0.192 |
+
+As before, these are elapsed pi/2-center coordinates where the measured
+visibility falls to **1/e of its 0.353423-us reference**, not exponential
+fit parameters or intrinsic dephasing times. The reported SD describes
+three repeats. The accompanying JSON also contains conditional 95%
+intervals from 1600 grouped-shot bootstrap draws (50 shots per group),
+including the shared IQ references; these exclude drift/systematic and
+interpolation-model uncertainty. A small repeat SD alone does not imply
+an equally small total uncertainty.
+
+![Paired coherence times versus frequency](q3_echo_refocus_map_20260930.png)
+
+![All paired decay curves at every frequency](q3_echo_refocus_map_traces_20260930.png)
+
+**Result:** this is a usable local coherence map, with a repeatable CPMG
+benefit across the band. Every individual CPMG crossing exceeds its paired
+Hahn crossing. At 1.8 us, average normalized visibility is approximately
+0.206 for Hahn and 0.533 for CPMG2; the absolute CPMG visibility is higher
+in all 15 visits. No convincing localized dephasing hotspot is resolved
+on this 4-MHz grid within this band. Narrower or out-of-band features are
+not excluded, and the result does not identify a TLS-specific mechanism.
+
+The apparent CPMG dip at 4.292 GHz is not consistent across repeats. The
+mean of its immediate neighbors minus its crossing is **0.440, 0.047,
+and 0.024 us** across the three blocks. It is driven mainly by the first
+pass, not a repeatable isolated line. Do not turn that shallow average dip
+into a feature claim.
+
+A calibration limitation remains visible despite all gates passing:
+the legacy Hahn bridge is systematically higher than the concurrent
+builder by an average **0.0308 visibility units** (site-visit SEM 0.0091;
+12/15 differences positive). The CPMG bridge offset averages 0.0023
+(SEM 0.0170). Therefore the builders are not established as quantitatively
+interchangeable. The map itself uses the concurrent builder consistently
+at every frequency; keep the legacy bridge as an explicit diagnostic and
+do not describe these measurements as intrinsic Gamma_phi.
+
+### Adjacent lower-frequency map with an overlapping reference
+
+The next bounded continuation is the same full protocol at **4.260,
+4.264, 4.268, 4.272 and 4.276 GHz**, with **4.288 GHz** repeated as an
+anchor. The archival blind square-echo scan had usable phase controls at
+all sampled frequencies from 4.240–4.280 GHz, supporting this modest
+extension. The new run retains its own pulse and late-projection checks
+rather than assuming that older calibration remains valid.
+
+Use `--refocus-map --lower-band`. Three blocks, both Hahn/CPMG curves,
+eight delays and 1600 shots per arm are unchanged: **18 site visits and
+1764 acquisitions**, approximately **35 minutes**. The fixed grid does
+not use T1 or loss-site selection. A failed local control still preserves
+all data and lets the remaining points run. The 4.288-GHz overlap allows
+comparison with the completed map before combining sessions. There are
+no pulse-builder or production-pipeline changes and no new terminal
+progress messages.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --refocus-map --lower-band
+```
+
+Release verification: **1224 tests passed** across `tests/`: 43 focused
+runner tests (including complete 1470- and 1764-acquisition map simulations)
+and 1181 remaining tests. The lower-band plan was also inspected through
+the CLI. Independent review found no blocking issue; the original map
+grid and all acquisition schedules remain unchanged unless the new option
+is selected.

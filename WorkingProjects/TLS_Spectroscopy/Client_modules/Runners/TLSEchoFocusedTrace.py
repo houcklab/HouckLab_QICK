@@ -50,6 +50,7 @@ SINGLE_SHOTS = 1600
 SINGLE_BLOCKS = 4
 SINGLE_SOURCE_SESSION = "q3_echo_focused_trace_20260930T001018Z_fdc72d98"
 LOCAL_MAP_SITES_GHZ = (4.280, 4.284, 4.288, 4.292, 4.296)
+LOWER_MAP_SITES_GHZ = (4.260, 4.264, 4.268, 4.272, 4.276, 4.288)
 LOCAL_MAP_SHOTS = 1200
 LOCAL_MAP_BLOCKS = 3
 POPULATION_SITE_GHZ = 4.288
@@ -383,13 +384,17 @@ def scout_parameters(phase):
             "output_suffix": f"TLS_Echo_Focused_Trace_{phase}_T1"}
 
 
-def plan(*, single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False):
+def plan(*, single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False, lower_band=False):
     if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay, refocus_map))) > 1:
         raise ValueError("choose one echo mode")
+    if lower_band and not refocus_map:
+        raise ValueError("--lower-band requires --refocus-map")
     if refocus_map:
         return {**plan(refocus_decay=True),
                 "purpose": "replicated local map of full Hahn Y and CPMG2 Y decays",
-                "sites_ghz": list(LOCAL_MAP_SITES_GHZ),
+                "sites_ghz": list(LOWER_MAP_SITES_GHZ if lower_band else LOCAL_MAP_SITES_GHZ),
+                "grid_band": "lower" if lower_band else "validated",
+                "anchor_frequency_ghz": POPULATION_SITE_GHZ,
                 "frequency_selection": "fixed grid; no T1 or loss-site selection",
                 "controls_at_every_site": True,
                 "unique_program_config_per_site_arm": True}
@@ -487,9 +492,11 @@ def plan(*, single_point=False, local_map=False, population_check=False, refocus
 
 
 def run(*, data_root=None, correction_json=None,
-        single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False):
+        single_point=False, local_map=False, population_check=False, refocus_check=False, refocus_decay=False, refocus_map=False, lower_band=False):
     if sum(map(bool, (single_point, local_map, population_check, refocus_check, refocus_decay, refocus_map))) > 1:
         raise ValueError("choose one echo mode")
+    if lower_band and not refocus_map:
+        raise ValueError("--lower-band requires --refocus-map")
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
         TLSDualTransitionLoss as dual,
@@ -517,7 +524,8 @@ def run(*, data_root=None, correction_json=None,
     refocusing = refocus_check or extended_refocus
     sequences = refocus.DECAY_SEQUENCES if extended_refocus else refocus.SEQUENCES
     audit_enabled = population_check or refocusing
-    sites = (LOCAL_MAP_SITES_GHZ if refocus_map else
+    map_sites = LOWER_MAP_SITES_GHZ if lower_band else LOCAL_MAP_SITES_GHZ
+    sites = (map_sites if refocus_map else
              (POPULATION_SITE_GHZ,) if audit_enabled else
              LOCAL_MAP_SITES_GHZ if local_map else
              (SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
@@ -563,7 +571,8 @@ def run(*, data_root=None, correction_json=None,
                 "correction_sha256": localizer.CORRECTION_SHA256,
                 "plan": plan(single_point=single_point, local_map=local_map,
                              population_check=population_check, refocus_check=refocus_check,
-                             refocus_decay=refocus_decay, refocus_map=refocus_map),
+                             refocus_decay=refocus_decay, refocus_map=refocus_map,
+                             lower_band=lower_band),
                 "blocks": []}
     if focused_source_path is not None:
         manifest["focused_source_manifest"] = str(focused_source_path)
@@ -956,19 +965,25 @@ def main(argv=None):
                         help="extend Hahn Y and CPMG2 to 4.2 us with full concurrent correction")
     experiment.add_argument("--refocus-map", action="store_true",
                         help="map paired full Hahn/CPMG decay over five fixed nearby frequencies")
+    parser.add_argument("--lower-band", action="store_true",
+                        help="with --refocus-map, extend to 4.260-4.276 GHz and repeat the 4.288-GHz anchor")
     args = parser.parse_args(argv)
+    if args.lower_band and not args.refocus_map:
+        parser.error("--lower-band requires --refocus-map")
     if args.plan:
         print(json.dumps(plan(single_point=args.single_point,
                               local_map=args.local_map,
                               population_check=args.population_check,
                               refocus_check=args.refocus_check,
                               refocus_decay=args.refocus_decay,
-                              refocus_map=args.refocus_map), indent=2))
+                              refocus_map=args.refocus_map,
+                              lower_band=args.lower_band), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
             single_point=args.single_point, local_map=args.local_map,
             population_check=args.population_check, refocus_check=args.refocus_check,
-            refocus_decay=args.refocus_decay, refocus_map=args.refocus_map)
+            refocus_decay=args.refocus_decay, refocus_map=args.refocus_map,
+            lower_band=args.lower_band)
     return 0
 
 

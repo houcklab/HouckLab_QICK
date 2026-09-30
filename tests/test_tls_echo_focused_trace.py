@@ -245,8 +245,11 @@ def test_source_hashes_identify_actual_file_bytes(tmp_path):
         str(source): "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
 
 
-@pytest.mark.parametrize("mode", ["population_check", "refocus_check", "refocus_decay", "refocus_map"])
-def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize("mode,lower_band", [
+    ("population_check", False), ("refocus_check", False),
+    ("refocus_decay", False), ("refocus_map", False), ("refocus_map", True),
+])
+def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, monkeypatch, mode, lower_band):
     """Replace hardware boundaries; exercise the real run, analysis, and files."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSDualTransitionLoss
 
@@ -324,10 +327,14 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
     install(f"{prefix}.production", ProductionResetSession=SimpleNamespace(
         passive=lambda: SimpleNamespace(apply=dict)))
 
-    path = focused.run(data_root=tmp_path, **{mode: True})
+    options = {mode: True}
+    if lower_band:
+        options["lower_band"] = True
+    path = focused.run(data_root=tmp_path, **options)
     manifest = json.loads(path.read_text())
     assert manifest["status"] == "complete_" + mode
-    sites = list(focused.LOCAL_MAP_SITES_GHZ) if mode == "refocus_map" else [4.288]
+    sites = ([4.260, 4.264, 4.268, 4.272, 4.276, 4.288] if lower_band else
+             [4.280, 4.284, 4.288, 4.292, 4.296] if mode == "refocus_map" else [4.288])
     assert manifest["valid_site_blocks"] == 3 * len(sites)
     metadata = json.loads(Path(manifest["acquisition_metadata_json"]).read_text())
     assert metadata["board_configuration"] == {"clock_mhz": 384.}
@@ -335,10 +342,16 @@ def test_audited_run_saves_every_arm_and_exact_config_without_scouts(tmp_path, m
     assert metadata["effective_base_config"]["opx_inter_shot_delay_us"] == 500.
     expected_acquisitions = {"population_check": 144, "refocus_check": 258,
                              "refocus_decay": 294, "refocus_map": 1470}[mode]
+    if lower_band:
+        expected_acquisitions = 1764
     assert len(metadata["acquisitions"]) == expected_acquisitions
     if mode == "refocus_map":
         assessment = manifest["refocus_map_assessment"]
-        assert assessment["total_site_blocks"] == 15
+        assert assessment["total_site_blocks"] == (18 if lower_band else 15)
+        assert manifest["plan"]["sites_ghz"] == sites
+        assert manifest["plan"]["grid_band"] == ("lower" if lower_band else "validated")
+        if lower_band:
+            assert manifest["plan"]["anchor_frequency_ghz"] == 4.288
         assert not assessment["intrinsic_pure_dephasing_inferred"]
         assert set(assessment["sites"]) == {f"{frequency:.3f}" for frequency in sites}
         assert all(site["total_blocks"] == 3 and
@@ -462,6 +475,60 @@ def test_refocus_map_repeats_full_paired_traces_at_five_fixed_sites_without_scou
             focused.run(refocus_map=True, **{other_mode: True})
     assert focused.main(['--plan', '--refocus-map']) == 0
     assert json.loads(capsys.readouterr().out)['sites_ghz'] == p['sites_ghz']
+
+
+def test_lower_refocus_map_extends_frequency_grid_and_preserves_anchor_and_protocol(capsys):
+    p = focused.plan(refocus_map=True, lower_band=True)
+    assert p['sites_ghz'] == [4.260, 4.264, 4.268, 4.272, 4.276, 4.288]
+    assert p['grid_band'] == 'lower'
+    assert p['anchor_frequency_ghz'] == 4.288
+    assert p['sequences'] == ['hahn_y', 'cpmg2_y']
+    assert p['requested_pi2_center_elapsed_us'] == [.35, .65, .95, 1.35, 1.8, 2.4, 3.2, 4.2]
+    assert p['shots_per_arm'] == 1600
+    assert p['reversed_blocks'] == 3
+    assert p['t1_scans'] is None
+    assert p['concurrent_flux_correction']
+    assert p['controls_at_every_site']
+    assert p['late_projection_control']
+    assert p['legacy_playback_overlap_us'] == 1.35
+    assert focused.main(['--plan', '--refocus-map', '--lower-band']) == 0
+    assert json.loads(capsys.readouterr().out) == p
+    # An opt-in extension must not silently change the previously validated grid.
+    original = focused.plan(refocus_map=True)
+    assert original['sites_ghz'] == [4.280, 4.284, 4.288, 4.292, 4.296]
+    assert original['grid_band'] == 'validated'
+
+
+@pytest.mark.parametrize('mode', [None, 'single_point', 'local_map',
+                                 'population_check', 'refocus_check', 'refocus_decay'])
+def test_lower_band_rejects_nonmap_modes_before_hardware_import(mode, capsys):
+    options = {} if mode is None else {mode: True}
+    with pytest.raises(ValueError):
+        focused.plan(lower_band=True, **options)
+    with pytest.raises(ValueError):
+        focused.run(lower_band=True, **options)
+    cli = ['--run', '--lower-band']
+    if mode:
+        cli.append('--' + mode.replace('_', '-'))
+    with pytest.raises(SystemExit) as exc:
+        focused.main(cli)
+    assert exc.value.code == 2
+    error = capsys.readouterr().err
+    assert '--lower-band' in error and '--refocus-map' in error
+
+
+def test_lower_band_cli_runs_the_requested_map(monkeypatch, tmp_path):
+    called = []
+
+    def run_boundary(**kwargs):
+        called.append(kwargs)
+        return tmp_path / 'manifest.json'
+
+    monkeypatch.setattr(focused, 'run', run_boundary)
+    assert focused.main(['--run', '--refocus-map', '--lower-band']) == 0
+    assert len(called) == 1
+    assert called[0]['refocus_map'] is True
+    assert called[0]['lower_band'] is True
 
 
 def test_decay_schedule_keeps_legacy_overlap_next_to_new_sequence():
