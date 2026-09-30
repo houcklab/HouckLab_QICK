@@ -22,6 +22,17 @@ def emit_cell(*, wait, record, condition, prepare_probe, delay_us,
     wait(ringdown_us)
 
 
+def emit_feedback_free_cell(*, wait, condition, prepare_probe, measure,
+                           delay_us, washout_us, recovery_us, ringdown_us):
+    wait(washout_us)
+    condition()
+    wait(recovery_us)
+    prepare_probe()
+    wait(delay_us)
+    measure()
+    wait(ringdown_us)
+
+
 def make_program_class():
     from ..active_reset_OPX.programs import (
         OPXResetT1Program, _declare_common, _reserved_registers,
@@ -34,6 +45,14 @@ def make_program_class():
 
         def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
             values = dict(cfg)
+            self.feedback_free = bool(values.get('qp_feedback_free', False))
+            if self.feedback_free:
+                from ..active_reset_OPX.records import decode_payload_records
+                self.record_words = 2
+                self.decode_dmem_records = decode_payload_records
+                recovery = float(values.get('qp_recovery_us', 0.))
+                if not math.isfinite(recovery) or recovery < 0:
+                    raise ValueError('invalid conditioning recovery time')
             self.conditions = list(values['qp_conditions'])
             self.shots = int(values['qp_shots'])
             if self.shots < 1 or len(self.conditions) != 10:
@@ -86,6 +105,20 @@ def make_program_class():
                                         if condition['state'] == 'e' else 0)
                 _pulse_pi_and_align(self)
 
+            if self.feedback_free:
+                def measure():
+                    self._measure_raw()
+                    for name in ('i', 'q'):
+                        self.memw(self.reset_page, self.reset_regs[name], self.reset_regs['address'])
+                        self.mathi(self.reset_page, self.reset_regs['address'],
+                                   self.reset_regs['address'], '+', 1)
+                emit_feedback_free_cell(
+                    wait=lambda us: self.sync_all(self.us2cycles(us)),
+                    condition=lambda: self._condition(condition['arm']),
+                    prepare_probe=prepare, measure=measure,
+                    delay_us=self.cfg['qp_delay_us'], washout_us=runner.WASHOUT_US,
+                    recovery_us=self.cfg['qp_recovery_us'], ringdown_us=runner.RINGDOWN_US)
+                return
             emit_cell(wait=lambda us: self.sync_all(self.us2cycles(us)),
                       record=lambda stage, payload: self._record(index, stage, payload),
                       condition=lambda: self._condition(condition['arm']),

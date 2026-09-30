@@ -4,6 +4,7 @@ No TLS scout or flux excursion. Equal-duration idle, spaced pi trains and
 equal-count +pi/-pi pairs precede matched ground/excited relaxation probes.
 Fresh active reset separates conditioning from probing; its complete telemetry
 is retained because feedback can itself perturb or erase the conditioned bath.
+--feedback-free instead uses passive preparation and one final readout only.
 """
 
 import argparse
@@ -26,6 +27,7 @@ ARMS = ('idle', 'pump_4', 'paired_4', 'pump_20', 'paired_20')
 DELAYS_US = (0.1, 2., 5., 15., 30., 60., 120., 250., 500.)
 BLOCKS, SHOTS = 4, 250
 PERIOD_US, WASHOUT_US, RINGDOWN_US = 30., 2000., 10.
+FEEDBACK_FREE_RECOVERY_US = 50.
 
 
 def base_config():
@@ -59,14 +61,18 @@ def base_config():
     )
 
 
-def plan():
+def plan(*, feedback_free=False):
     return dict(qubit='q3', frequency_mhz=4367.292, readout_mhz=6933.026,
                 park_gain=-25146, arms=list(ARMS), delays_us=list(DELAYS_US),
                 blocks=BLOCKS, shots_per_block=SHOTS, period_us=PERIOD_US,
                 conditioning_us=20 * PERIOD_US + 1., washout_us=WASHOUT_US,
-                post_reset_ringdown_us=RINGDOWN_US,
+                post_reset_ringdown_us=None if feedback_free else RINGDOWN_US,
+                final_readout_ringdown_us=RINGDOWN_US,
+                feedback_free=bool(feedback_free),
+                post_conditioning_wait_us=FEEDBACK_FREE_RECOVERY_US if feedback_free else None,
                 total_probe_shots=BLOCKS * SHOTS * len(DELAYS_US) * len(ARMS) * 2,
-                reset='fresh q3 active reset before and after conditioning',
+                reset=('2000 us passive wait; no feedback in science shots' if feedback_free
+                       else 'fresh q3 active reset before and after conditioning'),
                 approximate_minutes='5–10; depends on feedback and NAS transport')
 
 
@@ -290,12 +296,26 @@ def calibration_config():
     return cfg
 
 
-def calibrate(soc, soccfg, output, label):
+def validate_reference(bundle, *, feedback_free=False):
+    if not feedback_free:
+        from ..active_reset_OPX.calibration import validate_confident_calibration
+        validate_confident_calibration(bundle, min_confident_fraction=.2)
+        return
+    # Feedback thresholds and loop-reference quality are irrelevant when no
+    # feedback is played. Require useful discrimination at the analysis threshold.
+    h = bundle.payload.holdout
+    fidelity = float(h.get('peak_fidelity', 0.))
+    contrast = float(h.get('excited_fire', 0.)) - float(h.get('false_pi', 1.))
+    if not (math.isfinite(fidelity) and math.isfinite(contrast)
+            and fidelity >= .70 and contrast >= .30):
+        raise ValueError(f'insufficient readout reference: fidelity={fidelity:.3f}, contrast={contrast:.3f}')
+
+
+def calibrate(soc, soccfg, output, label, *, feedback_free=False):
     from ..active_reset_OPX.benchmark_settings import q3_benchmark_settings
     from ..active_reset_OPX.calibration import (
-        acquire_calibration, save_calibration, save_raw_calibration,
-        validate_confident_calibration)
-    print('SS cal: q3 readout and active-reset thresholds', flush=True)
+        acquire_calibration, save_calibration, save_raw_calibration)
+    print('SS cal: q3 readout' if feedback_free else 'SS cal: q3 readout and active-reset thresholds', flush=True)
     cfg = calibration_config()
     for attempt in range(1, 4):
         folder = Path(output) / f'calibration_{label}_{attempt}'
@@ -309,21 +329,26 @@ def calibrate(soc, soccfg, output, label):
         save_calibration(folder / 'calibration.json', bundle)
         save_raw_calibration(folder / 'raw.npz', raw)
         try:
-            validate_confident_calibration(bundle, min_confident_fraction=.2)
+            validate_reference(bundle, feedback_free=feedback_free)
         except ValueError:
             if attempt == 3:
                 raise
-            print('SS cal: insufficient confident assignments; recalibrating', flush=True)
+            print('SS cal: insufficient reference quality; recalibrating', flush=True)
             continue
         print('SS cal complete.', flush=True)
         return bundle
 
 
-def measurement_config(bundle):
+def measurement_config(bundle, *, feedback_free=False):
     from ..active_reset_OPX.production import ProductionResetSession
     cfg = ProductionResetSession.active(bundle.to_dict(), 4367.292).apply(base_config())
     cfg.update(opx_reset_scheme='opx_unbounded', opx_park_preroll_us=WASHOUT_US,
-               opx_resident_dmem_stream=True, qp_shots=SHOTS)
+               opx_resident_dmem_stream=True, qp_shots=SHOTS,
+               qp_feedback_free=bool(feedback_free),
+               qp_recovery_us=FEEDBACK_FREE_RECOVERY_US if feedback_free else 0.)
+    if feedback_free:
+        cfg.update(reset_mode='passive', opx_reset_scheme='none',
+                   relax_delay=WASHOUT_US, opx_inter_shot_delay_us=WASHOUT_US)
     return cfg
 
 
@@ -342,11 +367,13 @@ def preflight(program):
     return dict(instructions=instructions, capacity=capacity, waveform_memory=memory,
                 conditioning=program.conditioning_timing,
                 delay_us=program.cycles2us(program.us2cycles(program.cfg['qp_delay_us'])),
-                record_words=24, order='shot_condition_stage_word',
-                stages=['before', 'conditioned', 'probe'])
+                record_words=program.record_words, order='shot_condition_stage_word',
+                stages=['probe'] if program.record_words == 2 else ['before', 'conditioned', 'probe'],
+                feedback_free=bool(program.cfg.get('qp_feedback_free', False)),
+                post_conditioning_wait_us=program.cfg.get('qp_recovery_us', 0.))
 
 
-def rows_from_records(records, task, bundle):
+def rows_from_records(records, task, bundle, *, feedback_free=False):
     from ..active_reset_OPX.integration import reset_telemetry
     count = len(task['conditions'])
     if len(records) % count:
@@ -355,14 +382,16 @@ def rows_from_records(records, task, bundle):
     for i, condition in enumerate(task['conditions']):
         selected = records[i::count]
         row = dict(block=task['block'], delay_us=task['delay_us'], **condition,
-                   shots=len(selected))
-        for stage in ('before', 'conditioned', 'probe'):
-            data = [getattr(r, stage) for r in selected]
+                   shots=len(selected), feedback_free=bool(feedback_free),
+                   probe_preparation='pi' if condition['state'] == 'e' else 'no_pi')
+        for stage in ('probe',) if feedback_free else ('before', 'conditioned', 'probe'):
+            data = selected if feedback_free else [getattr(r, stage) for r in selected]
             projected = bundle.payload.project(
                 np.asarray([r.final_i for r in data], dtype=np.int64),
                 np.asarray([r.final_q for r in data], dtype=np.int64))
             row[stage + '_pe'] = float(np.mean(projected > bundle.payload.excited_threshold))
-            row[stage + '_reset'] = reset_telemetry(data)
+            if not feedback_free:
+                row[stage + '_reset'] = reset_telemetry(data)
         row['pe'] = row['probe_pe']
         rows.append(row)
     return rows
@@ -389,17 +418,18 @@ def acquire_task(soc, program, cfg, output, task, bundle, progress):
             np.savez_compressed(stem.with_suffix('.partial.npz'),
                                 words=np.asarray([r.to_words() for r in partial], dtype=np.int64))
         raise
-    # Raw accumulator IQ and all three reset records precede any analysis.
+    # Raw accumulator IQ (and reset records in the original mode) precedes analysis.
     words = np.asarray([r.to_words() for r in records], dtype=np.int64)
     np.savez_compressed(stem.with_suffix('.npz'), words=words)
     if len(records) != cfg['qp_shots'] * len(task['conditions']):
         raise RuntimeError(f'incomplete acquisition: {len(records)} records')
-    rows = rows_from_records(records, task, bundle)
+    rows = rows_from_records(records, task, bundle,
+                             feedback_free=cfg.get('qp_feedback_free', False))
     return dict(rows=rows, raw_file=stem.with_suffix('.npz').name,
                 completed_at=datetime.now(timezone.utc).isoformat())
 
 
-def plot_summary(output, summary):
+def plot_summary(output, summary, *, feedback_free=False):
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
     for arm, curve in summary['arms'].items():
@@ -407,8 +437,10 @@ def plot_summary(output, summary):
         c = np.asarray(curve['contrast'])
         axes[0].errorbar(t, c, yerr=curve['contrast_error'], marker='.', label=arm)
         axes[1].plot(t, curve['ground'], marker='.', label=arm)
-    axes[0].set(ylabel='Excited − ground preparation contrast', title='q3 relaxation after conditioning')
-    axes[1].set(ylabel='Classified excited fraction', title='Ground-prepared probe (readout floor included)')
+    axes[0].set(ylabel='π − no-π probe contrast' if feedback_free else 'Excited − ground preparation contrast',
+                title='q3 relaxation after conditioning')
+    axes[1].set(ylabel='Classified excited fraction',
+                title=('No-π probe' if feedback_free else 'Ground-prepared probe') + ' (readout floor included)')
     for ax in axes:
         ax.set(xlabel='Probe delay (µs)', xscale='symlog')
         ax.legend(fontsize=8)
@@ -416,11 +448,12 @@ def plot_summary(output, summary):
     plt.close(fig)
 
 
-def run(*, data_root=DATA_ROOT, progress=True):
+def run(*, data_root=DATA_ROOT, progress=True, feedback_free=False):
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    output = Path(data_root) / 'q3' / f'q3_quasiparticle_pumping_{stamp}_{uuid.uuid4().hex[:8]}'
+    mode = 'feedback_free_' if feedback_free else ''
+    output = Path(data_root) / 'q3' / f'q3_quasiparticle_pumping_{mode}{stamp}_{uuid.uuid4().hex[:8]}'
     output.mkdir(parents=True, exist_ok=False)
-    manifest = dict(schema='q3.quasiparticle-pumping.v1', plan=plan(),
+    manifest = dict(schema='q3.quasiparticle-pumping.v1', plan=plan(feedback_free=feedback_free),
                     created_at=datetime.now(timezone.utc).isoformat(), status='calibrating')
     revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent,
                               capture_output=True, text=True, check=True).stdout.strip()
@@ -441,8 +474,8 @@ def run(*, data_root=DATA_ROOT, progress=True):
     try:
         soc, soccfg = makeProxy()
         save_json(output / 'board_configuration.json', soccfg.get_cfg())
-        bundle = calibrate(soc, soccfg, output, 'pre')
-        cfg = measurement_config(bundle)
+        bundle = calibrate(soc, soccfg, output, 'pre', feedback_free=feedback_free)
+        cfg = measurement_config(bundle, feedback_free=feedback_free)
         save_json(output / 'config.json', cfg)
         run_tasks = tasks()
         programs = []
@@ -463,17 +496,22 @@ def run(*, data_root=DATA_ROOT, progress=True):
             rows = collect(output, acquire, run_tasks=run_tasks, manifest=manifest)
         summary = analyze(rows)
         save_json(output / 'summary.json', summary)
-        plot_summary(output, summary)
+        plot_summary(output, summary, feedback_free=feedback_free)
         manifest['status'] = 'post_calibrating'
         save_json(output / 'manifest.json', manifest)
-        post = calibrate(soc, soccfg, output, 'post')
+        post = calibrate(soc, soccfg, output, 'post', feedback_free=feedback_free)
         # Reclassify the saved measurements with the post-run axis as an explicit
         # sensitivity check. Never mix different thresholds within a trace.
         post_rows = []
         for entry in manifest['completed']:
             with np.load(output / entry['raw_file']) as saved:
-                records = decode_records(saved['words'])
-            post_rows.extend(rows_from_records(records, entry['task'], post))
+                if feedback_free:
+                    from ..active_reset_OPX.records import decode_payload_records
+                    records = decode_payload_records(saved['words'])
+                else:
+                    records = decode_records(saved['words'])
+            post_rows.extend(rows_from_records(records, entry['task'], post,
+                                                feedback_free=feedback_free))
         save_json(output / 'post_calibration_summary.json', analyze(post_rows))
         manifest.update(status='complete', completed_at=datetime.now(timezone.utc).isoformat())
         save_json(output / 'manifest.json', manifest)
@@ -496,13 +534,15 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group()
     action.add_argument('--run', action='store_true')
     action.add_argument('--plan', action='store_true')
+    parser.add_argument('--feedback-free', action='store_true',
+                        help='passive preparation; no intermediate readout or feedback')
     parser.add_argument('--data-root', default=DATA_ROOT)
     parser.add_argument('--quiet', action='store_true', help='hide progress bar')
     args = parser.parse_args(argv)
     if args.run:
-        run(data_root=args.data_root, progress=not args.quiet)
+        run(data_root=args.data_root, progress=not args.quiet, feedback_free=args.feedback_free)
     else:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(feedback_free=args.feedback_free), indent=2))
     return 0
 
 

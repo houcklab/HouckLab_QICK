@@ -6267,3 +6267,79 @@ After stopping q4, run:
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping --run
 ```
+
+### Completed first pumping screen and bounded feedback-free follow-up
+
+NAS session `q3_quasiparticle_pumping_20260930T193046Z_0a816d94`, commit
+`86cca7da`, completed all 36 acquisitions and 90,000 probes in about five
+minutes. Both saved runner sources match the local commit after newline
+normalization. Every raw array has shape (2500, 24), every terminal reset
+status is confirmed-ground, and independent reclassification of all 90,000
+records reproduces every saved probability exactly. Confirmed-ground is the
+classifier's decision, not a claim of perfect physical preparation.
+
+| Conditioning | Fitted decay time (us, 1 SE) |
+| --- | --- |
+| Idle | 102.4 ± 9.1 |
+| 4 spaced pi pulses | 101.2 ± 10.5 |
+| 4 paired pulses | 121.5 ± 11.6 |
+| 20 spaced pi pulses | 103.7 ± 10.6 |
+| 20 paired pulses | 115.4 ± 11.8 |
+
+**No resolved relaxation improvement.** The block-paired normalized-area
+effect for 20 pulses is +5.4 ± 16.1 us against idle, and −5.4 ± 16.8 us
+against its equal-count paired control. Its signs reverse across the four
+blocks. Post-calibration reanalysis gives idle 98.9 us and 20-pulse 102.8 us,
+with the same null conclusion. Payload reference peak assignment fidelity was
+0.784 before and 0.7835 after, below the earlier approximately 0.90 calibration
+but stable across this run. The fits retain useful contrast and do not justify
+discarding the result, nor do they tightly exclude a small improvement.
+
+The stimulation was delivered: conditioned-stage classified excitation was
+0.065 for idle, 0.262 after four spaced pulses and 0.308 after twenty, versus
+0.133 and 0.144 for the paired controls. However, the ensuing reset averaged
+1.13 pi pulses for idle and 2.17 for the twenty-pulse train; mean loop attempts
+were 1.70 and 2.78, with 99th percentiles 24 and 28. Feedback therefore adds
+different excitation/relaxation histories and delays before probing. At the
+shortest probe delay, ground-prepared classified excitation was 0.172 for idle
+and 0.230 after twenty pulses. This limits the claim to the complete sequence,
+including feedback; it is not proof against quasiparticle pumping in general.
+
+![First q3 quasiparticle pumping result](q3_quasiparticle_pumping_20260930.png)
+
+The follow-up `--feedback-free` mode directly tests this remaining sequence
+confound. Each science cell has a 2000-us passive washout, the same 601-us
+conditioning window, **50 us fixed quiet recovery**, no-pi or pi probe
+preparation, the chosen delay, and one final readout. There is **no readout or
+feedback anywhere between conditioning and probing**, and no feedback in any
+science cell. The final conditioning pulse ends about 79.2 us before probe
+preparation, including the train's existing trailing idle. This wait trades
+some bath-memory sensitivity for recoverable pi/no-pi contrast; a null does
+not constrain effects that disappear faster than this interval.
+
+The labels `g`/`e` remain condition identifiers for file compatibility but in
+this mode mean **no pi / pi**, not confirmed ground/excited states. Their
+difference is fitted with free amplitude to accommodate residual qubit
+excitation. Paired controls, interleaving, four blocks, nine delays, 1000 pooled
+shots per condition, and pre/post readout-reference checks are retained.
+Calibration still records both reference contexts for provenance, but only
+payload discrimination is required (peak fidelity at least 0.70 and classified
+reference contrast at least 0.30); unused reset thresholds cannot abort this
+mode. Records contain two raw IQ words per probe, with no fabricated reset
+telemetry. The default active-reset mode is retained unchanged in its pulse
+sequence. Production reset, TLS scanning, q4 and initialization files remain
+untouched.
+
+Verification: **1292 tests passed**, including 15 pumping-runner tests.
+Offline QICK compilation with the first run's actual classifier and the saved
+q3 board uses 1255/8192 instruction words in all four orders. The verification
+fails if any intermediate-record or reset-pulse emitter is called, and checks
+exactly one IQ readout per cell. A full 90,000-probe synthetic acquisition
+passes two-word stream-bank decoding, source/raw/summary saving, plotting and
+pre/post reclassification. Independent review found no blocking issue; its
+requested no-pi labeling is included in the plot and per-condition metadata.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping --run --feedback-free
+```

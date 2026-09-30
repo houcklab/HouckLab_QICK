@@ -185,3 +185,57 @@ def test_keyboard_interrupt_aborts_hardware_before_partial_data_save(monkeypatch
     with pytest.raises(KeyboardInterrupt):
         m.acquire_task(object(), object(), {'qp_shots': 250}, tmp_path, m.tasks()[0], None, None)
     assert events == ['abort', 'save']
+
+
+def test_feedback_free_plan_names_passive_preparation_and_fixed_wait(capsys):
+    m = module()
+    assert m.main(['--plan', '--feedback-free']) == 0
+    p = json.loads(capsys.readouterr().out)
+    assert p['feedback_free'] is True
+    assert p['post_conditioning_wait_us'] == 50.
+    assert p['reset'] == '2000 us passive wait; no feedback in science shots'
+    assert p['total_probe_shots'] == 90000
+
+
+def test_feedback_free_cell_has_only_one_final_measurement():
+    p = importlib.import_module(
+        'WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticleProgram')
+    events = []
+    p.emit_feedback_free_cell(
+        wait=lambda t: events.append(('wait', t)),
+        condition=lambda: events.append('condition'),
+        prepare_probe=lambda: events.append('prepare'),
+        measure=lambda: events.append('measure'), delay_us=15.,
+        washout_us=2000., recovery_us=50., ringdown_us=10.)
+    assert events == [('wait', 2000.), 'condition', ('wait', 50.),
+                      'prepare', ('wait', 15.), 'measure', ('wait', 10.)]
+
+
+def test_feedback_free_records_keep_shot_order_without_invented_reset_telemetry():
+    from types import SimpleNamespace
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.records import PayloadRecord
+    m = module()
+    task = m.tasks()[0]
+    # Two interleaved cycles, with excited preparation detected in only one.
+    records = [PayloadRecord(2 if s == 0 and c['state'] == 'e' else -2, 0)
+               for s in range(2) for c in task['conditions']]
+    bundle = SimpleNamespace(payload=SimpleNamespace(
+        project=lambda i, q: np.asarray(i), excited_threshold=0))
+    rows = m.rows_from_records(records, task, bundle, feedback_free=True)
+    for row, c in zip(rows, task['conditions']):
+        assert row['arm'] == c['arm'] and row['state'] == c['state']
+        assert row['shots'] == 2
+        assert row['pe'] == (.5 if c['state'] == 'e' else 0.)
+        assert row['feedback_free'] is True
+        assert not any(k.endswith('_reset') for k in row)
+
+
+def test_feedback_free_calibration_checks_payload_without_requiring_reset_thresholds():
+    from types import SimpleNamespace
+    m = module()
+    payload = SimpleNamespace(holdout={'peak_fidelity': .80, 'excited_fire': .65, 'false_pi': .08})
+    # No loop classifier: it is not used by feedback-free science.
+    m.validate_reference(SimpleNamespace(payload=payload), feedback_free=True)
+    payload.holdout['peak_fidelity'] = .55
+    with pytest.raises(ValueError, match='readout reference'):
+        m.validate_reference(SimpleNamespace(payload=payload), feedback_free=True)
