@@ -6,14 +6,18 @@ The later default mode covers fixed sites around the blind-map candidate
 and two quieter controls, with narrow five-point scans before and after.
 The --local-map mode repeats five nearby frequencies with model-free echo
 crossings. Neither T1 scan selects or gates the echo sites. All modes save IQ.
+The --population-check mode interleaves a short 4.288-GHz echo trace with
+ground/excited survival controls matched to each target-visit duration.
 """
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
 import subprocess
+import time
 import uuid
 
 import numpy as np
@@ -42,6 +46,124 @@ SINGLE_SOURCE_SESSION = "q3_echo_focused_trace_20260930T001018Z_fdc72d98"
 LOCAL_MAP_SITES_GHZ = (4.280, 4.284, 4.288, 4.292, 4.296)
 LOCAL_MAP_SHOTS = 1200
 LOCAL_MAP_BLOCKS = 3
+POPULATION_SITE_GHZ = 4.288
+POPULATION_DELAYS_US = (.08, .3, .5, .8, 1.2)
+POPULATION_SHOTS = 1600
+POPULATION_BLOCKS = 3
+
+
+def population_schedule(block):
+    """Keep six arms at each delay together, reversing the complete sequence."""
+    if not isinstance(block, int) or block < 0:
+        raise ValueError("block index must be a nonnegative integer")
+    arms = []
+    for index, delay in enumerate(POPULATION_DELAYS_US):
+        echo = [("echo", delay, phase) for phase in PHASES_DEG]
+        population = [("pop_g", delay, None), ("pop_e", delay, None)]
+        arms.extend(population + echo if index % 2 == 0 else echo + population)
+    return arms if block % 2 == 0 else list(reversed(arms))
+
+
+def population_config(cfg, kind, delay_us):
+    """Match the echo visit using a fixed pi-duration g/e preparation pulse."""
+    delay = float(delay_us)
+    if kind not in ("pop_g", "pop_e") or delay not in POPULATION_DELAYS_US:
+        raise ValueError("population control requires a planned short delay and g/e arm")
+    window = square.echo_window_us(delay)
+    return {**cfg, "fast_pulse_us": PI_US, "fast_second_phase_deg": None,
+            "opx_resident_gain": 0 if kind == "pop_g" else square.GAIN_DAC,
+            "opx_resident_post_us": POST_US + window - (PI_US + .01),
+            "ff_hold": PRE_US + POST_US + window}
+
+
+def validate_population_correction(compensation, *, settle_us=.5):
+    """Require identical held commands for echo and survival science windows."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+
+    if compensation is None or max(POPULATION_DELAYS_US) > 1.2:
+        raise ValueError("population check needs the bounded corrected hold")
+    pre = PRE_US + float(settle_us)
+    window = square.echo_window_us(max(POPULATION_DELAYS_US))
+    target, _ = ff_pulse.compensation_round_trip_segments(
+        compensation, pre + window + POST_US, recovery_us=40.)
+    before, tail = ff_pulse.split_compensation_segments(target, pre)
+    during, _ = ff_pulse.split_compensation_segments(tail, window)
+    if (not before or not during or
+            sum(duration for _, duration in during) < window - 1e-9 or
+            not all(math.isfinite(float(level)) and
+                    abs(float(level) - float(before[-1][0])) <= 1e-12
+                    for level, _ in during)):
+        raise ValueError("population check requires constant correction across the science window")
+    return {"window_start_us": pre, "window_end_us": pre + window,
+            "constant_coefficient": float(before[-1][0])}
+
+
+def population_report(cycles, populations):
+    """Compare relative echo contrast with a conditional relaxation benchmark."""
+    delays = POPULATION_DELAYS_US
+    if set(cycles) != set(delays) or set(populations) != set(delays):
+        raise ValueError("population report needs every planned echo and g/e pair")
+    visibility = {delay: square.phase_visibility(cycles[delay])["visibility"]
+                  for delay in delays}
+    contrasts = {delay: float(populations[delay]["e"]) -
+                       float(populations[delay]["g"]) for delay in delays}
+    short = contrasts[delays[0]]
+    short_valid = math.isfinite(short) and short >= .55
+    echo_short = visibility[delays[0]]
+    echo_valid = math.isfinite(echo_short) and echo_short >= .55
+    rows = {}
+    for delay in delays:
+        contrast = contrasts[delay]
+        valid = short_valid and math.isfinite(contrast) and contrast > 0
+        ratio = contrast / short if valid else None
+        reasons = []
+        if not short_valid:
+            reasons.append("invalid or weak shortest-delay population contrast")
+        if not math.isfinite(contrast) or contrast <= 0:
+            reasons.append("nonpositive or nonfinite population contrast")
+        if not echo_valid:
+            reasons.append("invalid or weak shortest-delay echo visibility")
+        rows[delay] = {
+            "valid": valid and echo_valid, "reasons": reasons,
+            "ground_response": float(populations[delay]["g"]),
+            "excited_response": float(populations[delay]["e"]),
+            "population_contrast": contrast,
+            "relative_population_contrast": ratio,
+            "echo_visibility": visibility[delay],
+            "relative_echo_visibility": visibility[delay] / echo_short if echo_valid else None,
+            "relaxation_only_echo_ratio": math.sqrt(ratio) if ratio is not None else None}
+    return {"valid": all(row["valid"] for row in rows.values()),
+            "normalization_delay_us": delays[0], "by_delay_us": rows,
+            "assumptions": [
+                "Square-root population contrast is a relaxation-only benchmark under exponential, stationary Markovian relaxation.",
+                "Preparation/readout transfer and rotation errors must remain stable; the fixed rotation-end offset cancels in ratios under that model.",
+                "No intrinsic pure-dephasing rate is inferred from these measurements."]}
+
+
+def json_safe(value):
+    """Snapshot numeric configurations without lossy repr fallbacks or NaN JSON."""
+    if isinstance(value, np.ndarray):
+        return json_safe(value.tolist())
+    if isinstance(value, np.generic):
+        return json_safe(value.item())
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, complex):
+        return {"__complex__": json_safe([value.real, value.imag])}
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    raise TypeError(f"unsupported acquisition metadata type: {type(value).__name__}")
+
+
+def source_file_sha256(paths):
+    return {str(Path(path)): hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            for path in paths}
 
 
 def schedule(block, *, sites=SITES_GHZ, delays=DELAYS_US):
@@ -196,9 +318,26 @@ def scout_parameters(phase):
             "output_suffix": f"TLS_Echo_Focused_Trace_{phase}_T1"}
 
 
-def plan(*, single_point=False, local_map=False):
-    if single_point and local_map:
+def plan(*, single_point=False, local_map=False, population_check=False):
+    if sum(map(bool, (single_point, local_map, population_check))) > 1:
         raise ValueError("choose one echo mode")
+    if population_check:
+        return {"hardware_access": False,
+                "purpose": "single-frequency echo with matched population survival",
+                "sites_ghz": [POPULATION_SITE_GHZ],
+                "delays_us": list(POPULATION_DELAYS_US),
+                "phase_cycle_deg": list(PHASES_DEG),
+                "shots_per_arm": POPULATION_SHOTS,
+                "reversed_blocks": POPULATION_BLOCKS,
+                "matched_ground_excited_pair_each_delay": True,
+                "one_pulse_half_and_two_pi_checks_at_each_block": True,
+                "two_pulse_phase_controls_before_and_after_echo": True,
+                "short_echo_sentinel_repeated_each_block": True,
+                "require_constant_correction_during_science_window": True,
+                "metric": "relative echo and population contrast with conditional square-root relaxation benchmark",
+                "intrinsic_pure_dephasing_inference": False,
+                "t1_scans": None, "native_corrected_return_us": 40.,
+                "terminal": "no custom progress messages"}
     if local_map:
         return {"hardware_access": False,
                 "purpose": "replicated local flux-ramp echo map",
@@ -242,8 +381,8 @@ def plan(*, single_point=False, local_map=False):
 
 
 def run(*, data_root=None, correction_json=None,
-        single_point=False, local_map=False):
-    if single_point and local_map:
+        single_point=False, local_map=False, population_check=False):
+    if sum(map(bool, (single_point, local_map, population_check))) > 1:
         raise ValueError("choose one echo mode")
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         FivePointApplesToApples as five,
@@ -268,14 +407,19 @@ def run(*, data_root=None, correction_json=None,
                                "manifest.json")
         validate_single_point_source(json.loads(
             focused_source_path.read_text(encoding="utf-8")))
-    sites = (LOCAL_MAP_SITES_GHZ if local_map else
+    sites = ((POPULATION_SITE_GHZ,) if population_check else
+             LOCAL_MAP_SITES_GHZ if local_map else
              (SINGLE_SITE_GHZ,) if single_point else SITES_GHZ)
-    delays = SINGLE_DELAYS_US if (single_point or local_map) else DELAYS_US
-    shots = (LOCAL_MAP_SHOTS if local_map else
+    delays = (POPULATION_DELAYS_US if population_check else
+              SINGLE_DELAYS_US if (single_point or local_map) else DELAYS_US)
+    shots = (POPULATION_SHOTS if population_check else
+             LOCAL_MAP_SHOTS if local_map else
              SINGLE_SHOTS if single_point else SHOTS)
-    blocks = (LOCAL_MAP_BLOCKS if local_map else
+    blocks = (POPULATION_BLOCKS if population_check else
+              LOCAL_MAP_BLOCKS if local_map else
               SINGLE_BLOCKS if single_point else 2)
-    session_id = (("q3_echo_local_map_" if local_map else
+    session_id = (("q3_echo_population_check_" if population_check else
+                   "q3_echo_local_map_" if local_map else
                    "q3_echo_single_point_" if single_point else
                    "q3_echo_focused_trace_") +
                   datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
@@ -290,20 +434,22 @@ def run(*, data_root=None, correction_json=None,
             stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
-    manifest = {"schema": ("q3.echo-local-map.v1" if local_map else
+    manifest = {"schema": ("q3.echo-population-check.v1" if population_check else
+                            "q3.echo-local-map.v1" if local_map else
                             "q3.echo-single-point.v1" if single_point else
                             "q3.echo-focused-trace.v1"), "status": "running",
                 "session_id": session_id, "code_commit": commit,
                 "source_manifest": str(source_path),
                 "correction_json": str(correction),
                 "correction_sha256": localizer.CORRECTION_SHA256,
-                "plan": plan(single_point=single_point, local_map=local_map),
+                "plan": plan(single_point=single_point, local_map=local_map,
+                             population_check=population_check),
                 "blocks": []}
     if focused_source_path is not None:
         manifest["focused_source_manifest"] = str(focused_source_path)
     dual.checkpoint(path, manifest)
     try:
-        if not (single_point or local_map):
+        if not (single_point or local_map or population_check):
             manifest["t1_pre_csv"] = str(localizer.run(
                 data_root=data_root, correction_json=correction,
                 parameter_overrides=scout_parameters("pre"), announce=False))
@@ -334,10 +480,27 @@ def run(*, data_root=None, correction_json=None,
                          "opx_reset_scheme": "none",
                          "opx_resident_dmem_stream": True,
                          "opx_inter_shot_delay_us": 500.})
+            if population_check:
+                from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+                manifest["population_correction_window"] = validate_population_correction(
+                    ff_pulse.load_compensation(base),
+                    settle_us=base["flux_settle_time_us"])
             control_class = fast.make_program(resident.ResidentDriveProgram)
             echo_class = square.make_echo_program(resident.ResidentDriveProgram)
             soc, soccfg = tls.makeProxy()
             bundle = runtime_bundle(base)
+            if population_check:
+                config_folder = folder / "program_configs"
+                config_folder.mkdir()
+                audit_path = folder / "acquisition_metadata.json"
+                audit = {"effective_base_config": json_safe(base),
+                         "board_configuration": json_safe(soc.get_cfg()),
+                         "source_file_sha256": source_file_sha256([
+                             __file__, fast.__file__, square.__file__,
+                             resident.__file__, ff_pulse.__file__]),
+                         "acquisitions": []}
+                manifest["acquisition_metadata_json"] = str(audit_path)
+                dual.checkpoint(audit_path, audit)
 
             def configuration(frequency, kind, *, phase=0, delay=None,
                               duration=None):
@@ -348,7 +511,9 @@ def run(*, data_root=None, correction_json=None,
                        "preparation_state": "g", "pre_drive_us": PRE_US,
                        "post_drive_us": POST_US, "shots": shots}
                 cfg = resident.arm_config(base, arm, dc_lookup)
-                if kind == "echo":
+                if kind in ("pop_g", "pop_e"):
+                    cfg = population_config(cfg, kind, delay)
+                elif kind == "echo":
                     cfg["echo_delay_us"] = float(delay)
                     cfg["echo_phase_deg"] = int(phase)
                     cfg["ff_hold"] = PRE_US + POST_US + square.echo_window_us(delay)
@@ -365,10 +530,13 @@ def run(*, data_root=None, correction_json=None,
                                       (cfg["fast_pulse_us"] + .01))
                 return cfg
 
-            for frequency in (sites[0], sites[-1]):
-                for kind, delay in (("control", None),
-                                    ("echo", delays[0]),
-                                    ("echo", delays[-1])):
+            compile_arms = [("control", None), ("echo", delays[0]),
+                            ("echo", delays[-1])]
+            if population_check:
+                compile_arms.extend((kind, delay) for kind in ("pop_g", "pop_e")
+                                    for delay in (delays[0], delays[-1]))
+            for frequency in dict.fromkeys((sites[0], sites[-1])):
+                for kind, delay in compile_arms:
                     cfg = configuration(frequency, kind, phase=270, delay=delay)
                     (echo_class if kind == "echo" else control_class)(
                         soccfg, cfg, bundle.payload, bundle.loop)
@@ -376,14 +544,48 @@ def run(*, data_root=None, correction_json=None,
             dual.checkpoint(path, manifest)
 
             def acquire(frequency, kind, *, phase=0, delay=None,
-                        duration=None):
+                        duration=None, label=None):
                 cfg = configuration(frequency, kind, phase=phase,
                                     delay=delay, duration=duration)
                 program = (echo_class if kind == "echo" else control_class)(
                     soccfg, cfg, bundle.payload, bundle.loop)
-                records = _run_program(
-                    soc, program, max(30., _block_timeout_s(cfg, shots)),
-                    cfg, total_shots=shots)
+                if population_check:
+                    if label is None:
+                        raise ValueError("population-check acquisition needs an IQ label")
+                    config_path = config_folder / f"block{block}_{label}.json"
+                    config_path.write_text(json.dumps(
+                        json_safe(program.cfg), indent=2, allow_nan=False) + "\n",
+                        encoding="utf-8")
+                    acquisition = {
+                        "block": block, "frequency_ghz": frequency,
+                        "label": label, "kind": kind, "delay_us": delay,
+                        "phase_deg": phase if kind in ("echo", "control") else None,
+                        "program_class": type(program).__name__,
+                        "program_config_json": str(config_path),
+                        "raw_npz": str(folder / f"block{block}_{round(1000*frequency)}MHz.npz"),
+                        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "status": "running"}
+                    audit["acquisitions"].append(acquisition)
+                    dual.checkpoint(audit_path, audit)
+                    started = time.monotonic()
+                try:
+                    records = _run_program(
+                        soc, program, max(30., _block_timeout_s(cfg, shots)),
+                        cfg, total_shots=shots)
+                except BaseException as exc:
+                    if population_check:
+                        acquisition["status"] = "failed"
+                        acquisition["error"] = f"{type(exc).__name__}: {exc}"
+                    raise
+                else:
+                    if population_check:
+                        acquisition["records_received"] = len(records)
+                        acquisition["status"] = "complete" if len(records) == shots else "incomplete"
+                finally:
+                    if population_check:
+                        acquisition["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+                        acquisition["elapsed_s"] = time.monotonic() - started
+                        dual.checkpoint(audit_path, audit)
                 if len(records) != shots:
                     raise RuntimeError("incomplete focused-echo IQ records")
                 return resident.record_iq(records)
@@ -395,15 +597,15 @@ def run(*, data_root=None, correction_json=None,
                 for entry in schedule(block, sites=sites, delays=delays):
                     frequency = entry["frequency_ghz"]
                     raw = {}
-                    zero_pre = acquire(frequency, "zero")
-                    pi_pre = acquire(frequency, "pi")
+                    zero_pre = acquire(frequency, "zero", label="zero_pre")
+                    pi_pre = acquire(frequency, "pi", label="pi_pre")
                     raw["zero_pre"], raw["pi_pre"] = zero_pre, pi_pre
                     acquired = []
 
                     def take(name, kind, *, phase=0, delay=None,
                              duration=None):
                         iq = acquire(frequency, kind, phase=phase,
-                                     delay=delay, duration=duration)
+                                     delay=delay, duration=duration, label=name)
                         raw[name] = iq
                         acquired.append((name, iq))
 
@@ -411,17 +613,24 @@ def run(*, data_root=None, correction_json=None,
                     take("rabi_twice", "pi", duration=TWO_PI_US)
                     for phase in entry["control_pre_phases"]:
                         take(f"control_pre_{phase}", "control", phase=phase)
-                    for delay, phase in entry["echo_arms"]:
-                        take(f"echo_{round(delay * 1000)}ns_{phase}", "echo",
-                             phase=phase, delay=delay)
-                    if single_point or local_map:
+                    if population_check:
+                        for kind, delay, phase in population_schedule(block):
+                            label = f"{kind}_{round(delay*1000)}ns"
+                            if kind == "echo":
+                                label += f"_{phase}"
+                            take(label, kind, phase=phase or 0, delay=delay)
+                    else:
+                        for delay, phase in entry["echo_arms"]:
+                            take(f"echo_{round(delay * 1000)}ns_{phase}", "echo",
+                                 phase=phase, delay=delay)
+                    if single_point or local_map or population_check:
                         for phase in entry["control_post_phases"]:
                             take(f"sentinel_{round(delays[0]*1000)}ns_{phase}",
                                  "echo", phase=phase, delay=delays[0])
                     for phase in entry["control_post_phases"]:
                         take(f"control_post_{phase}", "control", phase=phase)
-                    zero_post = acquire(frequency, "zero")
-                    pi_post = acquire(frequency, "pi")
+                    zero_post = acquire(frequency, "zero", label="zero_post")
+                    pi_post = acquire(frequency, "pi", label="pi_post")
                     raw["zero_post"], raw["pi_post"] = zero_post, pi_post
                     raw_path = folder / f"block{block}_{round(1000*frequency)}MHz.npz"
                     np.savez_compressed(raw_path, **{
@@ -458,7 +667,7 @@ def run(*, data_root=None, correction_json=None,
                         point["control_phases"] = controls
                         point["echo_phases"] = cycles
                         point["trace"] = trace_report(cycles, delays=delays)
-                        if single_point or local_map:
+                        if single_point or local_map or population_check:
                             sentinel = {phase: responses[
                                 f"sentinel_{round(delays[0]*1000)}ns_{phase}"]
                                 for phase in PHASES_DEG}
@@ -468,9 +677,17 @@ def run(*, data_root=None, correction_json=None,
                         point["status"] = (
                             "valid_controls" if point["rabi_gate"]["valid"] and
                             point["control_gate"]["valid"] and
-                            (not (single_point or local_map) or
+                            (not (single_point or local_map or population_check) or
                              point["short_echo_gate"]["valid"]) else
                             "unresolved_local_control")
+                        if population_check:
+                            populations = {delay: {state: responses[
+                                f"pop_{state}_{round(delay*1000)}ns"]
+                                for state in ("g", "e")} for delay in delays}
+                            point["population_comparison"] = population_report(cycles, populations)
+                            if (point["status"] == "valid_controls" and
+                                    not point["population_comparison"]["valid"]):
+                                point["status"] = "unresolved_population_control"
                     block_entry["sites"].append(point)
                     dual.checkpoint(path, manifest)
 
@@ -480,6 +697,12 @@ def run(*, data_root=None, correction_json=None,
         elif local_map:
             manifest["local_map_assessment"] = assess_local_map(
                 manifest["blocks"])
+        elif population_check:
+            manifest["population_assessment"] = {
+                "valid_blocks": sum(site["status"] == "valid_controls"
+                                    for block in manifest["blocks"] for site in block["sites"]),
+                "total_blocks": len(manifest["blocks"]),
+                "intrinsic_pure_dephasing_inferred": False}
         else:
             manifest["t1_post_csv"] = str(localizer.run(
                 data_root=data_root, correction_json=correction,
@@ -487,7 +710,8 @@ def run(*, data_root=None, correction_json=None,
         manifest["valid_site_blocks"] = sum(
             site["status"] == "valid_controls"
             for block in manifest["blocks"] for site in block["sites"])
-        manifest["status"] = ("complete_local_map" if local_map else
+        manifest["status"] = ("complete_population_check" if population_check else
+                              "complete_local_map" if local_map else
                               "complete_repeatable_echo" if single_point and
                               manifest["single_point_assessment"]["repeatable"]
                               else "complete_echo_unresolved" if single_point
@@ -508,17 +732,22 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--correction-json", type=Path)
-    parser.add_argument("--single-point", action="store_true",
+    experiment = parser.add_mutually_exclusive_group()
+    experiment.add_argument("--single-point", action="store_true",
                         help="validate one 4.284-GHz flux-ramp echo before mapping")
-    parser.add_argument("--local-map", action="store_true",
+    experiment.add_argument("--local-map", action="store_true",
                         help="map five nearby flux-ramp echoes with local checks")
+    experiment.add_argument("--population-check", action="store_true",
+                        help="compare one short echo trace with matched population survival")
     args = parser.parse_args(argv)
     if args.plan:
         print(json.dumps(plan(single_point=args.single_point,
-                              local_map=args.local_map), indent=2))
+                              local_map=args.local_map,
+                              population_check=args.population_check), indent=2))
     else:
         run(data_root=args.data_root, correction_json=args.correction_json,
-            single_point=args.single_point, local_map=args.local_map)
+            single_point=args.single_point, local_map=args.local_map,
+            population_check=args.population_check)
     return 0
 
 

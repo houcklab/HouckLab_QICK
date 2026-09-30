@@ -5602,3 +5602,79 @@ yet a claim about the 4.21-GHz candidate.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --local-map
 ```
+
+### Completed local echo map, September 30
+
+`q3_echo_local_map_20260930T042959Z_f78ae2f0` completed under
+`3bfd4869`: all 15 planned site visits were acquired, 13 passed every
+local control, and all five frequencies had at least two accepted repeats.
+Independent recalculation from the saved NPZ IQ reproduces the saved
+phase projections to 6e-16. No scout or loss-feature selection was used.
+
+| Frequency (GHz) | Mean 1/e visibility time (us) | Repeat SD (us) | Accepted blocks |
+| --- | --- | --- | --- |
+| 4.280 | 1.113 | 0.039 | 3/3 |
+| 4.284 | 1.238 | 0.176 | 3/3 |
+| 4.288 | 1.243 | 0.114 | 3/3 |
+| 4.292 | 1.347 | 0.101 | 2/3 |
+| 4.296 | 1.268 | 0.107 | 2/3 |
+
+These are interpolated times at which visibility reaches 1/e of the
+0.08-us value, not fitted exponential or intrinsic pure-dephasing times.
+The SD describes the observed repeats, not a full uncertainty budget.
+For example, 800 bootstraps of consecutive 50-shot groups give conditional
+shot-noise intervals of approximately [1.14, 1.58], [1.05, 1.25], and
+[1.11, 1.54] us for the three 4.288-GHz visits. Those intervals include
+uncertainty in the shared IQ references but do not bound slow calibration
+drift or the interpolation model. The saved
+`q3_echo_local_map_20260930_summary.json` includes all repeat values and
+conditional intervals.
+
+The two rejected visits were the final block at 4.292 and 4.296 GHz.
+Their phase-circle maximum exceeded the existing upper calibration bound
+(1.267 and 1.290 versus 1.25); the short-echo sentinel and one-pulse
+checks still passed. They remain visible as rejected points in the plot.
+No clearly localized dephasing minimum is established by this five-point,
+16-MHz map; narrower or out-of-band features are not excluded.
+
+![Local echo map and comparison with the earlier session](q3_echo_local_map_20260930.png)
+
+![Every local echo trace, including rejected controls](q3_echo_local_map_traces_20260930.png)
+
+The larger difference is **between sessions**: 4.288 GHz changed from
+2.50–2.81 us in the earlier single-point run to 1.12–1.35 us here, roughly
+four hours later. A code audit found the same requested pulses, realized
+frequency (4.2880150309 GHz), and correction SHA at that frequency.
+The shorter decay is already evident by 1.2 us, before the first
+within-window correction edge at 32 us of the target hold. Thus the
+existing frozen-command approximation for longer echo windows does not
+explain that early change. The older manifests do not save the effective
+PC configuration or board clocks, so the cause cannot be assigned to
+intrinsic qubit noise from the repository diff alone.
+
+The next bounded diagnostic pairs Hahn-echo phase cycles with
+ground/excited population contrasts at **4.288 GHz**, with the same
+nominal total flux-visit and return duration at each delay. Delays stop
+at 1.2 us so the science interval stays within the constant segment of
+the pinned correction. It acquires three reversed blocks and retains
+the pulse, readout, and short-echo checks. A delay-dependent population
+contrast tests relaxation and transfer/readout effects alongside the
+echo decay; its square-root ratio is a relaxation-only benchmark under
+the usual two-level relaxation model, not an automatic pure-dephasing
+measurement. The initial population pi pulse is longer than the first
+echo pi/2 pulse, giving a fixed preparation-time offset; the comparison
+is normalized to the shortest delay. Effective configurations, hardware
+clock information, hashes of the executed pulse-source files, and
+acquisition times are saved for the next run.
+The benchmark follows the relaxation contribution
+`Gamma_2 = Gamma_1/2 + Gamma_phi` described by
+[Bylander et al.](https://arxiv.org/html/1101.4707v1); using it here assumes
+stationary two-level population relaxation and stable readout transfer.
+The 1120-test `tests/` suite passes, including an offline execution of all
+144 planned acquisitions and metadata writes. The pinned correction is
+constant at coefficient 1.0221692712219028 over 30.5–31.9107 us.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSEchoFocusedTrace --run --population-check
+```

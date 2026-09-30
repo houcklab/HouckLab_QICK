@@ -1,5 +1,10 @@
+import json
 import math
+from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 
+import numpy as np
 import pytest
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
@@ -134,3 +139,201 @@ def test_local_map_assessment_uses_crossings_not_exponential_fit():
     blocks[1]["sites"][2]["status"] = "valid_controls"
     blocks[2]["sites"][2]["trace"]["one_over_e"]["time_us"] = 3.9
     assert focused.assess_local_map(blocks)["sites"]["4.288"]["status"] == "unresolved"
+
+
+def test_population_schedule_pairs_each_echo_with_survival_and_reverses_all_arms():
+    first = focused.population_schedule(0)
+    second = focused.population_schedule(1)
+    assert second == list(reversed(first))
+    assert len(first) == 30
+    for delay in (.08, .3, .5, .8, 1.2):
+        arms = [arm for arm in first if arm[1] == delay]
+        assert sorted(phase for kind, _, phase in arms if kind == "echo") == [0, 90, 180, 270]
+        assert [kind for kind, _, _ in arms if kind != "echo"] == ["pop_g", "pop_e"]
+    assert [arm[0] for arm in first[:6]] == ["pop_g", "pop_e"] + ["echo"] * 4
+    assert [arm[0] for arm in first[6:12]] == ["echo"] * 4 + ["pop_g", "pop_e"]
+
+
+@pytest.mark.parametrize("delay,post,hold", [(.08, .29, 30.3907), (1.2, 1.41, 31.5107)])
+def test_population_pulse_keeps_full_rotation_and_matches_echo_total_visit(delay, post, hold):
+    original = {"ff_hold": 99., "opx_resident_post_us": 99.}
+    for kind, gain in (("pop_g", 0), ("pop_e", 30000)):
+        cfg = focused.population_config(original, kind, delay)
+        assert cfg["fast_pulse_us"] == pytest.approx(.0907)
+        assert cfg["fast_second_phase_deg"] is None
+        assert cfg["opx_resident_gain"] == gain
+        assert cfg["opx_resident_post_us"] == pytest.approx(post)
+        assert cfg["ff_hold"] == pytest.approx(hold)
+        assert 30. + cfg["fast_pulse_us"] + .01 + cfg["opx_resident_post_us"] == pytest.approx(hold)
+    assert original["ff_hold"] == 99.
+    with pytest.raises(ValueError):
+        focused.population_config(original, "pop_e", 1.8)
+
+
+def test_population_correction_rejects_any_science_window_command_change():
+    correction = {"segment_edges_ns": [0., 30000., 32000., 40000.],
+                  "multipliers": [1.03, 1.02, 1.01, 1.]}
+    report = focused.validate_population_correction(correction)
+    assert report["window_start_us"] == pytest.approx(30.5)
+    assert report["window_end_us"] == pytest.approx(31.9107)
+    correction["segment_edges_ns"][2] = 31500.
+    with pytest.raises(ValueError, match="constant"):
+        focused.validate_population_correction(correction)
+
+
+def test_population_benchmark_recovers_relative_relaxation_only_echo():
+    delays = focused.POPULATION_DELAYS_US
+    # Fixed preparation/readout factors cancel at the first delay. For T1=2 us,
+    # population contrast decays twice as fast as relaxation-only coherence.
+    populations = {delay: {"g": .1, "e": .1 + .9 * math.exp(-delay / 2.)}
+                   for delay in delays}
+    cycles = {delay: {0: .5 + .4 * math.exp(-delay / 4.), 90: .5,
+                      180: .5 - .4 * math.exp(-delay / 4.), 270: .5}
+              for delay in delays}
+    report = focused.population_report(cycles, populations)
+    assert report["valid"]
+    row = report["by_delay_us"][1.2]
+    assert row["population_contrast"] == pytest.approx(.9 * math.exp(-.6))
+    assert row["relative_population_contrast"] == pytest.approx(math.exp(-.56))
+    assert row["relative_echo_visibility"] == pytest.approx(math.exp(-.28))
+    assert row["relaxation_only_echo_ratio"] == pytest.approx(math.exp(-.28))
+    assert "gamma_phi" not in report
+
+
+@pytest.mark.parametrize("short_contrast,last_contrast", [(.1, .7), (.9, -.1), (.9, math.nan)])
+def test_population_benchmark_flags_weak_negative_or_nonfinite_contrast(short_contrast, last_contrast):
+    delays = focused.POPULATION_DELAYS_US
+    populations = {delay: {"g": .1, "e": .9} for delay in delays}
+    populations[delays[0]]["e"] = .1 + short_contrast
+    populations[delays[-1]]["e"] = .1 + last_contrast
+    cycles = {delay: {0: .9, 90: .5, 180: .1, 270: .5} for delay in delays}
+    report = focused.population_report(cycles, populations)
+    assert not report["valid"]
+    assert report["by_delay_us"][delays[-1]]["relaxation_only_echo_ratio"] is None
+
+
+def test_population_plan_is_bounded_and_modes_reject_before_hardware_import(capsys):
+    plan = focused.plan(population_check=True)
+    assert plan["sites_ghz"] == [4.288]
+    assert plan["delays_us"] == [.08, .3, .5, .8, 1.2]
+    assert plan["shots_per_arm"] == 1600
+    assert plan["reversed_blocks"] == 3
+    assert plan["t1_scans"] is None
+    for kwargs in ({"single_point": True}, {"local_map": True}):
+        with pytest.raises(ValueError):
+            focused.run(population_check=True, **kwargs)
+    with pytest.raises(SystemExit) as exc:
+        focused.main(["--run", "--local-map", "--population-check"])
+    assert exc.value.code == 2
+    assert focused.main(["--plan", "--population-check"]) == 0
+    assert json.loads(capsys.readouterr().out)["sites_ghz"] == [4.288]
+
+
+def test_acquisition_metadata_serializer_preserves_numpy_and_paths():
+    value = {"path": Path("measured.json"), "gains": np.array([1, 2]),
+             "time": np.float64(.08), "missing": np.float64(math.nan),
+             "iq": np.complex128(1 + 2j)}
+    saved = json.loads(json.dumps(focused.json_safe(value), allow_nan=False))
+    assert saved == {"path": "measured.json", "gains": [1, 2], "time": .08,
+                     "missing": None, "iq": {"__complex__": [1., 2.]}}
+
+
+def test_source_hashes_identify_actual_file_bytes(tmp_path):
+    source = tmp_path / "runner.py"
+    source.write_bytes(b"abc")
+    assert focused.source_file_sha256([source]) == {
+        str(source): "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
+
+
+def test_population_run_saves_every_paired_arm_and_exact_config_without_scouts(tmp_path, monkeypatch):
+    """Replace hardware boundaries; exercise the real run, analysis, and files."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSDualTransitionLoss
+
+    package = sys.modules[focused.__package__]
+    correction = {"segment_edges_ns": [0., 30000., 32000., 80000.],
+                  "multipliers": [1.03, 1.02, 1.01, 1.]}
+    correction_path = tmp_path / "correction.json"
+    correction_path.write_text(json.dumps(correction))
+    source = tmp_path / "q3" / focused.square.SOURCE_SESSION / "manifest.json"
+    source.parent.mkdir(parents=True)
+    source.write_text("{}")
+    monkeypatch.setattr(focused.localizer, "checked_correction", lambda *_: correction_path)
+    monkeypatch.setattr(focused.square, "validate_source", lambda _: None)
+    monkeypatch.setattr(focused.localizer, "run", lambda **_: pytest.fail("population mode ran a T1 scout"))
+
+    def install(name, **attributes):
+        module = ModuleType(name)
+        module.__file__ = str(Path(focused.__file__).with_name(name.rsplit(".", 1)[1] + ".py"))
+        module.__dict__.update(attributes)
+        monkeypatch.setitem(sys.modules, name, module)
+        if name.rsplit(".", 1)[0] == focused.__package__:
+            monkeypatch.setattr(package, name.rsplit(".", 1)[1], module, raising=False)
+
+    class HardwareBoundary:
+        def __init__(self, soccfg, cfg, payload, loop):
+            self.cfg = {**cfg, "compiled_marker": np.int64(7)}
+
+    def arm_config(base, arm, dc):
+        return {**base, "ff_gain": dc[arm["flux_ghz"]],
+                "opx_resident_pre_us": arm["pre_drive_us"],
+                "opx_resident_post_us": arm["post_drive_us"],
+                "opx_resident_freq_mhz": arm["drive_mhz"],
+                "opx_resident_gain": arm["gain"],
+                "shots": arm["shots"], "reps": arm["shots"]}
+
+    def acquire(_soc, program, _timeout, cfg, *, total_shots):
+        assert total_shots == 1600
+        if "echo_delay_us" in cfg:
+            response = .5 + .45 * math.exp(-cfg["echo_delay_us"]) * math.cos(
+                math.radians(cfg["echo_phase_deg"]))
+        elif cfg["opx_resident_gain"] == 0:
+            response = 0.
+        elif cfg["opx_resident_post_us"] > .100001:
+            response = .9 * math.exp(-(cfg["opx_resident_post_us"] - .21) / 2.)
+        elif cfg["fast_second_phase_deg"] is not None:
+            response = .5 + .45 * math.cos(math.radians(cfg["fast_second_phase_deg"]))
+        else:
+            response = {focused.PI_US: 1., focused.PI2_US: .5, focused.TWO_PI_US: 0.}[cfg["fast_pulse_us"]]
+        return np.full(total_shots, round(response * 10000), dtype=complex)
+
+    install(f"{focused.__package__}.FivePointApplesToApples",
+            install_scan_calibration=lambda _: None,
+            apply_verified_feedback_timing=lambda _: None)
+    install(f"{focused.__package__}.TLSPumpProbeResidentDrive",
+            ResidentDriveProgram=HardwareBoundary, arm_config=arm_config,
+            record_iq=np.asarray)
+    install(f"{focused.__package__}.TLSPumpProbeWidePassiveScan", parameters=lambda: {})
+    install(f"{focused.__package__}.TLSSpectroscopy",
+            BaseConfig={"ff_park_gain": -25146}, FLUX_FIT_PARAMS=[],
+            _load_correction=lambda *_: correction,
+            makeProxy=lambda: (SimpleNamespace(get_cfg=lambda: {"clock_mhz": np.float64(384.)}), {}))
+    install(f"{focused.__package__}.ThreePointApplesToApples",
+            _integer_dc_grid=lambda _p, sites, _tls: (np.array([-20130]), sites))
+    prefix = "WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX"
+    install(f"{prefix}.integration", _run_program=acquire,
+            _block_timeout_s=lambda *_: 30.,
+            runtime_bundle=lambda _: SimpleNamespace(payload=None, loop=None))
+    install(f"{prefix}.production", ProductionResetSession=SimpleNamespace(
+        passive=lambda: SimpleNamespace(apply=dict)))
+
+    path = focused.run(data_root=tmp_path, population_check=True)
+    manifest = json.loads(path.read_text())
+    assert manifest["status"] == "complete_population_check"
+    assert manifest["valid_site_blocks"] == 3
+    metadata = json.loads(Path(manifest["acquisition_metadata_json"]).read_text())
+    assert metadata["board_configuration"] == {"clock_mhz": 384.}
+    assert len(metadata["source_file_sha256"]) == 5
+    assert metadata["effective_base_config"]["opx_inter_shot_delay_us"] == 500.
+    assert len(metadata["acquisitions"]) == 144
+    for block in manifest["blocks"]:
+        with np.load(block["sites"][0]["raw_npz"]) as raw:
+            assert len(raw.files) == 96
+            assert len(raw["pop_e_1200ns_i"]) == 1600
+        assert block["sites"][0]["population_comparison"]["valid"]
+    for arm in metadata["acquisitions"]:
+        assert arm["status"] == "complete"
+        assert arm["started_at_utc"] <= arm["finished_at_utc"]
+        cfg = json.loads(Path(arm["program_config_json"]).read_text())
+        assert cfg["compiled_marker"] == 7
+        if arm["kind"] in ("pop_g", "pop_e", "echo"):
+            assert cfg["ff_hold"] == pytest.approx(30.3107 + arm["delay_us"])
