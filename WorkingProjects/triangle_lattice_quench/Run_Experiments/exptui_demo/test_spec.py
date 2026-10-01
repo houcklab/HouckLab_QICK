@@ -8,7 +8,7 @@ import dataclasses
 
 import pytest
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.exptui_demo.spec import (
+from triangle_lattice_quench.Run_Experiments.exptui_demo.spec import (
     ExperimentSpec,
 )
 

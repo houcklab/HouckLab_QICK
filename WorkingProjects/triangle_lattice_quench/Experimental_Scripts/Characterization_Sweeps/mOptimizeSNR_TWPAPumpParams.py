@@ -3,12 +3,12 @@ from matplotlib.pyplot import tight_layout
 
 # from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.MixedShots_analysis import *
 
-# from WorkingProjects.triangle_lattice_quench.mTransmissionFF import SingleToneSpectroscopyProgramFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-# from WorkingProjects.triangle_lattice_quench.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
+# from triangle_lattice_quench.mTransmissionFF import SingleToneSpectroscopyProgramFF
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+# from triangle_lattice_quench.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
 
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-from WorkingProjects.triangle_lattice_quench.Helpers.hist_analysis import *
+from triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Helpers.hist_analysis import *
 
 import matplotlib; matplotlib.use('Qt5Agg')
 

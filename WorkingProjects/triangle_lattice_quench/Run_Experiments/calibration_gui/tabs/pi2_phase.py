@@ -21,15 +21,16 @@ from PyQt5.QtWidgets import (
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
-from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
+from triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
+from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
 
 from ..state import (
     CalibState,
     EXPERIMENTAL_SCRIPTS_DIR,
     _FF_FREQ_COUPLED_PAIRS,
     _confusion_matrix_for,
+    _singleshot_cal_for,
 )
 from ..helpers import (
     build_config,
@@ -646,11 +647,7 @@ class Pi2PhaseCalibTab(QWidget):
         # SingleShot cals (lifted from build_two_qubit_chevron_config).
         angle_list, threshold_list, confusion_matrix = [], [], []
         for Q in Qubit_Readout:
-            ro = (jd.get("readout_groups", {})
-                    .get(rg, {})
-                    .get("entries", {})
-                    .get(str(Q), {})
-                    .get("Readout", {})) or {}
+            ro = _singleshot_cal_for(jd, rg, Q)
             angle_list.append(float(ro.get("angle", 0.0)))
             threshold_list.append(float(ro.get("threshold", 0.0)))
             confusion_matrix.append(_confusion_matrix_for(ro))
@@ -800,7 +797,7 @@ class Pi2PhaseCalibTab(QWidget):
             # 5. Pair FF gains for the exchanged Init_FF frequencies (freq->gain). Only the
             #    pair is specified; other gains are per-qubit independent, so keep the ramp
             #    (Expt_FF) values and overwrite just the pair.
-            from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Calculate_FF import (
+            from triangle_lattice_quench.Flux_Files.LEGACY.Calculate_FF import (
                 CalculateFFExperiment,
             )
             cfg = {
@@ -1104,11 +1101,7 @@ class Pi2PhaseCalibTab(QWidget):
 
         # SingleShot cals for the single measured qubit (parity with _build_cfg; FFRamseyCal
         # itself uses normalize_contrast on raw IQ, so these are carried as metadata).
-        ro = (jd.get("readout_groups", {})
-                .get(rg, {})
-                .get("entries", {})
-                .get(measured_chip, {})
-                .get("Readout", {})) or {}
+        ro = _singleshot_cal_for(jd, rg, measured_chip)
         cfg["angle"] = [float(ro.get("angle", 0.0))]
         cfg["threshold"] = [float(ro.get("threshold", 0.0))]
         cfg["confusion_matrix"] = [_confusion_matrix_for(ro)]
@@ -1117,7 +1110,7 @@ class Pi2PhaseCalibTab(QWidget):
         # a compensated step from Pulse_FF (idle) to Gain_Expt per FF channel. The class does
         # not build it (its usual runner does), so build it here from the (already partner-
         # detuned) gains -- only the measured qubit steps to Expt_FF; others stay flat at idle.
-        from WorkingProjects.triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
+        from triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
         cfg["IDataArray"] = StepPulseArrays(cfg, 'Gain_Pulse', 'Gain_Expt')
 
         # Wait sweep (samples) + reps from the form. sigma / relax_delay come from

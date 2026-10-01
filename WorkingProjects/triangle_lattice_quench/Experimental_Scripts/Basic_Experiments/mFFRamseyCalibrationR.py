@@ -4,8 +4,8 @@ import datetime
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Experiment import ExperimentClass
+import triangle_lattice_quench.Helpers.FF_utils as FF
 import Pyro4.util
 
 class RamseyFFCalRProg(RAveragerProgram):

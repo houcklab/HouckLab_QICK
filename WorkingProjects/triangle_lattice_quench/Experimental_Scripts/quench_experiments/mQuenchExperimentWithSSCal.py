@@ -92,21 +92,21 @@ import math
 import numpy as np
 from matplotlib import pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
+import triangle_lattice_quench.Helpers.FF_utils as FF
 
 # --- Additional imports for the SingleShot pre-acquire calibration loop ---
 import copy
 import traceback
 from datetime import datetime
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
 
 try:
-    from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import Qubit_Parameters as _MODULE_QP
+    from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import Qubit_Parameters as _MODULE_QP
 except Exception as _exc:
     _MODULE_QP = None
     print(f"[mQuenchExperimentWithSSCal] Note: module-level Qubit_Parameters import failed ({_exc!r}); "
@@ -336,7 +336,7 @@ class RampQuenchBase_SS(SweepExperiment1D_lines):
             raise RuntimeError(
                 "RampQuenchBase_SS._run_singleshot_calibration: no Qubit_Parameters "
                 "available. Either set cfg['Qubit_Parameters'] or make sure "
-                "WorkingProjects.triangle_lattice_quench.Run_Experiments."
+                "triangle_lattice_quench.Run_Experiments."
                 "qubit_parameter_files.Qubit_Parameters_Master is importable on "
                 "PYTHONPATH."
             )

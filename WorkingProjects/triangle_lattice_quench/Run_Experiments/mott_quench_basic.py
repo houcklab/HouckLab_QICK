@@ -4,15 +4,15 @@ a pi/2 pulse on the center qubit and pi on the rest, evolution, then separation 
 on all qubits. Doesn't account for phase evolution, so meant to be a foundation for tests
 of these concepts.
 '''
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import MottQuenchDynamics
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import MottQuenchDynamics
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
 Readout_Point = "readout_3800_new"

@@ -3,20 +3,20 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+from triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.socProxy import makeProxy
 
 soc, soccfg = makeProxy()
 

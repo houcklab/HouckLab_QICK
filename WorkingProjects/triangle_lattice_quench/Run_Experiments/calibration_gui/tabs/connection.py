@@ -93,8 +93,8 @@ def load_d5a_voltages_from_file(path: str) -> dict[str, float]:
         def unlock(self): pass
 
     targets = [
-        "WorkingProjects.triangle_lattice_quench.PythonDrivers.SPIRackvoltage",
-        "WorkingProjects.triangle_lattice_quench.Client_modules.PythonDrivers.SPIRackvoltage",
+        "triangle_lattice_quench.PythonDrivers.SPIRackvoltage",
+        "triangle_lattice_quench.Client_modules.PythonDrivers.SPIRackvoltage",
     ]
     saved = {t: sys.modules.get(t) for t in targets}
     fake = types.ModuleType("spirack_stub")
@@ -153,7 +153,7 @@ class D5aApplyWorker(QThread):
         spi = None
         try:
             self.log.emit(f"Opening SPI rack on {self.port} (module={self.module})...")
-            from WorkingProjects.triangle_lattice_quench.PythonDrivers.SPIRackvoltage import (
+            from triangle_lattice_quench.PythonDrivers.SPIRackvoltage import (
                 SPIRack, D5aModule,
             )
             spi = SPIRack(self.port, self.baud, self.timeout)

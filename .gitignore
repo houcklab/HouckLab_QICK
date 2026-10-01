@@ -3,7 +3,7 @@
 /__pycache__/*
 **/__pycache__/
 **/.ipynb_checkpoints/
-
+*.env
 # Virtual environments
 .venv/
 venv/

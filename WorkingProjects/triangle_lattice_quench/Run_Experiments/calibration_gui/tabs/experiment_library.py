@@ -52,8 +52,8 @@ def _experiment_import_sandbox(soc=None, soccfg=None):
     import types
 
     target_names = [
-        "WorkingProjects.triangle_lattice_quench.MUXInitialize",
-        "WorkingProjects.triangle_lattice_quench.socProxy",
+        "triangle_lattice_quench.MUXInitialize",
+        "triangle_lattice_quench.socProxy",
         "WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize",
         "WorkingProjects.Triangle_Lattice_tProcV2.socProxy",
     ]

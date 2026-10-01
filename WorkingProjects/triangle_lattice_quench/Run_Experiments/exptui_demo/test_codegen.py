@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.exptui_demo.spec import ExperimentSpec
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.exptui_demo.codegen import (
+from triangle_lattice_quench.Run_Experiments.exptui_demo.spec import ExperimentSpec
+from triangle_lattice_quench.Run_Experiments.exptui_demo.codegen import (
     generate_script, validate_against_json,
 )
 

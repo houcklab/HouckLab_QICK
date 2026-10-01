@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ProgramBuilder import (
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ProgramBuilder import (
     DriveObj, FFSegment, ProgramBuilder,
 )
 
@@ -484,7 +484,7 @@ class ProgramBuilderTab(QWidget):
             QMessageBox.warning(self, "No JSON", "No qubit_parameters JSON loaded.")
             return
         try:
-            from WorkingProjects.triangle_lattice_quench.Run_Experiments.exptui_demo.freq_resolve import (
+            from triangle_lattice_quench.Run_Experiments.exptui_demo.freq_resolve import (
                 groups_for_kind, entries_for_group, resolve_stage_ff,
             )
         except Exception as e:

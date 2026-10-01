@@ -1,9 +1,9 @@
 import numpy as np
 import scipy
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RProgram
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import omega_guess
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RProgram
+from triangle_lattice_quench.Helpers.IQ_contrast import omega_guess
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class RamseyVsFF(SweepExperiment2D_plots):

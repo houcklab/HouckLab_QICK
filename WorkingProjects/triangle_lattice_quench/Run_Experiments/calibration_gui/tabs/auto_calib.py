@@ -1,9 +1,9 @@
 """Auto-Calibration tab and the single-stage calibration tabs.
 
 The biggest cluster: the ``StageTab`` base + its iterative recenter-and-zoom
-mixin + the off-thread ``ExperimentWorker``, the eight concrete stage tabs
+mixin + the off-thread ``ExperimentWorker``, the nine concrete stage tabs
 (Transmission / SpecSlice / AmplitudeRabi / ReadoutOpt / PulseOpt / SingleShot /
-T1 / T2R), the ``AutoCalibWorker`` that drives a queued matrix of stages off the
+T1 / T2R / T2E), the ``AutoCalibWorker`` that drives a queued matrix of stages off the
 GUI thread, the ``AutoCalibTab`` itself, and the per-qubit ``ResultsDialog``.
 
 Depends on the package foundation (state / helpers / widgets); no other tab is
@@ -429,7 +429,7 @@ class TransmissionTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
         return CavitySpecFFMUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="TransmissionFF", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -470,7 +470,7 @@ class SpecSliceTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFMUX
         return QubitSpecSliceFFMUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="QubitSpec", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -503,7 +503,7 @@ class AmplitudeRabiTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
         return AmplitudeRabiFFMUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="AmplitudeRabi", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -591,7 +591,7 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
         return {}
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
+        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
             ReadOpt_wSingleShotFFMUX,
         )
 
@@ -745,7 +745,7 @@ class PulseOptTab(RecenterZoomMixin, StageTab):
         return {}
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
+        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
             QubitPulseOpt_wSingleShotFFMUX,
         )
 
@@ -843,7 +843,7 @@ class SingleShotTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
         return SingleShotFFMUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="SingleShot", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -892,24 +892,29 @@ class SingleShotTab(StageTab):
         return f"{fid * 100.0:.1f}%"
 
     def on_apply(self, expt, data):
-        # Mirrors angle/threshold/fidelity (+ optional ne/ng_contrast) into the
-        # JSON entry's Readout sub-dict. build_cfg_for_qubit reads these to
-        # populate cfg['angle']/['threshold']/['confusion_matrix'], which
-        # SweepExperimentND needs to build population_corrected. The user
-        # persists via the QubitParametersTab Save buttons.
+        # Mirrors angle/threshold (+ optional ne/ng_contrast) into the JSON
+        # entry's SingleShot sub-dict, where they PERSIST to disk; only
+        # `fidelity` stays in the Readout block, which is session-only (stripped
+        # at save). build_cfg_for_qubit reads the SingleShot block to populate
+        # cfg['angle']/['threshold']/['confusion_matrix'], which SweepExperimentND
+        # needs to build population_corrected. The user persists via the
+        # QubitParametersTab Save buttons. setdefault (not a fresh dict) keeps
+        # SingleShot last in the entry's insertion order, so Readout/Qubit stay
+        # at the top of the JSON viewer.
         Q = str(self.state.target_qubit)
         d = data["data"]
         entry = _jd_entry_for(self.state, Q)
         if entry is None:
             return
         ro = entry.setdefault("Readout", {})
-        ro["angle"] = float(d["angle"][0])
-        ro["threshold"] = float(d["threshold"][0])
         ro["fidelity"] = float(d["fid"][0])
+        ss = entry.setdefault("SingleShot", {})
+        ss["angle"] = float(d["angle"][0])
+        ss["threshold"] = float(d["threshold"][0])
         if "ne_contrast" in d:
-            ro["ne_contrast"] = float(d["ne_contrast"][0])
+            ss["ne_contrast"] = float(d["ne_contrast"][0])
         if "ng_contrast" in d:
-            ro["ng_contrast"] = float(d["ng_contrast"][0])
+            ss["ng_contrast"] = float(d["ng_contrast"][0])
 
 
 class T1Tab(StageTab):
@@ -931,7 +936,7 @@ class T1Tab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
         return T1MUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="T1", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -954,13 +959,11 @@ class T1Tab(StageTab):
         return f"{T1:.1f} us" if T1 is not None else "OK"
 
     def on_apply(self, expt, data):
-        Q = str(self.state.target_qubit)
-        T1 = getattr(expt, "T1", None)
-        if T1 is None:
-            raise RuntimeError("No T1 fit to apply.")
-        entry = _jd_entry_for(self.state, Q)
-        if entry is not None:
-            entry.setdefault("Qubit", {})["T1"] = float(T1)
+        # Nothing to write: T1 is no longer stored in qubit_parameters.json
+        # (see helpers.SESSION_ONLY_FIELDS). Still raise on a failed fit so the
+        # AutoCalib cell goes red instead of reporting a green "OK".
+        if getattr(expt, "T1", None) is None:
+            raise RuntimeError("T1 fit failed.")
 
 
 class T2RTab(StageTab):
@@ -983,7 +986,7 @@ class T2RTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
         return T2RMUX(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="T2R", outerFolder=self.state.outer_folder, cfg=cfg,
@@ -1004,13 +1007,129 @@ class T2RTab(StageTab):
         return f"{T2:.1f} us" if T2 is not None else "OK"
 
     def on_apply(self, expt, data):
-        Q = str(self.state.target_qubit)
+        # Not stored in qubit_parameters.json any more; see T1Tab.on_apply.
+        if getattr(expt, "T2", None) is None:
+            raise RuntimeError("T2R fit failed.")
+
+
+class T2ETab(StageTab):
+    """Hahn echo. Same shape as T2RTab, but mT2EMUX fits only inside
+    ``display()`` (which takes no ``ax=``), so the fit and the plot both live
+    here. Side effect of that: T2E runs write no PNG."""
+
+    name = "T2E"
+
+    def param_spec(self):
+        # sigma is NOT exposed: per-qubit value lives in JSON entry's
+        # Qubit.sigma and reaches cfg as a list via build_config. A scalar
+        # override here would clobber the list shape mT2EMUX expects.
+        d = STAGE_DEFAULTS["t2e"]
+        return [
+            ("expts",              "Num delay points",     "int",   d["expts"]),
+            ("stop_delay_us",      "Max delay (us)",       "float", d["stop_delay_us"]),
+            ("reps",               "Repetitions",          "int",   d["reps"]),
+            ("relax_delay",        "Relax delay (us)",     "float", d["relax_delay"]),
+            ("freq_shift",         "Detuning (MHz)",       "float", d["freq_shift"]),
+            ("phase_shift_cycles", "Phase shift cycles",   "int",   d["phase_shift_cycles"]),
+        ]
+
+    def make_experiment(self, cfg):
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
+        return T2EMUX(
+            soc=self.state.soc, soccfg=self.state.soccfg,
+            path="T2E", outerFolder=self.state.outer_folder, cfg=cfg,
+        )
+
+    @staticmethod
+    def _ensure_fit(expt, data):
+        """Fit the echo decay once and cache it on ``expt`` (T2RMUX fits inside
+        acquire; T2EMUX does not). Idempotent - render / on_success /
+        cell_summary / on_apply each call it, and render runs first.
+
+        ``phase_shift_cycles == 0`` closes with a fixed 180 deg pi/2, so the
+        contrast decays monotonically -> bare exponential. Nonzero sweeps the
+        closing phase into fringes -> the damped cosine T2R uses.
+        """
+        if getattr(expt, "_t2e_fit_done", False):
+            return
+        import numpy as np
+        import scipy.optimize
+        from triangle_lattice_quench.Helpers.IQ_contrast import (
+            IQ_contrast, omega_guess,
+        )
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+
+        expt._t2e_fit_done = True
+        expt.T2 = None
+        expt.t2e_curve = None          # damped-cosine curve (fringe fit only)
+        expt.t2e_env = None            # (A, y0) of the exponential envelope
+        d = data["data"]
+        x = np.asarray(d["x_pts"], dtype=float)
+        y = np.asarray(IQ_contrast(np.asarray(d["avgi"]), np.asarray(d["avgq"])),
+                       dtype=float)
+        expt.t2e_contrast = y
+        if len(x) < 5:
+            return
+        fringes = int(data["config"].get("phase_shift_cycles", 0) or 0)
+        try:
+            if fringes:
+                p0 = [x[-1] / 5, (np.max(y) - np.min(y)) / 2, y[-1],
+                      omega_guess(x, y), 1e-2]
+                (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(
+                    T2RMUX._t2r_fit_func, x, y, p0=p0)
+                curve = T2RMUX._t2r_fit_func(x, T2, A, y0, omega, phi)
+            else:
+                p0 = [x[-1] / 3, y[0] - y[-1], y[-1]]
+                (T2, A, y0), _ = scipy.optimize.curve_fit(
+                    T2RMUX._t2r_envelope, x, y, p0=p0)
+                curve = None
+        except Exception as exc:
+            print(f"T2E fit failed: {exc}")
+            return
+        if not np.isfinite(T2) or T2 <= 0 or T2 > 50 * float(x[-1]):
+            print(f"T2E fit rejected: T2 = {T2}")
+            return
+        expt.T2 = float(T2)
+        expt.t2e_curve = curve
+        expt.t2e_env = (float(A), float(y0))
+
+    def render_into(self, ax, expt, data, qubit_id=None):
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+        self._ensure_fit(expt, data)
+        cfg = data["config"]
+        x = data["data"]["x_pts"]
+        ax.plot(x, expt.t2e_contrast, 'o-', color='blue',
+                label=f'qfreq = {cfg.get("qubit_drive_freq")}')
+        ax.set_xlabel("Wait time (us)")
+        ax.set_ylabel("a.u.")
+        ax.set_title("T2E Read:" + str(cfg.get("Qubit_Readout_List")))
+        T2 = getattr(expt, "T2", None)
+        if T2 is not None:
+            A, y0 = expt.t2e_env
+            if expt.t2e_curve is not None:
+                ax.plot(x, expt.t2e_curve, color='black')
+                ax.plot(x, T2RMUX._t2r_envelope(x, T2, -A, y0), color='black', ls='--')
+            ax.plot(x, T2RMUX._t2r_envelope(x, T2, A, y0), color='black', ls='--',
+                    label=f'T2E = {T2:.3f} us')
+        ax.legend(prop={'size': 10})
+
+    def on_success(self, expt, data):
+        self._ensure_fit(expt, data)
         T2 = getattr(expt, "T2", None)
         if T2 is None:
-            raise RuntimeError("No T2R fit to apply.")
-        entry = _jd_entry_for(self.state, Q)
-        if entry is not None:
-            entry.setdefault("Qubit", {})["T2R"] = float(T2)
+            return "T2E fit failed"
+        return f"T2E = {T2:.2f} us"
+
+    def cell_summary(self, expt, data) -> str:
+        self._ensure_fit(expt, data)
+        T2 = getattr(expt, "T2", None)
+        return f"{T2:.1f} us" if T2 is not None else "OK"
+
+    def on_apply(self, expt, data):
+        # Not stored in qubit_parameters.json any more; see T1Tab.on_apply.
+        self._ensure_fit(expt, data)
+        if getattr(expt, "T2", None) is None:
+            raise RuntimeError("T2E fit failed.")
 
 
 # ---------------------------------------------------------------------------
@@ -1106,7 +1225,7 @@ class AutoCalibWorker(QThread):
                 _on_point = None
                 if isinstance(stage, RecenterZoomMixin):
                     _last = [0.0]
-                    def _on_point(d, Q=Q, stage_name=stage_name, _last=_last):
+                    def _emit_point(d, Q=Q, stage_name=stage_name, _last=_last):
                         import numpy as np
                         now = time.perf_counter()
                         if now - _last[0] < 0.2:
@@ -1119,6 +1238,7 @@ class AutoCalibWorker(QThread):
                             self.live_update.emit(str(Q), stage_name, snap)
                         except Exception:
                             pass
+                    _on_point = _emit_point
                 if params.get("iterate") and isinstance(stage, RecenterZoomMixin):
                     expt, data = stage.iterate_recenter_zoom(
                         cfg, self.log_msg.emit, should_abort=lambda: self._stop,
@@ -1217,6 +1337,7 @@ class AutoCalibTab(QWidget):
         ("SingleShot",    "SS"),
         ("T1",            "T1"),
         ("T2R",           "T2R"),
+        ("T2E",           "T2E"),
     ]
 
     # Status-layer cell colors (background only; selection is a border drawn
@@ -1241,6 +1362,9 @@ class AutoCalibTab(QWidget):
         self._cell_outcome: dict[tuple[str, str], Optional[str]] = {}
         # (Q, stage_name) currently acquiring, for the live-frame stale guard.
         self._live_running: Optional[tuple[str, str]] = None
+        # (Q, stage) whose zoom/pan the live plot currently holds; a mismatch
+        # (new stage or new run) lets the next frame autoscale from scratch.
+        self._live_view_key: Optional[tuple[str, str]] = None
 
         # --- readout / drive group selectors (moved from MainWindow toolbar) ---
         self.readout_group_combo = QComboBox()
@@ -1432,6 +1556,7 @@ class AutoCalibTab(QWidget):
         self.results.clear()
         self._cell_outcome.clear()
         self._live_running = None   # drop any late live frame from a prior run
+        self._live_view_key = None
         # Mirror to current_qubit_label so SingleShot.on_apply writes into
         # the right entry on subsequent runs.
         self.refresh_qubits()
@@ -1959,6 +2084,22 @@ class AutoCalibTab(QWidget):
         stage = stages_by_name.get(stage_name)
         if stage is None:
             return
+        # Preserve the user's zoom/pan across per-point live frames. reset()
+        # rebuilds the axes (autoscale), which would snap the view back to the
+        # full sweep every ~0.2 s while ROpt/PulseOpt fill in. Live frames
+        # (switch_page=False) keep a fixed sweep extent, so restoring the prior
+        # view is exact when un-zoomed and honors the user's zoom otherwise. Gate
+        # on _live_view_key so only a repeat frame of the SAME (Q, stage) holds
+        # its view: the first frame of a new stage/run (or a text-only axes)
+        # autoscales, as does the final frame (switch_page=True) showing the result.
+        keep_view = (
+            (not switch_page)
+            and self._live_view_key == (Q, stage_name)
+            and self.live_canvas.ax.has_data()
+        )
+        if keep_view:
+            prev_xlim = self.live_canvas.ax.get_xlim()
+            prev_ylim = self.live_canvas.ax.get_ylim()
         self.live_canvas.reset()
         try:
             # Row label Q may be a drive-entry name like '1_3800+'; render_into
@@ -1973,7 +2114,11 @@ class AutoCalibTab(QWidget):
                 transform=self.live_canvas.ax.transAxes,
             )
             traceback.print_exc()
+        if keep_view:
+            self.live_canvas.ax.set_xlim(prev_xlim)
+            self.live_canvas.ax.set_ylim(prev_ylim)
         self.live_canvas.draw()
+        self._live_view_key = (Q, stage_name)
         self.live_label.setText(f"Live plot — Q{Q} / {stage_name}")
 
     def _on_live_update(self, Q: str, stage_name: str, snapshot):
@@ -2037,6 +2182,7 @@ class AutoCalibTab(QWidget):
         self.readout_group_combo.setEnabled(True)
         self.drive_group_combo.setEnabled(True)
         self._live_running = None
+        self._live_view_key = None
         self.worker = None
 
 
@@ -2046,8 +2192,9 @@ class AutoCalibTab(QWidget):
 
 
 class ResultsDialog(QDialog):
-    """Pop-up showing the six standard calibration plots (Trans, Spec, Rabi,
-    SingleShot, T1, T2R) for one qubit, in a 2x3 grid.
+    """Pop-up showing the nine standard calibration plots (Trans, Spec, Rabi,
+    ReadoutOpt, PulseOpt, SingleShot, T1, T2R, T2E) for one qubit, in a 3x3
+    grid.
 
     Each cell is its own ``MplCanvas`` so the matplotlib navigation toolbar
     works per panel and the original ``expt.display(ax=...)`` (or the bespoke
@@ -2059,24 +2206,25 @@ class ResultsDialog(QDialog):
         ("Transmission",  0, 0),
         ("QubitSpec",     0, 1),
         ("AmplitudeRabi", 0, 2),
-        ("ReadoutOpt",    0, 3),
-        ("PulseOpt",      1, 0),
-        ("SingleShot",    1, 1),
-        ("T1",            1, 2),
-        ("T2R",           1, 3),
+        ("ReadoutOpt",    1, 0),
+        ("PulseOpt",      1, 1),
+        ("SingleShot",    1, 2),
+        ("T1",            2, 0),
+        ("T2R",           2, 1),
+        ("T2E",           2, 2),
     ]
 
     def __init__(self, qubit_id, results_for_q: dict, stages_by_name: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Q{qubit_id} - calibration results")
-        self.resize(1500, 850)
+        self.resize(1400, 950)
 
         grid = QGridLayout()
         grid.setSpacing(8)
         for stage_name, r, c in self.POSITIONS:
             box = QGroupBox(stage_name)
             v = QVBoxLayout(box)
-            canvas = MplCanvas(box, height=3.0)
+            canvas = MplCanvas(box, height=2.4)
             tb = NavigationToolbar(canvas, box)
             v.addWidget(tb)
             v.addWidget(canvas, 1)

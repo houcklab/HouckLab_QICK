@@ -2,9 +2,9 @@ import time
 
 import numpy as np
 
-from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Helpers.Qblox_Functions import Qblox
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
 
 
 class SpecVsQblox(SweepExperiment2D_plots):

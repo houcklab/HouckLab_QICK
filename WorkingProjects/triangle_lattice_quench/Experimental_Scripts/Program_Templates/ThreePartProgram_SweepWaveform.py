@@ -1,10 +1,10 @@
 from qick.asm_v2 import AsmV2
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
     SweepWaveformAveragerProgram
-from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
+from triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 from math import ceil
 

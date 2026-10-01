@@ -14,9 +14,9 @@ from qick.asm_v2 import AveragerProgramV2
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.socProxy import makeProxy
 
 
 
@@ -71,14 +71,14 @@ class ConstantTone_Experiment(ExperimentClass):
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 20000,  # [DAC units]
+    "gain": 30000,  # [DAC units]
     "reps": 100000,
     "rounds":12000,
     # "qubit_LO_freq": 5000,
     "freq": 0, # [MHz] Leave as zero for flat pulse
     "length": 5,
 
-    "channels": [0],  # TODO default value # 0-7 label the fast flux channels
+    "channels": [0,1,2,3,4,5,6,7],  # TODO default value # 0-7 label the fast flux channels
 }
 print("Freq:", UpdateConfig["freq"])
 

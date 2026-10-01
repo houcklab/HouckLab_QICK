@@ -2,8 +2,8 @@ import numpy as np
 from random import random
 from math import ceil
 
-from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 
 
 def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start='auto', IQPulseArray=None, waveform_label = "FF"):
@@ -127,8 +127,7 @@ def FFPulses_compensated(instance, list_of_gains, previous_gains, length_us, t_s
         gencfg = instance.soccfg['gens'][channel]
         # print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
         if np.max(IQPulse) > gencfg['maxv'] or np.min(IQPulse) < -gencfg['maxv']:
-            # print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'],
-            #                                                                 gencfg['maxv']))
+            print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'], gencfg['maxv']))
             IQPulse[IQPulse < -gencfg['maxv']] = -gencfg['maxv']
             IQPulse[IQPulse > gencfg['maxv']] =  gencfg['maxv']
 

@@ -1,16 +1,16 @@
 
 
-from WorkingProjects.triangle_lattice_quench.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils_NEW as FF
+import triangle_lattice_quench.Helpers.FF_utils_NEW as FF
 
 '''Variation on ThreePartRProgramOneFF. Performs the time-domain spectroscopy experiment of Figure 1 in 
 Roushan et al. 2017, "Spectral signatures of many-body localization with interacting photons",

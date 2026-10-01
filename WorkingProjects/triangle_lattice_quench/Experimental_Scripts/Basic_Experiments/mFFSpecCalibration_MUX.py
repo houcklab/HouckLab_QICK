@@ -4,12 +4,12 @@ import qick.helpers
 from matplotlib import pyplot as plt
 from qick.asm_v2 import QickSweep1D
 
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+import triangle_lattice_quench.Helpers.FF_utils as FF
 
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class FFSpecCalibrationProgram(FFAveragerProgramV2):

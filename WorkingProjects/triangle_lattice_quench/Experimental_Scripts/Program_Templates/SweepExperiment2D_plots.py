@@ -2,11 +2,11 @@
 
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import SweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
 
 
 class SweepExperiment2D_plots(SweepExperimentND):

@@ -15,14 +15,14 @@ Two stages:
 
 2. MainWindow (calibration wizard):
    - Tabs for Transmission -> Spec slice -> Amplitude Rabi -> Single-shot -> T1
-     -> T2R, each with editable parameters and an inline plot.
+     -> T2R -> T2E, each with editable parameters and an inline plot.
    - "Apply" pushes a stage result into the in-memory Qubit_Parameters dict;
      the dict can be loaded from / saved to JSON via the toolbar.
 
 Launch from the repo root:
 
     cd D:/Agentic_QSim_Measurement
-    python -m WorkingProjects.triangle_lattice_quench.Run_Experiments.calibration_gui
+    python -m triangle_lattice_quench.Run_Experiments.calibration_gui
 
 Pyro4 and qick are imported lazily inside ConnectionDialog, so the GUI opens
 fine even when the RFSoC nameserver is unreachable.
@@ -67,6 +67,7 @@ from .tabs.auto_calib import (
     SingleShotTab,
     T1Tab,
     T2RTab,
+    T2ETab,
     AutoCalibTab,
 )
 from .tabs.lattice_point import LatticePointCalibrationTab
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
             SingleShotTab(self.state, lambda: self),
             T1Tab(self.state, lambda: self),
             T2RTab(self.state, lambda: self),
+            T2ETab(self.state, lambda: self),
         ]
 
         # Tabs.

@@ -4,16 +4,16 @@ SweepPi2Phase: bare two-pi/2 phase sweep (pi/2 sanity / pulse-pair phase referen
 MottQuenchPi2Phase: full Mott-quench sequence at fixed expt_samples, sweeping the measurement pi/2 phase.
 MottQuenchPi2Phase2D: maps the measurement pi/2 phase vs dynamics time, i.e. phi0(t).
 '''
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweeppi2Phase import \
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweeppi2Phase import \
     SweepPi2Phase, MottQuenchPi2Phase, MottQuenchPi2Phase2D
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
 Readout_Point = "readout_3800_new"

@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from qick.asm_v2 import QickSweep1D
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experiment import ExperimentClass
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class T2RProgram(FFAveragerProgramV2):

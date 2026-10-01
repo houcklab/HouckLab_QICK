@@ -1,4 +1,4 @@
-from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
+from triangle_lattice_quench.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
 import numpy as np
 COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds

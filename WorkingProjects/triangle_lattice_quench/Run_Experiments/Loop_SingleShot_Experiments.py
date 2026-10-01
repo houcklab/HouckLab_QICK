@@ -1,56 +1,56 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
     CalibrateFFvsDriveTiming
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.Readout_Crosstalk_Population import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.Readout_Crosstalk_Population import \
     ReadoutCrosstalkPopulation
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
     SingleShotDecimated
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mChiShift import ChiShift
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mChiShift import ChiShift
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
     SNROpt_wSingleShot
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsGain import SpecVsGain
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsGain import SpecVsGain
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mTransmissionVsPower_MUX import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mTransmissionVsPower_MUX import \
     TransmissionVsPower
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Second_Excited_State_Experiments.mSpecSliceMulti import \
+from triangle_lattice_quench.Experimental_Scripts.Second_Excited_State_Experiments.mSpecSliceMulti import \
     QubitSpecSlice2nd
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
+from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
     GainSweepOscillations
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
 
 import matplotlib.pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.socProxy import makeProxy
 
 
 soc, soccfg = makeProxy()
 
 
 # for det,Q in itertools.product([+20000, -20000],[1,2,3,4,5,6,7,8]):
-for Q in [4]:
+for Q in [1,2,3,4,5,6,7,8]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
 
@@ -93,11 +93,11 @@ for Q in [4]:
     Spec_relevant_params = {
                           # "qubit_gain": 200, "SpecSpan": 800, "SpecNumPoints": 1601,
                           #   "qubit_gain": 200, "SpecSpan": 50, "SpecNumPoints": 71,
-                             "qubit_gain": 300, "SpecSpan": 150, "SpecNumPoints": 71,
+                             "qubit_gain": 100, "SpecSpan": 150, "SpecNumPoints": 151,
                           #   "qubit_gain": 199, "SpecSpan": 50, "SpecNumPoints": 71,
                             # "qubit_gain": 10, "SpecSpan": 10, "SpecNumPoints": 71,
                             'Gauss': False, "sigma": 0.03, "Gauss_gain": 32766*config['qubit_gains'][0],
-                            'reps': 155, 'rounds': 1}
+                            'reps': 200, 'rounds': 1}
 
     Run_Spec_vs_FFgain = True # Inherit spec parameters from above
 
@@ -159,13 +159,12 @@ for Q in [4]:
     # These T1 and T2R experiments are done at FFPulses!
     RunT1 = False
     RunT2 = False
-
     T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
-    T2R_params = {"stop_delay_us": 5, "expts": 150, "reps": 300,
-                  "freq_shift": 0.0, "phase_shift_cycles": 5, "relax_delay":200}
+    T2R_params = {"stop_delay_us": 18, "expts": 125, "reps": 300,
+                  "freq_shift": 0.0, "phase_shift_cycles": 6, "relax_delay":200}
 
-    RunT2E = False
+    RunT2E = True
 
 
     RunT1_TLS = False
@@ -314,9 +313,6 @@ for Q in [4]:
     # if SingleShot_ROTimingOptimize:
     #     ROTimingOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", 
     #                              cfg=config | SS_params | SS_Timing_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
-
-    if Run_Readout_Crosstalk or Oscillation_Single or Calib_FF_vs_drive_delay or RunT1_TLS or Run_FF_v_Ramsey and FF_sweep_Ramsey_relevant_params['populations']:
-        exec(open("Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
     if Run_FF_v_Ramsey:
         RamseyVsFF(path="FF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params,

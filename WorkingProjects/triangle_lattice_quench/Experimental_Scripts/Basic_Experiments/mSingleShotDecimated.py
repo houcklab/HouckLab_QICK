@@ -4,15 +4,15 @@ import matplotlib
 import numpy as np
 from tqdm import tqdm
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotProgram
 
 matplotlib.use("Qt5agg")
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-from WorkingProjects.triangle_lattice_quench.Helpers.hist_analysis import *
+from triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Helpers.hist_analysis import *
 import time
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 # from matplotlib.widgets import Button, Slider
 

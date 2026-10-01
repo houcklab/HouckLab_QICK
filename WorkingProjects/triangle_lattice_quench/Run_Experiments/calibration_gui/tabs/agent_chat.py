@@ -603,7 +603,7 @@ class AgentChatTab(QWidget):
         if not schedule:
             return
 
-        from WorkingProjects.triangle_lattice_quench.Run_Experiments.calibration_gui import (
+        from triangle_lattice_quench.Run_Experiments.calibration_gui import (
             AutoCalibWorker,
         )
         self._append("gui", "auto-running: "

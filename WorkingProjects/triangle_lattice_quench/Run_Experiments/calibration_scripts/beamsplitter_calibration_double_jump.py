@@ -6,20 +6,20 @@ This assumes that the ramps (12,34,45,56,67,78) are all defined in the qubit par
 '''
 
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
-from WorkingProjects.triangle_lattice_quench.Helpers.Beamsplitter_Fit import reconstruct_double_beamsplitter_fit, \
+from triangle_lattice_quench.Helpers.Beamsplitter_Fit import reconstruct_double_beamsplitter_fit, \
     reconstruct_beamsplitter_offset_fit
-from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import SweepHelpers
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
+from triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR, RampBeamsplitterR1D, RampCurrentCorrelationsR, RampDoubleJumpGainR, \
     RampDoubleJumpIntermediateSamplesR, RampDoubleJumpR1D, RampDoubleJumpCorrelations, SweepRampLengthCorrelations, \
     RampDoubleJump_BS_GainR, RampCorrelations_Sweep_BS_Gain, RampCorrelations_Sweep_BS_Offset

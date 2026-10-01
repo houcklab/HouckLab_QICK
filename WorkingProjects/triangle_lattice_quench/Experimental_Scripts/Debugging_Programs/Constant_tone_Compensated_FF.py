@@ -14,12 +14,12 @@ from qick.asm_v2 import AveragerProgramV2
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.socProxy import makeProxy
 
 soc, soccfg = makeProxy()
 

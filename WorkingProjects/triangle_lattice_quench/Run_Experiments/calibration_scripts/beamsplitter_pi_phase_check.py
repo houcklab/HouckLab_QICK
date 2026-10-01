@@ -4,16 +4,16 @@ rungs (12, 34, 56, 78) or odd rungs (12, 45, 67).
 
 This assumes that the ramps (12,34,45,56,67,78) are all defined in the qubit parameters file.
 '''
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import BSClean_offset
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import BSClean_offset
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
+from triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 
 

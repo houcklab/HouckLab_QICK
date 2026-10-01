@@ -4,12 +4,12 @@ import warnings
 import numpy as np
 from matplotlib import pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
+import triangle_lattice_quench.Helpers.FF_utils as FF
 
 
 class QuenchProgram(FFAveragerProgramV2):

@@ -2,15 +2,15 @@
 This file can be used to find coupling strengths for all pairs of qubits.
 Can be used when starting from a new coupling point to find the coupling of couplers
 '''
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
 
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
+from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 
 

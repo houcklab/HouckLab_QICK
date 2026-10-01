@@ -11,102 +11,67 @@
       "entries": {
         "1": {
           "Readout": {
-            "Frequency": 7123.35,
-            "Gain": 1286,
+            "Frequency": 7125.250000000001,
+            "Gain": 2914,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.7424999999999999,
-            "angle": -1.7980020096513978,
-            "threshold": -1.8546067293132449,
-            "ne_contrast": 0.177,
-            "ng_contrast": 0.09366666666666668
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 3962.249988307954,
+            "Frequency": 4350.999991855622,
             "sigma": 0.03,
-            "Gain": 3436,
-            "T1": 41.12680862538429,
-            "T2R": 0.47027902955345074
+            "Gain": 2963
           }
         },
         "2": {
           "Readout": {
-            "Frequency": 7078.75,
+            "Frequency": 7080.3,
             "Gain": 4000,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.7374999999999999,
-            "angle": 2.189391554567942,
-            "threshold": -0.7524477521105686,
-            "ne_contrast": 0.25533333333333336,
-            "ng_contrast": 0.05833333333333335
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 4281.178553466797,
+            "Frequency": 4368.999991664888,
             "sigma": 0.03,
-            "Gain": 3250,
-            "T1": 10.527667941048644,
-            "T2R": 0.6051378147032717
+            "Gain": 5728
           }
         },
         "3": {
           "Readout": {
-            "Frequency": 7510.989999999998,
-            "Gain": 4000,
+            "Frequency": 7512.339999999998,
+            "Gain": 1743,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.825,
-            "angle": 2.215152501647426,
-            "threshold": -1.638431283858905,
-            "ne_contrast": 0.156,
-            "ng_contrast": 0.07533333333333336
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 3483.6475915908823,
+            "Frequency": 3687.9999909591684,
             "sigma": 0.03,
-            "Gain": 8275,
-            "T1": 22.6225061467083,
-            "T2R": 0.26589609696906286
+            "Gain": 8769
           }
         },
         "4": {
           "Readout": {
-            "Frequency": 7568.9,
-            "Gain": 2914,
+            "Frequency": 7571.049999999999,
+            "Gain": 1743,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.6275,
-            "angle": -1.0960556704602082,
-            "threshold": -2.664255966924779,
-            "ne_contrast": 0.25433333333333336,
-            "ng_contrast": 0.10233333333333339
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 4120.94511291504,
+            "Frequency": 4277.999992542268,
             "sigma": 0.03,
-            "Gain": 7279,
-            "T1": 9.702751145901622,
-            "T2R": 0.4784331937440718
+            "Gain": 7055
           }
         },
         "5": {
           "Readout": {
-            "Frequency": 7363.799999999999,
-            "Gain": 1829,
+            "Frequency": 7365.65,
+            "Gain": 2000,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.8525,
-            "angle": 1.6365189439853058,
-            "threshold": 4.887957478259036,
-            "ne_contrast": 0.161,
-            "ng_contrast": 0.06799999999999995
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 3932.099958515168,
+            "Frequency": 4407.499991302491,
             "sigma": 0.03,
-            "Gain": 5152,
-            "T1": 22.07770833341929,
-            "T2R": 0.37008251172887074
+            "Gain": 3170
           },
           "TwoQubit": {
             "6": {
@@ -119,22 +84,15 @@
         },
         "6": {
           "Readout": {
-            "Frequency": 7442.0,
-            "Gain": 3457,
+            "Frequency": 7443.1,
+            "Gain": 1743,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.86,
-            "angle": -2.3310889832107744,
-            "threshold": 1.5604304597631202,
-            "ne_contrast": 0.20633333333333334,
-            "ng_contrast": 0.119
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 3656.630918197633,
+            "Frequency": 3627.4999963378914,
             "sigma": 0.03,
-            "Gain": 3248,
-            "T1": 28.35749590653313,
-            "T2R": 0.47523044330744746
+            "Gain": 4743
           },
           "TwoQubit": {
             "5": {
@@ -159,22 +117,15 @@
         },
         "7": {
           "Readout": {
-            "Frequency": 7253.995000000001,
-            "Gain": 1829,
+            "Frequency": 7256.145000000001,
+            "Gain": 1743,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.7849999999999999,
-            "angle": 0.7295795215710557,
-            "threshold": -3.458227188021449,
-            "ne_contrast": 0.177,
-            "ng_contrast": 0.038000000000000034
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 3706.3523344230657,
+            "Frequency": 4286.999992465974,
             "sigma": 0.03,
-            "Gain": 6046,
-            "T1": 21.366738780678457,
-            "T2R": 0.8226437880110881
+            "Gain": 4082
           },
           "TwoQubit": {
             "6": {
@@ -187,22 +138,15 @@
         },
         "8": {
           "Readout": {
-            "Frequency": 7309.7249999999985,
-            "Gain": 3457,
+            "Frequency": 7311.424999999999,
+            "Gain": 971,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.8400000000000001,
-            "angle": -0.7681114414979769,
-            "threshold": -7.169647778335644,
-            "ne_contrast": 0.144,
-            "ng_contrast": 0.06599999999999995
+            "ADC_Offset": 1
           },
           "Qubit": {
-            "Frequency": 4234.173760128022,
+            "Frequency": 4417.4999912071235,
             "sigma": 0.03,
-            "Gain": 3486,
-            "T1": 35.27243907451244,
-            "T2R": 0.3976082114321091
+            "Gain": 4723
           },
           "TwoQubit": {
             "6": {
@@ -225,19 +169,12 @@
             "Frequency": 7510.724999999999,
             "Gain": 3189,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.8366666666666667,
-            "angle": 0.5584695968334585,
-            "threshold": -0.0789666731857217,
-            "ne_contrast": 0.12733333333333333,
-            "ng_contrast": 0.03600000000000003
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 3482.6118926811228,
             "sigma": 0.07,
-            "Gain": 8749,
-            "T1": 34.676549594457406,
-            "T2R": 11.67659402504965
+            "Gain": 8749
           }
         },
         "4": {
@@ -245,19 +182,12 @@
             "Frequency": 7568.2,
             "Gain": 2400,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.4646666666666667,
-            "angle": -0.14952130494405796,
-            "threshold": -5.042586192136145,
-            "ne_contrast": 0.46266666666666667,
-            "ng_contrast": 0.07266666666666666
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 3906.5880779266367,
             "sigma": 0.07,
-            "Gain": 3867,
-            "T1": 52.84339054820957,
-            "T2R": 0.7463164548044515
+            "Gain": 3867
           }
         },
         "5": {
@@ -265,19 +195,12 @@
             "Frequency": 7363.25,
             "Gain": 4000,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.6043333333333334,
-            "angle": 2.9408174044135555,
-            "threshold": 9.23165424268462,
-            "ne_contrast": 0.30866666666666664,
-            "ng_contrast": 0.08699999999999997
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 4043.3142593956004,
             "sigma": 0.07,
-            "Gain": 4220,
-            "T1": 13.64554937159139,
-            "T2R": 0.8059774128335035
+            "Gain": 4220
           }
         },
         "6": {
@@ -285,19 +208,12 @@
             "Frequency": 7442.0,
             "Gain": 2371,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.8046666666666666,
-            "angle": 2.770011120940008,
-            "threshold": 6.995902712770048,
-            "ne_contrast": 0.14433333333333334,
-            "ng_contrast": 0.051000000000000045
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 3555.4880813598643,
             "sigma": 0.07,
-            "Gain": 3078,
-            "T1": 17.3492666989589,
-            "T2R": 1.8107681750209743
+            "Gain": 3078
           },
           "TwoQubit": {
             "7": {
@@ -319,19 +235,12 @@
             "Frequency": 7254.1,
             "Gain": 1829,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.7696666666666667,
-            "angle": 2.431432956931954,
-            "threshold": -7.714172233189672,
-            "ne_contrast": 0.18366666666666667,
-            "ng_contrast": 0.046666666666666634
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 3884.4952204132087,
             "sigma": 0.07,
-            "Gain": 2250,
-            "T1": 21.699131942905048,
-            "T2R": 0.6050828308475856
+            "Gain": 2250
           },
           "TwoQubit": {
             "6": {
@@ -347,19 +256,12 @@
             "Frequency": 7309.749999999999,
             "Gain": 2914,
             "Readout_Time": 3,
-            "ADC_Offset": 1,
-            "fidelity": 0.035079516165161556,
-            "angle": -2.774418819771574,
-            "threshold": -13.043999301350038,
-            "ne_contrast": 0.1683894631543848,
-            "ng_contrast": 0.7965310206804537
+            "ADC_Offset": 1
           },
           "Qubit": {
             "Frequency": 4235.888079814912,
             "sigma": 0.07,
-            "Gain": 100,
-            "T1": 10.079161119720611,
-            "T2R": 11.790809691390319
+            "Gain": 100
           },
           "TwoQubit": {
             "6": {
@@ -367,6 +269,161 @@
               "resonance_gain": -2805.80299933092,
               "swept_qubit": 8,
               "calibrated_at": "2026-06-23 10:19:17"
+            }
+          }
+        }
+      }
+    },
+    "readout_3800_zerofluxhalfJ": {
+      "description": "Standard 8Q readout point. Q1 at 4400 MHz, Q2 broken, Q3-Q8 at 3800 MHz.",
+      "Readout_FF": [-5047, 7688, -20534, -9200, 3463, -24000, -3764, 4481],
+      "Pulse_FF": [-5047, 7688, -20534, -9200, 3463, -24000, -3764, 4481],
+      "entries": {
+        "1": {
+          "Readout": {
+            "Frequency": 7124.400000000001,
+            "Gain": 1340,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 3939.53568807602,
+            "sigma": 0.03,
+            "Gain": 3709
+          }
+        },
+        "2": {
+          "Readout": {
+            "Frequency": 7080.1,
+            "Gain": 3620,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 4430.678403148652,
+            "sigma": 0.03,
+            "Gain": 7357
+          }
+        },
+        "3": {
+          "Readout": {
+            "Frequency": 7512.089999999998,
+            "Gain": 2480,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 3507.790430469514,
+            "sigma": 0.03,
+            "Gain": 220
+          }
+        },
+        "4": {
+          "Readout": {
+            "Frequency": 7569.9,
+            "Gain": 3240,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 4203.802237453462,
+            "sigma": 0.03,
+            "Gain": 316
+          }
+        },
+        "5": {
+          "Readout": {
+            "Frequency": 7364.8499999999985,
+            "Gain": 3620,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 3798.099955482484,
+            "sigma": 0.03,
+            "Gain": 658
+          },
+          "TwoQubit": {
+            "6": {
+              "coupling_MHz": 6.148306804691255,
+              "resonance_gain": -9450.678983202673,
+              "swept_qubit": 6,
+              "calibrated_at": "2026-06-18 10:26:14"
+            }
+          }
+        },
+        "6": {
+          "Readout": {
+            "Frequency": 7442.650000000001,
+            "Gain": 2480,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 3573.0594865417493,
+            "sigma": 0.03,
+            "Gain": 5109
+          },
+          "TwoQubit": {
+            "5": {
+              "coupling_MHz": 6.148306804691255,
+              "resonance_gain": -9450.678983202673,
+              "swept_qubit": 6,
+              "calibrated_at": "2026-06-18 10:26:14"
+            },
+            "7": {
+              "coupling_MHz": 6.683894202849347,
+              "resonance_gain": -6767.496830527989,
+              "swept_qubit": 7,
+              "calibrated_at": "2026-06-19 14:17:39"
+            },
+            "8": {
+              "coupling_MHz": 7.472882156970838,
+              "resonance_gain": -3038.7144819004216,
+              "swept_qubit": 8,
+              "calibrated_at": "2026-06-23 21:53:05"
+            }
+          }
+        },
+        "7": {
+          "Readout": {
+            "Frequency": 7255.245000000001,
+            "Gain": 3620,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 3586.7809013938913,
+            "sigma": 0.03,
+            "Gain": 399
+          },
+          "TwoQubit": {
+            "6": {
+              "coupling_MHz": 6.683894202849347,
+              "resonance_gain": -6767.496830527989,
+              "swept_qubit": 7,
+              "calibrated_at": "2026-06-19 14:17:39"
+            }
+          }
+        },
+        "8": {
+          "Readout": {
+            "Frequency": 7311.424999999999,
+            "Gain": 3620,
+            "Readout_Time": 3,
+            "ADC_Offset": 1
+          },
+          "Qubit": {
+            "Frequency": 4239.102202529908,
+            "sigma": 0.03,
+            "Gain": 8677
+          },
+          "TwoQubit": {
+            "6": {
+              "coupling_MHz": 7.472882156970838,
+              "resonance_gain": -3038.7144819004216,
+              "swept_qubit": 8,
+              "calibrated_at": "2026-06-23 21:53:05"
             }
           }
         }
@@ -383,8 +440,7 @@
             "Frequency": 7568.1,
             "Gain": 1000,
             "Readout_Time": 2.3,
-            "ADC_Offset": 0.7,
-            "fidelity": 0.4099999999999999
+            "ADC_Offset": 0.7
           },
           "Qubit": {
             "Frequency": 3999.4999991989143,
@@ -397,8 +453,7 @@
             "Frequency": 7308.6,
             "Gain": 1000,
             "Readout_Time": 2.8,
-            "ADC_Offset": 0.7,
-            "fidelity": 0.825
+            "ADC_Offset": 0.7
           },
           "Qubit": {
             "Frequency": 3796.642856273652,
@@ -411,8 +466,7 @@
             "Frequency": 7362.85,
             "Gain": 1033,
             "Readout_Time": 2.8,
-            "ADC_Offset": 0.7,
-            "fidelity": 0.6575
+            "ADC_Offset": 0.7
           },
           "Qubit": {
             "Frequency": 3854.385713691712,

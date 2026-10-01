@@ -1,0 +1,197 @@
+{
+  "_comment": "Nested-groups JSON replacement for the legacy per-stage *_params.py files. Resolver in UPDATE_CONFIG_function.py:build_config consumes this directly.",
+  "base_params": {
+    "Expt_3800": [23036, 0, -6890, -9134, -6023, -8606, -5872, -7759]
+  },
+  "readout_groups": {
+    "readout": {
+      "description": "Standard 8Q readout point. Q1 at 4400 MHz, Q2 broken, Q3-Q8 at 3800 MHz.",
+      "Readout_FF": [-5047, 7688, -20534, -9200, 3463, -24000, -3764, 4481],
+      "Pulse_FF": [-5047, 7688, -20534, -9200, 3463, -24000, -3764, 4481],
+      "entries": {
+        "1": {
+          "Readout": {
+            "Frequency": 7124.35,
+            "Gain": 1743,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8099999999999999,
+            "angle": -2.916500871136184,
+            "threshold": 0.12357604510311049,
+            "ne_contrast": 0.131,
+            "ng_contrast": 0.05900000000000005
+          },
+          "Qubit": {
+            "Frequency": 4392.1071303558365,
+            "sigma": 0.03,
+            "Gain": 5633,
+            "T1": 41.12680862538429,
+            "T2R": 0.47027902955345074
+          }
+        },
+        "2": {
+          "Readout": {
+            "Frequency": 7079.7,
+            "Gain": 1743,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7675000000000001,
+            "angle": 2.189391554567942,
+            "threshold": -0.7524477521105686,
+            "ne_contrast": 0.25533333333333336,
+            "ng_contrast": 0.05833333333333335
+          },
+          "Qubit": {
+            "Frequency": 4403.892838420868,
+            "sigma": 0.03,
+            "Gain": 3344,
+            "T1": 10.527667941048644,
+            "T2R": 0.6051378147032717
+          }
+        },
+        "3": {
+          "Readout": {
+            "Frequency": 7512.07,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8366666666666667,
+            "angle": 0.5584695968334585,
+            "threshold": -0.0789666731857217,
+            "ne_contrast": 0.12733333333333333,
+            "ng_contrast": 0.03600000000000003
+          },
+          "Qubit": {
+            "Frequency": 4032.611892681123,
+            "sigma": 0.07,
+            "Gain": 2582,
+            "T1": 34.676549594457406,
+            "T2R": 11.67659402504965
+          }
+        },
+        "4": {
+          "Readout": {
+            "Frequency": 7569.7,
+            "Gain": 1743,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.4646666666666667,
+            "angle": -0.14952130494405796,
+            "threshold": -5.042586192136145,
+            "ne_contrast": 0.46266666666666667,
+            "ng_contrast": 0.07266666666666666
+          },
+          "Qubit": {
+            "Frequency": 4378.945,
+            "sigma": 0.07,
+            "Gain": 2473,
+            "T1": 52.84339054820957,
+            "T2R": 0.7463164548044515
+          }
+        },
+        "5": {
+          "Readout": {
+            "Frequency": 7364.75,
+            "Gain": 971,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.6043333333333334,
+            "angle": 2.9408174044135555,
+            "threshold": 9.23165424268462,
+            "ne_contrast": 0.30866666666666664,
+            "ng_contrast": 0.08699999999999997
+          },
+          "Qubit": {
+            "Frequency": 4397.1142593956,
+            "sigma": 0.07,
+            "Gain": 1661,
+            "T1": 13.64554937159139,
+            "T2R": 0.8059774128335035
+          }
+        },
+        "6": {
+          "Readout": {
+            "Frequency": 7443.0,
+            "Gain": 1743,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8046666666666666,
+            "angle": 2.770011120940008,
+            "threshold": 6.995902712770048,
+            "ne_contrast": 0.14433333333333334,
+            "ng_contrast": 0.051000000000000045
+          },
+          "Qubit": {
+            "Frequency": 4096.1,
+            "sigma": 0.07,
+            "Gain": 1562,
+            "T1": 17.3492666989589,
+            "T2R": 1.8107681750209743
+          },
+          "TwoQubit": {
+            "7": {
+              "coupling_MHz": 5.23217443792063,
+              "resonance_gain": 1404.1660326939354,
+              "swept_qubit": 7,
+              "calibrated_at": "2026-06-22 17:18:09"
+            },
+            "8": {
+              "coupling_MHz": 7.542354312019458,
+              "resonance_gain": -2805.80299933092,
+              "swept_qubit": 8,
+              "calibrated_at": "2026-06-23 10:19:17"
+            }
+          }
+        },
+        "7": {
+          "Readout": {
+            "Frequency": 7254.1,
+            "Gain": 1829,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7696666666666667,
+            "angle": 2.431432956931954,
+            "threshold": -7.714172233189672,
+            "ne_contrast": 0.18366666666666667,
+            "ng_contrast": 0.046666666666666634
+          },
+          "Qubit": {
+            "Frequency": 4324.495220413209,
+            "sigma": 0.07,
+            "Gain": 2250,
+            "T1": 21.699131942905048,
+            "T2R": 0.6050828308475856
+          },
+          "TwoQubit": {
+            "6": {
+              "coupling_MHz": 5.23217443792063,
+              "resonance_gain": 1404.1660326939354,
+              "swept_qubit": 7,
+              "calibrated_at": "2026-06-22 17:18:09"
+            }
+          }
+        },
+        "8": {
+          "Readout": {
+            "Frequency": 7309.749999999999,
+            "Gain": 2914,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.035079516165161556,
+            "angle": -2.774418819771574,
+            "threshold": -13.043999301350038,
+            "ne_contrast": 0.1683894631543848,
+            "ng_contrast": 0.7965310206804537
+          },
+          "Qubit": {
+            "Frequency": 4417.888079814912,
+            "sigma": 0.07,
+            "Gain": 100,
+            "T1": 10.079161119720611,
+            "T2R": 11.790809691390319
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,25 +1,25 @@
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import \
     FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
-from WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import *
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
+from triangle_lattice_quench.Helpers.IQ_contrast import *
+from triangle_lattice_quench.socProxy import makeProxy
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
+from triangle_lattice_quench.Helpers.rotate_SS_data import *
 import scipy
 import functools
 import operator
 import itertools
-import WorkingProjects.triangle_lattice_quench.Helpers.SweepHelpers
+import triangle_lattice_quench.Helpers.SweepHelpers
 from qick.asm_v2 import AveragerProgramV2
 
 
@@ -178,11 +178,12 @@ class SweepExperimentND(ExperimentClass):
                 for ro_index in range(len(readout_list)):
                     data_dict["I"][ro_index][*sweep_indices, ...] = avgi[ro_index]
                     data_dict["Q"][ro_index][*sweep_indices, ...] = avgq[ro_index]
-                    slices = tuple(slice(j+1) for j in sweep_indices)
-
-                    rotated_i = IQ_contrast(data_dict["I"][ro_index][*slices], data_dict["Q"][ro_index][*slices])
-
-                    data_dict["contrast"][ro_index][*slices] = rotated_i
+                    # slices = tuple(slice(j+1) for j in sweep_indices)
+                    #
+                    # rotated_i = IQ_contrast(data_dict["I"][ro_index][*slices], data_dict["Q"][ro_index][*slices])
+                    #
+                    # data_dict["contrast"][ro_index][*slices] = rotated_i
+                    data_dict["contrast"][ro_index][*sweep_indices, ...] = IQ_contrast(avgi[ro_index], avgq[ro_index])
 
             elif self.z_value == 'population' or self.z_value == 'population_corrected':
                 excited_populations = prog.acquire_populations(soc=self.soc, return_shots=False,

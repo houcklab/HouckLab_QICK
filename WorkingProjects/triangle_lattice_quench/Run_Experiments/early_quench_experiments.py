@@ -1,14 +1,14 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhase import SweepXPhase
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import RampQuenchDynamics, RampQuenchFreq, RampQuenchRabi, RampQuenchSweepQuenchTime, RampQuenchSweepRampTime
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchDynamicsSweeps import QuenchDynamicsSweepGain
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhase import SweepXPhase
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import RampQuenchDynamics, RampQuenchFreq, RampQuenchRabi, RampQuenchSweepQuenchTime, RampQuenchSweepRampTime
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchDynamicsSweeps import QuenchDynamicsSweepGain
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
 Qubit_Readout = [3,4,5,6,7,8]

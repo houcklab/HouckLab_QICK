@@ -1,17 +1,17 @@
-from WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
+from triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.rotate_SS_data import *
 import scipy
 
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import *
+from triangle_lattice_quench.Helpers.IQ_contrast import *
 from qick.asm_v2 import AveragerProgramV2
 
 

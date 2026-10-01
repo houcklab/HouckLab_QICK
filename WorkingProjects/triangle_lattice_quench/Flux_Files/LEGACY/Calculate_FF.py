@@ -2,12 +2,12 @@ from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Import_Functions_Transmon import *
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import flux_sign, model_mapping
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, \
+from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
+from triangle_lattice_quench.Flux_Files.LEGACY.Import_Functions_Transmon import *
+from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import flux_sign, model_mapping
+from triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, \
     coupler_freqs, beta_matrix
 
 
@@ -197,7 +197,7 @@ if __name__ == '__main__':
 # import numpy as np
 # from matplotlib import pyplot as plt
 #
-# from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+# from triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 # from Import_Functions_Transmon import *
 # from Initialize_Qubit_Information import flux_sign, model_mapping
 #

@@ -1,40 +1,40 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
     CalibrateFFvsDriveTiming
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
     SingleShotDecimated
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
     SNROpt_wSingleShot
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
+from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
     GainSweepOscillations
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
 fig1, axs1 = plt.subplots(2,4,figsize=(14,6),tight_layout=True)

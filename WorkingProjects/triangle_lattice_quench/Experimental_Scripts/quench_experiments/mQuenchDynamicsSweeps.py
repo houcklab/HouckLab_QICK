@@ -3,14 +3,14 @@ import math
 import numpy as np
 from matplotlib import pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
     SweepExperiment2D_plots
-from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import QuenchProgram
-from WorkingProjects.triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
+from triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import QuenchProgram
+from triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
 
 
 class QuenchDynamicsSweepBase(SweepExperiment2D_plots):

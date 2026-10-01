@@ -1,4 +1,4 @@
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 ######################################################
 ################ SingleShot General ##################

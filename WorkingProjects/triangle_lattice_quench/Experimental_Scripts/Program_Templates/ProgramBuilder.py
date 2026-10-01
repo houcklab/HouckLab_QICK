@@ -1,8 +1,8 @@
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
 
 from dataclasses import dataclass, field
 
@@ -268,10 +268,9 @@ class ProgramBuilder(FFAveragerProgramV2):
         # --- device flux model (lazy + wrapped) ---
         try:
             from pathlib import Path
-            from WorkingProjects.triangle_lattice_quench.Flux_Files.New_device_calib.DeviceData import DeviceData
-            from WorkingProjects.triangle_lattice_quench.Flux_Files.New_device_calib.DeviceInterface import DeviceInterface
-2
-            json_path = Path(__file__).parents[2] / "Flux_Files" / "New_device_calib" / "8QV1.json"
+            from triangle_lattice_quench.Flux_Files.Device_calib.DeviceData import DeviceData
+            from triangle_lattice_quench.Flux_Files.Device_calib.DeviceInterface import DeviceInterface
+            json_path = Path(__file__).parents[2] / "Flux_Files" / "Device_calib" / "8QV1.json"
             data = DeviceData.from_json(str(json_path))
             dev = DeviceInterface(data)
 

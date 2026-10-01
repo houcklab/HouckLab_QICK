@@ -342,13 +342,13 @@ Mirrors the BSClean_Correlations branch of
 ``Run_Experiments/beamsplitter_clean_timing.py`` — multi-qubit fast-flux
 beamsplitter pulse with current-correlation analysis on two readout pairs.
 """
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import \\
+from triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import \\
     BSClean_Correlations
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 from matplotlib import pyplot as plt
 
 soc, soccfg = makeProxy()
@@ -447,14 +447,14 @@ Mirrors ``Run_Experiments/mott_quench_basic.py`` — Mott qsf protocol with
 a pi/2 init on the chosen qubit (if any), full-pi init on the rest,
 ramp/dynamics evolution, and pi/2 measurement-basis rotation.
 """
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import MottQuenchDynamics
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import MottQuenchDynamics
 import matplotlib.pyplot as plt
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 
 soc, soccfg = makeProxy()
 

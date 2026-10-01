@@ -14,20 +14,20 @@ from typing import Any, Optional
 
 from PyQt5.QtCore import QSettings
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import (
+from triangle_lattice_quench.MUXInitialize import (
     BaseConfig  as DEFAULT_BASE_CONFIG,
     outerFolder as DEFAULT_OUTER_FOLDER,
 )
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 
 # Single readable anchor for the package's on-disk neighbours. From
 # ``calibration_gui/state.py``: parent -> calibration_gui, parent -> Run_Experiments.
 _RUN_EXPT_DIR = Path(__file__).resolve().parent.parent
 
-# Default Qblox D5a coupler-bias setpoint file (mirrors QbloxVoltageSet.py).
+# Default Qblox D5a coupler-bias setpoint file (mirrors SET_QBLOX_VOLTAGES.py).
 DEFAULT_D5A_VOLTAGES_FILE = (
     _RUN_EXPT_DIR.parent / "Flux_Files"
-    / "QbloxVoltageSet.py"
+    / "SET_QBLOX_VOLTAGES.py"
 )
 
 # Standard 8-qubit triangular-ladder D5a DAC mapping. Q1..Q8 -> DACs 1..8;
@@ -39,7 +39,7 @@ DEFAULT_D5A_DAC_MAP: dict[str, int] = {
 }
 
 # Hardcoded coupled-pair list copied from
-# WorkingProjects.triangle_lattice_quench.Flux_Files.plot_frequencies
+# triangle_lattice_quench.Flux_Files.plot_frequencies
 # (PlotFrequenciesExperiment.coupled_pairs). Kept inline so the FF-frequency and
 # pi/2-phase tabs can warn about crossings even when plot_frequencies fails to import.
 _FF_FREQ_COUPLED_PAIRS: list[tuple[int, int]] = [
@@ -53,7 +53,7 @@ _FF_FREQ_COUPLED_PAIRS: list[tuple[int, int]] = [
     (1, 4), (3, 6), (5, 8),
 ]
 
-# D5a connection defaults — match QbloxVoltageSet.py.
+# D5a connection defaults — match SET_QBLOX_VOLTAGES.py.
 DEFAULT_D5A_PORT = "COM3"
 DEFAULT_D5A_BAUD = int(1e6)
 DEFAULT_D5A_TIMEOUT = 1.0
@@ -196,11 +196,36 @@ STAGE_DEFAULTS: dict[str, dict] = {
         "relax_delay": 250, "rounds": 1,
         "freq_shift": 0.0, "phase_shift_cycles": 5,
     },
+    # Hahn echo. phase_shift_cycles = 0 -> fixed 180 deg closing pi/2, i.e. a
+    # monotonic decay rather than the fringes T2R uses.
+    "t2e": {
+        "expts": 150, "stop_delay_us": 200, "reps": 300,
+        "relax_delay": 200,
+        "freq_shift": 0.0, "phase_shift_cycles": 0,
+    },
 }
 
 
+def _singleshot_cal_for(jd: dict, readout_group, qubit) -> dict:
+    """SingleShot calibration values for one readout entry.
+
+    They live in the entry's ``SingleShot`` block; the legacy ``Readout``
+    block is merged underneath so a JSON written before the split still
+    resolves. Returns {} when the group or entry is missing.
+    """
+    if not readout_group:
+        return {}
+    entry = (jd.get("readout_groups", {})
+               .get(readout_group, {})
+               .get("entries", {})
+               .get(str(qubit), {})) or {}
+    legacy = entry.get("Readout", {}) or {}
+    ss = entry.get("SingleShot", {}) or {}
+    return {**legacy, **ss}
+
+
 def _confusion_matrix_for(readout_dict: dict):
-    """Build the 2x2 readout confusion matrix from a per-qubit Readout dict.
+    """Build the 2x2 readout confusion matrix from a per-qubit SingleShot dict (legacy: Readout).
 
     Layout matches mSingleShotProgramFFMUX.py:124-127:
         [[1 - ng,   ne],
@@ -349,17 +374,12 @@ class CalibState:
         )
 
         # SingleShot cals (build_config doesn't promote these). Read from the
-        # JSON readout-entry's Readout block, one per readout qubit.
+        # JSON readout-entry's SingleShot block (legacy: Readout), one per
+        # readout qubit.
         jd = self.qubit_parameters_json or {}
         angle_list, threshold_list, confusion_matrix = [], [], []
         for Q in Qubit_Readout:
-            ro = {}
-            if rg:
-                ro = (jd.get("readout_groups", {})
-                        .get(rg, {})
-                        .get("entries", {})
-                        .get(str(Q), {})
-                        .get("Readout", {})) or {}
+            ro = _singleshot_cal_for(jd, rg, Q)
             angle_list.append(float(ro.get("angle", 0.0)))
             threshold_list.append(float(ro.get("threshold", 0.0)))
             confusion_matrix.append(_confusion_matrix_for(ro))

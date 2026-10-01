@@ -66,7 +66,7 @@ class LatticePointCalibWorker(QThread):
     def run(self):
         # Lazy import — RamseyVsFF pulls qick-flavored deps; keep GUI cold-start cheap.
         try:
-            from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import (
+            from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import (
                 RamseyVsFF,
             )
         except Exception as exc:

@@ -1,9 +1,8 @@
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import *
+from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import *
 
 import matplotlib.pyplot as plt
 
-
-from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
 
 print_single_vector = True
 plot_bare_system = True
@@ -167,8 +166,8 @@ for j, key in enumerate(order_of_couplers):
         tunable_coupling = float(frequencies[key])
 
         bounds = [model_mapping[key].freq(-0.5) * 1000, model_mapping[key].freq(0) * 1000]
-        coupler_freq = full_device_calib.invert_eff_g(tunable_coupling, dressed_qubit_freqs[j], dressed_qubit_freqs[j+2],
-                                        beta_matrix[j,j+8], beta_matrix[j+2,j+8], beta_matrix[j,j+2])[0]
+        coupler_freq = full_device_calib.invert_eff_g(tunable_coupling, dressed_qubit_freqs[j], dressed_qubit_freqs[j + 2],
+                                                      beta_matrix[j,j+8], beta_matrix[j+2,j+8], beta_matrix[j,j+2])[0]
         coupler_freqs.append(coupler_freq)
     elif flux_was_given[key]: # as flux
         flux = frequencies[key]

@@ -57,20 +57,20 @@ File layout:
 # Imports
 # ---------------------------------------------------------------------------
 # BS experiment classes: Python-side outer-loop sweeps over BS parameters.
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import \
+from triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import \
     BSClean_Correlations, BSClean_offset, BSClean_BSGain, BSClean_ISamples, BSClean_IGain, BSClean1D
 # tProc-side sweep equivalents (faster, less flexible).
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterOffsetR, RampBeamsplitterGainR, RampDoubleJumpGainR, RampDoubleJumpIntermediateSamplesR
 
-# from WorkingProjects.triangle_lattice_quench.Flux_Files.Initialize_Qubit_Information import model_mapping
+# from triangle_lattice_quench.Flux_Files.Initialize_Qubit_Information import model_mapping
 # print(1000 * model_mapping['Q2_bare'].freq(0))  # model's upper sweetspot freq, MHz
 #19 rungs total
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
 # ---------------------------------------------------------------------------

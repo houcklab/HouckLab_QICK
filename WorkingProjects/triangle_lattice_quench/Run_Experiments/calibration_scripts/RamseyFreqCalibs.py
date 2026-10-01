@@ -1,17 +1,17 @@
 from matplotlib import pyplot as plt
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import \
     RamseyVsFF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF_CompPulse import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF_CompPulse import \
     RamseyVsFFComp
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF_Ramp import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF_Ramp import \
     RamseyVsFF_Ramp
-# from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
+# from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.MUXInitialize import outerFolder
+from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.socProxy import makeProxy
 
 soc, soccfg = makeProxy()
 

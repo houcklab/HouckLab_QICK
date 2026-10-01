@@ -74,7 +74,7 @@ if __name__ == '__main__':
 
     D5a = D5aModule(spi_rack, module=2, reset_voltages=False)
     for i in range(D5a._num_dacs):
-        print(D5a.get_settings(i))
+        print(f"dac {i}: voltage, span = {D5a.get_settings(i)}")
 
     for i in range(D5a._num_dacs):
         D5a.change_span_update(i, D5a.range_4V_bi)
@@ -87,3 +87,4 @@ if __name__ == '__main__':
     # -4 to 4 Volt: range_4V_bi (span 2)
     # -2 to 2 Volt: range_2V_bi (span 4)
 
+    print(spi_rack.get_temperature())

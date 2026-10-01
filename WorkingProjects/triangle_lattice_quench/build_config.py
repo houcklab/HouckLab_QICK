@@ -8,6 +8,7 @@ entirely. There is no intermediate Qubit_Parameters object exposed.
 
 Caller specifies which named entries to use from each pipeline-stage namespace:
     build_config(
+        jd             = qubit_parameters,       # REQUIRED: loaded JSON dict, or a path to it
         Qubit_Readout  = [3, 4, 5, 6, 7, 8],     # required: list of readout-entry labels
         Readout_Point  = 'readout_3800',         # REQUIRED: key in readout_groups (no default)
         Qubit_Pulse    = ['3_3800+', '6_3800+'], # optional: list of drive-entry labels
@@ -17,12 +18,8 @@ Caller specifies which named entries to use from each pipeline-stage namespace:
 """
 import json
 import warnings
-from pathlib import Path
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import BaseConfig
-
-JSON_PATH = Path(__file__).parent / 'Run_Experiments' / 'Qubit_Parameters' / 'qubit_parameters.json'
-
+from triangle_lattice_quench.MUXInitialize import BaseConfig
 
 def _deref_base(value, base_params):
     """If `value` names an entry in base_params, return that array. Else value unchanged."""
@@ -162,8 +159,14 @@ def build_config(**kwargs):
 
     jd = kwargs.get('jd')
     if jd is None:
-        with open(JSON_PATH) as fh:
+        raise ValueError(
+            "build_config requires an explicit jd (the loaded qubit_parameters "
+            "dict, or a path to a qubit_parameters.json) -- there is no default."
+        )
+    if not isinstance(jd, dict):
+        with open(jd) as fh:
             jd = json.load(fh)
+
     Readout_Point = kwargs.get('Readout_Point')
     if not Readout_Point:
         raise ValueError(

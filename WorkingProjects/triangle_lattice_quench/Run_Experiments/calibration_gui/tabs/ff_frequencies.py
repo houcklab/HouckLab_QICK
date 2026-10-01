@@ -24,9 +24,9 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
-from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
-from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
+from triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
+from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
 
 from ..state import CalibState, _FF_FREQ_COUPLED_PAIRS
 from ..helpers import (

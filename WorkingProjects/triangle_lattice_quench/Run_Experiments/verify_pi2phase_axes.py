@@ -18,7 +18,7 @@ What it does
 5. Renders the 2D map with imshow + extent the same way the GUI does, saves
    to test_pi2phase_axes.png.
 
-Run: python -m WorkingProjects.triangle_lattice_quench.Run_Experiments.verify_pi2phase_axes
+Run: python -m triangle_lattice_quench.Run_Experiments.verify_pi2phase_axes
 (or just python verify_pi2phase_axes.py from this folder if the helper imports
 fall back to a relative path -- see the import block below).
 """
@@ -41,7 +41,7 @@ _PROJ_ROOT = _HERE.parents[2]  # WorkingProjects/
 if str(_PROJ_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJ_ROOT))
 
-from WorkingProjects.triangle_lattice_quench.Helpers.Beamsplitter_Fit import (
+from triangle_lattice_quench.Helpers.Beamsplitter_Fit import (
     fit_beamsplitter_offset,
 )
 

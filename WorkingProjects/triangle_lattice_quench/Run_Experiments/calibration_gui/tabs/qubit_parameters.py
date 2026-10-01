@@ -28,7 +28,9 @@ from PyQt5.QtWidgets import (
 
 from ..state import CalibState, QUBIT_PARAMETERS_JSON
 from ..helpers import (
-    BUILD_CONFIG_JSON_PATH,
+    SESSION_ONLY_FIELDS,
+    strip_session_only,
+    strip_session_only_entry,
     _build_resolve_readout,
     _build_resolve_drive,
     _build_resolve_ramp,
@@ -380,13 +382,35 @@ class QubitParametersTab(QWidget):
 
     # --- save buttons ---
 
+    @staticmethod
+    def _revert_entry(live_entries: dict, ename: str, snap_entry: dict) -> dict:
+        """Snapshot copy of one entry, keeping its live SESSION_ONLY_FIELDS.
+
+        Those fields are never on disk (so never in the snapshot), but the
+        session still needs them — reverting must not wipe the angle/threshold
+        a SingleShot run just produced.
+        """
+        restored = copy.deepcopy(snap_entry)
+        prior = live_entries.get(ename) if isinstance(live_entries, dict) else None
+        if isinstance(prior, dict):
+            for block, keys in SESSION_ONLY_FIELDS.items():
+                src = prior.get(block)
+                if isinstance(src, dict):
+                    dst = restored.setdefault(block, {})
+                    for k in keys:
+                        if k in src:
+                            dst[k] = src[k]
+        return restored
+
     def _confirm_save_diffs(self) -> Optional[dict]:
-        """Show the per-qubit diff dialog and return the live dict to persist.
+        """Show the per-qubit diff dialog and return the dict to persist.
 
         Returns:
           - ``None`` if the user cancelled (caller must abort the save).
-          - The in-memory dict (with unchecked diffs reverted to the snapshot)
-            if the user accepted, OR if no diffs were found (fast path).
+          - A ``strip_session_only`` copy of the in-memory dict (with unchecked
+            diffs reverted to the snapshot) if the user accepted, OR if no diffs
+            were found (fast path). The copy is what reaches disk; the live dict
+            keeps its session-only fields.
 
         Side effect: when the user un-checks a diff, the corresponding entry
         is reverted in-place inside ``state.qubit_parameters_json`` so the
@@ -395,9 +419,12 @@ class QubitParametersTab(QWidget):
         """
         live = self.state.qubit_parameters_json
         snapshot = self.state.qubit_parameters_json_snapshot or {}
-        records = _diff_entries(snapshot, live)
+        # Diff the stripped view: the snapshot is on-disk state, which never
+        # carries the session-only fields, so an unstripped diff would list
+        # every calibrated entry as a change that then would not be saved.
+        records = _diff_entries(snapshot, strip_session_only(live))
         if not records:
-            return live  # no-diff fast path; no dialog shown.
+            return strip_session_only(live)  # no-diff fast path; no dialog.
 
         dlg = SaveDiffDialog(records, parent=self)
         if dlg.exec_() != QDialog.Accepted:
@@ -439,12 +466,13 @@ class QubitParametersTab(QWidget):
                     entries = (live.setdefault(kind, {})
                                    .setdefault(gname, {})
                                    .setdefault("entries", {}))
-                    entries[ename] = copy.deepcopy(snap_entry)
+                    entries[ename] = self._revert_entry(entries, ename, snap_entry)
             else:
                 # Modified: restore the original entry.
                 if snap_entry is not None and isinstance(live_entries, dict):
-                    live_entries[ename] = copy.deepcopy(snap_entry)
-        return live
+                    live_entries[ename] = self._revert_entry(
+                        live_entries, ename, snap_entry)
+        return strip_session_only(live)
 
     def _on_save(self) -> None:
         if not self.state.qubit_parameters_json:
@@ -457,30 +485,30 @@ class QubitParametersTab(QWidget):
         if path is None:
             self._on_save_timestamp()  # nowhere to overwrite — pivot to Save-As.
             return
-        live = self._confirm_save_diffs()
-        if live is None:
+        to_write = self._confirm_save_diffs()
+        if to_write is None:
             return  # user cancelled — disk and in-memory both untouched.
         try:
             written = []
             with open(path, "w") as fh:
-                dump_pretty(live, fh)
+                dump_pretty(to_write, fh)
             written.append(Path(path))
             # Always also overwrite the canonical qubit_parameters.json that
             # build_config (and therefore every experiment script) actually
             # loads. If the active save path already IS the canonical file this
             # is a no-op skip — avoid a redundant double write. Compare resolved
             # paths so a relative/loaded-elsewhere path still matches.
-            canonical = Path(BUILD_CONFIG_JSON_PATH)
+            canonical = Path(QUBIT_PARAMETERS_JSON)
             try:
                 same = Path(path).resolve() == canonical.resolve()
             except Exception:
                 same = Path(path) == canonical
             if not same:
                 with open(canonical, "w") as fh:
-                    dump_pretty(live, fh)
+                    dump_pretty(to_write, fh)
                 written.append(canonical)
             # Rebaseline: future diffs measure against what we just wrote.
-            self.state.qubit_parameters_json_snapshot = copy.deepcopy(live)
+            self.state.qubit_parameters_json_snapshot = copy.deepcopy(to_write)
             self.state.calibration_touched_paths = set()
             self._refresh_styles()
             self.path_label.setText(f"{path}  (saved)")
@@ -508,14 +536,14 @@ class QubitParametersTab(QWidget):
             )
             return
         path = self.state.qubit_parameters_json_path or QUBIT_PARAMETERS_JSON
-        live = self._confirm_save_diffs()
-        if live is None:
+        to_write = self._confirm_save_diffs()
+        if to_write is None:
             return  # user cancelled.
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = path.with_name(f"{path.stem}_{ts}.json")
         try:
             with open(out_path, "w") as fh:
-                dump_pretty(live, fh)
+                dump_pretty(to_write, fh)
             written = [out_path]
             # The timestamped file is a history checkpoint that build_config
             # NEVER loads — so a timestamp-only save would not reach any
@@ -523,18 +551,18 @@ class QubitParametersTab(QWidget):
             # qubit_parameters.json that build_config reads, so saved values
             # actually take effect. Skip if out_path already IS the canonical
             # file (it isn't, given the timestamp suffix — but guard anyway).
-            canonical = Path(BUILD_CONFIG_JSON_PATH)
+            canonical = Path(QUBIT_PARAMETERS_JSON)
             try:
                 same = out_path.resolve() == canonical.resolve()
             except Exception:
                 same = out_path == canonical
             if not same:
                 with open(canonical, "w") as fh:
-                    dump_pretty(live, fh)
+                    dump_pretty(to_write, fh)
                 written.append(canonical)
                 # The canonical file IS the working file: rebaseline diffs and
                 # styling against what we just wrote, matching plain Save.
-                self.state.qubit_parameters_json_snapshot = copy.deepcopy(live)
+                self.state.qubit_parameters_json_snapshot = copy.deepcopy(to_write)
                 self.state.calibration_touched_paths = set()
                 try:
                     self._refresh_styles()
@@ -1050,7 +1078,10 @@ class QubitParametersTab(QWidget):
         live_entry = (live.get(ns, {}) or {}).get(gname, {}).get("entries", {}).get(ename)
         if snap_entry is None and live_entry is None:
             return False
-        return _values_differ(snap_entry, live_entry)
+        # Compare the persisted view only: the session-only fields are never in
+        # the snapshot, so an unstripped compare marks the row dirty forever.
+        return _values_differ(strip_session_only_entry(snap_entry),
+                              strip_session_only_entry(live_entry))
 
     def _apply_table_styles(self) -> None:
         """Repaint every editable cell's font from snapshot + touched-paths."""

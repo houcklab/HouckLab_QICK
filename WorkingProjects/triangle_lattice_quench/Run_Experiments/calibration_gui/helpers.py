@@ -16,13 +16,13 @@ helpers->state back-edge beyond that one symbol.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 from typing import Optional, TYPE_CHECKING
 
-from WorkingProjects.triangle_lattice_quench.build_config import (
+from triangle_lattice_quench.build_config import (
     build_config,
-    JSON_PATH         as BUILD_CONFIG_JSON_PATH,
     _deref_base       as _build_deref_base,
     _resolve_readout  as _build_resolve_readout,
     _resolve_drive    as _build_resolve_drive,
@@ -30,7 +30,7 @@ from WorkingProjects.triangle_lattice_quench.build_config import (
     _resolve_dynamics as _build_resolve_dynamics,
 )
 
-from .state import _confusion_matrix_for
+from .state import _confusion_matrix_for, _singleshot_cal_for
 
 if TYPE_CHECKING:  # avoid a runtime helpers->state edge beyond _confusion_matrix_for
     from .state import CalibState
@@ -40,7 +40,6 @@ if TYPE_CHECKING:  # avoid a runtime helpers->state edge beyond _confusion_matri
 # deliberate re-export rather than dead imports.
 __all__ = [
     "build_config",
-    "BUILD_CONFIG_JSON_PATH",
     "_build_deref_base",
     "_build_resolve_readout",
     "_build_resolve_drive",
@@ -69,6 +68,10 @@ __all__ = [
     "_collapse_scalar_arrays",
     "dumps_pretty",
     "dump_pretty",
+    "SESSION_ONLY_FIELDS",
+    "strip_session_only",
+    "strip_session_only_entry",
+    "is_session_only_path",
 ]
 
 
@@ -128,7 +131,8 @@ def build_cfg_for_qubit(state: "CalibState", Q: str, *,
     Routes through the canonical pipeline (qubit_parameters.json -> build_config
     -> flat cfg) so GUI runs match external scripts. Layers on per-readout
     SingleShot calibration (angle/threshold/confusion_matrix) read from the
-    JSON entry's Readout block, then applies stage-form overrides last.
+    JSON entry's SingleShot block (legacy: Readout), then applies stage-form
+    overrides last.
 
     ``qubit_pulse`` defaults to ``[Q]`` (the drive resolver finds it inside the
     readout group's entry); pass an explicit list to override.
@@ -156,13 +160,7 @@ def build_cfg_for_qubit(state: "CalibState", Q: str, *,
     jd = state.qubit_parameters_json or {}
     angles, thresholds, confusion_matrices = [], [], []
     for ro_key in (qr if qr else [Q]):
-        ro_entry = {}
-        if rg:
-            ro_entry = (jd.get("readout_groups", {})
-                          .get(rg, {})
-                          .get("entries", {})
-                          .get(str(ro_key), {})
-                          .get("Readout", {})) or {}
+        ro_entry = _singleshot_cal_for(jd, rg, ro_key)
         angles.append(float(ro_entry.get("angle", 0.0)))
         thresholds.append(float(ro_entry.get("threshold", 0.0)))
         confusion_matrices.append(_confusion_matrix_for(ro_entry))
@@ -238,6 +236,73 @@ def recenter_zoom_step(prev_opt, new_opt, span_f, span_g,
 
 
 # ---------------------------------------------------------------------------
+# Session-only fields (computed by calibration, never written to disk)
+# ---------------------------------------------------------------------------
+
+# Calibration outputs are split two ways. The discriminator cals
+# (angle/threshold/ne_contrast/ng_contrast) now live in each entry's own
+# `SingleShot` block and DO persist to disk — they are deliberately absent from
+# the table below. What is still session-only: `fidelity` (a quality metric, not
+# an input to any cfg) and the T1/T2R/T2E fits (display-only). Those are stripped
+# at the save boundary, stay in the IN-MEMORY dict for the session, and do not
+# survive a GUI restart.
+#
+# The `Readout` tuple below deliberately still lists angle/threshold/contrasts:
+# JSONs written before the split hold legacy copies there, and stripping them on
+# save cleans up the old location while the SingleShot block becomes the single
+# source of truth. `_singleshot_cal_for` reads SingleShot over Readout, so a
+# legacy file keeps working until it is next saved.
+SESSION_ONLY_FIELDS = {
+    "Readout": ("fidelity", "angle", "threshold", "ne_contrast", "ng_contrast"),
+    "Qubit":   ("T1", "T2R", "T2E"),
+}
+
+_GROUP_NAMESPACES = ("readout_groups", "drive_groups", "ramp_groups",
+                     "dynamics_groups")
+
+
+def strip_session_only_entry(entry):
+    """Copy of one entry dict with SESSION_ONLY_FIELDS dropped."""
+    if not isinstance(entry, dict):
+        return entry
+    out = copy.deepcopy(entry)
+    for block, keys in SESSION_ONLY_FIELDS.items():
+        sub = out.get(block)
+        if isinstance(sub, dict):
+            for k in keys:
+                sub.pop(k, None)
+    return out
+
+
+def strip_session_only(jd: dict) -> dict:
+    """Deep copy of ``jd`` with SESSION_ONLY_FIELDS dropped from every entry.
+
+    Used for both the write to disk and the Save-dialog diff view, so the
+    dialog never lists a change that will not be saved. The caller's dict is
+    left alone — the live values stay usable for the rest of the session.
+    """
+    out = copy.deepcopy(jd or {})
+    for ns in _GROUP_NAMESPACES:
+        for group in (out.get(ns) or {}).values():
+            entries = (group or {}).get("entries") or {}
+            for ename, entry in entries.items():
+                entries[ename] = strip_session_only_entry(entry)
+    return out
+
+
+def is_session_only_path(path) -> bool:
+    """True for a JSON leaf path (``..., block, key``) that is never persisted.
+
+    The dirty/unsaved styling compares live against the on-disk snapshot; these
+    fields only ever exist live, so without this guard every calibrated cell
+    would read as unsaved forever — including right after a successful Save.
+    """
+    return (len(path) >= 2
+            and path[-2] in SESSION_ONLY_FIELDS
+            and path[-1] in SESSION_ONLY_FIELDS[path[-2]])
+
+
+# ---------------------------------------------------------------------------
 # qubit_parameters diff machinery (Save dialog + dirty styling)
 # ---------------------------------------------------------------------------
 
@@ -245,7 +310,9 @@ def recenter_zoom_step(prev_opt, new_opt, span_f, span_g,
 # >3x change" highlight is suppressed for these so a routine 10us -> 35us T1
 # update doesn't trip the warning glyph. Compared as a dotted path suffix
 # (e.g. matches "Qubit.T1" within an entry).
-_DIFF_NOISY_FIELDS = {"Qubit.T1", "Qubit.T2R"}
+_DIFF_NOISY_FIELDS = {"Qubit.T1", "Qubit.T2R", "Qubit.T2E",
+                      "SingleShot.angle", "SingleShot.threshold",
+                      "SingleShot.ne_contrast", "SingleShot.ng_contrast"}
 
 
 def _values_differ(a, b) -> bool:
@@ -537,6 +604,8 @@ def _path_is_dirty(snapshot: dict, live: dict, path: tuple) -> bool:
     Save dialog. A missing-on-one-side leaf counts as dirty (matches the
     behaviour the Save dialog already exposes via _walk_entry_diff).
     """
+    if is_session_only_path(path):
+        return False          # never persisted, so never "unsaved"
     snap_found, snap_v = _leaf_at_path(snapshot or {}, path)
     live_found, live_v = _leaf_at_path(live or {}, path)
     if snap_found != live_found:

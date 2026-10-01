@@ -3,12 +3,12 @@ from scipy.optimize import curve_fit
 
 from qick.asm_v2 import QickSweep1D
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast
+from triangle_lattice_quench.Experiment import ExperimentClass
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast
 
 class QubitSpecSliceFFProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -83,7 +83,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
     def acquire(self, progress=False, use_lorentzian=False):
         cfg = self.cfg
 
-        self.cfg.setdefault("qubit_length", 100) ### length of CW drive in us
+        self.cfg.setdefault("qubit_length", 50) ### length of CW drive in us
 
         prog = QubitSpecSliceFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                     final_delay=self.cfg["relax_delay"], initial_delay=10.0)

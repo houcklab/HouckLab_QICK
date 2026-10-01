@@ -1,7 +1,7 @@
-from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
+from triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
 
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers import *
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from triangle_lattice_quench.Helpers.RampHelpers import *
 
 '''
 Quickly generates IQDataArrays for each fast flux channel.
@@ -25,16 +25,11 @@ def StepPulseArrays(cfg, initial_key, final_key) -> list:
     '''Output: list of IQArrays'''
     initial_gains = get_gains(cfg, initial_key)
     final_gains = get_gains(cfg, final_key)
-    # print(initial_gains)
-    # print("StepPulseArrays:", final_gains)
     return [Compensated_Pulse(fgain, igain, Qubit=j+1) for j, (igain, fgain) in enumerate(zip(initial_gains, final_gains))]
 
 def CubicRampArrays(cfg, initial_key, final_key, ramp_duration, reverse=False) -> list:
     '''Output: list of IQArrays'''
     N = len(cfg['fast_flux_chs'])
-
-    # print(f'initial gains: {list([int(cfg["FF_Qubits"][str(Q)][initial_key]) for Q in range(1, N+1)])}')
-    # print(f'final gains: {list([int(cfg["FF_Qubits"][str(Q)][final_key]) for Q in range(1, N+1)])}')
 
     initial_gains = get_gains(cfg, initial_key)
     final_gains = get_gains(cfg, final_key)

@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from qick.asm_v2 import QickSweep1D
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experiment import ExperimentClass
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class T2EProgram(FFAveragerProgramV2):
@@ -56,9 +56,9 @@ class T2EProgram(FFAveragerProgramV2):
         self.delay(10.0)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_1", t=0)  # pi/2
         self.delay(self.qubit_length_us)
-        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_echo", t=self.delay_loop/2)  # pi/2
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_echo", t=self.delay_loop/2)  # pi
         self.delay(self.qubit_length_us)
-        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_2", t=self.delay_loop/2, tag='swept_delay')  # pi/2, with phase
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_2", t=self.delay_loop, tag='swept_delay')  # pi/2, with phase
         self.delay_auto()
 
         self.FFPulses(self.FFReadouts, cfg["res_length"])
@@ -72,7 +72,7 @@ class T2EProgram(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFPulse, expt_length)
 
     def loop_pts(self):
-        return (2*self.get_time_param("swept_delay", "t", as_array=True),)
+        return (1*self.get_time_param("swept_delay", "t", as_array=True),)
 
 class T2EMUX(ExperimentClass):
     """

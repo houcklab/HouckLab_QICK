@@ -9,42 +9,42 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7122.6, 'Gain': 1500,
+    '1': {'Readout': {'Frequency': 7125.2, 'Gain': 1500,
                       'FF_Gains': [0, 0, 20000, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.9, 'Gain': 1000,
+    '2': {'Readout': {'Frequency': 7080.3, 'Gain': 4000,
                       'FF_Gains': [20000, 0, 20000, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3,
                       'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.23, 'Gain': 1500,
+    '3': {'Readout': {'Frequency': 7512.54, 'Gain': 4000,
                       'FF_Gains': [20000, 0, 0, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.65, 'Gain': 1200,
+    '4': {'Readout': {'Frequency': 7570.85, 'Gain': 1500,
                       'FF_Gains': [20000, 0, 20000, 0, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7363.46, 'Gain': 2000,
+    '5': {'Readout': {'Frequency': 7365.4, 'Gain': 2000,
                       'FF_Gains': [20000, 0, 20000, 20000, 0, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 3200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7441.54, 'Gain': 1000,
+    '6': {'Readout': {'Frequency': 7443.54, 'Gain': 1500,
                       'FF_Gains': [20000, 0, 20000, 20000, 20000, 0, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '7': {'Readout': {'Frequency': 7254.06, 'Gain': 900,
+    '7': {'Readout': {'Frequency': 7255.9, 'Gain': 1500,
                       'FF_Gains': [20000, 0, 20000, 20000, 20000, 20000, 0, 20000], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '8': {'Readout': {'Frequency': 7309.23, 'Gain': 900,
+    '8': {'Readout': {'Frequency': 7311.42, 'Gain': 1500,
                       'FF_Gains': [20000, 0, 20000, 20000, 20000, 20000, 20000, 0], 'Readout_Time': 3, 'ADC_Offset': 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
@@ -103,21 +103,21 @@ FF_gain8_BS = 0
 #                      soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(fig_axs=(fig, [axs[i]]), plotDisp=True, block=False if Q < 8 else True)
 #
 
-for Q in [3,4,5,6,7,8]:
+for Q in [1]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
 
     Spec_relevant_params = {
         # "qubit_gain": 100, "SpecSpan":150, "SpecNumPoints": 301,
-          "qubit_gain": 100, "SpecSpan": 550, "SpecNumPoints": 1001,
-        # "qubit_gain": 400, "SpecSpan": 550, "SpecNumPoints": 251,
+        #   "qubit_gain": 100, "SpecSpan": 550, "SpecNumPoints": 1001,
+        "qubit_gain": 400, "SpecSpan": 550, "SpecNumPoints": 251,
         # "qubit_gain": 100, "SpecSpan": 20, "SpecNumPoints": 71,
         'Gauss': False, "sigma": 0.05, "Gauss_gain": 3200,
         'relax_delay': 150,
         'reps': 144*2}
 
     FF_sweep_spec_relevant_params = {"qubit_FF_index": Q,
-                                "FF_gain_start": -32000, "FF_gain_stop": 32000, "FF_gain_steps": 41}
+                                "FF_gain_start": -32000, "FF_gain_stop": 32000, "FF_gain_steps": 11}
     # FF_sweep_spec_relevant_params = {"qubit_FF_index": Q,
     #                                  "FF_gain_start": -25000, "FF_gain_stop": +25000, "FF_gain_steps": 2}
 

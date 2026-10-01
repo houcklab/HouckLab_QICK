@@ -18,7 +18,7 @@ from typing import Optional
 
 # Re-exported from build_config so both consumers see the same resolution
 # rules. build_config is import-safe (no soccfg / no hardware).
-from WorkingProjects.triangle_lattice_quench.build_config import (
+from triangle_lattice_quench.build_config import (
     _deref_base       as deref_base,
     _resolve_readout  as resolve_readout_entry,
     _resolve_drive    as resolve_drive_entry,

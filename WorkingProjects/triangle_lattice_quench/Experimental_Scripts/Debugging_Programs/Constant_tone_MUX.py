@@ -14,10 +14,10 @@ from qick.asm_v2 import AveragerProgramV2
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import soc, soccfg
-# soc, soccfg = makeProxy_RFSOC_11()
+from triangle_lattice_quench.socProxy import makeProxy
+soc, soccfg = makeProxy()
 
 #TODO UPDATE FOR TPROC_V2
 
@@ -91,14 +91,17 @@ class ConstantTone_Experiment(ExperimentClass):
 
 LO_FREQ = 9000
 MIXER_FREQ = -1750
+
+freqs = [7122, 7078, 7511, 7568]
+gains = [16000] * len(freqs)
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gains": [16000, 16000, 16000, 16000],  # [DAC units]
+    "gains": gains,  # [DAC units]
     "reps": 1000000,
     "rounds":1,
     "mixer_freq": MIXER_FREQ,
-    "freqs": [freq-LO_FREQ for freq in [7122, 7078, 7511, 7568]], # [MHz]
+    "freqs": [freq-LO_FREQ for freq in freqs], # [MHz]
 
     "channel": 8, #0,  # TODO default value # 8 is resonator, 9 is qubit
     "nqz": 1, #2,#1,  # TODO default value

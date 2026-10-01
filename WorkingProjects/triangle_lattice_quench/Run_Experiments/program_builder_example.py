@@ -1,6 +1,6 @@
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ProgramBuilder import ProgramBuilder
-from WorkingProjects.triangle_lattice_quench.build_config import build_config
-from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ProgramBuilder import ProgramBuilder
+from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.socProxy import makeProxy
 
 
 soc, soccfg = makeProxy()

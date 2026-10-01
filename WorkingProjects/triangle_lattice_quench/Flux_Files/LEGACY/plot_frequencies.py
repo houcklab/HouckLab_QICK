@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 from Initialize_Qubit_Information import model_mapping
 from Whole_system_to_Voltages import flux_vector, beta_matrix
-from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
 
 
 class PlotFrequenciesExperiment(ExperimentClass):
@@ -222,11 +222,11 @@ if __name__ == '__main__':
 #
 #
 # # import qubit parameters from this file
-# from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+# from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 #
 # from Initialize_Qubit_Information import model_mapping
 # from Whole_system_to_Voltages import flux_vector, beta_matrix
-# from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+# from triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 #
 # def ff_gains_to_freqs(ff_gains):
 #     mappings = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q6_bare', 'Q7_bare', 'Q8_bare']

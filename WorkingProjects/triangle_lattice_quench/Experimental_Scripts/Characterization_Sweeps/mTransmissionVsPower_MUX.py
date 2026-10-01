@@ -3,12 +3,12 @@ from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFProg
+import triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFProg
 
 
 class TransmissionVsPower(ExperimentClass):

@@ -1,13 +1,13 @@
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.TwoPartProgram import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.TwoPartProgram import \
     TwoPartProgram
-from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+import triangle_lattice_quench.Helpers.FF_utils as FF
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 

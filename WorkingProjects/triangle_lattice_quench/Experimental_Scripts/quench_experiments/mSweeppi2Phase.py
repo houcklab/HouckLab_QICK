@@ -1,16 +1,16 @@
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
     SweepExperiment2D_plots
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhase import SweepXPhase
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import \
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhase import SweepXPhase
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import \
     MottQuenchBasicProgram, MottQuenchBase
-from WorkingProjects.triangle_lattice_quench.Helpers.Beamsplitter_Fit import fit_beamsplitter_offset
-from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
-from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
-import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from triangle_lattice_quench.Helpers.Beamsplitter_Fit import fit_beamsplitter_offset
+from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
+import triangle_lattice_quench.Helpers.FF_utils as FF
 
 
 # Variant (A): bare two-pi/2 phase sweep (pi/2 sanity / pulse-pair phase reference)

@@ -56,10 +56,10 @@ from datetime import datetime
 
 import numpy as np
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import (
+from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import (
     RampQuenchDynamics,
 )
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import (
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import (
     SingleShotFFMUX,
 )
 
@@ -67,7 +67,7 @@ from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experime
 # the cfg dict. Wrapped in try/except so a missing or differently-named
 # qubit-params file does not block class import.
 try:
-    from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import (
+    from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import (
         Qubit_Parameters as _MODULE_QP,
     )
 except Exception as _exc:

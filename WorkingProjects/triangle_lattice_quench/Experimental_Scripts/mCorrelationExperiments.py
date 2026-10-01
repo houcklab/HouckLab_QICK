@@ -3,14 +3,14 @@ import time
 from itertools import product
 
 
-import WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers as RampHelpers
+import triangle_lattice_quench.Helpers.RampHelpers as RampHelpers
 
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
-from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from triangle_lattice_quench.Experiment import ExperimentClass
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
+from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
 
 ### Simple Singleshot experiment, but uses a separately calibrated angle and threshold to pick 0 or 1
