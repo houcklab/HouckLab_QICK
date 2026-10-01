@@ -7610,3 +7610,47 @@ computer. Production TLS, reset and initialization files and q4 are unchanged.
 Final maintained-suite verification: **1,342 tests passed** in `tests/`,
 including 13 repeated-loading regressions. No measurement outcome is inferred
 from these software checks.
+
+### Repeated loading: short pilot before the dose screen (2026-10-01)
+
+The user correctly requested a smaller first run before committing 40--60 min.
+Start with `--pilot`: three sites (4.026, 4.037 and 4.046 GHz), zero versus
+32 writes, on-target and detuned loading, and two reversed-order blocks.
+The first two frequencies had weak, unconfirmed single-load hints; the third
+is an unresolved switching site. These are hypotheses to test, not established
+storage sites. A null at these fixed frequencies does not exclude other sites
+or a shifted feature.
+
+The pilot retains 600 shots per condition per block, both 0.1/40-us probes,
+all 32 visits, identical reset timing, raw feedback records, and independent
+pre/mid/post references. It reduces the number of sites and doses, not the
+per-condition statistics or controls. There are 24 science programs and
+28,800 science probe records, plus 3,600 final-reference records. Estimated
+duration is **8--12 min**, including calibration and transport, with a progress
+bar and ETA. The midpoint references occur after program 12.
+
+First inspect whether reset and reference controls work, then whether 32 writes
+produce additional long-minus-short excitation that reproduces in both blocks
+and exceeds the detuned-loading response. An initial-population offset alone
+is not a return signal. Pilot hits are labelled `pilot_followup_frequencies_ghz`,
+not dose-dependent candidates: two doses cannot establish the shape of an
+accumulation curve. The runner stops after the pilot. It never automatically
+starts the full screen or an erase sequence.
+
+A reproducible pilot response would justify a focused dose sweep at that site
+and an order/washout check, rather than automatically expanding to eight sites.
+An inconclusive or null pilot should be judged against its uncertainty and
+reset performance before spending an hour. It cannot exclude small effects or
+memory shorter than the approximately 169-us last-write-to-probe gap.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoading --run --pilot
+```
+
+Verification: all 30 pilot science/reference programs compiled against the
+saved q3 board with unchanged pulse timing and a maximum of 1,985 instructions.
+A complete synthetic pilot saved and reanalyzed 32,400 records, placed the
+midpoint references between the two blocks, and flagged the injected local
+return under both final-readout axes without claiming a dose curve. All
+**1,344 maintained tests passed**, including 15 repeated-loading tests.

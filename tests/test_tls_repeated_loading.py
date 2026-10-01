@@ -180,3 +180,35 @@ def test_final_reset_acceptance_gate_scales_with_reference(m):
     axis = dict(theta_rad=0.,threshold=0.,low=-100.,high=100.)
     cell = m.summarize_program(w.reshape(-1,m.RECORD_WORDS),task,loop,axis)
     assert cell['valid'] and cell['conditions'][0]['accepted'] == 120
+
+
+def test_pilot_preserves_controls_and_precision_but_reduces_programs(m, capsys):
+    assert m.main(['--plan', '--pilot']) == 0
+    import json
+    p=json.loads(capsys.readouterr().out)
+    assert p['mode'] == 'pilot'
+    assert p['doses'] == [0,32]
+    assert p['science_programs'] == 24 and p['probe_shots'] == 28800
+    specs=m.tasks(pilot=True)
+    assert {t['frequency_ghz'] for t in specs} == {4.026,4.037,4.046}
+    for f in (4.026,4.037,4.046):
+        for b in (0,1):
+            selected=[t for t in specs if t['frequency_ghz']==f and t['block']==b]
+            assert {(t['writes'],t['location']) for t in selected} == {
+                (n,s) for n in (0,32) for s in ('on','off')}
+            assert all(t['shots']==600 and set(t['probes_us'])=={.1,40.} for t in selected)
+    assert m.plan()['science_programs'] == 128
+
+
+def test_pilot_flags_return_for_followup_without_claiming_dose_dependence(m):
+    cells=[]
+    for i,task in enumerate(t for t in m.tasks(shots=4000,pilot=True) if t['frequency_ghz']==4.037):
+        rise=.25 if task['writes']==32 and task['location']=='on' else 0.
+        cells.append(synthetic_cell(m,task,rise=rise,seed=i))
+    report=m.analyze(cells,controls_valid=True,pilot=True)
+    assert report['pilot_followup_frequencies_ghz'] == [4.037]
+    assert report['candidate_frequencies_ghz'] == []
+    assert not report['dose_dependence_tested']
+    assert report['automatic_full_run'] is False
+    assert not m.analyze(cells[:4],controls_valid=True,pilot=True)['pilot_followup_frequencies_ghz']
+    assert not m.analyze(cells,controls_valid=False,pilot=True)['pilot_followup_frequencies_ghz']
