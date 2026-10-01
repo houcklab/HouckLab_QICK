@@ -7316,3 +7316,104 @@ has been prepared in this results-only update.
 Frozen data, raw audit, comparison script, statistics and inspected
 PNG/PDF figures:
 `~/.codex/visualizations/2026/10/01/q3-controlled-noise-switching-confirm/`.
+
+### Switching investigation deferred; same-frequency prerequisite for two-frequency swap spectroscopy
+
+The user asked to keep the reproduced switching-duration result for a later
+return and start the energy-return direction. The eventual question is
+whether excitation deposited at one load frequency reappears at that same
+frequency or elsewhere. **Do not expand to a two-frequency grid until a
+same-frequency return signal has been independently confirmed.** The flux
+transfer/line-filtering question above remains open; it is not abandoned or
+answered by the new experiment.
+
+`TLSAfterglowDiagonal` implements the first bounded screen. It visits every
+point in **4.020–4.080 GHz at 1 MHz spacing**, independent of T1-dip depth.
+This region includes the recent 4.046-GHz loss site and its surrounding
+frequencies; it is not a search across the entire accessible band.
+At every frequency, each hardware logical shot contains six subshots:
+
+1. Park π (hot) or a timing-matched zero-gain π (cold).
+2. A **10-us loading visit** to the selected frequency.
+3. The established **40-us compensated return**, park readout, and existing
+   readout/accumulator guard. Retain first-readout IQ for offline ground
+   heralding; this is conditional ground preparation, not active reset.
+4. A ground probe at the **same frequency** for **0.1, 10 or 40 us**, followed
+   by the same corrected return and final park readout. These are requested
+   hold durations; the 0.5-us target-settle prefix also remains in place.
+5. A **5-ms recovery between every subshot**, including between hot and cold
+   controls. There is no additional intentional wait between loading and
+   probing beyond the required return, readout and guard.
+
+The second block reverses both the initial randomized frequency order and
+the complete six-condition order. There are **400 logical shots per point
+per block**, **122 science programs**, **292,800 paired-readout science
+records**. Pre/mid/post reference triplets each use 1,200 shots per arm,
+adding 10,800 records. Paired references prepare their known states after
+the flux return, and assess holdout herald discrimination. Terminal output
+is limited to usual setup/SS-calibration output and one science progress
+bar with elapsed time and ETA. Expect roughly **30–40 minutes**.
+
+The saved observables include all-shot excitation, first-readout acceptance,
+ground-heralded final excitation, and unthresholded final IQ. The return
+test is hot-minus-cold excitation **and its increase above the 0.1-us probe
+baseline**. A decaying residual qubit excitation by itself fails that growth
+test. Every paired logical shot contributes to the covariance of these
+contrasts, including their shared short-probe baseline.
+
+Candidate triage requires at least 80 accepted shots in each contributing
+arm per block, hot-minus-cold and growth both ≥0.03 in each order, agreeing
+continuous-IQ signs, passing reference checks, and both pooled contrasts
+larger than **3.35 descriptive standard errors**. The SE includes the paired
+shot covariance and an order-disagreement floor. The 3.35 factor is motivated
+by a one-sided normal screen over 61 × 2 comparisons, but two acquisition
+orders and possible temporal correlations do **not** establish a calibrated
+discovery p-value. Every curve and raw record is saved regardless of this
+triage. Final-reference reclassification is a sensitivity check on the same
+shots. No positive screen automatically launches a 2-D map.
+
+**What differs from the earlier null:** the September 29 weak-site screen
+accepted only one site and added 100–1000 us of waiting. This measurement
+uses a blind local frequency grid with no added wait and explicitly measures
+short-to-long growth of a ground-probe signal. It still cannot access memory
+that dies during the 40-us return plus readout/guard. It is an exploratory
+screen for a sizable return signal, not a precision exclusion of small
+afterglow: low herald acceptance particularly reduces sensitivity.
+
+A candidate must next survive independent repetition, excited loading at an
+off-target frequency, matched readout-history and carryover controls, and a
+storage-delay check. Only then should independent load/probe coordinates be
+scanned. A broad response or an isolated positive pixel is not evidence of
+interacting TLSs. The inspiration is the pump/excitation-probe protocol in
+[Guimarães et al., arXiv:2609.31280v1, Fig. 3](https://arxiv.org/html/2609.31280v1).
+
+The implementation is a separate experimental runner. It scopes explicit
+q3 parameters and restores prior runner settings; production spectroscopy,
+active reset, `initialize.py` and q4 runners are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowDiagonal --run
+```
+
+Validation: **1,329 tests pass** in `tests/`. All **131 science/reference
+programs** compile with the saved QICK 0.2.133 board configuration; maximum
+program size is **4,211/8,192 instructions**, and maximum flux-envelope
+allocation is **55,040/65,536 samples** with the 4-us startup/shutdown ramp.
+A complete synthetic acquisition saves and reanalyzes **303,600 paired
+records**, detects an injected return at 4.046 GHz with both calibrations,
+renders the output plot, checks streaming dimensions and actual pulse-memory
+loading, and restores prior settings. A separate forced-disconnect test
+preserves partial raw data and the original acquisition error even when
+board-stop commands also fail. Independent review found no remaining
+important implementation issue; it motivated the stricter candidate gate.
+These are offline implementation checks, not evidence of measured afterglow.
+
+The initial unscoped `pytest` command also collected hardware scripts
+`Archive/q4diamond/Client_modules/Running_Experiments_MUX/Timing_test.py` and
+`WorkingProjects/Inductive_Coupler/Client_modules/Running_Experiments_MUX/Timing_test.py`;
+both raised missing-`qick` collection errors in the normal local Python
+environment. That unscoped collection was interrupted. The maintained
+`tests/` suite and the separate real-QICK compiler checks above pass.
+Verification files are in `/tmp/q3_afterglow_diagonal_check/` on the analysis
+computer.
