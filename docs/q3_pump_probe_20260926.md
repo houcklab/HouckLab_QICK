@@ -7505,3 +7505,108 @@ conditional-mean influence calculation at 4.037 GHz agrees with the saved
 growth and paired covariance. Frozen raw data, reproducible audit,
 threshold sensitivity, and inspected PNG/PDF figures are in
 `~/.codex/visualizations/2026/10/01/q3-afterglow-diagonal/`.
+
+## 2026-10-01: repeated loading before a write--erase experiment
+
+The user authorized a bounded accumulation test. The question is whether
+repeated, controlled excited preparations deposit a detectable population
+that survives our return/reset and re-excites a ground-prepared probe. This
+is different from the previous single-load diagonal screen. It does not yet
+implement active erasure or a two-frequency map; either requires a confirmed
+return signal first. The mechanism is inspired by
+[Spiecker et al.](https://arxiv.org/abs/2204.00499), but their 2-us cycle and
+>50-ms reservoir memory must not be assumed for q3.
+
+`TLSRepeatedLoading` uses explicit q3 settings and eight predetermined probe
+frequencies: 4.020, 4.026, 4.030, 4.037, 4.040, 4.046, 4.060 and 4.080 GHz.
+The two earlier post-hoc hints are included without labelling them confirmed
+storage sites; other frequencies need not have a strong T1 dip. There is no
+scout-selection gate. Detuned loading is 16 MHz below each probe frequency;
+this is a frequency-locality control, not an assertion that the detuned site
+is free of loss or other defects.
+
+Each trial has 32 visits of 10 us, each preceded by reset at park. The final
+N visits use excited preparation, with N=0,1,8,32. Earlier visits use a
+zero-gain preparation of the same length. Every visit has the full 40-us
+native corrected return. A final reset precedes a ground/no-pi probe of
+0.1 or 40 us at the target, followed by the identical corrected return and
+park readout. The short/long probes alternate within each hardware shot;
+the whole task order and probe order reverse in block two. Separate zero-dose
+controls exist for on- and off-target loading. Each condition has 600 shots
+per block, 1,200 across two blocks: 128 science programs and 153,600 probes.
+Expected duration is approximately 40--60 min with progress and ETA.
+
+The reset is local to this experiment: four readout/conditional-pi rounds,
+then a fifth verification readout. Each feedback branch plays a pi or a
+zero-gain waveform of identical length, with the same 20-us scheduled guard.
+There are no early exits, variable retries or stream handoffs inside a train.
+Every one of the 33 resets saves all five raw IQ pairs, plus final-probe IQ:
+332 words per probe. Verification failures remain in the raw data. They are
+not silently labelled ground. Counts of confident preparations and inferred
+feedback-pi counts are saved by visit. Confidence fractions are compared to
+the freshly calibrated ground/false-ground acceptance, not to an absolute
+50% threshold; the conservative classifier does not accept every ground shot.
+Raw IQ outside the tProc multiplier range invalidates a science cell.
+
+Fresh experiment-local classifier references reproduce the four preceding
+readouts, 20-us guard, zero/pi waveform duration and alignment/settle timing.
+Independent ground/excited final-readout references bracket both blocks.
+The final reference axis is trained/validated on separate shots; frozen-axis
+mid/post checks and a post-final-axis refit are saved. The refit changes the
+final-readout analysis only, not the classifier that controlled hardware reset.
+The established production reset policy and code are unchanged.
+
+On the saved board configuration, compiled scheduled timing is 128.441 us
+per reset, 179.748 us per loading cycle, and 5.752 ms for 32 cycles. The gap
+from the end of the last loading hold to the probe excursion is approximately
+169.250 us, before the probe's 0.5-us arrival interval. These are programmed
+times, not an analog transfer measurement. Consequently, a null cannot rule
+out population memory shorter than this gap.
+
+Analysis forms long-minus-short ground-conditioned excitation, subtracts the
+same loading location's zero-dose value, then compares on-target with detuned
+loading. It also saves all-shot populations and continuous-IQ contrasts.
+A candidate must reproduce in both orders, pass references and preparation
+checks, have positive IQ support, and exceed descriptive pooled uncertainty
+thresholds. This is an exploratory screen, not a discovery p-value. With
+this many sites/controls it is intended to detect substantial accumulation;
+a few-percent effect may require a focused higher-statistics follow-up.
+
+The 5-ms recovery between independent trials is **not a demonstrated bath
+washout**. No such wait occurs inside a train. A positive result requires
+independent replication, a longer-washout/order check, and review of reset
+histories before attributing it to stored TLS energy or attempting erase.
+Repeated high-dose trials could condition a long-lived reservoir across
+trials; nominal N alone would then not determine its population.
+
+All completed program files are checkpointed. A timeout also retains partial
+records exposed by the acquisition layer. Interruptions/transport failures
+can lose the current program's drained records when that layer supplies no
+partial payload; completed files survive. Hardware abort is attempted before
+saving failure metadata, and an abort failure does not hide the original
+exception. No hardware acquisition was executed on the analysis computer.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoading --run
+```
+
+Offline verification: all 134 science/final-reference programs compile with
+QICK 0.2.133 and the saved q3 board, using at most **1,985/8,192 instructions**
+and **55,040/65,536 flux samples**. Instruction-path simulation exercised both
+classifier orientations, every dose, both feedback decisions and all four
+calibration-reference contexts; it checked pulse counts, equal preparation
+timestamps and exactly 664 saved words per paired science shot. This is an
+offline scheduling check, not hardware validation. A complete synthetic run
+saved/reanalyzed **157,200 records**, detected an injected local return with
+both final-readout axes, and rendered the summary plot. Unit tests reject
+carryover-only and broad-excitation signals, insufficient reset verification,
+IQ arithmetic overflow and calibration-confidence mistakes. Interrupt/timeout
+checks retain completed files, save supplied timeout partials, preserve the
+original error if board stopping fails, and restore prior q3 runner settings.
+Verification artifacts are in `/tmp/q3_repeated_loading_check/` on the analysis
+computer. Production TLS, reset and initialization files and q4 are unchanged.
+
+Final maintained-suite verification: **1,342 tests passed** in `tests/`,
+including 13 repeated-loading regressions. No measurement outcome is inferred
+from these software checks.
