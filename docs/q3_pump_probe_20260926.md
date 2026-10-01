@@ -6993,3 +6993,78 @@ also passes its complete 384,000-probe synthetic acquisition. Independent
 read-only review found no remaining consequential code or statistics issue
 and independently reproduced the 375-DAC paired phase result. These are
 software checks; the new polarity-paired TLS protocol awaits measurement.
+
+### Polarity-paired TLS run: the loss-profile difference survives the stricter control
+
+`q3_controlled_noise_paired_20261001T000851Z_22f82e50`, commit `aed9cada`,
+completed **128 programs / 640,000 probes** in **16 min 46 s**. Seeds were
+200–207. The scout selected **4.042 GHz**, with quiet comparison at
+**4.058 GHz**. The sampled no-noise maximum was at 4.044 GHz. All ten arms
+were present in each hardware loop, including both polarities of slow/fast
+noise and the shared g/e no-noise reference.
+
+**Question:** can the temporal pattern of deliberately applied qubit-frequency
+noise control the loss measured around a persistent resonance, when the
+commanded excursion and exposure distribution are matched? Slow chips last
+297.62 ns; fast chips last 37.20 ns. Both use the same nominal ±4-MHz endpoints.
+The endpoint-inverted pairs match the *full commanded DAC-code distribution*,
+including the changing DC compensation. This is an experiment on the
+qubit's interaction with the loss feature, not a demonstrated change in the
+TLS's population or microscopic properties.
+
+The comparison prescribed before this run uses upper **4.044 GHz**
+(scout +2 MHz) and lower **4.038 GHz** (scout −4 MHz):
+
+| Readout projection | D (per µs, ±1 SE) | Paired-block 95% t7 interval |
+| --- | --- | --- |
+| Pre-run | **+0.03525 ± 0.00435** | **[+0.02497, +0.04552]** |
+| Post-run | **+0.03545 ± 0.00435** | **[+0.02516, +0.04575]** |
+
+`D = (fast−slow at 4.044) − (fast−slow at 4.038)`. The constituent pooled
+signs also pass: upper **+0.01432 ± 0.00368 /µs**, lower **−0.02093 ±
+0.00301 /µs**. D is positive in **8/8 blocks**, upper is positive in 7/8,
+and lower is negative in 8/8. Both half-run profiles retain these signs.
+The confirmation rule therefore passes with either readout calibration.
+
+| Center frequency | No-noise rate | Slow-noise rate | Fast-noise rate |
+| --- | --- | --- | --- |
+| 4.038 GHz (prescribed lower flank) | 0.01346 ± 0.00345 | 0.03766 ± 0.00304 | 0.01673 ± 0.00279 |
+| 4.042 GHz (scout center, descriptive) | 0.05880 ± 0.00502 | 0.02711 ± 0.00297 | 0.05016 ± 0.00450 |
+| 4.044 GHz (prescribed upper site) | 0.06276 ± 0.00339 | 0.03684 ± 0.00471 | 0.05116 ± 0.00298 |
+
+Rates are the two-hold contrast-decay estimates in /µs, not independently
+fitted full exponential T1 curves. Slow-noise reduction is **41.3%** at the
+prescribed upper point and **53.9%** at the scout center. The enhancement of
+loss on the flanks matters: this reshapes the measured loss profile rather
+than establishing that the defect has disappeared. The quiet-site fast-minus-
+slow difference is **+0.00576 ± 0.00257 /µs**; its t7 interval includes zero,
+but do not claim exact absence of a background effect. The primary spatial
+contrast removes a uniform fast/slow offset.
+
+![Polarity-paired loss comparison](q3_controlled_noise_paired_20261001.png)
+
+**Interpretation:** the earlier profile response is reproducible after
+matching complete commanded-code distributions across the polarity pairs.
+This rules out their original aggregate histogram mismatch as the sole
+explanation. It does not establish identical delivered frequency trajectories,
+rule out flux filtering or nonlinear survival averaging, or demonstrate TLS
+saturation, coherent exchange or a Zeno mechanism. A mechanism claim requires
+quantitative comparison with those alternatives. The practical question of
+whether this programmed control can change the measured loss profile has a
+positive answer in this protocol.
+
+Audit: all **640,000 raw IQ records** reproduce every saved probability exactly,
+and the entire pre/post summaries reproduce numerically. Payload fidelity is
+**0.924 / 0.929**. All three saved source snapshots match the current recorded
+commit content and their byte hashes (Windows line endings normalized only
+for source-content comparison). All **128** paired waveform sets have exactly
+matched full DAC histograms; all four driven traces reconstruct from saved
+constant segments without clipping and retain ≥2 clocks of instruction issue
+margin. The independent continuous-IQ estimator reproduces the spatial sign
+pattern: fast-minus-slow is −0.02108 /µs at 4.038, +0.02659 /µs at 4.042,
+and +0.01598 /µs at 4.044 GHz. Per-polarity raw rows are retained.
+
+Frozen data, raw audit, paired-block analysis and inspected PNG/PDF figures:
+`~/.codex/visualizations/2026/10/01/q3-controlled-noise-paired/`. This entry
+records the result and the experimental question; it does not introduce a
+new acquisition protocol or make a mechanism claim.
