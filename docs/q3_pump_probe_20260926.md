@@ -7966,3 +7966,80 @@ under both final-reference analyses.
 Default science/reference binaries and timing match the preceding commit.
 All **1,356 maintained tests pass**; independent review found no actionable
 issues. These software checks do not establish a TLS return signal.
+
+### Repeated-loading pilot completed: no qualified written-population return
+
+`q3_repeated_loading_pilot_20261001T072326Z_00fce639`, source commit
+`1472472a`, completed in **6 min 36 s**. All **24 science programs / 28,800
+paired probe records**, plus **3,600 pre/mid/post reference records**, were
+saved. All three sites and both reversed blocks completed. This was an actual
+repeated-loading experiment, with no site-selection or reset-calibration abort.
+
+The gain-1200 calibration retained the conservative correction policy:
+held-out false-pi rates 1.6% payload / 3.0% loop and excited detection
+51.3% / 52.3%. Final-reference fidelities were **92.85% pre, 91.55% mid,
+92.18% post**, using the frozen pre axis; independent post refit was 92.55%.
+All four reference reports and all 24 science-cell quality gates passed.
+There were no out-of-range reset IQ records. The final ground cut retained
+**12,349/28,800 science probes (42.88%)**, with individual condition acceptance
+37.33--47.0%. Mean write-slot verification fractions for the 32-write arms
+were 40.46--43.48%, above the unchanged calibrated minimum 34.62%. These
+acceptance fractions are classifier responses, not absolute ground purity.
+
+**No site passes the prespecified pilot follow-up rule**, using either the
+initial or refitted final-readout axis. Define probe growth as the classified
+excited fraction at 40 us minus that at 0.1 us. The on-target effect is this
+growth after 32 writes minus growth after zero writes. The localized contrast
+additionally subtracts the corresponding effect after loading 16 MHz lower.
+
+| Probe frequency | On-target effect, percentage points | After detuned-loading subtraction, percentage points |
+| --- | ---: | ---: |
+| 4.026 GHz | +1.21 +/- 2.15 | +2.79 +/- 3.56 |
+| 4.037 GHz | +3.54 +/- 2.57 | +3.52 +/- 3.51 |
+| 4.046 GHz | +1.30 +/- 2.53 | +1.28 +/- 3.12 |
+
+Uncertainties are descriptive **one-standard-error** estimates, taking the
+larger of propagated shot noise and the two-block scatter estimate. They do
+not include all calibration/drift uncertainty and are not precise confidence
+limits on absolute populations. Refitting the final axis gives localized
+contrasts **+2.48 +/- 4.14, +2.36 +/- 4.02, -0.28 +/- 3.38 points**,
+preserving the absence of a qualified result.
+
+![Repeated-loading pilot contrasts](q3_repeated_loading_pilot_20261001.png)
+
+The largest first-pass on-target contrast is **+6.11 points at 4.037 GHz**,
+but this is not a clear pumped upward-excitation trace. The 32-write arm
+changes only **5.16% to 6.30%**, while the zero-write control decreases
+**9.85% to 4.89%**. In the reversed pass, both decline: **6.59% to 4.91%**
+after 32 writes and **7.14% to 4.49%** after zero writes. The localized
+contrast therefore changes from **+7.03 to +0.01 points**, and continuous-IQ
+on-target/localized contrasts reverse sign. This does not reproduce the
+earlier post-hoc hint as a clear accumulation effect. Unselected-shot
+on-target effects average -0.83, +1.83 and -1.17 points across the three
+sites; they also provide no large hidden upward-growth signal.
+
+![Details of the 4.037-GHz repeated-loading pilot](q3_repeated_loading_4037_20261001.png)
+
+**Decision:** do not expand these data into the 40--60 minute dose sweep,
+and do not implement erasure on the assumption that a population has been
+written. Close this pilot at these sites and this timing unless independent
+new evidence supplies a reason to reopen it. The original write--erase
+prerequisite remains unmet. No additional hardware command is introduced
+in this results update.
+
+This is a limited null: it tests three fixed frequencies and population
+surviving approximately **169.25 us from the last load to the probe excursion**,
+plus 0.5 us arrival, with a **179.75-us loading cycle**. It cannot exclude
+faster memory, smaller effects or storage at other frequencies. This pilot
+does not include a fresh loss spectrum, so it does not independently establish
+that the same defects remained at the chosen sites. Do not turn the result
+into a claim that individual TLSs cannot store energy.
+
+Audit: every raw cell reproduces its saved summary; independently computed
+conditional means and paired influence variances reproduce the growth/error
+values. All reference reports and both full analysis summaries reproduce,
+and all saved source-file hashes match. All science/reference configurations
+use the intended gain-1200 feedback and gain-1880 final readout. The raw
+snapshot, `audit_and_plot.py`, numerical audit and inspected PNG/PDF figures
+are saved under
+`~/.codex/visualizations/2026/10/01/q3_repeated_loading_pilot_20261001T072326Z_00fce639/`.
