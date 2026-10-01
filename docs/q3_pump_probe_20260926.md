@@ -7068,3 +7068,78 @@ Frozen data, raw audit, paired-block analysis and inspected PNG/PDF figures:
 `~/.codex/visualizations/2026/10/01/q3-controlled-noise-paired/`. This entry
 records the result and the experimental question; it does not introduce a
 new acquisition protocol or make a mechanism claim.
+
+### Next run: sweep the programmed switching duration
+
+The user requested the next measurement after the polarity-paired result.
+Implement an opt-in `--switching-sweep` mode in the existing controlled-noise
+runner, requiring `--long-hold --paired-polarity`. The question is whether the
+reproduced loss-profile contrast changes as the programmed chip duration is
+increased from 37 to 149 ns, using the same nominal ±4-MHz endpoints and
+paired full-code exposure control. This is a programmed-timescale test; the
+chip duration is not a calibrated correlation time. Adjacent equal signs
+extend individual constant-value runs.
+
+The three variable-chip settings are **16/32/64 fabric clocks =
+37.20/74.40/148.81 ns**. Every program compares one setting with a separately
+acquired **128-clock = 297.62-ns** reference and the shared off g/e arms.
+Each hardware loop retains ten subshots: off g/e and slow/variable-chip ×
+g/e × endpoint-inverse polarity. DC correction remains quantized on the
+same **16-clock grid** for all settings. Slow-reference waveforms are
+identical at fixed site/hold/seed across all three chip cases; their
+*measurements* remain separately indexed to capture acquisition drift.
+No global chip setting is mutated.
+
+Use a single scout anchored within ±8 MHz of **4.044 GHz**, followed by four
+centers: scout **−4, 0, +2 MHz** and the selected quieter **±16-MHz control**.
+All centers, the two existing 1.26488/10.19345-µs holds, and three chip cases
+are randomized within each block. Eight fresh seeds **300–307** give
+**192 programs / 960,000 probes** at 500 shots per condition, approximately
+**22–35 minutes** including scouting, calibration and NAS overhead. Passive
+1000-µs washout and the full corrected 40-µs return remain unchanged. The
+usual SS/scout output and one progress bar with ETA remain the terminal UI.
+
+**Analysis fixed before acquisition:**
+
+- Keep chip cases separate. Pool polarities within each preparation/hold
+  before the logarithmic contrast-decay estimate, as in the previous run.
+- For each chip setting, calculate
+  `D(chip) = (variable−slow at scout+2) − (variable−slow at scout−4)`.
+- The primary comparison is **E = D(16 clocks) − D(64 clocks)**. Calculate
+  it from pooled contrasts, using one common complete-block set across the
+  eight constituent rate terms and the full 16-component contrast covariance.
+  Retain the propagated shot-noise variance floor; do not drop measured
+  low-contrast seeds. Report a paired-block t interval and whether all eight
+  planned blocks are available.
+- Require the endpoint 37-vs-298-ns response itself to retain the previous
+  constituent signs before interpreting a positive E as a weakening of that
+  response at longer chips. E's sign is a test, not a fit constraint. The
+  74-ns point describes shape; no forced monotonic curve or extracted TLS
+  linewidth is produced. Check both pre/post readout classifications, actual
+  site rates and the quiet control.
+
+A resolved E would add a programmed timescale dependence to the already
+reproduced effect. A null would bound the change over this interval; it
+would not negate the earlier 37-vs-298-ns comparison. Even a clear crossover
+would require quantitative alternatives for delivered-waveform filtering,
+nonlinear averaging and qubit–TLS dynamics before a microscopic interpretation.
+This run is not an assertion of TLS saturation, coherent exchange or Zeno
+physics. Existing six-condition and ten-condition default behavior is kept;
+production spectroscopy, active reset and initialize settings are untouched.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold --paired-polarity --switching-sweep --anchor-ghz 4.044 --seed-offset 300
+```
+
+Validation before push: **1,322 tests pass**. All **192 programs** compile
+against the saved QICK 0.2.133 board configuration, with a maximum of
+**7,283/8,192 instructions**, **13,760 flux waveform samples**, and at least
+two clocks of instruction issue margin. A complete **960,000-probe synthetic
+acquisition** exercises streaming, decoding, storage, per-chip analysis,
+plotting, post-readout reclassification and restoration of the prior q4
+settings. The existing 640,000-probe paired acquisition also passes its
+offline end-to-end check. Independent review verifies unchanged existing
+schedules/waveforms and the pooled primary estimator with its full covariance.
+These checks validate implementation and resource fit; they are not hardware
+measurements or evidence for the proposed physical dependence.

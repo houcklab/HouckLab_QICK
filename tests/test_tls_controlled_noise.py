@@ -250,3 +250,98 @@ def test_paired_schedule_and_decoder_retain_every_polarity(noise):
         noise.plan(paired_polarity=True)
     with pytest.raises(ValueError,match='incomplete'):
         noise.rows_from_words(words[:-1],task,SimpleNamespace(payload=axis))
+
+
+def test_switching_sweep_matches_commands_but_separates_chip_durations(noise):
+    expected={16,32,64}
+    plan=noise.plan(long_hold=True,paired_polarity=True,switching_sweep=True,seed_offset=300)
+    tasks=noise.tasks(4.042,16,fabric_mhz=430.08,long_hold=True,
+                      paired_polarity=True,switching_sweep=True,seed_offset=300)
+    assert len(tasks)==plan['science_programs']==192
+    assert sum(t['shots']*len(t['conditions']) for t in tasks)==plan['total_science_probes']==960000
+    assert {t['offset_mhz'] for t in tasks}=={-4,0,2,16}
+    assert {t['fast_chip_cycles'] for t in tasks}==expected
+    for block in range(8):
+        group=[t for t in tasks if t['block']==block]
+        assert {(t['offset_mhz'],t['core_cycles'],t['fast_chip_cycles']) for t in group}=={
+            (o,c,k) for o in (-4,0,2,16) for c in (512,4352) for k in expected}
+    waves=[]
+    for chip in sorted(expected):
+        signs=noise.noise_signs(4352,'fast',seed=300,chip_cycles=chip)
+        assert len(signs)==4384 and np.sum(signs)==0
+        edges=np.flatnonzero(np.diff(signs[16:-16]))+1
+        assert all(v%chip==0 for v in edges)
+        w,report=noise.paired_waveforms(segments=[(.9,.3),(1.,20.)],park_gain=-1000,
+            target_gain=-500,endpoint_gains=(-541,-458),core_cycles=4352,fabric_mhz=430.08,
+            samples_per_clock=16,max_gain=1000,seed=300,dc_tick_quantum=16,fast_chip_cycles=chip)
+        assert report['patterns']['fast']['chip_us']==pytest.approx(chip/430.08)
+        assert report['patterns']['slow']['chip_us']==pytest.approx(128/430.08)
+        waves.append(np.sort(np.r_[w['fast'],w['fast_inverse']]))
+    for w in waves[1:]:np.testing.assert_array_equal(waves[0],w)
+    with pytest.raises(ValueError,match='paired'):
+        noise.plan(long_hold=True,switching_sweep=True)
+    with pytest.raises(ValueError,match='chip'):
+        noise.noise_signs(512,'fast',seed=300,chip_cycles=24)
+
+
+def sweep_rows():
+    rows=[]
+    for b in range(8):
+        for chip in (16,32,64):
+            for off in (-4,0,2,16):
+                for pattern in ('off','slow','fast'):
+                    rate=.025
+                    if pattern=='fast':rate+=(.008 if off==2 else -.006 if off==-4 else 0)*(16/chip)
+                    for hold in (1.26488095238,10.19345238095):
+                        for state in ('g','e'):
+                            for polarity in ((0,) if pattern=='off' else (-1,1)):
+                                rows.append(dict(block=b,offset_mhz=off,frequency_ghz=4.042+off/1000,
+                                    fast_chip_cycles=chip,pattern=pattern,state=state,polarity=polarity,
+                                    hold_us=hold,shots=500,pe=.08+(.7*np.exp(-hold*rate) if state=='e' else 0)))
+    return rows
+
+
+def test_switching_analysis_never_pools_different_speeds(noise):
+    summary=noise.analyze(sweep_rows())
+    assert summary['mode']=='switching_sweep'
+    assert [c['fast_chip_cycles'] for c in summary['comparisons']]==[16,32,64]
+    for c in summary['comparisons']:
+        upper=next(s for s in c['profile']['sites'] if s['offset_mhz']==2)
+        assert upper['rates']['fast']['rate_per_us']==pytest.approx(.025+.008*16/c['fast_chip_cycles'])
+    primary=summary['primary_comparison']
+    assert primary['valid'] and primary['complete_blocks']==8
+    assert primary['difference_per_us']==pytest.approx(.014*(1-.25))
+    assert primary['error_per_us']>0 and len(primary['ci95_t'])==2
+    partial=[r for r in sweep_rows() if r['block']<3]
+    assert noise.analyze(partial)['primary_comparison']['complete_blocks']==3
+    mixed=sweep_rows();mixed[0].pop('fast_chip_cycles')
+    with pytest.raises(ValueError,match='mixed'):
+        noise.analyze(mixed)
+
+
+def test_switching_primary_uses_pooled_contrasts_and_common_blocks(noise):
+    rows=sweep_rows()
+    # Unequal preparation contrasts and decay rates make the mean of individual
+    # log-rates differ from the required logarithm after pooling shots.
+    for r in rows:
+        if r['state']=='e':
+            extra=(.06 if r['block']==0 else 0) if (r['fast_chip_cycles'],r['offset_mhz'],r['pattern'])==(16,2,'fast') else 0
+            contrast=r['pe']-.08
+            r['pe']=.08+contrast*np.exp(-extra*r['hold_us'])*(.5 if r['block']==0 else 1.)
+    terms=[(16,2,'fast',1),(16,2,'slow',-1),(16,-4,'fast',-1),(16,-4,'slow',1),
+           (64,2,'fast',-1),(64,2,'slow',1),(64,-4,'fast',1),(64,-4,'slow',-1)]
+    holds=sorted({r['hold_us'] for r in rows});expected=0
+    for chip,off,pattern,weight in terms:
+        contrast=[]
+        for hold in holds:
+            means=[np.mean([r['pe'] for r in rows if (r['fast_chip_cycles'],r['offset_mhz'],r['pattern'],r['hold_us'],r['state'])==(chip,off,pattern,hold,state)]) for state in ('g','e')]
+            contrast.append(means[1]-means[0])
+        expected+=weight*np.log(contrast[0]/contrast[1])/(holds[1]-holds[0])
+    result=noise.analyze(rows)['primary_comparison']
+    assert result['difference_per_us']==pytest.approx(expected)
+    # Remove one acquisition from one endpoint: all terms must use the same
+    # seven complete blocks, even though other endpoint rows are present.
+    partial=[r for r in rows if not (r['block']==7 and r['fast_chip_cycles']==64 and r['offset_mhz']==2 and r['hold_us']==holds[-1])]
+    result=noise.analyze(partial)['primary_comparison']
+    assert result['complete_blocks']==7 and result['block_ids']==list(range(7))
+    assert not result['full_run']

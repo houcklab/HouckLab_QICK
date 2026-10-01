@@ -16,6 +16,9 @@ def make_program_class():
             self.endpoint_gains=tuple(endpoint_gains)
             self.logical_shots=int(task['shots'])
             paired=bool(task.get('paired_polarity',False))
+            chip=task.get('fast_chip_cycles')
+            if chip is not None and (not paired or chip not in runner.SWEEP_CHIPS):
+                raise ValueError('unsupported paired switching-sweep chip duration')
             if paired and task.get('playback')!='const_segments':
                 raise ValueError('paired polarity requires constant-segment long-hold mode')
             expected={(p,s,pol) for p in runner.PATTERNS for s in ('g','e')
@@ -52,7 +55,8 @@ def make_program_class():
                 endpoint_gains=self.endpoint_gains,core_cycles=self.task['core_cycles'],
                 fabric_mhz=g['f_fabric'],samples_per_clock=g['samps_per_clk'],
                 max_gain=ff_maxv(self,scaled=True),seed=self.task['seed'],
-                dc_tick_quantum=16 if segmented else 1)
+                dc_tick_quantum=16 if segmented else 1,
+                fast_chip_cycles=self.task.get('fast_chip_cycles'))
             park=sum(length for ch,_,_,length in self._ff_ramp_cache if ch==cfg['ff_ch'])
             total=park+(0 if segmented else sum(len(w) for w in self.waveforms.values()))
             if total>ff_envelope_samples(self): raise ValueError('noise waveform exceeds envelope memory')

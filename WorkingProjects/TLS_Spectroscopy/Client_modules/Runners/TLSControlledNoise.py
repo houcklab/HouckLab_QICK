@@ -27,6 +27,8 @@ CORE_CYCLES = (512, 1536)
 LONG_CORE_CYCLES = (512, 4352)
 GUARD_CYCLES = 16
 CHIP_CYCLES = {'fast': 16, 'slow': 128}
+SWEEP_CHIPS = (16,32,64)
+SWEEP_OFFSETS_MHZ = (-4,0,2)
 BLOCKS, SHOTS = 8, 500
 PRE_US = .05
 
@@ -38,14 +40,15 @@ def _validate_request(anchor_ghz=None,seed_offset=0):
         raise ValueError('seed offset must be an integer from 0 to 1000000')
 
 
-def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0,paired_polarity=False):
+def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0,paired_polarity=False,switching_sweep=False):
     _validate_request(anchor_ghz,seed_offset)
     if paired_polarity and not long_hold:raise ValueError('paired polarity requires --long-hold')
+    if switching_sweep and not paired_polarity:raise ValueError('switching sweep requires paired polarity and long hold')
     cores=LONG_CORE_CYCLES if long_hold else CORE_CYCLES
     return dict(qubit='q3', scout_ghz=[3.8, 4.3], scout_step_mhz=2.,
                 anchor_ghz=anchor_ghz,anchor_radius_mhz=8. if anchor_ghz is not None else None,
                 seed_offset=int(seed_offset),
-                offsets_mhz=list(OFFSETS_MHZ), control='quieter of ±16 MHz',
+                offsets_mhz=list(SWEEP_OFFSETS_MHZ if switching_sweep else OFFSETS_MHZ), control='quieter of ±16 MHz',
                 programmed_excursion_mhz=AMPLITUDE_MHZ,
                 chip_cycles=CHIP_CYCLES, core_cycles=list(cores),
                 long_hold=bool(long_hold),
@@ -55,10 +58,14 @@ def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0,paired_polarity=False)
                 noise_ensemble='eight frozen balanced realizations, repeated per hardware shot',
                 blocks=BLOCKS, shots_per_condition_per_block=SHOTS,
                 paired_polarity=bool(paired_polarity),
+                switching_sweep=bool(switching_sweep),
+                fast_chip_cycles=list(SWEEP_CHIPS) if switching_sweep else [16],
+                primary_comparison=('E = D(16 ticks) - D(64 ticks), D = (fast-slow at scout+2 MHz) - (fast-slow at scout-4 MHz); pooled contrasts, paired blocks, both calibrations' if switching_sweep else None),
                 commanded_histogram_match='full DAC codes across both polarities' if paired_polarity else 'additive offsets only',
-                science_programs=128, total_science_probes=640000 if paired_polarity else 384000,
+                science_programs=192 if switching_sweep else 128,
+                total_science_probes=960000 if switching_sweep else 640000 if paired_polarity else 384000,
                 reset='1000 us passive washout', return_us=40.,
-                approximate_minutes=('16–25' if paired_polarity else '12–20')+' including scout, calibration and NAS overhead',
+                approximate_minutes=('22–35' if switching_sweep else '16–25' if paired_polarity else '12–20')+' including scout, calibration and NAS overhead',
                 interpretation=__doc__)
 
 
@@ -79,10 +86,13 @@ def q3_context(tls, data_root):
             else: setattr(tls,k,v)
 
 
-def noise_signs(core_cycles, pattern, *, seed):
+def noise_signs(core_cycles, pattern, *, seed,chip_cycles=None):
     if pattern not in CHIP_CYCLES or core_cycles not in (*CORE_CYCLES,*LONG_CORE_CYCLES):
         raise ValueError('invalid noise pattern or duration')
-    chip=CHIP_CYCLES[pattern]
+    chip=CHIP_CYCLES[pattern] if chip_cycles is None else chip_cycles
+    if chip not in (16,32,64,128) or (pattern=='slow' and chip!=128):
+        raise ValueError('unsupported chip duration')
+    chip=int(chip)
     count=core_cycles//chip
     signs=np.r_[np.ones(count//2,dtype=int),-np.ones(count//2,dtype=int)]
     np.random.default_rng(300926+101*int(seed)+(pattern=='fast')).shuffle(signs)
@@ -91,7 +101,8 @@ def noise_signs(core_cycles, pattern, *, seed):
 
 
 def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
-              fabric_mhz, samples_per_clock, max_gain, seed, dc_tick_quantum=1,polarity=1):
+              fabric_mhz, samples_per_clock, max_gain, seed, dc_tick_quantum=1,polarity=1,
+              fast_chip_cycles=None):
     """Common correction on fabric ticks; additive endpoint offsets, no clipping.
 
     The off arm uses lossless run-length encoding of the SAME DC samples as
@@ -129,7 +140,8 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
         raise ValueError('DC correction contains an unplayable short segment')
     values={}; reports={}; pattern_segments={}
     for pattern in ('slow','fast'):
-        signs=int(polarity)*noise_signs(core_cycles,pattern,seed=seed)
+        chip=fast_chip_cycles if pattern=='fast' and fast_chip_cycles is not None else CHIP_CYCLES[pattern]
+        signs=int(polarity)*noise_signs(core_cycles,pattern,seed=seed,chip_cycles=chip)
         offset=np.where(signs<0,endpoint_gains[0]-target_gain,
                         np.where(signs>0,endpoint_gains[1]-target_gain,0))
         code=np.rint(dc+offset)
@@ -138,7 +150,7 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
         values[pattern]=np.repeat(code.astype(np.int16),int(samples_per_clock))
         edges=np.r_[0,np.flatnonzero(np.diff(code))+1,n]
         pattern_segments[pattern]=[(int(code[a]),int(b-a)) for a,b in zip(edges[:-1],edges[1:])]
-        reports[pattern]=dict(chip_us=CHIP_CYCLES[pattern]/fabric_mhz,
+        reports[pattern]=dict(chip_us=chip/fabric_mhz,
                               switches=int(np.count_nonzero(np.diff(signs))),
                               positive_cycles=int(np.sum(signs==1)),
                               negative_cycles=int(np.sum(signs==-1)),
@@ -204,20 +216,24 @@ def select_candidate(rows,*,anchor_ghz=None):
     return max(candidates,key=lambda c:c['depth_10us']+.25*c['depth_25us']) if candidates else None
 
 
-def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0,paired_polarity=False):
+def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0,paired_polarity=False,switching_sweep=False):
     _validate_request(seed_offset=seed_offset)
     if paired_polarity and not long_hold:raise ValueError('paired polarity requires long hold')
-    offsets=(*OFFSETS_MHZ,int(control_offset))
-    if len(set(offsets))!=8: raise ValueError('control must be separate from local profile')
+    if switching_sweep and not paired_polarity:raise ValueError('switching sweep requires paired polarity')
+    if switching_sweep and not math.isclose(float(fabric_mhz),430.08,rel_tol=1e-8):
+        raise ValueError('switching sweep requires the verified 430.08-MHz clock')
+    offsets=(*(SWEEP_OFFSETS_MHZ if switching_sweep else OFFSETS_MHZ),int(control_offset))
+    if len(set(offsets))!=len(offsets): raise ValueError('control must be separate from local profile')
     result=[]
     for block in range(BLOCKS):
-        settings=[(off,core) for off in offsets for core in (LONG_CORE_CYCLES if long_hold else CORE_CYCLES)]
+        settings=[(off,core,chip) for off in offsets for core in (LONG_CORE_CYCLES if long_hold else CORE_CYCLES)
+                  for chip in (SWEEP_CHIPS if switching_sweep else (None,))]
         np.random.default_rng(300930+block).shuffle(settings)
         patterns=list(PATTERNS)
         patterns=patterns[block%3:]+patterns[:block%3]
         if block%2: patterns.reverse()
         states=('g','e') if block%2==0 else ('e','g')
-        for off,core in settings:
+        for off,core,chip in settings:
             index=len(result)
             conditions=[dict(pattern=p,state=s) for p in patterns for s in states]
             if paired_polarity:
@@ -230,6 +246,7 @@ def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0,p
                                playback='const_segments' if long_hold else 'arb',
                                hold_us=(core+2*GUARD_CYCLES)/fabric_mhz,shots=SHOTS,
                                paired_polarity=bool(paired_polarity),conditions=conditions))
+            if chip is not None:result[-1]['fast_chip_cycles']=int(chip)
     return result
 
 
@@ -245,6 +262,7 @@ def rows_from_words(words, task, bundle):
         rows.append(dict(block=task['block'],offset_mhz=task['offset_mhz'],
                          frequency_ghz=task['frequency_ghz'],hold_us=task['hold_us'],
                          shots=task['shots'],pe=pe,**condition))
+        if 'fast_chip_cycles' in task:rows[-1]['fast_chip_cycles']=task['fast_chip_cycles']
     return rows
 
 
@@ -273,6 +291,13 @@ def _rate(rows):
 
 
 def analyze(rows):
+    if any('fast_chip_cycles' in r for r in rows):
+        if not all('fast_chip_cycles' in r for r in rows):raise ValueError('mixed sweep and ordinary rows')
+        return analyze_switching(rows)
+    return analyze_profile(rows)
+
+
+def analyze_profile(rows):
     result=dict(sites=[],interpretation='finite-window decay; programmed noise comparison, transfer uncalibrated',
                 estimator='all-seed pooled log contrast ratios; no contrast-based seed selection')
     if rows and all('polarity' in r for r in rows):
@@ -312,7 +337,79 @@ def analyze(rows):
     return result
 
 
+def switching_contrast(rows,terms):
+    """Pooled-log contrast on a common block set; no low-contrast seed censoring."""
+    from scipy.stats import t as student_t
+    selected=[[r for r in rows if (r['fast_chip_cycles'],r['offset_mhz'],r['pattern'])==(chip,off,pattern)]
+              for chip,off,pattern,weight in terms]
+    block_ids=sorted({r['block'] for r in rows})
+    per_block=[{b:_rate([r for r in group if r['block']==b]) for b in block_ids} for group in selected]
+    complete=[b for b in block_ids if all('contrast' in group[b] for group in per_block)]
+    result=dict(valid=False,complete_blocks=len(complete),block_ids=complete,full_run=len(complete)==BLOCKS)
+    pooled=[_rate([r for r in group if r['block'] in complete]) for group in selected]
+    if len(complete)<2 or not all(p['valid'] for p in pooled):return result
+    gradients=[]
+    for p,term in zip(pooled,terms):
+        gradients.extend(np.array([term[3],-term[3]])/(np.diff(p['holds_us'])[0]*np.array(p['contrast'])))
+    gradient=np.array(gradients)
+    values=np.array([np.concatenate([group[b]['contrast'] for group in per_block]) for b in complete])
+    shot_variance=np.concatenate([np.array(p['contrast_error'])**2 for p in pooled])
+    variance=max(float(gradient@np.cov(values,rowvar=False,ddof=1)@gradient/len(complete)),
+                 float(np.sum(gradient**2*shot_variance)))
+    estimate=sum(term[3]*p['rate_per_us'] for term,p in zip(terms,pooled))
+    error=float(np.sqrt(variance));half=float(student_t.ppf(.975,len(complete)-1)*error)
+    result.update(valid=True,difference_per_us=estimate,error_per_us=error,
+                  ci95_t=[estimate-half,estimate+half],estimator='difference of pooled-log rates with paired-block covariance and shot floor')
+    return result
+
+
+def analyze_switching(rows):
+    if any(r['fast_chip_cycles'] not in SWEEP_CHIPS for r in rows):raise ValueError('unknown sweep chip duration')
+    comparisons=[]
+    def terms(chip,scale=1):
+        return [(chip,2,'fast',scale),(chip,2,'slow',-scale),
+                (chip,-4,'fast',-scale),(chip,-4,'slow',scale)]
+    for chip in sorted({r['fast_chip_cycles'] for r in rows}):
+        group=[r for r in rows if r['fast_chip_cycles']==chip]
+        comparisons.append(dict(fast_chip_cycles=chip,programmed_chip_ns=chip/430.08*1000,
+                                profile=analyze_profile(group),profile_contrast=switching_contrast(group,terms(chip))))
+    return dict(mode='switching_sweep',comparisons=comparisons,
+                primary_comparison=switching_contrast(rows,terms(16)+terms(64,-1)),
+                interpretation='Dependence on programmed chip duration; no calibrated correlation time, TLS linewidth or mechanism inferred.')
+
+
+def plot_switching(output,summary):
+    import matplotlib.pyplot as plt
+    fig,axes=plt.subplots(1,3,figsize=(13,4.2),layout='constrained')
+    comparisons=summary['comparisons']
+    for off,color in ((2,'C0'),(-4,'C1')):
+        for pattern,style in (('fast','o-'),('slow','s--')):
+            points=[(c,next((s for s in c['profile']['sites'] if s['offset_mhz']==off),None)) for c in comparisons]
+            points=[(c,s) for c,s in points if s is not None and s['rates'][pattern]['valid']]
+            if points:axes[0].errorbar([c['programmed_chip_ns'] for c,s in points],
+                [s['rates'][pattern]['rate_per_us'] for c,s in points],
+                yerr=[s['rates'][pattern]['error_per_us'] for c,s in points],fmt=style,color=color,capsize=3,
+                label=f'{off:+d} MHz, '+('variable chip' if pattern=='fast' else '298 ns reference'))
+    good=[c for c in comparisons if c['profile_contrast']['valid']]
+    if good:axes[1].errorbar([c['programmed_chip_ns'] for c in good],
+        [c['profile_contrast']['difference_per_us'] for c in good],
+        yerr=[c['profile_contrast']['error_per_us'] for c in good],fmt='o-',capsize=3)
+    quiet=[(c,s) for c in comparisons for s in c['profile']['sites'] if abs(s['offset_mhz'])==16 and s['fast_minus_slow']['valid']]
+    if quiet:axes[2].errorbar([c['programmed_chip_ns'] for c,s in quiet],
+        [s['fast_minus_slow']['rate_difference_per_us'] for c,s in quiet],
+        yerr=[s['fast_minus_slow']['error_per_us'] for c,s in quiet],fmt='o-',capsize=3)
+    axes[0].set(title='Loss at the two prescribed sites',ylabel='Finite-window decay rate (1/µs)')
+    axes[0].legend(fontsize=8)
+    axes[1].set(title='Spatial contrast D',ylabel='D (1/µs)')
+    axes[2].set(title='Quiet-site control',ylabel='Variable chip − 298 ns rate (1/µs)')
+    for ax in axes:
+        ax.set_xlabel('Programmed variable-chip duration (ns)');ax.axhline(0,color='gray',ls='--');ax.grid(alpha=.15)
+    fig.suptitle('q3 switching-duration sweep; equal paired command exposure, ±1 SE')
+    fig.savefig(Path(output)/'switching_sweep.png',dpi=170);plt.close(fig)
+
+
 def plot_summary(output, summary):
+    if summary.get('mode')=='switching_sweep':return plot_switching(output,summary)
     import matplotlib.pyplot as plt
     fig,axes=plt.subplots(1,2,figsize=(11,4.5),layout='constrained')
     for p in PATTERNS:
@@ -373,12 +470,13 @@ def preflight(program):
 
 
 def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_hold=False,
-        anchor_ghz=None,seed_offset=0,paired_polarity=False):
-    request=plan(long_hold=long_hold,anchor_ghz=anchor_ghz,seed_offset=seed_offset,paired_polarity=paired_polarity)
+        anchor_ghz=None,seed_offset=0,paired_polarity=False,switching_sweep=False):
+    request=plan(long_hold=long_hold,anchor_ghz=anchor_ghz,seed_offset=seed_offset,paired_polarity=paired_polarity,switching_sweep=switching_sweep)
     data_root=Path(data_root)
     correction=localizer.checked_correction(data_root,correction_json)
     prefix='q3_controlled_noise_long_' if long_hold else 'q3_controlled_noise_'
     if paired_polarity:prefix='q3_controlled_noise_paired_'
+    if switching_sweep:prefix='q3_controlled_noise_switching_'
     folder=data_root/'q3'/(prefix+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path=folder/'manifest.json'
@@ -419,7 +517,7 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
             cfg=science_config(bundle,tls,compensation)
             qp.save_json(folder/'config.json',cfg)
             run_tasks=tasks(center,selected['control_offset_mhz'],fabric_mhz=soccfg['gens'][cfg['ff_ch']]['f_fabric'],
-                            long_hold=long_hold,seed_offset=seed_offset,paired_polarity=paired_polarity)
+                            long_hold=long_hold,seed_offset=seed_offset,paired_polarity=paired_polarity,switching_sweep=switching_sweep)
             requested=sorted({round(t['frequency_ghz']+o/1000,6) for t in run_tasks for o in (-AMPLITUDE_MHZ,0,AMPLITUDE_MHZ)})
             gains,realized=_integer_dc_grid(wide.parameters(),np.asarray(requested),tls)
             lookup=dict(zip(requested,map(int,gains)))
@@ -504,12 +602,13 @@ def main(argv=None):
     parser.add_argument('--anchor-ghz',type=float,help='select a fresh loss site within ±8 MHz of this frequency')
     parser.add_argument('--seed-offset',type=int,default=0,help='first noise-realization seed (0–1000000)')
     parser.add_argument('--paired-polarity',action='store_true',help='pair each waveform with its inverse; requires --long-hold')
+    parser.add_argument('--switching-sweep',action='store_true',help='37/74/149-ns chips against a 298-ns reference; requires long-hold and paired-polarity')
     args=parser.parse_args(argv)
     if args.run: run(data_root=args.data_root,correction_json=args.correction_json,
                      progress=not args.quiet,long_hold=args.long_hold,
-                     anchor_ghz=args.anchor_ghz,seed_offset=args.seed_offset,paired_polarity=args.paired_polarity)
+                     anchor_ghz=args.anchor_ghz,seed_offset=args.seed_offset,paired_polarity=args.paired_polarity,switching_sweep=args.switching_sweep)
     else: print(json.dumps(plan(long_hold=args.long_hold,anchor_ghz=args.anchor_ghz,
-                               seed_offset=args.seed_offset,paired_polarity=args.paired_polarity),indent=2))
+                               seed_offset=args.seed_offset,paired_polarity=args.paired_polarity,switching_sweep=args.switching_sweep),indent=2))
     return 0
 
 
