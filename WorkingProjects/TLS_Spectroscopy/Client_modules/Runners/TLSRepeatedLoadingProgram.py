@@ -73,6 +73,9 @@ class RepeatedLoadingProgram(OPXResetT1Program):
                 raise ValueError('flux gain outside signed DAC range')
         if int(cfg['ff_park_gain']) != -25146 or float(cfg['qubit_pi_freq']) != 4367.292:
             raise ValueError('q3 park configuration required')
+        if 'loading_final_readout_gain' in cfg and (
+                cfg['read_pulse_gain'] != 1200 or cfg['loading_final_readout_gain'] != 1880):
+            raise ValueError('reduced loading readout requires feedback gain 1200 and final gain 1880')
         self._sync_ticks = 0
         self.timing = {}
         super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
@@ -117,6 +120,10 @@ class RepeatedLoadingProgram(OPXResetT1Program):
         page, regs = self.reset_page, self.reset_regs
         label = f'LOAD_{index}'
         self.sync_all(self.us2cycles(runner.WASHOUT_US))
+        if 'loading_final_readout_gain' in self.cfg:
+            # Restore weak gain after the preceding trial's strong final readout.
+            self.regwi(self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain'),
+                       int(self.cfg['read_pulse_gain']))
         self.regwi(page, regs['slot'], runner.SLOTS-1)
         self.regwi(page, regs['dose'], self.task['writes'])
         self.label(label+'_SLOT')
@@ -151,6 +158,9 @@ class RepeatedLoadingProgram(OPXResetT1Program):
         if self.task.get('reference_state') is not None:
             self._set_payload_pulse(gain=self.cfg['qubit_pi_gain'] if self.task['reference_state']=='e' else 0)
             _pulse_pi_and_align(self)
+        if 'loading_final_readout_gain' in self.cfg:
+            self.regwi(self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain'),
+                       int(self.cfg['loading_final_readout_gain']))
         self._measure_raw()
         self._save_iq()
         self.sync_all(self.us2cycles(runner.GUARD_US))

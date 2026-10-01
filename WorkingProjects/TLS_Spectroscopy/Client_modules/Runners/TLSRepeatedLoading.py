@@ -70,7 +70,7 @@ def tasks(*, shots=SHOTS, pilot=False):
     return result
 
 
-def plan(*, pilot=False):
+def plan(*, pilot=False, reduced_readout_reset=False):
     frequencies = PILOT_FREQUENCIES_GHZ if pilot else FREQUENCIES_GHZ
     doses = (0, 32) if pilot else DOSES
     programs = len(frequencies)*len(doses)*2*BLOCKS
@@ -82,6 +82,10 @@ def plan(*, pilot=False):
                 science_programs=programs, probe_shots=programs*SHOTS*2,
                 reset='four fixed feedback opportunities plus final verification; no early exit',
                 reset_rounds=RESET_ROUNDS, return_us=40., washout_between_trials_us=WASHOUT_US,
+                feedback_readout_gain=1200 if reduced_readout_reset else 1880,
+                final_readout_gain=1880,
+                false_pi_training_limit=.02 if reduced_readout_reset else None,
+                false_pi_holdout_maximum=.04 if reduced_readout_reset else None,
                 washout_inside_train_us=0., raw_words_per_probe=RECORD_WORDS,
                 nominal_dose_note='actual reset confidence is recorded at every visit',
                 no_loss_site_selection=True, automatic_erase=False, automatic_full_run=False,
@@ -376,6 +380,15 @@ def build_program(soccfg, base, task, lookup, bundle):
     return RepeatedLoadingProgram(soccfg, cfg, bundle.payload, bundle.loop)
 
 
+def configure_readout(base, *, reduced_readout_reset=False):
+    cfg = dict(base)
+    if reduced_readout_reset:
+        if cfg.get('read_pulse_gain') != 1880:
+            raise ValueError('reduced loading reset requires the q3 final readout gain 1880')
+        cfg.update(read_pulse_gain=1200, loading_final_readout_gain=1880)
+    return cfg
+
+
 def plot_summary(folder, summary):
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True, constrained_layout=True)
@@ -401,13 +414,15 @@ def plot_summary(folder, summary):
     plt.close(fig)
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True, pilot=False):
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True, pilot=False,
+        reduced_readout_reset=False):
+    protocol = plan(pilot=pilot, reduced_readout_reset=reduced_readout_reset)
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
     prefix = 'q3_repeated_loading_pilot_' if pilot else 'q3_repeated_loading_'
     folder = data_root/'q3'/(prefix+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
-    manifest = dict(schema='q3.repeated-loading.v1', status='initializing', plan=plan(pilot=pilot),
+    manifest = dict(schema='q3.repeated-loading.v1', status='initializing', plan=protocol,
                     completed=[], references={}, created_at=datetime.now(timezone.utc).isoformat(),
                     correction_sha256=localizer.CORRECTION_SHA256,
                     commit=subprocess.check_output(['git','rev-parse','HEAD'], cwd=Path(__file__).parent, text=True).strip())
@@ -435,9 +450,11 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True, p
             gains, realized = _integer_dc_grid(dict(wide.parameters(), freq_step_mhz=1.), np.asarray(grid), tls)
             lookup = dict(zip(grid, map(int, gains)))
             cfg = diagonal.science_config(tls, tls._load_correction(str(correction), str(data_root)))
+            cfg = configure_readout(cfg, reduced_readout_reset=reduced_readout_reset)
             soc, soccfg = tls.makeProxy()
             qp.save_json(folder/'board_configuration.json', soccfg.get_cfg())
-            bundle = calibrate(soc, soccfg, folder)
+            bundle = calibrate(soc, soccfg, folder, readout_gain=protocol['feedback_readout_gain'],
+                               false_pi_limit=protocol['false_pi_training_limit'])
             # Existing calibrator only supplies thresholds; the fixed reset is
             # experiment-local and never changes the production reset policy.
             qp.save_json(folder/'config.json', cfg)
@@ -540,13 +557,16 @@ def main(argv=None):
     parser.add_argument('--plan', action='store_true')
     parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--pilot', action='store_true', help='short zero-versus-32 pilot at three sites; stops for review')
+    parser.add_argument('--reduced-readout-reset', action='store_true',
+                        help='gain-1200 feedback with conservative correction thresholds; final readout remains gain 1880')
     parser.add_argument('--data-root', default=str(localizer.DATA_ROOT))
     parser.add_argument('--correction-json')
     args = parser.parse_args(argv)
     if args.plan or not args.run:
-        print(json.dumps(plan(pilot=args.pilot), indent=2))
+        print(json.dumps(plan(pilot=args.pilot, reduced_readout_reset=args.reduced_readout_reset), indent=2))
     else:
-        run(data_root=args.data_root, correction_json=args.correction_json, progress=not args.quiet, pilot=args.pilot)
+        run(data_root=args.data_root, correction_json=args.correction_json, progress=not args.quiet,
+            pilot=args.pilot, reduced_readout_reset=args.reduced_readout_reset)
     return 0
 
 

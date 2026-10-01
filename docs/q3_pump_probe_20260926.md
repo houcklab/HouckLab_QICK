@@ -7892,3 +7892,77 @@ synthetic acquisition exercised all 8,000 calibration and 6,000 probe records
 with saved gain metadata and both final-reference analyses.
 The default gain-940 instruction-path checks also pass, as do all **1,354
 maintained tests**. Independent code review found no actionable issues.
+
+### Gain-1200 result: resume the bounded loading pilot
+
+`q3_repeated_loading_feedback_check_20261001T065222Z_d439f373` completed
+in **18.15 s**. Held-out pre strong-reference accuracy was 91.4%; post
+accuracy was 92.2% on the frozen axis and 93.6% after refitting. All arithmetic
+range checks passed. Fresh conservative classifiers had false-pi rates
+1.6% payload / 2.3% loop and excited-detection rates 51.8% / 49.6%.
+
+| Initial preparation | Sham: final classified excited | Feedback: final classified excited | Ground-verified feedback subset |
+| --- | ---: | ---: | ---: |
+| Ground/no pi | 8.0% | 8.4% | 5.77% (503/1000 accepted) |
+| Excited/pi | 39.7% | 10.0% | 5.45% (495/1000 accepted) |
+
+These are classification fractions, not absolute populations. Ground-start
+feedback is now close to its matched sham, while excited-start feedback gives
+a large reduction. The two selected feedback subsets are consistent within
+counting uncertainty. Block-level all-shot feedback fractions are 8.0/8.8%
+for ground starts and 12.2/7.8% for excited starts; selected fractions are
+5.69/5.84% and 7.66/3.46%, respectively. Refitting the strong final axis gives
+pooled all-shot fractions 7.8/9.6% and selected fractions 4.97/4.85%.
+
+The loop classifier has ground acceptance 0.510 and false-ground acceptance
+0.048, giving the unchanged loading confidence minimum **0.4176**. Each
+feedback block exceeds it: 0.492/0.514 for ground starts, 0.470/0.520 for
+excited starts. This supports proceeding to the bounded, ground-conditioned
+pilot; it does not establish perfect unconditional reset or validate behavior
+through an entire 32-visit loading train. The pilot retains those checks.
+
+![Gain-1200 feedback result](q3_loading_gain1200_feedback_20261001.png)
+
+Dots are blocks; error bars are pooled binomial standard errors. The raw
+snapshot and reproducible analysis, including checks of every saved fraction
+against raw IQ, are in
+`~/.codex/visualizations/2026/10/01/q3_repeated_loading_feedback_check_20261001T065222Z_d439f373/`.
+
+`--reduced-readout-reset` opts the existing loading runner into fresh gain-1200
+calibration and the conservative 2% training false-pi target / 4% held-out
+cap. All five reads in each of 33 resets use gain 1200. Each trial's terminal
+readout uses gain 1880, and the next trial restores gain 1200. Strong final
+references use the same readout history. All confidence, reference, carryover
+and locality requirements remain in place, and unselected outcomes and every
+reset IQ record remain saved. Production reset and ordinary runner defaults
+are unchanged.
+
+The **8--12 minute pilot** compares 0 versus 32 excited writes at 4.026,
+4.037 and 4.046 GHz. Every arm has 32 total visits; ground-prepared visits fill
+the zero-dose train. Matching arms load 16 MHz lower, without assuming those
+sites are quiet. Ground-verified probes compare 0.1 versus 40 us, and the full
+order is reversed in block two. There are 28,800 science probe records and
+3,600 pre/mid/post reference records. There is no automatic full run or erase.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoading --run --pilot --reduced-readout-reset
+```
+
+The scheduled loading cycle remains **179.748 us**, with **169.250 us** from
+the end of the last load to the probe excursion, plus 0.5 us arrival. The
+experiment can only reveal population memory surviving that gap. The short
+probe, zero dose, detuned loading and reversed repeat test carryover and broad
+effects; a positive pilot would still require confirmation and a dose study.
+
+Offline checks compile all 30 pilot/reference programs (maximum 1,989
+instructions). Instruction-path simulation exercises 104 paths with both
+classifier orientations and feedback outcomes, two hardware shots each,
+checking all 165 weak reads then the strong final read, gain restoration,
+unchanged timing, record boundaries and no late pulses under the conservative
+timing model. A synthetic end-to-end run saves all 32,400 records, uses fresh
+conservative calibration, and recovers only the injected 4.037-GHz return
+under both final-reference analyses.
+Default science/reference binaries and timing match the preceding commit.
+All **1,356 maintained tests pass**; independent review found no actionable
+issues. These software checks do not establish a TLS return signal.

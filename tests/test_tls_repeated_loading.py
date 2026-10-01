@@ -212,3 +212,28 @@ def test_pilot_flags_return_for_followup_without_claiming_dose_dependence(m):
     assert report['automatic_full_run'] is False
     assert not m.analyze(cells[:4],controls_valid=True,pilot=True)['pilot_followup_frequencies_ghz']
     assert not m.analyze(cells,controls_valid=False,pilot=True)['pilot_followup_frequencies_ghz']
+
+
+def test_reduced_reset_readout_preserves_final_gain_and_other_science_settings(m):
+    base = dict(read_pulse_gain=1880, read_length=3.5, ff_park_gain=-25146)
+    ordinary = m.configure_readout(base)
+    weak = m.configure_readout(base, reduced_readout_reset=True)
+    assert ordinary == base and ordinary is not base
+    assert base['read_pulse_gain'] == 1880
+    assert weak == dict(base, read_pulse_gain=1200, loading_final_readout_gain=1880)
+    p = m.plan(pilot=True, reduced_readout_reset=True)
+    assert p['feedback_readout_gain'] == 1200
+    assert p['final_readout_gain'] == 1880
+    assert p['false_pi_training_limit'] == .02
+    assert p['false_pi_holdout_maximum'] == .04
+    assert p['probe_shots'] == 28800 and p['reset_rounds'] == 4
+    assert m.plan()['feedback_readout_gain'] == 1880
+    assert m.plan()['false_pi_training_limit'] is None
+
+
+def test_reduced_readout_cli_reaches_runner(m, monkeypatch):
+    calls = []
+    monkeypatch.setattr(m, 'run', lambda **kwargs: calls.append(kwargs))
+    m.main(['--run', '--pilot', '--reduced-readout-reset'])
+    assert calls[0]['pilot'] is True
+    assert calls[0]['reduced_readout_reset'] is True
