@@ -6,7 +6,7 @@ Matched detuned trains, zero-dose trains and short probes test carryover.
 """
 import argparse
 from contextlib import redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import math
@@ -245,7 +245,29 @@ def reference_settings(cfg):
     return int(rounds), guard, int(prior_gain)
 
 
-def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3):
+def conservative_classifier(calibration, ground_i, ground_q, excited_i, excited_q, *, false_pi_limit):
+    """Raise only the correction threshold, using training shots exclusively."""
+    limit = float(false_pi_limit)
+    if not math.isfinite(limit) or not 0 < limit < .1:
+        raise ValueError('false-pi training limit must lie between zero and 0.1')
+    arrays = [np.asarray(a).ravel() for a in (ground_i, ground_q, excited_i, excited_q)]
+    if len({len(a) for a in arrays}) != 1 or len(arrays[0]) < 40:
+        raise ValueError('matched ground/excited IQ with at least 40 shots is required')
+    g = calibration.project(arrays[0], arrays[1])
+    e = calibration.project(arrays[2], arrays[3])
+    train = np.sort(g[::2])
+    threshold = max(calibration.excited_threshold, int(train[int(math.ceil((1-limit)*len(train)))-1]))
+    holdout = dict(calibration.holdout)
+    holdout.update(unconstrained_excited_threshold=int(calibration.excited_threshold),
+                   unconstrained_false_pi=float(calibration.holdout['false_pi']),
+                   false_pi_training_limit=limit, false_pi_training=float(np.mean(train > threshold)),
+                   false_pi=float(np.mean(g[1::2] > threshold)),
+                   excited_fire=float(np.mean(e[1::2] > threshold)),
+                   correction_policy='ground_tail_limit')
+    return replace(calibration, excited_threshold=threshold, holdout=holdout)
+
+
+def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3, false_pi_limit=None):
     """Fresh classifier with this experiment's readout train and zero-pi timing."""
     import json
     import qick
@@ -259,6 +281,10 @@ def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3):
     if not isinstance(attempts, int) or not 1 <= attempts <= 3:
         raise ValueError('calibration attempts must be an integer from one to three')
     cfg = calibration_config(readout_gain=readout_gain)
+    if false_pi_limit is not None:
+        if not math.isfinite(float(false_pi_limit)) or not 0 < float(false_pi_limit) < .1:
+            raise ValueError('false-pi training limit must lie between zero and 0.1')
+        cfg['loading_false_pi_training_limit'] = float(false_pi_limit)
     capacity = max_records(dmem_words_from_soccfg(soccfg), cfg.get('opx_record_base', 32), 2)
     for attempt in range(1, attempts+1):
         print('SS cal: q3 fixed-reset readout references', flush=True)
@@ -284,6 +310,9 @@ def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3):
                                 excited_i=e['i'], excited_q=e['q'])
             fits[context] = fit_classifier(g['i'], g['q'], e['i'], e['q'], context=context,
                                             **q3_benchmark_settings().calibration_options())
+            if false_pi_limit is not None:
+                fits[context] = conservative_classifier(fits[context], g['i'], g['q'], e['i'], e['q'],
+                                                        false_pi_limit=false_pi_limit)
         save_raw_calibration(out/'raw.npz', raw)
         g, e = raw['loop']['ground'], raw['loop']['excited']
         axis = ReferenceAxis.from_centers(g['i'].mean(), g['q'].mean(), e['i'].mean(), e['q'].mean())
@@ -293,11 +322,17 @@ def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3):
                                         created_at=datetime.now(timezone.utc).isoformat(),
                                         config_sha256=hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest(),
                                         shots_per_state_per_context=2000,
+                                        false_pi_training_limit=false_pi_limit,
+                                        false_pi_holdout_maximum=2*false_pi_limit if false_pi_limit is not None else None,
                                         fixed_reset_rounds=RESET_ROUNDS, guard_us=GUARD_US,
                                         ground_reference_plays_zero_gain_waveform=True))
         save_calibration(out/'calibration.json', bundle)
         try:
             qp.validate_reference(bundle)
+            if false_pi_limit is not None:
+                for context in ('payload', 'loop'):
+                    if fits[context].holdout['false_pi'] > 2*false_pi_limit:
+                        raise ValueError(f'{context} false-pi holdout exceeds {2*false_pi_limit:.3f}')
         except ValueError:
             if attempt == attempts:
                 raise

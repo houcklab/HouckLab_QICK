@@ -30,12 +30,14 @@ def tasks():
     return refs('pre', ('g', 'e')) + science + refs('post', ('e', 'g'))
 
 
-def plan():
+def plan(*, conservative=False):
     return dict(qubit='q3', feedback_readout_gain=940, final_readout_gain=1880,
                 feedback_rounds=4, weak_readouts_per_trial=5,
                 shots_per_condition_per_block=SHOTS, blocks=2,
                 total_probe_shots=12*SHOTS, calibration_shots=8000,
                 recovery_us=1000., guard_us=20., approximate_minutes='1--3',
+                false_pi_training_limit=.02 if conservative else None,
+                false_pi_holdout_maximum=.04 if conservative else None,
                 automatic_loading=False, automatic_calibration_install=False,
                 note='Compare all shots and ground-conditioned shots; classification fractions are not absolute reset fidelity.')
 
@@ -121,7 +123,7 @@ def analyze(raw, entries, bundle):
                 automatic_loading=False, interpretation=plan()['note'])
 
 
-def run(*, data_root=loading.localizer.DATA_ROOT, progress=True):
+def run(*, data_root=loading.localizer.DATA_ROOT, progress=True, conservative=False):
     from tqdm.auto import tqdm
     from . import TLSSpectroscopy as tls
     from .TLSRepeatedLoadingProgram import LoadingFeedbackCheckProgram
@@ -132,7 +134,7 @@ def run(*, data_root=loading.localizer.DATA_ROOT, progress=True):
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path = folder/'manifest.json'
-    manifest = dict(schema='q3.repeated-loading-feedback-check.v1', plan=plan(), status='initializing',
+    manifest = dict(schema='q3.repeated-loading-feedback-check.v1', plan=plan(conservative=conservative), status='initializing',
                     completed=[], created_at=datetime.now(timezone.utc).isoformat(),
                     commit=subprocess.check_output(['git','rev-parse','HEAD'], cwd=Path(__file__).parent, text=True).strip())
     loading.qp.save_json(path, manifest)
@@ -141,7 +143,8 @@ def run(*, data_root=loading.localizer.DATA_ROOT, progress=True):
         with loading.noise.q3_context(tls, data_root):
             soc, soccfg = tls.makeProxy()
             loading.qp.save_json(folder/'board_configuration.json', soccfg.get_cfg())
-            bundle = loading.calibrate(soc, soccfg, folder, readout_gain=940, attempts=1)
+            bundle = loading.calibrate(soc, soccfg, folder, readout_gain=940, attempts=1,
+                                       false_pi_limit=.02 if conservative else None)
             manifest['status'] = 'acquiring'
             capacity = max_records(dmem_words_from_soccfg(soccfg), 32, RECORD_WORDS)
             raw = {}
@@ -193,12 +196,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--quiet', action='store_true')
+    parser.add_argument('--conservative', action='store_true', help='calibrate a 2%% false-correction target on training ground shots')
     parser.add_argument('--data-root', default=str(loading.localizer.DATA_ROOT))
     args = parser.parse_args(argv)
     if args.run:
-        run(data_root=args.data_root, progress=not args.quiet)
+        run(data_root=args.data_root, progress=not args.quiet, conservative=args.conservative)
     else:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(conservative=args.conservative), indent=2))
     return 0
 
 

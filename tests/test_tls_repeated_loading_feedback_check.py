@@ -55,3 +55,31 @@ def test_feedback_decode_and_no_postselection_only_success():
     assert m.summarize_records(w, axis, bundle, feedback=False)['mean_feedback_pi_count'] == 0.
     w[0, 0] = 32768
     assert m.summarize_records(w, axis, bundle, feedback=True)['feedback_iq_out_of_range'] == 1
+
+
+def test_conservative_threshold_uses_training_ground_tail_and_reports_holdout():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSRepeatedLoading as loading
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.classifier import fit_classifier
+    rng = np.random.default_rng(156)
+    g = rng.normal(0, 1000, 4000).astype(int)
+    e = rng.normal(1700, 1000, 4000).astype(int)
+    q = np.zeros_like(g)
+    c = fit_classifier(g, q, e, q, context='loop', ground_confidence_fidelity=.7)
+    careful = loading.conservative_classifier(c, g, q, e, q, false_pi_limit=.02)
+    assert careful.ground_threshold == c.ground_threshold
+    assert careful.excited_threshold > c.excited_threshold
+    assert careful.holdout['false_pi'] < .04
+    assert careful.holdout['false_pi'] < c.holdout['false_pi']/3
+    assert careful.holdout['excited_fire'] > .2
+    changed = g.copy(); changed[1::2] = 20000
+    check = loading.conservative_classifier(c, changed, q, e, q, false_pi_limit=.02)
+    assert check.excited_threshold == careful.excited_threshold
+    assert check.holdout['false_pi'] == 1.
+
+
+def test_conservative_plan_is_opt_in_and_leaves_existing_calibration_policy():
+    m = module()
+    assert m.plan()['false_pi_training_limit'] is None
+    assert m.plan(conservative=True)['false_pi_training_limit'] == .02
+    assert m.plan(conservative=True)['false_pi_holdout_maximum'] == .04
+    assert not m.plan(conservative=True)['automatic_loading']

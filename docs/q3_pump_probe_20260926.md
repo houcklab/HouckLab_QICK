@@ -7773,3 +7773,61 @@ maximum program size was 212 instructions. A full synthetic run acquired and
 reanalyzed all 6,000 probe records with the two independent reference axes.
 **1,350 maintained tests passed**. Hardware feedback performance remains to
 be measured.
+
+### Half-gain feedback result: correction threshold is too permissive
+
+`q3_repeated_loading_feedback_check_20261001T060037Z_c6f7f91f` completed
+all 12 programs in **18.5 s**, including the fresh weak-readout calibration.
+Strong final-reference held-out accuracy was 91.4% before and 93.0% after;
+the post-refitted axis gives the same qualitative result. No feedback IQ was
+outside the arithmetic range. Pooled across the two 500-shot blocks:
+
+| Initial preparation | Matched sham: final classified excited | Feedback: final classified excited |
+| --- | ---: | ---: |
+| Ground/no pi | 5.8% | 21.8% |
+| Excited/pi | 32.0% | 21.4% |
+
+These are readout classification fractions, not calibrated absolute excited
+populations. Feedback harms the ground-prepared condition reproducibly
+(22.2/21.4% versus sham 6.2/5.4% across blocks). It reduces the initially
+excited signal, but does not produce a satisfactory all-shot reset.
+Conditioning on the fifth weak readout gives 7.4% and 8.2% final excited
+classification for the feedback arms, accepting only 41.7% and 36.8% of shots.
+That selected subset does not establish successful unconditional reset.
+
+![Half-gain feedback result](q3_loading_feedback_20261001.png)
+
+Bars pool both blocks; dots show individual blocks. Error bars are binomial
+shot-noise standard errors, not estimates of slow drift uncertainty.
+
+The weak classifier's held-out false-pi rates were **19.5% payload / 23.1%
+loop**, with excited detection 77.9/75.9%. Its threshold maximized ordinary
+state discrimination; such false-positive rates are costly when they trigger
+physical correction pulses. Ground-prepared feedback shots received about
+1.2 inferred corrections on average. This identifies a concrete threshold
+policy to test rather than accepting the postselected subset as a fix.
+
+Offline rethresholding uses only the even-index training ground references
+to bound nominal-ground false triggering at 2%. Odd-index holdout estimates
+are then **1.4/2.0% false pi**, with **29.8/31.0% excited detection**. This is
+a sensitivity tradeoff, not a counterfactual prediction of hardware reset:
+changing decisions changes subsequent qubit states. The next short run repeats
+the identical benchmark using fresh calibration under that policy.
+
+`--conservative` raises only the correction threshold, retaining the original
+ground-verification threshold. It requires the existing minimum excited
+detection/ground acceptance and additionally rejects a calibration whose
+held-out false-pi rate exceeds 4%. Training shots select the threshold;
+held-out shots only assess it. Both thresholds, the prior unconstrained
+threshold and the policy are saved. The current experiment and production
+defaults are untouched; there is no automatic loading run.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoadingFeedbackCheck --run --conservative
+```
+
+Allow **1--3 min**; the preceding hardware check took under 20 s. Software
+verification includes a full synthetic conservative run with real offline
+QICK compilation, held-out rejection before feedback, training/holdout
+separation tests and sign/arithmetic review. **1,352 maintained tests passed**.
