@@ -192,3 +192,45 @@ class RepeatedLoadingProgram(OPXResetT1Program):
         self._finish_stream()
         self._end_park_lifecycle()
         self.end()
+
+
+class LoadingFeedbackCheckProgram(OPXResetT1Program):
+    """Park-only test of the loading reset, with an independent final readout."""
+
+    record_words = 12  # five weak readouts plus the final strong readout
+    _fixed_reset = RepeatedLoadingProgram._fixed_reset
+    _save_iq = RepeatedLoadingProgram._save_iq
+
+    def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        if cfg.get('do_ff') or not cfg.get('opx_persistent_park') or not cfg.get('opx_hard_flux_steps'):
+            raise ValueError('feedback check requires persistent hard park without excursions')
+        if cfg.get('read_pulse_gain') != 940 or cfg.get('ff_park_gain') != -25146:
+            raise ValueError('feedback check requires q3 park and readout gain 940')
+        if cfg['check_initial_state'] not in ('g', 'e') or cfg.get('check_reference_state') not in (None, 'g', 'e'):
+            raise ValueError('unknown feedback-check preparation')
+        expected_gain = cfg['qubit_pi_gain'] if cfg['check_feedback'] else 0
+        if cfg.get('reset_pi_gain') != expected_gain:
+            raise ValueError('feedback and sham must use their specified correction gains')
+        super().__init__(soccfg, cfg, payload_calibration, loop_calibration)
+
+    def decode_dmem_records(self, words, expected_records=None):
+        from .TLSRepeatedLoadingFeedbackCheck import decode_records
+        return decode_records(words, expected_records)
+
+    def _emit_body(self):
+        # The base benchmark reserves a ground-threshold scratch register;
+        # this fixed-reset helper uses it for its single branch threshold.
+        self.reset_regs['threshold'] = self.reset_regs['ground']
+        self.sync_all(self.us2cycles(self.reset_config.inter_shot_delay_us))
+        self._set_payload_pulse(gain=self.cfg['qubit_pi_gain'] if self.cfg['check_initial_state']=='e' else 0)
+        _pulse_pi_and_align(self)
+        ro_page, ro_gain = self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain')
+        self.regwi(ro_page, ro_gain, 940)
+        self._fixed_reset('CHECK_RESET')
+        # A matched zero/pi slot supplies independent final-readout references.
+        self._set_payload_pulse(gain=self.cfg['qubit_pi_gain'] if self.cfg.get('check_reference_state')=='e' else 0)
+        _pulse_pi_and_align(self)
+        self.regwi(ro_page, ro_gain, 1880)
+        self._measure_raw()
+        self._save_iq()
+        self.sync_all(self.us2cycles(runner.GUARD_US))

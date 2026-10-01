@@ -7706,3 +7706,70 @@ A synthetic acquisition saved all 16,000 records and completed despite
 deliberately rejected profiles; a transport-failure check retained the first
 state and stopped without retry. **1,347 maintained tests passed**. These
 checks do not establish physical readout-train behavior on q3.
+
+### Readout-train result: reduced drive restores reference contrast
+
+`q3_repeated_loading_reset_check_20261001T053505Z_dafb9724` completed all
+16 profile/block pairs in **47.6 s**. The useful discriminator is the final
+g/pi accuracy on held-out shots, `(1 - false_pi + excited_fire)/2`, rather
+than the training-set peak fidelity or the binary loop-acceptance flag.
+
+| Preceding readouts | Block 1 held-out accuracy | Block 2 held-out accuracy |
+| --- | ---: | ---: |
+| None | 90.2% | 91.0% |
+| One, gain 1880, 20-us guard | 82.4% | 84.2% |
+| Two, gain 1880, 20-us guard | 77.0% | 75.0% |
+| Four, gain 1880, 20-us guard | 69.8% | 64.4% |
+| Four, gain 1880, 50-us guard | 68.6% | 70.0% |
+| Four, gain 1880, 100-us guard | 71.4% | 68.4% |
+| Four, zero preceding drive, 20-us guard | 92.0% | 92.8% |
+| Four, gain 940, 20-us guard | 91.0% | 90.6% |
+
+Every final readout used gain 1880. The reversed second block reproduces the
+loss of reference contrast with repeated full-strength readout and its
+recovery with weaker preceding drive. Longer guards alone do not restore it.
+This points to a drive-dependent measurement-history problem. It does not
+separate heating, leakage, preparation changes or all possible readout-chain
+effects, and it does **not** establish discrimination at a weak final readout
+or the fidelity of active reset. No TLS was loaded in this diagnostic.
+
+![Readout-train comparison](q3_readout_train_20261001.png)
+
+Plot error bars are binomial standard errors for the held-out shots, conditional
+on each fitted threshold. Raw data and the reproducible analysis are copied to
+`~/.codex/visualizations/2026/10/01/q3-readout-train-check/`.
+
+The next bounded test, `TLSRepeatedLoadingFeedbackCheck`, calibrates both
+feedback contexts freshly at gain 940, using one calibration attempt and the
+unchanged confidence gate. It then compares the actual four-round fixed
+feedback helper with a matched sham that plays only zero-gain correction
+pulses. Both receive five gain-940 readouts, the same pulse lengths and
+20-us guards. Nominal ground and excited initial preparations are both tested.
+An independent gain-1880 readout follows the weak verification. Pre/post
+ground/pi references use the same five-readout history and a final zero/pi
+preparation slot. This slot also remains present at zero gain in science arms.
+
+There are two reversed blocks, 500 shots per condition per block, 4,000
+feedback/sham trials and 2,000 final-reference trials. All 12 raw IQ words per
+trial are saved. Analysis retains all-shot and ground-conditioned outcomes,
+verification acceptance and inferred correction counts. It reports readout
+classification fractions, not an absolute ground-state purity. The matched
+sham tests whether feedback adds benefit beyond readouts and elapsed time.
+Estimated duration is **1--3 min** including calibration and transport.
+The run stops for review; it never starts TLS loading automatically.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoadingFeedbackCheck --run
+```
+
+The original loading runner still defaults to gain 1880; only the new check
+opts into gain 940. Production reset, initialization and TLS scans are
+unchanged. Offline QICK compilation and instruction-path simulation exercised
+all 12 tasks, both classifier orientations and both feedback outcomes for two
+successive trials each. Checks verified five weak/one strong readouts, correct
+gain restoration, correction pulses, fixed timestamps and 12-word records;
+maximum program size was 212 instructions. A full synthetic run acquired and
+reanalyzed all 6,000 probe records with the two independent reference axes.
+**1,350 maintained tests passed**. Hardware feedback performance remains to
+be measured.

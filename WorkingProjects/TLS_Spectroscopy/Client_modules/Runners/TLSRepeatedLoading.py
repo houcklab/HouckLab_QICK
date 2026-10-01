@@ -219,10 +219,12 @@ def reference_tasks(phase):
                  probes_us=[.1], reference_state=s) for s in ('g', 'e')]
 
 
-def calibration_config():
+def calibration_config(*, readout_gain=1880):
+    if not isinstance(readout_gain, (int, np.integer)) or not 1 <= readout_gain <= 1880:
+        raise ValueError('calibration readout gain must be an integer from 1 to 1880')
     cfg = qp.calibration_config()
     cfg.update(opx_feedback_syncdelay_us=GUARD_US, opx_loop_recovery_us=GUARD_US,
-               opx_inter_shot_delay_us=1000.)
+               opx_inter_shot_delay_us=1000., read_pulse_gain=int(readout_gain))
     return cfg
 
 
@@ -243,7 +245,7 @@ def reference_settings(cfg):
     return int(rounds), guard, int(prior_gain)
 
 
-def calibrate(soc, soccfg, folder):
+def calibrate(soc, soccfg, folder, *, readout_gain=1880, attempts=3):
     """Fresh classifier with this experiment's readout train and zero-pi timing."""
     import json
     import qick
@@ -254,9 +256,11 @@ def calibrate(soc, soccfg, folder):
     from ..active_reset_OPX.classifier import fit_classifier
     from ..active_reset_OPX.analysis import ReferenceAxis
     from ..active_reset_OPX.benchmark_settings import q3_benchmark_settings
-    cfg = calibration_config()
+    if not isinstance(attempts, int) or not 1 <= attempts <= 3:
+        raise ValueError('calibration attempts must be an integer from one to three')
+    cfg = calibration_config(readout_gain=readout_gain)
     capacity = max_records(dmem_words_from_soccfg(soccfg), cfg.get('opx_record_base', 32), 2)
-    for attempt in range(1, 4):
+    for attempt in range(1, attempts+1):
         print('SS cal: q3 fixed-reset readout references', flush=True)
         out = Path(folder)/f'calibration_pre_{attempt}'
         out.mkdir()
@@ -295,7 +299,7 @@ def calibrate(soc, soccfg, folder):
         try:
             qp.validate_reference(bundle)
         except ValueError:
-            if attempt == 3:
+            if attempt == attempts:
                 raise
             continue
         print('SS cal complete.', flush=True)
