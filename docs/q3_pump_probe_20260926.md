@@ -7417,3 +7417,91 @@ environment. That unscoped collection was interrupted. The maintained
 `tests/` suite and the separate real-QICK compiler checks above pass.
 Verification files are in `/tmp/q3_afterglow_diagonal_check/` on the analysis
 computer.
+
+### Diagonal afterglow screen completed: no qualified return site
+
+`q3_afterglow_diagonal_20261001T025927Z_a2f0ad74`, source commit
+`d34eadff`, completed in **27 min 50 s** (September 30, 22:59–23:27 EDT).
+All **122 science programs / 292,800 paired science records**, plus
+**10,800 reference records**, were saved. All 61 planned frequencies and
+both reversed acquisition orders completed. Initial, midpoint and final
+reference checks passed; this was not a site-selection or reset-calibration
+abort. First-readout fidelity was approximately **0.936 / 0.922 / 0.925**;
+the separately fitted final-readout fidelities were **0.808 / 0.904 / 0.820**.
+These meet the defined gates but should not be described as identical,
+unchanging readout quality.
+
+**No frequency passes the preregistered return-screen rule**, under either
+initial- or final-reference reclassification. The initial classifier gives
+valid count coverage for all 122 long-probe/site comparisons; the final
+classifier gives 120/122. All reported probabilities below are classified
+excited fractions, not corrected absolute qubit populations.
+
+There is a broad hot-minus-cold offset, but it is already present at the
+shortest probe. The equal-weight means across the measured frequencies and
+two orders are descriptive averages:
+
+| Probe hold | Hot minus cold, percentage points | Increase above 0.1-us baseline |
+| --- | --- | --- |
+| 0.1 us | +4.05 | 0 |
+| 10 us | +4.24 | +0.19 |
+| 40 us | +3.23 | −0.82 |
+
+The final classifier gives corresponding baseline/10/40-us excesses of
+**+2.60 / +3.00 / +2.16 percentage points**, preserving the absence of
+clear average growth. Continuous, unthresholded final IQ gives the same
+qualitative pattern. Band averages are not a substitute for the local
+return test and are not quoted with an independent-frequency confidence
+interval.
+
+The first-readout ground cut accepts roughly **35% of hot-loaded shots**
+versus **90% of cold-loaded shots** (median 140.5/400 hot shots with the
+initial cut). Roughly 60% of hot shots classify excited at that first
+measurement, so false-ground assignments can leave appreciable residual
+excitation in the selected subset. Tightening the excited-reference tail
+cut from 5% to 2.5% reduces the band-mean short-probe offset from **4.05 to
+2.10 points**; a 1% cut gives **1.58 points**, but retains only a median
+46 hot shots. These are descriptive sensitivity checks, not optimized
+candidate selection. They support carryover/selection as an explanation
+for much of the broad offset; they do not prove a unique mechanism or
+justify a strong null bound at the tighter cut.
+
+![Same-frequency return screen and largest inspected growth hint](q3_afterglow_diagonal_20261001.png)
+
+Two post-hoc hints are retained without upgrading the screening decision:
+
+- **4.037 GHz, 40 us:** growth above baseline is **+10.13 ± 4.32 points**
+  (descriptive 1 SE), or 2.35 SE, below the fixed 3.35-SE threshold. The
+  two order estimates of growth are +9.41 and +10.85 points, but their
+  10-us behavior disagrees. The final classifier gives +11.65 ± 4.56
+  points; this is the same raw data, not an independent replication.
+- **4.026 GHz:** initial-classifier hot-minus-cold is +10.33 ± 3.25
+  points at 10 us and +9.33 ± 3.15 points at 40 us. Their baseline-subtracted
+  growth estimates are only +8.34 ± 4.37 and +7.33 ± 5.25 points. With the
+  final classifier, growth falls to +3.90 ± 4.67 and +2.61 ± 4.51 points.
+  It therefore also fails the fixed rule. Its proximity to the previously
+  tested 4.026-GHz weak site does not establish identity of the defect or
+  turn the earlier null into a positive result.
+
+At the recent switching-sweep center, **4.046 GHz**, the initial-classifier
+10/40-us growth estimates are +3.45 ± 7.32 / +2.46 ± 7.13 points: unresolved.
+The reproduced switching result and energy storage remain separate questions.
+
+**Decision:** do not launch a two-frequency map on these results. The
+same-frequency prerequisite is still unmet. This is no evidence for a
+qualified, localized return in this band and timing window, not evidence
+that every TLS is memoryless. The minimum 40-us return plus readout/guard
+can erase faster storage, and the actual hot-herald acceptance limits
+sensitivity. Any later focused test of the post-hoc hints must be explicitly
+independent and include off-target loading/readout/carryover controls;
+do not weaken the original screen threshold after inspecting the data.
+No new acquisition mode is introduced in this results update.
+
+Audit: all three source snapshots match their saved hashes and the committed
+source after newline normalization. Every raw science record reproduces its
+saved summary, all pre/mid/post reference reports reproduce, and both full
+initial/final analysis summaries reproduce. An independently constructed
+conditional-mean influence calculation at 4.037 GHz agrees with the saved
+growth and paired covariance. Frozen raw data, reproducible audit,
+threshold sensitivity, and inspected PNG/PDF figures are in
+`~/.codex/visualizations/2026/10/01/q3-afterglow-diagonal/`.
