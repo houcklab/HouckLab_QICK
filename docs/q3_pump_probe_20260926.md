@@ -7143,3 +7143,93 @@ offline end-to-end check. Independent review verifies unchanged existing
 schedules/waveforms and the pooled primary estimator with its full covariance.
 These checks validate implementation and resource fit; they are not hardware
 measurements or evidence for the proposed physical dependence.
+
+### Switching-duration sweep completed: a resolved endpoint change
+
+`q3_controlled_noise_switching_20261001T010015Z_4d04042a`, source commit
+`5bbeec59`, completed all **192 programs / 960,000 probes** in **24 min 6 s**
+(21:00–21:24 EDT on September 30). The fresh scout selected **4.046 GHz**;
+the other science sites were **4.042, 4.048 and 4.062 GHz**. All eight
+planned blocks (seeds 300–307) contribute; no measured seed was dropped.
+
+The prespecified statistic is
+`D = (variable−298 ns rate at 4.048) − (variable−298 ns rate at 4.042)`.
+Positive D means the two waveforms give different shapes across the line,
+after cancelling a frequency-independent rate offset. These are finite-window
+contrast-decay estimates from 1.26488/10.19345-us holds, not full T1 fits.
+
+| Variable chip | D (/us), ±1 SE | 95% paired-block t7 interval |
+| --- | --- | --- |
+| 37.20 ns | +0.02641 ± 0.00427 | [+0.01631, +0.03652] |
+| 74.40 ns | +0.01571 ± 0.00625 | [+0.00093, +0.03049] |
+| 148.81 ns | +0.00791 ± 0.00458 | [−0.00292, +0.01873] |
+
+The primary **E = D(37 ns) − D(149 ns)** is
+**+0.01850 ± 0.00585 /us**, with **95% t7 interval
+[+0.00466, +0.03235] /us** (two-sided t comparison p=0.0159). Reclassifying
+the same raw shots with the final calibration gives **+0.01852 ± 0.00589**,
+interval **[+0.00460, +0.03244] /us**; this is a calibration sensitivity
+check, not an independent replication. The required 37-ns constituent
+signs hold: variable-minus-slow is **+0.01056 ± 0.00398 /us** at 4.048 and
+**−0.01585 ± 0.00292 /us** at 4.042 GHz.
+
+At the scout center (secondary observation), the variable-waveform rate
+decreases **0.05721 → 0.04250 → 0.03711 /us** across the three intervals.
+Its separately acquired slow references are **0.02100, 0.03124, 0.03132**,
+and no-noise references **0.05932, 0.06954, 0.07768 /us**. These changing
+references are why a single pooled baseline or raw center-rate trend is
+insufficient; each chip case keeps its own controls.
+
+![Completed switching-duration sweep](q3_controlled_noise_switching_20261001.png)
+
+**Stability and limitations:** E is positive in **7/8 individual blocks**,
+and deleting any one block leaves its pooled estimate positive
+(0.01567–0.02155 /us). However, the first/second halves give
+**+0.02923 ± 0.00838** and **+0.00780 ± 0.00819 /us** respectively; the
+second half alone is unresolved. The quiet-site 37-minus-298-ns difference
+is **−0.00598 ± 0.00226 /us**, with a t7 interval excluding zero. Thus do
+not claim a completely unchanged background, a stationary response, a
+resolved microscopic crossover time, or a precise monotonic law from three
+central estimates. A common rate offset cancels in D; frequency-dependent
+instrumental effects do not.
+
+**Conclusion:** this bounded run provides evidence that the measured
+loss-profile response depends on programmed switching duration. It passes
+the fixed endpoint comparison and sign checks. It does not distinguish
+flux-line filtering, nonlinear survival averaging or qubit–TLS dynamics,
+and does not demonstrate saturating or permanently changing a TLS. The
+earlier larger-amplitude even-phase diagnostic is not a calibration of
+these small-amplitude delivered trajectories.
+
+Audit: all **960,000 raw IQ records** reproduce every saved probability
+exactly, and both complete summaries reproduce. Three source snapshots
+match their saved byte hashes and the recorded source after CRLF
+normalization. All **192 waveform sets** have matched full DAC-code
+histograms across polarities, reconstruct from saved constant segments,
+avoid clipping and retain at least two clocks of instruction issue margin.
+All **64 site/hold/seed groups** retain identical off/slow waveforms across
+the three chip settings. Payload fidelity is **0.922 / 0.911** before/after.
+An independently assembled pooled-log estimator and full covariance reproduce
+E and its standard error; continuous, unthresholded IQ gives E=**+0.01967
+/us**. The block bootstrap is a sensitivity check, not the primary interval.
+
+Frozen data, reproducible audit, block/control figure and inspected PNG/PDF:
+`~/.codex/visualizations/2026/10/01/q3-controlled-noise-switching/`.
+
+**Next: one confirmation with fresh seeds 400–407.** Keep the same
+waveforms, ±4-MHz command, holds, paired controls, offsets and primary
+statistic; use a fresh scout within ±8 MHz of **4.046 GHz**. The aim is to
+test reproducibility of E in another measurement, given the weaker second
+half, before adding more chip durations or fitting a timescale. Require
+positive E with its paired 95% interval excluding zero under both readout
+calibrations and the original 37-ns constituent signs. Retain failed signs,
+all measured blocks, half-run checks and background controls. Even a
+successful confirmation leaves delivered-waveform calibration unresolved.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold --paired-polarity --switching-sweep --anchor-ghz 4.046 --seed-offset 400
+```
+
+This continuation uses the already validated runner; no acquisition,
+production spectroscopy, active-reset or initialize code changes are made.
