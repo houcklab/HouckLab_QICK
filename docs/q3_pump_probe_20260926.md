@@ -7233,3 +7233,86 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControll
 
 This continuation uses the already validated runner; no acquisition,
 production spectroscopy, active-reset or initialize code changes are made.
+
+### Fresh-seed confirmation: switching-duration profile effect reproduced
+
+`q3_controlled_noise_switching_20261001T013857Z_15627da6`, source commit
+`7b75a01b`, completed all **192 programs / 960,000 probes** in **25 min 20 s**
+(21:38–22:04 EDT on September 30). The fresh scout again selected
+**4.046 GHz**. The same four sites, paired polarities, nominal ±4-MHz
+commands, hold times and comparison against the 297.62-ns reference were
+used, with new seeds **400–407**. All eight planned blocks are retained.
+
+The statistic and pass criteria were fixed in the preceding entry. For
+`D = (variable−298 ns rate at 4.048) − (variable−298 ns rate at 4.042)`, the
+new initial-calibration results are:
+
+| Variable chip | D (/us), ±1 SE | 95% paired-block t7 interval |
+| --- | --- | --- |
+| 37.20 ns | +0.01977 ± 0.00379 | [+0.01082, +0.02872] |
+| 74.40 ns | +0.00815 ± 0.00621 | [−0.00654, +0.02284] |
+| 148.81 ns | −0.00110 ± 0.00374 | [−0.00995, +0.00774] |
+
+The primary endpoint change **E = D(37 ns) − D(149 ns)** is
+**+0.02087 ± 0.00532 /us**, with **95% t7 interval
+[+0.00829, +0.03346] /us** (two-sided t comparison p=0.00574).
+Final-calibration reclassification gives **+0.01809 ± 0.00526 /us**,
+interval **[+0.00566, +0.03052] /us**. Both required 37-ns constituent
+signs also hold under both classifiers. With the initial calibration,
+variable-minus-slow is **+0.00920 ± 0.00272 /us** at 4.048 and
+**−0.01057 ± 0.00263 /us** at 4.042 GHz. **The confirmation passes the
+prespecified criteria.** Reclassifying the same raw shots is a sensitivity
+check; the new acquisition with different seeds is the replication.
+
+![Switching-duration result reproduced in a separate acquisition](q3_controlled_noise_switching_confirm_20261001.png)
+
+The first run gave E=**+0.01850 /us**, interval **[+0.00466, +0.03235]**.
+The new estimate is comparable. E is positive in **all eight new blocks**,
+and removing any one block leaves the pooled estimate positive
+(0.01840–0.02213 /us). First/second halves give
+**+0.01917 ± 0.00804** and **+0.02281 ± 0.00710 /us**, respectively.
+There is no recurrence of the first run's smaller second-half central
+estimate, although four-block half-run intervals are broad and do not
+establish stationarity. Neither adjacent chip-duration difference is
+individually resolved; do not fit a precise crossover time or claim a
+resolved monotonic law from these three points.
+
+**What reproduced is the spatial profile comparison.** The center-only
+variable-minus-slow differences are now approximately +0.01042, +0.01005
+and +0.00920 /us across the three chip durations. Thus the earlier strong
+center-only trend is not separately reproduced. Absolute reference rates
+also changed. At the nominal quiet control (4.062 GHz), the corresponding
+differences are −0.01149, −0.01163 and −0.00392 /us: the background is not
+unchanged. D cancels a uniform rate offset, not a frequency-dependent
+instrumental response.
+
+Audit: all **960,000 raw IQ records** reproduce every saved classified
+probability exactly, and the complete initial/final summaries reproduce.
+The three saved source hashes match; source snapshots agree with the
+recorded implementation after CRLF normalization. All **192 waveform
+sets** have matched full commanded DAC histograms, reconstruct exactly
+from saved constant segments, avoid clipping and retain at least two
+clocks of issue margin. Off/slow waveforms are identical across the three
+chip settings within all **64 site/hold/seed groups**. Payload SS fidelity
+is **0.9105 / 0.9065** before/after. An independently assembled estimator
+and full contrast covariance reproduce E and its standard error.
+Continuous, unthresholded IQ gives E=**+0.01390 /us**, preserving the sign
+but not the exact classified magnitude.
+
+**Conclusion and next decision:** programmed switching duration has a
+reproduced effect on the measured loss-profile shape. These finite-window
+contrast-decay rates do not demonstrate TLS saturation, a changed TLS
+population, coherent TLS exchange or an intrinsic TLS timescale. Equal
+commanded histograms do not establish equal delivered frequency
+histograms: flux-line filtering and nonlinear survival averaging remain
+alternatives to a dynamical qubit–TLS explanation. Another identical
+confirmation is not the most useful next acquisition. The next
+mechanistic task should quantify whether delivered-waveform distortion
+can explain the observed profile change, using a diagnostic with adequate
+sensitivity to the actual small commands. The previous large-amplitude
+phase measurement does not settle that question. No new acquisition mode
+has been prepared in this results-only update.
+
+Frozen data, raw audit, comparison script, statistics and inspected
+PNG/PDF figures:
+`~/.codex/visualizations/2026/10/01/q3-controlled-noise-switching-confirm/`.
