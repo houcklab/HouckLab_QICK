@@ -210,3 +210,43 @@ def test_anchor_keeps_confirmation_near_original_feature(noise):
     assert noise.select_candidate(rows,anchor_ghz=4.250) is None
     with pytest.raises(ValueError,match='anchor'):
         noise.plan(anchor_ghz=float('nan'))
+
+
+def test_polarity_pair_matches_full_codes_during_changing_correction(noise):
+    args=dict(segments=[(.9,.3),(.95,.4),(1.,20.)],park_gain=-1000,target_gain=-500,
+              endpoint_gains=(-541,-459),core_cycles=4352,fabric_mhz=430.08,
+              samples_per_clock=16,max_gain=1000,seed=203,dc_tick_quantum=16)
+    # Deliberately asymmetric DAC offsets must be swapped, not negated.
+    args['endpoint_gains']=(-541,-458)
+    waves,report=noise.paired_waveforms(**args)
+    fast=np.r_[waves['fast'],waves['fast_inverse']]
+    slow=np.r_[waves['slow'],waves['slow_inverse']]
+    np.testing.assert_array_equal(np.sort(fast),np.sort(slow))
+    assert report['paired_full_code_histograms_equal']
+    dc=np.repeat(np.concatenate([np.full(n,g) for g,n in report['off_segments']]),16)
+    for p in ('fast','slow'):
+        paired=waves[p].astype(int)+waves[p+'_inverse'].astype(int)-2*dc
+        assert set(np.unique(paired))=={0,1}
+        for name in (p,p+'_inverse'):
+            rebuilt=np.repeat(np.concatenate([np.full(n,g) for g,n in report['pattern_segments'][name]]),16)
+            np.testing.assert_array_equal(rebuilt,waves[name])
+
+
+def test_paired_schedule_and_decoder_retain_every_polarity(noise):
+    plan=noise.plan(long_hold=True,paired_polarity=True,seed_offset=200)
+    tasks=noise.tasks(4.044,16,fabric_mhz=430.08,long_hold=True,paired_polarity=True,seed_offset=200)
+    assert plan['total_science_probes']==sum(t['shots']*len(t['conditions']) for t in tasks)==640000
+    assert len(tasks)==128 and {t['seed'] for t in tasks}==set(range(200,208))
+    task=tasks[0];n=len(task['conditions']);assert n==10
+    assert {(c['pattern'],c['state'],c['polarity']) for c in task['conditions']}=={
+        (p,s,pol) for p in ('off','slow','fast') for s in ('g','e') for pol in ((0,) if p=='off' else (-1,1))}
+    words=np.zeros((task['shots']*n,2),dtype=int)
+    words[:,0]=np.tile(np.arange(n),task['shots'])
+    axis=SimpleNamespace(project=lambda i,q:i,excited_threshold=5)
+    rows=noise.rows_from_words(words,task,SimpleNamespace(payload=axis))
+    assert len(rows)==10 and [r['pe'] for r in rows]==[float(i>5) for i in range(n)]
+    assert [r['polarity'] for r in rows]==[c['polarity'] for c in task['conditions']]
+    with pytest.raises(ValueError,match='long'):
+        noise.plan(paired_polarity=True)
+    with pytest.raises(ValueError,match='incomplete'):
+        noise.rows_from_words(words[:-1],task,SimpleNamespace(payload=axis))

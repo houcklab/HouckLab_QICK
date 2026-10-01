@@ -38,8 +38,9 @@ def _validate_request(anchor_ghz=None,seed_offset=0):
         raise ValueError('seed offset must be an integer from 0 to 1000000')
 
 
-def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0):
+def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0,paired_polarity=False):
     _validate_request(anchor_ghz,seed_offset)
+    if paired_polarity and not long_hold:raise ValueError('paired polarity requires --long-hold')
     cores=LONG_CORE_CYCLES if long_hold else CORE_CYCLES
     return dict(qubit='q3', scout_ghz=[3.8, 4.3], scout_step_mhz=2.,
                 anchor_ghz=anchor_ghz,anchor_radius_mhz=8. if anchor_ghz is not None else None,
@@ -53,9 +54,11 @@ def plan(*, long_hold=False,anchor_ghz=None,seed_offset=0):
                 expected_holds_us=[(c+2*GUARD_CYCLES)/430.08 for c in cores],
                 noise_ensemble='eight frozen balanced realizations, repeated per hardware shot',
                 blocks=BLOCKS, shots_per_condition_per_block=SHOTS,
-                science_programs=128, total_science_probes=384000,
+                paired_polarity=bool(paired_polarity),
+                commanded_histogram_match='full DAC codes across both polarities' if paired_polarity else 'additive offsets only',
+                science_programs=128, total_science_probes=640000 if paired_polarity else 384000,
                 reset='1000 us passive washout', return_us=40.,
-                approximate_minutes='12–20 including scout, calibration and NAS overhead',
+                approximate_minutes=('16–25' if paired_polarity else '12–20')+' including scout, calibration and NAS overhead',
                 interpretation=__doc__)
 
 
@@ -88,13 +91,14 @@ def noise_signs(core_cycles, pattern, *, seed):
 
 
 def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
-              fabric_mhz, samples_per_clock, max_gain, seed, dc_tick_quantum=1):
+              fabric_mhz, samples_per_clock, max_gain, seed, dc_tick_quantum=1,polarity=1):
     """Common correction on fabric ticks; additive endpoint offsets, no clipping.
 
     The off arm uses lossless run-length encoding of the SAME DC samples as
     both noise arms, avoiding a third full-size envelope in QICK memory.
     """
     n=int(core_cycles)+2*GUARD_CYCLES
+    if polarity not in (-1,1):raise ValueError('noise polarity must be -1 or +1')
     lengths=np.asarray([t for _,t in segments],float)
     levels=np.asarray([v for v,_ in segments],float)
     if not len(lengths) or np.any(lengths<=0) or not np.all(np.isfinite(lengths+levels)):
@@ -125,7 +129,7 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
         raise ValueError('DC correction contains an unplayable short segment')
     values={}; reports={}; pattern_segments={}
     for pattern in ('slow','fast'):
-        signs=noise_signs(core_cycles,pattern,seed=seed)
+        signs=int(polarity)*noise_signs(core_cycles,pattern,seed=seed)
         offset=np.where(signs<0,endpoint_gains[0]-target_gain,
                         np.where(signs>0,endpoint_gains[1]-target_gain,0))
         code=np.rint(dc+offset)
@@ -147,6 +151,28 @@ def waveforms(*, segments, park_gain, target_gain, endpoint_gains, core_cycles,
                       dc_quantization_changed_cycles=int(np.count_nonzero(dc!=original_dc)),
                       dc_sliver_cycles_merged=merged, patterns=reports,
                       correction_note='same DC correction; AC transfer is uncalibrated')
+
+
+def paired_waveforms(**kwargs):
+    """Swap endpoint assignments at every tick, leaving DC correction intact.
+
+    Pooling a waveform with its inverse matches the full code distribution
+    between slow and fast even with asymmetric endpoints and changing DC.
+    This does not certify identical delivered frequency distributions.
+    """
+    waves,report=waveforms(**kwargs,polarity=1)
+    inverse,other=waveforms(**kwargs,polarity=-1)
+    if report['off_segments']!=other['off_segments']:
+        raise ValueError('polarity pair has different DC correction')
+    for p in ('slow','fast'):
+        name=p+'_inverse';waves[name]=inverse[p]
+        report['patterns'][name]=other['patterns'][p]
+        report['pattern_segments'][name]=other['pattern_segments'][p]
+    matched=np.array_equal(np.sort(np.r_[waves['slow'],waves['slow_inverse']]),
+                           np.sort(np.r_[waves['fast'],waves['fast_inverse']]))
+    if not matched:raise ValueError('paired full DAC-code histograms do not match')
+    report['paired_full_code_histograms_equal']=bool(matched)
+    return waves,report
 
 
 def select_candidate(rows,*,anchor_ghz=None):
@@ -178,8 +204,9 @@ def select_candidate(rows,*,anchor_ghz=None):
     return max(candidates,key=lambda c:c['depth_10us']+.25*c['depth_25us']) if candidates else None
 
 
-def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0):
+def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0,paired_polarity=False):
     _validate_request(seed_offset=seed_offset)
+    if paired_polarity and not long_hold:raise ValueError('paired polarity requires long hold')
     offsets=(*OFFSETS_MHZ,int(control_offset))
     if len(set(offsets))!=8: raise ValueError('control must be separate from local profile')
     result=[]
@@ -192,19 +219,25 @@ def tasks(center, control_offset, *, fabric_mhz, long_hold=False,seed_offset=0):
         states=('g','e') if block%2==0 else ('e','g')
         for off,core in settings:
             index=len(result)
+            conditions=[dict(pattern=p,state=s) for p in patterns for s in states]
+            if paired_polarity:
+                polarities=(1,-1) if block%2==0 else (-1,1)
+                conditions=[dict(pattern=p,state=s,polarity=pol) for p in patterns
+                            for pol in ((0,) if p=='off' else polarities) for s in states]
             result.append(dict(name=f'b{block:02d}_p{index:03d}',index=index,block=block,
                                seed=int(seed_offset)+block,offset_mhz=float(off),
                                frequency_ghz=round(center+off/1000,6),core_cycles=core,
                                playback='const_segments' if long_hold else 'arb',
                                hold_us=(core+2*GUARD_CYCLES)/fabric_mhz,shots=SHOTS,
-                               conditions=[dict(pattern=p,state=s) for p in patterns for s in states]))
+                               paired_polarity=bool(paired_polarity),conditions=conditions))
     return result
 
 
 def rows_from_words(words, task, bundle):
     words=np.asarray(words)
-    if words.shape!=(task['shots']*6,2): raise ValueError('incomplete science IQ stream')
-    data=words.reshape(task['shots'],6,2)
+    count=len(task['conditions'])
+    if words.shape!=(task['shots']*count,2): raise ValueError('incomplete science IQ stream')
+    data=words.reshape(task['shots'],count,2)
     rows=[]
     for i,condition in enumerate(task['conditions']):
         z=bundle.payload.project(data[:,i,0],data[:,i,1])
@@ -242,6 +275,8 @@ def _rate(rows):
 def analyze(rows):
     result=dict(sites=[],interpretation='finite-window decay; programmed noise comparison, transfer uncalibrated',
                 estimator='all-seed pooled log contrast ratios; no contrast-based seed selection')
+    if rows and all('polarity' in r for r in rows):
+        result['polarity_pairing']='both polarities pooled before log contrast ratio; delivered transfer uncalibrated'
     for off in sorted({r['offset_mhz'] for r in rows}):
         selected=[r for r in rows if r['offset_mhz']==off]
         blocks=sorted({r['block'] for r in selected})
@@ -338,11 +373,12 @@ def preflight(program):
 
 
 def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_hold=False,
-        anchor_ghz=None,seed_offset=0):
-    request=plan(long_hold=long_hold,anchor_ghz=anchor_ghz,seed_offset=seed_offset)
+        anchor_ghz=None,seed_offset=0,paired_polarity=False):
+    request=plan(long_hold=long_hold,anchor_ghz=anchor_ghz,seed_offset=seed_offset,paired_polarity=paired_polarity)
     data_root=Path(data_root)
     correction=localizer.checked_correction(data_root,correction_json)
     prefix='q3_controlled_noise_long_' if long_hold else 'q3_controlled_noise_'
+    if paired_polarity:prefix='q3_controlled_noise_paired_'
     folder=data_root/'q3'/(prefix+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path=folder/'manifest.json'
@@ -383,7 +419,7 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
             cfg=science_config(bundle,tls,compensation)
             qp.save_json(folder/'config.json',cfg)
             run_tasks=tasks(center,selected['control_offset_mhz'],fabric_mhz=soccfg['gens'][cfg['ff_ch']]['f_fabric'],
-                            long_hold=long_hold,seed_offset=seed_offset)
+                            long_hold=long_hold,seed_offset=seed_offset,paired_polarity=paired_polarity)
             requested=sorted({round(t['frequency_ghz']+o/1000,6) for t in run_tasks for o in (-AMPLITUDE_MHZ,0,AMPLITUDE_MHZ)})
             gains,realized=_integer_dc_grid(wide.parameters(),np.asarray(requested),tls)
             lookup=dict(zip(requested,map(int,gains)))
@@ -404,12 +440,13 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
                 'Compiler diagnostics are retained in compile.log.')
             manifest['preflight']=[]
             # Every site/duration (both DAC extrema occur in every realization).
-            for task in run_tasks[:16]:
+            for task in (run_tasks if paired_polarity else run_tasks[:16]):
                 p=build(task)
                 manifest['preflight'].append(dict(name=task['name'],**preflight(p),noise=p.waveform_report))
             manifest['status']='acquiring';qp.save_json(path,manifest)
             rows=[]
-            with tqdm(total=len(run_tasks)*SHOTS*6,desc='T1 noise comparison',unit='shot',disable=not progress,
+            conditions_per_shot=10 if paired_polarity else 6
+            with tqdm(total=len(run_tasks)*SHOTS*conditions_per_shot,desc='T1 noise comparison',unit='shot',disable=not progress,
                       bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} elapsed, ETA {remaining}]') as bar:
                 for task in run_tasks:
                     manifest['current']=task;qp.save_json(path,manifest)
@@ -419,8 +456,8 @@ def run(*,data_root=localizer.DATA_ROOT,correction_json=None,progress=True,long_
                     qp.save_json(stem.with_suffix('.json'),dict(task=task,config=program.cfg,
                                                                preflight=info,waveform_report=program.waveform_report))
                     np.savez_compressed(folder/(task['name']+'_waveforms.npz'),**program.waveforms)
-                    offset=task['index']*SHOTS*6
-                    def update(done,total): bar.update(offset+int(done)*6-bar.n)
+                    offset=task['index']*SHOTS*conditions_per_shot
+                    def update(done,total): bar.update(offset+int(done)*conditions_per_shot-bar.n)
                     try:
                         records=_run_program(soc,program,60.,cfg,total_shots=SHOTS,progress=update)
                     except BaseException as exc:
@@ -466,12 +503,13 @@ def main(argv=None):
     parser.add_argument('--long-hold',action='store_true',help='1.265/10.193-us comparison using constant flux segments')
     parser.add_argument('--anchor-ghz',type=float,help='select a fresh loss site within ±8 MHz of this frequency')
     parser.add_argument('--seed-offset',type=int,default=0,help='first noise-realization seed (0–1000000)')
+    parser.add_argument('--paired-polarity',action='store_true',help='pair each waveform with its inverse; requires --long-hold')
     args=parser.parse_args(argv)
     if args.run: run(data_root=args.data_root,correction_json=args.correction_json,
                      progress=not args.quiet,long_hold=args.long_hold,
-                     anchor_ghz=args.anchor_ghz,seed_offset=args.seed_offset)
+                     anchor_ghz=args.anchor_ghz,seed_offset=args.seed_offset,paired_polarity=args.paired_polarity)
     else: print(json.dumps(plan(long_hold=args.long_hold,anchor_ghz=args.anchor_ghz,
-                               seed_offset=args.seed_offset),indent=2))
+                               seed_offset=args.seed_offset,paired_polarity=args.paired_polarity),indent=2))
     return 0
 
 

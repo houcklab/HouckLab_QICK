@@ -15,19 +15,23 @@ def make_program_class():
             self.task=dict(task)
             self.endpoint_gains=tuple(endpoint_gains)
             self.logical_shots=int(task['shots'])
-            expected={(p,s) for p in runner.PATTERNS for s in ('g','e')}
-            if (self.logical_shots<1 or len(task['conditions'])!=6 or
-                    {(c['pattern'],c['state']) for c in task['conditions']}!=expected):
-                raise ValueError('noise program requires each of six conditions exactly once')
+            paired=bool(task.get('paired_polarity',False))
+            if paired and task.get('playback')!='const_segments':
+                raise ValueError('paired polarity requires constant-segment long-hold mode')
+            expected={(p,s,pol) for p in runner.PATTERNS for s in ('g','e')
+                      for pol in (((0,) if p=='off' else (1,-1)) if paired else (1,))}
+            if (self.logical_shots<1 or len(task['conditions'])!=len(expected) or
+                    {(c['pattern'],c['state'],c.get('polarity',1)) for c in task['conditions']}!=expected):
+                raise ValueError('noise program requires each preparation, pattern and polarity exactly once')
             self.condition_cfgs=[]
             for c in task['conditions']:
                 arm=dict(flux_ghz=task['frequency_ghz'],drive_mhz=task['frequency_ghz']*1000,
                          gain=0,preparation_state=c['state'],reference_state=None,
                          pre_drive_us=runner.PRE_US,post_drive_us=task['hold_us'],shots=self.logical_shots)
                 cfg=resident.arm_config(base,arm,{task['frequency_ghz']:int(center_gain)})
-                cfg['noise_pattern']=c['pattern']
+                cfg['noise_pattern']=c['pattern']+('_inverse' if c.get('polarity',1)==-1 and c['pattern']!='off' else '')
                 self.condition_cfgs.append(cfg)
-            run_cfg=dict(self.condition_cfgs[0],reps=6*self.logical_shots)
+            run_cfg=dict(self.condition_cfgs[0],reps=len(self.condition_cfgs)*self.logical_shots)
             resident.ResidentDriveProgram.__init__(self,soccfg,run_cfg,payload,loop)
 
         def _declare_experiment(self):
@@ -42,7 +46,8 @@ def make_program_class():
             _,during,_=modulation._target_segments(
                 self._t1_ff_compensation,pre_us=runner.PRE_US+self._t1_ff_settle_us,
                 hold_us=self.task['hold_us'],recovery_us=40.)
-            self.waveforms,self.waveform_report=runner.waveforms(
+            waveform_builder=runner.paired_waveforms if self.task.get('paired_polarity',False) else runner.waveforms
+            self.waveforms,self.waveform_report=waveform_builder(
                 segments=during,park_gain=cfg['ff_park_gain'],target_gain=cfg['ff_gain'],
                 endpoint_gains=self.endpoint_gains,core_cycles=self.task['core_cycles'],
                 fabric_mhz=g['f_fabric'],samples_per_clock=g['samps_per_clk'],

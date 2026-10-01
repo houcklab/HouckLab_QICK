@@ -6883,3 +6883,113 @@ do not validate hardware fidelity.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSNoiseFluxResponse --run
 ```
+
+### Even-phase flux response completed: both waveforms produce a clear response
+
+`q3_noise_flux_response_20260930T232122Z_50a3d618`, commit `b9fef51f`,
+completed all **58 programs / 326,400 probes** in **6 min 42 s**. Both
+resident pulse controls, all four zero-offset phase brackets and every
+science phase circle pass. Payload readout fidelity is **0.920 / 0.922**
+before/after. Phase-circle visibility ranges 0.784–1.041 and the largest
+bracket phase drift is 5.19°. Visibility slightly above one reflects the
+finite-shot normalization to resident g/e references, not gain of coherence.
+
+The table averages the two placements within each of four blocks. Error
+bars use the larger of block scatter and propagated shot noise, including
+shared zero-offset-reference covariance. The paired difference is evaluated
+before pooling blocks; it is not obtained by treating the two plotted means
+as independent.
+
+| Command amplitude | Slow-reference phase | Fast-waveform phase | Paired fast − slow |
+| --- | --- | --- | --- |
+| 64 DAC | −0.0586 ± 0.0402 rad | −0.0585 ± 0.0379 rad | +0.0000 ± 0.0255 rad |
+| 250 DAC | +0.3488 ± 0.0380 rad | +0.3273 ± 0.0237 rad | −0.0214 ± 0.0205 rad |
+| 375 DAC | +0.7002 ± 0.0302 rad | +0.6224 ± 0.0228 rad | −0.0778 ± 0.0223 rad |
+
+At 375 DAC the fast response is approximately **11% smaller**. The paired
+95% t3 interval is [−0.1490, −0.0067] rad; all four block differences are
+negative. This is an exploratory comparison across several amplitudes and
+placements, not a multiplicity-adjusted discovery claim. Early placement
+alone gives −0.0391 ± 0.0308 rad and late gives −0.1165 ± 0.0350 rad.
+Fast late-minus-early is −0.0623 ± 0.0306 rad, with a t3 interval containing
+zero. Therefore do not claim either a resolved placement dependence or
+placement equivalence. The 250-DAC difference is unresolved; the 64-DAC
+response itself is unresolved. All amplitude-squared scaling warnings remain
+false, which does not establish the correct modulo-π branch. Post-calibration
+projection changes none of these conclusions.
+
+![Completed q3 flux response](q3_noise_flux_response_20260930.png)
+
+**Conclusion:** the fast commanded waveform produces a strong even-phase
+response at the larger diagnostic amplitudes, close to the slow reference.
+This is useful evidence that the fast waveform has a measurable action on
+q3. It does **not** certify its small-amplitude delivered excursion at the
+TLS bias. The response is signed and echo-weighted; filtering, tails and
+rectification remain possible. Do not turn the 0.889 phase ratio into an
+unqualified voltage-transfer estimate or use this run alone to establish
+a coherent/Zeno mechanism for the earlier loss-profile change.
+
+Audit: all 326,400 raw IQ records reproduce their saved means/SEs, and both
+complete analysis summaries reproduce numerically. Six saved source hashes
+match their snapshots, and the snapshots match the recorded commit after
+Windows CRLF normalization. All science-window waveforms reconstruct from
+saved constant segments, with no clipping, correct guards, matched full
+code histograms across polarities, and at least 64 clocks of queue margin.
+Raw files, audit script, paired statistics and inspected PNG/PDF figures are
+frozen in `~/.codex/visualizations/2026/09/30/q3-noise-flux-response/`.
+
+### Next TLS control: pair each noise waveform with its endpoint inverse
+
+Add the opt-in `--paired-polarity` mode to `TLSControlledNoise --long-hold`.
+Each hardware loop now contains a shared no-noise g/e reference pair plus
+g/e × slow/fast × the two polarities,
+with **1000 µs passive washout between every subshot**. At every noise tick,
+the inverse swaps the low/high endpoint assignment; it leaves the shared
+DC correction intact. This is an endpoint swap, not arithmetic negation:
+the flux-frequency curve can make the two DAC offsets asymmetric.
+
+Pooling both polarities gives **exactly identical full commanded DAC-code
+histograms** for slow and fast, even during the changing correction. Every
+compiled waveform pair must pass this check. This removes the original
+comparison's mismatch of full code distributions without flattening or
+changing the flux correction. Matching is across the two polarities, not
+necessarily within an individual subshot. It does not make their delivered
+waveforms identical, or ensure identical averaged survival under every
+incoherent model: nonlinear averaging of decay and line response remain
+relevant. Treat this as a stronger reproducibility/control test, not a unique
+mechanism witness.
+
+Use eight fresh seeds **200–207**, one fresh scout anchored within ±8 MHz of
+4.044 GHz, the same seven relative profile points plus a quiet control, and
+the same 1.26488/10.19345-µs hold comparison. Preserve separate raw polarity
+rows; pool their g/e contrasts before the logarithmic rate estimate. The
+primary comparison is fixed again at `D = (fast−slow at scout+2 MHz) −
+(fast−slow at scout−4 MHz)`, with positive upper, negative lower differences
+and a positive paired-block 95% t7 interval, checked with both readout
+calibrations. Do not substitute the eventual observed peak for either point.
+
+The run has **128 programs / 640,000 probes**, 500 shots per condition per
+block, approximately **16–25 minutes** including the scout. All 128 programs
+are preflighted before acquisition. There are ten conditions; duplicate no-noise references were removed after
+compilation found a twelve-condition program exceeding 8192 instructions.
+Noise arms retain both polarities, each with 500 shots; the shared no-noise
+reference has 500 shots per state. Analysis uses these actual shot counts.
+Defaults remain the original six-condition
+protocol. Production TLS, active reset and initialize settings are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSControlledNoise --run --long-hold --paired-polarity --anchor-ghz 4.044 --seed-offset 200
+```
+
+Validation before push: **1319 tests pass**. All 128 paired programs compile
+with QICK 0.2.133 against the saved board/correction/calibration, at most
+**7547 of 8192 instructions**, 13760 FF-envelope samples and at least two
+clocks of constant-segment issue margin. Every full-code histogram check
+passes. A complete **640,000-probe synthetic acquisition** passes stream
+bank decoding, storage, rates, plotting, post-calibration reclassification
+and restoration of prior q4 settings. The original six-condition runner
+also passes its complete 384,000-probe synthetic acquisition. Independent
+read-only review found no remaining consequential code or statistics issue
+and independently reproduced the 375-DAC paired phase result. These are
+software checks; the new polarity-paired TLS protocol awaits measurement.
