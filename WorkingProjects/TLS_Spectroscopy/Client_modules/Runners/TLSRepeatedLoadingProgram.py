@@ -20,19 +20,26 @@ class LoadingReferenceProgram(TimingMatchedReferenceDMemProgram):
         page = self.reset_page
         gain = self.sreg(self.cfg['qubit_ch'], 'gain')
         excited = bool(self.cfg['prep_excited'])
-        if self.cfg['opx_reference_context'] == 'loop':
-            for k in range(runner.RESET_ROUNDS):
+        rounds, guard, prior_gain = runner.reference_settings(self.cfg)
+        change_readout = rounds and prior_gain != self.cfg['read_pulse_gain']
+        if change_readout:
+            self.regwi(self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain'), prior_gain)
+        if rounds:
+            for k in range(rounds):
                 if k:
                     self.sync_all(self.us2cycles(self.reset_config.reset_settle_us))
                 self._measure_raw()
-                self.sync_all(self.us2cycles(runner.GUARD_US))
+                self.sync_all(self.us2cycles(guard))
                 self.regwi(page, gain, self.cfg['qubit_pi_gain']
-                           if excited and k == runner.RESET_ROUNDS-1 else 0)
+                           if excited and k == rounds-1 else 0)
                 _pulse_pi_and_align(self)
             self.sync_all(self.us2cycles(self.reset_config.reset_settle_us))
         else:
             self.regwi(page, gain, self.cfg['qubit_pi_gain'] if excited else 0)
             _pulse_pi_and_align(self)
+        if change_readout:
+            self.regwi(self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain'),
+                       int(self.cfg['read_pulse_gain']))
         self._measure_raw()
         for name in ('i', 'q'):
             self.memw(page, self.reset_regs[name], self.reset_regs['address'])

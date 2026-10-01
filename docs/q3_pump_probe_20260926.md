@@ -7654,3 +7654,55 @@ A complete synthetic pilot saved and reanalyzed 32,400 records, placed the
 midpoint references between the two blocks, and flagged the injected local
 return under both final-readout axes without claiming a dose curve. All
 **1,344 maintained tests passed**, including 15 repeated-loading tests.
+
+### Repeated-loading pilot: readout-train reference failure (2026-10-01)
+
+NAS session `q3_repeated_loading_pilot_20261001T050454Z_a3302ee5`
+stopped during calibration after about 28 s, with **zero science programs**.
+All three attempts and their raw references were saved. Peak discrimination
+fidelities in the payload context were 0.9105, 0.9135 and 0.8990. After the
+four preceding readouts in the new loop reference, they were 0.6455, 0.6735
+and 0.6500. Confident-ground acceptance was 0.001, 0.003 and 0.003, correctly
+failing the existing minimum of 0.20.
+
+Using each attempt's payload projection, approximately 44--50% of the nominal
+loop-ground records lie above the payload discrimination threshold, compared
+with 7--8% in the ordinary ground reference. This describes measured IQ, not
+a calibrated excited-state population under the changed readout history.
+The loop-ground distribution broadens substantially. These observations
+localize the failure to the repeated-readout reference context, but do not
+identify whether readout-induced state changes, recovery, pulse preparation
+or feedback-read timing is responsible. They do not constitute a TLS null.
+
+`TLSRepeatedLoadingResetCheck` is a bounded **1--3 minute park-only diagnostic**.
+It compares zero, one, two and four preceding readouts at the current 20-us
+guard; four at 50/100-us guards; and four with zero/half preceding readout
+drive. The zero-drive arm still triggers the ADC and plays equal-duration
+zero-drive resonator pulses. Every final readout retains gain 1880, duration
+3.5 us and the existing frequency. No flux excursion, TLS loading or feedback
+is played. There are 500 shots per nominal g/pi state and two blocks, reversing
+both profile order and state order: 16,000 final-reference records in total.
+The nominal g label after the readout train is deliberately not assumed to
+represent a pure state.
+
+Rejected fits are saved and do not stop the diagnostic; transport failures
+still stop it. Raw data are saved after each state. It neither relaxes the
+existing acceptance policy nor installs a classifier. A successful profile
+would require a separate validation of actual feedback reset before resuming
+the loading pilot. The original loading calibration's compiled instructions
+are identical when no diagnostic overrides are supplied; production reset,
+TLS scans and initialize.py are unchanged.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoadingResetCheck --run
+```
+
+Offline checks compiled all 32 state/profile programs with QICK 0.2.133,
+at most 109 instructions each. Instruction-path simulation verified two
+successive trials per program, exact readout drive restoration, readout/pulse
+counts and no late pulses under the existing conservative timing model.
+A synthetic acquisition saved all 16,000 records and completed despite
+deliberately rejected profiles; a transport-failure check retained the first
+state and stopped without retry. **1,347 maintained tests passed**. These
+checks do not establish physical readout-train behavior on q3.

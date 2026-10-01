@@ -226,6 +226,23 @@ def calibration_config():
     return cfg
 
 
+def reference_settings(cfg):
+    """Diagnostic overrides only; ordinary calibration retains its timing."""
+    context = cfg['opx_reference_context']
+    if context not in ('payload', 'loop'):
+        raise ValueError('reference context must be payload or loop')
+    rounds = cfg.get('loading_reference_rounds', RESET_ROUNDS) if context == 'loop' else 0
+    guard = float(cfg.get('loading_reference_guard_us', GUARD_US))
+    prior_gain = cfg.get('loading_reference_prior_gain', cfg['read_pulse_gain'])
+    if not isinstance(rounds, (int, np.integer)) or not 0 <= rounds <= RESET_ROUNDS:
+        raise ValueError('reference rounds must be an integer from zero to four')
+    if not math.isfinite(guard) or not GUARD_US <= guard <= 100.:
+        raise ValueError('reference guard must be between 20 and 100 us')
+    if not isinstance(prior_gain, (int, np.integer)) or not 0 <= prior_gain <= cfg['read_pulse_gain']:
+        raise ValueError('preceding readout gain must be between zero and the final readout gain')
+    return int(rounds), guard, int(prior_gain)
+
+
 def calibrate(soc, soccfg, folder):
     """Fresh classifier with this experiment's readout train and zero-pi timing."""
     import json
