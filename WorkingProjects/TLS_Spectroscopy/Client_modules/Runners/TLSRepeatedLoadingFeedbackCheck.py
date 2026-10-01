@@ -1,4 +1,4 @@
-"""Bounded q3 half-gain feedback test before resuming repeated TLS loading.
+"""Bounded q3 reduced-gain feedback test before resuming repeated TLS loading.
 
 Compare four fixed feedback opportunities with equal-time zero-gain pulses,
 from both nominal g and e initial preparations. Save five weak IQ pairs and
@@ -17,6 +17,13 @@ from . import TLSRepeatedLoading as loading
 
 SHOTS = 500
 RECORD_WORDS = 12
+READOUT_GAINS = (940, 1200)
+
+
+def checked_readout_gain(readout_gain):
+    if not isinstance(readout_gain, (int, np.integer)) or readout_gain not in READOUT_GAINS:
+        raise ValueError('feedback check readout gain must be 940 or 1200')
+    return int(readout_gain)
 
 
 def tasks():
@@ -30,8 +37,8 @@ def tasks():
     return refs('pre', ('g', 'e')) + science + refs('post', ('e', 'g'))
 
 
-def plan(*, conservative=False):
-    return dict(qubit='q3', feedback_readout_gain=940, final_readout_gain=1880,
+def plan(*, conservative=False, readout_gain=940):
+    return dict(qubit='q3', feedback_readout_gain=checked_readout_gain(readout_gain), final_readout_gain=1880,
                 feedback_rounds=4, weak_readouts_per_trial=5,
                 shots_per_condition_per_block=SHOTS, blocks=2,
                 total_probe_shots=12*SHOTS, calibration_shots=8000,
@@ -54,8 +61,8 @@ def decode_records(words, expected_records=None):
     return [loading.LoadingRecord(tuple(map(int, row))) for row in signed]
 
 
-def program_config(task):
-    cfg = loading.calibration_config(readout_gain=940)
+def program_config(task, *, readout_gain=940):
+    cfg = loading.calibration_config(readout_gain=checked_readout_gain(readout_gain))
     cfg.update(reps=task['shots'], shots=task['shots'], check_initial_state=task['initial_state'],
                check_reference_state=task['reference_state'], check_feedback=task['feedback'],
                reset_pi_gain=cfg['qubit_pi_gain'] if task['feedback'] else 0)
@@ -123,7 +130,8 @@ def analyze(raw, entries, bundle):
                 automatic_loading=False, interpretation=plan()['note'])
 
 
-def run(*, data_root=loading.localizer.DATA_ROOT, progress=True, conservative=False):
+def run(*, data_root=loading.localizer.DATA_ROOT, progress=True, conservative=False, readout_gain=940):
+    protocol = plan(conservative=conservative, readout_gain=readout_gain)
     from tqdm.auto import tqdm
     from . import TLSSpectroscopy as tls
     from .TLSRepeatedLoadingProgram import LoadingFeedbackCheckProgram
@@ -134,7 +142,7 @@ def run(*, data_root=loading.localizer.DATA_ROOT, progress=True, conservative=Fa
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True)
     path = folder/'manifest.json'
-    manifest = dict(schema='q3.repeated-loading-feedback-check.v1', plan=plan(conservative=conservative), status='initializing',
+    manifest = dict(schema='q3.repeated-loading-feedback-check.v1', plan=protocol, status='initializing',
                     completed=[], created_at=datetime.now(timezone.utc).isoformat(),
                     commit=subprocess.check_output(['git','rev-parse','HEAD'], cwd=Path(__file__).parent, text=True).strip())
     loading.qp.save_json(path, manifest)
@@ -143,17 +151,17 @@ def run(*, data_root=loading.localizer.DATA_ROOT, progress=True, conservative=Fa
         with loading.noise.q3_context(tls, data_root):
             soc, soccfg = tls.makeProxy()
             loading.qp.save_json(folder/'board_configuration.json', soccfg.get_cfg())
-            bundle = loading.calibrate(soc, soccfg, folder, readout_gain=940, attempts=1,
+            bundle = loading.calibrate(soc, soccfg, folder, readout_gain=readout_gain, attempts=1,
                                        false_pi_limit=.02 if conservative else None)
             manifest['status'] = 'acquiring'
             capacity = max_records(dmem_words_from_soccfg(soccfg), 32, RECORD_WORDS)
             raw = {}
-            with tqdm(total=plan()['total_probe_shots'], desc='Reset check', unit='shot', disable=not progress,
+            with tqdm(total=protocol['total_probe_shots'], desc='Reset check', unit='shot', disable=not progress,
                       bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} elapsed, ETA {remaining}]') as bar:
                 for task in tasks():
                     manifest['current'] = task
                     loading.qp.save_json(path, manifest)
-                    cfg = program_config(task)
+                    cfg = program_config(task, readout_gain=readout_gain)
                     loading.qp.save_json(folder/(task['name']+'_config.json'), cfg)
                     records = []
                     for count in chunk_sizes(task['shots'], capacity):
@@ -197,12 +205,15 @@ def main(argv=None):
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--conservative', action='store_true', help='calibrate a 2%% false-correction target on training ground shots')
+    parser.add_argument('--readout-gain', type=int, choices=READOUT_GAINS, default=940,
+                        help='gain for calibration and the five feedback/verification readouts; final readout remains 1880')
     parser.add_argument('--data-root', default=str(loading.localizer.DATA_ROOT))
     args = parser.parse_args(argv)
     if args.run:
-        run(data_root=args.data_root, progress=not args.quiet, conservative=args.conservative)
+        run(data_root=args.data_root, progress=not args.quiet, conservative=args.conservative,
+            readout_gain=args.readout_gain)
     else:
-        print(json.dumps(plan(conservative=args.conservative), indent=2))
+        print(json.dumps(plan(conservative=args.conservative, readout_gain=args.readout_gain), indent=2))
     return 0
 
 

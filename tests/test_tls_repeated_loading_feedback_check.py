@@ -83,3 +83,27 @@ def test_conservative_plan_is_opt_in_and_leaves_existing_calibration_policy():
     assert m.plan(conservative=True)['false_pi_training_limit'] == .02
     assert m.plan(conservative=True)['false_pi_holdout_maximum'] == .04
     assert not m.plan(conservative=True)['automatic_loading']
+
+
+def test_intermediate_gain_reaches_plan_and_all_programs_without_changing_timing():
+    m = module()
+    base = m.plan(conservative=True)
+    changed = m.plan(conservative=True, readout_gain=1200)
+    assert changed == dict(base, feedback_readout_gain=1200)
+    for task in m.tasks():
+        ordinary = m.program_config(task)
+        intermediate = m.program_config(task, readout_gain=1200)
+        assert ordinary['read_pulse_gain'] == 940
+        assert intermediate == dict(ordinary, read_pulse_gain=1200)
+    for invalid in (0, 940.5, 1880, 1881):
+        with pytest.raises(ValueError):
+            m.plan(readout_gain=invalid)
+
+
+def test_cli_passes_intermediate_gain_to_acquisition(monkeypatch):
+    m = module()
+    calls = []
+    monkeypatch.setattr(m, 'run', lambda **kw: calls.append(kw))
+    assert m.main(['--run', '--conservative', '--readout-gain', '1200']) == 0
+    assert calls[0]['readout_gain'] == 1200
+    assert calls[0]['conservative'] is True

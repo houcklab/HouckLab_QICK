@@ -7831,3 +7831,64 @@ Allow **1--3 min**; the preceding hardware check took under 20 s. Software
 verification includes a full synthetic conservative run with real offline
 QICK compilation, held-out rejection before feedback, training/holdout
 separation tests and sign/arithmetic review. **1,352 maintained tests passed**.
+
+### Conservative feedback result and one intermediate-gain check
+
+`q3_repeated_loading_feedback_check_20261001T062008Z_b1b9d630` completed
+all 12 programs in **18.49 s**. Pre/post frozen-axis final-reference accuracies
+were 91.6% / 92.7%; the independent post refit was 93.2%. No IQ arithmetic
+overflow was found. Recomputing the classifications and verification masks
+from saved raw IQ reproduces every saved cell summary.
+
+| Initial preparation | Matched sham: final classified excited | Feedback: final classified excited | Feedback, ground-verified subset |
+| --- | ---: | ---: | ---: |
+| Ground/no pi | 7.4% | 9.9% | 7.1% (449/1000 accepted) |
+| Excited/pi | 45.3% | 19.3% | 10.0% (380/1000 accepted) |
+
+Each all-shot value pools two 500-shot reversed blocks. The ground-start
+feedback values were 9.0/10.8%, versus sham 6.4/8.4%; excited-start feedback
+was 17.8/20.8%, versus sham 43.8/46.8%. Refitting the final axis gives
+9.4% and 19.3% for the two pooled feedback conditions, preserving the result.
+These are classified fractions, not calibrated absolute excited populations.
+
+![Conservative feedback result](q3_loading_conservative_feedback_20261001.png)
+
+Dots show blocks; error bars are pooled binomial standard errors and do not
+include calibration uncertainty or drift. The raw snapshot, analysis script
+and pooled counts are in
+`~/.codex/visualizations/2026/10/01/q3_repeated_loading_feedback_check_20261001T062008Z_b1b9d630/`.
+
+The conservative policy reduces spurious corrections: held-out false-pi
+rates were 2.0% payload / 2.5% loop, at excited detection 28.3% / 33.7%.
+Ground-prepared shots received only 0.113 inferred corrections on average,
+compared with about 1.2 in the previous permissive-threshold run. However,
+initial-state dependence remains after four rounds. Even the selected subset
+is not a demonstration of unconditional reset. The loop's calibrated
+confidence minimum is 0.384; excited-start feedback verification acceptance
+is 0.396 / 0.364 in the two blocks. This does not justify declaring the
+loading reset validated or relaxing its confidence gate.
+
+The next bounded comparison uses **gain 1200**, between the demonstrated
+weak setting 940 and the problematic repeated-readout setting 1880. It
+retains four feedback rounds, five decision/verification reads, the same
+guards and trial timing, independent final readout at 1880, two reversed
+blocks and the conservative 2% training false-pi target / 4% held-out cap.
+Fresh calibration and actual feedback outcomes determine whether the
+intermediate gain improves detection without restoring the readout-history
+problem. No increase in reset-cycle duration or automatic loading is added.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSRepeatedLoadingFeedbackCheck --run --conservative --readout-gain 1200
+```
+
+Allow **1--3 min** including setup; the previous two checks each took about
+19 s. This is still preparation validation, not a TLS intervention result.
+The original loading runner and production reset defaults remain unchanged.
+Offline compilation and instruction-path simulation at gain 1200 verified
+all 12 tasks, both classifier orientations and both feedback outcomes,
+including exact gain restoration, fixed timing and 12-word records. A full
+synthetic acquisition exercised all 8,000 calibration and 6,000 probe records
+with saved gain metadata and both final-reference analyses.
+The default gain-940 instruction-path checks also pass, as do all **1,354
+maintained tests**. Independent code review found no actionable issues.

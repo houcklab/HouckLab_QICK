@@ -202,10 +202,12 @@ class LoadingFeedbackCheckProgram(OPXResetT1Program):
     _save_iq = RepeatedLoadingProgram._save_iq
 
     def __init__(self, soccfg, cfg, payload_calibration, loop_calibration):
+        from .TLSRepeatedLoadingFeedbackCheck import checked_readout_gain
         if cfg.get('do_ff') or not cfg.get('opx_persistent_park') or not cfg.get('opx_hard_flux_steps'):
             raise ValueError('feedback check requires persistent hard park without excursions')
-        if cfg.get('read_pulse_gain') != 940 or cfg.get('ff_park_gain') != -25146:
-            raise ValueError('feedback check requires q3 park and readout gain 940')
+        checked_readout_gain(cfg.get('read_pulse_gain'))
+        if cfg.get('ff_park_gain') != -25146:
+            raise ValueError('feedback check requires q3 park')
         if cfg['check_initial_state'] not in ('g', 'e') or cfg.get('check_reference_state') not in (None, 'g', 'e'):
             raise ValueError('unknown feedback-check preparation')
         expected_gain = cfg['qubit_pi_gain'] if cfg['check_feedback'] else 0
@@ -225,7 +227,7 @@ class LoadingFeedbackCheckProgram(OPXResetT1Program):
         self._set_payload_pulse(gain=self.cfg['qubit_pi_gain'] if self.cfg['check_initial_state']=='e' else 0)
         _pulse_pi_and_align(self)
         ro_page, ro_gain = self.ch_page(self.cfg['res_ch']), self.sreg(self.cfg['res_ch'], 'gain')
-        self.regwi(ro_page, ro_gain, 940)
+        self.regwi(ro_page, ro_gain, self.cfg['read_pulse_gain'])
         self._fixed_reset('CHECK_RESET')
         # A matched zero/pi slot supplies independent final-readout references.
         self._set_payload_pulse(gain=self.cfg['qubit_pi_gain'] if self.cfg.get('check_reference_state')=='e' else 0)
