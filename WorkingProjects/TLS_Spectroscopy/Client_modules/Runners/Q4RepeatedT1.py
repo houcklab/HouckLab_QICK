@@ -168,7 +168,7 @@ def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
         raise
 
 
-def calibrate_reset(soc, soccfg, output, index):
+def calibrate_reset(soc, soccfg, output, index, *, purpose='Q4RepeatedT1'):
     from ..active_reset_OPX.benchmark_settings import q3_benchmark_settings
     from ..active_reset_OPX.calibration import (
         acquire_calibration, save_calibration, save_raw_calibration,
@@ -182,7 +182,7 @@ def calibrate_reset(soc, soccfg, output, index):
         bundle, raw = acquire_calibration(
             soc, soccfg, cfg, shots=2000,
             **q3_benchmark_settings().calibration_options(),
-            metadata={'qubit': 'q4', 'purpose': 'Q4RepeatedT1',
+            metadata={'qubit': 'q4', 'purpose': purpose,
                       'created': datetime.now(timezone.utc).isoformat()})
         save_calibration(folder / 'calibration.json', bundle)
         save_raw_calibration(folder / 'calibration_raw.npz', raw)
