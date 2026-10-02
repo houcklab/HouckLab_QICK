@@ -225,3 +225,76 @@ Verification also includes nine targeted regression cases for phase-balanced
 conditions, detuning recovery with both phase conventions, rejection of weak
 or inconsistent Ramsey signals, independent rotation fits, bounded peak
 selection and pulse limits. The full maintained suite passes 1376 tests.
+
+## Tune-up result: detuning and under-rotation identified
+
+Session `q4_echo_tuneup_20261002T062951Z_cf100fcf` completed all three stages in
+62.39 s (02:29–02:30 EDT). All 199500 raw payload shots are finite; independent
+raw reclassification exactly reproduces the saved populations in every stage.
+Refitting reproduces the frequency and rotation estimates below.
+
+![Measured q4 pulse tune-up](q4_echo_tuneup_20261002.png)
+
+The two Ramsey drives, 4367.765 and 4367.815 MHz, give signed beat frequencies
++21.787 ± 0.162 and −28.490 ± 0.134 kHz. Their slope versus drive frequency is
+−1.0055, consistent with the expected magnitude of one. The independently
+inferred qubit frequencies agree within 0.277 kHz. Their weighted estimate is
+**4367.786623 ± 0.000103 MHz** (fit uncertainty), 26.623 kHz above the old
+4367.760 MHz setting. Reduced χ² values are 1.73 and 1.67. The fitted Ramsey
+decay constants are about 61 and 57 µs; these are not Hahn-echo T2E values.
+
+The independent pulse-train fits at the corrected frequency are:
+
+| Pulse count | Equivalent single-pulse π gain | Fit error | Reduced χ² |
+| --- | ---: | ---: | ---: |
+| 1 | 41369 | 1980 | 1.02 |
+| 3 | 40171 | 185 | 2.45 |
+| 4 | 40208 | 238 | 1.17 |
+
+The four-pulse return gives **π/2 gain 20104 ± 119**. At the measured resonance,
+the old gains 32000 and 16000 correspond to approximately 143° and 72° under
+the fitted rotation model, rather than 180° and 90°. Together with detuning,
+this provides a concrete candidate explanation for the malformed first echo.
+It does not prove that these errors explain every feature of that earlier run.
+
+The tune-up's final candidate was correctly rejected because its required
+single-pulse π gain exceeds the signed DAC range, not because the frequency or
+rotation fits were unresolved. Do not apply gain 40171 to the hardware.
+
+### Corrected single-echo check
+
+The optional `--tuned-pulses` flag uses the measured frequency and π/2 gain,
+and constructs the central π rotation from **two Yπ/2 pulses**, separated by
+the same 0.1 µs gap used in the rotation checks:
+
+`Xπ/2 — τ/2 — Yπ/2 — 0.1 µs — Yπ/2 — τ/2 — ±Xπ/2`
+
+All four payload pulses use gain 20104 and the existing approximately 8 µs
+Gaussian. This avoids exceeding DAC gain or waveform memory. The central pair
+has a 16.097 µs total span. The two outer free gaps remain equal and the entire
+refocusing pair is centered between the outer π/2 pulses. τ still excludes
+the fixed pulse block and its internal gap; actual timings are saved.
+
+Fresh readout/reset calibration and feedback retain the original 4367.760 MHz,
+gain 32000 settings used successfully for the diagnostic. This change affects
+only payload pulses in the dedicated echo runner. Defaults, `initialize.py`,
+the q4 T1 runner and shared production reset remain unchanged. The plan and
+manifest record the source tune-up session and the split refocusing sequence.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q4RepeatedT2E --run --max-runs 1 --max-delay-us 1000 --tuned-pulses
+```
+
+Inspect this trace before starting an infinite series. Offline QICK 0.2.133
+compilation with the measured tune-up classifier uses 3505 instructions per
+16-delay block and 1552 for the last block, below 8192; waveform use remains
+55040/65536 samples. A full synthetic acquisition recovers 257.96 ± 13.02 µs
+from an injected 250 µs decay. Unit checks explicitly verify paired-pulse
+centering, reset isolation and configuration reporting. Instruction emulation
+checks every block with both classifier signs and both reset branches, including
+the unchanged original three-pulse mode.
+
+Verification: **1378 tests passed** in the maintained suite; 42 targeted checks
+and 40 emulated branch paths also pass. The tuned sequence still requires the
+single hardware curve above before continuous acquisition.

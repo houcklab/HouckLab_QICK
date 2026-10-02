@@ -20,6 +20,26 @@ from . import Q4RepeatedT1 as t1
 
 SHOTS_PER_PHASE = 500
 POINTS_PER_PROGRAM = 16
+TUNED_PULSES = dict(source_session='q4_echo_tuneup_20261002T062951Z_cf100fcf',
+                    frequency_mhz=4367.786623, pi2_gain=20104,
+                    refocus_pulse_count=2, refocus_gap_us=.1)
+
+
+def echo_pulse_starts(envelope_ticks, half_gap_ticks, refocus_count=1, inner_gap_ticks=0):
+    if (not math.isfinite(envelope_ticks) or envelope_ticks<=0 or
+            half_gap_ticks<0 or inner_gap_ticks<0 or refocus_count not in (1,2)):
+        raise ValueError('invalid echo pulse timing')
+    spacing=math.ceil(envelope_ticks)+int(half_gap_ticks)
+    if refocus_count==1:return [0,spacing,2*spacing]
+    inner=math.ceil(envelope_ticks)+int(inner_gap_ticks)
+    return [0,spacing,spacing+inner,2*spacing+inner]
+
+
+def tuned_overrides():
+    return dict(qubit_freq=TUNED_PULSES['frequency_mhz'],qubit_pi_freq=TUNED_PULSES['frequency_mhz'],
+                qubit_pi2_gain=TUNED_PULSES['pi2_gain'],q4_echo_refocus_count=2,
+                q4_echo_refocus_gap_us=TUNED_PULSES['refocus_gap_us'],
+                reset_pi_freq=4367.760,reset_pi_gain=32000)
 
 
 def delays_us(max_delay_us=1000.):
@@ -31,26 +51,34 @@ def delay_chunks(delays):
             for k in range(0,len(delays),POINTS_PER_PROGRAM)]
 
 
-def plan(*, max_delay_us=1000., hours=12., max_runs=None):
+def plan(*, max_delay_us=1000., hours=12., max_runs=None, tuned_pulses=False):
     if hours is not None and (not math.isfinite(hours) or hours <= 0):
         raise ValueError('hours must be positive and finite, or None')
     if max_runs is not None and (not isinstance(max_runs,int) or max_runs <= 0):
         raise ValueError('max_runs must be a positive integer')
-    return dict(qubit='q4', sequence='X(pi/2)-tau/2-Y(pi)-tau/2-+/-X(pi/2)',
+    return dict(qubit='q4', sequence=('X(pi/2)-tau/2-Y(pi/2)-0.1us-Y(pi/2)-tau/2-+/-X(pi/2)'
+                                     if tuned_pulses else 'X(pi/2)-tau/2-Y(pi)-tau/2-+/-X(pi/2)'),
         max_delay_us=max_delay_us, delays_us=delays_us(max_delay_us).tolist(),
         delay_definition='sum of the two free gaps; finite pulse durations excluded',
         delay_points=71, shots_per_phase=SHOTS_PER_PHASE, shots_per_delay=2*SHOTS_PER_PHASE,
         records_per_curve=71*2*SHOTS_PER_PHASE, analysis_phases_deg=[0,180],
         hours=hours, max_runs=max_runs, recalibration_minutes=30,
-        reset_mode='opx_unbounded', flux_gain=0, qubit_frequency_mhz=4367.760,
-        readout_frequency_mhz=7026.520, pi_gain=32000, pi2_gain=16000, sigma_us=2.,
+        reset_mode='opx_unbounded', flux_gain=0,
+        qubit_frequency_mhz=TUNED_PULSES['frequency_mhz'] if tuned_pulses else 4367.760,
+        readout_frequency_mhz=7026.520, pi_gain=None if tuned_pulses else 32000,
+        pi2_gain=TUNED_PULSES['pi2_gain'] if tuned_pulses else 16000, sigma_us=2.,
+        refocus_gain=TUNED_PULSES['pi2_gain'] if tuned_pulses else 32000,
+        refocus_pulse_count=2 if tuned_pulses else 1,
+        reset_pi_freq_mhz=4367.760,reset_pi_gain=32000,
+        pulse_tuneup=dict(TUNED_PULSES) if tuned_pulses else None,
         fit='signed phase contrast, offset + amplitude * exp(-free_delay/T2E)',
         echo_signal_check='stop if first curve has no detectable echo, or three subsequent curves lose contrast')
 
 
-def measurement_config(calibration):
+def measurement_config(calibration, *, tuned_pulses=False):
     cfg = t1.measurement_config(calibration)
     cfg.update(shots=SHOTS_PER_PHASE, reps=SHOTS_PER_PHASE)
+    if tuned_pulses:cfg.update(tuned_overrides())
     return cfg
 
 
@@ -95,8 +123,8 @@ SUMMARY_FIELDS=('index','started_at','elapsed_s','duration_s','calibration_id',
 
 
 def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
-                 max_delay_us=1000., clock=time.monotonic):
-    protocol=plan(max_delay_us=max_delay_us,hours=hours,max_runs=max_runs)
+                 max_delay_us=1000., tuned_pulses=False, clock=time.monotonic):
+    protocol=plan(max_delay_us=max_delay_us,hours=hours,max_runs=max_runs,tuned_pulses=tuned_pulses)
     output=Path(output); output.mkdir(parents=True,exist_ok=True)
     started=clock(); deadline=math.inf if hours is None else started+hours*3600
     manifest=dict(protocol,started_at=datetime.now(timezone.utc).isoformat(),status='running',runs=[])
@@ -133,14 +161,14 @@ def collect_runs(output, *, hours, calibrate, measure, max_runs=None,
     return manifest
 
 
-def measure_curve(soc,soccfg,output,index,calibration,*,progress=True,max_delay_us=1000.):
+def measure_curve(soc,soccfg,output,index,calibration,*,progress=True,max_delay_us=1000.,tuned_pulses=False):
     from tqdm import tqdm
     import matplotlib.pyplot as plt
     from .Q4RepeatedT2EProgram import Q4EchoSweepProgram
     from ..active_reset_OPX.integration import runtime_bundle,classify_payload_iq
     started=time.monotonic();started_at=datetime.now(timezone.utc).isoformat()
     stem=Path(output)/f'run_{index:06d}'
-    cfg=measurement_config(calibration['bundle']); bundle=runtime_bundle(cfg)
+    cfg=measurement_config(calibration['bundle'],tuned_pulses=tuned_pulses); bundle=runtime_bundle(cfg)
     delays=delays_us(max_delay_us)
     t1.save_json(stem.with_suffix('.config.json'),cfg)
     programs=[];preflight=[]
@@ -206,8 +234,8 @@ def measure_curve(soc,soccfg,output,index,calibration,*,progress=True,max_delay_
     return result
 
 
-def run(*,data_root=t1.DATA_ROOT,hours=12.,max_runs=None,progress=True,max_delay_us=1000.):
-    protocol=plan(max_delay_us=max_delay_us,hours=hours,max_runs=max_runs)
+def run(*,data_root=t1.DATA_ROOT,hours=12.,max_runs=None,progress=True,max_delay_us=1000.,tuned_pulses=False):
+    protocol=plan(max_delay_us=max_delay_us,hours=hours,max_runs=max_runs,tuned_pulses=tuned_pulses)
     output=Path(data_root)/'q4'/('q4_repeated_t2e_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     output.mkdir(parents=True)
     t1.snapshot_initialize(output/'initialize_snapshot')
@@ -215,7 +243,9 @@ def run(*,data_root=t1.DATA_ROOT,hours=12.,max_runs=None,progress=True,max_delay
         shutil.copyfile(Path(__file__).with_name(name),output/name)
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=Path(__file__).parent,text=True).strip()
     t1.save_json(output/'plan.json',dict(protocol,commit=revision))
-    t1.save_json(output/'requested_config.json',t1.base_config())
+    requested=t1.base_config()
+    if tuned_pulses:requested.update(tuned_overrides())
+    t1.save_json(output/'requested_config.json',requested)
     print(f'q4 repeated T2E: {output}',flush=True)
     import matplotlib
     matplotlib.use('Agg')
@@ -224,9 +254,10 @@ def run(*,data_root=t1.DATA_ROOT,hours=12.,max_runs=None,progress=True,max_delay
     soc,soccfg=makeProxy()
     try:
         t1.save_json(output/'board_configuration.json',soccfg.get_cfg())
-        collect_runs(output,hours=hours,max_runs=max_runs,max_delay_us=max_delay_us,
+        collect_runs(output,hours=hours,max_runs=max_runs,max_delay_us=max_delay_us,tuned_pulses=tuned_pulses,
             calibrate=lambda n:t1.calibrate_reset(soc,soccfg,output,n,purpose='Q4RepeatedT2E'),
-            measure=lambda n,c:measure_curve(soc,soccfg,output,n,c,progress=progress,max_delay_us=max_delay_us))
+            measure=lambda n,c:measure_curve(soc,soccfg,output,n,c,progress=progress,
+                                            max_delay_us=max_delay_us,tuned_pulses=tuned_pulses))
     finally:
         _safe_abort(soc)
     return output
@@ -239,11 +270,14 @@ def main(argv=None):
     duration.add_argument('--hours',type=float,default=12.)
     duration.add_argument('--forever',dest='hours',action='store_const',const=None)
     p.add_argument('--max-runs',type=int);p.add_argument('--max-delay-us',type=float,default=1000.)
+    p.add_argument('--tuned-pulses',action='store_true',help='use October 2 q4 tune-up and two half-pulses for refocusing')
     p.add_argument('--data-root',default=t1.DATA_ROOT);p.add_argument('--quiet',action='store_true')
     a=p.parse_args(argv)
     if a.run and not a.plan:
-        run(data_root=a.data_root,hours=a.hours,max_runs=a.max_runs,progress=not a.quiet,max_delay_us=a.max_delay_us)
-    else: print(json.dumps(plan(hours=a.hours,max_runs=a.max_runs,max_delay_us=a.max_delay_us),indent=2))
+        run(data_root=a.data_root,hours=a.hours,max_runs=a.max_runs,progress=not a.quiet,
+            max_delay_us=a.max_delay_us,tuned_pulses=a.tuned_pulses)
+    else: print(json.dumps(plan(hours=a.hours,max_runs=a.max_runs,max_delay_us=a.max_delay_us,
+                               tuned_pulses=a.tuned_pulses),indent=2))
     return 0
 
 

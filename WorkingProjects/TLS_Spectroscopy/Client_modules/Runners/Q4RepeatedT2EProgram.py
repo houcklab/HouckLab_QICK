@@ -2,6 +2,7 @@
 import math
 
 from .Q4RepeatedT1 import reuse_reset_waveform
+from .Q4RepeatedT2E import echo_pulse_starts
 from ..active_reset_OPX.programs import OPXResetT1SweepProgram, emit_payload_reset_shot
 
 
@@ -10,8 +11,13 @@ class Q4EchoSweepProgram(OPXResetT1SweepProgram):
         self.echo_timing = []
         if cfg.get('do_ff') or cfg.get('ff_park_gain') != 0:
             raise ValueError('q4 echo requires zero flux and no excursion')
-        if cfg.get('qubit_pi_freq') != 4367.760 or cfg.get('read_pulse_freq') != 7026.520:
+        frequency=float(cfg.get('qubit_pi_freq',math.nan))
+        if not math.isfinite(frequency) or abs(frequency-4367.760)>.1 or cfg.get('read_pulse_freq') != 7026.520:
             raise ValueError('q4 pulse/readout frequencies required')
+        if cfg.get('q4_echo_refocus_count',1) not in (1,2):raise ValueError('invalid refocusing pulse count')
+        if not 0<=float(cfg.get('q4_echo_refocus_gap_us',.1))<=1:raise ValueError('invalid refocusing gap')
+        if any(not 0<int(cfg[key])<=32000 for key in ('qubit_pi_gain','qubit_pi2_gain')):
+            raise ValueError('echo gains must remain in 1..32000')
         delays = cfg['opx_t1_delays_us']
         if len(delays) % 2 or any(delays[k] != delays[k+1] for k in range(0,len(delays),2)):
             raise ValueError('echo requires adjacent phase pairs at equal delays')
@@ -32,23 +38,25 @@ class Q4EchoSweepProgram(OPXResetT1SweepProgram):
             self._set_payload_pulse(gain=self.cfg['qubit_pi2_gain'])
             self.pulse(ch=ch, t=0)
             envelope_ticks = float(self._dac_ts[ch])
-            # Equal gaps and exactly centered refocusing pulse, including the
-            # fractional generator-to-tProcessor clock conversion.
-            spacing = math.ceil(envelope_ticks) + self.us2cycles(delay_us/2)
-            self.regwi(page, gain_reg, self.cfg['qubit_pi_gain'])
-            # This generator has 32-bit phase; 90/180 degrees exceed the
-            # tProcessor's direct-immediate range.
+            count=self.cfg.get('q4_echo_refocus_count',1)
+            starts=echo_pulse_starts(envelope_ticks,self.us2cycles(delay_us/2),count,
+                                    self.us2cycles(self.cfg.get('q4_echo_refocus_gap_us',.1)))
+            refocus_gain=self.cfg['qubit_pi2_gain'] if count==2 else self.cfg['qubit_pi_gain']
+            self.regwi(page, gain_reg, refocus_gain)
+            # Both halves of the split pi rotation have the same Y axis.
+            # Large 32-bit phase words require the safe write path.
             self.safe_regwi(page, phase_reg, self.deg2reg(90, gen_ch=ch))
-            self.pulse(ch=ch, t=spacing)
+            for start in starts[1:-1]:self.pulse(ch=ch,t=start)
             self.regwi(page, gain_reg, self.cfg['qubit_pi2_gain'])
             self.safe_regwi(page, phase_reg, self.deg2reg(phase, gen_ch=ch))
-            self.pulse(ch=ch, t=2*spacing)
+            self.pulse(ch=ch, t=starts[-1])
             self.sync_all(self.us2cycles(.01))
             self.echo_timing.append(dict(requested_free_us=delay_us, analysis_phase_deg=phase,
-                free_us=float(self.cycles2us(2*(spacing-envelope_ticks))),
+                free_us=float(self.cycles2us(2*(starts[1]-envelope_ticks))),
                 envelope_us=float(self.cycles2us(envelope_ticks)),
-                pulse_start_ticks=[0, spacing, 2*spacing],
-                center_to_center_us=float(self.cycles2us(2*spacing))))
+                pulse_start_ticks=starts,refocus_pulse_count=count,refocus_gain=refocus_gain,
+                refocus_block_us=float(self.cycles2us(starts[-2]-starts[1]+envelope_ticks)),
+                center_to_center_us=float(self.cycles2us(starts[-1]))))
 
         emit_payload_reset_shot(self, page=self.reset_page, regs=self.reset_regs,
             reset_scheme='opx_unbounded', payload_calibration=self.payload_calibration,

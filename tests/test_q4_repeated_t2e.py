@@ -24,6 +24,31 @@ def test_q4_echo_plan_and_phase_pair_budget():
     assert not cfg['do_ff'] and cfg['ff_park_gain'] == 0
 
 
+def test_tuned_payload_preserves_reset_settings_and_records_split_refocusing():
+    m=module()
+    cfg=m.measurement_config({'test':'calibration'},tuned_pulses=True)
+    assert cfg['qubit_pi_freq']==pytest.approx(4367.786623)
+    assert cfg['qubit_pi2_gain']==20104
+    assert cfg['q4_echo_refocus_count']==2 and cfg['q4_echo_refocus_gap_us']==.1
+    assert cfg['reset_pi_freq']==4367.760 and cfg['reset_pi_gain']==32000
+    assert cfg['sigma']==2 and cfg['qubit_pi_gain']==32000
+    p=m.plan(tuned_pulses=True,max_runs=1)
+    assert p['refocus_gain']==20104 and p['refocus_pulse_count']==2
+    assert p['pi_gain'] is None and 'source_session' in p['pulse_tuneup']
+
+
+def test_split_refocusing_keeps_equal_outer_gaps_and_centered_net_pi():
+    m=module()
+    # 8-tick envelopes, each free gap 3 ticks, inner half-pulse gap 1 tick.
+    starts=m.echo_pulse_starts(8,3,2,1)
+    assert starts==[0,11,20,31]
+    centers=np.array(starts)+4
+    assert (centers[1]+centers[2])/2 == (centers[0]+centers[-1])/2
+    assert starts[1]-(starts[0]+8)==starts[-1]-(starts[-2]+8)==3
+    assert m.echo_pulse_starts(8,3,1,1)==[0,11,22]
+    with pytest.raises(ValueError):m.echo_pulse_starts(8,3,3,1)
+
+
 def test_contrast_is_signed_phase_difference_with_paired_standard_error():
     m = module()
     y = np.array([[[1,1,1,0], [0,0,1,0]], [[1,0,1,0], [0,1,0,1]]])
