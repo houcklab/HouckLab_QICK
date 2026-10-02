@@ -298,3 +298,42 @@ the unchanged original three-pulse mode.
 Verification: **1378 tests passed** in the maintained suite; 42 targeted checks
 and 40 emulated branch paths also pass. The tuned sequence still requires the
 single hardware curve above before continuous acquisition.
+
+## Tuned echo succeeded; continuous acquisition is ready
+
+Session `q4_repeated_t2e_20261002T064453Z_20b1cc38`, commit `4da0d7fb`,
+completed at 02:45 EDT on October 2 using `--tuned-pulses`. The full run took
+47.69 s including calibration; the curve's acquisition/analysis took 28.11 s
+before plot save. All 71000 payload shots are finite, and raw reclassification
+exactly matches saved phase populations, signed contrast and standard errors.
+
+![Validated tuned q4 echo](q4_t2e_tuned_trace_20261002.png)
+
+**T2E = 131.82 ± 5.95 µs**, with reduced χ² = **1.244**. The error is the
+fit uncertainty. Short-delay contrast is 0.6776 ± 0.0102, and the previous
+large rise/oscillation is absent. The two final-phase traces converge at long
+delay, as expected for lost coherence. Both signal and exponential-fit checks
+pass. SS-cal held-out peak fidelity is 0.8945 for payload and 0.8935 for the
+feedback-loop context; these are reference-separation metrics, not reset-purity
+measurements.
+
+Additional checks:
+
+- First 250 shots per phase: 125.15 ± 8.07 µs; last 250: 139.45 ± 8.74 µs.
+  Their pointwise contrast difference has χ²/71 = 1.039.
+- Excluding delays below 5 µs gives 131.70 ± 6.66 µs. Truncating the curve at
+  500 µs gives 121.15 ± 7.78 µs; the longer tail helps constrain the free offset.
+- Largest saved absolute accumulator is 24780, within the signed 16-bit range.
+
+This establishes a usable current echo trace and supports starting the user's
+requested continuous T2E series. Frequency and pulse gains remain fixed to
+this tune-up; readout/reset references refresh every 30 minutes. Keep the
+`--tuned-pulses` flag:
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q4RepeatedT2E --run --forever --max-delay-us 1000 --tuned-pulses
+```
+
+Each curve still has 71 logarithmic delays and 1000 total shots per delay,
+with active reset. Ctrl+C preserves completed curves and completed blocks of
+the current curve. No acquisition code was changed after this successful run.
