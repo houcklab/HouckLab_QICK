@@ -155,3 +155,73 @@ Decision: **do not begin the infinite loop yet**. Check q4's current drive
 frequency and π/π2 calibration, then repeat one echo trace. Detuning or pulse
 imperfection is a candidate explanation, not an established cause from this
 curve alone. No acquisition code or fit threshold was changed after this run.
+
+## Finite pulse tune-up before repeating echo
+
+The user approved checking drive frequency and π/π2 calibration. Run:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q4EchoTuneup --run
+```
+
+This is a finite diagnostic with the established q4 readout and active reset.
+It archives initialization and code and writes under
+`q4/q4_echo_tuneup_<UTC>_<id>/`. It does not edit `initialize.py`, apply new
+settings to the repeated echo runner, or start an infinite loop. The pulse
+shape remains the approximately 8 µs Gaussian, sigma 2 µs. Flux remains zero.
+Reset pulses stay at the previous 4367.760 MHz / gain 32000 settings throughout
+the diagnostic; payload pulse settings vary independently.
+
+The stages are:
+
+1. **Pulsed spectroscopy:** 51 frequencies over 4367.760 ± 0.250 MHz, in a
+   fixed shuffled order, plus four zero-gain references. Select an interior
+   peak with at least 0.15 classified-population contrast above the references.
+   This coarse peak seeds the Ramsey check, rather than serving as the final
+   frequency calibration.
+2. **Four-phase Ramsey:** two drive frequencies at coarse center ±25 kHz,
+   81 free gaps from 0.2 to 40.2 µs, and final pulse phases 0/90/180/270°.
+   Each delay interleaves both drives and all phases. The complex contrast
+   is `(P0−P180) + i(P90−P270)`. Fit a decaying rotating phasor with complex
+   amplitude and offset. The known 50 kHz drive separation determines the
+   hardware phase convention; both traces must resolve and show the expected
+   beat-frequency shift. The constant pulse duration shifts the fitted phase,
+   not the fringe frequency versus free gap.
+3. **Rotation check:** at the Ramsey-derived frequency if qualified, otherwise
+   at the coarse frequency for diagnostic purposes only, sweep 0–32000 gain
+   for one and three equal-phase pulses, plus 8000–22000 gain for four pulses.
+   Pulse gaps are 0.1 µs. Fit each train independently to a sinusoidal rotation
+   response. The three-pulse fit estimates π gain; the four-pulse fit estimates
+   π2 gain from its first full-rotation return. The one-pulse response and train
+   agreement provide consistency checks.
+
+There are 55 + 648 + 95 = **798 conditions**, 250 payload shots each:
+**199500 payload shots**, plus reset readouts and fresh calibration references.
+Acquisition uses 34 programs of at most 24 conditions, with one progress/ETA
+bar per stage and raw IQ saved after every completed block. Full raw data,
+conditions, timing and memory reports, classified populations, fit reports and
+`diagnostic.png` are retained. On interruption, completed blocks remain saved;
+recovery of the current block depends on partial records supplied by transport.
+
+The saved candidate requires two qualified Ramsey fits, agreement with the
+known drive shift, frequency within 40 kHz of the coarse center, independent
+gain fits with resolved contrast and reduced χ² ≤ 5, agreement between pulse
+trains, and a suggested π gain no higher than 32000. A failed Ramsey fit does
+not prevent collecting the amplitude diagnostic, but disqualifies the final
+candidate. Suggested gains are **not automatically applied**. Inspect this run
+and repeat one measured echo before starting the continuous series.
+
+Offline checks use QICK 0.2.133 and the saved q4 board/classifier. All 34
+programs compile (maximum 2633/8192 instructions; waveform 55040/65536 samples).
+Instruction emulation covers both classifier signs and ground/hot reset paths
+for every block and verifies phases, frequencies, gains, gaps, reset-register
+restoration and record ordering. Full synthetic acquisition recovers injected
+frequency and rotation gains and saves all three stages; interrupt/timeout
+injection preserves completed blocks. These are software checks, not evidence
+that the actual hardware tune-up has succeeded.
+
+Verification also includes nine targeted regression cases for phase-balanced
+conditions, detuning recovery with both phase conventions, rejection of weak
+or inconsistent Ramsey signals, independent rotation fits, bounded peak
+selection and pulse limits. The full maintained suite passes 1376 tests.
