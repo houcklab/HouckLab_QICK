@@ -116,3 +116,42 @@ must establish the current hardware contrast and decay before interpreting
 an overnight series. Initialization and shared production/reset code are
 unchanged; the only existing-runner change is an optional calibration metadata
 label in `Q4RepeatedT1.calibrate_reset`, defaulting to its original T1 label.
+
+## First hardware curve: echo present, exponential T2E unresolved
+
+Session `q4_repeated_t2e_20261002T060725Z_122edf43`, commit `a29fdfc4`,
+completed at 02:08 EDT on October 2. Calibration plus the single curve took
+36.75 s; acquisition/analysis before plot save took 19.72 s. All 71000 payload
+shots were saved as finite 71 × 2 × 500 IQ arrays. Reclassifying those arrays
+exactly reproduces both saved phase populations, contrast and error bars.
+
+![First q4 echo trace](q4_t2e_first_trace_20261002.png)
+
+The first calibration attempt passed: held-out peak fidelity 0.9135 for
+payload and 0.9005 for the reset-loop context. These describe reference
+separation, not a measurement of post-reset purity or π/2 fidelity.
+
+The trace contains substantial echo contrast, but is strongly nonmonotonic:
+
+| Free-delay interval (µs) | Mean classified phase contrast | Standard error |
+| --- | ---: | ---: |
+| 1–2 | 0.3165 | 0.0102 |
+| 10–30 | 0.6035 | 0.0076 |
+| 50–80 | 0.2928 | 0.0137 |
+| 90–120 | 0.4287 | 0.0164 |
+| 500–1000 | 0.0148 | 0.0109 |
+
+The forced exponential yields 315.57 ± 27.45 µs but reduced χ² = 18.75:
+**do not report that value as a reliable T2E**. The runner correctly stored
+`signal_valid=true`, `fit_valid=false`, and null reported T2E. The early rise
+and later oscillation occur within acquisition blocks as well as across them.
+First-versus-second 250-shot halves agree at reduced difference χ² = 0.88
+(71 points), so this run provides no evidence of a large drift during each
+block. The largest saved absolute accumulator value is 26602, within the
+signed 16-bit range. These checks find no raw-to-plot mismatch; they do not
+prove that the physical pulses have the intended rotations.
+
+Decision: **do not begin the infinite loop yet**. Check q4's current drive
+frequency and π/π2 calibration, then repeat one echo trace. Detuning or pulse
+imperfection is a candidate explanation, not an established cause from this
+curve alone. No acquisition code or fit threshold was changed after this run.
