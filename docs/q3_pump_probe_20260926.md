@@ -8073,3 +8073,11 @@ below the blind-search threshold. Next: one bounded six-frequency,
 2,000-shot, two-pass independent confirmation (~13--15 min), with this
 primary endpoint specified before collecting the new data. Full statistics,
 scope and command are in the dedicated time-map note.
+
+User steering supersedes the narrow confirmation: prioritize a blind
+3.8--4.3 GHz afterglow search. Next run two 250-MHz blocks, one pass each at
+2-MHz spacing and 400 shots, approximately 55 minutes total. Independent
+initial/final references bound each block. The paper motivates broadband
+coverage and does not identify a privileged 4.046-GHz site. Keep the
+40-us-return/herald sensitivity limitation explicit. Commands and revised
+decision are recorded in the time-map note; acquisition code is unchanged.

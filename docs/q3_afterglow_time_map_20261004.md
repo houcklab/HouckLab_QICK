@@ -269,3 +269,37 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglo
 
 Raw snapshot, numerical audit, independent analysis and inspected plots:
 `~/.codex/visualizations/2026/10/04/q3_afterglow_time_map_202506Z/`.
+
+## Revised priority: broadband search
+
+The user correctly prioritized coverage over following another weak peak.
+The proposed six-frequency 4.046-GHz confirmation is superseded as the next
+measurement. The paper reports long-lived TLSs spread across 3--4.5 GHz;
+it supplies motivation for a blind broad search, not a physical reason to
+privilege 4.046 GHz. Its density and signal visibility cannot be transferred
+to q3. Reference: https://arxiv.org/html/2609.31280v1, Fig. 3 and associated
+discussion. Our 50-MHz screen covered only one tenth of the usual accessible
+band, and the corrected-return/herald gap still limits sensitivity to
+shorter-lived energy storage.
+
+Next take one pass of each **3.800--4.050 GHz** and **4.050--4.300 GHz**,
+2 MHz spacing, 400 shots/condition. The shared 4.050-GHz point provides an
+overlap between sessions. Each half has 126 frequencies and 302,400 science
+records (25.2 minutes minimum recovery time), below the 30-minute per-pass
+workload limit. Each half has independent initial and final references.
+Allow roughly **55 minutes total** at measured throughput. Keep 0.1/10/40-us
+probes, raw-IQ saving and the current matched hot/cold controls unchanged.
+This is a coarse screen; 2-MHz spacing and limited shots can miss narrow or
+weak signals. Repetition and finer sampling follow candidates from the full
+band. Do not interpret a broad null as excluding TLSs whose memory decays
+during the return and first readout.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy &&
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 3.800 --freq-stop 4.050 --step-mhz 2 --shots 400 --passes 1 &&
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 4.050 --freq-stop 4.300 --step-mhz 2 --shots 400 --passes 1
+```
+
+The command chain starts the second half only after successful completion of
+the first. Reference rejection or acquisition failure stops the chain and
+retains the existing raw data. No new acquisition code is needed.
