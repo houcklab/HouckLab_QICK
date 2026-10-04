@@ -8054,3 +8054,11 @@ an offline-heralded screen for memory surviving the corrected return and
 first readout, not the paper's feed-forward protocol. No new measurement
 result is claimed. Full protocol, commands, scope and validation are in
 [q3_afterglow_time_map_20261004.md](q3_afterglow_time_map_20261004.md).
+
+First pass `20261004T193258Z_8af4b9b7` completed all 26 frequencies in 6m17s,
+with valid initial/final references. Raw IQ reproduces all saved summaries
+and growth errors. No confirmed afterglow: strongest growth is 4.034 GHz,
+40 us, +17.29 +/- 6.33 points (2.73 SE before the 52-comparison search
+correction). Continuous IQ supports the direction but is not independent.
+Next: three finite repeat passes at unchanged settings, with order reversal,
+to establish a wall-clock map and test this hint before further expansion.

@@ -155,3 +155,50 @@ hardware-sequence inheritance; its blocking findings were resolved before
 the final checks. Local audit outputs are under
 `/tmp/q3_afterglow_time_map_check/` and maintained-suite output is
 `/tmp/q3_afterglow_time_map_maintained_tests_final.log`.
+
+## First measured pass: 20261004T193258Z_8af4b9b7
+
+The finite pass completed on commit `fbc8334b`: all 26 frequencies, 62,400
+science records and 7,200 reference records, in **376.94 seconds** overall.
+Science acquisition took 330.67 seconds. Both boundaries passed. Herald
+reference fidelity was 91.17% initially and 91.71% on the frozen axis at the
+end; conditioned final-readout fidelity was 78.36% and 78.35%. These are the
+paired sequence's reference scores, not a separate standard SS-cal result.
+All 78 frequency/delay cells met the accepted-shot threshold. Counts ranged
+from 86 to 330 of 400 (median 247.5); hot arms often have substantially fewer
+accepted shots than cold arms because the qubit retains excitation.
+
+All saved summaries, both reference reports, source hashes and final summary
+rows reproduce from the saved raw IQ. Independently reconstructed paired
+influence variances reproduce every growth error.
+
+There is **no confirmed afterglow signal**. The strongest growth is at
+4.034 GHz, 40 us: **+17.29 +/- 6.33 percentage points** (one SE), with direct
+hot-minus-cold excess **+11.11 +/- 4.80 points**. It is 2.73 SE in growth;
+an approximate one-sided normal Bonferroni correction over the 26 x 2
+frequency/delay search gives p=0.164. This is exploratory triage, not a
+calibrated discovery test. The continuous-IQ growth has the same sign
+(0.309 +/- 0.094 of the reference separation), but is computed from the
+same shots and is not independent confirmation. All-shot growth is smaller.
+
+As a descriptive selection-sensitivity check at 4.034 GHz, lowering the
+excited-reference tail admitted by the herald from 5% to 2.5% changes growth
+to +11.60 +/- 7.58 points; at 1% it is +12.49 +/- 12.16 points. Positive
+direction survives, but the accepted sample shrinks. This neither proves nor
+excludes selection bias. The second classified-growth hint, 4.042 GHz at
+10 us (+15.58 +/- 5.89 points), has a weak IQ counterpart and is less persuasive.
+
+Next take **three finite passes on the unchanged grid at 400 shots**, roughly
+18--20 minutes at the measured throughput. Alternating frequency and arm
+order will test reproducibility and provide multiple wall-clock map rows.
+Treat 4.034 GHz/40 us as the prespecified primary repeat target, while
+retaining the blind grid if the spectrum shifts. Do not expand into a
+two-frequency experiment or infer a lifetime from this pass.
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --passes 3
+```
+
+Audit script, raw snapshot, numerical report and inspected spectrum/map plots
+are saved under
+`~/.codex/visualizations/2026/10/04/q3_afterglow_time_map_193258Z/`.
