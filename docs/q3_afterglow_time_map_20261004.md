@@ -303,3 +303,82 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglo
 The command chain starts the second half only after successful completion of
 the first. Reference rejection or acquisition failure stops the chain and
 retains the existing raw data. No new acquisition code is needed.
+
+## First full-band result: 212318Z_601077f7 / 215155Z_e5a7c5d6
+
+Both halves completed on 2026-10-04, with all four reference boundaries
+valid. The combined sweep lasted **3,428.65 seconds (57m09s)** from first
+initialization to final completion. It contains **252 science cells, 251
+unique frequencies, 604,800 paired science records and 14,400 reference
+records**. The duplicated point is 4.050 GHz. All 252 raw summaries, four
+reference reports, source hashes and independent paired growth variances
+reproduce. Each half uses its own frozen initial classifier; these remain
+classified contrasts rather than absolutely calibrated populations.
+
+At **4.000 GHz**, only 79 hot short-probe shots were accepted, below the
+fixed minimum of 80. Both growth contrasts there stay masked. The other
+**502 of 504 planned growth comparisons** pass quality checks, counting the
+overlap measurements separately. No science acquisition was skipped.
+
+**No confirmed afterglow in this first coarse broad pass.** Standardized
+growth among valid comparisons has mean -0.0015 and standard deviation
+1.0134; there are 15 points above +2 SE and 18 below -2 SE. This scatter is
+compatible with shot noise. Shared short-probe baselines and references mean
+these are descriptive diagnostics, not independent exact hypothesis tests.
+The largest positive standardized growth is 2.84 SE; an approximate normal
+one-sided Bonferroni screen across all 504 planned comparisons would require
+3.72 SE. This is not evidence that all long-lived TLSs are absent: coarse
+frequency spacing, finite shots, imperfect heralding and the return/readout
+gap still limit visibility.
+
+Exploratory observations (one-SE errors, percentage points):
+
+| Frequency | Probe | Growth above 0.1 us | Direct hot-minus-cold |
+|---|---|---|---|
+| 3.862 GHz | 40 us | +14.27 +/- 5.03 | +11.04 +/- 3.71 |
+| 3.984 GHz | 40 us | +11.65 +/- 4.19 | +9.89 +/- 2.93 |
+| 4.046 GHz | 10 us | +15.06 +/- 6.38 | +7.50 +/- 4.69 |
+
+The new 3.862/3.984-GHz observations are selected after looking at this broad
+screen and require independent repetition. The earlier 4.046-GHz candidate
+is positive again, making four positive growth observations since the
+three-pass session. However its new direct excess is only 1.60 SE, and its
+IQ growth is 0.122 +/- 0.102 of reference separation. Its large growth partly
+reflects a negative short-probe offset; do not equate it with a 15-point
+absolute upward-excitation signal or declare localized TLS memory.
+
+Descriptive stricter-herald checks, admitting 2.5% instead of 5% of the
+initial excited-reference tail, give growth +10.74 +/- 5.79 at 3.862 GHz,
++15.22 +/- 5.14 at 3.984 GHz, and +22.54 +/- 7.88 at 4.046 GHz. These are
+sensitivity checks sharing the same data, not independent confirmations;
+the stricter 4.046-GHz selection falls below the default accepted-shot gate.
+
+Plots and the complete reproducible raw snapshot/audit are under
+`~/.codex/visualizations/2026/10/04/q3_afterglow_full_band_212318Z/`.
+`full_band_growth.png` combines the two blocks, preserves the invalid gap,
+and uses a descriptive mean with a disagreement-error floor at the overlap.
+The dashed boundary marks the separately calibrated blocks. The full band
+was measured sequentially; it is not a simultaneous spectrum.
+
+Next take **one independent repeat of the whole band**, upper block first
+and lower block second, at unchanged spacing, shots and probe delays. Allow
+roughly 57 minutes. This reverses block order only; each individual one-pass
+session still scans frequencies and arms in its default order. The repeat
+will provide a second broad observation with actual cell timestamps, rather
+than treating a single sweep as a wall-clock series.
+
+Before collecting it, specify three candidate checks: 3.862 GHz/40 us,
+3.984 GHz/40 us and 4.046 GHz/10 us. A useful repeat requires positive direct
+excess and growth, each exceeding 2.5 paired SE in the new data, with positive
+IQ support. These are triage criteria for three selected endpoints, not a
+discovery claim; neighboring frequencies and off-target loading controls
+remain necessary for localization and attribution. Other frequencies remain
+exploratory, and a shifted feature is reported as such rather than used to
+silently redefine confirmation. Analyze the independent repeat separately
+before any pooling that includes the original selection data.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy &&
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 4.050 --freq-stop 4.300 --step-mhz 2 --shots 400 --passes 1 &&
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 3.800 --freq-stop 4.050 --step-mhz 2 --shots 400 --passes 1
+```

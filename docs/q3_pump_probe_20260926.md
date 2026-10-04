@@ -8081,3 +8081,15 @@ initial/final references bound each block. The paper motivates broadband
 coverage and does not identify a privileged 4.046-GHz site. Keep the
 40-us-return/herald sensitivity limitation explicit. Commands and revised
 decision are recorded in the time-map note; acquisition code is unchanged.
+
+First full-band afterglow sweep `212318Z_601077f7` / `215155Z_e5a7c5d6`
+completed 3.8--4.3 GHz in 57m09s, all reference boundaries valid. Raw data
+reproduce all 252 cells and errors. The 4.000-GHz growth comparisons are
+masked because 79 short hot shots fall below the 80-shot gate; other 502
+planned comparisons pass. No confirmed afterglow: standardized growth has
+mean approximately zero and SD 1.013, with maximum positive 2.84 SE before
+the broad search correction. New 3.862/3.984-GHz hints and recurring
+4.046-GHz growth remain exploratory. Next repeat the entire band once,
+upper block first; independently score the three specified candidate
+endpoints before pooling. Full statistics, caveats and commands are in the
+dedicated time-map note.
