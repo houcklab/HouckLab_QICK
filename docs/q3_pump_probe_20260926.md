@@ -8062,3 +8062,14 @@ and growth errors. No confirmed afterglow: strongest growth is 4.034 GHz,
 correction). Continuous IQ supports the direction but is not independent.
 Next: three finite repeat passes at unchanged settings, with order reversal,
 to establish a wall-clock map and test this hint before further expansion.
+
+Three-pass repeat `20261004T202506Z_c3e9f87d` completed 78 cells in 18m31s;
+all four reference boundaries and all accepted-shot gates passed. Raw IQ
+reproduces summaries, errors and references. The 4.034 GHz/40-us hint did
+not reproduce: growth +3.62, -9.25, -5.69 points, pooled -3.78 +/- 3.84.
+The map contains no confirmed afterglow. A weaker 4.046 GHz/10-us candidate
+is positive in all three passes (pooled +7.60 +/- 3.05 points), but remains
+below the blind-search threshold. Next: one bounded six-frequency,
+2,000-shot, two-pass independent confirmation (~13--15 min), with this
+primary endpoint specified before collecting the new data. Full statistics,
+scope and command are in the dedicated time-map note.

@@ -202,3 +202,70 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglo
 Audit script, raw snapshot, numerical report and inspected spectrum/map plots
 are saved under
 `~/.codex/visualizations/2026/10/04/q3_afterglow_time_map_193258Z/`.
+
+## Three-pass repeat: 20261004T202506Z_c3e9f87d
+
+Completed **78 frequency/pass cells**, 187,200 science records and 14,400
+reference records in **1,111.46 seconds (18m31s)** on commit `725e8fc5`.
+All four reference boundaries passed, including the independent frozen-axis
+checks after each pass. Every frequency/delay contrast met the acceptance
+threshold; accepted counts ranged from 95 to 362 of 400, median 280.5.
+All source hashes, 78 raw cell summaries, four reference reports and final
+summary rows reproduce. Independent reconstruction of paired influence
+variances reproduces every growth error. A higher final-reference fidelity
+than in the first session does not establish identical population calibration
+between sessions; these remain classified fractions.
+
+The prespecified **4.034 GHz, 40-us hint did not reproduce**. Growth in the
+ascending/descending/ascending passes was **+3.62, -9.25, -5.69 points**.
+The three-pass mean is **-3.78 +/- 3.84 points**, with the error taken as the
+larger of paired-shot SE and between-pass disagreement SE. Direct excess
+averages -0.06 +/- 2.39 points. Continuous-IQ growth also averages negative.
+Do not pool the initial exploratory peak into the independent repeat and
+claim confirmation, or interpret this as a proof that the site cannot have
+intermittent memory.
+
+No pooled point establishes afterglow across the blind 52-comparison search.
+The largest pooled positive growth is **4.046 GHz, 10 us**, at
+**+7.60 +/- 3.05 points** (2.49 SE; approximate normal one-sided Bonferroni
+p=0.329 over 52 comparisons). Its three growth values are **+3.63, +10.07,
++9.11 points**; direct excess averages **+6.74 +/- 2.57 points** and IQ
+growth **0.128 +/- 0.048 of reference separation**. The IQ check shares the
+same shots. Nearby-frequency direct-excess localization is not consistent
+in every pass, so neither this candidate nor its apparent persistence should
+be called a localized TLS signal.
+
+The time map now contains three sequential science strips, separated by
+reference measurements. Each strip is a frequency sweep lasting about
+5.5 minutes, not a simultaneous spectrum. The apparent vertical continuity
+within one strip is a plotting convention; point timestamps remain in CSV.
+The combined-spectrum errors include a pass-disagreement floor and are
+descriptive, not calibrated discovery intervals.
+
+Next use one bounded independent confirmation of the remaining candidate:
+**4.040--4.050 GHz, 2 MHz spacing, 2,000 shots/condition, two passes**.
+Keep the 4.046 GHz/10-us growth as the primary endpoint selected before this
+new run; neighboring points are drift/localization controls. The sequence
+and analysis stay unchanged. Require positive direct excess, growth and IQ
+growth in both scan orders, and pooled primary growth exceeding three times
+the larger of paired-shot SE and pass-disagreement SE, before extending to
+off-target loading controls. This is a screening decision rather than a
+discovery claim. Comparing
+to both neighboring frequencies is needed before claiming localization;
+even a repeat would not by itself identify an individual TLS. If the
+independent repeat is null or contradictory, close this candidate rather
+than promoting another fluctuation from the same screen.
+
+At observed throughput the two-pass confirmation should take **13--15
+minutes**: 144,000 science records with 12 minutes minimum recovery time,
+plus 10,800 reference records. All 21 science/reference programs were
+compiled offline on the newly saved board snapshot before the command was
+issued, with binary identity against the existing diagonal sequence and
+maximum 4,211 of 8,192 instructions.
+
+```bash
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 4.040 --freq-stop 4.050 --step-mhz 2 --shots 2000 --passes 2
+```
+
+Raw snapshot, numerical audit, independent analysis and inspected plots:
+`~/.codex/visualizations/2026/10/04/q3_afterglow_time_map_202506Z/`.
