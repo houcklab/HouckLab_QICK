@@ -8043,3 +8043,14 @@ use the intended gain-1200 feedback and gain-1880 final readout. The raw
 snapshot, `audit_and_plot.py`, numerical audit and inspected PNG/PDF figures
 are saved under
 `~/.codex/visualizations/2026/10/01/q3_repeated_loading_pilot_20261001T072326Z_00fce639/`.
+
+## 2026-10-04 — fixed-grid afterglow versus wall-clock time
+
+Implemented a blind repeated afterglow map using the existing paired-readout
+diagonal sequence. Start with one 4.000--4.050 GHz pass at 2 MHz spacing and
+400 shots per condition, then inspect references and growth contrasts before
+continuous acquisition. The map requires no T1 site-selection gate. This is
+an offline-heralded screen for memory surviving the corrected return and
+first readout, not the paper's feed-forward protocol. No new measurement
+result is claimed. Full protocol, commands, scope and validation are in
+[q3_afterglow_time_map_20261004.md](q3_afterglow_time_map_20261004.md).
