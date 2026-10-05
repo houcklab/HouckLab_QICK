@@ -1,0 +1,124 @@
+[
+  {
+    "name": "overnight_801_point_frame",
+    "instructions": 5777,
+    "capacity": 8192,
+    "waveform_memory": [
+      {
+        "channel": 0,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 1,
+        "used_samples": 11008,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 2,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 3,
+        "used_samples": 55040,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 4,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 5,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 6,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      }
+    ],
+    "record_words": 2,
+    "stream_plan": {
+      "done_addr": 1,
+      "ack_addr": 2,
+      "ready_addr": 3,
+      "bank_units": 164,
+      "bank_records": 820,
+      "bank_words": 1640,
+      "total_shots": 40,
+      "total_units": 32040,
+      "records_per_unit": 5,
+      "records_per_shot": 4005,
+      "final_partial_units": 60
+    },
+    "points": 801,
+    "shots": 40,
+    "records": 160200,
+    "record_base": 816,
+    "max_frequency_error_mhz": 0.03740393207385395
+  },
+  {
+    "name": "overnight_801_point_reference",
+    "instructions": 5777,
+    "capacity": 8192,
+    "waveform_memory": [
+      {
+        "channel": 0,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 1,
+        "used_samples": 11008,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 2,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 3,
+        "used_samples": 55040,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 4,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 5,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      },
+      {
+        "channel": 6,
+        "used_samples": 0,
+        "capacity_samples": 65536
+      }
+    ],
+    "record_words": 2,
+    "stream_plan": {
+      "done_addr": 1,
+      "ack_addr": 2,
+      "ready_addr": 3,
+      "bank_units": 164,
+      "bank_records": 820,
+      "bank_words": 1640,
+      "total_shots": 250,
+      "total_units": 200250,
+      "records_per_unit": 5,
+      "records_per_shot": 4005,
+      "final_partial_units": 6
+    },
+    "points": 801,
+    "shots": 250,
+    "records": 1001250,
+    "record_base": 816,
+    "max_frequency_error_mhz": 0.03740393207385395
+  }
+]

@@ -319,6 +319,86 @@ def test_full_band_cli_and_point_cap_before_acquisition(tmp_path,monkeypatch):
     assert observed[0]['width_mhz']==500 and observed[0]['step_mhz']==2.
     assert observed[0]['frames']==10 and observed[0]['center_ghz']==4.05
     observed.clear()
-    for args in (['--width-mhz','500','--step-mhz','1'],['--width-mhz','126','--step-mhz','0.5']):
+    for args in (['--width-mhz','500','--step-mhz','0.5'],['--width-mhz','402','--step-mhz','0.5']):
         with pytest.raises(SystemExit):m.main(['--run',*args])
     assert not observed
+
+
+def test_dense_overnight_grid_preserves_all_points_references_and_shots(tmp_path):
+    m=module();called=[]
+    def acquire(grid,shots,name):
+        called.append((grid.copy(),shots,name))
+        return block(grid,shots,center=5.)
+    manifest={'status':'initializing','completed':[]}
+    m.collect(tmp_path,acquire,manifest,frames=1,center_ghz=4.1,width_mhz=400,step_mhz=.5)
+    expected=np.arange(3900,4300.5,.5)/1000
+    assert len(expected)==801
+    assert all(np.array_equal(grid,expected) for grid,_,_ in called)
+    assert [shots for _,shots,_ in called]==[250,40,250]
+    with np.load(tmp_path/'frame_0000.npz') as z:
+        assert z['i'].shape==z['q'].shape==z['states'].shape==(5,801,40)
+        assert z['shot_scan_direction'].tolist()==[1,-1]*20
+
+
+def test_loop_plan_exposes_finite_batches_and_requires_explicit_window(capsys):
+    m=module()
+    assert m.main(['--plan','--loop','--frames','100','--center-ghz','4.1',
+                   '--width-mhz','400','--step-mhz','0.5'])==0
+    p=json.loads(capsys.readouterr().out)
+    assert p['repeat_batches'] is True and p['frames']==100
+    assert p['total_frame_limit'] is None and p['local_points']==801
+    assert p['scout_shots']==0 and p['shots_per_condition_per_frame']==40
+    assert p['local_pre_post_shots']==250
+    assert m.plan()['repeat_batches'] is False and m.plan()['total_frame_limit']==40
+    with pytest.raises(SystemExit):m.main(['--plan','--loop'])
+
+
+def test_loop_continues_drift_flagged_batches_and_stops_on_interrupt(tmp_path):
+    m=module();calls=[]
+    def once():
+        index=len(calls);folder=tmp_path/f'batch_{index}';folder.mkdir()
+        status=['complete','complete_reference_drift','interrupted'][index]
+        (folder/'manifest.json').write_text(json.dumps({'status':status}))
+        (folder/'preserved.npz').write_bytes(b'saved before next batch')
+        calls.append(folder)
+        return folder
+    assert m.repeat_runs(once)==130
+    assert len(calls)==3 and all((p/'preserved.npz').exists() for p in calls)
+
+
+@pytest.mark.parametrize('status',['failed','unresolved','unknown'])
+def test_loop_stops_on_errors_without_retry(tmp_path,status):
+    m=module();calls=[]
+    (tmp_path/'manifest.json').write_text(json.dumps({'status':status}))
+    def once():
+        calls.append(1)
+        return tmp_path
+    assert m.repeat_runs(once)==1
+    assert len(calls)==1
+
+
+def test_loop_interrupt_between_batches_does_not_restart(capsys):
+    m=module();calls=[]
+    def once():
+        calls.append(1)
+        raise KeyboardInterrupt
+    assert m.repeat_runs(once)==130
+    assert calls==[1]
+
+
+def test_cli_loop_uses_exact_dense_grid_in_each_fresh_run(tmp_path,monkeypatch):
+    m=module();calls=[]
+    def run(**kwargs):
+        folder=tmp_path/f'batch_{len(calls)}';folder.mkdir()
+        status='complete_reference_drift' if not calls else 'interrupted'
+        (folder/'manifest.json').write_text(json.dumps({'status':status}))
+        calls.append(kwargs)
+        return folder
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--loop','--frames','100','--center-ghz','4.1',
+                   '--width-mhz','400','--step-mhz','0.5'])==130
+    assert len(calls)==2
+    for kwargs in calls:
+        assert kwargs['frames']==100 and kwargs['center_ghz']==4.1
+        assert kwargs['width_mhz']==400 and kwargs['step_mhz']==.5
+        assert kwargs['continuous'] is True

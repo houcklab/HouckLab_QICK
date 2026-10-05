@@ -8360,3 +8360,20 @@ rate fit is warranted. Next: thirteen fixed points, 4.108–4.132 GHz/2MHz,
 stream plans match the parent and pass preflight for science/reference.
 No measurement-code or initialize changes. Plots and detailed limitations
 are appended to `docs/q3_fast_loss_map_20261005.md`.
+
+User requested overnight indefinite maps over 3.9–4.3 GHz/0.5MHz. Added
+runner-only `--loop`: repeat 100-map finite batches with fresh production
+calibration and 250-shot pre/post, new folders and per-map raw checkpoints.
+Continue completed drift-flagged batches; stop on calibration/acquisition
+errors, unresolved/unknown status or Ctrl+C, without failed-acquisition
+retries. Explicit center is required. Point cap extends 251→801 while
+finite defaults remain unchanged. Same five conditions, 40 shots, active
+reset and corrected return; no shared production/reset/initialize edits.
+Estimate ~25s/map (budget20–30s) and40–55min/batch including references;
+actual dense-grid cadence remains to be measured. Saved-board801-point
+science/reference binaries and stream plans match the parent and pass
+preflight (5777/8192 instructions; record base816/two1640-word banks fit
+4096-word DMem;801 unique DCgains). Each100-map batch saves18,022,500
+records. Eight new test cases witnessed failing;29 focused and1451 full
+suite tests pass. Independent review found no P1/P2 issues. Command and
+preflight report are archived in `docs/q3_fast_loss_map_20261005.md`.

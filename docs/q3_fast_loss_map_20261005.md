@@ -940,3 +940,74 @@ caches and SVGs are in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.12 --width-mhz 24 --step-mhz 2
 ```
+
+## Overnight dense fixed-grid recording
+
+The user requested indefinite fast maps while asleep, over **3.9–4.3 GHz
+at 0.5 MHz spacing**. This is **801 points**, using the same 40 shots per
+frequency/condition, P0/P1 references and 2/10/25 µs survival holds. It is
+not Bayesian/adaptive acquisition, and it does not use passive reset.
+
+`TLSFastLossMap --loop` now repeats independently saved finite batches.
+For the overnight command, `--frames 100` means **100 science maps per
+batch**, not 100 maps total. Each batch creates a new timestamped folder,
+takes fresh production active-reset calibration and 250-shot pre/post maps,
+and checkpoints every completed raw-IQ map. The next batch starts after a
+`complete` or `complete_reference_drift` result; drift flags are retained.
+Acquisition/calibration failures, unresolved/unknown status, or Ctrl+C stop
+the loop. There is no automatic retry of failed acquisition. Ctrl+C during
+acquisition retains existing abort/partial-record protection; Ctrl+C between
+batches does not restart. Loop mode requires an explicit frequency window
+so it cannot repeatedly rediscover and select different sites overnight.
+
+The runner-only grid cap expands **251→801 points**. Grids remain bounded
+to 3.8–4.3 GHz; the width/step constraints and finite 1–2,000-frame batch
+limit are retained. A 400 MHz/0.5 MHz grid is accepted, while 402 MHz/0.5 MHz
+and 500 MHz/0.5 MHz reject before hardware. Finite defaults remain 40 frames,
+20 MHz/1 MHz, with the previous finite CLI exit-status policy. Shared
+production/reset/pulse code and initialize.py are untouched.
+
+### Timing estimate and hardware bounds
+
+Budget **20–30 seconds per 801-point science map**, roughly **25 seconds**.
+This is extrapolated from measured 251-point cadence (6.78s), not yet a
+measurement of the dense grid. The larger gain lookup reduces resident
+transfer-bank capacity from 960 to **820 records**, so simple proportional
+point-count scaling can underestimate overhead. The dry-run plan gives
+20.98–27.27s per science map and **39.8–53.1 minutes per 100-map batch**,
+including the larger reference maps and startup allowance. In user-facing
+terms, expect about **40–55 minutes between batch calibrations**, with
+reference/calibration pauses. The first 250-shot reference can take a few
+minutes before ordinary science maps begin. Actual host receipt/acquisition
+timestamps remain saved; gaps between folders must not be treated as data.
+
+One science map contains **160,200 records**. Each pre/post reference
+contains **1,001,250**, and a 100-map batch contains **18,022,500** total.
+Offline QICK 0.2.133 compilation with the latest saved board/calibration
+verifies both science and reference cases: 801 unique integer DC gains,
+exact requested grid endpoints 3.9/4.3 GHz, nearest-DAC frequency error
+≤0.0375 MHz, observer/production parent binaries and stream plans identical.
+Both pass preflight at **5,777/8,192 instructions**, with waveform usage
+below capacity. The gain lookup precedes record base **816**, and two
+1,640-word stream banks fill the remaining 4,096-word data memory without
+overlap. Total-unit/record counters fit their register widths. The report is
+`docs/q3_fast_loss_map_overnight_801_20261005_preflight.json`.
+
+Eight new test cases were witnessed failing before implementation (old
+point cap, missing loop flag/helper), then **29 focused tests** and the
+**1,451-test full suite** pass (44.31s). Tests cover dense-grid preservation,
+all raw-array axes/shots and references, explicit-window loop validation,
+drift-flagged continuation, error/unknown-status stopping, interruption
+without restart and exact CLI propagation. Independent review found no
+actionable P1/P2 issues in the loop or memory/counter handling.
+
+Each batch still includes every map's concurrent preparation references;
+offline analysis must use these when studying spectral changes. The
+runner's quicklook uses pooled endpoint references and is not sufficient
+to establish switching in drifting data. No automated event classification
+or microscopic interpretation is added to the overnight loop.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --loop --frames 100 --center-ghz 4.1 --width-mhz 400 --step-mhz 0.5
+```

@@ -1,7 +1,9 @@
-"""Finite q3 fast loss-map pilot using the production active-reset pulses.
+"""q3 fast loss maps using the production active-reset pulses.
 
 One optional 3.8--4.3 GHz scout, one local window, a finite number of low-shot
-five-condition frames, and high-shot local references before/after. No adaptive FPGA
+five-condition frames, and high-shot local references before/after. Optional
+--loop repeats these finite batches with fresh calibration until interrupted.
+No adaptive FPGA
 estimator, passive fallback, target microwave pulses, or production edits.
 """
 import argparse
@@ -36,11 +38,13 @@ def atomic_npz(path, **arrays):
     os.replace(pending,path)
 
 
-def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.):
+def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.,continuous=False):
     if not isinstance(frames,int) or not 1<=frames<=2000:
         raise ValueError('frames must be an integer between 1 and 2000')
+    if continuous and center_ghz is None:
+        raise ValueError('loop mode requires an explicit center-ghz; no repeated discovery gate')
     grid=local_grid(4.05 if center_ghz is None else center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
-    scale=len(grid)/21
+    period=.3+6.48*len(grid)/251
     return dict(qubit='q3', reset='production active reset throughout',
                 scout_ghz=[3.8, 4.3] if center_ghz is None else None,
                 scout_step_mhz=2. if center_ghz is None else None,
@@ -49,11 +53,15 @@ def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.):
                 window_selection='fresh wide scout' if center_ghz is None else 'explicit window; no scout or fresh-feature claim',
                 local_width_mhz=width_mhz, local_step_mhz=step_mhz, local_points=len(grid),
                 frames=frames, shots_per_condition_per_frame=FRAME_SHOTS,
+                repeat_batches=bool(continuous),total_frame_limit=None if continuous else frames,
+                batch_calibration='fresh production active-reset calibration before every batch',
+                loop_stop_policy='Ctrl+C or any acquisition/calibration error; retain and flag reference drift',
                 conditions=['P0', 'P1', 'Ps_2us', 'Ps_10us', 'Ps_25us'],
                 reference_hold_us=REFERENCE_US, full_corrected_return_us=40.,
                 local_pre_post_shots=SCOUT_SHOTS,
                 timing='per-frame wall time and monotonic time, per-transfer host receipt time; no individual hardware timestamps',
-                approximate_minutes=f'{1+frames*.85*scale/60:.1f}--{3+frames*1.1*scale/60:.1f}; first-pilot timing estimate scaled by point count, actual cadence is measured',
+                estimated_frame_period_s=[period,1.3*period],
+                approximate_minutes=f'{.5+(frames+12.5)*period/60:.1f}--{2+(frames+12.5)*period*1.3/60:.1f} per batch; extrapolated from 251-point hardware timing, including reference maps; actual cadence is measured',
                 interpretation='finite cadence and line-contrast pilot; no automatic switching or intrinsic-linewidth claim')
 
 
@@ -74,8 +82,8 @@ def local_grid(center,*,width_mhz=20,step_mhz=1.):
     if (not isinstance(width_mhz,int) or not 2<=width_mhz<=500
             or step_mhz not in (.5,1.,2.) or width_mhz/step_mhz!=int(width_mhz/step_mhz)):
         raise ValueError('local grid requires integer width 2--500 MHz, step 0.5/1/2 MHz, and an integer number of intervals')
-    if width_mhz/step_mhz+1>251:
-        raise ValueError('local grid exceeds the validated 251-point limit; use a larger step or smaller width')
+    if width_mhz/step_mhz+1>801:
+        raise ValueError('local grid exceeds the validated 801-point limit; use a larger step or smaller width')
     lower=max(3.8,min(4.3-width_mhz/1000,center-width_mhz/2000))
     return np.round(lower+step_mhz/1000*np.arange(int(width_mhz/step_mhz)+1),6)
 
@@ -290,8 +298,9 @@ def plot_result(folder,summary):
 
 
 def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center_ghz=None,
-        width_mhz=20,step_mhz=1.):
-    requested_plan=plan(frames=frames,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
+        width_mhz=20,step_mhz=1.,continuous=False):
+    requested_plan=plan(frames=frames,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,
+                        continuous=continuous)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
@@ -380,23 +389,42 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center
     return folder
 
 
+def repeat_runs(run_once):
+    """Repeat complete finite batches; never retry a failed acquisition."""
+    try:
+        while True:
+            folder=Path(run_once())
+            status=json.loads((folder/'manifest.json').read_text())['status']
+            if status=='interrupted':return 130
+            if status not in ('complete','complete_reference_drift'):return 1
+    except KeyboardInterrupt:
+        print('5pt scan interrupted between batches.',flush=True)
+        return 130
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--plan',action='store_true');mode.add_argument('--run',action='store_true')
     parser.add_argument('--data-root',type=Path);parser.add_argument('--correction-json',type=Path)
     parser.add_argument('--quiet',action='store_true')
-    parser.add_argument('--frames',type=int,default=FRAMES,help='finite local frame count, 1--2000 (default: 40)')
+    parser.add_argument('--frames',type=int,default=FRAMES,help='frames per finite batch, 1--2000 (default: 40)')
+    parser.add_argument('--loop',action='store_true',help='repeat finite batches with fresh calibration until Ctrl+C; requires center-ghz; stop on acquisition errors')
     parser.add_argument('--center-ghz',type=float,help='record explicit local window without a scout/feature-selection gate')
-    parser.add_argument('--width-mhz',type=int,default=20,help='window width, 2--500 MHz, at most 251 points (default: 20)')
+    parser.add_argument('--width-mhz',type=int,default=20,help='window width, 2--500 MHz, at most 801 points (default: 20)')
     parser.add_argument('--step-mhz',type=float,choices=(.5,1.,2.),default=1.,help='local grid spacing (default: 1 MHz)')
     args=parser.parse_args(argv)
-    try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz)
+    try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,
+                            step_mhz=args.step_mhz,continuous=args.loop)
     except ValueError as exc:parser.error(str(exc))
     if args.plan:
         print(json.dumps(requested_plan,indent=2));return 0
-    folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,
-               frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz)
+    def run_once():
+        return run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,
+                   frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,
+                   step_mhz=args.step_mhz,continuous=args.loop)
+    if args.loop:return repeat_runs(run_once)
+    folder=run_once()
     status=json.loads((folder/'manifest.json').read_text())['status']
     return 0 if status=='complete' else 1
 
