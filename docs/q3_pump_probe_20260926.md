@@ -8321,3 +8321,21 @@ no shared reset/pulse/production/initialize edits. Tests witnessed red;
 stream plans match for both 251-point configurations and pass preflight;
 review found no P1/P2 issues. Details/plots/audits are appended to
 `docs/q3_fast_loss_map_20261005.md`.
+
+Full-band pilot `20261005T091759Z_1e7dca77` (c5535b1f) completed ten
+251-frequency maps over 3.8–4.3 GHz at 2 MHz, plus pre/post references,
+in 2m39.93s. Median acquisition/start interval was 6.615/6.939s; the science
+record spans 69.61s. All 1,129,500 records are accounted for and raw-IQ
+classification matches science and reference states. Science axes/directions,
+transfer receipts and source/correction hashes verify. Concurrent-normalized
+pooled loss regions recur near 3.984, 4.112, 4.196 and 4.256 GHz in pre/post
+and science spectra; linear-IQ/classified profile correlation is 0.983.
+Per-map pointwise normalized-survival SE is typically 0.226, versus 0.069
+for ten pooled maps; displayed time rows average two maps (~14s). Endpoint
+reference check passes despite significant P0/P1 changes; concurrent
+normalization is used and stability is not claimed. This is useful full-band
+acquisition, not established seven-second individual TLS-event resolution.
+Next: 100 maps on the same full-band grid (~13–16min), to compare variation
+at several loss regions and common changes across the band. No measurement
+code, shared reset or initialize changes. Plots, exact spectral checks,
+uncertainties and limits are in `docs/q3_fast_loss_map_20261005.md`.

@@ -1,0 +1,233 @@
+{
+  "run": "q3_fast_loss_map_20261005T091759Z_1e7dca77",
+  "status": "complete",
+  "frames": 10,
+  "local_records": 502000,
+  "total_records": 1129500,
+  "source_hash_verified": true,
+  "correction_hash_verified": true,
+  "classifier_recomputed_match": true,
+  "axes_directions_counts_match": true,
+  "reset_mode": "opx_unbounded",
+  "qubit_park_mhz": 4367.292,
+  "readout_mhz": 6933.026,
+  "corrected_return_us": 40.0,
+  "frame_acquisition_s": {
+    "median": 6.614730250090361,
+    "min": 6.457217000424862,
+    "max": 6.842689899727702
+  },
+  "frame_start_period_s": {
+    "median": 6.938816299661994,
+    "min": 6.786568599753082,
+    "max": 7.157792700454593
+  },
+  "series_span_s": 69.61066830065101,
+  "reference_check": {
+    "valid": true,
+    "reference_contrasts": [
+      0.4446374501992032,
+      0.40239043824701193
+    ],
+    "conditions": [
+      {
+        "condition": "P0",
+        "before": 0.27666932270916333,
+        "after": 0.29470916334661357,
+        "delta": 0.018039840637450233,
+        "se": 0.0025498553438518066,
+        "valid": true
+      },
+      {
+        "condition": "P1",
+        "before": 0.7213067729083665,
+        "after": 0.6970996015936255,
+        "delta": -0.02420717131474104,
+        "se": 0.002562934162456051,
+        "valid": true
+      }
+    ],
+    "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+  },
+  "host_time_scope": "frame acquisition includes hardware configuration/transport; start-to-start also includes analysis, recompilation and NAS checkpoint gaps",
+  "transfers_per_frame_range": [
+    53,
+    53
+  ],
+  "reference_raw_classifier_verified": true,
+  "source_commit": "c5535b1f1882835d5cae21e9b974132f4343beac",
+  "pointwise_25us_median_se": {
+    "one_frame": 0.2256168563183054,
+    "pooled_ten_frames": 0.06943390694893663
+  },
+  "science_contrast_range": [
+    0.31000000000000005,
+    0.52
+  ],
+  "profile_correlations": {
+    "pre_post": 0.8030346287474233,
+    "science_pre": 0.8705879462189072,
+    "science_post": 0.826744244800702,
+    "classified_raw_IQ": 0.9825558009556428
+  },
+  "regions": [
+    {
+      "label": "3.984 GHz",
+      "center_band_ghz": [
+        3.982,
+        3.984,
+        3.986
+      ],
+      "flank_band_ghz": [
+        3.97,
+        3.972,
+        3.974,
+        3.994,
+        3.996,
+        3.998
+      ],
+      "science_center_survival": 0.3754789272030653,
+      "science_flank_survival": 0.6890909090909091,
+      "science_depth": 0.3136119818878438,
+      "science_paired_shot_se": 0.049179575037806275,
+      "science_frame_cluster_se": 0.042197596386325746,
+      "pre_depth": 0.35883872442565057,
+      "post_depth": 0.2542878448918746,
+      "frame_depths": [
+        0.42569444444444476,
+        0.41817650496785524,
+        0.307609282245008,
+        0.19128171763175006,
+        0.26410256410256416,
+        0.5760613207547169,
+        0.5247058823529409,
+        0.25447570332480796,
+        0.10433096315449253,
+        0.2980318650421742
+      ]
+    },
+    {
+      "label": "4.112 GHz",
+      "center_band_ghz": [
+        4.108,
+        4.11,
+        4.112,
+        4.114,
+        4.116
+      ],
+      "flank_band_ghz": [
+        4.098,
+        4.1,
+        4.102,
+        4.122,
+        4.124,
+        4.126
+      ],
+      "science_center_survival": 0.5816091954022987,
+      "science_flank_survival": 0.7180232558139535,
+      "science_depth": 0.13641406041165482,
+      "science_paired_shot_se": 0.041284150184291275,
+      "science_frame_cluster_se": 0.04367907339126786,
+      "pre_depth": 0.14429583935869617,
+      "post_depth": 0.20228418755174216,
+      "frame_depths": [
+        0.14935340258638952,
+        -0.05828900709219853,
+        -0.01630315047367259,
+        0.18461538461538463,
+        -0.006879606879606759,
+        0.11198478123018418,
+        0.2143694327238631,
+        0.12529550827423153,
+        0.2997126436781609,
+        0.35742929506120724
+      ]
+    },
+    {
+      "label": "4.196 GHz",
+      "center_band_ghz": [
+        4.194,
+        4.196,
+        4.198
+      ],
+      "flank_band_ghz": [
+        4.182,
+        4.184,
+        4.186,
+        4.206,
+        4.208,
+        4.21
+      ],
+      "science_center_survival": 0.4597938144329895,
+      "science_flank_survival": 0.7983271375464686,
+      "science_depth": 0.33853332311347906,
+      "science_paired_shot_se": 0.048964269328776074,
+      "science_frame_cluster_se": 0.03878868344098302,
+      "pre_depth": 0.26002032520325213,
+      "post_depth": 0.2730675593426676,
+      "frame_depths": [
+        0.40454545454545454,
+        0.43734230445752764,
+        0.4456337071015971,
+        0.252508361204013,
+        0.2931070605489206,
+        0.25297878523684963,
+        0.30612244897959173,
+        0.49537550869404356,
+        0.4097151055544169,
+        0.10576923076923073
+      ]
+    },
+    {
+      "label": "4.256 GHz",
+      "center_band_ghz": [
+        4.252,
+        4.254,
+        4.256,
+        4.258,
+        4.26
+      ],
+      "flank_band_ghz": [
+        4.242,
+        4.244,
+        4.246,
+        4.266,
+        4.268,
+        4.27
+      ],
+      "science_center_survival": 0.6201372997711672,
+      "science_flank_survival": 0.8476374156219864,
+      "science_depth": 0.2275001158508192,
+      "science_paired_shot_se": 0.041183706617208216,
+      "science_frame_cluster_se": 0.03255355100706523,
+      "pre_depth": 0.230607671461331,
+      "post_depth": 0.3330645161290345,
+      "frame_depths": [
+        0.2189556823168055,
+        0.42659605766401887,
+        0.22075471698113214,
+        0.22891891891891858,
+        0.170294494238156,
+        0.07894736842105277,
+        0.15422077922077915,
+        0.3203559510567294,
+        0.14727722772277263,
+        0.2752855948732239
+      ]
+    }
+  ],
+  "normalization": "Within each frequency and plotted time bin, (Ps-P0)/(P1-P0). No constant pre/post normalization. Unclipped ratios retained in cached data; heatmap color range has overflow colors.",
+  "uncertainty": "Delta-method SE includes paired logical-shot covariance. Frame-cluster SE uses only ten frames; statistics descriptive, selected regions not discovery significance.",
+  "limits": "Only 70 s of science data. No established switching times, single-TLS identity, qubit-frequency drift exclusion or undisturbed-equilibrium control.",
+  "next": {
+    "frames": 100,
+    "center_ghz": 4.05,
+    "width_mhz": 500,
+    "step_mhz": 2,
+    "science_shots_per_point": 40,
+    "expected_total_minutes": [
+      13,
+      16
+    ]
+  }
+}

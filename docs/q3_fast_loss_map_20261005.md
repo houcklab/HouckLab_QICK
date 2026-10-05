@@ -756,3 +756,90 @@ SVGs and intermediate audits remain in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 10 --center-ghz 4.05 --width-mhz 500 --step-mhz 2
 ```
+
+## Full-band pilot: 20261005T091759Z_1e7dca77
+
+The explicit 3.8–4.3 GHz, 2 MHz grid completed all ten science maps and
+250-shot pre/post references in **2m39.93s**, with no scout or site-selection
+gate. The source commit was `c5535b1f1882835d5cae21e9b974132f4343beac`.
+Each science map contained 251 frequencies × five conditions × 40 shots.
+Median acquisition time was **6.615s** and median start-to-start interval
+**6.939s** (range 6.787–7.158s). The science recording spanned **69.61s**.
+This is measured full-band cadence, distinct from the earlier half-second
+nine-frequency cadence and from useful event resolution.
+
+All **1,129,500 records** are accounted for: 502,000 science records and
+627,500 reference records. Reclassification from saved integer IQ matches
+the stored science and pre/post binary states. Science frequency/DC axes,
+alternating shot directions, complete transfer receipts, source hash and
+correction hash verify. Production active reset, park preparation/readout
+and the corrected 40 µs return were used. No shared production, reset,
+pulse or initialize.py changes were needed for this analysis.
+
+![Full-band pilot spectra, time map and concurrent references](q3_fast_loss_map_full_band_20261005_result.png)
+
+The pooled low-shot maps reproduce several spectral loss regions, including
+near **3.984, 4.112, 4.196 and 4.256 GHz**. They also appear in the independent
+pre/post spectra. The broad low-survival region below approximately 3.88 GHz
+is recorded, without interpreting it as an individual TLS. Pooled science
+profile correlations are 0.871 with pre and 0.827 with post; pre/post
+correlation is 0.803. The reference-normalized linear projected-IQ profile
+agrees with the classified profile (correlation **0.983**), so this spectrum
+is not produced solely by the binary decision threshold.
+
+The median pointwise 25 µs normalized-survival SE is **0.226 per 40-shot
+map**, falling to **0.069** when all ten maps are pooled. The time-map figure
+therefore displays two frames per row (80 shots/point, approximately 14s),
+with no frequency smoothing. It retains unbounded reference ratios; color
+overflow is shown rather than clipping survival estimates to physical bounds.
+The pooled spectrum is a 400-shot mean, not proof that every dip is resolved
+in every seven-second frame.
+
+For descriptive region checks, average the center frequencies before taking
+their concurrent reference ratio, and compare against two flanks 10–14 MHz
+away. Center half-widths are 2 MHz at 3.984/4.196 and 4 MHz at 4.112/4.256.
+The exact grids, shot-covariance SEs and ten-frame cluster SEs are saved in
+the audit. The regions were selected from this run's spectra; these numbers
+are not discovery significance or fitted single-TLS parameters.
+
+| Region | Before depth | Science depth ± conservative SE | After depth |
+| --- | ---: | ---: | ---: |
+| 3.984 GHz | 0.359 | 0.314 ± 0.049 | 0.254 |
+| 4.112 GHz | 0.144 | 0.136 ± 0.044 | 0.202 |
+| 4.196 GHz | 0.260 | 0.339 ± 0.049 | 0.273 |
+| 4.256 GHz | 0.231 | 0.228 ± 0.041 | 0.333 |
+
+Depth means flank minus center normalized survival, not a decay rate.
+The reported science SE is the larger of paired-shot and frame-cluster
+estimates; only ten frames are available for the latter.
+
+![Full-band dwell, raw-IQ and spectral-reference checks](q3_fast_loss_map_full_band_20261005_controls.png)
+
+The preset reference check passes, but is not evidence of stationarity:
+pooled P0 rises **0.2767→0.2947** (+0.0180, SE 0.00255), P1 falls
+**0.7213→0.6971** (−0.0242, SE 0.00256), and contrast falls
+**0.4446→0.4024**. All analysis here normalizes using concurrent references
+at each frequency/time bin instead of the runner's fixed pooled endpoint
+normalization. This reduces measured reference drift sensitivity without
+excluding arbitrary preparation/readout errors or qubit-frequency drift.
+
+The conclusion is a successful full-band speed/contrast benchmark. This
+70-second record does **not** establish individual switching events, an
+intrinsic linewidth, a diffusion coefficient or a unique TLS identity.
+The next bounded recording is **100 maps on the same full-band grid**,
+expected **13–16 minutes total** from the measured cadence. It will test
+whether multiple spectral regions vary independently or together, with
+raw IQ and concurrent references available for comparison. It is not an
+infinite loop or an automatic microscopic interpretation. The pulse program,
+shots per frame, calibration and active-reset behavior remain identical;
+only the requested number of separate frames changes.
+
+The compact audit is `docs/q3_fast_loss_map_full_band_20261005_audit.json`.
+Raw IQ remains on NAS. Cached states, profiles, SVGs and the executable
+analysis recipe are in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_091759Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 100 --center-ghz 4.05 --width-mhz 500 --step-mhz 2
+```
