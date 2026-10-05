@@ -261,3 +261,32 @@ def test_explicit_plan_and_cli_keep_local_reference_maps_and_validate_band(tmp_p
     monkeypatch.setattr(m,'run',run)
     assert m.main(['--run','--frames','1000','--center-ghz','4.108'])==0
     assert observed[0]['center_ghz']==4.108 and observed[0]['frames']==1000
+
+
+def test_wider_window_keeps_the_same_point_and_shot_budget(tmp_path):
+    m=module();called=[]
+    def acquire(grid,shots,name):
+        called.append((grid.copy(),shots,name))
+        return block(grid,shots)
+    manifest={'status':'initializing','completed':[]}
+    m.collect(tmp_path,acquire,manifest,frames=3,center_ghz=4.108,width_mhz=40,step_mhz=2.)
+    assert all(len(grid)==21 for grid,_,_ in called)
+    assert called[0][0]==pytest.approx(np.arange(4088,4129,2)/1000)
+    assert [shots for _,shots,_ in called]==[250,40,40,40,250]
+    assert m.plan(center_ghz=4.108,width_mhz=40,step_mhz=2.)['local_points']==21
+
+
+def test_cli_wider_window_and_invalid_grids_are_checked_before_hardware(tmp_path,monkeypatch):
+    m=module();observed=[]
+    def run(**kwargs):
+        observed.append(kwargs)
+        (tmp_path/'manifest.json').write_text('{"status":"complete"}')
+        return tmp_path
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--frames','200','--center-ghz','4.108','--width-mhz','40','--step-mhz','2'])==0
+    assert observed[0]['width_mhz']==40 and observed[0]['step_mhz']==2.
+    for options in ({'width_mhz':101},{'width_mhz':0},{'step_mhz':.1},{'width_mhz':3,'step_mhz':2.}):
+        with pytest.raises(ValueError,match='grid'):m.plan(**options)
+    for center in [3.8,4.3]:
+        grid=m.local_grid(center,width_mhz=40,step_mhz=2.)
+        assert len(grid)==21 and grid.min()>=3.8 and grid.max()<=4.3

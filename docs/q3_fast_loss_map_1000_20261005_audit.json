@@ -1,0 +1,107 @@
+{
+  "source_commit": "98043fc4",
+  "source_folder": "/Volumes/ourphoton/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/q3_fast_loss_map_20261005T060449Z_70ee3b0a",
+  "local_analysis_folder": "/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_060449Z",
+  "integrity": {
+    "run": "q3_fast_loss_map_20261005T060449Z_70ee3b0a",
+    "status": "complete",
+    "frames": 1000,
+    "local_records": 4200000,
+    "total_records": 4252500,
+    "source_hash_verified": true,
+    "correction_hash_verified": true,
+    "classifier_recomputed_match": true,
+    "axes_directions_counts_match": true,
+    "reset_mode": "opx_unbounded",
+    "qubit_park_mhz": 4367.292,
+    "readout_mhz": 6933.026,
+    "corrected_return_us": 40.0,
+    "frame_acquisition_s": {
+      "median": 0.7212314503267407,
+      "min": 0.4898377005010843,
+      "max": 1.0022997995838523
+    },
+    "frame_start_period_s": {
+      "median": 0.9499556999653578,
+      "min": 0.6665984997525811,
+      "max": 1.4245819002389908
+    },
+    "series_span_s": 964.4171687001362,
+    "reference_check": {
+      "valid": true,
+      "reference_contrasts": [
+        0.5186666666666667,
+        0.456
+      ],
+      "conditions": [
+        {
+          "condition": "P0",
+          "before": 0.1739047619047619,
+          "after": 0.22380952380952382,
+          "delta": 0.049904761904761924,
+          "se": 0.007775923543865851,
+          "valid": true
+        },
+        {
+          "condition": "P1",
+          "before": 0.6925714285714286,
+          "after": 0.6798095238095239,
+          "delta": -0.012761904761904752,
+          "se": 0.009057139376194644,
+          "valid": true
+        }
+      ],
+      "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+    },
+    "host_time_scope": "frame acquisition includes hardware configuration/transport; start-to-start also includes analysis, recompilation and NAS checkpoint gaps",
+    "transfers_per_frame_range": [
+      5,
+      5
+    ]
+  },
+  "temporal_analysis": {
+    "2us": {
+      "sd": 0.09022767460559329,
+      "median_paired_shot_se": 0.058717954982120915,
+      "median_frame_cluster_se": 0.059062094801716196
+    },
+    "10us": {
+      "sd": 0.1266551228069704,
+      "median_paired_shot_se": 0.055889541692446226,
+      "median_frame_cluster_se": 0.06299074060429993
+    },
+    "25us": {
+      "sd": 0.15498360347897747,
+      "median_paired_shot_se": 0.054221483780760846,
+      "median_frame_cluster_se": 0.06416446269431998
+    },
+    "shoulder_bands_mhz": {
+      "left": [
+        4103.986085000541,
+        4104.977393177546,
+        4106.024960309061
+      ],
+      "right": [
+        4110.021069078374,
+        4111.000852534319,
+        4111.978752096214
+      ]
+    },
+    "band_normalized_25us": {
+      "sd": 0.15498360347897747,
+      "median_paired_shot_se": 0.054221483780760846,
+      "median_cluster_se": 0.06416446269431998,
+      "forward_reverse_correlation": 0.76457675270814,
+      "correlation_10us_25us": 0.8688576295435299,
+      "correlation_binary_IQ": 0.9804919135408853,
+      "raw_IQ_imbalance_sd": 0.15497406906913302,
+      "reference_regressed_residual_sd": 0.14005700846459335,
+      "reference_regressed_correlation_10us_25us": 0.8412587915862237,
+      "conservative_constant_chi2": 563.3019450851292,
+      "dof": 99,
+      "descriptive_p": 4.3184150842445514e-66
+    },
+    "caveat": "All stationarity statistics are descriptive. Cluster SE uses ten frames per bin and does not bound arbitrary long-correlated errors; no single-TLS identity or qubit-frequency-drift exclusion."
+  },
+  "interpretation": "Time-dependent relaxation-spectrum shape supported by disjoint scan directions and raw IQ; no single-TLS identity, intrinsic linewidth, switching-time or qubit-frequency-drift exclusion."
+}

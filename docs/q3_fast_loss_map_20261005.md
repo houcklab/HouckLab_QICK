@@ -236,3 +236,86 @@ Next measurement-PC command (approximately 15–22 min):
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.108
 ```
+
+
+## Completed 1,000-frame recording and wider-window follow-up
+
+`q3_fast_loss_map_20261005T060449Z_70ee3b0a`, source commit `98043fc4`,
+completed 1,000 science frames plus local pre/post references in 16 min
+43.43 s. The requested 4.098–4.118 GHz window has 21 frequencies at 1 MHz
+spacing, 40 shots per condition per science frame. Production active reset,
+park preparation/readout and the native corrected 40 µs return are retained.
+All 4,252,500 records are present (4,200,000 science records). Every raw
+integer-IQ frame has the expected axes/counts; recomputing classifications
+from the saved runtime projector matches every recorded state. Source and
+correction hashes match, and all 1,000 transfer receipts account for 4,200
+records each. No interrupted or missing frame is included.
+
+Median frame acquisition is 0.721 s; median start-to-start cadence is
+0.950 s, including recompilation, processing and NAS checkpoints. Science
+frames span 964.42 s. These are host timings, not individual hardware-shot
+timestamps. Plots average ten consecutive frames (400 shots per condition
+per frequency, approximately 9.5 s) to make spectral changes interpretable.
+
+The preset end-reference check passes its tolerance, but the references
+are not stationary: pooled P0 rises 0.174→0.224, P1 falls 0.693→0.680,
+and contrast falls 0.519→0.456. Accordingly, use each concurrent bin's
+P0/P1 for normalization rather than fixed endpoint references. This does
+not remove every possible preparation or readout systematic.
+
+![Concurrent-reference loss map and raw-IQ cross-check](q3_fast_loss_map_1000_20261005_result.png)
+
+The spectrum changes visibly. Central loss around 4.107–4.110 GHz and
+upper-edge loss near 4.115–4.117 GHz vary; some intervals contain both.
+A single moving Gaussian would therefore impose an unsupported TLS identity.
+A predefined shoulder comparison, S(4.110–4.112) minus S(4.104–4.106),
+using band-pooled concurrent references, has 25 µs standard deviation 0.155,
+versus median paired-shot SE 0.054 and ten-frame cluster SE 0.064. The paired
+influence calculation retains condition/frequency covariance; cluster SE
+also accounts for correlations within each ten-frame bin. Neither bounds
+arbitrary long-correlated systematics.
+
+Disjoint forward/reverse shot halves give correlation 0.765. The 10 µs and
+25 µs shoulder traces correlate 0.869; binary classifications and a linear
+raw-IQ projection correlate 0.980. Regressing concurrent reference spectral
+imbalances and global P0/P1 leaves a residual SD of 0.140 and 10/25 µs
+correlation 0.841. These checks support time-dependent relaxation-spectrum
+shape beyond independent-shot noise and a threshold-only artifact. They
+are not proof of one TLS switching, a microscopic identity, intrinsic
+linewidth, or exclusion of qubit-frequency drift. Descriptive stationarity
+statistics in the audit are not a formal TLS-discovery significance.
+
+![Concurrent references and both dwell maps](q3_fast_loss_map_1000_20261005_controls.png)
+
+Raw NAS provenance and numerical checks are saved in
+`docs/q3_fast_loss_map_1000_20261005_audit.json`. The local analysis folder
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_060449Z`
+contains `load.py`, `analyze.py`, `robust.py`, cached classified shots and
+projected IQ statistics, saved raw configuration/reference files and SVGs.
+The complete frame IQ remains in the source NAS folder.
+
+The next test widens the requested window to **4.088–4.128 GHz at 2 MHz**:
+still 21 frequencies and 40 shots per condition, preserving the frame shot
+budget while capturing the changing upper-edge structure. First run only
+200 frames (approximately 4–7 minutes including calibration/references),
+then assess coverage and contrast before extending. Actual cadence must
+be measured again. Explicit mode records even a flat region; no new feature
+selection or automatic recenter gate is introduced.
+
+The runner now accepts bounded `--width-mhz` (integer 2–100 MHz) and
+`--step-mhz` (0.5, 1 or 2 MHz), requiring an integer number of intervals.
+Grids stay inside 3.8–4.3 GHz and shift at a band edge. Default 20 MHz/1 MHz
+behavior, reset, shots, pulse generation, return, interrupt preservation,
+production modules and initialize.py are unchanged. Plan/manifest and
+DAC-grid reporting include the requested spacing and point count.
+
+Verification: 19 focused tests with offline QICK and 1,441 full suite tests
+pass (45.44 s). Seven saved-board production/observer program comparisons,
+including the proposed wider grid, have identical instruction binaries and
+pass preflight (maximum 5,777/8,192 instructions). Independent review found
+no actionable P1/P2 findings.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
+```

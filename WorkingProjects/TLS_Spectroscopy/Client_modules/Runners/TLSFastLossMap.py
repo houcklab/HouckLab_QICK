@@ -1,6 +1,6 @@
 """Finite q3 fast loss-map pilot using the production active-reset pulses.
 
-One optional 3.8--4.3 GHz scout, one 21-point window, a finite number of low-shot
+One optional 3.8--4.3 GHz scout, one local window, a finite number of low-shot
 five-condition frames, and high-shot local references before/after. No adaptive FPGA
 estimator, passive fallback, target microwave pulses, or production edits.
 """
@@ -36,23 +36,24 @@ def atomic_npz(path, **arrays):
     os.replace(pending,path)
 
 
-def plan(*,frames=FRAMES,center_ghz=None):
+def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.):
     if not isinstance(frames,int) or not 1<=frames<=2000:
         raise ValueError('frames must be an integer between 1 and 2000')
-    if center_ghz is not None:local_grid(center_ghz)
+    grid=local_grid(4.05 if center_ghz is None else center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
+    scale=len(grid)/21
     return dict(qubit='q3', reset='production active reset throughout',
                 scout_ghz=[3.8, 4.3] if center_ghz is None else None,
                 scout_step_mhz=2. if center_ghz is None else None,
                 scout_shots=SCOUT_SHOTS if center_ghz is None else 0,
                 window_center_ghz=center_ghz,
                 window_selection='fresh wide scout' if center_ghz is None else 'explicit window; no scout or fresh-feature claim',
-                local_width_mhz=20., local_step_mhz=1., local_points=21,
+                local_width_mhz=width_mhz, local_step_mhz=step_mhz, local_points=len(grid),
                 frames=frames, shots_per_condition_per_frame=FRAME_SHOTS,
                 conditions=['P0', 'P1', 'Ps_2us', 'Ps_10us', 'Ps_25us'],
                 reference_hold_us=REFERENCE_US, full_corrected_return_us=40.,
                 local_pre_post_shots=SCOUT_SHOTS,
                 timing='per-frame wall time and monotonic time, per-transfer host receipt time; no individual hardware timestamps',
-                approximate_minutes=f'{1+frames*.85/60:.1f}--{3+frames*1.1/60:.1f}; first-pilot timing estimate, actual cadence is measured',
+                approximate_minutes=f'{1+frames*.85*scale/60:.1f}--{3+frames*1.1*scale/60:.1f}; first-pilot timing estimate scaled by point count, actual cadence is measured',
                 interpretation='finite cadence and line-contrast pilot; no automatic switching or intrinsic-linewidth claim')
 
 
@@ -66,12 +67,15 @@ def canonical_iq(records, *, shots, points):
     return i.transpose(2,1,0),q.transpose(2,1,0)
 
 
-def local_grid(center):
+def local_grid(center,*,width_mhz=20,step_mhz=1.):
     center=float(center)
     if not np.isfinite(center) or not 3.8<=center<=4.3:
         raise ValueError('local center outside the calibrated band')
-    lower=max(3.8,min(4.28,center-.010))
-    return np.round(lower+.001*np.arange(21),6)
+    if (not isinstance(width_mhz,int) or not 2<=width_mhz<=100
+            or step_mhz not in (.5,1.,2.) or width_mhz/step_mhz!=int(width_mhz/step_mhz)):
+        raise ValueError('local grid requires integer width 2--100 MHz, step 0.5/1/2 MHz, and an integer number of intervals')
+    lower=max(3.8,min(4.3-width_mhz/1000,center-width_mhz/2000))
+    return np.round(lower+step_mhz/1000*np.arange(int(width_mhz/step_mhz)+1),6)
 
 
 def select_feature(block):
@@ -150,7 +154,8 @@ def save_block(folder,name,block):
     checkpoint(Path(folder)/(name+'.json'),metadata)
 
 
-def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_block=False,center_ghz=None):
+def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_block=False,
+            center_ghz=None,width_mhz=20,step_mhz=1.):
     folder=Path(folder)
     def measure(grid,shots,name):
         manifest.update(status='acquiring',current=name)
@@ -166,11 +171,11 @@ def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_bl
         selected=select_feature(scout)
     else:
         # Validate before acquiring; a chosen window is not a detected feature.
-        local_grid(center_ghz)
+        local_grid(center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
         selected=dict(center_ghz=float(center_ghz),mode='explicit_window',fresh_feature_claim=False,
                       selection_scope='requested model-frequency window; record even if loss weakens or leaves it')
     manifest['selection']=selected
-    grid=local_grid(selected['center_ghz'])
+    grid=local_grid(selected['center_ghz'],width_mhz=width_mhz,step_mhz=step_mhz)
     pre=measure(grid,SCOUT_SHOTS,'local_pre')
     rows=[]
     for n in range(frames):
@@ -282,8 +287,9 @@ def plot_result(folder,summary):
     plt.close(fig)
 
 
-def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center_ghz=None):
-    requested_plan=plan(frames=frames,center_ghz=center_ghz)
+def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center_ghz=None,
+        width_mhz=20,step_mhz=1.):
+    requested_plan=plan(frames=frames,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
@@ -324,7 +330,7 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center
                 compiled=time.perf_counter()
                 with (folder/'compile.log').open('a',encoding='utf-8') as log,redirect_stdout(log):
                     gains,realized=three._integer_dc_grid(dict(five.P6_5PT_APPLES_TO_APPLES,
-                        dc_min=-25146,freq_step_mhz=2. if name=='scout' else 1.),grid,tls)
+                        dc_min=-25146,freq_step_mhz=2. if name=='scout' else step_mhz),grid,tls)
                     cfg=dict(base,shots=shots,reps=shots,opx_reset_scheme='opx_unbounded',
                         opx_t1_3pt_shots=shots,opx_t1_3pt_dc_gains=gains.tolist(),
                         opx_t1_5pt_delays_us=list(DELAYS_US),opx_t1_5pt_reference_hold_us=REFERENCE_US,
@@ -349,7 +355,7 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center
                     return block
                 return acquire_records(soc,program,cfg,shots,shots*len(grid)*5,folder,name,process=process)
             summary=collect(folder,acquire,manifest,frames=frames,update=lambda:bar.update(1),
-                            acquire_saves_block=True,center_ghz=center_ghz)
+                            acquire_saves_block=True,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
             plot_result(folder,summary)
     except KeyboardInterrupt:
         manifest.update(status='interrupted',error='KeyboardInterrupt')
@@ -380,13 +386,15 @@ def main(argv=None):
     parser.add_argument('--quiet',action='store_true')
     parser.add_argument('--frames',type=int,default=FRAMES,help='finite local frame count, 1--2000 (default: 40)')
     parser.add_argument('--center-ghz',type=float,help='record explicit local window without a scout/feature-selection gate')
+    parser.add_argument('--width-mhz',type=int,default=20,help='local window width, 2--100 MHz (default: 20)')
+    parser.add_argument('--step-mhz',type=float,choices=(.5,1.,2.),default=1.,help='local grid spacing (default: 1 MHz)')
     args=parser.parse_args(argv)
-    try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz)
+    try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz)
     except ValueError as exc:parser.error(str(exc))
     if args.plan:
         print(json.dumps(requested_plan,indent=2));return 0
     folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,
-               frames=args.frames,center_ghz=args.center_ghz)
+               frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz)
     status=json.loads((folder/'manifest.json').read_text())['status']
     return 0 if status=='complete' else 1
 

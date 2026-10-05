@@ -8216,3 +8216,23 @@ same21point/40shot/pulses, no wide discovery requirement and no freshfeature
 claim. Defaultselector/thresholds, production/reset/initialize unchanged.
 Raw-source audit, scoutcomparison, exactlimits and commands are appended
 to `docs/q3_fast_loss_map_20261005.md`.
+
+
+Fast explicit-window recording `20261005T060449Z_70ee3b0a` (98043fc4)
+completed all1,000frames plus pre/post,4,252,500records,16m43.43s. Median
+acquisition0.721s/startperiod0.950s; science span964.42s. Every integer-IQ
+classification,axes,count,transfer andsource/correction hash verified.
+References drift despite passing preset tolerance: P0.174→.224,
+P1.693→.680,contrast.519→.456. Ten-frame bins use concurrent references.
+Time-dependent spectral shape survives disjoint forward/reverse comparison
+(corr.765),10/25uscomparison(.869) andlinearraw-IQcheck(.980).
+ShoulderimbalanceSD.155 versus shotSE.054/frameclusterSE.064; reference
+regression residualSD.140. Central4.107–4.110 andupper4.115–4.117 loss
+can coexist: nooneGaussian/singleTLSswitching,intrinsiclinewidth or
+qubitdriftexclusion claim. Descriptive statistics are not discovery pvalues.
+Fullprovenance,audit,plots andlimits appended to
+`docs/q3_fast_loss_map_20261005.md`.
+Next bounded200framewindow4.088–4.128GHz/2MHzstill21points×40shots:
+approximately4–7min,thenassesscoverage. Addedvalidatedwidth/spacingflags;
+noreset/pulse/production/initialize edits.19focused+1441fulltests pass;
+7identicalproduction/observerbinaries passpreflight;reviewnoP1/P2findings.
