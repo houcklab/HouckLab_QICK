@@ -8135,3 +8135,14 @@ classified points; all-shot growth is consistent with zero or negative.
 Post-refit agrees. Stop further long maps of this sequence; do not interpret
 the null as exclusion of faster memory or TLS absence. Full control stats,
 plots, scope and the decision are in the dedicated feedback-pilot note.
+
+User authorized the e–f loss route with a quiet g–e bias. The September29
+dual-transition attempt is acknowledged, not repeated unchanged. New
+`TLSResidentEFPilot` calibrates both transitions at the target and applies
+a local g–e mapping pulse before the full40-us return. Paired identity/map
+IQ references can resolve preparation-relative f even after f→e return.
+One wide scout, bounded local spectroscopy/Rabi/audits, at most one small
+recenter, then one-bias0.25/2/8-us g/e/f decay if controls pass. Expected8–15min;
+no automatic long profile. Production/reset/initialize code unchanged.
+Full design, limitations, tests, offline compile/timing checks and commands
+are in `docs/q3_resident_ef_pilot_20261004.md`. No hardware result yet.
