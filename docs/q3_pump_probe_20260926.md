@@ -8265,3 +8265,21 @@ proven1sTLS-eventresolution. Nextbounded1000frames same40MHz/2MHzwindow
 (~16–20min), concurrentrefs/rawIQretained, tocharacterize dynamics/reliability.
 No measurementcode/reset/initialize edits. Detailedplots/audit/limits in
 `docs/q3_fast_loss_map_20261005.md`.
+
+
+Wider1,000frame run `20261005T074220Z_e9212267` (d6811a60) completedall
+4,252,500records in15m15.15s. Medianacq0.644s/start0.869s;science878.64s.
+Rawscience classification/axes/directions/receipts/source+correctionhashes
+verify. Endpointreferencepasses (P0.164→.151,P1.703→.638), butwithinrunP0
+rises~.16→.25thenfallsnear800s; notstable. Concurrentnormalizedlower
+4.100–4.112 loss changes plusupper4.120–4.122component. FixedshoulderSD.226
+versusshotSE.065/clusterSE.066;directioncorr.814,10/25us.847,rawIQ.987.
+Measuredreference regression leavesSD.187/residual10/25corr.777: stronger
+thanpreviousshortrecord, supportsfastmonitoring beyondindependentshotnoise
+andmeasuredrefchanges. StillnocleanindividualTLSidentity/switchtime or
+qubitdriftexclusion. Two-frame(~1.74s) directioncorr.556,SD.279/SE.145;
+singleframe noisy. Next9points4.098–4.114GHz/2MHz,200frames40shots, toreduce
+framebudget4200→1800andmeasurecadencegain (~2–5min startupincluded).
+Sameexistingrunner/pulses/reset/initialize; offline9pointscience+reference
+parentbinaries/streamplans match andpasspreflight. Detailedplots/audits/
+multiscaleandlimits appended to `docs/q3_fast_loss_map_20261005.md`.

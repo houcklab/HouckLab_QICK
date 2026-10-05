@@ -464,3 +464,100 @@ This turn changes only documentation/artifacts; no measurement code changed.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
 ```
+
+
+## 1,000-frame wider recording: stronger spectral dynamics; next reduce point count
+
+`q3_fast_loss_map_20261005T074220Z_e9212267`, source commit `d6811a60`,
+completed all 1,000 frames and local pre/post references in 15 min 15.15 s.
+All 4,252,500 records are present (4,200,000 science), with 21 frequencies
+4.088–4.128 GHz/2 MHz, 40 shots per condition and the same five conditions.
+Every science integer-IQ classification matches the saved runtime payload;
+frequency/DC axes, alternating directions, per-frame transfer counts and
+source/correction hashes match. Local references have the expected
+5×21×250 shapes. Production active reset and native corrected full 40 µs
+return remain in force. Median acquisition is 0.644 s, median start interval
+0.869 s, and science span 878.64 s. The ten-frame display represents about
+8.7 s per row, not individual TLS events at that interval.
+
+![Wider long recording and its concurrent references](q3_fast_loss_map_wide_1000_20261005_result.png)
+
+The endpoint check passes: P0 changes 0.1638→0.1512, P1 changes
+0.7027→0.6377 (delta −0.0650, SE 0.00916), and contrast 0.5389→0.4865.
+This does not mean references were stationary. Within the series P0 rises
+from roughly 0.16 to 0.25 around 170 s and falls near 800 s; P1 also varies.
+Concurrent ten-frame reference contrast has median 0.4575 and minimum
+0.2475 across frequency/time bins. Fixed endpoint normalization would
+misrepresent parts of the recording; all reported temporal analyses use
+concurrent P0/P1. Reference drift remains visible rather than being hidden
+by the endpoint pass.
+
+The changing lower loss structure spans roughly 4.100–4.112 GHz, with
+another loss component around 4.120–4.122 GHz. The two components are
+visible in long-period profiles; they need not represent one moving TLS
+or two fixed microscopic defects. For the existing fixed shoulder bands
+(4.104/4.106 versus 4.110/4.112 GHz), the 25 µs imbalance SD is **0.226**,
+versus median paired-shot SE **0.065** and ten-frame cluster SE **0.066**.
+Disjoint forward/reverse correlation is **0.814**, 10/25 µs correlation
+**0.847**, and classified/raw-linear-IQ correlation **0.987**. Measured
+reference regression leaves SD **0.187** and residual 10/25 µs correlation
+**0.777**. Unlike the previous short repeat, the residual is substantially
+larger than these noise estimates. This supports continuing fast monitoring:
+changing spectral shape survives the available independent-shot and measured
+reference sensitivity checks. It is not exclusion of all common systematics
+or qubit-frequency drift, nor a new microscopic TLS-physics claim.
+
+![Reference and dwell controls](q3_fast_loss_map_wide_1000_20261005_controls.png)
+
+Multiscale analysis of the same fixed shoulders gives:
+
+| Frames averaged | Approximate interval | Imbalance SD | Median paired-shot SE | Forward/reverse correlation |
+| --- | --- | --- | --- | --- |
+| 1 | 0.87 s | 0.323 | 0.207 | 0.339 |
+| 2 | 1.74 s | 0.279 | 0.145 | 0.556 |
+| 5 | 4.34 s | 0.246 | 0.091 | 0.727 |
+| 10 | 8.69 s | 0.226 | 0.065 | 0.814 |
+
+Shared variation already remains in two-frame direction comparisons, which
+is encouraging for few-second spectral monitoring. Single frames remain
+noisy. These ratios/correlations and descriptive stationarity statistics
+do not identify individual TLS jumps, infer an intrinsic switching time,
+or establish a diffusion coefficient. Scan halves are interleaved sets of
+shots, not independent simultaneous instruments. Arbitrary long-correlated
+systematics are not bounded by the reported SEs.
+
+### Next bounded configuration: nine frequencies, unchanged shots and pulses
+
+Use 200 frames, explicit center 4.106 GHz, width 16 MHz, step 2 MHz: **nine
+points 4.098–4.114 GHz**. This concentrates on the strongest changing lower
+structure and reduces science records/frame 4,200→1,800. Forty shots per
+frequency/condition are retained, so per-point shot precision is not
+improved by the smaller grid; it aims to collect frames faster, allowing
+equal-shot averages over a shorter wall-clock interval. It omits the upper
+4.120 GHz component and may miss loss that leaves the window. Absence in
+the requested grid is not evidence that a TLS disappears. No rediscovery
+or automatic recenter gate is added.
+
+Run only 200 frames first to measure the cadence gain rather than assume
+linear scaling. The existing runner plan estimates approximately 2.2–4.6
+min including startup/reference overhead; use approximately 2–5 min as the
+user estimate. No measurement code, shared reset, production or initialize
+edit is required. Newest saved-board QICK 0.2.133 offline checks compile
+both nine-point science and 250-shot reference configurations: observer
+and production parent binaries/stream plans match, active reset/full 40 µs
+return are preserved, both pass preflight (5,777/8,192 instructions), and
+maximum realized model-frequency error is 0.025 MHz. This is configuration
+verification, not measured hardware cadence. No broad suite rerun is
+needed for this documentation/parameter-only step.
+
+Raw provenance, all numerical sensitivity checks, multiscale analysis and
+next-configuration preflight are in
+`docs/q3_fast_loss_map_wide_1000_20261005_audit.json`. Full frame IQ remains
+on NAS. Scripts, raw configuration/reference copies, cached classified shots
+and projected-IQ statistics, SVGs and audit intermediates remain in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_074220Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.106 --width-mhz 16 --step-mhz 2
+```
