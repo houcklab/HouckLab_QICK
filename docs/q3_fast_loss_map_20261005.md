@@ -1011,3 +1011,81 @@ or microscopic interpretation is added to the overnight loop.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --loop --frames 100 --center-ghz 4.1 --width-mhz 400 --step-mhz 0.5
 ```
+
+## 50 MHz pilot and reset readout diagnostic (2026-10-05 afternoon)
+
+The explicit 3.945–3.995 GHz, 0.5 MHz pilot
+`q3_fast_loss_map_20261005T200240Z_d29fe648` completed 100 frames.
+Median acquisition/start cadence was 2.748/3.062 s; science spanned
+5.466 min. All 2,272,500 science/reference IQ classifications verify.
+The display retains the overnight inferno limits (.17699115, .63461538)
+for comparison, so strong losses saturate visibly. Five-frame binning
+masks 21/2,020 cells below .2 reference contrast. First/last quarter pooled
+25 us normalized loss is .716/.463 at 3.954–3.962 GHz and .310/.625
+at 3.980–3.988 GHz; the 3.945–3.950 GHz flank is .281/.260.
+References drift strongly within the record; this is profile evolution,
+not an identified individual TLS or measured switching rate.
+
+The next batch `q3_fast_loss_map_20261005T202804Z_cee80f79` stopped during
+all three production calibration attempts, with zero science frames.
+Calibration config SHA256 is identical to the successful pilot.
+Payload peak discrimination was .829–.837, loop .686–.689, below the
+.7 threshold search criterion; its fallback threshold accepts effectively
+no ground holdout shots. No threshold or acceptance criterion was changed.
+
+The existing readout-train diagnostic
+`q3_repeated_loading_reset_check_20261005T203230Z_bbf22ce2` completed both
+forward/reverse orders (16,000 reference records). Saved holdout
+classifications were recomputed from raw IQ. Held-out balanced
+classification accuracy (not reset fidelity) for the two blocks:
+
+| Prior readouts | Block 0 | Block 1 |
+| --- | --- | --- |
+| None | .906 | .894 |
+| One full-power, 20 us guard | .802 | .726 |
+| Two full-power, 20 us guard | .710 | .726 |
+| Four full-power, 20 us guard | .596 | .730 |
+| Four full-power, 50 us guard | .634 | .710 |
+| Four full-power, 100 us guard | .670 | .768 |
+| Four zero-drive, 20 us guard | .884 | .898 |
+| Four half-drive (940), 20 us guard | .910 | .910 |
+
+The recorded final readout remains gain 1880 in all these arms; the
+half-drive result therefore does not establish readout discrimination
+at gain 940. It points to disturbance from the prior readout drive;
+longer guards improve separation less consistently. This diagnostic uses
+persistent park and 20 us guards, whereas the production calibration is
+per-shot park with its standard recovery, so neither its classifiers nor
+its gate outcomes are installed into the fast map.
+
+Added standalone `TLSFastLossReadoutCheck` to compare gain 1880 and 940
+using exactly the fast-map production calibration configuration and
+`TimingMatchedReferenceDMemProgram`, measuring both payload/loop contexts
+at each power in opposite power orders. It saves all raw IQ, per-arm
+configuration and classifiers, board configuration, source hashes and
+rejection reports; no feedback, spectrum or automatic installation.
+The .7 classifier policy and .2 minimum accepted-state fractions remain
+unchanged. This is a bounded references-only check before any change to
+fast-map readout power. Production reset, fast-map acquisition and
+initialize.py are unchanged.
+
+Readout-check verification: 34 focused tests passed, one hardware-dependent
+case skipped. A direct configuration-digest check reproduces the successful
+pilot's full-power calibration SHA256 exactly:
+`59ace8ebcc7182b3959c4f2dbcdc24133a90c19aa04d074a62bc2d341856df4e`.
+
+Repository-root `python3 -m pytest -q` cannot collect six pre-existing
+legacy experiment scripts in this local environment:
+
+- `Archive/q4diamond/Client_modules/Running_Experiments_MUX/Timing_test.py`: missing qick.
+- `WorkingProjects/Inductive_Coupler/Client_modules/Running_Experiments_MUX/Timing_test.py`: missing qick.
+- `WorkingProjects/Tantalum_fluxonium_escher/Client_modules/Calib_escher/Experiment_test.py`: missing remote nameserver (`NoneType.list`).
+- `WorkingProjects/Tantalum_fluxonium_escher/Client_modules/Experiments/mFFDelayedTransSlice_test.py`: missing PyQt5.
+- `WorkingProjects/Tantalum_fluxonium_escher/Client_modules/Experiments/mFFSpecSlice_test.py`: missing PyQt5.
+- `WorkingProjects/Tantalum_fluxonium_marvin/Client_modules/Experiments/mTransmission_GUI_test.py`: duplicate imported module basename from the escher folder.
+
+These are collection limitations, not hardware validation of the new runner.
+
+Final maintained-suite check `python3 -m pytest -q tests`: 1,454 passed
+in 47.15 s. The runner's CLI plan and Python compilation also passed.
+Actual lower-power hardware readout discrimination remains unmeasured.
