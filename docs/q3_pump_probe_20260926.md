@@ -8107,3 +8107,18 @@ stop broad400-shot repeats of the current offline-heralded protocol; a
 preparation/timing change would require a short independently validated
 pilot. No further measurement command or production-code change is issued.
 Full statistics, plots and limitations are in the dedicated time-map note.
+
+User authorized a short load--feedback-reset--probe pilot before any further
+long spectrum. `TLSAfterglowFeedbackPilot` interleaves hot/cold loading,
+gain-1200 four-opportunity feedback versus equal-time sham, and 0.1/40-us
+probes at fixed 3.984/3.862/4.046-GHz sites, with two reversed-order blocks.
+28,800 science trials plus fresh reset and independent final references;
+expected 4--8 minutes. The short-probe conditional AND all-shot normalized IQ
+must establish preparation equivalence before return can qualify. All reset
+IQ, accepted and rejected shots, paired covariance, all-shot growth and
+frozen/post-refit results are retained. No automatic long run or peak scout.
+Compiled scheduled load-end-to-probe-excursion gap is 169.250 us: this tests
+memory surviving the reset, and cannot exclude faster TLS memory. QICK
+0.2.133 compile/emulator/workflow audits and the implementation are described
+in `docs/q3_afterglow_feedback_pilot_20261004.md`. Production reset defaults,
+TLS spectroscopy and initialize settings are unchanged.
