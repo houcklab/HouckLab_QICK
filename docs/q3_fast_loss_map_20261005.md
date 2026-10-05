@@ -561,3 +561,94 @@ and projected-IQ statistics, SVGs and audit intermediates remain in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.106 --width-mhz 16 --step-mhz 2
 ```
+
+
+## Nine-frequency pilot: measured cadence gain and retained spectral signal
+
+`q3_fast_loss_map_20261005T081526Z_bdf12fcb`, source commit `c6ab8ea6`,
+completed 200 science frames plus local pre/post in **2 min 6.32 s**.
+The nine frequencies are 4.098–4.114 GHz at 2 MHz, with the same 40 shots
+per condition and five conditions. All 382,500 records are present
+(360,000 science). Each science frame has complete 5×9×40 integer IQ and
+binary states; classifications recomputed from the saved runtime payload
+match every science state. Frequency/DC axes, alternating shot directions,
+transfer totals and source/correction hashes match. Pre/post each have
+5×9×250 records. There are two host transfer receipts per frame, each final
+cumulative total 1,800; a host transfer is not a condition bank identity.
+
+Median acquisition is **0.331 s**, median start interval **0.539 s**, and
+science span **113.21 s**. Compared with the previous 21-point recording's
+0.869 s interval, this is a **1.61× map-rate increase** (38% shorter frame
+interval). These are consecutive runs rather than a randomized paired
+benchmark. Reducing science records 4,200→1,800 accelerated acquisition;
+fixed host/configuration/save overhead remains about 0.21 s per map. Full
+production active reset, native compensation and 40 µs return remain intact.
+
+![Nine-frequency pilot: map, changing profiles and references](q3_fast_loss_map_nine_200_20261005_result.png)
+
+Endpoint references change much less than in the preceding wider pilots:
+P0 0.2493→0.2631 (delta 0.0138, SE 0.0130), P1 0.7182→0.7076
+(delta −0.0107, SE 0.0135), contrast 0.4689→0.4444. The preset check
+passes. Concurrent ten-frame reference contrast has median 0.4563 and
+minimum 0.3600. This is a comparatively steady-reference recording, not
+proof of within-frame stability or a measurement of true thermal population;
+these are classified preparation/readout reference probabilities.
+
+The lower loss structure changes during the 113 s science series. Existing
+fixed shoulders (4.104/4.106 versus 4.110/4.112 GHz) retain 25 µs imbalance
+SD **0.159**, versus paired-shot SE **0.066** and frame-cluster SE **0.069**.
+Forward/reverse correlation is **0.742**, 10/25 µs correlation **0.697**,
+and classified/raw-linear-IQ correlation **0.988**. Regression against the
+measured reference differences and global probabilities leaves SD **0.144**
+and residual 10/25 µs correlation **0.721**. Thus the faster acquisition
+retained shared spectral variation larger than the estimated noise; the
+available reference sensitivity checks do not remove it. Shared qubit-frequency,
+preparation/readout or flux-model errors remain possible. No one-TLS jump
+identity or microscopic switching-time claim is warranted.
+
+![Concurrent reference and dwell controls](q3_fast_loss_map_nine_200_20261005_controls.png)
+
+Multiscale checks retain the distinction between cadence and reliable event
+resolution. At one frame (~0.54 s), imbalance SD is 0.292, paired-shot SE
+0.214 and direction correlation 0.230. At two frames (~1.08 s), they are
+0.223/0.148/0.389; at five (~2.69 s), 0.191/0.094/0.660; at ten
+(~5.39 s), 0.159/0.066/0.742. Single half-second frames remain noisy;
+the displayed ten-frame averages are ~5.4 s. No isolated subsecond TLS
+events are identified. Descriptive stationarity statistics are not discovery
+significance and cannot bound arbitrary long-correlated systematics.
+
+The final 250-shot local-post map has 25 µs survival 0.395 at 4.112 GHz
+and **0.248 at the 4.114 GHz upper edge**, compared with 0.738–0.832
+at 4.102–4.106 GHz. This is the post map, not the average of the final
+science frames; the latter show weaker edge loss when averaged. A narrow
+window can truncate the profile, so do not fit an isolated line center or
+interpret absence in this window as a disappeared TLS.
+
+### Next bounded measurement
+
+Shift the same nine-point window upward by 4 MHz: **4.102–4.118 GHz**,
+center 4.110 GHz, width 16 MHz, step 2 MHz. It retains the earlier changing
+4.104 GHz region and adds coverage beyond the new upper-edge loss.
+Collect 1,000 frames with unchanged 40 shots/condition, active reset,
+concurrent references and raw IQ. Expected roughly **9–12 min**, based
+on observed cadence plus long-record checkpoint overhead; actual time is
+measured. No discovery/recenter gate or measurement code edit is needed.
+The experiment records a fixed window rather than claiming to follow one
+TLS. It still omits spectral structure outside that window.
+
+The latest saved-board offline check compiles shifted nine-point science
+and 250-shot reference programs. Both have identical instruction binaries
+and stream plans to the production parent and pass preflight, with
+5,777/8,192 instructions and full 40 µs return. This verifies configuration,
+not future hardware timing. Only documentation/artifacts changed this turn;
+shared reset, production pipeline and initialize.py remain unchanged.
+The audit is `docs/q3_fast_loss_map_nine_200_20261005_audit.json`.
+Raw IQ remains in the NAS source folder. Local scripts, raw configuration/
+reference copies, cached states and projected-IQ statistics, SVGs and
+intermediate audits are retained in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_081526Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.110 --width-mhz 16 --step-mhz 2
+```

@@ -8283,3 +8283,22 @@ framebudget4200→1800andmeasurecadencegain (~2–5min startupincluded).
 Sameexistingrunner/pulses/reset/initialize; offline9pointscience+reference
 parentbinaries/streamplans match andpasspreflight. Detailedplots/audits/
 multiscaleandlimits appended to `docs/q3_fast_loss_map_20261005.md`.
+
+
+Nine-frequency pilot `20261005T081526Z_bdf12fcb` (c6ab8ea6) completed
+200 frames and pre/post, all 382,500 records, in 2m06.32s. Median acquisition
+0.331s/start interval 0.539s: 1.61× map-rate increase versus the last wider
+recording. Science raw IQ/classifications, axes, directions, receipts and
+hashes verify. Endpoint reference changes are small (P0 .249→.263,
+P1 .718→.708); concurrent normalization still used. Fixed shoulder SD .159
+versus shot SE .066/cluster SE .069; direction correlation .742, raw IQ .988;
+reference regression leaves SD .144. Faster maps retained spectral variation,
+without establishing individual TLS jumps or excluding common qubit drift.
+Single half-second frames remain noisy; five-frame averages (~2.7s) have
+SD .191/SE .094/direction correlation .660. Final post map has strong edge
+loss at 4.114GHz (S25 .248), distinct from the science-frame averages.
+Next: shift nine-point window to 4.102–4.118GHz and collect 1,000 frames
+(~9–12min). Same shots/pulses/production reset; no measurement code or
+initialize changes. Shifted configuration matches parent binaries and passes
+saved-board preflight. Details, plots, audits and limits are appended to
+`docs/q3_fast_loss_map_20261005.md`.
