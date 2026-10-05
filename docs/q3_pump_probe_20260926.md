@@ -8122,3 +8122,16 @@ memory surviving the reset, and cannot exclude faster TLS memory. QICK
 0.2.133 compile/emulator/workflow audits and the implementation are described
 in `docs/q3_afterglow_feedback_pilot_20261004.md`. Production reset defaults,
 TLS spectroscopy and initialize settings are unchanged.
+
+Feedback pilot `20261005T020450Z_2ebf154f` completed in 2m59s: all 28,800
+science trials and independent final references valid; raw summaries and
+paired covariance reproduce. Feedback reduces short hot--cold all-shot IQ
+carryover from approximately 10--15% to 2--5% of reference separation, but
+none of the three sites establishes both ±5% preparation-equivalence checks.
+3.984 GHz is borderline on the conditional interval, not demonstrably failed
+preparation. No resolved added return: feedback conditional growth at
+3.862/3.984/4.046 GHz is +2.25+/-2.08, +0.91+/-2.30 and +2.85+/-3.46
+classified points; all-shot growth is consistent with zero or negative.
+Post-refit agrees. Stop further long maps of this sequence; do not interpret
+the null as exclusion of faster memory or TLS absence. Full control stats,
+plots, scope and the decision are in the dedicated feedback-pilot note.

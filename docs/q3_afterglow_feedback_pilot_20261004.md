@@ -111,3 +111,66 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglo
 Session prefix: `q3_afterglow_feedback_pilot_` under the existing q3 data root.
 The runner uses temporary explicit q3 settings; production reset defaults,
 TLS spectroscopy and `initialize.py` are unchanged.
+
+## Completed pilot outcome
+
+Session `q3_afterglow_feedback_pilot_20261005T020450Z_2ebf154f` completed normally
+in **2 min 59 s** at release `ec4f6859`. All 28,800 science and 2,400
+final-reference trials were saved. Fresh reset calibration used the planned
+8,000 reference trials. All six science programs pass their arm acceptance
+and overflow checks (189–290 accepted shots per 600-shot arm). Pre and frozen
+post final-reference holdout fidelity are **0.905 and 0.926**; the independent
+post-axis refit is also valid. Weak-readout loop calibration detects 41.1% of
+nominal excited holdout shots, accepts 43.1% of nominal ground shots, has 3.6%
+false-ground acceptance and 1.4% false-π decisions. Its conservatism limits
+reset speed and completeness; the strong final readout has different fidelity.
+
+All 38 session files were copied locally and verified against NAS hashes.
+Every saved science summary, frozen pre/post reference report, final summary
+and post-refit summary reproduces to numerical precision. An independent
+projection/influence calculation reproduces the paired classification
+covariance. No acquisition failure or missing-data explanation is needed.
+
+| Frequency (GHz) | Short hot–cold IQ, sham (%) | Short hot–cold IQ, feedback (%) | Feedback conditional growth (points) | Feedback all-shot growth (points) |
+|---|---:|---:|---:|---:|
+| 3.862 | 11.02 ± 1.62 | 3.17 ± 1.47 | 2.25 ± 2.08 | −1.58 ± 1.57 |
+| 3.984 | 9.59 ± 3.50 | 2.12 ± 1.42 | 0.91 ± 2.30 | 0.08 ± 1.52 |
+| 4.046 | 15.08 ± 1.69 | 4.78 ± 1.78 | 2.85 ± 3.46 | −1.58 ± 1.55 |
+
+Table errors are one SE with the prescribed block-disagreement floor.
+Short IQ units are percent of the final-reference separation, not absolute
+population. Direct paired estimates of the feedback-minus-sham change are
+−7.85 ± 2.18, −7.47 ± 4.57 and −10.30 ± 2.20 reference-separation points,
+respectively. Feedback reduces carryover, clearly at 3.862 and 4.046 GHz;
+the reduction at 3.984 GHz varies substantially between order blocks.
+
+**No site establishes both preparation-equivalence checks.** At 3.984 GHz,
+the all-shot short IQ interval lies inside the ±5% band, but the conditional
+interval is [−2.60%, +5.37%], narrowly outside. That is unresolved precision,
+not proof of failed preparation. At 3.862 and 4.046 GHz, the all-shot upper
+bounds are +6.06% and +8.27%; full equivalence is also unestablished.
+
+**No convincing additional energy return is present**, even before the
+equivalence gate. Conditional growth is at most 1.08 SE from zero; all-shot
+growth is zero or negative within uncertainty. The small positive direct
+40-µs offsets at 3.984/4.046 GHz do not establish growth above the matched
+short control. Post-axis refitting leaves the conclusion unchanged.
+
+Decision: **do not start a longer map with this sequence**. This is a useful
+preparation-control result, not a positive TLS-memory result. A future return
+test would need a meaningful preparation/timing improvement validated in a
+bounded pilot; simply collecting a longer version of these data is not
+justified. No new measurement command or runtime change follows this run.
+The 169-µs gap, potential environment disturbance by reset, three fixed sites
+and absence of a simultaneous loss spectrum limit the physical inference:
+the result does not exclude faster memory, smaller return or other sites.
+
+![Feedback carryover and return checks](q3_afterglow_feedback_pilot_20261004_controls_and_return.png)
+
+Plot intervals are estimate ± 1.96 SE, descriptive normal intervals from two
+counterbalanced blocks. The left plot shows only the all-shot preparation
+metric; both conditional and all-shot equivalence are required. The right
+plot compares conditional and all-shot classified growth under feedback.
+
+Raw snapshot, audit script/statistics and PNG/SVG plot:
+`/Users/rummanrahman/.codex/visualizations/2026/10/04/q3_afterglow_feedback_pilot_020450Z/`.
