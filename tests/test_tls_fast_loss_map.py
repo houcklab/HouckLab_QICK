@@ -285,8 +285,40 @@ def test_cli_wider_window_and_invalid_grids_are_checked_before_hardware(tmp_path
     monkeypatch.setattr(m,'run',run)
     assert m.main(['--run','--frames','200','--center-ghz','4.108','--width-mhz','40','--step-mhz','2'])==0
     assert observed[0]['width_mhz']==40 and observed[0]['step_mhz']==2.
-    for options in ({'width_mhz':101},{'width_mhz':0},{'step_mhz':.1},{'width_mhz':3,'step_mhz':2.}):
+    for options in ({'width_mhz':501},{'width_mhz':0},{'step_mhz':.1},{'width_mhz':3,'step_mhz':2.}):
         with pytest.raises(ValueError,match='grid'):m.plan(**options)
     for center in [3.8,4.3]:
         grid=m.local_grid(center,width_mhz=40,step_mhz=2.)
         assert len(grid)==21 and grid.min()>=3.8 and grid.max()<=4.3
+
+
+def test_full_band_collection_preserves_references_and_five_condition_budget(tmp_path):
+    m=module();called=[]
+    def acquire(grid,shots,name):
+        called.append((grid.copy(),shots,name))
+        return block(grid,shots)
+    manifest={'status':'initializing','completed':[]}
+    m.collect(tmp_path,acquire,manifest,frames=2,center_ghz=4.05,width_mhz=500,step_mhz=2.)
+    expected=np.arange(3800,4301,2)/1000
+    assert all(np.array_equal(grid,expected) for grid,_,_ in called)
+    assert [shots for _,shots,_ in called]==[250,40,40,250]
+    assert [name for _,_,name in called]==['local_pre','frame_0000','frame_0001','local_post']
+    assert np.load(tmp_path/'frame_0000.npz')['states'].shape==(5,251,40)
+    assert manifest['selection']['fresh_feature_claim'] is False
+    assert m.plan(frames=10,center_ghz=4.05,width_mhz=500,step_mhz=2.)['local_points']==251
+
+
+def test_full_band_cli_and_point_cap_before_acquisition(tmp_path,monkeypatch):
+    m=module();observed=[]
+    def run(**kwargs):
+        observed.append(kwargs)
+        (tmp_path/'manifest.json').write_text('{"status":"complete"}')
+        return tmp_path
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--frames','10','--center-ghz','4.05','--width-mhz','500','--step-mhz','2'])==0
+    assert observed[0]['width_mhz']==500 and observed[0]['step_mhz']==2.
+    assert observed[0]['frames']==10 and observed[0]['center_ghz']==4.05
+    observed.clear()
+    for args in (['--width-mhz','500','--step-mhz','1'],['--width-mhz','126','--step-mhz','0.5']):
+        with pytest.raises(SystemExit):m.main(['--run',*args])
+    assert not observed

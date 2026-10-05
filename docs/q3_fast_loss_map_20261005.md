@@ -652,3 +652,107 @@ intermediate audits are retained in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.110 --width-mhz 16 --step-mhz 2
 ```
+
+
+## Shifted nine-point long recording: sustained cadence and a persistent dip
+
+`q3_fast_loss_map_20261005T082358Z_0606fe52`, source commit `1467f975`,
+completed all 1,000 frames and local pre/post in **10 min 1.47 s**.
+The fixed nine-frequency grid is 4.102–4.118 GHz at 2 MHz, with unchanged
+40 shots per condition, five conditions, production active reset and native
+corrected full 40 µs return. All **1,822,500 records** are present
+(1,800,000 science). Every science integer-IQ classification matches the
+saved runtime payload; axes, alternating directions, transfer totals and
+source/correction hashes match. References have expected 5×9×250 shapes.
+Each science frame's two host receipts account for all 1,800 records.
+Median acquisition is **0.329 s**, median start interval **0.541 s**, and
+science span **569.00 s**. The smaller-grid cadence is sustained over a
+long recording rather than demonstrated only in a short pilot.
+
+![Shifted nine-frequency long recording](q3_fast_loss_map_nine_1000_20261005_result.png)
+
+The preset endpoint check passes with small deltas: P0 0.2996→0.2951
+(delta −0.0044, SE 0.0136), P1 0.7164→0.7311 (delta 0.0147,
+SE 0.0133), contrast 0.4169→0.4360. However, P0 rises within the science
+series from roughly 0.26–0.28 to 0.31–0.33 around 100 s; P1 also varies.
+These are classified reference probabilities, not true temperatures or
+thermal populations. Concurrent ten-frame contrast has median 0.430 and
+minimum 0.2675. Small endpoint changes cannot establish stationarity.
+
+A persistent loss dip is captured inside the window, near **4.112–4.114
+GHz**, through most of the science recording. Its depth varies, and the
+last 200-frame mean (~453–569 s) is noticeably shallower than earlier
+means. Do not infer defect disappearance: it could weaken, move beyond the
+window, or reflect other physical/instrumental changes. There is no fit
+assigning a single microscopic identity to the observed dip.
+
+The existing fixed shoulder comparison (4.104/4.106 versus 4.110/4.112
+GHz) has 25 µs imbalance SD **0.189**, versus median paired-shot SE
+**0.070** and frame-cluster SE **0.073**. Disjoint forward/reverse
+correlation is **0.704**, 10/25 µs correlation **0.769**, and classified/
+raw-linear-IQ correlation **0.976**. Regression on the measured reference
+imbalances and global P0/P1 leaves residual SD **0.168** and residual
+10/25 µs correlation **0.710**. The available reference checks do not
+remove the spectral variation, but do not exclude arbitrary common
+readout/preparation/flux-model errors or qubit-frequency drift. No matched
+probe-duty-cycle control establishes undisturbed equilibrium dynamics.
+
+![Concurrent reference and dwell controls](q3_fast_loss_map_nine_1000_20261005_controls.png)
+
+At one frame (~0.54 s), shoulder SD/paired-shot SE/direction correlation
+are 0.316/0.228/0.256; at two (~1.08 s), 0.254/0.158/0.392; at five
+(~2.70 s), 0.210/0.100/0.552; at ten (~5.41 s), 0.189/0.070/0.704.
+Single frames remain noisy. The display averages ten frames, not an
+established half-second TLS-event resolution. Descriptive correlations and
+stationarity statistics do not provide a microscopic switching-time fit,
+linewidth, diffusion coefficient or formal TLS discovery significance.
+
+### Next: short full-band speed/contrast benchmark
+
+Local monitoring now works reproducibly. Rather than repeat more shifted
+local windows, benchmark whether the same acquisition approach gives useful
+faster **whole-band** maps. Use an explicit 3.8–4.3 GHz grid at 2 MHz:
+**251 frequencies, ten 40-shot frames**, with unchanged 250-shot pre/post
+and fresh production calibration. There is no scout/discovery gate in this
+explicit mode. Expected approximately **3–6 minutes total**; actual whole-
+band cadence and per-map contrast must be measured. A larger frequency
+span necessarily sacrifices local cadence and precision remains limited by
+40 shots per point. This is not a claim of full-band half-second scans,
+an FPGA adaptive estimator, or the literature paper's cadence.
+
+This also checks coverage after the local dip weakened; broad data can
+show whether stronger loss now lies outside the narrow grid. It does not
+establish that any newly seen feature is the same TLS. Ten science maps
+contain 502,000 records; pre/post together contain 627,500; total
+**1,129,500 records across twelve maps**. Stop after this finite pilot and
+assess cadence/contrast before extending.
+
+A bounded runner change extends allowed integer widths 2–100→2–500 MHz
+and adds a hard **251-point maximum**. The existing 0.5/1/2 MHz choices
+and integer-interval requirement remain. Hence 500 MHz is accepted only
+at 2 MHz; 500 MHz/1 MHz and 126 MHz/0.5 MHz reject before hardware access.
+All grids remain inside 3.8–4.3 GHz. Default 20 MHz/1 MHz behavior,
+discovery, shots, reset, pulse generation, return, raw-data preservation
+and printing behavior are unchanged. Production/shared reset/initialize.py
+are untouched. CLI help, plan and manifest expose width and point count.
+
+Two new tests were witnessed failing at the old 100 MHz limit, then pass:
+full-grid collection with preserved 250/40/40/250 references/science shapes
+and explicit no-discovery metadata; CLI full-band propagation and excessive-
+point rejection before acquisition. **21 focused tests** with offline QICK
+and **1,443 full-suite tests** pass (42.97 s). Latest saved-board QICK
+0.2.133 compilation of 251-point science and reference cases gives identical
+observer/production parent binaries and stream plans, both passing preflight
+(5,777/8,192 instructions). Independent review found no actionable P1/P2
+issues. Actual full-band hardware timing is still unmeasured in this mode.
+
+The audit is `docs/q3_fast_loss_map_nine_1000_20261005_audit.json`, including
+next-configuration preflight. Full raw IQ remains on NAS; local scripts,
+raw configuration/reference copies, cached states/projected-IQ statistics,
+SVGs and intermediate audits remain in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_082358Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 10 --center-ghz 4.05 --width-mhz 500 --step-mhz 2
+```

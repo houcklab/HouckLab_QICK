@@ -1,0 +1,262 @@
+{
+  "source_commit": "1467f9759fcdc1b18fb87eb8fdae5975513a8c53",
+  "source_folder": "/Volumes/ourphoton/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/q3_fast_loss_map_20261005T082358Z_0606fe52",
+  "local_analysis_folder": "/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_082358Z",
+  "integrity": {
+    "run": "q3_fast_loss_map_20261005T082358Z_0606fe52",
+    "status": "complete",
+    "frames": 1000,
+    "local_records": 1800000,
+    "total_records": 1822500,
+    "source_hash_verified": true,
+    "correction_hash_verified": true,
+    "classifier_recomputed_match": true,
+    "axes_directions_counts_match": true,
+    "reset_mode": "opx_unbounded",
+    "qubit_park_mhz": 4367.292,
+    "readout_mhz": 6933.026,
+    "corrected_return_us": 40.0,
+    "frame_acquisition_s": {
+      "median": 0.32932915026322007,
+      "min": 0.25275049917399883,
+      "max": 0.6412395993247628
+    },
+    "frame_start_period_s": {
+      "median": 0.5406349999830127,
+      "min": 0.43137199990451336,
+      "max": 0.9577422998845577
+    },
+    "series_span_s": 569.0016005998477,
+    "reference_check": {
+      "valid": true,
+      "reference_contrasts": [
+        0.41688888888888886,
+        0.436
+      ],
+      "conditions": [
+        {
+          "condition": "P0",
+          "before": 0.2995555555555556,
+          "after": 0.2951111111111111,
+          "delta": -0.004444444444444473,
+          "se": 0.013630494541981038,
+          "valid": true
+        },
+        {
+          "condition": "P1",
+          "before": 0.7164444444444444,
+          "after": 0.7311111111111112,
+          "delta": 0.014666666666666717,
+          "se": 0.0133319532246889,
+          "valid": true
+        }
+      ],
+      "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+    },
+    "host_time_scope": "frame acquisition includes hardware configuration/transport; start-to-start also includes analysis, recompilation and NAS checkpoint gaps",
+    "transfers_per_frame_range": [
+      2,
+      2
+    ]
+  },
+  "temporal_analysis": {
+    "2us": {
+      "sd": 0.09207312997425018,
+      "median_paired_shot_se": 0.07044514760140261,
+      "median_frame_cluster_se": 0.07050920190409468
+    },
+    "10us": {
+      "sd": 0.11936472043735197,
+      "median_paired_shot_se": 0.07090839869891541,
+      "median_frame_cluster_se": 0.0684859571069133
+    },
+    "25us": {
+      "sd": 0.189169931800777,
+      "median_paired_shot_se": 0.06969084437865053,
+      "median_frame_cluster_se": 0.07257668953916116
+    },
+    "shoulder_bands_mhz": {
+      "left": [
+        4103.986085000541,
+        4106.024960309061
+      ],
+      "right": [
+        4110.021069078374,
+        4111.978752096214
+      ]
+    },
+    "band_normalized_25us": {
+      "sd": 0.189169931800777,
+      "median_paired_shot_se": 0.06969084437865053,
+      "median_cluster_se": 0.07257668953916116,
+      "forward_reverse_correlation": 0.703631464523116,
+      "correlation_10us_25us": 0.7690964167513425,
+      "correlation_binary_IQ": 0.9757515200290577,
+      "raw_IQ_imbalance_sd": 0.18530179944410277,
+      "reference_regressed_residual_sd": 0.1676973405976896,
+      "reference_regressed_correlation_10us_25us": 0.7101108447190059,
+      "conservative_constant_chi2": 546.3587525749575,
+      "dof": 99,
+      "descriptive_p": 4.72064157053485e-63
+    },
+    "caveat": "All stationarity statistics are descriptive. Cluster SE uses ten frames per bin and does not bound arbitrary long-correlated errors; no single-TLS identity or qubit-frequency-drift exclusion."
+  },
+  "multiscale_analysis": {
+    "1": {
+      "frames_per_bin": 1,
+      "approximate_seconds": 0.540635,
+      "imbalance_sd": 0.3159898865413521,
+      "median_paired_shot_se": 0.22788545776961375,
+      "forward_reverse_correlation": 0.2562095975277379,
+      "correlation_10us_25us": 0.48922470950427654
+    },
+    "2": {
+      "frames_per_bin": 2,
+      "approximate_seconds": 1.08127,
+      "imbalance_sd": 0.25353834411701814,
+      "median_paired_shot_se": 0.15761955029532718,
+      "forward_reverse_correlation": 0.3918103542358631,
+      "correlation_10us_25us": 0.5971744799301014
+    },
+    "5": {
+      "frames_per_bin": 5,
+      "approximate_seconds": 2.703175,
+      "imbalance_sd": 0.20973442316935956,
+      "median_paired_shot_se": 0.10009993840360816,
+      "forward_reverse_correlation": 0.5523551732924699,
+      "correlation_10us_25us": 0.7168330492501229
+    },
+    "10": {
+      "frames_per_bin": 10,
+      "approximate_seconds": 5.40635,
+      "imbalance_sd": 0.189169931800777,
+      "median_paired_shot_se": 0.06969084437865053,
+      "forward_reverse_correlation": 0.703631464523116,
+      "correlation_10us_25us": 0.7690964167513425
+    },
+    "limitations": "Ratios, errors and correlations are descriptive. Shared systematic drift is not excluded; independent halves are alternating scan-shot sets, not simultaneous independent instruments. No individual-TLS event classification or switching-time fit."
+  },
+  "next_full_band_preflight": [
+    {
+      "name": "full_band_frame",
+      "instructions": 5777,
+      "capacity": 8192,
+      "waveform_memory": [
+        {
+          "channel": 0,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 1,
+          "used_samples": 11008,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 2,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 3,
+          "used_samples": 55040,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 4,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 5,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 6,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        }
+      ],
+      "record_words": 2,
+      "stream_plan": {
+        "done_addr": 1,
+        "ack_addr": 2,
+        "ready_addr": 3,
+        "bank_units": 192,
+        "bank_records": 960,
+        "bank_words": 1920,
+        "total_shots": 40,
+        "total_units": 10040,
+        "records_per_unit": 5,
+        "records_per_shot": 1255,
+        "final_partial_units": 56
+      },
+      "max_frequency_error_mhz": 0.04119407841773892
+    },
+    {
+      "name": "full_band_reference",
+      "instructions": 5777,
+      "capacity": 8192,
+      "waveform_memory": [
+        {
+          "channel": 0,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 1,
+          "used_samples": 11008,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 2,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 3,
+          "used_samples": 55040,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 4,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 5,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        },
+        {
+          "channel": 6,
+          "used_samples": 0,
+          "capacity_samples": 65536
+        }
+      ],
+      "record_words": 2,
+      "stream_plan": {
+        "done_addr": 1,
+        "ack_addr": 2,
+        "ready_addr": 3,
+        "bank_units": 192,
+        "bank_records": 960,
+        "bank_words": 1920,
+        "total_shots": 250,
+        "total_units": 62750,
+        "records_per_unit": 5,
+        "records_per_shot": 1255,
+        "final_partial_units": 158
+      },
+      "max_frequency_error_mhz": 0.04119407841773892
+    }
+  ],
+  "limitations": [
+    "Small endpoint reference changes do not establish within-run stability; P0 rises within the science series around 100 seconds.",
+    "Fixed-shoulder variations survive measured reference sensitivity checks, but common instrumentation/preparation/flux-model/qubit-frequency drift is not excluded.",
+    "No individual TLS identity, isolated jump, intrinsic linewidth, diffusion coefficient or fitted microscopic switching time.",
+    "No matched probe-duty-cycle test establishes that observed dynamics are unperturbed equilibrium fluctuations.",
+    "Half-second cadence is not established half-second event resolution; figures average ten frames, approximately 5.4 seconds."
+  ]
+}

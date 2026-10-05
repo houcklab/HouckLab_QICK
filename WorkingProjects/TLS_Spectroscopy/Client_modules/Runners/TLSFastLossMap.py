@@ -71,9 +71,11 @@ def local_grid(center,*,width_mhz=20,step_mhz=1.):
     center=float(center)
     if not np.isfinite(center) or not 3.8<=center<=4.3:
         raise ValueError('local center outside the calibrated band')
-    if (not isinstance(width_mhz,int) or not 2<=width_mhz<=100
+    if (not isinstance(width_mhz,int) or not 2<=width_mhz<=500
             or step_mhz not in (.5,1.,2.) or width_mhz/step_mhz!=int(width_mhz/step_mhz)):
-        raise ValueError('local grid requires integer width 2--100 MHz, step 0.5/1/2 MHz, and an integer number of intervals')
+        raise ValueError('local grid requires integer width 2--500 MHz, step 0.5/1/2 MHz, and an integer number of intervals')
+    if width_mhz/step_mhz+1>251:
+        raise ValueError('local grid exceeds the validated 251-point limit; use a larger step or smaller width')
     lower=max(3.8,min(4.3-width_mhz/1000,center-width_mhz/2000))
     return np.round(lower+step_mhz/1000*np.arange(int(width_mhz/step_mhz)+1),6)
 
@@ -386,7 +388,7 @@ def main(argv=None):
     parser.add_argument('--quiet',action='store_true')
     parser.add_argument('--frames',type=int,default=FRAMES,help='finite local frame count, 1--2000 (default: 40)')
     parser.add_argument('--center-ghz',type=float,help='record explicit local window without a scout/feature-selection gate')
-    parser.add_argument('--width-mhz',type=int,default=20,help='local window width, 2--100 MHz (default: 20)')
+    parser.add_argument('--width-mhz',type=int,default=20,help='window width, 2--500 MHz, at most 251 points (default: 20)')
     parser.add_argument('--step-mhz',type=float,choices=(.5,1.,2.),default=1.,help='local grid spacing (default: 1 MHz)')
     args=parser.parse_args(argv)
     try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz)

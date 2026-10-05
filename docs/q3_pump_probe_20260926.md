@@ -8302,3 +8302,22 @@ Next: shift nine-point window to 4.102–4.118GHz and collect 1,000 frames
 initialize changes. Shifted configuration matches parent binaries and passes
 saved-board preflight. Details, plots, audits and limits are appended to
 `docs/q3_fast_loss_map_20261005.md`.
+
+
+Shifted nine-point run `20261005T082358Z_0606fe52` (1467f975) completed
+1,000 frames and pre/post, all 1,822,500 records, in 10m01.47s. Median
+acquisition .329s/start interval .541s; sustained local cadence. Science
+raw IQ classifications, axes, directions, receipts and hashes verify. Small
+endpoint reference deltas conceal within-run P0 rise around 100s; concurrent
+normalization used. Persistent 4.112–4.114GHz dip is shallower in the final
+~453–569s mean. Fixed-shoulder SD .189 versus shot SE .070/cluster SE .073;
+direction correlation .704, raw IQ .976; measured-reference regression leaves
+SD .168. No individual TLS identity/jump time or qubit-drift exclusion.
+Next finite full-band benchmark: 3.8–4.3GHz/2MHz, ten 40-shot maps plus
+250-shot pre/post (~3–6min), not a full-band half-second cadence claim.
+Bounded runner width maximum extends to 500MHz with hard 251-point cap;
+no shared reset/pulse/production/initialize edits. Tests witnessed red;
+21 focused and 1,443 full-suite tests pass; saved-board parent binaries and
+stream plans match for both 251-point configurations and pass preflight;
+review found no P1/P2 issues. Details/plots/audits are appended to
+`docs/q3_fast_loss_map_20261005.md`.
