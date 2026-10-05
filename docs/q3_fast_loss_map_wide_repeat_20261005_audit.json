@@ -1,0 +1,117 @@
+{
+  "source_commit": "3dc8c1eb76e043ff18f7b3e17cc0fed92480338b",
+  "source_folder": "/Volumes/ourphoton/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/q3_fast_loss_map_20261005T072829Z_7813fdc4",
+  "local_analysis_folder": "/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_072829Z",
+  "integrity": {
+    "run": "q3_fast_loss_map_20261005T072829Z_7813fdc4",
+    "status": "complete",
+    "frames": 200,
+    "local_records": 840000,
+    "total_records": 892500,
+    "source_hash_verified": true,
+    "correction_hash_verified": true,
+    "classifier_recomputed_match": true,
+    "axes_directions_counts_match": true,
+    "reset_mode": "opx_unbounded",
+    "qubit_park_mhz": 4367.292,
+    "readout_mhz": 6933.026,
+    "corrected_return_us": 40.0,
+    "frame_acquisition_s": {
+      "median": 0.6728187003172934,
+      "min": 0.5666645998135209,
+      "max": 0.954250699840486
+    },
+    "frame_start_period_s": {
+      "median": 0.905396300368011,
+      "min": 0.7484250999987125,
+      "max": 1.3515306999906898
+    },
+    "series_span_s": 186.14160129986703,
+    "reference_check": {
+      "valid": true,
+      "reference_contrasts": [
+        0.4638095238095238,
+        0.4104761904761905
+      ],
+      "conditions": [
+        {
+          "condition": "P0",
+          "before": 0.1916190476190476,
+          "after": 0.26361904761904764,
+          "delta": 0.07200000000000004,
+          "se": 0.008154364618293676,
+          "valid": true
+        },
+        {
+          "condition": "P1",
+          "before": 0.6554285714285715,
+          "after": 0.6740952380952381,
+          "delta": 0.01866666666666661,
+          "se": 0.009213010332863694,
+          "valid": true
+        }
+      ],
+      "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+    },
+    "host_time_scope": "frame acquisition includes hardware configuration/transport; start-to-start also includes analysis, recompilation and NAS checkpoint gaps",
+    "transfers_per_frame_range": [
+      5,
+      5
+    ]
+  },
+  "temporal_analysis": {
+    "2us": {
+      "sd": 0.05603997956880464,
+      "median_paired_shot_se": 0.06843710943524063,
+      "median_frame_cluster_se": 0.06154053543243841
+    },
+    "10us": {
+      "sd": 0.0978175536047409,
+      "median_paired_shot_se": 0.06599655130097956,
+      "median_frame_cluster_se": 0.06459276697611262
+    },
+    "25us": {
+      "sd": 0.12531818705815345,
+      "median_paired_shot_se": 0.0634487928450291,
+      "median_frame_cluster_se": 0.07162780394071709
+    },
+    "shoulder_bands_mhz": {
+      "left": [
+        4103.986085000541,
+        4106.024960309061
+      ],
+      "right": [
+        4110.021069078374,
+        4111.978752096214
+      ]
+    },
+    "band_normalized_25us": {
+      "sd": 0.12531818705815345,
+      "median_paired_shot_se": 0.0634487928450291,
+      "median_cluster_se": 0.07162780394071709,
+      "forward_reverse_correlation": 0.5936659928250021,
+      "correlation_10us_25us": 0.7824403162640253,
+      "correlation_binary_IQ": 0.9533344975590088,
+      "raw_IQ_imbalance_sd": 0.12163713682712037,
+      "reference_regressed_residual_sd": 0.07609704165117909,
+      "reference_regressed_correlation_10us_25us": 0.5351332480414551,
+      "conservative_constant_chi2": 59.681594457370366,
+      "dof": 19,
+      "descriptive_p": 4.34519105923545e-06
+    },
+    "caveat": "All stationarity statistics are descriptive. Cluster SE uses ten frames per bin and does not bound arbitrary long-correlated errors; no single-TLS identity or qubit-frequency-drift exclusion."
+  },
+  "single_frame": {
+    "single_frame_sd": 0.26907054688931326,
+    "median_single_frame_paired_shot_se": 0.20630322152027702,
+    "single_frame_forward_reverse_correlation": 0.17093017082218429,
+    "scope": "Per-frame noisy ratios; descriptive only. Ten-frame display and analysis remain preferable; not a resolved subsecond TLS-event claim."
+  },
+  "limitations": [
+    "Endpoint reference check passes preset tolerance but P0 drifts by 0.072, approximately 8.8 reported SE. Passing is not stationarity.",
+    "Reference regression reduces the shoulder SD to 0.076, comparable to frame-cluster SE 0.072; this record alone cannot isolate the signal from preparation/reference changes.",
+    "Raw-IQ agreement excludes a threshold-only explanation but does not exclude common readout/preparation/flux drift.",
+    "Single frames are noisy; approximately one-second acquisition cadence is not established one-second TLS switching resolution.",
+    "No single TLS identity, intrinsic linewidth, diffusion coefficient or qubit-frequency drift exclusion."
+  ]
+}

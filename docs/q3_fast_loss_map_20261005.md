@@ -388,3 +388,79 @@ on NAS. Scripts and cached classified/IQ statistics are retained in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
 ```
+
+
+## Independently calibrated wider repeat: acquisition reproducible, drift remains
+
+`q3_fast_loss_map_20261005T072829Z_7813fdc4`, commit `3dc8c1eb`,
+completed all 200 science frames plus local pre/post in 3 min 24.86 s.
+All 892,500 records are present (840,000 science). Every science integer-IQ
+classification matches the saved runtime projector, with matching axes,
+alternating scan directions, transfer totals and source/correction hashes.
+This is the same 4.088–4.128 GHz/2 MHz/21-point, 40-shot, five-condition
+window with newly acquired production active-reset calibration. Native
+correction/full 40 µs return, park preparation/readout and initialize settings
+are unchanged. Median acquisition is 0.673 s, start interval 0.905 s and
+science span 186.14 s. Wider-window cadence is reproduced independently.
+
+The preset endpoint check passes, status `complete`, but **references are
+not stationary**. P0 rises 0.1916→0.2636 (delta 0.0720, SE 0.00815),
+P1 rises 0.6554→0.6741 and contrast falls 0.4638→0.4105. P0's change is
+about 8.8 reported SE, just inside the preset absolute 0.05 plus 3-SE
+tolerance. Fresh calibration did not remove reference variation. Do not
+call this a stable-reference run or weaken/retune the gate to hide the drift.
+
+![Repeat loss map, profiles and concurrent references](q3_fast_loss_map_wide_repeat_20261005_result.png)
+
+Concurrent-reference normalized 25 µs survival changes shape again: early
+loss is strongest around 4.108–4.110 GHz, intermediate profiles have loss
+near 4.118 GHz, and late profiles have stronger central loss again. Other
+low-frequency structure appears. This is a repeat observation of changing
+spectral shape, not replication of a specific TLS jump, a stationary line
+identity or the exact previous time course. Ten-frame heatmap bins contain
+400 shots/condition/frequency and represent approximately 9 s.
+
+For the existing shoulder bands (4.104/4.106 versus 4.110/4.112 GHz),
+25 µs imbalance SD is 0.125 versus median paired-shot SE 0.063 and
+frame-cluster SE 0.072. Disjoint forward/reverse correlation is 0.594,
+10/25 µs correlation 0.782, and classified/raw-linear-IQ correlation 0.953.
+Thus classified and raw-IQ traces agree and both directions share some
+variation. These checks cannot exclude common preparation/readout/flux
+systematics. In particular, regression on concurrent reference imbalances
+and global P0/P1 reduces residual SD to 0.076, comparable to cluster SE;
+residual 10/25 µs correlation is 0.535. This record alone does not cleanly
+isolate TLS dynamics from reference/preparation changes. Descriptive
+stationarity statistics must not be presented as microscopic discovery
+significance.
+
+Single-frame imbalance SD is 0.269 versus median paired-shot SE 0.206;
+forward/reverse correlation is only 0.171 at that resolution. Approximately
+one-second acquisition is useful, but this recording does **not** establish
+one-second-resolved TLS events. Ten-frame averages remain more reliable;
+subsecond dynamics would need more signal, different allocation or a
+validated estimator rather than simply treating noisy raw frames as events.
+
+![Concurrent reference and dwell controls](q3_fast_loss_map_wide_repeat_20261005_controls.png)
+
+Both bounded wider pilots record useful coverage at similar cadence, with
+changing spectra and substantial reference sensitivity. Next collect a
+bounded **1,000-frame wider-window** recording to obtain more temporal
+statistics while retaining all concurrent P0/P1 and raw IQ. The purpose is
+to characterize profile changes and assess reliability, not to declare
+single-TLS telegraph dynamics. Expected approximately 16–20 min based on
+recorded cadence and earlier long-run overhead. No further discovery gate,
+automatic recenter, pulse, production/reset or initialize changes are needed.
+Do not repeat short calibration pilots indefinitely; use the accumulated
+record to quantify which spectral changes survive reference sensitivity,
+and report an inconclusive dynamics result if they do not.
+
+The audit is `docs/q3_fast_loss_map_wide_repeat_20261005_audit.json`;
+full frame IQ remains on NAS. Analysis scripts, cached states and projected
+IQ statistics, raw reference/configuration copies and SVGs are retained in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_072829Z`.
+This turn changes only documentation/artifacts; no measurement code changed.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
+```

@@ -8250,3 +8250,18 @@ Changes overlapreference drift: no singleTLSmotion orclean switchingclaim.
 Nextsame200framewindow withfreshcalibration (~3–5min), beforeextending.
 No measurementcode/reset/initialize changes. Detailedplots,audit,exploratory
 region comparisons andlimits appended to `docs/q3_fast_loss_map_20261005.md`.
+
+
+Fresh-cal widerrepeat `20261005T072829Z_7813fdc4` (3dc8c1eb) completed
+all200frames+pre/post,892,500records,3m24.86s. Medianacq0.673s/start0.905s,
+sciencespan186.14s;raw-IQ classifications/axes/directions/transfers/hashes
+verified. Presetendpointcheckpasses butP0.192→.264 (~8.8SE),contrast.464→.410:
+freshcaldidnotremove drift. Concurrent-normalized loss changes shape, with
+central/upper structure atdifferenttimes. ShoulderSD.125 versusshotSE.063,
+clusterSE.072;forward/reversecorr.594,10/25us.782,rawIQ.953. Reference
+regressionresidualSD.076 comparableclusterSE: notcleanTLSswitchingproof.
+SingleframeSD.269/SE.206 anddirectioncorr.171: ~1s acquisition isnot
+proven1sTLS-eventresolution. Nextbounded1000frames same40MHz/2MHzwindow
+(~16–20min), concurrentrefs/rawIQretained, tocharacterize dynamics/reliability.
+No measurementcode/reset/initialize edits. Detailedplots/audit/limits in
+`docs/q3_fast_loss_map_20261005.md`.
