@@ -30,6 +30,10 @@ from ..active_reset_OPX.programs import OPXResetT1Program, _pulse_pi_and_align
 VIEWS = ('identity', 'ge_swap')
 DWELLS_US = (.25, 2., 8.)
 CAL_SHOTS, SHOTS = 160, 500
+FIXED_SCOUT_RELATIVE = 'q3/q3_2026_10_04/q3_23_24_09_TLS_Resident_EF_Pilot_Scout_T1_5pt_vs_wall_clock_full.csv'
+FIXED_SCOUT_SHA256 = '0c0ed0c6b3ec6a8d559bd503e2a2a1243951fe2d31e95bc51abd4f762b96cf13'
+FIXED_BIAS_GHZ = 4.272
+FIXED_FEATURE_GHZ = 4.092
 
 
 def checkpoint(path, payload):
@@ -44,7 +48,18 @@ def checkpoint(path, payload):
     dual.checkpoint(path, json.loads(json.dumps(payload, default=encode)))
 
 
-def plan():
+def plan(*, fixed_check=False):
+    if fixed_check:
+        return dict(qubit='q3', scout='reuse checksum-verified October4 scout; no new scout or site selection',
+                    fixed_bias_ghz=FIXED_BIAS_GHZ, old_feature_ghz=FIXED_FEATURE_GHZ,
+                    calibration='one local g-e and e-f spectroscopy/Rabi calibration with independent pulse and readout audits',
+                    maximum_alignment_attempts=1, automatic_recenter=False,
+                    views=list(VIEWS), reference_dwells_us=[.25, 8.],
+                    check='independent g/e/f response references and ground/excited 8-us controls only',
+                    science_decay=False, automatic_long_scan=False, shots_per_check=SHOTS,
+                    reset='1000 us passive park washout', programs=176,
+                    approximate_minutes='5--10 including transport and NAS overhead',
+                    interpretation='Local preparation/readout feasibility. The old scout does not establish that the TLS is still at its previous frequency.')
     return dict(qubit='q3', scout='one 3.8--4.3 GHz passive five-point scan',
                 selection='loss line with a quiet shifted g-e window',
                 calibration='local g-e and e-f opposed spectroscopy, Rabi gains, independent 0/pi/2pi checks',
@@ -352,7 +367,93 @@ def plot_summary(folder, summary):
     plt.close(fig)
 
 
-def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
+def assess_fixed_check(pre, post, observations, *, draws=400):
+    """Prove stable preparation-relative readout, then check local g-e loss."""
+    responses = {d: fit_response(pre[d]) for d in (.25, 8.)}
+    reports = {d: validate_response(responses[d], post[d]) for d in (.25, 8.)}
+    result = dict(valid=False, readout_valid=False, quiet_control_valid=False,
+                  final_response_validation=reports,
+                  interpretation='Preparation-relative state control only; no absolute f purity or TLS loss result.')
+    if not all(r['valid'] for r in reports.values()):
+        result['reason'] = 'independent final readout references changed'
+        return result
+    matrix = np.asarray(responses[8.]['matrix'])
+    inverse = np.linalg.pinv(matrix)
+    estimates = {s: population(responses[8.], observations[s]) for s in 'ge'}
+    residual_checks = {}
+    for s, estimate in estimates.items():
+        covariance = _covariance(observations[s])
+        for state in 'gef':
+            covariance += estimate[state]**2*_covariance({v: pre[8.][v][state] for v in VIEWS})
+        residual = _vector(observations[s])-np.asarray(responses[8.]['ground'])-matrix @ [estimate['e'], estimate['f']]
+        projection = np.eye(4)-matrix @ inverse
+        chi2 = float(residual @ np.linalg.pinv(projection @ covariance @ projection.T, rcond=1e-8) @ residual)
+        errors = np.sqrt(np.maximum(np.diag(inverse @ covariance @ inverse.T), 0))
+        physical = (all(-.05-4*err <= estimate[level] <= 1.05+4*err for level, err in zip('ef', errors))
+                    and -.05-4*sum(errors) <= estimate['g'] <= 1.05+4*sum(errors))
+        residual_checks[s] = dict(residual_chi2=chi2, valid=bool(chi2 < 18.5 and physical))
+    result['control_response_consistency'] = residual_checks
+    if not all(r['valid'] for r in residual_checks.values()):
+        result['reason'] = '8-us controls are inconsistent with the calibrated response'
+        return result
+    rng = np.random.default_rng(51026)
+    samples = {s: [] for s in 'ge'}
+    unstable = 0
+    def resample(x):
+        x = np.asarray(x)
+        return x[rng.integers(len(x), size=len(x))]
+    for _ in range(draws):
+        response = fit_response({v: {s: resample(pre[8.][v][s]) for s in 'gef'} for v in VIEWS}, validate=False)
+        unstable += response['condition'] > 8 or min(response['pair_snr']) < 6
+        for s in 'ge':
+            samples[s].append(population(response, {v: resample(observations[s][v]) for v in VIEWS}))
+    result['bootstrap_unstable_fraction'] = float(unstable/draws)
+    if unstable > .05*draws:
+        result['reason'] = 'response uncertainty is unstable'
+        return result
+    result['readout_valid'] = True
+    bounds = {s: {level: np.quantile([x[level] for x in samples[s]], [.025, .975]).tolist()
+                  for level in 'gef'} for s in 'ge'}
+    heating = np.quantile([x['e']+x['f'] for x in samples['g']], [.025, .975]).tolist()
+    quiet = bounds['e']['e'][0] >= .65 and bounds['e']['f'][1] <= .15 and heating[1] <= .15
+    result.update(valid=bool(quiet), quiet_control_valid=bool(quiet),
+                  controls_8us={s: dict(relative_population=estimates[s], ci95=bounds[s]) for s in 'ge'},
+                  ground_control_added_excitation_ci95=heating,
+                  thresholds=dict(excited_control_retention_lower95_min=.65, added_excitation_upper95_max=.15),
+                  reason='local preparation/readout and quiet controls passed' if quiet else
+                         'local readout passed, but 8-us g-e/ground controls did not establish a quiet site')
+    return result
+
+
+def plot_calibration(folder, calibrations):
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(2, 2, figsize=(9, 6), constrained_layout=True)
+    for column, calibration in enumerate(calibrations):
+        for spectrum in calibration['spectroscopy']:
+            if spectrum['stage'] == 'fine':
+                points = sorted(spectrum['points'], key=lambda p: p['frequency_mhz'])
+                axes[0, column].plot([p['frequency_mhz'] for p in points], [p['score'] for p in points],
+                                     'o-', ms=4, label=f"order {spectrum['order']+1}")
+        fit = calibration['rabi_fit']
+        gains = calibration['gain_grid']
+        dense = np.linspace(min(gains), max(gains), 300)
+        axes[1, column].plot(gains, calibration['gain_scores'], 'ko', ms=4, label='acquired')
+        axes[1, column].plot(dense, fit['offset']+fit['amplitude']*np.sin(np.pi*dense/(2*fit['pi_gain']))**2,
+                             label='Rabi fit')
+        axes[1, column].axvline(fit['pi_gain'], color='tab:red', ls='--', label='first π')
+        axes[0, column].set(title='Local '+calibration['transition'], xlabel='Drive frequency (MHz)')
+        axes[1, column].set(xlabel='Pulse gain (DAC)')
+    for axis in axes.flat:
+        axis.set_ylabel('IQ / park reference separation')
+        axis.grid(alpha=.25)
+        axis.legend(fontsize=8)
+    fig.suptitle('q3 fixed-bias pulse calibration — no TLS loss measurement')
+    for suffix in ('png', 'svg'):
+        fig.savefig(Path(folder)/('local_pulse_calibration.'+suffix), dpi=180)
+    plt.close(fig)
+
+
+def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True, fixed_check=False):
     from tqdm import tqdm
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
     from .ThreePointApplesToApples import _integer_dc_grid
@@ -360,10 +461,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
 
     data_root = Path(data_root)
     correction = localizer.checked_correction(data_root, correction_json)
+    fixed_source = None
+    if fixed_check:
+        fixed_source = data_root/FIXED_SCOUT_RELATIVE
+        if hashlib.sha256(fixed_source.read_bytes()).hexdigest() != FIXED_SCOUT_SHA256:
+            raise ValueError('fixed scout checksum does not match the reviewed source')
     folder = data_root/'q3'/('q3_resident_ef_pilot_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8])
     folder.mkdir(parents=True, exist_ok=False)
     path = folder/'manifest.json'
-    manifest = dict(schema='q3.resident-ef-pilot.v1', status='initializing', plan=plan(), completed=[],
+    manifest = dict(schema='q3.resident-ef-fixed-check.v1' if fixed_check else 'q3.resident-ef-pilot.v1',
+                    status='initializing', plan=plan(fixed_check=fixed_check), completed=[],
                     created_at=datetime.now(timezone.utc).isoformat(), correction_sha256=localizer.CORRECTION_SHA256,
                     commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent, text=True).strip())
     for name in ('TLSResidentEFPilot.py', 'TLSEchoRefocusProgram.py', 'TLSDualTransitionLoss.py'):
@@ -375,10 +482,16 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
     try:
         with noise.q3_context(tls, data_root), localizer.scan_environment(correction):
             five.install_scan_calibration(tls)
-            parameters = dict(wide.parameters(), output_suffix='TLS_Resident_EF_Pilot_Scout')
-            scout = localizer.run(data_root=data_root, correction_json=correction, parameter_overrides=parameters, announce=False)
-            manifest['scout'] = str(scout)
-            selected = dual.select_eligible_feature(dual.read_scout(scout), anharmonicity_mhz=-180., pooled_readout=True)
+            if fixed_check:
+                selected = dict(center_ghz=FIXED_FEATURE_GHZ, ef_bias_ghz=FIXED_BIAS_GHZ,
+                                source='previously reviewed scout; feasibility check only')
+                manifest.update(scout=str(fixed_source), scout_sha256=FIXED_SCOUT_SHA256)
+                shutil.copy2(fixed_source, folder/'source_scout.csv')
+            else:
+                parameters = dict(wide.parameters(), output_suffix='TLS_Resident_EF_Pilot_Scout')
+                scout = localizer.run(data_root=data_root, correction_json=correction, parameter_overrides=parameters, announce=False)
+                manifest['scout'] = str(scout)
+                selected = dual.select_eligible_feature(dual.read_scout(scout), anharmonicity_mhz=-180., pooled_readout=True)
             manifest['selection'] = selected
             checkpoint(path, manifest)
             compensation = tls._load_correction(str(correction), str(data_root))
@@ -400,7 +513,8 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
                     else:
                         gains, realized_grid = _integer_dc_grid(dict(wide.parameters(), dc_min=-25146, freq_step_mhz=.5), grid, tls)
                         gain, realized = int(gains[0]), float(realized_grid[0])
-                    cfg = dict(base, ef_task=task, ff_gain=gain, shots=shots, reps=shots, ff_hold=8., ef_park_reference=park_reference)
+                    cfg = dict(base, ef_task=task, ef_bias_ghz=bias, ff_gain=gain, shots=shots, reps=shots,
+                               ff_hold=8., ef_park_reference=park_reference)
                     program = ResidentEFProgram(soccfg, cfg, bundle.payload, bundle.loop)
                     check = noise.preflight(program)
                 manifest['current'] = dict(name=name, task=task, bias_ghz=bias, realized_ge_bias_ghz=realized)
@@ -497,7 +611,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
                 return center, fit['pi_gain']
 
             bias = initial_bias
-            for attempt in range(2):
+            for attempt in range(1 if fixed_check else 2):
                 bar.total = bar.n+146  # 60 g-e + 86 e-f calibration arms.
                 task = dict(default, ge_mhz=bias*1000, ef_mhz=bias*1000-180.)
                 task['ge_mhz'], task['ge_gain'] = calibrate('ge', task, bias, attempt)
@@ -506,7 +620,7 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
                 matched = alignment(feature, task['ge_mhz'], task['ef_mhz'])
                 manifest['alignment'] = matched
                 checkpoint(path, manifest)
-                if matched['aligned']:
+                if fixed_check or matched['aligned']:
                     break
                 corrected_bias = bias+(feature-task['ef_mhz'])/1000
                 if attempt == 1 or abs(corrected_bias-initial_bias) > .006:
@@ -518,17 +632,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
             manifest['target_bias_ghz'] = bias
             manifest['local_pulses'] = task
             pre, post, science = {}, {}, {}
-            bar.set_description('Qutrit readout and decay')
-            bar.total = bar.n+72
+            bar.set_description('Qutrit readout check' if fixed_check else 'Qutrit readout and decay')
+            bar.total = bar.n+(28 if fixed_check else 72)
+            reference_dwells = (.25, 8.) if fixed_check else DWELLS_US
             def references(phase, output):
                 print('SS cal: local two-view g/e/f references', flush=True)
-                for d in DWELLS_US:
+                for d in reference_dwells:
                     output[d] = {v: {} for v in VIEWS}
                     pairs = [(v, s) for v in VIEWS for s in 'gef']
                     for v, s in (pairs if phase == 'pre' else pairs[::-1]):
                         output[d][v][s] = acquire(f'{phase}_d{d}_{v}_{s}', dict(task, state=s, view=v, dwell_us=d, late=True), bias=bias, shots=SHOTS)
                 manifest[phase+'_response'] = {}
-                for d in DWELLS_US:
+                for d in reference_dwells:
                     if phase == 'pre':
                         train = {v: {s: output[d][v][s][:SHOTS//2] for s in 'gef'} for v in VIEWS}
                         held = {v: {s: output[d][v][s][SHOTS//2:] for s in 'gef'} for v in VIEWS}
@@ -545,17 +660,29 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
                       'SS cal: local two-view final references unresolved.', flush=True)
                 checkpoint(path, manifest)
             references('pre', pre)
-            manifest['status'] = 'measuring'
-            for block in range(2):
-                cells = [(s, d, v) for d in DWELLS_US for s in 'gef' for v in VIEWS]
-                for s, d, v in (cells if block == 0 else cells[::-1]):
-                    key = (block, s, d)
-                    science.setdefault(key, {})[v] = acquire(f'b{block}_d{d}_{s}_{v}', dict(task, state=s, view=v, dwell_us=d, late=False), bias=bias, shots=SHOTS)
-            references('post', post)
-            manifest['summary'] = summarize_decay(pre, post, science)
+            if fixed_check:
+                observations = {s: {} for s in 'ge'}
+                manifest['status'] = 'checking_local_controls'
+                for s in 'ge':
+                    for v in VIEWS:
+                        observations[s][v] = acquire(f'check_d8_{s}_{v}', dict(task, state=s, view=v, dwell_us=8., late=False), bias=bias, shots=SHOTS)
+                references('post', post)
+                manifest['summary'] = assess_fixed_check(pre, post, observations)
+                plot_calibration(folder, calibration)
+                manifest.update(status='complete_calibration_passed' if manifest['summary']['valid'] else
+                                'complete_calibration_check_failed', current=None)
+            else:
+                manifest['status'] = 'measuring'
+                for block in range(2):
+                    cells = [(s, d, v) for d in DWELLS_US for s in 'gef' for v in VIEWS]
+                    for s, d, v in (cells if block == 0 else cells[::-1]):
+                        key = (block, s, d)
+                        science.setdefault(key, {})[v] = acquire(f'b{block}_d{d}_{s}_{v}', dict(task, state=s, view=v, dwell_us=d, late=False), bias=bias, shots=SHOTS)
+                references('post', post)
+                manifest['summary'] = summarize_decay(pre, post, science)
+                plot_summary(folder, manifest['summary'])
+                manifest.update(status='complete' if manifest['summary']['valid'] else 'complete_invalid_final_response', current=None)
             checkpoint(folder/'summary.json', manifest['summary'])
-            plot_summary(folder, manifest['summary'])
-            manifest.update(status='complete' if manifest['summary']['valid'] else 'complete_invalid_final_response', current=None)
             bar.total = bar.n
             bar.refresh()
             bar.close()
@@ -581,17 +708,18 @@ def run(*, data_root=localizer.DATA_ROOT, correction_json=None, progress=True):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', action='store_true')
+    parser.add_argument('--fixed-check', action='store_true', help='local preparation/readout check at 4.272 GHz using the reviewed scout; no new scan or recenter')
     parser.add_argument('--data-root', default=localizer.DATA_ROOT)
     parser.add_argument('--correction-json')
     parser.add_argument('--quiet', action='store_true')
     args = parser.parse_args()
     if not args.run:
-        print(json.dumps(plan(), indent=2))
+        print(json.dumps(plan(fixed_check=args.fixed_check), indent=2))
         return 0
-    folder = run(data_root=args.data_root, correction_json=args.correction_json, progress=not args.quiet)
+    folder = run(data_root=args.data_root, correction_json=args.correction_json, progress=not args.quiet, fixed_check=args.fixed_check)
     status = json.loads((folder/'manifest.json').read_text())['status']
     print(f'Local e-f pilot {status}: {folder / "manifest.json"}', flush=True)
-    return 0 if status == 'complete' else 1
+    return 0 if status in ('complete', 'complete_calibration_passed') else 1
 
 
 if __name__ == '__main__':

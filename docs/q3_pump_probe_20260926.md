@@ -8156,3 +8156,12 @@ This gate was unnecessarily broad for the one-bias8-us pilot. No negative
 e–f physics result exists. Stop unchanged reruns/broad selection loops;
 only a bounded fixed-bias local preparation/readout check could justify
 continuation. Details and limitations are appended to the dedicated note.
+
+User approved the fixed-bias follow-up. `TLSResidentEFPilot --run --fixed-check`
+reuses the hash-verified reviewed scout, holds model g–e4.272GHz, calibrates
+both local transitions once, independently tests two-view g/e/f readout and
+the ground/excited8us controls, then stops. No scout/selection, recenter or
+f decay series.176programs, expected5–10min. Old feature4.092GHz is only
+a saved prior, not evidence that the TLS remains there.1422tests and24
+offline fixed-bias compiled/emulated cases pass. No production/default
+changes. Commands, decision thresholds and limits are in the dedicated note.

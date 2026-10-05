@@ -178,3 +178,60 @@ preparation/readout check at a fixed potentially quiet bias using this scout,
 with an independently tested e control before any loss profile. Stop the
 route if usable local f preparation/readout cannot be demonstrated. No
 measurement-code change or new run command is issued in this results review.
+
+## Authorized follow-up: fixed-bias preparation/readout check
+
+User approved the bounded follow-up. Run the same module with `--fixed-check`:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSResidentEFPilot --run --fixed-check
+```
+
+This mode verifies and copies the reviewed scout CSV (SHA256
+`0c0ed0c6b3ec6a8d559bd503e2a2a1243951fe2d31e95bc51abd4f762b96cf13`)
+before hardware access. It does not take a new scout, run a site-selection
+gate, recenter the bias, or acquire an f decay series. It always uses the
+one predicted g–e bias **4.272GHz**, with the same native correction and
+explicit temporary q3 configuration. The installed flux inversion gives
+DAC gain−19650, realized model coordinate4.272000782GHz. This is a model
+coordinate; local microwave frequencies are still calibrated on hardware.
+
+One opposed GE/EF frequency calibration, gain sweeps, zero/π/two-π checks
+and EF ground-leakage control are followed by g/e/f two-view reference sets
+at total visits corresponding to0.25/8us additional dwell. Training/held-out
+checks precede the four ground/excited-prepared8us control arms. Independent
+post references test the frozen response at both visit durations.
+
+There are176programs:2park references,146pulse calibration/control arms,
+24pre/post response reference arms and4local ground/excited8us controls.
+Expected5–10minutes, including transport/NAS overhead. Plotting saves local
+frequency and gain curves (PNG/SVG), explicitly labeled as calibration.
+
+Pass requires stable, resolved g/e/f response, control IQ compatible with
+the response plane and population bounds, stable bootstrap uncertainty,
+and a quiet local control: prepared-e relative-e retention lower95% bound
+≥0.65; its apparent-f upper95% bound≤0.15; ground-prepared added e+f
+upper95% bound≤0.15. Shared reference uncertainty is retained when
+bootstrapping the two controls. These are preparation-relative quantities,
+not ground purity or absolute f preparation fidelity.
+
+Success is `complete_calibration_passed`; failed final checks are
+`complete_calibration_check_failed`; earlier unresolved pulses/references
+retain `unresolved` with the precise error. There is no automatic follow-up.
+The measured EF-to-old-feature mismatch is saved but does not trigger
+recalibration: this test asks whether local f preparation/readout works,
+independently of whether the old TLS is still present. A pass would justify
+reviewing a small locally calibrated TLS test; it is not TLS evidence itself.
+If local f preparation/readout fails, stop this route rather than extend it
+to a long profile.
+
+Verification:1422maintained tests passed, including fixed-mode absence of
+scout/selection/recenter/decay calls, wrong-source rejection before hardware,
+strong-GE-decay rejection and unphysical-control rejection. The original
+full-pilot workflow remains tested. Offline QICK0.2.133 compiled/emulated
+24fixed-bias state/view/dwell/preparation configurations with exact frequency
+words, gains and time offsets; max475/8192instructions, no late pulses under
+the conservative4-cycle instruction audit. Pulse-program code is unchanged.
+Independent review found no P1/P2 issues. Production TLS/reset code and
+`initialize.py` are unchanged.

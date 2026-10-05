@@ -1,5 +1,6 @@
 import importlib
 import json
+import hashlib
 import sys
 from types import SimpleNamespace
 
@@ -166,7 +167,7 @@ def hardware_workflow(tmp_path, monkeypatch):
             mean = 0 if t['state'] == 'g' else 1000
         elif t.get('cal_transition'):
             transition = t['cal_transition']
-            frequency = 4211.5 if transition == 'ge' else 4030.5
+            frequency = cfg['ef_bias_ghz']*1000+(1.5 if transition == 'ge' else -179.5)
             pi_gain = 13500 if transition == 'ge' else 11250
             response = np.sin(np.pi*t['drive_gain']*(2 if t.get('turns') == 2 else 1)/(2*pi_gain))**2
             response *= np.exp(-((t['drive_mhz']-frequency)/1.5)**2)
@@ -213,6 +214,67 @@ def test_interrupt_retains_transferred_bank_and_partial_manifest(hardware_workfl
     with np.load(partial) as saved:
         assert len(saved['i']) == 12
     assert tls.QUBIT == 'q4'
+
+
+def install_fixed_source(root, monkeypatch):
+    source = root/'q3/q3_2026_10_04/q3_23_24_09_TLS_Resident_EF_Pilot_Scout_T1_5pt_vs_wall_clock_full.csv'
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b'fixed calibration source\n')
+    monkeypatch.setattr(ef, 'FIXED_SCOUT_SHA256', hashlib.sha256(source.read_bytes()).hexdigest())
+    return source
+
+
+def test_fixed_check_skips_scout_selection_recenter_and_decay(hardware_workflow, monkeypatch):
+    root, tls, calls, grids, _, _ = hardware_workflow
+    install_fixed_source(root, monkeypatch)
+    def forbidden(*args, **kwargs):
+        pytest.fail('fixed calibration check must not scan, select or summarize decay')
+    monkeypatch.setattr(ef.localizer, 'run', forbidden)
+    monkeypatch.setattr(ef.dual, 'select_eligible_feature', forbidden)
+    monkeypatch.setattr(ef, 'summarize_decay', forbidden)
+    folder = ef.run(data_root=root, progress=False, fixed_check=True)
+    manifest = json.loads((folder/'manifest.json').read_text())
+    assert manifest['status'] == 'complete_calibration_passed', manifest.get('error')
+    assert manifest['target_bias_ghz'] == 4.272
+    assert set(grids) == {4.272}
+    assert len(manifest['calibrations']) == 2  # Exactly one local GE/EF calibration.
+    assert all(not name.startswith('b') for name in manifest['completed'])
+    assert manifest['summary']['readout_valid']
+    assert manifest['summary']['quiet_control_valid']
+    assert tls.QUBIT == 'q4'
+
+
+def test_fixed_source_is_verified_before_touching_hardware(hardware_workflow, monkeypatch):
+    root, tls, calls, grids, _, _ = hardware_workflow
+    source = install_fixed_source(root, monkeypatch)
+    source.write_bytes(b'wrong scout')
+    with pytest.raises(ValueError, match='scout.*checksum'):
+        ef.run(data_root=root, progress=False, fixed_check=True)
+    assert not calls
+
+
+def test_fixed_check_does_not_treat_strong_ge_decay_as_quiet():
+    refs = references()
+    pre = {d: refs for d in (.25, 8.)}
+    observations = {}
+    for s in 'ge':
+        p = (.8, .2, 0) if s == 'e' else (1., 0., 0.)
+        observations[s] = {v: sum(weight*np.mean(refs[v][state]) for weight, state in zip(p, 'gef'))
+                           + np.zeros(800, dtype=complex) for v in ef.VIEWS}
+    result = ef.assess_fixed_check(pre, pre, observations, draws=100)
+    assert result['readout_valid']
+    assert not result['quiet_control_valid']
+    assert not result['valid']
+
+
+def test_fixed_check_rejects_unphysical_control_outside_population_simplex():
+    refs = references()
+    pre = {d: refs for d in (.25, 8.)}
+    observations = {s: {v: np.full(800, np.mean(refs[v][s]), dtype=complex) for v in ef.VIEWS} for s in 'ge'}
+    for v in ef.VIEWS:
+        observations['e'][v] = 1.4*np.mean(refs[v]['e'])-.4*np.mean(refs[v]['g'])+np.zeros(800, dtype=complex)
+    result = ef.assess_fixed_check(pre, pre, observations, draws=100)
+    assert not result['valid']
 
 
 @pytest.mark.parametrize('dwell', ef.DWELLS_US)
