@@ -1,0 +1,144 @@
+{
+  "source_commit": "bd8230ba476f3cc8f4aa32f03cb4591bb7af4c6d",
+  "source_folder": "/Volumes/ourphoton/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/q3_fast_loss_map_20261005T070818Z_d88b4281",
+  "local_analysis_folder": "/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_070818Z",
+  "integrity": {
+    "run": "q3_fast_loss_map_20261005T070818Z_d88b4281",
+    "status": "complete_reference_drift",
+    "frames": 200,
+    "local_records": 840000,
+    "total_records": 892500,
+    "source_hash_verified": true,
+    "correction_hash_verified": true,
+    "classifier_recomputed_match": true,
+    "axes_directions_counts_match": true,
+    "reset_mode": "opx_unbounded",
+    "qubit_park_mhz": 4367.292,
+    "readout_mhz": 6933.026,
+    "corrected_return_us": 40.0,
+    "frame_acquisition_s": {
+      "median": 0.6454617502167821,
+      "min": 0.487780200317502,
+      "max": 1.0603680005297065
+    },
+    "frame_start_period_s": {
+      "median": 0.8913563005626202,
+      "min": 0.6786294002085924,
+      "max": 1.2805091999471188
+    },
+    "series_span_s": 182.011016799137,
+    "reference_check": {
+      "valid": false,
+      "reference_contrasts": [
+        0.576952380952381,
+        0.43047619047619046
+      ],
+      "conditions": [
+        {
+          "condition": "P0",
+          "before": 0.15885714285714286,
+          "after": 0.2805714285714286,
+          "delta": 0.12171428571428572,
+          "se": 0.00799448101043822,
+          "valid": false
+        },
+        {
+          "condition": "P1",
+          "before": 0.7358095238095238,
+          "after": 0.711047619047619,
+          "delta": -0.024761904761904763,
+          "se": 0.008727940333233234,
+          "valid": true
+        }
+      ],
+      "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+    },
+    "host_time_scope": "frame acquisition includes hardware configuration/transport; start-to-start also includes analysis, recompilation and NAS checkpoint gaps",
+    "transfers_per_frame_range": [
+      5,
+      5
+    ]
+  },
+  "temporal_analysis": {
+    "2us": {
+      "sd": 0.06479279498664692,
+      "median_paired_shot_se": 0.06395411803126672,
+      "median_frame_cluster_se": 0.06061220421290622
+    },
+    "10us": {
+      "sd": 0.09156294525798911,
+      "median_paired_shot_se": 0.061806891063048944,
+      "median_frame_cluster_se": 0.057997610843256435
+    },
+    "25us": {
+      "sd": 0.11584001860494143,
+      "median_paired_shot_se": 0.059786029169107205,
+      "median_frame_cluster_se": 0.06596832185957632
+    },
+    "shoulder_bands_mhz": {
+      "left": [
+        4103.986085000541,
+        4106.024960309061
+      ],
+      "right": [
+        4110.021069078374,
+        4111.978752096214
+      ]
+    },
+    "band_normalized_25us": {
+      "sd": 0.11584001860494143,
+      "median_paired_shot_se": 0.059786029169107205,
+      "median_cluster_se": 0.06596832185957632,
+      "forward_reverse_correlation": 0.7424191960929841,
+      "correlation_10us_25us": 0.5664995591113362,
+      "correlation_binary_IQ": 0.9489977223110726,
+      "raw_IQ_imbalance_sd": 0.10278478441984223,
+      "reference_regressed_residual_sd": 0.09037944451897612,
+      "reference_regressed_correlation_10us_25us": 0.42882480177912563,
+      "conservative_constant_chi2": 46.03316179437009,
+      "dof": 19,
+      "descriptive_p": 0.0004903104500945799
+    },
+    "caveat": "All stationarity statistics are descriptive. Cluster SE uses ten frames per bin and does not bound arbitrary long-correlated errors; no single-TLS identity or qubit-frequency-drift exclusion."
+  },
+  "exploratory_region_comparison": {
+    "early": {
+      "central": {
+        "P0": 0.16911458333333335,
+        "P1": 0.7055729166666667,
+        "survival10": 0.674368932038835,
+        "survival25": 0.4612621359223301,
+        "rawIQsurvival25": 0.4672573219898866
+      },
+      "upper": {
+        "P0": 0.16796875,
+        "P1": 0.71265625,
+        "survival10": 0.8169822145725759,
+        "survival25": 0.6731210556511762,
+        "rawIQsurvival25": 0.6811994372225836
+      }
+    },
+    "late": {
+      "central": {
+        "P0": 0.2365625,
+        "P1": 0.7097569444444445,
+        "survival10": 0.839521573231582,
+        "survival25": 0.6870413853830348,
+        "rawIQsurvival25": 0.6986332388894743
+      },
+      "upper": {
+        "P0": 0.23635416666666667,
+        "P1": 0.703125,
+        "survival10": 0.7247266235215353,
+        "survival25": 0.5248828386520866,
+        "rawIQsurvival25": 0.5277290337579815
+      }
+    }
+  },
+  "limitations": [
+    "End reference-drift gate fails; concurrent normalization is a sensitivity analysis, not proof that all drift is removed.",
+    "Central/upper region and early/late division were chosen after viewing this dataset; descriptive, not independent hypothesis tests.",
+    "No claim of a single TLS moving, single-defect telegraph switching, intrinsic linewidth or exclusion of qubit frequency/preparation drift.",
+    "Host frame cadence differs from ten-frame display averaging and is not an individual hardware timestamp."
+  ]
+}

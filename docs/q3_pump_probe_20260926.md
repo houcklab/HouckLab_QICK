@@ -8236,3 +8236,17 @@ Next bounded200framewindow4.088–4.128GHz/2MHzstill21points×40shots:
 approximately4–7min,thenassesscoverage. Addedvalidatedwidth/spacingflags;
 noreset/pulse/production/initialize edits.19focused+1441fulltests pass;
 7identicalproduction/observerbinaries passpreflight;reviewnoP1/P2findings.
+
+
+Wider fast-map `20261005T070818Z_d88b4281` (bd8230ba) acquired all200frames
+plus pre/post,892,500records in3m23.34s. Medianacq0.645s/startinterval0.891s;
+182.01s science span. Allscience integer-IQ classifications,axes,directions,
+receipts andsource/correction hashes verify. Window4.088–4.128GHz/2MHz,
+21points×40shots retains production active reset/full40uscorrectedreturn.
+Statuscomplete_reference_drift: P0.159→.281,contrast.577→.430 fails gate.
+Concurrent-reference maps show central4.100–4.110 loss weakening whileupper
+4.116–4.118 loss strengthens; rawIQ reproduces shape, forward/reversecorr.742.
+Changes overlapreference drift: no singleTLSmotion orclean switchingclaim.
+Nextsame200framewindow withfreshcalibration (~3–5min), beforeextending.
+No measurementcode/reset/initialize changes. Detailedplots,audit,exploratory
+region comparisons andlimits appended to `docs/q3_fast_loss_map_20261005.md`.

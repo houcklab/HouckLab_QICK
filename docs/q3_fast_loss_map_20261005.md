@@ -319,3 +319,72 @@ no actionable P1/P2 findings.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
 ```
+
+
+## Wider 200-frame recording: coverage works, reference drift limits interpretation
+
+`q3_fast_loss_map_20261005T070818Z_d88b4281`, commit `bd8230ba`,
+acquired all 200 frames and local pre/post in 3 min 23.34 s. It is explicitly
+marked **complete_reference_drift**, not clean complete: P0 rises
+0.1589→0.2806 (delta 0.1217, SE 0.0080), P1 falls 0.7358→0.7110,
+and pooled contrast falls 0.5770→0.4305. No raw acquisition is missing.
+This gate failure must remain visible in reporting; do not relax the gate.
+
+All 892,500 records are present, including 840,000 science records. Each
+frame contains 21 frequencies across 4.088–4.128 GHz at 2 MHz, five
+conditions and 40 shots. Integer-IQ classifications recomputed with the
+saved runtime payload match all science states; axes, directions, transfer
+counts and source/correction hashes match. Production active reset and full
+corrected 40 µs return are unchanged. Median acquisition is 0.645 s and
+median start-to-start interval 0.891 s. The science sequence spans 182.01 s;
+its ten-frame display bins are approximately 9 s, not subsecond resolved
+TLS events. Widening coverage did not degrade cadence in this recording.
+
+![Wider map, profiles and concurrent reference drift](q3_fast_loss_map_wide_200_20261005_result.png)
+
+Concurrent-reference normalized 25 µs survival shows central loss across
+roughly 4.100–4.110 GHz early, with stronger loss near 4.116–4.118 GHz later.
+These structures need not be the same TLS moving; multiple components,
+qubit-frequency changes and preparation/readout systematics remain possible.
+The upper structure was missed or truncated by the narrower window.
+
+The previous shoulder comparison (4.104/4.106 versus 4.110/4.112 GHz) has
+SD 0.116 versus median shot SE 0.060 and frame-cluster SE 0.066.
+Forward/reverse correlation is 0.742, classified versus linear raw-IQ
+correlation 0.949, and 10/25 µs correlation 0.566. Reference regression
+leaves residual SD 0.090 and 10/25 µs correlation 0.429. Thus the signal
+is weaker than in the 1,000-frame recording but not just a classification
+threshold artifact. Stationarity statistics are descriptive only and
+serial systematic errors are not bounded by these SEs.
+
+An **exploratory**, post-viewing region comparison pools 4.100–4.110 GHz
+and 4.114–4.120 GHz separately. First 80 frames (~0–67 s) versus remaining
+120 (~67–182 s): central 25 µs survival rises 0.461→0.687, while upper
+survival falls 0.673→0.525. Linear raw-IQ ratios give 0.467→0.699 and
+0.681→0.528, respectively. Concurrent P0 is nearly identical between
+these two regions within each period (~0.169 early, ~0.236 late), so a
+uniform additive probability shift alone cannot describe the opposing
+changes. This does not exclude more general state/preparation/reference
+changes; the transition overlaps the rising P0 and is not a clean isolated
+TLS-switching observation. The regions and division are not independent
+predefined tests and must not be assigned a discovery significance.
+
+![Both reference and dwell maps](q3_fast_loss_map_wide_200_20261005_controls.png)
+
+The next measurement repeats the **same bounded 200-frame wider recording**
+with a fresh production calibration, rather than extending this drifting
+session. It records a full sequence regardless of whether loss is present;
+there is no rediscovery gate. A second independently calibrated record can
+check both the spectrum and whether reference drift recurs before spending
+15–20 min on a longer run. Expected approximately 3–5 min based on this
+record; actual time depends on calibration/reset/transfer performance.
+No runner, reset, production or initialize changes are needed this turn.
+Raw provenance, integrity checks and both descriptive comparisons are in
+`docs/q3_fast_loss_map_wide_200_20261005_audit.json`; complete raw IQ remains
+on NAS. Scripts and cached classified/IQ statistics are retained in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_070818Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 200 --center-ghz 4.108 --width-mhz 40 --step-mhz 2
+```
