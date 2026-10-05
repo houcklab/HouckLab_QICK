@@ -8146,3 +8146,13 @@ recenter, then one-bias0.25/2/8-us g/e/f decay if controls pass. Expected8–15m
 no automatic long profile. Production/reset/initialize code unchanged.
 Full design, limitations, tests, offline compile/timing checks and commands
 are in `docs/q3_resident_ef_pilot_20261004.md`. No hardware result yet.
+
+First local e–f attempt `20261005T032401Z_b4a205d9` stopped after the
+144.54s wide scout; zero local calibration/science arms. No candidate passed
+the inherited whole±8MHz shifted-window25-us quiet gate. Loss features
+remain, including4.092GHz with a potentially quiet shifted center4.272GHz
+(25-us survival0.876); its nearby4.276GHz point0.547 caused rejection.
+This gate was unnecessarily broad for the one-bias8-us pilot. No negative
+e–f physics result exists. Stop unchanged reruns/broad selection loops;
+only a bounded fixed-bias local preparation/readout check could justify
+continuation. Details and limitations are appended to the dedicated note.

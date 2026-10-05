@@ -130,3 +130,51 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSResident
 ```
 
 Output: `Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC/q3/q3_resident_ef_pilot_<UTC>_<id>/`.
+
+## First hardware attempt: selection stopped the experiment
+
+Session `q3_resident_ef_pilot_20261005T032401Z_b4a205d9`, commit `5315fdbc`,
+finished as `unresolved` at 03:26:34 UTC after 2m32.5s. Error:
+`no bidirectional loss line with a quiet shifted e-f bias`.
+**Zero local calibration or science arms completed.** The folder contains
+only the manifest and three source snapshots. Their text matches the pushed
+sources exactly after accounting for Windows CRLF endings. This was not a
+negative e–f result: the measurement was never attempted.
+
+Scout source:
+`q3/q3_2026_10_04/q3_23_24_09_TLS_Resident_EF_Pilot_Scout_T1_5pt_vs_wall_clock_full.csv`.
+All251 frequency rows and 250shots per condition completed in144.54s;
+median P1−P0 contrast0.444. Loss sites are still present.
+
+The selection rule required every point in the predicted shifted bias's
+±8MHz window to have normalized10-us survival≥0.65 AND25-us survival≥0.60.
+Several loss candidates passed the bidirectional depth criterion but failed
+that window condition. For example:
+
+| Loss candidate | Predicted shifted g–e bias | Minimum10-us survival in window | Minimum25-us survival in window |
+| --- | --- | --- | --- |
+|4.022GHz|4.202GHz|0.562|0.227|
+|4.092GHz|4.272GHz|0.752|0.547|
+|3.886GHz|4.066GHz|0.730|0.510|
+|3.984GHz|4.164GHz|0.685|0.571|
+
+The4.092GHz line's pooled/up/down depths were0.302/0.283/0.204. Its exact
+predicted shifted center4.272GHz had25-us survival0.876; neighboring4.270
+and4.274GHz had0.839 and0.664. The rejecting25-us point was4.276GHz,
+4MHz away, with0.547; both scan directions were low there (0.532/0.564).
+The25-us window median was0.725. These are noisy normalized scout estimates,
+not a validated local pulse calibration or proof of a quiet e control.
+
+Assessment: demanding a quiet **entire±8MHz window at25us** before a
+**one-bias8-us maximum pilot** was unnecessarily restrictive. The nearby
+loss must still be respected if local calibration requires moving the bias.
+Simply disabling the quiet-site gate would select4.022GHz and knowingly
+introduce a g–e-loss confound, so it is not an appropriate workaround.
+
+Decision: do not rerun this unchanged, take another broad scout, or expand
+to a long e–f profile. There is no new experimental evidence for the e–f
+route. If it is pursued, the only justified next step is a bounded local
+preparation/readout check at a fixed potentially quiet bias using this scout,
+with an independently tested e control before any loss profile. Stop the
+route if usable local f preparation/readout cannot be demonstrated. No
+measurement-code change or new run command is issued in this results review.
