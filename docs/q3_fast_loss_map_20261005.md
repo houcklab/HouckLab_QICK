@@ -1138,3 +1138,20 @@ production calibration/runtime builders preserve the selected gain.
 Final maintained-suite validation: `python3 -m pytest -q tests`, 1,457
 passed in42.69s. Repository-root legacy collection limitations are listed
 above and remain outside this runner change.
+
+Gain940 finite pilot `q3_fast_loss_map_20261005T205105Z_b18ea8cb`
+completed all 20 science maps plus pre/post references. Median acquisition/
+start cadence2.073/2.383s; science spans47.718s. All656,500 raw IQ
+classifications verify, sourcehash matches, shot axes/directions checked,
+all22 final cumulative transfer counts match and every block's config has
+readout gain940. Production active reset and corrected40us return retained.
+Endpoint pooled reference contrast .41125/.41105; P0 .23719→.24111,
+P1 .64844→.65216. Concurrent five-frame P0 .2321–.2357 and contrast
+.4073–.4195;0/404 five-frame frequency/time cells are masked below.2
+contrast (38/2,020 individual-frame cells masked). Persistent loss near
+3.983GHz and weaker structure around3.966–3.969GHz are visible. No
+switching-rate claim from a48s record, no separately verified reset
+fidelity, and no guarantee of longer-term reference stability.
+Next: repeat100-frame batches at gain940 over the same50MHz/.5MHz window
+for about30min, with fresh calibration and250-shot pre/post each batch;
+stop on acquisition/calibration failures as before. Plot limits unchanged.
