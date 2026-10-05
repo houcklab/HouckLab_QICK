@@ -121,3 +121,61 @@ python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLoss
 The script enforces q3 even if the PC's local settings still describe q4.
 Report completion; inspect timing, local contrast and reference stability
 before choosing a longer run or implementing adaptive acquisition.
+
+## First hardware result and bounded extension
+
+`q3_fast_loss_map_20261005T052318Z_c0263e35`, commit `fc38b5a8`, completed
+all 43 maps in approximately 1m42s. Source hash matches; explicit q3 park,
+readout and π parameters, active reset, 10 µs readout thermalization and
+40 µs corrected return are confirmed in the saved config. All 534,250
+integer-IQ/classified records are present, with matching transfer counts,
+array shapes and the identical local frequency grid in every frame.
+
+Scout: 46.60 s acquisition, selected 4.108 GHz. Local window:
+4.098–4.118 GHz, 21 points at 1 MHz. Local references: 3.93 s each.
+Forty low-shot frames: acquisition median **0.684 s** (0.631–0.896 s);
+start-to-start median **0.894 s** (0.813–1.378 s), including compile/save
+gaps. The local recording spans **37.79 s**. This is a local-window result,
+not a sub-second 500 MHz map or an adaptive FPGA result.
+
+The loss remains resolved in independent pre/post scans and the pooled fast
+frames. At 25 µs, pooled normalized survival reaches **0.304 at 4.109 GHz**,
+versus approximately **0.65–0.71 at the window edges**. Pooled pre/post
+references pass: P0 0.1335→0.1280, P1 0.6844→0.7082; reference contrast
+0.5509→0.5802. The actual classifier contrast is approximately 0.5–0.6;
+these are preparation-relative survival values, not absolute thermometry.
+
+Individual frames are visibly noisy. A single Gaussian-notch center fitted
+to five-frame groups depends materially on local versus pooled reference
+normalization and on broad/secondary loss structure. Do not report its
+few-MHz center excursions as a resolved switching result. The saved fit
+numbers are descriptive audit data, not diffusion/linewidth estimates.
+The pilot establishes useful cadence and persistent loss contrast; it does
+not yet establish dynamics or a particular microscopic TLS model.
+
+![First fast-map result](q3_fast_loss_map_20261005_result.png)
+
+Raw NAS source remains under the run folder above. Local copied raw files,
+analysis script and plots: `.codex/visualizations/2026/10/05/q3_fast_loss_map_052318Z`
+under the user's home directory. Summary/audit statistics are also in
+`docs/q3_fast_loss_map_20261005_audit.json`.
+
+Next: keep the identical 21-point/40-shot sequence and acquire **1,000
+frames**, expected approximately **15–22 min** with fresh calibration/scout
+and local pre/post. `--frames` changes only the finite host frame count,
+manifest, progress total and duration estimate; default remains 40 and the
+accepted range is 1–2,000. No pulse instructions, shot count, feature
+selector, return, reset defaults or automatic recentering change. This
+longer record is justified by the successful speed/contrast pilot; inspect
+raw references and both scan orders before interpreting apparent line
+motion. Stop the controller with Ctrl+C if needed; partial preservation is
+unchanged.
+
+Extension verification: 15 focused tests with offline QICK and 1,437 full
+suite tests pass (41.27 s); all five offline production/observer instruction
+comparisons still match. Independent review found no actionable P1/P2 issues.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000
+```

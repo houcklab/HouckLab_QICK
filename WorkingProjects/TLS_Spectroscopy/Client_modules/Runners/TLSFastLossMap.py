@@ -1,7 +1,7 @@
 """Finite q3 fast loss-map pilot using the production active-reset pulses.
 
-One 3.8--4.3 GHz scout, one 21-point window, 40 low-shot five-condition
-frames, and high-shot local references before/after. No adaptive FPGA
+One 3.8--4.3 GHz scout, one 21-point window, a finite number of low-shot
+five-condition frames, and high-shot local references before/after. No adaptive FPGA
 estimator, passive fallback, target microwave pulses, or production edits.
 """
 import argparse
@@ -36,16 +36,18 @@ def atomic_npz(path, **arrays):
     os.replace(pending,path)
 
 
-def plan():
+def plan(*,frames=FRAMES):
+    if not isinstance(frames,int) or not 1<=frames<=2000:
+        raise ValueError('frames must be an integer between 1 and 2000')
     return dict(qubit='q3', reset='production active reset throughout',
                 scout_ghz=[3.8, 4.3], scout_step_mhz=2., scout_shots=SCOUT_SHOTS,
                 local_width_mhz=20., local_step_mhz=1., local_points=21,
-                frames=FRAMES, shots_per_condition_per_frame=FRAME_SHOTS,
+                frames=frames, shots_per_condition_per_frame=FRAME_SHOTS,
                 conditions=['P0', 'P1', 'Ps_2us', 'Ps_10us', 'Ps_25us'],
                 reference_hold_us=REFERENCE_US, full_corrected_return_us=40.,
                 local_pre_post_shots=SCOUT_SHOTS,
                 timing='per-frame wall time and monotonic time, per-transfer host receipt time; no individual hardware timestamps',
-                approximate_minutes='5--10; actual cadence is measured, not promised',
+                approximate_minutes=f'{1+frames*.85/60:.1f}--{3+frames*1.1/60:.1f}; first-pilot timing estimate, actual cadence is measured',
                 interpretation='finite cadence and line-contrast pilot; no automatic switching or intrinsic-linewidth claim')
 
 
@@ -269,7 +271,8 @@ def plot_result(folder,summary):
     plt.close(fig)
 
 
-def run(*,data_root=None,correction_json=None,progress=True):
+def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES):
+    requested_plan=plan(frames=frames)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
@@ -282,7 +285,7 @@ def run(*,data_root=None,correction_json=None,progress=True):
     folder.mkdir(parents=True,exist_ok=False)
     source=Path(__file__)
     shutil.copy2(source,folder/source.name);shutil.copy2(correction,folder/'correction.json')
-    manifest=dict(schema='q3.fast-loss-map.v1',status='initializing',plan=plan(),completed=[],
+    manifest=dict(schema='q3.fast-loss-map.v1',status='initializing',plan=requested_plan,completed=[],
                   created_at=datetime.now(timezone.utc).isoformat(),commit=subprocess.check_output(
                       ['git','rev-parse','HEAD'],cwd=source.parent,text=True).strip(),
                   source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -304,7 +307,7 @@ def run(*,data_root=None,correction_json=None,progress=True):
             manifest['reset_calibration']=str(session.calibration_output)
             bundle=runtime_bundle(base)
             Program=make_program_class()
-            bar=tqdm(total=FRAMES+3,desc='5pt loss maps',unit='map',disable=not progress,
+            bar=tqdm(total=frames+3,desc='5pt loss maps',unit='map',disable=not progress,
                      bar_format='{desc}: {n_fmt}/{total_fmt} [{elapsed} elapsed, ETA {remaining}]')
             def acquire(grid,shots,name):
                 compiled=time.perf_counter()
@@ -334,7 +337,7 @@ def run(*,data_root=None,correction_json=None,progress=True):
                     save_block(folder,name,block)
                     return block
                 return acquire_records(soc,program,cfg,shots,shots*len(grid)*5,folder,name,process=process)
-            summary=collect(folder,acquire,manifest,update=lambda:bar.update(1),acquire_saves_block=True)
+            summary=collect(folder,acquire,manifest,frames=frames,update=lambda:bar.update(1),acquire_saves_block=True)
             plot_result(folder,summary)
     except KeyboardInterrupt:
         manifest.update(status='interrupted',error='KeyboardInterrupt')
@@ -363,10 +366,13 @@ def main(argv=None):
     mode.add_argument('--plan',action='store_true');mode.add_argument('--run',action='store_true')
     parser.add_argument('--data-root',type=Path);parser.add_argument('--correction-json',type=Path)
     parser.add_argument('--quiet',action='store_true')
+    parser.add_argument('--frames',type=int,default=FRAMES,help='finite local frame count, 1--2000 (default: 40)')
     args=parser.parse_args(argv)
+    try:requested_plan=plan(frames=args.frames)
+    except ValueError as exc:parser.error(str(exc))
     if args.plan:
-        print(json.dumps(plan(),indent=2));return 0
-    folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet)
+        print(json.dumps(requested_plan,indent=2));return 0
+    folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,frames=args.frames)
     status=json.loads((folder/'manifest.json').read_text())['status']
     return 0 if status=='complete' else 1
 

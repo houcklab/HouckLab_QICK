@@ -8192,3 +8192,15 @@ production instructions are unchanged; no FPGA estimator/adaptive-delay
 claim. Expected5–10min, actual cadence unknown until measurement. No
 production/reset/initialize edits. Design, verification, commands and limits
 are in `docs/q3_fast_loss_map_20261005.md`. No hardware result yet.
+
+Fast local pilot `20261005T052318Z_c0263e35` completed all43maps/534,250
+records in1m42s. Wide scout46.60s; selected4.108GHz, local4.098–4.118GHz.
+Median local acquisition0.684s, start interval0.894s including compile/save
+gaps;40frames cover37.79s. Independent pre/post and pooled fast data resolve
+the25us loss dip (survival0.304 at4.109GHz versus roughly0.65–0.71 atedges).
+Pooled reference check passes. Useful cadence/contrast demonstrated, but
+single-frame noise and model/reference sensitivity prevent a switching
+claim from this short run. Next bounded extension: same sequence,1000
+frames via `--frames 1000`, approximately15–22min. Default remains40;
+no production/pulse/reset/initialize changes. Full audit, plots and limits
+are appended to the dedicated fast-map note.

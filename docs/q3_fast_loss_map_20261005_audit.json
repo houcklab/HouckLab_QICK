@@ -1,0 +1,219 @@
+{
+  "run": "2026-10-05T05:23:19.144533+00:00",
+  "status": "complete",
+  "commit": "fc38b5a8eb288f9d674fbd3af7c226073505b466",
+  "source_hash_verified": true,
+  "frame_acquisition_s": {
+    "median": 0.6838557501323521,
+    "min": 0.6307311998680234,
+    "max": 0.8957860004156828
+  },
+  "frame_start_period_s": {
+    "median": 0.8940636003389955,
+    "min": 0.8128239996731281,
+    "max": 1.3778424002230167
+  },
+  "local_series_span_s": 37.791828700341284,
+  "reference_check": {
+    "valid": true,
+    "reference_contrasts": [
+      0.5508571428571428,
+      0.5801904761904761
+    ],
+    "conditions": [
+      {
+        "condition": "P0",
+        "before": 0.13352380952380952,
+        "after": 0.128,
+        "delta": -0.005523809523809514,
+        "se": 0.00658070060584119,
+        "valid": true
+      },
+      {
+        "condition": "P1",
+        "before": 0.6843809523809524,
+        "after": 0.7081904761904761,
+        "delta": 0.023809523809523725,
+        "se": 0.008973409524559836,
+        "valid": true
+      }
+    ],
+    "scope": "pooled preparation/readout-reference drift check; not proof of per-frequency or sub-frame stability"
+  },
+  "frequency_mhz": [
+    4097.9986767693645,
+    4099.0012874804315,
+    4100.002014479655,
+    4101.000857748713,
+    4101.997817269873,
+    4102.992893025998,
+    4103.986085000541,
+    4104.977393177546,
+    4106.024960309061,
+    4107.012390031647,
+    4107.997935911558,
+    4108.981597935233,
+    4110.021069078374,
+    4111.000852534319,
+    4111.978752096214,
+    4113.012121770014,
+    4113.98614269199,
+    4115.015405547567,
+    4115.985547787419,
+    4117.010703782799,
+    4117.976967303452
+  ],
+  "pooled_25us_survival": [
+    0.6933638443935926,
+    0.6475972540045767,
+    0.6058823529411765,
+    0.5362997658079625,
+    0.5756154747948417,
+    0.5797933409873709,
+    0.580411124546554,
+    0.48143712574850284,
+    0.431530494821634,
+    0.3752834467120182,
+    0.3240093240093241,
+    0.3043010752688172,
+    0.35792951541850215,
+    0.41731409544950043,
+    0.5556780595369348,
+    0.5867678958785251,
+    0.6237513873473919,
+    0.6565217391304348,
+    0.6670378619153676,
+    0.6846560846560847,
+    0.7093922651933701
+  ],
+  "pooled_survival_shot_se": [
+    0.02706803714784935,
+    0.027330075361037553,
+    0.027963145321486686,
+    0.027354023268351756,
+    0.027506234554567032,
+    0.026713694018301683,
+    0.02797509196102812,
+    0.027290220016007755,
+    0.025795265723749905,
+    0.025097363585494074,
+    0.024939874880683145,
+    0.023052259782158215,
+    0.02408111259625114,
+    0.025127618601935537,
+    0.025383489017085547,
+    0.025499509094478935,
+    0.02608282416985629,
+    0.025939953012447448,
+    0.025981372593760738,
+    0.025118324944762866,
+    0.026728351142805813
+  ],
+  "descriptive_five_frame_centers": [
+    {
+      "first_frame": 0,
+      "last_frame": 4,
+      "center_mhz": 4107.832455838859,
+      "shot_noise_se_mhz": 0.28020182523909254,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 5,
+      "last_frame": 9,
+      "center_mhz": 4107.715225393162,
+      "shot_noise_se_mhz": 0.43078874804103634,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 10,
+      "last_frame": 14,
+      "center_mhz": 4108.993359687752,
+      "shot_noise_se_mhz": 0.19370021486637984,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 15,
+      "last_frame": 19,
+      "center_mhz": 4108.98327672037,
+      "shot_noise_se_mhz": 0.2565139827956658,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 20,
+      "last_frame": 24,
+      "center_mhz": 4109.796578690674,
+      "shot_noise_se_mhz": 0.3476842899107784,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 25,
+      "last_frame": 29,
+      "center_mhz": 4109.4875229266745,
+      "shot_noise_se_mhz": 0.33255891829797785,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 30,
+      "last_frame": 34,
+      "center_mhz": 4107.0733182192,
+      "shot_noise_se_mhz": 0.4012107682569292,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    },
+    {
+      "first_frame": 35,
+      "last_frame": 39,
+      "center_mhz": 4108.124027409458,
+      "shot_noise_se_mhz": 0.23222724245594015,
+      "model": "descriptive Gaussian notch, fixed pooled references"
+    }
+  ],
+  "positive_bilateral_depth_frames": 31,
+  "median_bilateral_frame_depth": 0.2313219269998793,
+  "frame_depths": [
+    0.15320890168378754,
+    0.06513073874034897,
+    0.19962334831261558,
+    0.1896722972785455,
+    0.19477671139432695,
+    -0.016054109277801598,
+    0.15919795328201958,
+    -0.11815825722102202,
+    -0.2916465091139273,
+    0.3909348657156602,
+    0.4206170699205517,
+    0.22344702181219783,
+    0.3224169279104645,
+    0.6197502105539252,
+    0.36899945601268463,
+    0.5245334250011869,
+    0.37838397655504463,
+    0.33873410385579206,
+    0.3067770501882683,
+    0.4985956692026191,
+    0.23919683218756077,
+    0.0400032746188268,
+    0.056218170760546804,
+    -0.02535488330339486,
+    -0.06773184210635524,
+    0.09222582800709822,
+    0.035320753943606675,
+    -0.06925460420483898,
+    -0.0028627552081808005,
+    -0.08739914923994413,
+    0.41647045549611816,
+    -0.1394180196288567,
+    0.24915183576140887,
+    0.29908611831635695,
+    0.4368666158775573,
+    0.36907361529349836,
+    0.4977849546048597,
+    0.5401722723996606,
+    0.5099277291816133,
+    0.3571438804475541
+  ],
+  "total_complete_records": 534250,
+  "maps": 43,
+  "reference_contrast_min": 0.504,
+  "reference_contrast_max": 0.608,
+  "center_fit_interpretation": "Not used as switching evidence: descriptive single-notch centers are sensitive to per-group versus pooled reference normalization and secondary/broad loss structure. Fixed-reference fit shot SE does not capture this model uncertainty."
+}

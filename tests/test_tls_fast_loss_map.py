@@ -209,3 +209,23 @@ def test_processing_interrupt_preserves_received_iq_after_hardware_returns(tmp_p
     assert events==['stopped','generators_reset']
     with np.load(tmp_path/'frame_0000.partial.npz') as z:
         assert z['i_acquisition_order'].tolist()==[14]
+
+
+def test_extended_plan_is_finite_and_keeps_validated_shots_and_grid():
+    m=module();p=m.plan(frames=1000)
+    assert p['frames']==1000 and p['shots_per_condition_per_frame']==40
+    assert p['local_points']==21 and p['full_corrected_return_us']==40.
+    assert m.plan()['frames']==40
+    for invalid in (0,-1,2001):
+        with pytest.raises(ValueError,match='frames'):m.plan(frames=invalid)
+
+
+def test_cli_passes_extended_count_to_runner_without_implicit_loop(tmp_path,monkeypatch):
+    m=module();counts=[]
+    def run(**kwargs):
+        counts.append(kwargs['frames'])
+        (tmp_path/'manifest.json').write_text('{"status":"complete"}')
+        return tmp_path
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--frames','1000'])==0
+    assert counts==[1000]
