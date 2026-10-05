@@ -8178,3 +8178,17 @@ final references, early8-us controls or decay data were acquired. Stop the
 current e–f loss route without a longer run or gate relaxation. No negative
 TLS physics conclusion follows. Raw-source checks, reference statistics,
 plots and limits are recorded in `docs/q3_resident_ef_pilot_20261004.md`.
+
+User pivoted to faster T1-versus-frequency measurements inspired by the
+Oliver-group adaptive spectroscopy paper. Production uses active reset;
+the passive-relax timing bound previously discussed is inapplicable.
+`TLSFastLossMap --run` is a finite active-reset pilot: one wide250-shot
+scout, one21-frequency/20MHz window, local250-shot pre/post references and
+forty40-shot five-condition frames. Ordered raw integer IQ/classifications,
+actual frame and host transfer times, reference-drift checks and a survival
+heatmap are retained. Conservative paired-shot uncertainty guards avoid
+selecting scout noise as a feature. Native correction/full40us return and
+production instructions are unchanged; no FPGA estimator/adaptive-delay
+claim. Expected5–10min, actual cadence unknown until measurement. No
+production/reset/initialize edits. Design, verification, commands and limits
+are in `docs/q3_fast_loss_map_20261005.md`. No hardware result yet.
