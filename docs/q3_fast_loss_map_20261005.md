@@ -843,3 +843,100 @@ analysis recipe are in
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 100 --center-ghz 4.05 --width-mhz 500 --step-mhz 2
 ```
+
+## Full-band 100-map recording: 20261005T093352Z_d8822080
+
+All 100 maps and pre/post references completed in **12m59.30s**, from source
+commit `329708c747af478f5158e88048ece5fb689aed4c`. The final status is
+**`complete_reference_drift`**, not an acquisition failure: all **5,647,500
+records** were saved. Science contributed 5,020,000 records, and the two
+250-shot references contributed 627,500. Raw integer-IQ classifications match
+all science and reference binary states; science axes, alternating directions,
+transfer receipts, source hash and correction hash verify.
+
+Median acquisition/start interval was **6.467/6.784s**, with start intervals
+6.240–7.637s. The science record spans **684.06s**. Production active reset,
+park preparation/readout and the native corrected 40 µs return were retained.
+No measurement code, production reset or initialize.py changes were made.
+
+![Full-band recording and concurrent reference changes](q3_fast_loss_map_full_band_100_20261005_result.png)
+
+The pooled spectrum remains well resolved. Its correlations with pre/post
+are **0.883/0.889**, and its classified/linear-IQ correlation is **0.998**.
+The median pointwise normalized-survival SE is approximately **0.195** in
+one 40-shot frame and **0.019** in the 4,000-shot pooled mean. That mean
+can mix different loss profiles over eleven minutes; it does not establish
+instantaneous line shape or event resolution.
+
+Reference drift is substantial. Endpoint P0 changes **0.2453→0.1624**
+(−0.0829, SE 0.00226), while P1 changes **0.6757→0.6863** (+0.0106,
+SE 0.00263); reference contrast changes **0.4304→0.5239**. Within the science
+series, P1 also dips markedly around 200–300s. These are classified reference
+probabilities, not measured thermal populations or temperatures. All plots
+here use concurrent references within each frequency/time bin, with the
+reference traces visible. This does not exclude arbitrary systematic errors.
+
+One of 25,100 individual science frequency/frame cells has zero estimated
+reference contrast; its ratio is undefined and stored as NaN rather than
+dividing by a small artificial denominator. There are 165 cells with contrast
+below 0.2. At the displayed two-frame averaging, all denominators are positive,
+but **13 of 12,550 cells** have contrast below 0.2 and are blanked explicitly.
+Finite ratios remain unclipped in the cached data, and heatmap overflow
+colors are shown. No frequency smoothing is applied.
+
+![Four spectral regions in the full-band recording](q3_fast_loss_map_full_band_100_20261005_zoom.png)
+
+The dip near **4.114 GHz** persists through the science series. The five
+20-map (~2.3min, 800-shot) profile minima in that neighborhood are
+4.114, 4.116, 4.112, 4.114 and 4.114 GHz. The final independent reference
+instead has a minimum at **4.122 GHz**. Projected linear IQ independently
+places the pre/post minima at **4.114/4.122 GHz**. This is an observed change
+in the loss profile; no fit establishes that the two minima have the same
+microscopic TLS identity, or identifies the precise time of a jump during
+the reference scan. Meanwhile, the sharp 4.196 GHz neighborhood shifts only
+about one grid step to 4.198 GHz, and the 4.260 GHz minimum remains at the
+same grid point. These descriptive differences motivate local follow-up,
+but do not constitute a calibrated exclusion of common qubit/flux drift.
+
+This recording is **less compelling as a telegraph witness** than the earlier
+1,000-map local run. With two maps per bin (~14s), the fixed 4.112 GHz
+shoulder imbalance has SD **0.194**, paired-shot SE **0.139**, forward/reverse
+correlation **0.279**, and 10/25 µs correlation **0.448**. Reference regression
+leaves SD **0.155** and residual 10/25 µs correlation **0.201**. The analogous
+3.984/4.196/4.256 GHz checks are retained in the audit rather than presenting
+all visual fluctuations as physical events. At five-map averaging, the
+4.196 GHz direction correlation improves to 0.718, but reference regression
+reduces its SD to 0.079, comparable to the 0.095 cluster SE. The current data
+do not justify fitting switching rates or declaring independent TLS events.
+
+![Spectral imbalance and raw-IQ time traces](q3_fast_loss_map_full_band_100_20261005_dynamics.png)
+
+The next bounded recording returns to a faster local window covering both
+observed 4.114/4.122 GHz loss positions: **4.108–4.132 GHz at 2 MHz**, thirteen
+points, **1,000 frames × 40 shots**, with unchanged 250-shot pre/post and fresh
+production calibration. Expect roughly **12–16 minutes total** and a local
+cadence around 0.6–0.8s, based on previous nine-/21-point timings; the actual
+13-point cadence must be measured. The aim is to resolve rapid changes in
+this spectral neighborhood with less time averaging than the full-band scan.
+The grid is fixed; there is no Bayesian estimation or adaptive selection.
+No automatic single-TLS, switching-time or undisturbed-equilibrium claim is
+made. A moved or weakened feature will still be recorded without a site gate.
+
+Latest saved-board QICK 0.2.133 compilation of both 13-point science and
+reference cases matches the production parent's binary and stream plan and
+passes preflight (5,777/8,192 instructions). Full corrected return and
+unbounded production active reset are verified. The CLI plan confirms the
+finite 1,000-frame, thirteen-point request. No runner change or new production
+test suite is needed for this parameter-only follow-up.
+
+The compact audit is
+`docs/q3_fast_loss_map_full_band_100_20261005_audit.json`, including region
+definitions, multiscale shot/cluster checks, exact low-contrast counts and
+next-configuration compilation. Raw IQ remains on NAS; analysis recipes,
+caches and SVGs are in
+`/Users/rummanrahman/.codex/visualizations/2026/10/05/q3_fast_loss_map_093352Z`.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.12 --width-mhz 24 --step-mhz 2
+```

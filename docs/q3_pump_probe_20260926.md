@@ -8339,3 +8339,24 @@ Next: 100 maps on the same full-band grid (~13–16min), to compare variation
 at several loss regions and common changes across the band. No measurement
 code, shared reset or initialize changes. Plots, exact spectral checks,
 uncertainties and limits are in `docs/q3_fast_loss_map_20261005.md`.
+
+Full-band 100-map run `20261005T093352Z_d8822080` (329708c7) saved all
+5,647,500 records in 12m59.30s; median acquisition/start interval was
+6.467/6.784s and science span 684.06s. Raw-IQ classification, axes,
+directions, receipts and source/correction hashes verify. Status is
+`complete_reference_drift`: endpoint P0 .2453→.1624, P1 .6757→.6863;
+within-run reference changes remain visible. Concurrent normalization is
+used; 13 of 12,550 two-frame cells with contrast <.2 are blanked explicitly.
+The 4.114 GHz loss region persists through science maps but the final
+reference has a 4.122 GHz minimum, also confirmed by linear IQ. Other
+regions change less; this is not a single-TLS identity or calibrated
+qubit-drift exclusion. The full-band run is less convincing as a telegraph
+witness than the earlier local record: two-map 4.112 GHz shoulder SD .194
+versus shot SE .139, direction correlation .279; measured-reference
+regression leaves SD .155/residual 10/25 correlation .201. No switching
+rate fit is warranted. Next: thirteen fixed points, 4.108–4.132 GHz/2MHz,
+1,000 40-shot maps (~12–16min), unchanged production active reset and
+250-shot pre/post, covering both observed positions. Saved-board binaries/
+stream plans match the parent and pass preflight for science/reference.
+No measurement-code or initialize changes. Plots and detailed limitations
+are appended to `docs/q3_fast_loss_map_20261005.md`.
