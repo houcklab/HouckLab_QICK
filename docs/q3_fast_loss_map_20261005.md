@@ -1089,3 +1089,52 @@ These are collection limitations, not hardware validation of the new runner.
 Final maintained-suite check `python3 -m pytest -q tests`: 1,454 passed
 in 47.15 s. The runner's CLI plan and Python compilation also passed.
 Actual lower-power hardware readout discrimination remains unmeasured.
+
+## Matched readout-power check and half-gain fast-map pilot
+
+`q3_fast_loss_readout_check_20261005T204208Z_b9f9ee33` completed four
+reference pairs: gain1880, gain940, gain940, gain1880. All 32,000 raw
+reference records are accounted for and saved holdout classifications
+recomputed. Archived source hashes verify; per-arm configurations differ
+only in read_pulse_gain. Held-out balanced discrimination:
+
+| Gain | Payload block 0 / block 1 | Loop block 0 / block 1 |
+| --- | --- | --- |
+| 1880 | .7745 / .7885 | .6945 / .7590 |
+| 940 | .7490 / .7550 | .7770 / .7795 |
+
+Both powers pass the existing confident-calibration guard in both blocks.
+The full-gain block-0 loop has training peak fidelity .703 but held-out
+balanced accuracy .6945; the unchanged production guard is not a held-out
+70% balanced-accuracy test. Half-gain ground acceptance is .509/.594 in
+loop and .523/.582 in payload. Loop false-pi fractions remain .193/.160;
+this is not a measured high-fidelity reset or a proof that readout drift
+is resolved. Half-gain means DAC amplitude halved, not microwave power
+halved. Final discrimination trades some signal for less preceding-readout
+disturbance.
+
+Added explicit fast-runner `--readout-gain {940,1880}`, default1880.
+Chosen gain is recorded in the manifest and copied into q3 BaseConfig
+inside its restoring context before fresh calibration; the same config
+then feeds science. No calibration reuse, lowered quality criteria,
+passive fallback, initialize or shared production code changes.
+The flag is propagated into every repeated batch. Existing grid, 40 shots,
+five conditions, 250-shot pre/post and corrected 40 us return are unchanged.
+
+Next finite check: 20 frames, 3.945–3.995 GHz, .5 MHz spacing, gain940,
+estimated2–4min including calibration/references. Gain940 actual scan
+cadence, concurrent reference contrast and reset performance remain to
+be measured. Command:
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 20 --center-ghz 3.970 --width-mhz 50 --step-mhz 0.5 --readout-gain 940
+```
+
+Three new tests witnessed failing for the missing gain option; 37 focused
+tests pass with one hardware-dependent case skipped. CLI plan confirms
+101 points, 20 frames and explicit gain940 override; unchanged source-level
+production calibration/runtime builders preserve the selected gain.
+Final maintained-suite validation: `python3 -m pytest -q tests`, 1,457
+passed in42.69s. Repository-root legacy collection limitations are listed
+above and remain outside this runner change.

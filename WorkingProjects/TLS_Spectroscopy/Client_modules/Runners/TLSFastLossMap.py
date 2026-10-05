@@ -1,8 +1,10 @@
-"""q3 fast loss maps using the production active-reset pulses.
+"""q3 fast loss maps using production active-reset timing.
 
 One optional 3.8--4.3 GHz scout, one local window, a finite number of low-shot
 five-condition frames, and high-shot local references before/after. Optional
 --loop repeats these finite batches with fresh calibration until interrupted.
+Readout gain defaults to 1880; --readout-gain 940 is an explicit experimental
+override applied to both fresh calibration and science readouts.
 No adaptive FPGA
 estimator, passive fallback, target microwave pulses, or production edits.
 """
@@ -38,14 +40,24 @@ def atomic_npz(path, **arrays):
     os.replace(pending,path)
 
 
-def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.,continuous=False):
+def readout_base_config(base_cfg,readout_gain):
+    if (isinstance(readout_gain,bool) or not isinstance(readout_gain,(int,np.integer))
+            or readout_gain not in (940,1880)):
+        raise ValueError('readout gain must be 940 or 1880')
+    return dict(base_cfg,read_pulse_gain=int(readout_gain))
+
+
+def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.,continuous=False,readout_gain=1880):
+    readout_gain=readout_base_config({},readout_gain)['read_pulse_gain']
     if not isinstance(frames,int) or not 1<=frames<=2000:
         raise ValueError('frames must be an integer between 1 and 2000')
     if continuous and center_ghz is None:
         raise ValueError('loop mode requires an explicit center-ghz; no repeated discovery gate')
     grid=local_grid(4.05 if center_ghz is None else center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
     period=.3+6.48*len(grid)/251
-    return dict(qubit='q3', reset='production active reset throughout',
+    return dict(qubit='q3', reset='production active-reset timing throughout',
+                readout_gain=readout_gain,readout_gain_override=readout_gain!=1880,
+                readout_gain_scope='same gain for fresh reset calibration and all science readouts',
                 scout_ghz=[3.8, 4.3] if center_ghz is None else None,
                 scout_step_mhz=2. if center_ghz is None else None,
                 scout_shots=SCOUT_SHOTS if center_ghz is None else 0,
@@ -298,9 +310,9 @@ def plot_result(folder,summary):
 
 
 def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center_ghz=None,
-        width_mhz=20,step_mhz=1.,continuous=False):
+        width_mhz=20,step_mhz=1.,continuous=False,readout_gain=1880):
     requested_plan=plan(frames=frames,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,
-                        continuous=continuous)
+                        continuous=continuous,readout_gain=readout_gain)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
@@ -323,11 +335,12 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center
     soc=None
     try:
         with noise.q3_context(tls,data_root),localizer.scan_environment(correction):
+            tls.BaseConfig=readout_base_config(tls.BaseConfig,readout_gain)
             five.install_scan_calibration(tls)
             compensation=tls._load_correction(str(correction),str(data_root))
             soc,soccfg=tls.makeProxy()
             checkpoint(folder/'board_configuration.json',soccfg.get_cfg())
-            print('SS cal: production q3 active-reset calibration',flush=True)
+            print(f'SS cal: q3 active-reset calibration (readout gain {readout_gain})',flush=True)
             session=prepare_reset_session('active',outer_folder=str(folder),qubit='q3',
                     base_cfg=tls.BaseConfig,soc=soc,soccfg=soccfg,purpose='TLSFastLossMap')
             base=science_config(tls,compensation,session)
@@ -413,16 +426,18 @@ def main(argv=None):
     parser.add_argument('--center-ghz',type=float,help='record explicit local window without a scout/feature-selection gate')
     parser.add_argument('--width-mhz',type=int,default=20,help='window width, 2--500 MHz, at most 801 points (default: 20)')
     parser.add_argument('--step-mhz',type=float,choices=(.5,1.,2.),default=1.,help='local grid spacing (default: 1 MHz)')
+    parser.add_argument('--readout-gain',type=int,choices=(940,1880),default=1880,
+                        help='reset and final readout gain; 940 is experimental (default: 1880)')
     args=parser.parse_args(argv)
     try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,
-                            step_mhz=args.step_mhz,continuous=args.loop)
+                            step_mhz=args.step_mhz,continuous=args.loop,readout_gain=args.readout_gain)
     except ValueError as exc:parser.error(str(exc))
     if args.plan:
         print(json.dumps(requested_plan,indent=2));return 0
     def run_once():
         return run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,
                    frames=args.frames,center_ghz=args.center_ghz,width_mhz=args.width_mhz,
-                   step_mhz=args.step_mhz,continuous=args.loop)
+                   step_mhz=args.step_mhz,continuous=args.loop,readout_gain=args.readout_gain)
     if args.loop:return repeat_runs(run_once)
     folder=run_once()
     status=json.loads((folder/'manifest.json').read_text())['status']

@@ -402,3 +402,46 @@ def test_cli_loop_uses_exact_dense_grid_in_each_fresh_run(tmp_path,monkeypatch):
         assert kwargs['frames']==100 and kwargs['center_ghz']==4.1
         assert kwargs['width_mhz']==400 and kwargs['step_mhz']==.5
         assert kwargs['continuous'] is True
+
+
+def test_selected_readout_gain_reaches_calibration_and_runtime_without_mutating_defaults():
+    m=module()
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping import base_config
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
+        build_calibration_config, ProductionResetSession,
+    )
+    original=base_config()
+    half=m.readout_base_config(original,940)
+    assert half['read_pulse_gain']==940 and original['read_pulse_gain']==1880
+    assert {k:v for k,v in half.items() if k!='read_pulse_gain'}=={k:v for k,v in original.items() if k!='read_pulse_gain'}
+    cal=build_calibration_config(half,4367.292)
+    runtime=ProductionResetSession.active({'reference':'fixture'},4367.292).apply(half)
+    assert cal['read_pulse_gain']==runtime['read_pulse_gain']==940
+    assert runtime['reset_mode']=='opx_unbounded'
+    assert m.readout_base_config(original,1880)==original
+    for invalid in (0,939,941,940.5,1881,True):
+        with pytest.raises(ValueError,match='readout gain'):m.readout_base_config(original,invalid)
+
+
+def test_readout_power_option_is_explicit_in_plan_and_preserves_scan_conditions():
+    m=module()
+    default=m.plan(frames=20,center_ghz=3.970,width_mhz=50,step_mhz=.5)
+    half=m.plan(frames=20,center_ghz=3.970,width_mhz=50,step_mhz=.5,readout_gain=940)
+    assert default['readout_gain']==1880 and not default['readout_gain_override']
+    assert half['readout_gain']==940 and half['readout_gain_override']
+    for k in ['conditions','local_points','shots_per_condition_per_frame','local_pre_post_shots','full_corrected_return_us']:
+        assert half[k]==default[k]
+    with pytest.raises(ValueError,match='readout gain'):m.plan(readout_gain=0)
+
+
+def test_cli_keeps_selected_readout_gain_in_every_recalibrated_batch(tmp_path,monkeypatch):
+    m=module();calls=[]
+    def run(**kwargs):
+        folder=tmp_path/f'readout_batch_{len(calls)}';folder.mkdir()
+        (folder/'manifest.json').write_text(json.dumps({'status':'complete' if not calls else 'interrupted'}))
+        calls.append(kwargs)
+        return folder
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--loop','--frames','20','--center-ghz','3.970','--width-mhz','50',
+                   '--step-mhz','.5','--readout-gain','940'])==130
+    assert len(calls)==2 and all(c['readout_gain']==940 for c in calls)
