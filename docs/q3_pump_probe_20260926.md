@@ -8165,3 +8165,16 @@ f decay series.176programs, expected5–10min. Old feature4.092GHz is only
 a saved prior, not evidence that the TLS remains there.1422tests and24
 offline fixed-bias compiled/emulated cases pass. No production/default
 changes. Commands, decision thresholds and limits are in the dedicated note.
+
+
+Fixed-bias e–f check `20261005T035124Z_65a9b64b` (cdfb66e5) stopped after
+66.44s/160arms at the training e/f separation gate:5.660 versus minimum6.
+Both local transitions and gain responses are resolved (g–e4273.50MHz,
+gain16004; e–f4093.25MHz,gain5845). All-shot two-view reference matrices
+are distinguishable and well-conditioned; the gate miss is marginal,
+not evidence of impossible f readout. Two-pulse inversion controls remain
+poor (approximately51%/47% of the one-pulse increment), and no independent
+final references, early8-us controls or decay data were acquired. Stop the
+current e–f loss route without a longer run or gate relaxation. No negative
+TLS physics conclusion follows. Raw-source checks, reference statistics,
+plots and limits are recorded in `docs/q3_resident_ef_pilot_20261004.md`.

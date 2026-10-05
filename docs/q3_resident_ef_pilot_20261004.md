@@ -235,3 +235,53 @@ words, gains and time offsets; max475/8192instructions, no late pulses under
 the conservative4-cycle instruction audit. Pulse-program code is unchanged.
 Independent review found no P1/P2 issues. Production TLS/reset code and
 `initialize.py` are unchanged.
+
+
+## Fixed bias check result
+
+Session `q3_resident_ef_pilot_20261005T035124Z_65a9b64b`, commit
+`cdfb66e5`, finished in 66.44 seconds with 160 of the planned 176 arms.
+Status is `unresolved`: `two-view state separation is unresolved`.
+The source snapshots match the pushed files after newline normalization.
+The NAS was read only; an independent local audit retains every session file
+at `/Users/rummanrahman/.codex/visualizations/2026/10/04/q3_resident_ef_fixed_035124Z/raw`.
+
+Local spectroscopy and gain sweeps found g–e 4273.50 MHz / gain16004 and
+e–f 4093.25 MHz / gain5845. The measured anharmonicity is −180.25 MHz.
+The e–f frequency lies 1.25 MHz above the OLD scout feature. This does not
+establish that the TLS remains at that frequency. Rabi fit amplitudes are
+0.589 and 0.425 in park-reference IQ units; independent one-pulse signals
+are resolved. The ground-prepared e–f control passes the existing gate.
+Neither observation establishes absolute state-preparation purity.
+
+The stop occurred at the first training-reference check (0.25-us visit):
+e/f separation score5.660 misses the preset minimum6. The 8-us training
+score is5.498. This is a marginal precision failure, not a disappearance of
+state contrast. Using all500shots per reference, scores rise to8.454 and
+7.780; response condition numbers2.340 and2.876 are reasonable. An offline
+inspection ignoring only the initial SNR gate finds the existing held-out
+consistency checks pass at both durations. These diagnostics do not turn
+the aborted run into a completed calibration check: the independent final
+references and all four early ground/excited8-us controls were never taken.
+There is no f-decay or TLS-loss measurement.
+
+The two-pulse inversion controls also merit caution. On the park-reference
+projection, g–e zero/one/two-pulse signals are−0.0116±0.0145,
+0.5858±0.0274,0.2956±0.0263. The e–f values are0.1744±0.0233,
+0.6153±0.0260,0.3806±0.0256 (errors are single-arm standard errors).
+Two pulses leave approximately51% and47% of the one-pulse increment.
+They pass the original permissive complex-IQ audit, but do not demonstrate
+clean reversible π operations. Relaxation, preparation error, and pulse
+error are not separately identified by these measurements.
+
+Decision: stop the current e–f TLS-loss route here rather than launch a
+longer decay/profile run or relax the gate. The calibration has real state
+contrast and could in principle be improved, so this is not evidence that
+e–f TLS spectroscopy is physically impossible. It has not established the
+reliable, controlled measurement required to justify more hardware time.
+No production code, initialize settings or acquisition gates were changed.
+Raw audit statistics and plots are saved beside the local raw copy as
+`audit.json`, `readout_check.png/.svg` and `local_pulse_calibration.png/.svg`.
+The readout plot uses all reference shots and is an IQ projection, not an
+absolute population measurement; both panels use late preparation, so their
+comparison is NOT a state-decay trace.
