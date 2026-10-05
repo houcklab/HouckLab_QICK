@@ -8093,3 +8093,17 @@ the broad search correction. New 3.862/3.984-GHz hints and recurring
 upper block first; independently score the three specified candidate
 endpoints before pooling. Full statistics, caveats and commands are in the
 dedicated time-map note.
+
+
+Independent full-band repeat `225214Z_6f2d10a0` / `232144Z_5c01520e`
+completed in 59m11s with all four reference boundaries and all504 growth
+comparisons valid. All raw summaries, reference reports and paired growth
+variances reproduce. None of the three prespecified endpoints passes:
+3.862GHz/40us growth -1.03+/-3.81 points, 3.984GHz/40us +2.53+/-5.76,
+4.046GHz/10us +3.57+/-5.84. The positive direct offset at3.984GHz does
+not establish additional return above the short-probe control. New global
+peaks remain consistent with descriptive shot-noise scatter. Decision:
+stop broad400-shot repeats of the current offline-heralded protocol; a
+preparation/timing change would require a short independently validated
+pilot. No further measurement command or production-code change is issued.
+Full statistics, plots and limitations are in the dedicated time-map note.

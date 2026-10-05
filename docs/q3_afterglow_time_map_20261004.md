@@ -382,3 +382,70 @@ git -c gc.auto=0 pull --ff-only origin tls-spectroscopy &&
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 4.050 --freq-stop 4.300 --step-mhz 2 --shots 400 --passes 1 &&
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSAfterglowTimeMap --run --freq-start 3.800 --freq-stop 4.050 --step-mhz 2 --shots 400 --passes 1
 ```
+
+
+## Independent full-band repeat: 225214Z_6f2d10a0 / 232144Z_5c01520e
+
+The upper-first/lower-second repeat completed on commit `49d4f704` in
+**3,551.32 seconds (59m11s)**. Both halves saved all 126 cells: **604,800
+paired science records**, **14,400 paired reference records**, and all **504
+planned growth comparisons** pass quality checks. All four reference
+boundaries are valid. Every cell summary and reference report reproduces
+from raw IQ; separately calculated paired influence variances reproduce the
+growth errors. This was a completed measurement with a negative result,
+not an acquisition or calibration failure.
+
+**None of the three prespecified endpoints passes the independent repeat
+criterion.** Values below are classified-fraction percentage points, with
+one paired-shot standard error; they are not absolute population estimates.
+
+| Frequency / probe | First broad growth | Independent repeat growth | Repeat direct hot-minus-cold |
+|---|---:|---:|---:|
+| 3.862 GHz / 40 us | +14.27 +/- 5.03 | -1.03 +/- 3.81 | +1.10 +/- 2.66 |
+| 3.984 GHz / 40 us | +11.65 +/- 4.19 | +2.53 +/- 5.76 | +10.22 +/- 3.77 |
+| 4.046 GHz / 10 us | +15.06 +/- 6.38 | +3.57 +/- 5.84 | -0.29 +/- 4.03 |
+
+![First broad sweep and independent repeat](q3_afterglow_repeat_20261004_first_vs_repeat_growth.png)
+
+Gray is the first sweep, blue the independent repeat. Each point is one
+frequency/delay contrast; error bars are one paired-shot SE. Red circles
+mark the endpoints fixed before this repeat. The two separately calibrated
+4.050-GHz observations remain separate; no overlap averaging or interpolation
+is performed in this plot.
+
+At 3.984 GHz the direct 40-us excess remains positive, but the new 0.1-us
+excess is already +7.68 points. The additional growth is only +2.53 +/- 5.76
+points. A positive offset alone cannot separate rapid return from qubit
+carryover or preparation/selection effects. Continuous-IQ growth there is
++0.0900 +/- 0.0694 of reference separation; it shares the same shots and
+is not independent confirmation. The 3.862 and 4.046 GHz IQ growth values
+are negative in this repeat. Do not pool the original selection peaks into
+a claim that the independent confirmation passed.
+
+![Prespecified hot-minus-cold traces](q3_afterglow_repeat_20261004_prespecified_site_traces.png)
+
+Across the repeat, standardized growth has mean **-0.0364**, standard
+deviation **1.0430**, and 12 comparisons each above +2 SE and below -2 SE.
+The maximum positive value is **2.79 SE** at 3.812 GHz/40 us. This does not
+clear the descriptive one-sided normal Bonferroni screen of **3.72 SE** for
+504 planned comparisons. Shared baselines and references mean these are
+descriptive noise diagnostics rather than independent exact tests. No new
+post-hoc peak is promoted to replace the failed prespecified endpoints.
+
+The reproducible snapshot, independent audits, numerical results and plots
+are under
+`~/.codex/visualizations/2026/10/04/q3_afterglow_repeat_225214Z/`.
+`afterglow_actual_time_map.png` displays both broad sweeps at each cell's
+actual midpoint time. Gray regions are unmeasured; square markers do not
+represent continuous coverage. The diagonal paths reflect sequential scans,
+not moving TLSs. Two visits per frequency are not a dense wall-clock history.
+
+**Decision:** stop broad repeats of this 400-shot, offline-heralded version.
+It has produced no confirmed afterglow across two full-band observations.
+This does not exclude smaller effects, narrower sites, memory lost during
+the corrected return/readout gap, or rapid return already present in the
+short-probe offset. If pursued further, first design and validate a short
+preparation/timing pilot with actual ground-state feedback or a shorter
+valid load-to-probe gap. Neither modification is implemented or validated by
+these results, and another hour-long command is not issued here. Production
+acquisition/reset code is unchanged.
