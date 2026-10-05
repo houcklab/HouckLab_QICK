@@ -8204,3 +8204,15 @@ claim from this short run. Next bounded extension: same sequence,1000
 frames via `--frames 1000`, approximately15–22min. Default remains40;
 no production/pulse/reset/initialize changes. Full audit, plots and limits
 are appended to the dedicated fast-map note.
+
+Longer attempt `20261005T054544Z_e04e1bb0` (b29ed706) stopped after46.86s
+at automatic wide-band selection: complete313,750-record scout, zero local
+references/frames. Loss remains near4.106–4.108GHz, but scout contrastmedian
+fell0.556→0.480 and no trough passed the conservative pooled/directional
+scores. At4.106GHz allscore3.243/reversescore1.201 versus4.5/2 required.
+No long-series/dynamics result exists. Next bounded correction is explicit
+window `--center-ghz 4.108 --frames 1000`: fresh activecal/localpre/post,
+same21point/40shot/pulses, no wide discovery requirement and no freshfeature
+claim. Defaultselector/thresholds, production/reset/initialize unchanged.
+Raw-source audit, scoutcomparison, exactlimits and commands are appended
+to `docs/q3_fast_loss_map_20261005.md`.

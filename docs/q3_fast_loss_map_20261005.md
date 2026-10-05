@@ -179,3 +179,60 @@ comparisons still match. Independent review found no actionable P1/P2 issues.
 git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
 python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000
 ```
+
+## Longer attempt stopped at discovery; explicit-window follow-up
+
+`q3_fast_loss_map_20261005T054544Z_e04e1bb0`, commit `b29ed706`, ended
+`unresolved` after 46.86 s. It acquired the complete 251×250×5 scout
+(313,750 records, 37.51 s acquisition) and **zero local references/frames**.
+The source hash matches and the production active-reset calibration passed.
+This is not a 1,000-frame measurement or a negative switching result.
+
+Loss remains visible near 4.106–4.108 GHz (25 µs normalized survival about
+0.354), but the scout reference contrast median is 0.480 versus 0.556 in
+the successful pilot. No candidate passes the conservative discovery gate.
+At 4.106 GHz, bilateral depth is 0.235 and score 3.243 over all shots;
+the reverse score is 1.201, below the required 4.5/2 scores. The strongest
+pooled candidate, 4.062 GHz, has score 4.590 but forward score 1.868.
+Thus the rejection is reproduced from the raw shots; it is not a corrupt
+file, missing acquisition, calibration exception or frequency-grid error.
+These shot-noise scores do not identify the microscopic absorber or show
+that a TLS disappeared.
+
+![Scout comparison](q3_fast_loss_scout_20261005_result.png)
+
+The automatic gate is suitable for discovering a new window across 500 MHz,
+but reapplying it before every recording obstructs monitoring a previously
+observed window when the signal weakens or changes. Add an **explicit model
+frequency window** option, `--center-ghz 4.108`: record 4.098–4.118 GHz
+directly with fresh active-reset calibration and 250-shot local pre/post,
+plus the requested 1,000 unchanged 40-shot frames. There is no wide scout
+in this mode. Data are recorded even if the region is flat; specifying a
+window is not evidence of a fresh feature. Plan/manifest explicitly say
+`explicit_window` and `fresh_feature_claim=False`. Default discovery behavior,
+scores, pulse instructions, reset/calibration gates, return and shot count
+remain unchanged. Progress total is frames+2 rather than frames+3.
+
+This targets the recently observed region for dynamics measurement rather
+than repeatedly attempting whole-band discovery. If loss moves outside the
+window, the result only describes the requested window. No automatic
+recenter, new TLS identity, or motion significance is inferred by the runner.
+
+The audited scout and candidate scores are in
+`docs/q3_fast_loss_scout_20261005_audit.json`; raw/analysis copies are under
+the user's `.codex/visualizations/2026/10/05/q3_fast_loss_scout_054544Z`.
+Focused regressions include flat explicit-window acquisition, CLI/plan
+propagation, finite counts and band validation.
+
+Explicit-window verification: 17 focused tests with offline QICK and
+1,439 full suite tests pass (41.66 s). Six production/observer instruction
+comparisons, including the exact 4.108 GHz requested window, match and
+pass preflight; latest saved board configuration matches the successful
+pilot. Independent review found no actionable P1/P2 issues.
+
+Next measurement-PC command (approximately 15–22 min):
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastLossMap --run --frames 1000 --center-ghz 4.108
+```

@@ -1,6 +1,6 @@
 """Finite q3 fast loss-map pilot using the production active-reset pulses.
 
-One 3.8--4.3 GHz scout, one 21-point window, a finite number of low-shot
+One optional 3.8--4.3 GHz scout, one 21-point window, a finite number of low-shot
 five-condition frames, and high-shot local references before/after. No adaptive FPGA
 estimator, passive fallback, target microwave pulses, or production edits.
 """
@@ -36,11 +36,16 @@ def atomic_npz(path, **arrays):
     os.replace(pending,path)
 
 
-def plan(*,frames=FRAMES):
+def plan(*,frames=FRAMES,center_ghz=None):
     if not isinstance(frames,int) or not 1<=frames<=2000:
         raise ValueError('frames must be an integer between 1 and 2000')
+    if center_ghz is not None:local_grid(center_ghz)
     return dict(qubit='q3', reset='production active reset throughout',
-                scout_ghz=[3.8, 4.3], scout_step_mhz=2., scout_shots=SCOUT_SHOTS,
+                scout_ghz=[3.8, 4.3] if center_ghz is None else None,
+                scout_step_mhz=2. if center_ghz is None else None,
+                scout_shots=SCOUT_SHOTS if center_ghz is None else 0,
+                window_center_ghz=center_ghz,
+                window_selection='fresh wide scout' if center_ghz is None else 'explicit window; no scout or fresh-feature claim',
                 local_width_mhz=20., local_step_mhz=1., local_points=21,
                 frames=frames, shots_per_condition_per_frame=FRAME_SHOTS,
                 conditions=['P0', 'P1', 'Ps_2us', 'Ps_10us', 'Ps_25us'],
@@ -145,7 +150,7 @@ def save_block(folder,name,block):
     checkpoint(Path(folder)/(name+'.json'),metadata)
 
 
-def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_block=False):
+def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_block=False,center_ghz=None):
     folder=Path(folder)
     def measure(grid,shots,name):
         manifest.update(status='acquiring',current=name)
@@ -156,8 +161,14 @@ def collect(folder,acquire,manifest,*,frames=FRAMES,update=None,acquire_saves_bl
         checkpoint(folder/'manifest.json',manifest)
         if update:update()
         return result
-    scout=measure(np.round(np.arange(3800,4301,2)/1000,6),SCOUT_SHOTS,'scout')
-    selected=select_feature(scout)
+    if center_ghz is None:
+        scout=measure(np.round(np.arange(3800,4301,2)/1000,6),SCOUT_SHOTS,'scout')
+        selected=select_feature(scout)
+    else:
+        # Validate before acquiring; a chosen window is not a detected feature.
+        local_grid(center_ghz)
+        selected=dict(center_ghz=float(center_ghz),mode='explicit_window',fresh_feature_claim=False,
+                      selection_scope='requested model-frequency window; record even if loss weakens or leaves it')
     manifest['selection']=selected
     grid=local_grid(selected['center_ghz'])
     pre=measure(grid,SCOUT_SHOTS,'local_pre')
@@ -271,8 +282,8 @@ def plot_result(folder,summary):
     plt.close(fig)
 
 
-def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES):
-    requested_plan=plan(frames=frames)
+def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center_ghz=None):
+    requested_plan=plan(frames=frames,center_ghz=center_ghz)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
@@ -307,7 +318,7 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES):
             manifest['reset_calibration']=str(session.calibration_output)
             bundle=runtime_bundle(base)
             Program=make_program_class()
-            bar=tqdm(total=frames+3,desc='5pt loss maps',unit='map',disable=not progress,
+            bar=tqdm(total=frames+(3 if center_ghz is None else 2),desc='5pt loss maps',unit='map',disable=not progress,
                      bar_format='{desc}: {n_fmt}/{total_fmt} [{elapsed} elapsed, ETA {remaining}]')
             def acquire(grid,shots,name):
                 compiled=time.perf_counter()
@@ -337,7 +348,8 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES):
                     save_block(folder,name,block)
                     return block
                 return acquire_records(soc,program,cfg,shots,shots*len(grid)*5,folder,name,process=process)
-            summary=collect(folder,acquire,manifest,frames=frames,update=lambda:bar.update(1),acquire_saves_block=True)
+            summary=collect(folder,acquire,manifest,frames=frames,update=lambda:bar.update(1),
+                            acquire_saves_block=True,center_ghz=center_ghz)
             plot_result(folder,summary)
     except KeyboardInterrupt:
         manifest.update(status='interrupted',error='KeyboardInterrupt')
@@ -367,12 +379,14 @@ def main(argv=None):
     parser.add_argument('--data-root',type=Path);parser.add_argument('--correction-json',type=Path)
     parser.add_argument('--quiet',action='store_true')
     parser.add_argument('--frames',type=int,default=FRAMES,help='finite local frame count, 1--2000 (default: 40)')
+    parser.add_argument('--center-ghz',type=float,help='record explicit local window without a scout/feature-selection gate')
     args=parser.parse_args(argv)
-    try:requested_plan=plan(frames=args.frames)
+    try:requested_plan=plan(frames=args.frames,center_ghz=args.center_ghz)
     except ValueError as exc:parser.error(str(exc))
     if args.plan:
         print(json.dumps(requested_plan,indent=2));return 0
-    folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,frames=args.frames)
+    folder=run(data_root=args.data_root,correction_json=args.correction_json,progress=not args.quiet,
+               frames=args.frames,center_ghz=args.center_ghz)
     status=json.loads((folder/'manifest.json').read_text())['status']
     return 0 if status=='complete' else 1
 

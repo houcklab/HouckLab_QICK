@@ -1,0 +1,76 @@
+{
+  "run": "2026-10-05T05:45:44.446897+00:00",
+  "status": "unresolved",
+  "error": "no resolved bidirectional loss trough in the scout",
+  "requested_frames": 1000,
+  "actual_local_frames": 0,
+  "complete_scout_records": 313750,
+  "received_scout_records": 313750,
+  "scout_acquisition_s": 37.50642410013825,
+  "source_hash_verified": true,
+  "median_reference_contrast": 0.4800000000000001,
+  "previous_median_reference_contrast": 0.556,
+  "selection_thresholds": {
+    "all_depth": 0.12,
+    "all_score": 4.5,
+    "direction_depth": 0.06,
+    "direction_score": 2.0
+  },
+  "top_candidates": [
+    {
+      "center_ghz": 4.062,
+      "depth": {
+        "all": 0.30277630530076394,
+        "forward": 0.16764323595443142,
+        "reverse": 0.44326935462321093
+      },
+      "scores": {
+        "all": 4.5899178172070645,
+        "forward": 1.8681218181351278,
+        "reverse": 4.518614188322697
+      },
+      "min_contrast": {
+        "all": 0.388,
+        "forward": 0.33599999999999997,
+        "reverse": 0.39999999999999997
+      }
+    },
+    {
+      "center_ghz": 4.194,
+      "depth": {
+        "all": 0.2387532757728334,
+        "forward": 0.2465293958187943,
+        "reverse": 0.23639396613702557
+      },
+      "scores": {
+        "all": 3.935841760534339,
+        "forward": 3.1030736980290965,
+        "reverse": 2.5214485903764587
+      },
+      "min_contrast": {
+        "all": 0.44399999999999995,
+        "forward": 0.416,
+        "reverse": 0.40800000000000003
+      }
+    },
+    {
+      "center_ghz": 4.106,
+      "depth": {
+        "all": 0.234975104918617,
+        "forward": 0.3667609785360152,
+        "reverse": 0.12497517487153825
+      },
+      "scores": {
+        "all": 3.2430519391469845,
+        "forward": 3.5588925252849894,
+        "reverse": 1.2009950315605826
+      },
+      "min_contrast": {
+        "all": 0.41600000000000004,
+        "forward": 0.376,
+        "reverse": 0.4
+      }
+    }
+  ],
+  "interpretation": "Only the wide scout was acquired. Loss is visible near the prior window but no candidate passed the conservative discovery gate. No longer-series or switching result exists."
+}

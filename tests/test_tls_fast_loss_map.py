@@ -229,3 +229,35 @@ def test_cli_passes_extended_count_to_runner_without_implicit_loop(tmp_path,monk
     monkeypatch.setattr(m,'run',run)
     assert m.main(['--run','--frames','1000'])==0
     assert counts==[1000]
+
+
+def test_explicit_window_records_even_flat_data_without_a_scout_gate(tmp_path):
+    m=module();called=[]
+    def acquire(grid,shots,name):
+        called.append((name,grid.copy(),shots))
+        return block(grid,shots,center=5.)
+    manifest={'status':'initializing','completed':[]}
+    result=m.collect(tmp_path,acquire,manifest,frames=3,center_ghz=4.108)
+    assert [x[0] for x in called]==['local_pre','frame_0000','frame_0001','frame_0002','local_post']
+    assert called[0][1]==pytest.approx(np.arange(4098,4119)/1000)
+    assert all(np.array_equal(x[1],called[0][1]) for x in called)
+    assert result['automatic_switching_claim'] is False
+    assert manifest['selection']['mode']=='explicit_window'
+    assert manifest['selection']['fresh_feature_claim'] is False
+
+
+def test_explicit_plan_and_cli_keep_local_reference_maps_and_validate_band(tmp_path,monkeypatch):
+    m=module();p=m.plan(frames=1000,center_ghz=4.108)
+    assert p['scout_shots']==0 and p['scout_ghz'] is None
+    assert p['window_center_ghz']==4.108
+    assert p['local_pre_post_shots']==250 and p['shots_per_condition_per_frame']==40
+    for invalid in (3.79,4.31,float('nan')):
+        with pytest.raises(ValueError,match='band'):m.plan(center_ghz=invalid)
+    observed=[]
+    def run(**kwargs):
+        observed.append(kwargs)
+        (tmp_path/'manifest.json').write_text('{"status":"complete"}')
+        return tmp_path
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--frames','1000','--center-ghz','4.108'])==0
+    assert observed[0]['center_ghz']==4.108 and observed[0]['frames']==1000
