@@ -25,13 +25,17 @@ REFERENCE_SHOTS=250
 
 
 def plan(*,frames=FRAMES,shots=SHOTS,reference_every=REFERENCE_EVERY,delay_us=25.,
-         center_ghz=3.970,width_mhz=50,step_mhz=.5,readout_gain=940,continuous=False):
+         center_ghz=3.970,width_mhz=50,step_mhz=.5,readout_gain=940,continuous=False,
+         reference_shots=None):
     grid=fast.local_grid(center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
     fast.readout_base_config({},readout_gain)
     for value,name,lo,hi in [(frames,'frames',1,2000),(shots,'shots',4,250),(reference_every,'reference_every',1,2000)]:
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError(f'{name} must be an integer between {lo} and {hi}')
-    if shots%2:raise ValueError('shots must be even to balance sweep directions')
+    reference_shots=shots if reference_shots is None else reference_shots
+    if isinstance(reference_shots,bool) or not isinstance(reference_shots,int) or not 4<=reference_shots<=250:
+        raise ValueError('reference_shots must be an integer between 4 and 250')
+    if shots%2 or reference_shots%2:raise ValueError('shots must be even to balance sweep directions')
     if not np.isfinite(delay_us) or not .1<=delay_us<=100.:
         raise ValueError('delay_us must be finite and between .1 and 100 us')
     refs=2+(frames-1)//reference_every
@@ -40,7 +44,7 @@ def plan(*,frames=FRAMES,shots=SHOTS,reference_every=REFERENCE_EVERY,delay_us=25
                 window_center_ghz=float(center_ghz),local_width_mhz=width_mhz,local_step_mhz=step_mhz,
                 local_points=len(grid),frames=frames,shots_per_condition_per_frame=shots,
                 science_records_per_frame=len(grid)*shots,science_measurement_reduction_vs_five_point=5,
-                reference_every_science_frames=reference_every,periodic_reference_shots=shots,
+                reference_every_science_frames=reference_every,periodic_reference_shots=reference_shots,
                 local_pre_post_shots=REFERENCE_SHOTS,reference_blocks_per_batch=refs,
                 readout_gain=readout_gain,reset='production active-reset timing throughout',
                 full_corrected_return_us=5.,repeat_batches=bool(continuous),
@@ -137,9 +141,11 @@ def normalize_frames(frames,references):
 
 
 def collect(folder,acquire,manifest,*,frames=FRAMES,shots=SHOTS,reference_every=REFERENCE_EVERY,
-            delay_us=25.,center_ghz=3.970,width_mhz=50,step_mhz=.5,update=None,acquire_saves_block=False):
-    plan(frames=frames,shots=shots,reference_every=reference_every,delay_us=delay_us,
-         center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
+            delay_us=25.,center_ghz=3.970,width_mhz=50,step_mhz=.5,update=None,acquire_saves_block=False,
+            reference_shots=None):
+    requested=plan(frames=frames,shots=shots,reference_every=reference_every,delay_us=delay_us,
+         center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,reference_shots=reference_shots)
+    reference_shots=requested['periodic_reference_shots']
     folder=Path(folder);grid=fast.local_grid(center_ghz,width_mhz=width_mhz,step_mhz=step_mhz)
     science=[];refs=[];rows=[]
     def measure(name,kind,count):
@@ -156,7 +162,7 @@ def collect(folder,acquire,manifest,*,frames=FRAMES,shots=SHOTS,reference_every=
             rows.append(dict(index=j,started_epoch_s=x['started_epoch_s'],finished_epoch_s=x['finished_epoch_s'],
                              start=x['started_monotonic_s'],end=x['finished_monotonic_s'],compile_s=x['compile_s']))
             if (j+1)%reference_every==0 and j+1<frames:
-                name=f'reference_{j+1:04d}';refs.append((name,measure(name,'reference',shots)))
+                name=f'reference_{j+1:04d}';refs.append((name,measure(name,'reference',reference_shots)))
         refs.append(('local_post',measure('local_post','reference',REFERENCE_SHOTS)))
     finally:
         # No extrapolation after a stop: frames after the last reference remain raw only.
@@ -201,9 +207,10 @@ def plot_result(folder):
 
 def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,shots=SHOTS,
         reference_every=REFERENCE_EVERY,delay_us=25.,center_ghz=3.970,width_mhz=50,step_mhz=.5,
-        readout_gain=940,continuous=False):
+        readout_gain=940,continuous=False,reference_shots=None):
     requested=plan(frames=frames,shots=shots,reference_every=reference_every,delay_us=delay_us,
-                   center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,readout_gain=readout_gain,continuous=continuous)
+                   center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,readout_gain=readout_gain,continuous=continuous,
+                   reference_shots=reference_shots)
     from tqdm import tqdm
     from . import TLSControlledNoise as noise,TLSPumpProbeLocalizer as localizer
     from . import FivePointApplesToApples as five,TLSSpectroscopy as tls,ThreePointApplesToApples as three
@@ -252,7 +259,8 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,shots=
                     save_block(folder,name,x,kind=kind,delay_us=delay_us);return x
                 return fast.acquire_records(soc,program,cfg,count,count*len(grid)*conditions,folder,name,process=process)
             collect(folder,acquire,manifest,frames=frames,shots=shots,reference_every=reference_every,delay_us=delay_us,
-                    center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,update=lambda:bar.update(1),acquire_saves_block=True)
+                    center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,update=lambda:bar.update(1),acquire_saves_block=True,
+                    reference_shots=reference_shots)
             plot_result(folder)
     except KeyboardInterrupt:manifest.update(status='interrupted',error='KeyboardInterrupt')
     except ValueError as exc:manifest.update(status='unresolved',error=str(exc))
@@ -275,6 +283,8 @@ def main(argv=None):
     parser.add_argument('--data-root',type=Path);parser.add_argument('--correction-json',type=Path)
     parser.add_argument('--frames',type=int,default=FRAMES);parser.add_argument('--shots',type=int,default=SHOTS)
     parser.add_argument('--reference-every',type=int,default=REFERENCE_EVERY)
+    parser.add_argument('--reference-shots',type=int,default=None,
+                        help='Shots per periodic reference condition; defaults to science shots. Endpoints remain 250.')
     parser.add_argument('--delay-us',type=float,default=25.)
     parser.add_argument('--center-ghz',type=float,default=3.970);parser.add_argument('--width-mhz',type=int,default=50)
     parser.add_argument('--step-mhz',type=float,choices=(.5,1.,2.),default=.5)
@@ -282,7 +292,7 @@ def main(argv=None):
     args=parser.parse_args(argv)
     options=dict(frames=args.frames,shots=args.shots,reference_every=args.reference_every,delay_us=args.delay_us,
                  center_ghz=args.center_ghz,width_mhz=args.width_mhz,step_mhz=args.step_mhz,
-                 readout_gain=args.readout_gain,continuous=args.loop)
+                 readout_gain=args.readout_gain,continuous=args.loop,reference_shots=args.reference_shots)
     try:requested=plan(**options)
     except ValueError as exc:parser.error(str(exc))
     if args.plan:print(json.dumps(requested,indent=2));return 0

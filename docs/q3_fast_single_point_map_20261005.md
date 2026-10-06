@@ -150,3 +150,63 @@ The calibration failure must be diagnosed separately; do not lower its gate.
 
 The maintained test suite passed: 1,475 tests in 40.51 s. An independent review
 found no actionable issues in the timing change.
+
+## October 6: minimum-shot full-band recording
+
+The user requested replacing the running 50 MHz movie with an infinite
+3.9–4.3 GHz movie at the fastest supported settings. The running October 6
+process still has the old 40 µs return loaded. Pulling alone cannot alter an
+already imported module: stop it with Ctrl+C, wait for the shell prompt,
+then pull and launch a new process. The committed fast-map timing already
+uses a full 5 µs corrected return before final readout.
+
+Retain 0.5 MHz spacing (801 frequencies) and the 25 µs science probe, but
+use four alternating sweeps per science map: 3,204 final records. This is
+the runner's minimum supported shot count, and individual maps will be
+noisy. All raw shots are retained for later averaging. Readout integration
+remains 3.5 µs at gain 940; verified active-reset feedback/recovery timing
+remains unchanged. Shortening those further has not been validated.
+
+Added `--reference-shots` for independent periodic-reference statistics.
+Its default is the science count, preserving existing commands. The wide
+command uses 40 shots per periodic-reference condition every 100 science
+maps, and existing 250-shot endpoint references. Four-shot P0/P1 estimates
+would add substantial frequency-dependent normalization noise; using more
+shots in sparse reference blocks avoids that particular shortcut. Reference
+interpolation still assumes no unobserved rapid reference changes.
+
+Each batch contains 1,000 science maps, nine periodic reference blocks and
+two endpoint reference blocks, with a fresh calibration before the next
+batch. The loop has no total map limit; it stops on Ctrl+C or a calibration/
+acquisition error. Reference drift is flagged and masks derived data while
+raw IQ survives. The first high-shot full-band reference will take longer
+than a science map; later references and recalibrations create real pauses.
+
+```bash
+git -c gc.auto=0 pull --ff-only origin tls-spectroscopy
+python -u -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSFastSinglePointMap --run --loop --frames 1000 --center-ghz 4.100 --width-mhz 400 --step-mhz 0.5 --delay-us 25 --shots 4 --reference-every 100 --reference-shots 40 --readout-gain 940
+```
+
+The most recent twenty completed science maps in the old 50 MHz batch
+`q3_fast_single_point_map_20261006T061823Z_4a2d681d` had median acquisition
+0.511 s, compile 0.028 s and start spacing 0.673 s. The new full-band map
+has fewer records (3,204 versus 4,040) and a shorter return, so roughly
+0.5–1 s per science map is a planning estimate. It is not an observed
+full-band cadence, and reference/calibration pauses are excluded.
+
+Offline QICK 0.2.133 compilation with Python 3.10/NumPy 1.26.4 and the
+saved board/calibration confirms all three 801-frequency block types fit:
+science four shots uses 761/8,192 instructions and 3,204 records; periodic
+references 40 shots use 1,527 instructions and 96,120 records; endpoint
+references 250 shots use 1,527 instructions and 600,750 records. Maximum
+waveform memory is 55,040/65,536 samples. The adjacent
+`q3_fast_single_point_full_band_20261006_preflight.json` retains full
+memory/stream-bank reports and realized frequency errors. This checks
+compilation and memory, not execution or cadence on hardware.
+
+Validation: 21 single-point tests passed, including independent reference
+counts, minimum-shot full-band planning, invalid inputs, saved reference
+array dimensions and repeated CLI propagation. Maintained suite: 1,482
+passed. CLI plan, Python compilation and whitespace checks passed;
+independent review found no actionable findings. Existing production/reset,
+initialize.py and QUA sources are unchanged.

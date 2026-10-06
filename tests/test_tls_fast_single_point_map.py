@@ -172,3 +172,37 @@ def test_periodic_reference_drift_masks_derived_results_but_preserves_raw_shots(
     with np.load(tmp_path/'normalized.npz') as z:
         assert np.isnan(z['survival']).all() and np.isfinite(z['raw_probability']).all()
     assert np.load(tmp_path/'frame_0002.npz')['states'].size==4040
+
+
+def test_wide_minimum_shot_plan_keeps_reference_precision_independent():
+    m=module();p=m.plan(frames=1000,shots=4,reference_every=100,reference_shots=40,
+                       center_ghz=4.1,width_mhz=400,step_mhz=.5,continuous=True)
+    assert p['local_points']==801 and p['science_records_per_frame']==3204
+    assert p['periodic_reference_shots']==40 and p['full_corrected_return_us']==5
+    assert p['reference_blocks_per_batch']==11 and p['total_frame_limit'] is None
+    grid=m.fast.local_grid(4.1,width_mhz=400,step_mhz=.5)
+    assert grid[0]==3.9 and grid[-1]==4.3
+    assert m.plan(shots=4)['periodic_reference_shots']==4  # Existing behavior retained.
+
+
+@pytest.mark.parametrize('shots',[0,3,251,True,float('nan')])
+def test_invalid_independent_reference_shots_rejected(shots):
+    with pytest.raises(ValueError):module().plan(reference_shots=shots)
+
+
+def test_independent_reference_shots_reach_collection_and_repeated_cli(tmp_path,monkeypatch):
+    m=module();calls=[]
+    def acquire(grid,shots,name,kind):
+        calls.append((kind,shots));return block(grid,shots,kind,len(calls))
+    manifest={'completed':[],'plan':m.plan(frames=3,shots=4,reference_every=2,reference_shots=40)}
+    m.collect(tmp_path,acquire,manifest,frames=3,shots=4,reference_every=2,reference_shots=40)
+    assert calls==[('reference',250),('science',4),('science',4),('reference',40),('science',4),('reference',250)]
+    with np.load(tmp_path/'reference_0002.npz') as z:assert z['states'].shape==(3,101,40)
+    options=[]
+    def run(**kw):
+        folder=tmp_path/f'b{len(options)}';folder.mkdir()
+        (folder/'manifest.json').write_text(json.dumps({'status':'complete' if not options else 'interrupted'}))
+        options.append(kw);return folder
+    monkeypatch.setattr(m,'run',run)
+    assert m.main(['--run','--loop','--shots','4','--reference-shots','40'])==130
+    assert len(options)==2 and all(x['reference_shots']==40 and x['shots']==4 for x in options)
