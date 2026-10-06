@@ -1,5 +1,11 @@
 # q3 pump–probe notebook: 26 September 2026
 
+Historical record: the experimental runners named below were retired in the
+6 October 2026 cleanup. Recover their source from pre-cleanup commit
+`969c8c0c` (`git show 969c8c0c:<repository-relative-path>`). Current fast TLS
+entrypoints and the exact retirement list are recorded in
+[cleanup_2026_10_06.json](cleanup_2026_10_06.json).
+
 Measurement-PC workflow: pull `tls-spectroscopy`, run the named Python module,
 then inspect NAS results before selecting another experiment. No hardware is
 accessed by `--plan`. Do not run another acquisition concurrently.

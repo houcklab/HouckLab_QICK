@@ -22,14 +22,11 @@ import uuid
 
 import numpy as np
 
+from .tls_fast_support import checkpoint
+
 DELAYS_US = (2., 10., 25.)
 REFERENCE_US = .1
 SCOUT_SHOTS, FRAME_SHOTS, FRAMES = 250, 40, 40
-
-
-def checkpoint(path, payload):
-    from .TLSResidentEFPilot import checkpoint as save
-    save(path, payload)
 
 
 def atomic_npz(path, **arrays):
@@ -314,7 +311,7 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,center
     requested_plan=plan(frames=frames,center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,
                         continuous=continuous,readout_gain=readout_gain)
     from tqdm import tqdm
-    from . import TLSControlledNoise as noise, TLSPumpProbeLocalizer as localizer
+    from . import tls_fast_support as noise, tls_fast_support as localizer
     from . import FivePointApplesToApples as five, TLSSpectroscopy as tls
     from . import ThreePointApplesToApples as three
     from ..active_reset_OPX.production import prepare_reset_session

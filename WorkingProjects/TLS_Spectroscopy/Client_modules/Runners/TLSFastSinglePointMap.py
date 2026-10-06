@@ -212,7 +212,7 @@ def run(*,data_root=None,correction_json=None,progress=True,frames=FRAMES,shots=
                    center_ghz=center_ghz,width_mhz=width_mhz,step_mhz=step_mhz,readout_gain=readout_gain,continuous=continuous,
                    reference_shots=reference_shots)
     from tqdm import tqdm
-    from . import TLSControlledNoise as noise,TLSPumpProbeLocalizer as localizer
+    from . import tls_fast_support as noise, tls_fast_support as localizer
     from . import FivePointApplesToApples as five,TLSSpectroscopy as tls,ThreePointApplesToApples as three
     from ..active_reset_OPX import production,integration,programs,classifier,acquisition
     root=Path(data_root or localizer.DATA_ROOT);correction=localizer.checked_correction(root,correction_json)

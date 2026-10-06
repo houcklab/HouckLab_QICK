@@ -174,7 +174,7 @@ def test_run_pins_q3_and_correction_then_restores_pc_settings_on_failure(tmp_pat
     pytest.importorskip('qick')
     import os
     from WorkingProjects.TLS_Spectroscopy.Client_modules import Runners
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSPumpProbeLocalizer as localizer
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import tls_fast_support as localizer
     m=module()
     previous={'qubit_freq':4367.760,'read_pulse_freq':7026.520,'sigma':2.}
     tls=SimpleNamespace(BaseConfig=previous,QUBIT='q4',SET_YOKO=True,outerFolder='previous',
@@ -434,7 +434,7 @@ def test_cli_loop_uses_exact_dense_grid_in_each_fresh_run(tmp_path,monkeypatch):
 
 def test_selected_readout_gain_reaches_calibration_and_runtime_without_mutating_defaults():
     m=module()
-    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.Q3QuasiparticlePumping import base_config
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.tls_fast_support import base_config
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
         build_calibration_config, ProductionResetSession,
     )

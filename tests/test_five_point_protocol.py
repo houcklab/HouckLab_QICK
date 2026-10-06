@@ -2281,29 +2281,6 @@ def test_series_override_accepts_explicit_q3_sync_cadence(monkeypatch):
     assert params["sync_slot_s"] == 250.0
 
 
-def test_q3_tls_pump_probe_runner_is_explicitly_bound_to_q3_dac_branch():
-    """The direct-TLS runner must never inherit its positive-DAC defaults."""
-    path = Path(
-        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/"
-        "TLS4p15PumpProbe.py"
-    )
-    source = path.read_text()
-
-    assert '"dc_search_min": _float("Q3_TLS_PUMP_DC_MIN", -20550.0, environ)' in source
-    assert '"dc_search_max": _float("Q3_TLS_PUMP_DC_MAX", -11800.0, environ)' in source
-    assert '"Q3_TLS_PUMP_CENTER_GHZ", 4.150' in source
-
-
-def test_q3_tls_pump_probe_uses_the_native_active_reset_acquisition_path():
-    path = Path(
-        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/"
-        "TLSSaturationRecovery.py"
-    )
-    source = path.read_text()
-
-    assert "acquire_tls_saturation_iq" in source
-
-
 def test_native_tls_saturation_quantizes_inverse_model_coordinates_to_dac_samples():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import integration
 
