@@ -158,4 +158,3 @@ def checkpoint(path, payload):
             return str(value)
         raise TypeError(f'unsupported metadata type {type(value).__name__}')
     _checkpoint(path, json.loads(json.dumps(payload, default=encode)))
-
