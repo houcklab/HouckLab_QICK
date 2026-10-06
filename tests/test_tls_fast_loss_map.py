@@ -12,6 +12,34 @@ def module():
     return importlib.import_module(NAME)
 
 
+@pytest.mark.parametrize('hold_us', [.1, 2.1, 10.1, 25.1])
+def test_fast_payload_waits_five_us_of_corrected_return_before_readout(hold_us, monkeypatch):
+    pytest.importorskip('qick')
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX import programs
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+    m=module()
+    tls=SimpleNamespace(BaseConfig={'flux_predistortion_recovery_us':40.},FLUX_FIT_PARAMS=[])
+    session=SimpleNamespace(apply=lambda cfg:dict(cfg,reset_mode='opx_unbounded'))
+    compensation={'segment_edges_ns':[0.,4000.,8000.,40000.],
+                  'multipliers':[1.03,1.02,1.01,1.]}
+    cfg=m.science_config(tls,compensation,session)
+    p=object.__new__(programs.OPXResetT1NPointProgram)
+    p.cfg=cfg
+    p._t1_ff_settle_us=.5
+    p._t1_ff_return_prefix_us=cfg['flux_predistortion_return_prefix_us']
+    p._t1_ff_predistortion_mode='stateful'
+    p._t1_ff_predistortion_recovery_us=cfg['flux_predistortion_recovery_us']
+    p._t1_ff_compensation=compensation
+    events=[]
+    p._play_dynamic_relative_segment=lambda coefficient,duration,anchor:events.append(('segment',anchor,duration))
+    p.sync_all=lambda cycles:events.append(('sync',cycles))
+    monkeypatch.setattr(ff_pulse,'play_hard_step',lambda prog,gain:events.append(('park',gain)))
+    programs.OPXResetT1FluxSweepProgram._play_dynamic_compensated_hold(p,hold_us)
+    assert sum(e[2] for e in events if e[:2]==('segment','park'))==pytest.approx(5.)
+    assert events[-1]==('sync',0)  # The flux tail must finish before readout.
+    assert tls.BaseConfig['flux_predistortion_recovery_us']==40.
+
+
 def block(grid, shots=40, center=4.1):
     rng = np.random.default_rng(78)
     f = np.asarray(grid)
@@ -214,7 +242,7 @@ def test_processing_interrupt_preserves_received_iq_after_hardware_returns(tmp_p
 def test_extended_plan_is_finite_and_keeps_validated_shots_and_grid():
     m=module();p=m.plan(frames=1000)
     assert p['frames']==1000 and p['shots_per_condition_per_frame']==40
-    assert p['local_points']==21 and p['full_corrected_return_us']==40.
+    assert p['local_points']==21 and p['full_corrected_return_us']==5.
     assert m.plan()['frames']==40
     for invalid in (0,-1,2001):
         with pytest.raises(ValueError,match='frames'):m.plan(frames=invalid)

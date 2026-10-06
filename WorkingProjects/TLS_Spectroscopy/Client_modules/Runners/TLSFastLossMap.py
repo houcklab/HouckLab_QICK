@@ -69,7 +69,7 @@ def plan(*,frames=FRAMES,center_ghz=None,width_mhz=20,step_mhz=1.,continuous=Fal
                 batch_calibration='fresh production active-reset calibration before every batch',
                 loop_stop_policy='Ctrl+C or any acquisition/calibration error; retain and flag reference drift',
                 conditions=['P0', 'P1', 'Ps_2us', 'Ps_10us', 'Ps_25us'],
-                reference_hold_us=REFERENCE_US, full_corrected_return_us=40.,
+                reference_hold_us=REFERENCE_US, full_corrected_return_us=5.,
                 local_pre_post_shots=SCOUT_SHOTS,
                 timing='per-frame wall time and monotonic time, per-transfer host receipt time; no individual hardware timestamps',
                 estimated_frame_period_s=[period,1.3*period],
@@ -266,7 +266,7 @@ def science_config(tls,compensation,session):
     base.update(shots=FRAME_SHOTS,apply_flux_tail_compensation=True,
                 flux_tail_compensation=compensation,flux_fit_params=tls.FLUX_FIT_PARAMS,
                 qubit_pulse_style='arb',flux_settle_time_us=.5,
-                flux_predistortion_return_prefix_us=.5,flux_predistortion_recovery_us=40.,
+                flux_predistortion_return_prefix_us=5.,flux_predistortion_recovery_us=5.,
                 flux_predistortion_overlap_payload_readout=False,flux_predistortion_timing_matched_off=False,
                 readout_thermalization_us=10.,opx_t1_3pt_gain_lookup=True,
                 opx_reverse_survival_order=False)

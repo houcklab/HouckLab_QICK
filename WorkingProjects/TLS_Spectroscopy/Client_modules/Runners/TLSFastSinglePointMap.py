@@ -43,7 +43,7 @@ def plan(*,frames=FRAMES,shots=SHOTS,reference_every=REFERENCE_EVERY,delay_us=25
                 reference_every_science_frames=reference_every,periodic_reference_shots=shots,
                 local_pre_post_shots=REFERENCE_SHOTS,reference_blocks_per_batch=refs,
                 readout_gain=readout_gain,reset='production active-reset timing throughout',
-                full_corrected_return_us=40.,repeat_batches=bool(continuous),
+                full_corrected_return_us=5.,repeat_batches=bool(continuous),
                 total_frame_limit=None if continuous else frames,
                 batch_calibration='fresh production active-reset calibration for every batch',
                 loop_stop_policy='Ctrl+C or acquisition/calibration error; retain and flag reference drift',
