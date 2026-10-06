@@ -33,11 +33,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
     save_wall_clock_repeat_full_outputs,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.protocol_crossover import (
-    apply_phase as apply_crossover_phase,
-    annotate_metadata as annotate_crossover_metadata,
-    enabled as crossover_enabled,
-)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
     AUTOMATIC_RECALIBRATION_MIN,
     PASSIVE_T1_RESET_US,
@@ -75,11 +70,7 @@ P6_3PT_APPLES_TO_APPLES = {
 
 def runtime_parameters(environ=None):
     """Build this process's parameters without importing hardware clients."""
-    return apply_crossover_phase(
-        P6_3PT_APPLES_TO_APPLES,
-        expected="legacy_off",
-        environ=environ,
-    )
+    return dict(P6_3PT_APPLES_TO_APPLES)
 
 
 def _target_frequency_grid_ghz(p):
@@ -236,11 +227,6 @@ def main():
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import (
         TLSSpectroscopy as tls,
     )
-    if crossover_enabled("legacy_off"):
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.FivePointApplesToApples import (
-            install_scan_calibration,
-        )
-        install_scan_calibration(tls)
     gc.collect()
     tls._set_yoko_if_requested()
     soc, soccfg = tls.makeProxy()
@@ -293,7 +279,6 @@ def main():
         print(f"automatic reset calibration refreshed: {state['session'].calibration_output}")
 
     def factory(repeat_metadata):
-        repeat_metadata.update(annotate_crossover_metadata({}, p))
         exp = T13PointVsFlux(
             soc=soc,
             soccfg=soccfg,

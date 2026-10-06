@@ -2,14 +2,13 @@
   "date": "2026-10-06",
   "baseline_commit": "969c8c0cfc2b20ecffe85051447843e10295e8d7",
   "scope": "Retire superseded TLS experiments and q3/q4 one-off diagnostics; preserve current measurement entrypoints and production modules.",
-  "deleted_runner_count": 78,
-  "deleted_test_count": 66,
+  "deleted_runner_count": 81,
+  "deleted_test_count": 68,
   "preserved_runner_entrypoints": [
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/BasicAutoTune.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/FivePointApplesToApples.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/FluxRamseyCryoscope.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/GateCalibration.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ProtocolSelectionBenchmark.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ReadoutCharacterization.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/SevenPointApplesToApples.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/SingleQubitCoherence.py",
@@ -20,9 +19,7 @@
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/TLSSpectroscopy.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/Test.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ThreePointApplesToApples.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ZeroFlux.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_crossover.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_selection_benchmark.py"
+    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ZeroFlux.py"
   ],
   "preserved_unchanged": [
     "WorkingProjects/TLS_Spectroscopy/Client_modules/active_reset_OPX/",
@@ -74,6 +71,7 @@
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Experiments/mTLSSaturation.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/P4ProductionTiming.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ParkLandingSpec.py",
+    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ProtocolSelectionBenchmark.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/Q3QuasiparticleProgram.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/Q3QuasiparticlePumping.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/Q4EchoTuneup.py",
@@ -150,7 +148,11 @@
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/TLSTwoVisitMemory.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/TLSWeakAfterglowScreen.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/TargetReadoutCheck.py",
+    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_crossover.py",
+    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_selection_benchmark.py",
     "tests/test_park_landing_spec.py",
+    "tests/test_protocol_crossover.py",
+    "tests/test_protocol_selection_benchmark.py",
     "tests/test_q3_quasiparticle_pumping.py",
     "tests/test_q4_echo_tuneup.py",
     "tests/test_q4_repeated_t1.py",
@@ -233,7 +235,6 @@
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/FivePointApplesToApples.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/FluxRamseyCryoscope.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/GateCalibration.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ProtocolSelectionBenchmark.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ReadoutCharacterization.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/SevenPointApplesToApples.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/SingleQubitCoherence.py",
@@ -241,9 +242,7 @@
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/SweetSpotReadoutCharacterization.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/TLSSpectroscopy.py",
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ThreePointApplesToApples.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ZeroFlux.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_crossover.py",
-    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_selection_benchmark.py"
+    "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ZeroFlux.py"
   ],
   "preserved_shared_diagnostic_utilities": [
     "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/Test.py (saved step-response, trace extraction, and reset diagnostics remain tested)"
@@ -255,6 +254,60 @@
   "protected_surviving_source_verification": {
     "python_files_checked": 93,
     "baseline_and_current_aggregate_sha256": "d5c16dd5ffe4f1785989f569566424399d6337cc3952c26f0a8a8c8a12d36b2e",
-    "method": "Every retained tracked Client_modules Python source except the two import-relocated fast runners was byte-compared with baseline HEAD969c8c0c; all match. Aggregate SHA256 uses sorted git-ls-files path, NUL, file bytes, NUL."
-  }
+    "method": "Every retained tracked Client_modules Python source except the two import-relocated fast runners was byte-compared with baseline HEAD969c8c0c; all match. Aggregate SHA256 uses sorted git-ls-files path, NUL, file bytes, NUL.",
+    "phase": "Initial cleanup before this separately fingerprinted optional-crossover retirement follow-up; preserved as historical verification."
+  },
+  "followups": [
+    {
+      "baseline_commit": "d619a2b090dddf6e3d17b5c53949ca8d87ab5e2c",
+      "normal_runtime_cases": [
+        {},
+        {
+          "Q3_5PT_DURATION_MIN": "12.5",
+          "Q3_5PT_MAX_RUNS": "4",
+          "Q3_5PT_PREDISTORTION": "off",
+          "Q3_5PT_RECOVERY_US": "5",
+          "Q3_5PT_SHOTS": "40",
+          "Q3_5PT_REFERENCE_HOLD_US": "0.1",
+          "Q3_5PT_DELAYS_US": "2,10,25",
+          "Q3_5PT_DC_MIN": "-25146",
+          "Q3_5PT_DC_MAX": "-11800",
+          "Q3_5PT_FREQ_MIN_GHZ": "3.8",
+          "Q3_5PT_FREQ_MAX_GHZ": "4.3",
+          "Q3_5PT_FREQ_STEP_MHZ": "2",
+          "Q3_5PT_SYNC_SLOT_S": "180",
+          "Q3_5PT_SYNC": "off"
+        }
+      ],
+      "runner_ast_without_crossover_sha256": {
+        "ThreePointApplesToApples.py": "89778df4e4d4b4415dd83900a0ccc6115785945b3ab2a54327762236f427bce7",
+        "FivePointApplesToApples.py": "70d0075651469c288f5edcdfa9ae68fc67b8faf7a5b59d2d6797c4bd7e36d538"
+      },
+      "normal_runtime_parameters_sha256": {
+        "ThreePointApplesToApples.py": [
+          "55ec2ac8feb31f79195e80c08b999977873784e3461cbdd3b8e59e38b0a8c60e",
+          "55ec2ac8feb31f79195e80c08b999977873784e3461cbdd3b8e59e38b0a8c60e"
+        ],
+        "FivePointApplesToApples.py": [
+          "dd52d232df5138b20045247fc6a39cf34729808dcdece2eafe655e7a246f53a0",
+          "b25290061e2a401c9c7109f041a88243cfa56ed94c39047d976f8e697d7447ac"
+        ]
+      },
+      "modified_sources": [
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ThreePointApplesToApples.py",
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/FivePointApplesToApples.py"
+      ],
+      "deleted_paths": [
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/ProtocolSelectionBenchmark.py",
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_crossover.py",
+        "WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/protocol_selection_benchmark.py",
+        "tests/test_protocol_crossover.py",
+        "tests/test_protocol_selection_benchmark.py"
+      ],
+      "date": "2026-10-06",
+      "reason": "User explicitly retired protocol audit, crossover and protocol-selection benchmarks as non-generalizable experimental work.",
+      "already_absent_requested_file": "ProductionProtocolAudit.py",
+      "production_change": "Removed only crossover imports, optional three-point calibration arm and crossover metadata tagging. Ordinary runtime defaults, five-point environment overrides, scan calibration, acquisition helpers and reset settings are unchanged. No replacement crossover module was created."
+    }
+  ]
 }

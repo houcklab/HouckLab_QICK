@@ -168,3 +168,42 @@ def test_retained_python_has_no_imports_of_retired_experiment_modules():
             elif isinstance(node, ast.ImportFrom):
                 assert not {a.name for a in node.names} & retired, path
                 assert not set((node.module or '').split('.')) & retired, path
+
+
+@pytest.mark.parametrize('name', ['ThreePointApplesToApples.py', 'FivePointApplesToApples.py'])
+def test_protocol_retirement_preserves_non_crossover_runner_ast(name):
+    manifest = json.loads((ROOT / 'docs/cleanup_2026_10_06.json').read_text())
+    baseline = manifest['followups'][-1]['runner_ast_without_crossover_sha256'][name]
+    tree = ast.parse((RUNNERS / name).read_text())
+    assert not any(isinstance(node, ast.Name) and 'crossover' in node.id
+                   for node in ast.walk(tree))
+    tree.body = [node for node in tree.body
+                 if not isinstance(node, ast.FunctionDef) or node.name != 'runtime_parameters']
+    fingerprint = hashlib.sha256(ast.dump(tree, include_attributes=False).encode()).hexdigest()
+    assert fingerprint == baseline
+
+
+@pytest.mark.parametrize('name', ['ThreePointApplesToApples.py', 'FivePointApplesToApples.py'])
+@pytest.mark.parametrize('case_index', [0, 1])
+def test_protocol_retirement_preserves_normal_runtime_settings_and_overrides(name, case_index):
+    manifest = json.loads((ROOT / 'docs/cleanup_2026_10_06.json').read_text())
+    followup = manifest['followups'][-1]
+    environ = followup['normal_runtime_cases'][case_index]
+    baseline = followup['normal_runtime_parameters_sha256'][name][case_index]
+    # Execute only pure parameter definitions; do not import hardware clients.
+    tree = ast.parse((RUNNERS / name).read_text())
+    params_name = ('P6_3PT_APPLES_TO_APPLES' if name.startswith('Three')
+                   else 'P6_5PT_APPLES_TO_APPLES')
+    nodes = [node for node in tree.body
+             if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and
+                                                     t.id == params_name for t in node.targets))
+             or (isinstance(node, ast.FunctionDef) and
+                 node.name in ('apply_series_overrides', 'runtime_parameters'))]
+    namespace = {'np': np, 'os': os}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), '<normal runtime settings>', 'exec'), namespace)
+    runtime = namespace['runtime_parameters']
+    def fingerprint(params):
+        return hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
+    assert fingerprint(runtime(environ)) == baseline
+    for obsolete_phase in ('legacy_off', 'current_on', 'invalid'):
+        assert fingerprint(runtime(dict(environ, Q3_PROTOCOL_CROSSOVER_PHASE=obsolete_phase))) == baseline

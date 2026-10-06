@@ -41,10 +41,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux impor
     save_wall_clock_repeat_full_outputs,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.five_point_t1 import five_point_output_metadata
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.protocol_crossover import (
-    apply_phase as apply_crossover_phase,
-    annotate_metadata as annotate_crossover_metadata,
-)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.production import (
     AUTOMATIC_RECALIBRATION_MIN,
     PASSIVE_T1_RESET_US,
@@ -210,11 +206,7 @@ def apply_series_overrides(params, environ=None):
 
 def runtime_parameters(environ=None):
     return apply_series_overrides(
-        apply_crossover_phase(
-            P6_5PT_APPLES_TO_APPLES,
-            expected="current_on",
-            environ=environ,
-        ),
+        P6_5PT_APPLES_TO_APPLES,
         environ=environ,
     )
 
@@ -672,7 +664,6 @@ def main():
         )
 
     def factory(repeat_metadata):
-        repeat_metadata.update(annotate_crossover_metadata({}, p))
         exp = T15PointVsFlux(
             soc=soc,
             soccfg=soccfg,
