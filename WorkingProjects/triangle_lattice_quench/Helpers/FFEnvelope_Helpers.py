@@ -14,7 +14,7 @@ Usage:
 def get_gains(cfg, key) -> (list):
     '''Helper function to retrieve gains and apply crosstalk correction'''
     N = len(cfg['fast_flux_chs'])
-    gains = [cfg['FF_Qubits'][str(Q)][key] for Q in range(1 ,N + 1)]
+    gains = list(cfg[{'Gain_Readout': 'FF_Readouts', 'Gain_Pulse': 'FF_Pulses', 'Gain_Expt': 'FF_Expt', 'Gain_BS': 'FF_BS', 'Gain_Dynamics': 'FF_Dynamics', 'Gain_RampInit': 'FF_RampInit'}[key]])
     gains = FF_Crosstalk_Helper.correct(gains)
 
     return np.array(gains, int)

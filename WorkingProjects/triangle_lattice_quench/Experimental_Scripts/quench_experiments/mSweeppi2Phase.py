@@ -8,7 +8,7 @@ from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhas
 from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mMottQuench import \
     MottQuenchBasicProgram, MottQuenchBase
 from triangle_lattice_quench.Helpers.Beamsplitter_Fit import fit_beamsplitter_offset
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 from triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
 import triangle_lattice_quench.Helpers.FF_utils as FF
 
@@ -36,7 +36,7 @@ class SweepPi2Phase(SweepXPhase):
     def analyze(self, data):
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)[..., None]  # (R, O=phase, T=1)
-        phases = np.asarray(data_dict[SweepHelpers.key_savename(self.x_key)], float)  # (O,) deg
+        phases = np.asarray(data_dict[NDSweepHelpers.key_savename(self.x_key)], float)  # (O,) deg
         wait_times = np.array([0.0])  # no dynamics axis in variant A
 
         self.fit_params = fit_beamsplitter_offset(Z, phases, wait_times)
@@ -71,7 +71,7 @@ class MottQuenchPi2PhaseProgram(MottQuenchBasicProgram):
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"],
                          mixer_freq=cfg["qubit_mixer_freq"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -96,12 +96,12 @@ class MottQuenchPi2PhaseProgram(MottQuenchBasicProgram):
             seed_chip = str(qp[int(self.cfg['pi2_init_index'])])
             partner_chip = str(qp[int(self.cfg['swept_qubit'])])
             # FFSeed: all at Expt, but PARTNER returned to idle -> seed qubit alone at f_int (SEED pi/2).
-            raw_seed = [self.cfg["FF_Qubits"][q]["Gain_Expt"] for q in self.FFQubits]
-            raw_seed[self.FFQubits.index(partner_chip)] = self.cfg["FF_Qubits"][partner_chip]["Gain_Pulse"]
+            raw_seed = list(self.cfg["FF_Expt"])
+            raw_seed[int(partner_chip) - 1] = self.cfg["FF_Pulses"][int(partner_chip) - 1]
             self.FFSeed = FF_Crosstalk_Helper.correct(np.array(raw_seed))
             # FFSecond: all at Expt, but SEED returned to idle -> partner alone at f_int (MEASURE pi/2).
-            raw_second = [self.cfg["FF_Qubits"][q]["Gain_Expt"] for q in self.FFQubits]
-            raw_second[self.FFQubits.index(seed_chip)] = self.cfg["FF_Qubits"][seed_chip]["Gain_Pulse"]
+            raw_second = list(self.cfg["FF_Expt"])
+            raw_second[int(seed_chip) - 1] = self.cfg["FF_Pulses"][int(seed_chip) - 1]
             self.FFSecond = FF_Crosstalk_Helper.correct(np.array(raw_second))
 
         # qubit init pulses (one Gaussian envelope per pulse)
@@ -168,56 +168,56 @@ class MottQuenchPi2PhaseProgram(MottQuenchBasicProgram):
         if getattr(self, '_wo', False):
             ### William-Oliver common-frequency scheme: both pi/2 at f_int, spectator detuned.
             # 1. Init: seed qubit at Expt(f_int), partner detuned (FFSeed) -> INIT pi/2 @ f_int.
-            self.FFPulses(self.FFSeed, self.qubit_total_length_us + FF_Delay_time)
+            self.FFPlay_Const(self.FFSeed, self.qubit_total_length_us + FF_Delay_time)
             self.pulse(ch=self.cfg["qubit_ch"], name='qubit_init_pi2', t=FF_Delay_time)
             self.delay_auto()
             # 2. Dwell: partner steps idle->Expt (FFSeed -> FFExpts), both resonant -> iSWAP.
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"],
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples"],
                                  self.FFSeed, IQPulseArray=self.cfg["IQArray_wo"], waveform_label='FFDynamics')
             self.delay_auto()
             # 3. Measure: partner at Expt(f_int), seed detuned (FFSecond) -> MEASURE pi/2 @ f_int (swept phase).
-            self.FFPulses(self.FFSecond, self.qubit_total_length_us + Second_FFPulse_delay)
+            self.FFPlay_Const(self.FFSecond, self.qubit_total_length_us + Second_FFPulse_delay)
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_measurement_pi2_{meas_idx}', t=Second_FFPulse_delay)
             self.delay_auto()
             ### Readout
-            self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+            self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
             for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
                 self.trigger(ros=[ro_ch], t=adc_trig_delay)
             self.pulse(cfg["res_ch"], name='res_drive')
             self.wait_auto()
             self.delay_auto(10)  # us
             ### FF cleanup -- mirror the unwinds with the W-O geometries
-            self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-            self.FFPulses(-1 * self.FFSeed, self.qubit_total_length_us + FF_Delay_time)
-            self.FFPulses(-1 * self.FFSecond, self.qubit_total_length_us + Second_FFPulse_delay)
-            self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"],
+            self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+            self.FFPlay_Const(-1 * self.FFSeed, self.qubit_total_length_us + FF_Delay_time)
+            self.FFPlay_Const(-1 * self.FFSecond, self.qubit_total_length_us + Second_FFPulse_delay)
+            self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples"],
                                  -1 * self.FFSeed, IQPulseArray=[-arr for arr in self.cfg["IQArray_wo"]],
                                  waveform_label='FFDynamicsInverse')
             self.delay_auto()
             return
 
         ### Init: pi/2 on the seed qubit only (no pulses on the other qubits)
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_pi2_{init_idx}', t=FF_Delay_time)
         self.delay_auto()
 
         ### Dynamics: jump to Expt_FF (seed + partner resonant; others held detuned by Ramp_State)
-        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"],
-                             self.FFPulse, IQPulseArray=self.cfg["IQArray"], waveform_label='FFDynamics')
+        self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples"],
+                             self.FFPulses, IQPulseArray=self.cfg["IQArray"], waveform_label='FFDynamics')
         self.delay_auto()
 
         ### Measurement: jump to the 2nd-pulse FF point, pi/2 on the swept qubit with swept phase
         use_dyn = bool(self.cfg.get('second_pulse_at_dynamics'))
         # use_dyn (legacy, no meas_pi2_freq): park at the swapped-frequency dynamics point (FFBS);
         # else: original behaviour (jump back to Pulse_FF, drive at the swept qubit's own freq).
-        second_FF = self.FFBS if use_dyn else self.FFPulse
+        second_FF = self.FFBS if use_dyn else self.FFPulses
         meas_pulse = f'qubit_measurement_pi2_{meas_idx}'  # freq set in _initialize
-        self.FFPulses(second_FF, self.qubit_total_length_us + Second_FFPulse_delay)
+        self.FFPlay_Const(second_FF, self.qubit_total_length_us + Second_FFPulse_delay)
         self.pulse(ch=self.cfg["qubit_ch"], name=meas_pulse, t=Second_FFPulse_delay)
         self.delay_auto()
 
         ### Readout
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
@@ -226,11 +226,11 @@ class MottQuenchPi2PhaseProgram(MottQuenchBasicProgram):
 
 
         ### FF cleanup -- mirror the parent's negative-pulse unwinds so state returns to baseline
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
-        self.FFPulses(-1 * second_FF, self.qubit_total_length_us + Second_FFPulse_delay)
-        self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"],
-                             -1 * self.FFPulse, IQPulseArray=[-arr for arr in self.cfg["IQArray"]],
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * second_FF, self.qubit_total_length_us + Second_FFPulse_delay)
+        self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples"],
+                             -1 * self.FFPulses, IQPulseArray=[-arr for arr in self.cfg["IQArray"]],
                              waveform_label='FFDynamicsInverse')
 
         self.delay_auto()
@@ -263,7 +263,7 @@ class MottQuenchPi2Phase(MottQuenchBase, SweepExperiment1D_lines):
     def analyze(self, data):
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)[..., None]  # (R, O=phase, T=1)
-        phases = np.asarray(data_dict[SweepHelpers.key_savename(self.x_key)], float)  # (O,) deg
+        phases = np.asarray(data_dict[NDSweepHelpers.key_savename(self.x_key)], float)  # (O,) deg
         wait_times = np.array([float(self.cfg.get('expt_samples', 0))])  # fixed dynamics duration
 
         self.fit_params = fit_beamsplitter_offset(Z, phases, wait_times)
@@ -297,7 +297,7 @@ class MottQuenchPi2FreqCal(MottQuenchBase, SweepExperiment1D_lines):
 
     def analyze(self, data):
         data_dict = data['data']
-        x = np.asarray(data_dict[SweepHelpers.key_savename(self.x_key)], float)  # freqs (MHz)
+        x = np.asarray(data_dict[NDSweepHelpers.key_savename(self.x_key)], float)  # freqs (MHz)
         # swept qubit's readout trace. Map the swept (0-based) position -> chip qubit ->
         # readout index, normalizing BOTH sides to str (Qubit_Readout_List / Qubit_Pulse
         # are string chip labels from build_config / _build_cfg). Mirror _on_finished's
@@ -356,8 +356,8 @@ class MottQuenchPi2GainFreqCal(MottQuenchBase, SweepExperiment2D_plots):
         # extremum extraction degenerates). Best-effort freq + pi/2 gain estimate.
         try:
             dd = data['data']
-            x = np.asarray(dd[SweepHelpers.key_savename(self.x_key)], float)  # freqs
-            y = np.asarray(dd[SweepHelpers.key_savename(self.y_key)], float)  # gains
+            x = np.asarray(dd[NDSweepHelpers.key_savename(self.x_key)], float)  # freqs
+            y = np.asarray(dd[NDSweepHelpers.key_savename(self.y_key)], float)  # gains
             # swept qubit's readout trace, indexed Z[ro][y=gain, x=freq] (engine order:
             # y outer, x inner -- see SweepExperimentND.keys = (y_key, x_key)).
             sw = int(self.cfg['swept_qubit'])
@@ -414,7 +414,7 @@ class MottQuenchPi2Phase2D(MottQuenchBase, SweepExperiment2D_plots):
     def analyze(self, data):
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)  # (R, O=phase, T=samples)
-        phases = np.asarray(data_dict[SweepHelpers.key_savename(self.y_key)], float)  # (O,) deg
+        phases = np.asarray(data_dict[NDSweepHelpers.key_savename(self.y_key)], float)  # (O,) deg
         wait_times = np.asarray(data_dict[self.x_key], float)  # (T,)
 
         self.fit_params = fit_beamsplitter_offset(Z, phases, wait_times)

@@ -1,6 +1,6 @@
 
 
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
@@ -38,7 +38,7 @@ class SweepExperiment1D_lines(SweepExperimentND):
             ylabel = None
 
         try:
-            x_key_name = SweepHelpers.key_savename(self.x_key)
+            x_key_name = NDSweepHelpers.key_savename(self.x_key)
         except:
             x_key_name = self.loop_names[0]
         X = data['data'][x_key_name]

@@ -3,14 +3,14 @@ import time
 import numpy as np
 
 from triangle_lattice_quench.Experiment import ExperimentClass
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class MultiFluxStabilitySpec(ExperimentClass):
 
     def acquire(self):
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
 
         self.y_key = "minutes_passed"
         self.y_points = self.cfg["delay_minutes"] * np.arange(self.cfg["num_steps"])
@@ -31,7 +31,7 @@ class MultiFluxStabilitySpec(ExperimentClass):
 
         fig.suptitle(str(self.titlename), fontsize=16)
 
-        y_key_name = SweepHelpers.key_savename(self.y_key)
+        y_key_name = NDSweepHelpers.key_savename(self.y_key)
         try:
             x_key_name = self.x_key
         except:

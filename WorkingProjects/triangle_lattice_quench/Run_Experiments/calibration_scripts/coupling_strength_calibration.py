@@ -5,8 +5,8 @@ Can be used when starting from a new coupling point to find the coupling of coup
 from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
-    SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
+    SingleShot
 
 
 from triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
@@ -53,10 +53,10 @@ def calibrate_coupling(pairs):
         FF_gain7_expt = Expt_FF_subsys[6]
         FF_gain8_expt = Expt_FF_subsys[7]
 
-        oscillation_gain_dict['qubit_FF_index'] = q_j if q_j != 7 else q_i
+        oscillation_gain_dict['qubit_FF_index'] = (q_j if q_j != 7 else q_i) - 1
 
-        oscillation_gain_dict['gainStart'] = Expt_FF[oscillation_gain_dict['qubit_FF_index']-1] - oscillation_gain_dict['gainRange']//2
-        oscillation_gain_dict['gainStop'] = Expt_FF[oscillation_gain_dict['qubit_FF_index']-1] + oscillation_gain_dict['gainRange']//2
+        oscillation_gain_dict['gainStart'] = FF_Expt[oscillation_gain_dict['qubit_FF_index']] - oscillation_gain_dict['gainRange']//2
+        oscillation_gain_dict['gainStop'] = FF_Expt[oscillation_gain_dict['qubit_FF_index']] + oscillation_gain_dict['gainRange']//2
 
 
 
@@ -71,8 +71,8 @@ def calibrate_coupling(pairs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())

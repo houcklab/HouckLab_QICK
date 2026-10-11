@@ -1,6 +1,6 @@
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
@@ -10,7 +10,7 @@ class CrosstalkRandomFFvsSpec(SweepExperiment2D_plots):
         self.cfg["random_ff_gain_matrix"] = np.loadtxt(self.cfg["filename"], delimiter=",").astype(int)
         print(self.cfg["random_ff_gain_matrix"])
 
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
 
         self.cfg["qubit_length"] = self.cfg.get("qubit_length") or 100  ### length of CW drive in us
 
@@ -25,5 +25,4 @@ class CrosstalkRandomFFvsSpec(SweepExperiment2D_plots):
 
     def set_up_instance(self):
         Gain_Pulse_vector = self.cfg["random_ff_gain_matrix"][self.cfg["Gain_Pulse_index"]]
-        for qubit, Gain_Pulse in zip(self.cfg["FF_Qubits"], Gain_Pulse_vector):
-            self.cfg["FF_Qubits"][qubit]["Gain_Pulse"] = Gain_Pulse
+        self.cfg["FF_Pulses"] = list(Gain_Pulse_vector)

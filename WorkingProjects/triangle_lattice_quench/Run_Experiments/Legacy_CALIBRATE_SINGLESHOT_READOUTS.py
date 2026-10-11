@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
-    SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
+    SingleShot
 
 
 def characterize_readout(config, Qubit_Readout):
@@ -13,7 +13,7 @@ def characterize_readout(config, Qubit_Readout):
     import copy
 
     new_config = config.copy()
-    new_config["FF_Qubits"] = copy.deepcopy(new_config["FF_Qubits"])
+    new_config["FF_Pulses"] = copy.deepcopy(new_config["FF_Pulses"])
     new_config["Shots"] = 2*4000
     # new_config["Shots"] = 1
     print(f"Running single shot with {new_config['Shots']} shots.")
@@ -27,9 +27,9 @@ def characterize_readout(config, Qubit_Readout):
         new_config['sigma']       = [Qubit_Parameters[str(Qubit)]['Qubit']['sigma']]
 
         for Q, Gain in enumerate(Qubit_Parameters[str(Qubit)]['Pulse_FF']):
-            new_config["FF_Qubits"][str(Q+1)]['Gain_Pulse'] = Gain
+            new_config["FF_Pulses"][Q] = Gain
 
-        SSExp = SingleShotFFMUX(path="SingleShot",  cfg=new_config, soc=soc, soccfg=soccfg)
+        SSExp = SingleShot(path="SingleShot", cfg=new_config, soc=soc, soccfg=soccfg)
         data = SSExp.acquire()
         # SSExp.display(data, plotDisp=True, block=False, display_indices=[Q])
 

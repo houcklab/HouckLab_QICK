@@ -19,7 +19,7 @@ class RamseyFFCalProg(SweepWaveformAveragerProgram):
     def _initialize(self, cfg):
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -81,7 +81,7 @@ class RamseyFFCalProg(SweepWaveformAveragerProgram):
         # 1: FFPulses
         # self.delay_auto()
         # Length: 1 us to reach asymptotic value, qubit length for qubit, 0.1 us to account for relative qubit delay
-        self.FFPulses(self.FFPulse, FF_QUBIT_DELAY + self.qubit_length_us)
+        self.FFPlay_Const(self.FFPulses, FF_QUBIT_DELAY + self.qubit_length_us)
         # first pi/2
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_1', t= FF_QUBIT_DELAY)
         self.delay(self.qubit_length_us + FF_QUBIT_DELAY)
@@ -89,15 +89,15 @@ class RamseyFFCalProg(SweepWaveformAveragerProgram):
         # 2: FFExpt
         # self.delay(self.cycles2us(max(3, ceil(self.cfg["expt_samples1"] / 16)) - 2))
         # self.delay_auto()
-        self.FFLoad16Waveforms(self.FFExpts, self.FFPulse, cfg["IDataArray"])
+        self.FFLoad16Waveforms(self.FFExpts, self.FFPulses, cfg["IDataArray"])
         self.FFPulses_arb_length_and_delay(t_start=0)
         # self.delay(self.cycles2us(2))  # Placeholder correction
         # second pi/2
-        self.FFPulses(self.FFPulse, FF_QUBIT_DELAY+self.qubit_length_us, t_start=0)
+        self.FFPlay_Const(self.FFPulses, FF_QUBIT_DELAY+self.qubit_length_us, t_start=0)
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_2', t=FF_QUBIT_DELAY)
         self.delay(self.qubit_length_us + FF_QUBIT_DELAY)
         # 3: FFReadouts
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"], t_start=0)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
@@ -105,10 +105,10 @@ class RamseyFFCalProg(SweepWaveformAveragerProgram):
         self.delay(self.cfg["res_length"])  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
         self.FFInvert_arb_length_and_delay(t_start=0)
-        self.FFPulses(-1 * self.FFPulse, 2*(self.qubit_length_us + FF_QUBIT_DELAY+0.1), t_start=0)
+        self.FFPlay_Const(-1 * self.FFPulses, 2*(self.qubit_length_us + FF_QUBIT_DELAY+0.1), t_start=0)
         self.delay(2*(self.qubit_length_us + FF_QUBIT_DELAY + 0.1))
 
     def loop_pts(self):
@@ -119,8 +119,8 @@ class FFRamseyCal(ExperimentClass):
     RamseyCal
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg,)
 
     def acquire(self, progress=False):
         self.cfg.setdefault('pi_gain',  self.cfg['qubit_gains'][0])
@@ -139,13 +139,13 @@ class FFRamseyCal(ExperimentClass):
 
 
         # pop_list = prog.acquire_populations(soc=self.soc, load_envelopes=True, rounds=self.cfg.get('rounds', 1),
-        #                                     progress=progress)[0]
+        #                                    )[0]
         # print(self.cfg['confusion_matrix'][0])
         # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
         # x_contrast = pop_to_expect(pop_list)
         iq_list = prog.acquire(self.soc, load_envelopes=True,
                                rounds=self.cfg.get('rounds', 1),
-                               progress=progress)
+                              )
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         self.data['data']['yi'] = avgi
         self.data['data']['yq'] = avgq
@@ -164,14 +164,14 @@ class FFRamseyCal(ExperimentClass):
         prog = RamseyFFCalProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         # pop_list = prog.acquire_populations(soc=self.soc, load_envelopes=True, rounds=self.cfg.get('rounds', 1),
-        #                                     progress=progress)[0]
+        #                                    )[0]
         # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
         # y_contrast = pop_to_expect(pop_list)
         #
         self.soc.reset_gens()
         iq_list = prog.acquire(self.soc, load_envelopes=True,
                                rounds=self.cfg.get('rounds', 1),
-                               progress=progress)
+                              )
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         self.data['data']['yi'] = avgi
         self.data['data']['yq'] = avgq
@@ -231,7 +231,3 @@ class FFRamseyCal(ExperimentClass):
             plt.close(fig)
 
         return fig, (ax_trace, ax_detuning)
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

@@ -15,7 +15,6 @@
             "Gain": 1743,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.8099999999999999,
             "angle": -2.916500871136184,
             "threshold": 0.12357604510311049,
             "ne_contrast": 0.131,
@@ -35,7 +34,6 @@
             "Gain": 1743,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.7675000000000001,
             "angle": 2.189391554567942,
             "threshold": -0.7524477521105686,
             "ne_contrast": 0.25533333333333336,
@@ -55,7 +53,6 @@
             "Gain": 2000,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.8366666666666667,
             "angle": 0.5584695968334585,
             "threshold": -0.0789666731857217,
             "ne_contrast": 0.12733333333333333,
@@ -75,7 +72,6 @@
             "Gain": 1743,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.4646666666666667,
             "angle": -0.14952130494405796,
             "threshold": -5.042586192136145,
             "ne_contrast": 0.46266666666666667,
@@ -95,7 +91,6 @@
             "Gain": 971,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.6043333333333334,
             "angle": 2.9408174044135555,
             "threshold": 9.23165424268462,
             "ne_contrast": 0.30866666666666664,
@@ -115,7 +110,6 @@
             "Gain": 1743,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.8046666666666666,
             "angle": 2.770011120940008,
             "threshold": 6.995902712770048,
             "ne_contrast": 0.14433333333333334,
@@ -127,20 +121,6 @@
             "Gain": 1562,
             "T1": 17.3492666989589,
             "T2R": 1.8107681750209743
-          },
-          "TwoQubit": {
-            "7": {
-              "coupling_MHz": 5.23217443792063,
-              "resonance_gain": 1404.1660326939354,
-              "swept_qubit": 7,
-              "calibrated_at": "2026-06-22 17:18:09"
-            },
-            "8": {
-              "coupling_MHz": 7.542354312019458,
-              "resonance_gain": -2805.80299933092,
-              "swept_qubit": 8,
-              "calibrated_at": "2026-06-23 10:19:17"
-            }
           }
         },
         "7": {
@@ -149,7 +129,6 @@
             "Gain": 1829,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.7696666666666667,
             "angle": 2.431432956931954,
             "threshold": -7.714172233189672,
             "ne_contrast": 0.18366666666666667,
@@ -161,14 +140,6 @@
             "Gain": 2250,
             "T1": 21.699131942905048,
             "T2R": 0.6050828308475856
-          },
-          "TwoQubit": {
-            "6": {
-              "coupling_MHz": 5.23217443792063,
-              "resonance_gain": 1404.1660326939354,
-              "swept_qubit": 7,
-              "calibrated_at": "2026-06-22 17:18:09"
-            }
           }
         },
         "8": {
@@ -177,7 +148,6 @@
             "Gain": 2914,
             "Readout_Time": 3,
             "ADC_Offset": 1,
-            "fidelity": 0.035079516165161556,
             "angle": -2.774418819771574,
             "threshold": -13.043999301350038,
             "ne_contrast": 0.1683894631543848,

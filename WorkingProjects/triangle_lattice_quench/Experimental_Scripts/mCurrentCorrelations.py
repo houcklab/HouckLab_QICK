@@ -10,8 +10,8 @@ class CurrentCorrelationMeasurement(ExperimentClass):
     Basic spec experiement that takes a single slice of data
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False):
 
@@ -74,11 +74,3 @@ class CurrentCorrelationMeasurement(ExperimentClass):
         need to implement in the future
         '''
         pass
-
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-
-

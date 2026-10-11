@@ -24,7 +24,7 @@ calibrate_singleshot = False
 #=================== RamseyVsFF ======================
 FF_sweep_Ramsey_relevant_params = {
     "stop_delay_us": 4, "expts": 61, "reps": 200,
-    "qubit_FF_index": int(str(Qubit_Readout[0])[0]),
+    "qubit_FF_index": int(str(Qubit_Readout[0])[0]) - 1,
     "FF_gain_start": Expt_FF[int(str(Qubit_Readout[0])[0])-1] - 100,
     "FF_gain_stop": Expt_FF[int(str(Qubit_Readout[0])[0])-1] + 100,
     "FF_gain_steps": 11,
@@ -49,11 +49,11 @@ Spec_relevant_params = {
 
 #=================== SpecVsFF ======================
 FF_sweep_spec_relevant_params = {
-    "qubit_FF_index": Q,
+    "qubit_FF_index": Q - 1,
     "FF_gain_start": -10000 - 5000, "FF_gain_stop": -10000 + 5000, "FF_gain_steps": 11,
     'relax_delay': 100
 }
-center = Expt_FF[FF_sweep_spec_relevant_params['qubit_FF_index']-1]
+center = FF_Expt[FF_sweep_spec_relevant_params['qubit_FF_index']]
 FF_sweep_spec_relevant_params['FF_gain_start'] = center - 6000
 FF_sweep_spec_relevant_params['FF_gain_stop'] = center + 6000
 
@@ -98,13 +98,13 @@ T2R_params = {
 T1TLS_params = {
     "FF_gain_start": -8874 - 4000, "FF_gain_stop": -8874 + 4000, "FF_gain_steps": 301,
     "stop_delay_us": 10, "expts": 5, "reps": 300,
-    'qubitIndex': int(str(Qubit_Pulse[0])[0])
+    'qubitIndex': int(str(Qubit_Pulse[0])[0]) - 1
 }
 
 #================= GainSweepOscillations, GainSweepOscillationsR, ====================
 #================= QubitOscillations ====================
 oscillation_gain_dict = {
-    'qubit_FF_index': 2, 'reps': 200,
+    'qubit_FF_index': 1, 'reps': 200,
     'start': 0, 'step': 8, 'expts': 2000,
     'gainStart': - 500, 'gainStop': + 500, 'gainNumPoints': 16,
     'relax_delay': 200, 'fit': True

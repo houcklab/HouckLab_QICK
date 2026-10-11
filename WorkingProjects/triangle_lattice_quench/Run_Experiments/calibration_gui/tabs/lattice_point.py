@@ -24,8 +24,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .. import style as st
 from ..state import CalibState
-from ..helpers import build_cfg_for_qubit, _readout_qubit_for_entry
+from ..helpers import build_cfg_for_qubit, _readout_qubit_for_entry, groups_of
 from ..widgets import (
     MplCanvas,
     ParamForm,
@@ -107,7 +108,7 @@ class LatticePointCalibWorker(QThread):
             try:
                 overrides = dict(sweep_params)
                 overrides.update({
-                    "qubit_FF_index": int(ro_q),
+                    "qubit_FF_index": int(ro_q) - 1,  # 0-based FF index of chip qubit ro_q
                     "FF_gain_start": int(current_value) - int(sweep_params["__window"]),
                     "FF_gain_stop":  int(current_value) + int(sweep_params["__window"]),
                     "FF_gain_steps": int(sweep_params["__steps"]),
@@ -120,7 +121,7 @@ class LatticePointCalibWorker(QThread):
                 # build_cfg_for_qubit: drive entry = row_label, readout qubit = ro_q.
                 cfg = build_cfg_for_qubit(
                     self.state, str(ro_q),
-                    qubit_pulse=[row_label],
+                    pulse_group=row['drive_group'], qubit_pulse=[row_label],
                     qubit_readout=[str(ro_q)],
                     overrides=overrides,
                 )
@@ -390,8 +391,7 @@ class LatticePointCalibrationTab(QWidget):
         # --- log area ---
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Per-row status appears here.")
 
         # --- right pane: plot canvas ---
@@ -447,7 +447,7 @@ class LatticePointCalibrationTab(QWidget):
         groups like ``4Q_readout`` are excluded.
         """
         jd = self.state.qubit_parameters_json or {}
-        dg = jd.get("drive_groups") or {}
+        dg = groups_of(jd, "drive_groups") or {}
         names: list[str] = []
         for gname, gbody in dg.items():
             if not isinstance(gbody, dict):
@@ -498,7 +498,7 @@ class LatticePointCalibrationTab(QWidget):
             self.target_freq_lbl.setText("Drive frequency: —")
             return
         jd = self.state.qubit_parameters_json or {}
-        gbody = (jd.get("drive_groups") or {}).get(gname, {}) or {}
+        gbody = (groups_of(jd, "drive_groups") or {}).get(gname, {}) or {}
         recipe = gbody.get("_recipe") or {}
         base = recipe.get("base", "?")
         self.target_array_lbl.setText(f"Target array: {base}")
@@ -559,7 +559,7 @@ class LatticePointCalibrationTab(QWidget):
 
         gname = self.drive_group_combo.currentData() or ""
         jd = self.state.qubit_parameters_json or {}
-        gbody = (jd.get("drive_groups") or {}).get(gname, {}) or {}
+        gbody = (groups_of(jd, "drive_groups") or {}).get(gname, {}) or {}
         entries = list((gbody.get("entries") or {}).keys())
         base_name = (gbody.get("_recipe") or {}).get("base")
         base_arr = (jd.get("base_params") or {}).get(base_name) if base_name else None
@@ -671,7 +671,7 @@ class LatticePointCalibrationTab(QWidget):
     def _current_base_name(self) -> Optional[str]:
         gname = self.drive_group_combo.currentData() or ""
         jd = self.state.qubit_parameters_json or {}
-        gbody = (jd.get("drive_groups") or {}).get(gname, {}) or {}
+        gbody = (groups_of(jd, "drive_groups") or {}).get(gname, {}) or {}
         return (gbody.get("_recipe") or {}).get("base")
 
     def _snapshot_val_for_row(self, ename: str):
@@ -783,7 +783,7 @@ class LatticePointCalibrationTab(QWidget):
         """
         gname = self.drive_group_combo.currentData() or ""
         jd = self.state.qubit_parameters_json or {}
-        gbody = (jd.get("drive_groups") or {}).get(gname, {}) or {}
+        gbody = (groups_of(jd, "drive_groups") or {}).get(gname, {}) or {}
         base_name = (gbody.get("_recipe") or {}).get("base")
         base_arr = (jd.get("base_params") or {}).get(base_name) if base_name else None
         ro_q = self._row_ro_q.get(ename) or _readout_qubit_for_entry(ename)
@@ -949,7 +949,7 @@ class LatticePointCalibrationTab(QWidget):
                                     "Select a recipe-driven drive group first.")
             return
         jd = self.state.qubit_parameters_json or {}
-        gbody = (jd.get("drive_groups") or {}).get(gname, {}) or {}
+        gbody = (groups_of(jd, "drive_groups") or {}).get(gname, {}) or {}
         base_name = (gbody.get("_recipe") or {}).get("base")
         if not base_name or base_name not in (jd.get("base_params") or {}):
             QMessageBox.critical(self, "Bad drive group",
@@ -1002,6 +1002,7 @@ class LatticePointCalibrationTab(QWidget):
             }
             schedule.append({
                 "row_label":     ename,
+                "drive_group":   gname,
                 "ro_q":          ro_q,
                 "current_value": int(current_value),
                 "sweep_params":  sweep_params,

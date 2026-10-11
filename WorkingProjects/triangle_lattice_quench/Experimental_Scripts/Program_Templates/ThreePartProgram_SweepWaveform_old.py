@@ -31,7 +31,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
     def _initialize(self, cfg):
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -44,7 +44,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         FF.FFDefinitions(self)
         longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
         # print(longest_length)
-        FF.FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
+        FF.FFLoad16Waveforms(self, self.FFPulses, "FFExpt", longest_length)
 
         # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
@@ -91,7 +91,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
     def _body(self, cfg):
         # 1: FFPulses
         # self.delay_auto()
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + 1.01)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 if i==0 else 1 + 4 * sum(self.cfg["sigma"][:i])
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
@@ -116,7 +116,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
 
         self.label("start readout")
         # 3: FFReadouts
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
@@ -125,7 +125,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         self.delay(self.cfg["res_length"] + 10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
         self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
         for i in range(1, 17):
@@ -136,7 +136,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
             self.jump("finish_inv")
         self.label("finish_inv")
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + 1.01, t_start=0)
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + 1.01, t_start=0)
         self.delay(self.qubit_total_length_us + 10.01)
 
     def loop_pts(self):

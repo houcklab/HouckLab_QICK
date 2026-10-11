@@ -2,18 +2,17 @@
 Interactive calibration wizard for superconducting-qubit experiments controlled
 by a QICK RFSoC over Pyro4.
 
-Two stages:
-
-1. ConnectionDialog (pre-step):
-   - Enter Pyro4 nameserver host/port.
-   - List nameserver entries (every name => uri pair the ns knows about).
-   - Pick the RFSoC proxy name and connect; the dialog acts as a thin client
-     for the nameserver and the soc proxy (no hidden hardcoded address).
+The main window opens at once, with or without an RFSoC. It starts a background
+connection attempt with the previous session's nameserver / proxy name / channel map
+(ConnectionController). Click the "RFSoC: ..." status or "Connection info..." to open the
+ConnectionDialog panel, where you can:
+   - Enter Pyro4 nameserver host/port, list the nameserver entries, pick the proxy name.
+   - Connect (restarts an attempt already running) or Abort / Disconnect.
    - Inspect the soccfg description (DACs, ADCs, sample rates).
    - Choose the number of qubits and map each qubit to its FF DAC channel,
-     plus the shared Readout-DAC / Qubit-DAC / ADC indices.
+     plus the shared Readout-DAC / Qubit-DAC indices.
 
-2. MainWindow (calibration wizard):
+MainWindow (calibration wizard):
    - Tabs for Transmission -> Spec slice -> Amplitude Rabi -> Single-shot -> T1
      -> T2R -> T2E, each with editable parameters and an inline plot.
    - "Apply" pushes a stage result into the in-memory Qubit_Parameters dict;
@@ -24,7 +23,7 @@ Launch from the repo root:
     cd D:/Agentic_QSim_Measurement
     python -m triangle_lattice_quench.Run_Experiments.calibration_gui
 
-Pyro4 and qick are imported lazily inside ConnectionDialog, so the GUI opens
+Pyro4 and qick are imported lazily by the connection thread, so the GUI opens
 fine even when the RFSoC nameserver is unreachable.
 
 Note: the underlying experiment classes are MUX-based (single shared res_ch /
@@ -34,6 +33,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon, QImage, QKeySequence, QPixmap
 from typing import Optional
 
 import matplotlib
@@ -41,8 +43,10 @@ matplotlib.use("Qt5Agg")
 
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPushButton, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QShortcut, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
 )
+
+from . import style as st
 
 # Session state (the only foundation symbols MainWindow itself needs).
 from .state import (
@@ -50,13 +54,13 @@ from .state import (
     DEFAULT_D5A_VOLTAGES_FILE,
     QUBIT_PARAMETERS_JSON,
     get_d5a_settings,
+    get_settings,
     set_d5a_settings,
 )
 
 # One module per tab. MainWindow wires them together; each owns its own
 # dialogs / workers / helpers.
 from .tabs.qubit_parameters import QubitParametersTab
-from .tabs.ff_frequencies import FFFrequenciesTab
 from .tabs.auto_calib import (
     StageTab,
     TransmissionTab,
@@ -75,20 +79,42 @@ from .tabs.two_qubit import TwoQubitCalibTab
 from .tabs.pi2_phase import Pi2PhaseCalibTab
 from .tabs.experiment_library import ExperimentLibraryTab
 from .tabs.connection import (
+    ConnectionController,
     ConnectionDialog,
     D5aCouplerDialog,
+    apply_channel_map,
+    initial_channel_map,
     load_d5a_voltages_from_file,
+    save_connection_params,
+    saved_connection_params,
+    state_from_channel_map,
 )
 from .tabs.program_builder import ProgramBuilderTab
 from .tabs.agent_chat import AgentChatTab
 
 
+class ClickableLabel(QLabel):
+    """A status label that opens something when clicked."""
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+# status colours of the "RFSoC: ..." label (light backgrounds, dark text)
+_CONN_STYLES = {
+    "idle": "#e9ecef", "connecting": "#fff3cd", "connected": "#d4edda", "failed": "#f8d7da",
+}
+
+
 class MainWindow(QMainWindow):
     def __init__(self, state: Optional[CalibState] = None):
         super().__init__()
-        self.state = state if state is not None else CalibState()
+        self.state = state if state is not None else state_from_channel_map(initial_channel_map())
         self.setWindowTitle("Calibration Wizard")
-        self.resize(1400, 800)
+        self.resize(1400, 800)  # clamped to the screen below, once the tabs exist
         # Item 9: window resizable (default behaviour, but be explicit — no
         # setFixedSize / setMinimumSize anywhere).
 
@@ -121,7 +147,11 @@ class MainWindow(QMainWindow):
         # is gone — auto-calib table now exposes per-qubit state directly.
         summary = QWidget()
         summary_layout = QHBoxLayout(summary)
-        self.conn_label = QLabel("RFSoC: not connected")
+        self.conn_label = ClickableLabel()
+        self.conn_label.setCursor(Qt.PointingHandCursor)
+        self.conn_label.setToolTip("Click to open the RFSoC connection panel")
+        self.conn_label.clicked.connect(self.on_connect)
+        self._set_conn_status("idle", "RFSoC: not connected")
         self.d5a_status_label = QLabel("D5a: not applied")
         self.d5a_status_label.setStyleSheet("color: #b00; font-weight: bold;")
         summary_layout.addWidget(self.conn_label, 1)
@@ -153,16 +183,14 @@ class MainWindow(QMainWindow):
         self.two_qubit_tab = TwoQubitCalibTab(self.state, lambda: self)
         self.pi2_phase_tab = Pi2PhaseCalibTab(self.state, lambda: self)
         self.exp_lib_tab = ExperimentLibraryTab(self.state, lambda: self)
-        self.ff_freq_tab = FFFrequenciesTab(self.state, lambda: self)
         self.tabs.addTab(self.params_tab, self.params_tab.name)
-        self.tabs.addTab(self.ff_freq_tab, self.ff_freq_tab.name)
+        self.program_builder_tab = ProgramBuilderTab(self.state, lambda: self)
+        self.tabs.addTab(self.program_builder_tab, self.program_builder_tab.name)
         self.tabs.addTab(self.auto_calib_tab, self.auto_calib_tab.name)
         self.tabs.addTab(self.lattice_point_tab, self.lattice_point_tab.name)
         self.tabs.addTab(self.two_qubit_tab, self.two_qubit_tab.name)
         self.tabs.addTab(self.pi2_phase_tab, self.pi2_phase_tab.name)
         self.tabs.addTab(self.exp_lib_tab, self.exp_lib_tab.name)
-        self.program_builder_tab = ProgramBuilderTab(self.state, lambda: self)
-        self.tabs.addTab(self.program_builder_tab, self.program_builder_tab.name)
         self.agent_tab = AgentChatTab(self.state, lambda: self)
         self.tabs.addTab(self.agent_tab, self.agent_tab.name)
 
@@ -172,22 +200,36 @@ class MainWindow(QMainWindow):
         layout.addWidget(summary)
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(central)
+        # A tab's natural size must not set the window's minimum: let the window shrink below it
+        # and start no larger than the screen.
+        for i in range(self.tabs.count()):
+            self.tabs.widget(i).setMinimumSize(1, 1)
+        avail = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1400, int(avail.width() * 0.95)), min(900, int(avail.height() * 0.9)))
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        for keys, action in ((("Ctrl+=", "Ctrl++"), lambda: self.set_zoom(st.current_scale() + st.ZOOM_STEP)),
+                             (("Ctrl+-",), lambda: self.set_zoom(st.current_scale() - st.ZOOM_STEP)),
+                             (("Ctrl+0",), lambda: self.set_zoom(st.ZOOM_DEFAULT))):
+            for key in keys:
+                QShortcut(QKeySequence(key), self, activated=action)
+        # The connection panel is created once and re-shown on demand; the controller makes the
+        # (background, abortable) connection, auto-started by start_auto_connect().
+        self.conn_ctrl = ConnectionController(parent=self)
+        self.conn_dialog = ConnectionDialog(self.conn_ctrl, self.state,
+                                            busy_check=self._experiment_running, parent=self)
+        self.conn_dialog.channel_map_applied.connect(self._on_channel_map_applied)
+        self.conn_ctrl.started.connect(lambda msg: self._set_conn_status("connecting", f"RFSoC: {msg}"))
+        self.conn_ctrl.succeeded.connect(self._on_conn_succeeded)
+        self.conn_ctrl.failed.connect(self._on_conn_failed)
+        self.conn_ctrl.aborted.connect(lambda: self._set_conn_status("idle", "RFSoC: not connected (attempt aborted)"))
+        self.conn_ctrl.disconnected.connect(self._on_conn_disconnected)
         if self.state.is_connected():
-            self.conn_label.setText(
-                f"RFSoC: connected ({self.state.server_name or '?'} @ "
-                f"{self.state.ns_host or '?'}:{self.state.ns_port or '?'})"
-            )
-            self.status.showMessage(
-                f"Ready — {self.state.n_qubits} qubits configured. "
-                f"Load a Qubit_Parameters JSON or run a stage."
-            )
-        else:
-            self.status.showMessage(
-                "Not connected. Click 'Connection info...' to (re)open the connection dialog."
-            )
+            self._set_conn_status("connected",
+                                  f"RFSoC: connected ({self.state.server_name or '?'} @ "
+                                  f"{self.state.ns_host or '?'}:{self.state.ns_port or '?'})")
+        self.status.showMessage("Ready. Load a Qubit_Parameters JSON or run a stage (needs the RFSoC).")
         self._restore_d5a_session()
         # Seed the readout/drive combos in AutoCalibTab (and refresh dependent
         # widgets) from whatever the QubitParametersTab loaded.
@@ -199,49 +241,67 @@ class MainWindow(QMainWindow):
     # --- handlers ---
 
     def on_connect(self):
-        if self.state.is_connected():
-            QMessageBox.information(
-                self, "Connection info",
-                f"Connected to '{self.state.server_name}' at "
-                f"{self.state.ns_host}:{self.state.ns_port}.\n\n"
-                f"Qubits configured: {self.state.n_qubits}\n"
-                f"Readout DAC: {self.state.base_config.get('res_ch')}\n"
-                f"Qubit DAC: {self.state.base_config.get('qubit_ch')}\n"
-                f"ADC channel: {self.state.base_config.get('ro_chs')}\n"
-                f"FF DACs: {self.state.base_config.get('fast_flux_chs')}\n\n"
-                f"Restart the GUI to change the channel map."
-            )
-            return
-        dlg = ConnectionDialog(self)
-        if dlg.exec_() != QDialog.Accepted or dlg.state is None:
-            return
-        self.state = dlg.state
-        for stage in self.stages:
-            stage.state = self.state
-        self.params_tab.state = self.state
-        if self.state.qubit_parameters_json_path is None:
-            self.state.qubit_parameters_json_path = QUBIT_PARAMETERS_JSON
-        self.params_tab._load_json(
-            self.state.qubit_parameters_json_path, silent=True,
-        )
-        self.auto_calib_tab.state = self.state
-        self.two_qubit_tab.state = self.state
-        self.two_qubit_tab.refresh_qubit_combos()
-        self.two_qubit_tab.refresh_groups_from_state()
-        self.pi2_phase_tab.state = self.state
-        self.pi2_phase_tab.refresh_qubit_combos()
-        self.pi2_phase_tab.refresh_groups_from_state()
-        self.lattice_point_tab.state = self.state
-        self.lattice_point_tab.refresh_groups_from_state()
-        self.exp_lib_tab.state = self.state
-        self.conn_label.setText(
-            f"RFSoC: connected ({self.state.server_name} @ "
-            f"{self.state.ns_host}:{self.state.ns_port})"
-        )
-        self.outer_edit.setText(self.state.outer_folder)
-        self._on_qubit_params_loaded()
-        self.refresh_qubit_summary()
+        """Open the connection panel (non-modal, so its status updates stay visible)."""
+        self.conn_dialog.show()
+        self.conn_dialog.raise_()
+        self.conn_dialog.activateWindow()
+
+    def start_auto_connect(self) -> None:
+        """Try the previous session's connection in the background; failures only colour the status."""
+        p = saved_connection_params()
+        self.conn_ctrl.connect_to(p["host"], p["port"], p["name"])
+
+    def _experiment_running(self) -> bool:
+        """True while any tab's experiment worker is alive (the connection must not change then)."""
+        owners = [*getattr(self, "stages", []), getattr(self, "auto_calib_tab", None),
+                  getattr(self, "lattice_point_tab", None), getattr(self, "two_qubit_tab", None),
+                  getattr(self, "pi2_phase_tab", None), getattr(self, "exp_lib_tab", None)]
+        for tab in owners:
+            worker = getattr(tab, "worker", None)
+            if worker is not None and hasattr(worker, "isRunning") and worker.isRunning():
+                return True
+        return False
+
+    def _set_conn_status(self, kind: str, text: str) -> None:
+        self.conn_label.setText(text)
+        self.conn_label.setStyleSheet(
+            f"background: {_CONN_STYLES[kind]}; color: #212529; padding: 3px 8px; border-radius: 3px;")
+
+    def _on_conn_succeeded(self, soc, soccfg, cfg_dict, params) -> None:
+        """Store the connection in the shared state IN PLACE (tabs hold that object), and keep the
+        loaded Qubit_Parameters JSON and outerFolder untouched."""
+        self.state.soc = soc
+        self.state.soccfg = soccfg
+        self.state.ns_host, self.state.ns_port, self.state.server_name = (
+            params["host"], int(params["port"]), params["name"])
+        save_connection_params(params["host"], params["port"], params["name"])
+        cmap = self.conn_dialog.channel_map()      # what the panel shows (previous map unless edited)
+        if cmap is not None:
+            apply_channel_map(self.state, cmap)
+        self._set_conn_status("connected", f"RFSoC: connected ({params['name']} @ "
+                                           f"{params['host']}:{params['port']})")
         self.status.showMessage("Connected.", 3000)
+        self.conn_dialog._refresh_buttons()
+
+    def _on_conn_failed(self, msg: str) -> None:
+        self._set_conn_status("failed", f"RFSoC: connection failed - {msg} (click to change)")
+        self.status.showMessage("RFSoC connection failed; the rest of the GUI still works offline.", 5000)
+
+    def _on_conn_disconnected(self) -> None:
+        self.state.soc = None
+        self.state.soccfg = None
+        self._set_conn_status("idle", "RFSoC: not connected")
+        self.conn_dialog._refresh_buttons()
+
+    def _on_channel_map_applied(self, cmap: dict) -> None:
+        if not apply_channel_map(self.state, cmap):
+            QMessageBox.information(
+                self, "Restart needed",
+                f"The number of qubits is fixed while the GUI is open ({self.state.n_qubits}); the "
+                f"new count ({cmap['n_qubits']}) is saved and used at the next start. The shared "
+                f"readout / qubit channels were updated now.")
+        self.status.showMessage("Channel map applied.", 3000)
+
 
     # ---- group-load orchestration ----
 
@@ -260,8 +320,8 @@ class MainWindow(QMainWindow):
             self.pi2_phase_tab.refresh_groups_from_state()
         if hasattr(self, "lattice_point_tab"):
             self.lattice_point_tab.refresh_groups_from_state()
-        if hasattr(self, "ff_freq_tab"):
-            self.ff_freq_tab.refresh_from_state()
+        if hasattr(self, "program_builder_tab"):
+            self.program_builder_tab.refresh_json()
 
     # ---- D5a coupler bias ----
 
@@ -316,23 +376,60 @@ class MainWindow(QMainWindow):
         )
         self._refresh_d5a_status()
 
-    def refresh_qubit_summary(self):
-        """Mirror state changes into the params table.
+    def set_zoom(self, scale: float) -> float:
+        """Re-apply the style at ``scale`` (clamped to 0.8-2.0) and remember it."""
+        scale = st.apply_style(QApplication.instance(), scale)
+        get_settings().setValue(st.SETTING_ZOOM, scale)
+        self.status.showMessage(f"zoom {scale:.1f}x  (Ctrl+= / Ctrl+- / Ctrl+0)", 3000)
+        return scale
 
-        Repaints both the QubitParametersTab (tree + detail table cell styles
-        against the calibration-touched paths) AND the FFFrequenciesTab's
-        group/entry combo styling so dirty-after-on_apply state is visible on
-        both tabs without a manual reload.
-        """
+    def refresh_qubit_summary(self):
+        """Mirror state changes into the params table (tree + detail table cell styles
+        against the calibration-touched paths) without a manual reload."""
         params_tab = getattr(self, "params_tab", None)
         if params_tab is not None:
             params_tab.refresh_from_state()
-        ff_tab = getattr(self, "ff_freq_tab", None)
-        if ff_tab is not None:
-            try:
-                ff_tab._apply_combo_styles()
-            except Exception:
-                pass
+
+
+ICON_PATH = Path(__file__).with_name("software_icon.png")
+APP_ID = "HouckLab.CalibrationGUI"
+
+
+def _app_icon() -> QIcon:
+    """software_icon.png with its opaque white corners made transparent.
+
+    The art is a dark rounded tile on an opaque near-white square, which shows as white
+    nibs on a dark taskbar. Clear the background connected to the image border (at 256 px;
+    plenty for an icon) and fall back to the plain file if PIL/scipy are unavailable.
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+        from scipy import ndimage
+        rgb = np.asarray(Image.open(ICON_PATH).convert("RGB").resize((256, 256), Image.LANCZOS))
+        labels, _ = ndimage.label(rgb.min(axis=2) > 225)
+        border = np.unique(np.r_[labels[0], labels[-1], labels[:, 0], labels[:, -1]])
+        clear = ndimage.binary_dilation(np.isin(labels, border[border > 0]), iterations=2)
+        rgba = np.ascontiguousarray(np.dstack([rgb, np.where(clear, 0, 255).astype(np.uint8)]))
+        return QIcon(QPixmap.fromImage(QImage(rgba.data, 256, 256, 1024,
+                                              QImage.Format_RGBA8888).copy()))
+    except Exception:
+        return QIcon(str(ICON_PATH))
+
+
+def _apply_app_identity(app) -> None:
+    """Window/taskbar icon for every window and dialog of this app.
+
+    Windows groups pythonw.exe windows under Python's own identity and icon unless the
+    process sets an AppUserModelID, so set one (before any window is shown).
+    """
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass                                  # not Windows
+    if ICON_PATH.exists():
+        app.setWindowIcon(_app_icon())
 
 
 def main():
@@ -344,14 +441,11 @@ def main():
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
     app = QApplication(sys.argv)
-    # Item 9: slightly larger buttons across the whole app.
-    app.setStyleSheet("QPushButton { padding: 4px 10px; }")
+    _apply_app_identity(app)
+    st.apply_style(app, get_settings().value(st.SETTING_ZOOM, st.ZOOM_DEFAULT, type=float))
 
-    # Launch the connection / channel-mapping dialog first.
-    dlg = ConnectionDialog()
-    if dlg.exec_() != QDialog.Accepted or dlg.state is None:
-        sys.exit(0)
-
-    win = MainWindow(state=dlg.state)
+    # The window opens straight away; the RFSoC connects in the background.
+    win = MainWindow()
     win.show()
+    QTimer.singleShot(0, win.start_auto_connect)
     sys.exit(app.exec_())

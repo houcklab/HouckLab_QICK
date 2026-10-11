@@ -11,7 +11,7 @@ class GainSweepOscillations(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.Program = ThreePartProgramOneFF
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Expt")
+        self.y_key = ("FF_Expt", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
         self.x_key = 'expt_samples'
         self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])

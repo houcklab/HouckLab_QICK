@@ -21,21 +21,25 @@ from PyQt5.QtWidgets import (
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
-from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
-from triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
-from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
+from .. import style as st
+from triangle_lattice_quench.Device_Calibration.LEGACY.Initialize_Qubit_Information import model_mapping
+from triangle_lattice_quench.Device_Calibration.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
+from triangle_lattice_quench.Device_Calibration.LEGACY.Device_calibration import full_device_calib
 
 from ..state import (
     CalibState,
     EXPERIMENTAL_SCRIPTS_DIR,
     _FF_FREQ_COUPLED_PAIRS,
-    _confusion_matrix_for,
-    _singleshot_cal_for,
 )
 from ..helpers import (
-    build_config,
-    _build_resolve_drive,
-    _build_resolve_ramp,
+    compose_cfg,
+    QubitParams,
+    ff_entry_items,
+    combo_path,
+    groups_of,
+    entries_of,
+    readout_group_names,
+    pulse_group_names,
 )
 from ..widgets import MplCanvas, ParamForm, _agent_set_combo
 from .experiment_library import import_experiment_class
@@ -147,7 +151,7 @@ class Pi2PhaseCalibTab(QWidget):
     # _on_run's class_name=variant dispatch needs no separate map. The dropdown
     # DISPLAY text is set in addItem; this value is what currentData() returns.
     VAR_GFCAL = "MottQuenchPi2GainFreqCal"
-    # Single-qubit T2 (Ramsey) at the Expt_FF operating flux. Non-standard variant:
+    # Single-qubit T2 (Ramsey) at the FF_Expt operating flux. Non-standard variant:
     # its own cfg builder / finish handler / render (FFRamseyCal, not a SweepExperimentND).
     VAR_FFRAMSEY = "FFRamseyCal"
     NONE_LABEL = "(none)"
@@ -178,7 +182,7 @@ class Pi2PhaseCalibTab(QWidget):
         self.drive_group_combo = QComboBox()
         self.drive_group_combo.setMinimumWidth(160)
         self.drive_group_combo.setToolTip(
-            "Drive (Pulse) point. Optional; empty = use readout group's Pulse_FF."
+            "Drive (Pulse) point. Optional; empty = use readout group's FF_Pulses."
         )
         self.drive_group_combo.currentIndexChanged.connect(
             self._on_drive_group_changed
@@ -199,14 +203,14 @@ class Pi2PhaseCalibTab(QWidget):
             "Required for the Mott-quench variants."
         )
         # Opt-in (variants B only): fire the 2nd (measurement) pi/2 while parked at the
-        # swapped-frequency dynamics point (FFBS) rather than after jumping back to Pulse_FF.
+        # swapped-frequency dynamics point (FFBS) rather than after jumping back to FF_Pulses.
         # Needs a Dynamics_Point with swapped FF gains selected to do anything physical.
         self.second_pulse_dyn_check = QCheckBox("2nd π/2 at dynamics point (swapped freq)")
         self.second_pulse_dyn_check.setChecked(False)
         self.second_pulse_dyn_check.setToolTip(
             "Variant B only. Play the measurement pi/2 at the swapped-frequency dynamics "
             "point (FFBS / Dynamics_Point) driven at the seed qubit's frequency, instead of "
-            "jumping back to Pulse_FF. Select a Dynamics_Point with swapped FF gains for the "
+            "jumping back to FF_Pulses. Select a Dynamics_Point with swapped FF gains for the "
             "swap to take effect."
         )
         # Gain×Freq Cal target: when checked, the cal writes its measured gain to the INIT pi/2
@@ -221,14 +225,14 @@ class Pi2PhaseCalibTab(QWidget):
             "meas_pi2_freq. Set the swept qubit to the INIT qubit, run the cal, and the first "
             "pi/2 gain is stored automatically."
         )
-        # Generate a swapped-frequency dynamics point from the current Pulse_FF
+        # Generate a swapped-frequency dynamics point from the current FF_Pulses
         # via the existing forward (ff_gains_to_freqs) / inverse (CalculateFF)
         # pipeline. Writes a new dynamics_groups entry and selects it. Variant-B
         # only (same gate as second_pulse_dyn_check) — the swap is meaningless
         # for the bare variant A.
         self.swap_dyn_btn = QPushButton("Swap two qubits → dynamics point")
         self.swap_dyn_btn.setToolTip(
-            "Forward-map the selected config's Pulse_FF to 8 dressed freqs, "
+            "Forward-map the selected config's FF_Pulses to 8 dressed freqs, "
             "exchange the seed/swept qubit frequencies, inverse-map the full "
             "8-vector (CalculateFF, compensating crosstalk on the others), and "
             "write the result as a new dynamics_groups entry 'swap_<seed>_<swept>'. "
@@ -279,7 +283,7 @@ class Pi2PhaseCalibTab(QWidget):
             "2nd π/2 Gain×Freq Cal (in-situ, 2D)", self.VAR_GFCAL,
         )
         self.variant_combo.addItem(
-            "FF Ramsey T2 (at Expt_FF, 1D)", self.VAR_FFRAMSEY,
+            "FF Ramsey T2 (at FF_Expt, 1D)", self.VAR_FFRAMSEY,
         )
         self.variant_combo.currentIndexChanged.connect(self._on_variant_changed)
         var_layout.addWidget(self.variant_combo)
@@ -359,7 +363,7 @@ class Pi2PhaseCalibTab(QWidget):
             ("reps",             "Repetitions",                 "int",   500),
         ])
         # Single-qubit FF Ramsey T2 (FFRamseyCal). Wait sweep is in samples (start/step/expts),
-        # measured at the Expt_FF flux of the selected Ramp_State on the pi2_init qubit.
+        # measured at the FF_Expt flux of the selected Ramp_State on the pi2_init qubit.
         self.param_form_fframsey = ParamForm("Sweep parameters (FF Ramsey T2)", [
             ("start",  "Wait start (samples)", "int", 0),
             ("step",   "Wait step (samples)",  "int", 16),
@@ -383,8 +387,7 @@ class Pi2PhaseCalibTab(QWidget):
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Pi/2-phase progress / fit results appear here.")
 
         # ---- layout (group selectors on top, splitter under) ----
@@ -441,7 +444,7 @@ class Pi2PhaseCalibTab(QWidget):
               or "")
         chip_qubits: list[str] = []
         if rg and isinstance(jd, dict):
-            entries = (jd.get("readout_groups", {})
+            entries = (groups_of(jd, "drive_groups")
                          .get(rg, {})
                          .get("entries", {}))
             try:
@@ -490,7 +493,7 @@ class Pi2PhaseCalibTab(QWidget):
         self.param_form_fframsey.setVisible(v == self.VAR_FFRAMSEY)
         # Ramp_State / Dynamics_Point needed for every Mott variant (B-1D/B-2D and
         # the in-situ gain×freq cal, which runs the same Mott sequence). FF Ramsey also
-        # needs a Ramp_State (it supplies Expt_FF, the flux the T2 is measured at).
+        # needs a Ramp_State (it supplies FF_Expt, the flux the T2 is measured at).
         need_ramp = v != self.VAR_A
         self.ramp_state_combo.setEnabled(need_ramp)
         self.dynamics_point_combo.setEnabled(need_ramp)
@@ -539,8 +542,8 @@ class Pi2PhaseCalibTab(QWidget):
         with chip-q numbers from the selected group's entries.
         """
         jd = self.state.qubit_parameters_json or {}
-        readout_groups = list((jd.get("readout_groups") or {}).keys())
-        drive_groups = list((jd.get("drive_groups") or {}).keys())
+        readout_groups = readout_group_names(jd)
+        drive_groups = pulse_group_names(jd)
 
         self.readout_group_combo.blockSignals(True)
         self.readout_group_combo.clear()
@@ -562,26 +565,22 @@ class Pi2PhaseCalibTab(QWidget):
         self.drive_group_combo.blockSignals(False)
 
         # Flatten ramp_groups / dynamics_groups -> entry-name list.
-        ramp_entries: list[str] = []
-        for grp in (jd.get("ramp_groups") or {}).values():
-            ramp_entries.extend((grp or {}).get("entries", {}).keys())
-        dyn_entries: list[str] = []
-        for grp in (jd.get("dynamics_groups") or {}).values():
-            dyn_entries.extend((grp or {}).get("entries", {}).keys())
+        ramp_entries = ff_entry_items(jd, "ramp_groups")      # (label 'group/entry', path)
+        dyn_entries = ff_entry_items(jd, "dynamics_groups")
 
         self.ramp_state_combo.blockSignals(True)
         self.ramp_state_combo.clear()
         self.ramp_state_combo.addItem(self.NONE_LABEL, "")
-        for n in ramp_entries:
-            self.ramp_state_combo.addItem(n, n)
+        for label, path in ramp_entries:
+            self.ramp_state_combo.addItem(label, path)
         self.ramp_state_combo.setCurrentIndex(0)
         self.ramp_state_combo.blockSignals(False)
 
         self.dynamics_point_combo.blockSignals(True)
         self.dynamics_point_combo.clear()
         self.dynamics_point_combo.addItem(self.NONE_LABEL, "")
-        for n in dyn_entries:
-            self.dynamics_point_combo.addItem(n, n)
+        for label, path in dyn_entries:
+            self.dynamics_point_combo.addItem(label, path)
         self.dynamics_point_combo.setCurrentIndex(0)
         self.dynamics_point_combo.blockSignals(False)
 
@@ -607,7 +606,7 @@ class Pi2PhaseCalibTab(QWidget):
 
         # Qubit_Readout / Qubit_Pulse = all entries in the selected readout
         # group. This follows mott_quench_basic.py's pattern.
-        entries = (jd.get("readout_groups", {}).get(rg, {}).get("entries", {}) or {})
+        entries = (groups_of(jd, "drive_groups").get(rg, {}).get("entries", {}) or {})
         try:
             qubit_list = sorted(entries.keys(), key=lambda s: int(str(s)))
         except ValueError:
@@ -621,10 +620,10 @@ class Pi2PhaseCalibTab(QWidget):
 
         # Ramp_State is required for variants B (provides Gain_Expt -- the FF endpoint
         # of the dynamics window). Dynamics_Point is OPTIONAL: when omitted, no Gain_Dynamics
-        # / t_offset overrides are applied, so the FF goes straight from Expt_FF to Readout_FF
+        # / t_offset overrides are applied, so the FF goes straight from FF_Expt to FF_Readouts
         # with zero channel-skew. Variant A ignores both.
-        ramp_state = str(self.ramp_state_combo.currentData() or "") or None
-        dynamics_point = str(self.dynamics_point_combo.currentData() or "") or None
+        ramp_state = combo_path(self.ramp_state_combo)          # ('ramp_groups', group, entry) or None
+        dynamics_point = combo_path(self.dynamics_point_combo)
         if variant != self.VAR_A and not ramp_state:
             raise RuntimeError(
                 "Variants B (Mott-quench) need a Ramp_State (the dynamics FF endpoint). "
@@ -632,28 +631,13 @@ class Pi2PhaseCalibTab(QWidget):
                 "Dynamics_Point is optional -- leave it as (none) to go straight to readout."
             )
 
-        build_kwargs: dict = {
-            "Qubit_Readout": Qubit_Readout,
-            "Qubit_Pulse": Qubit_Pulse,
-            "Readout_Point": rg,
-            "jd": jd,
-        }
+        ff_expt_path = None
         if variant != self.VAR_A:
-            build_kwargs["Ramp_State"] = ramp_state
-            if dynamics_point:
-                build_kwargs["Dynamics_Point"] = dynamics_point
-        cfg = build_config(**build_kwargs)
-
-        # SingleShot cals (lifted from build_two_qubit_chevron_config).
-        angle_list, threshold_list, confusion_matrix = [], [], []
-        for Q in Qubit_Readout:
-            ro = _singleshot_cal_for(jd, rg, Q)
-            angle_list.append(float(ro.get("angle", 0.0)))
-            threshold_list.append(float(ro.get("threshold", 0.0)))
-            confusion_matrix.append(_confusion_matrix_for(ro))
-        cfg["angle"] = angle_list
-        cfg["threshold"] = threshold_list
-        cfg["confusion_matrix"] = confusion_matrix
+            ff_expt_path = (*ramp_state, "FF_Expt")
+            if dynamics_point or self.second_pulse_dyn_check.isChecked():  # needs FF_BS / meas_pi2_* / t_offset in cfg
+                raise RuntimeError("Dynamics_Point / '2nd π/2 at dynamics point' are disabled: dynamics_groups "
+                                   "are not composed into the cfg. Set Dynamics_Point to (none) and untick it.")
+        cfg = compose_cfg(jd, rg, Qubit_Readout, rg, Qubit_Pulse, ff_expt_path=ff_expt_path)
 
         # Tab-supplied keys (these override anything build_config produced).
         cfg["pi2_init_index"] = int(pi2_init_index)
@@ -681,7 +665,7 @@ class Pi2PhaseCalibTab(QWidget):
         """Forward map: 8 FF gains -> 8 dressed frequencies (MHz), chip 1..8.
 
         Same algorithm as FFFrequenciesTab._compute_frequencies, which is a
-        direct copy of Flux_Files.print_bs_ff.ff_gains_to_freqs. We do NOT
+        direct copy of Device_Calibration.print_bs_ff.ff_gains_to_freqs. We do NOT
         import print_bs_ff (it runs a module-level print loop and uses bare,
         non-package imports); instead we reuse the already-imported flux-model
         globals (model_mapping / flux_vector / beta_matrix / full_device_calib).
@@ -704,19 +688,19 @@ class Pi2PhaseCalibTab(QWidget):
         return np.asarray(dressed, float)
 
     def _resolve_base_pulse_ff(self):
-        """Resolve the base Pulse_FF exactly as build_config does.
+        """Resolve the base FF_Pulses exactly as build_config does.
 
-        build_config sets Gain_Pulse = drives[0]['Pulse_FF'] (build_config.py),
+        build_config sets Gain_Pulse = drives[0]['FF_Pulses'] (build_config.py),
         where each drive is _resolve_drive(jd, Qubit_Pulse[i]). _build_cfg never
         passes a drive group to build_config, so we mirror that: resolve each
-        Qubit_Pulse entry's Pulse_FF and require they agree (build_config's own
+        Qubit_Pulse entry's FF_Pulses and require they agree (build_config's own
         consistency assert). Returns an 8-int list indexed chip qubit 1..8.
         """
         jd = self.state.qubit_parameters_json or {}
         rg = self.state.current_readout_group or None
         if not rg:
             raise RuntimeError("No readout group selected.")
-        entries = (jd.get("readout_groups", {}).get(rg, {}).get("entries", {}) or {})
+        entries = (groups_of(jd, "drive_groups").get(rg, {}).get("entries", {}) or {})
         try:
             qubit_list = sorted(entries.keys(), key=lambda s: int(str(s)))
         except ValueError:
@@ -724,28 +708,33 @@ class Pi2PhaseCalibTab(QWidget):
         if not qubit_list:
             raise RuntimeError(f"Readout group {rg!r} has no entries.")
         Qubit_Pulse = [str(q) for q in qubit_list]
-        resolved = {P: list(_build_resolve_drive(jd, P)["Pulse_FF"]) for P in Qubit_Pulse}
+        resolved = {P: QubitParams(jd).drive_ff("FF_Pulses", rg, P) for P in Qubit_Pulse}
         distinct = {tuple(v) for v in resolved.values()}
         if len(distinct) > 1:
             raise RuntimeError(
-                "Qubit_Pulse entries do not share one Pulse_FF: "
+                "Qubit_Pulse entries do not share one FF_Pulses: "
                 + str(resolved)
             )
         pulse_ff = resolved[Qubit_Pulse[0]]
         if len(pulse_ff) != 8:
             raise RuntimeError(
-                f"Resolved Pulse_FF has length {len(pulse_ff)}, expected 8."
+                f"Resolved FF_Pulses has length {len(pulse_ff)}, expected 8."
             )
         return Qubit_Pulse, [int(round(g)) for g in pulse_ff]
 
     def _on_swap_two_qubits(self):
         """Generate a swapped-frequency dynamics point and select it.
 
-        Forward-map current Pulse_FF -> 8 freqs, exchange seed/swept entries,
+        Forward-map current FF_Pulses -> 8 freqs, exchange seed/swept entries,
         inverse-map the full 8-vector via CalculateFFExperiment (so crosstalk
         from moving the pair is compensated on the others), write the result as
         a new dynamics_groups entry, refresh, and select it. No hardware I/O.
         """
+        # DISABLED: needs ramp Init_FF + dynamics_groups, which build_config no longer resolves
+        self.log.appendPlainText("[DISABLED] Swap-two-qubits: build_config no longer resolves ramp "
+                                 "Init_FF / dynamics_groups (pending ProgramBuilder).")
+        self.result_lbl.setText("Swap-two-qubits disabled (see log).")
+        return
         try:
             import numpy as np
             jd = self.state.qubit_parameters_json or {}
@@ -755,8 +744,8 @@ class Pi2PhaseCalibTab(QWidget):
             seed_idx = int(self.pi2_init_combo.currentData() or 0)
             swept_idx = int(self.swept_qubit_combo.currentData() or 0)
 
-            # 2. Base Pulse_FF resolved the build_config way (8 ints, chip 1..8).
-            Qubit_Pulse, _ = self._resolve_base_pulse_ff()  # also validates Pulse_FF consistency
+            # 2. Base FF_Pulses resolved the build_config way (8 ints, chip 1..8).
+            Qubit_Pulse, _ = self._resolve_base_pulse_ff()  # also validates FF_Pulses consistency
             if not (0 <= seed_idx < len(Qubit_Pulse) and 0 <= swept_idx < len(Qubit_Pulse)):
                 raise RuntimeError(
                     f"seed/swept index out of range for Qubit_Pulse {Qubit_Pulse}."
@@ -768,22 +757,22 @@ class Pi2PhaseCalibTab(QWidget):
                     f"Seed and swept qubit are the same (Q{seed_chip}); pick two distinct qubits."
                 )
 
-            # 3. Resolve the ramp. Spectators stay at their ramp (Expt_FF) frequencies, so the
-            #    dynamics point is the Expt_FF gains with ONLY the swap pair overwritten
+            # 3. Resolve the ramp. Spectators stay at their ramp (FF_Expt) frequencies, so the
+            #    dynamics point is the FF_Expt gains with ONLY the swap pair overwritten
             #    (per-qubit FF gains are independent). The swap pair takes each other's
             #    INIT_FF (init_ff_delta) frequencies.
-            ramp_state = str(self.ramp_state_combo.currentData() or "") or None
+            ramp_state = combo_path(self.ramp_state_combo)
             if not ramp_state:
-                raise RuntimeError("Select a Ramp_State first -- spectators inherit its Expt_FF.")
-            ramp = _build_resolve_ramp(jd, ramp_state)
-            expt_ff = list(ramp["Expt_FF"])                  # spectator base (the held ramp point)
+                raise RuntimeError("Select a Ramp_State first -- spectators inherit its FF_Expt.")
+            ramp = {"FF_Expt": QubitParams(jd).get_ff(*ramp_state, "FF_Expt"), "Init_FF": None}  # Init_FF no longer resolved; tool disabled above
+            expt_ff = list(ramp["FF_Expt"])                  # spectator base (the held ramp point)
             if len(expt_ff) != 8:
-                raise RuntimeError(f"Resolved Expt_FF has length {len(expt_ff)}, expected 8.")
+                raise RuntimeError(f"Resolved FF_Expt has length {len(expt_ff)}, expected 8.")
             init_ff = ramp["Init_FF"]
             if init_ff is None:                              # no distinct init segment
                 init_ff = expt_ff
                 self.log.appendPlainText(
-                    f"[note] Ramp_State {ramp_state!r} has no Init_FF; using Expt_FF for the swap pair.")
+                    f"[note] Ramp_State {ramp_state!r} has no Init_FF; using FF_Expt for the swap pair.")
             init_ff = list(init_ff)
 
             # 4. Swap the pair's *Init_FF* (init_ff_delta) frequencies -- where the qubits sit
@@ -796,8 +785,8 @@ class Pi2PhaseCalibTab(QWidget):
 
             # 5. Pair FF gains for the exchanged Init_FF frequencies (freq->gain). Only the
             #    pair is specified; other gains are per-qubit independent, so keep the ramp
-            #    (Expt_FF) values and overwrite just the pair.
-            from triangle_lattice_quench.Flux_Files.LEGACY.Calculate_FF import (
+            #    (FF_Expt) values and overwrite just the pair.
+            from triangle_lattice_quench.Device_Calibration.LEGACY.Calculate_FF import (
                 CalculateFFExperiment,
             )
             cfg = {
@@ -805,32 +794,30 @@ class Pi2PhaseCalibTab(QWidget):
                 "plot_effective_system": False,  # keep headless: no plt.show()
             }
             pair_g = np.asarray(
-                CalculateFFExperiment(path="", prefix="CalculateFF", soc=None,
+                CalculateFFExperiment(path="", suffix="CalculateFF", soc=None,
                                       soccfg=None, cfg=cfg).acquire()["gains_list"], int)
             new_gains = [int(round(g)) for g in expt_ff]
             new_gains[seed_chip - 1] = int(pair_g[seed_chip - 1])
             new_gains[swept_chip - 1] = int(pair_g[swept_chip - 1])
             meas_pi2_freq_abs = seed_init  # swept qubit parks here -> measurement pi/2 drive freq
-            # Achieved dressed freqs of the ACTUAL dynamics point (Expt_FF spectators + pair swap),
+            # Achieved dressed freqs of the ACTUAL dynamics point (FF_Expt spectators + pair swap),
             # for the review log + collision check below.
             dressed = self._ff_gains_to_freqs8(new_gains)
 
-            # 6. Write a new dynamics_groups entry. Reuse the FFFrequenciesTab's
-            #    in-memory write + refresh path so dirty styling / Save behave
-            #    exactly like the existing add-entry flow.
-            ff_tab = getattr(self.get_main(), "ff_freq_tab", None)
-            dyn_groups = jd.setdefault("dynamics_groups", {})
+            # 6. Write a new dynamics_groups entry in memory; the Qubit Parameters tab shows it
+            #    as unsaved and Save persists it.
+            dyn_groups = groups_of(jd, "dynamics_groups", create=True)
             if "dynamics_FF_points" in dyn_groups:
                 gname = "dynamics_FF_points"
             elif dyn_groups:
                 gname = next(iter(dyn_groups.keys()))
             else:
                 gname = "dynamics_FF_points"
-                dyn_groups[gname] = {"entries": {}}
+                dyn_groups[gname] = {}
             group = dyn_groups[gname]
             if not isinstance(group, dict):
                 raise RuntimeError(f"dynamics_groups/{gname} is not a dict.")
-            entries = group.setdefault("entries", {})
+            entries = group  # ff_groups entries sit directly under the group
 
             base_name = f"swap_{seed_chip}_{swept_chip}"
             ename = base_name
@@ -838,34 +825,31 @@ class Pi2PhaseCalibTab(QWidget):
             while ename in entries:
                 ename = f"{base_name}_{n}"
                 n += 1
-            entries[ename] = {"Dynamics_FF_abs": list(new_gains),
+            entries[ename] = {"FF_Dynamics": list(new_gains),
                               "meas_pi2_freq_abs": round(float(meas_pi2_freq_abs), 4)}
 
-            # Refresh + dirty styling via the FF tab (mirrors _on_crud_entry's
-            # _after_jd_mutation call). Snapshot already differs, so Save persists.
-            if ff_tab is not None and hasattr(ff_tab, "_after_jd_mutation"):
-                ff_tab._after_jd_mutation(select_group=gname, select_entry=ename)
-            else:
-                main = self.get_main()
-                if main is not None and hasattr(main, "refresh_qubit_summary"):
-                    main.refresh_qubit_summary()
+            # Refresh + dirty styling. Snapshot already differs, so Save persists.
+            main = self.get_main()
+            if main is not None and hasattr(main, "refresh_qubit_summary"):
+                main.refresh_qubit_summary()
 
             # 7. Add the new entry to this tab's Dynamics_Point combo and select
             #    it. Insert directly rather than refresh_groups_from_state(),
             #    which would reset Ramp_State and the pi2/swept combos (the user
             #    needs Ramp_State to stay set so the Variant-B run still builds).
-            if self.dynamics_point_combo.findData(ename) < 0:
-                self.dynamics_point_combo.addItem(ename, ename)
+            new_path = ("dynamics_groups", gname, ename)
+            if self.dynamics_point_combo.findData(new_path) < 0:
+                self.dynamics_point_combo.addItem(f"{gname}/{ename}", new_path)
             self.dynamics_point_combo.setCurrentIndex(
-                self.dynamics_point_combo.findData(ename)
+                self.dynamics_point_combo.findData(new_path)
             )
 
             # 8. Review / safety: log gains + freqs; warn on coupled-pair collisions.
             log = self.log.appendPlainText
             log(f"--- Swap Q{seed_chip} <-> Q{swept_chip} -> dynamics entry "
                 f"'{gname}/{ename}' ---")
-            log(f"Ramp_State         : {ramp_state}  (spectators keep its Expt_FF)")
-            log(f"Expt_FF (ramp)     : {[int(round(g)) for g in expt_ff]}")
+            log(f"Ramp_State         : {ramp_state}  (spectators keep its FF_Expt)")
+            log(f"FF_Expt (ramp)     : {[int(round(g)) for g in expt_ff]}")
             log(f"pair swap freqs    : Q{seed_chip}->{swept_init:.1f}, Q{swept_chip}->{seed_init:.1f} MHz (Init_FF)")
             log(f"measurement pi/2   : driven at {meas_pi2_freq_abs:.1f} MHz (swept Q{swept_chip} parks here)")
             log(f"new_gains          : {new_gains}")
@@ -896,14 +880,14 @@ class Pi2PhaseCalibTab(QWidget):
             for line in traceback.format_exc().rstrip().splitlines():
                 self.log.appendPlainText(f"       {line}")
             self.log.appendPlainText(
-                "       If the flux-model import failed, the Flux_Files model "
+                "       If the flux-model import failed, the Device_Calibration model "
                 "(Whole_system_to_Voltages / model_mapping) may be stale or unloadable."
             )
             self.result_lbl.setText("Swap generation FAILED (see log).")
 
     # ---- calibrate 2nd pi/2 frequency at the swap point ----
 
-    def _find_dynamics_entry(self, dyn_name: str):
+    def _find_dynamics_entry(self, dyn_path):
         """Return (group_name, raw_entry_dict) for the named dynamics entry.
 
         The combo stores only the entry NAME; the raw entry (with the
@@ -913,11 +897,11 @@ class Pi2PhaseCalibTab(QWidget):
         to ``meas_pi2_freq``).
         """
         jd = self.state.qubit_parameters_json or {}
-        for gname, grp in (jd.get("dynamics_groups") or {}).items():
-            ents = (grp or {}).get("entries", {})
-            if dyn_name in ents:
-                return gname, ents[dyn_name]
-        raise RuntimeError(f"Dynamics entry {dyn_name!r} not found in any dynamics_groups.")
+        _, gname, ename = dyn_path  # ('dynamics_groups', group, entry)
+        entry = entries_of("dynamics_groups", groups_of(jd, "dynamics_groups").get(gname, {})).get(ename)
+        if entry is None:
+            raise RuntimeError(f"Dynamics entry ff_groups/dynamics_groups/{gname}/{ename} not found.")
+        return gname, entry
 
     # 2nd-pi/2 in-situ 2D (gain x freq) calibration. Frequency axis: half-width
     # (MHz) around the entry's current meas_pi2_freq_abs. Gain axis: 0 ..
@@ -942,7 +926,9 @@ class Pi2PhaseCalibTab(QWidget):
         finished slot runs after the worker and needs the raw swap entry + old values.
         Raises (caught by _on_run -> QMessageBox.critical) on any precondition failure.
         """
-        dyn_name = str(self.dynamics_point_combo.currentData() or "")
+        raise RuntimeError("Gain x Freq cal is disabled: it needs a Dynamics_Point, which build_config "
+                           "no longer resolves (pending ProgramBuilder).")
+        dyn_name = combo_path(self.dynamics_point_combo)
         if not dyn_name:
             raise RuntimeError("Select a Dynamics_Point (swap entry) first.")
         # Force the 2nd-pi/2-at-dynamics path on (the only mode that consumes
@@ -970,11 +956,11 @@ class Pi2PhaseCalibTab(QWidget):
         center = raw_entry.get("meas_pi2_freq_abs")
         if center is None:
             jd = self.state.qubit_parameters_json or {}
-            center = float(_build_resolve_drive(jd, str(swept_chip))["Frequency"])
+            center = float(groups_of(jd, "drive_groups")[self.state.current_readout_group]["entries"][str(swept_chip)]["Qubit"]["Frequency"])
         center = float(center)
 
         # Build the Variant-B-1D base cfg the SAME way a Variant-B run does (readout/
-        # drive/Ramp_State/Dynamics_Point + SingleShot cals + second_pulse_at_dynamics).
+        # drive/Ramp_State/Dynamics_Point + second_pulse_at_dynamics).
         # MottQuenchPi2GainFreqCal reads freq_*/gain_* from cfg; the rest of the sequence
         # (init/ramp/swap/expt_samples) is identical to the real run. We feed the B-1D
         # base only the keys it consumes (reps + expt_samples); freq_* must be in
@@ -1051,7 +1037,7 @@ class Pi2PhaseCalibTab(QWidget):
     def _build_fframsey_cfg(self, measured_idx: int, sweep_params: dict) -> dict:
         """Build a SINGLE-QUBIT cfg for the VAR_FFRAMSEY (FFRamseyCal) run.
 
-        Measures single-qubit T2 (Ramsey) at the Ramp_State's Expt_FF flux on the
+        Measures single-qubit T2 (Ramsey) at the Ramp_State's FF_Expt flux on the
         qubit selected in pi2_init_combo (0-based POSITION into the readout group).
         FFRamseyCal reads index 0 of every per-qubit list, so we hand build_config a
         one-element Qubit_Readout/Qubit_Pulse = [measured_chip]. ``sweep_params`` is
@@ -1062,17 +1048,17 @@ class Pi2PhaseCalibTab(QWidget):
         rg = self.state.current_readout_group or None
         if not rg:
             raise RuntimeError("No readout group selected.")
-        # Ramp_State supplies Expt_FF -- the flux the free precession (T2) happens at.
-        ramp_state = str(self.ramp_state_combo.currentData() or "") or None
+        # Ramp_State supplies FF_Expt -- the flux the free precession (T2) happens at.
+        ramp_state = combo_path(self.ramp_state_combo)
         if not ramp_state:
             raise RuntimeError(
-                "FF Ramsey needs a Ramp_State (it supplies Expt_FF, the flux the T2 is "
+                "FF Ramsey needs a Ramp_State (it supplies FF_Expt, the flux the T2 is "
                 "measured at). Pick an entry in the top-row Ramp_State combo."
             )
 
         # Map measured combo (0-based position) -> chip qubit, same convention as
         # _build_cfg (readout-group entries sorted by integer key).
-        entries = (jd.get("readout_groups", {}).get(rg, {}).get("entries", {}) or {})
+        entries = (groups_of(jd, "drive_groups").get(rg, {}).get("entries", {}) or {})
         try:
             qubit_list = sorted(entries.keys(), key=lambda s: int(str(s)))
         except ValueError:
@@ -1087,29 +1073,20 @@ class Pi2PhaseCalibTab(QWidget):
         measured_chip = str(Qubit_Readout[int(measured_idx)])
 
         # SINGLE-QUBIT build: one-element Qubit_Readout/Qubit_Pulse so FFRamseyCal's
-        # index-0 reads land on the measured qubit. Ramp_State sets Gain_Expt = Expt_FF.
-        cfg = build_config(
-            Qubit_Readout=[measured_chip], Qubit_Pulse=[measured_chip],
-            Readout_Point=rg, Ramp_State=ramp_state, jd=jd,
-        )
+        # index-0 reads land on the measured qubit. Ramp_State sets Gain_Expt = FF_Expt.
+        cfg = compose_cfg(jd, rg, [measured_chip], rg, [measured_chip],
+                          ff_expt_path=(*ramp_state, "FF_Expt"))
 
-        # Partner-detune: hold every OTHER qubit at its Pulse_FF (idle) during the wait,
-        # so only the measured qubit sits at Expt_FF (no swap -> clean single-qubit T2).
-        for q, entry in cfg.get("FF_Qubits", {}).items():
-            if str(q) != measured_chip:
-                entry["Gain_Expt"] = entry.get("Gain_Pulse", 0)
-
-        # SingleShot cals for the single measured qubit (parity with _build_cfg; FFRamseyCal
-        # itself uses normalize_contrast on raw IQ, so these are carried as metadata).
-        ro = _singleshot_cal_for(jd, rg, measured_chip)
-        cfg["angle"] = [float(ro.get("angle", 0.0))]
-        cfg["threshold"] = [float(ro.get("threshold", 0.0))]
-        cfg["confusion_matrix"] = [_confusion_matrix_for(ro)]
+        # Partner-detune: hold every OTHER qubit at its FF_Pulses (idle) during the wait,
+        # so only the measured qubit sits at FF_Expt (no swap -> clean single-qubit T2).
+        mi = int(measured_chip) - 1
+        cfg["FF_Expt"] = [e if i == mi else p for i, (e, p) in enumerate(zip(cfg["FF_Expt"], cfg["FF_Pulses"]))]
 
         # FFRamseyCal's _body loads cfg["IDataArray"] for the variable-length wait segment:
-        # a compensated step from Pulse_FF (idle) to Gain_Expt per FF channel. The class does
+        # a compensated step from FF_Pulses (idle) to FF_Expt per FF channel. NOTE: StepPulseArrays
+        # (Helpers/FFEnvelope_Helpers) still reads cfg['FF_Qubits'][q]['Gain_*'] -> raises until the user updates it. The class does
         # not build it (its usual runner does), so build it here from the (already partner-
-        # detuned) gains -- only the measured qubit steps to Expt_FF; others stay flat at idle.
+        # detuned) gains -- only the measured qubit steps to FF_Expt; others stay flat at idle.
         from triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
         cfg["IDataArray"] = StepPulseArrays(cfg, 'Gain_Pulse', 'Gain_Expt')
 
@@ -1125,13 +1102,13 @@ class Pi2PhaseCalibTab(QWidget):
 
         self.log.appendPlainText(
             f"--- FF Ramsey T2 (single-qubit): Q{measured_chip} at Ramp_State "
-            f"'{ramp_state}' (Expt_FF) ---"
+            f"'{ramp_state}' (FF_Expt) ---"
         )
         self.log.appendPlainText(
             f"wait: {cfg['start']} .. "
             f"{cfg['start'] + cfg['step'] * cfg['expts']} samples "
             f"({cfg['expts']} pts), reps {cfg['reps']}. "
-            f"All other qubits held at Pulse_FF (idle) so only Q{measured_chip} precesses."
+            f"All other qubits held at FF_Pulses (idle) so only Q{measured_chip} precesses."
         )
         return cfg
 
@@ -1272,7 +1249,7 @@ class Pi2PhaseCalibTab(QWidget):
         ax.plot(x_samples, y_contrast, "o-", color="orange", label="Y")
         ax.set_xlabel("wait (samples)")
         ax.set_ylabel("contrast")
-        ax.set_title(f"Q{measured_chip} FF Ramsey @ Expt_FF")
+        ax.set_title(f"Q{measured_chip} FF Ramsey @ FF_Expt")
         ax.legend(loc="best")
 
         # Sample index -> us. soccfg from state (the source _on_run uses).
@@ -1392,8 +1369,8 @@ class Pi2PhaseCalibTab(QWidget):
     AGENT_ACTION = "pi2_phase"
     AGENT_PARAMS = ("variant (one of SweepPi2Phase / MottQuenchPi2Phase / "
                     "MottQuenchPi2Phase2D / MottQuenchPi2GainFreqCal / FFRamseyCal), "
-                    "pi2_init (chip int), swept (chip int), ramp_state (str), "
-                    "dynamics_point (str), second_pulse_at_dynamics (bool); sweep sizes "
+                    "pi2_init (chip int), swept (chip int), ramp_state (str 'group/entry'), "
+                    "dynamics_point (str 'group/entry'), second_pulse_at_dynamics (bool); sweep sizes "
                     "(applied to the active variant's form): phase_start, phase_end, "
                     "phase_num_points, reps; 2D adds samples_start, samples_end, "
                     "samples_num_points; 1D adds expt_samples, pi2_init_gain; GainFreqCal "
@@ -1535,7 +1512,7 @@ class Pi2PhaseCalibTab(QWidget):
             return
         Z = np.asarray(Z, float)
         # phase axis lives under the savename of the swept x_key; the experiment
-        # populates it via SweepHelpers.key_savename. Common names below.
+        # populates it via NDSweepHelpers.key_savename. Common names below.
         phases = None
         for k in ("measurement_pi2_phases", "qubit_phases_matrix"):
             v = d.get(k)

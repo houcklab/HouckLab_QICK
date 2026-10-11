@@ -3,6 +3,7 @@ import scipy
 
 from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RProgram
 from triangle_lattice_quench.Helpers.IQ_contrast import omega_guess
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
@@ -21,7 +22,7 @@ class RamseyVsFF(SweepExperiment2D_plots):
 
         self.Program = T2RProgram
 
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Pulse")
+        self.y_key = ("FF_Pulses", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg["FF_gain_start"], self.cfg["FF_gain_stop"], self.cfg["FF_gain_steps"],
                                     dtype=int)
 
@@ -38,7 +39,7 @@ class RamseyVsFF(SweepExperiment2D_plots):
         omegas, FFgains = [], []
         x_pts = data["data"][self.loop_names[0]]
         Zmat = data["data"][self.z_value][0]
-        for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
+        for row, FFgain in zip(Zmat, data["data"][NDSweepHelpers.key_savename(self.y_key)]):
             w_guess = omega_guess(x_pts, row)
             period_guess = 2*np.pi/w_guess
             if period_guess > 2/3 * x_pts[-1] or period_guess < 1/10 * x_pts[-1]:
@@ -57,7 +58,7 @@ class RamseyVsFF(SweepExperiment2D_plots):
         def freq_fit(FF_gain, center_gain, k):
             return k * np.abs(FF_gain - center_gain)
         try:
-            (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"]["Gain_Pulse"]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
+            (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"][NDSweepHelpers.key_savename(self.y_key)]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
 
             data['data']['center_gain'] = center_gain
             data['data']['k_fit_param'] = k
@@ -81,7 +82,7 @@ class RamseyVsFF(SweepExperiment2D_plots):
             try:
                 center_gain = data["data"]["center_gain"]
                 k = data["data"]["k_fit_param"]
-                y_pts = data["data"]["Gain_Pulse"]
+                y_pts = data["data"][NDSweepHelpers.key_savename(self.y_key)]
                 y_spacing = np.abs(y_pts[1] - y_pts[0])
                 gains_up = np.linspace(np.max(y_pts)+y_spacing, center_gain,  num=50,endpoint=False,)
                 gains_lo = np.linspace(np.min(y_pts) - y_spacing, center_gain,  num=50,endpoint=False,)

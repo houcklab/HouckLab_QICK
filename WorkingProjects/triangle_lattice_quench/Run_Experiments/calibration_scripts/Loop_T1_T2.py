@@ -1,13 +1,13 @@
-# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# os.add_dll_directory(os.getcwd() + '\\Equipment_Drivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
     CalibrateFFvsDriveTiming
 from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
     SingleShotDecimated
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
-    QubitSpecSliceFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import \
+    QubitSpecSlice
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2E
 from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
 from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
     SNROpt_wSingleShot
@@ -17,7 +17,7 @@ from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxS
 from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
 
 from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
-from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
     GainSweepOscillations
@@ -25,15 +25,15 @@ from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR i
     GainSweepOscillationsR
 from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import TransmissionSweep
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabi import AmplitudeRabiFFMUX
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShot, SingleShot_2QFFMUX
 from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
 
 from triangle_lattice_quench.build_config import build_config
 
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
@@ -83,7 +83,7 @@ for Q in [3,4,5,6,7,8]:
     # This begins the booleans
 
     if RunT1:
-        T1MUX(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs1))
+        T1(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs1))
     fig1.canvas.draw()
     fig1.canvas.flush_events()
     if RunT2:

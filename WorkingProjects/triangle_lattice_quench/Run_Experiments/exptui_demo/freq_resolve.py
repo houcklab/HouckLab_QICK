@@ -1,4 +1,4 @@
-"""Qt-free adapter around build_config's stage resolvers.
+"""Qt-free stage resolvers over qubit_parameters.json (drive_groups + flat ff_groups).
 
 Used by both ExptUIDemoTab (for stage-y-position rendering) and codegen
 tests. The four ``resolve_*_section`` helpers here mirror FFFrequenciesTab's
@@ -16,45 +16,51 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Re-exported from build_config so both consumers see the same resolution
-# rules. build_config is import-safe (no soccfg / no hardware).
-from triangle_lattice_quench.build_config import (
-    _deref_base       as deref_base,
-    _resolve_readout  as resolve_readout_entry,
-    _resolve_drive    as resolve_drive_entry,
-    _resolve_ramp     as resolve_ramp_entry,
-    _resolve_dynamics as resolve_dynamics_entry,
-)
+# build_config is import-safe (no soccfg / no hardware).
+from triangle_lattice_quench.build_config import QubitParams
 
 NONE_LABEL = "(none)"
 DRIVE_FALLBACK_LABEL = "(readout)"
 
 
+def _groups(jd: dict, namespace: str) -> dict:
+    """Groups of 'drive_groups' or of ff_groups/<namespace> (ramp_groups, dynamics_groups)."""
+    if namespace == "drive_groups":
+        return (jd or {}).get("drive_groups") or {}
+    return ((jd or {}).get("ff_groups") or {}).get(namespace) or {}
+
+
+def _entries(namespace: str, grp: dict) -> dict:
+    """drive groups nest entries under 'entries'; ff groups hold them flat next to 'description'."""
+    if namespace == "drive_groups":
+        return (grp or {}).get("entries") or {}
+    return {k: v for k, v in (grp or {}).items() if k != "description"}
+
+
 def group_names(jd: dict, namespace: str) -> list[str]:
-    ns = jd.get(namespace, {})
-    if not isinstance(ns, dict):
-        return []
-    return [n for n, g in ns.items() if isinstance(g, dict)]
+    """Group names; 'readout_groups' = drive_groups with a group-level FF_Readouts."""
+    if namespace == "readout_groups":
+        return [n for n, g in _groups(jd, "drive_groups").items() if isinstance(g, dict) and "FF_Readouts" in g]
+    return [n for n, g in _groups(jd, namespace).items() if isinstance(g, dict)]
 
 
 def resolve_readout_section(jd: dict, group: str,
                             entry: str) -> Optional[dict]:
     if not group or group == NONE_LABEL:
         return None
-    rg = jd.get("readout_groups", {}).get(group)
+    rg = _groups(jd, "drive_groups").get(group)
     if rg is None:
-        raise KeyError(f"Readout group {group!r} not in readout_groups.")
-    base = jd.get("base_params", {})
-    readout_ff = rg.get("Readout_FF")
-    pulse_ff = rg.get("Pulse_FF")
+        raise KeyError(f"Readout group {group!r} not in drive_groups.")
+    readout_ff = rg.get("FF_Readouts")
+    pulse_ff = rg.get("FF_Pulses")
     if readout_ff is None:
         raise KeyError(
-            f"Readout group {group!r} is missing Readout_FF."
+            f"Readout group {group!r} is missing FF_Readouts."
         )
     return {
-        "Readout_FF": list(deref_base(readout_ff, base)),
-        "Pulse_FF":   (None if pulse_ff is None
-                       else list(deref_base(pulse_ff, base))),
+        "FF_Readouts": list(readout_ff),
+        "FF_Pulses":   (None if pulse_ff is None
+                       else list(pulse_ff)),
     }
 
 
@@ -63,38 +69,32 @@ def resolve_drive_section(jd: dict, group: str,
     """Decision tree mirrors FFFrequenciesTab._resolve_drive_section."""
     if not group or group in (NONE_LABEL, DRIVE_FALLBACK_LABEL):
         return None
-    base = jd.get("base_params", {})
-    g = jd.get("drive_groups", {}).get(group)
-    # Drive combos in this tab can include readout group names too (parity
-    # with build_config._resolve_drive's fallback search).
-    if g is None:
-        g = jd.get("readout_groups", {}).get(group)
+    g = _groups(jd, "drive_groups").get(group)
     if not isinstance(g, dict):
-        raise KeyError(f"Drive group {group!r} not in drive_groups or readout_groups.")
-    if g.get("Pulse_FF") is not None:
-        return {"Pulse_FF": list(deref_base(g.get("Pulse_FF"), base))}
+        raise KeyError(f"Drive group {group!r} not in drive_groups.")
+    if g.get("FF_Pulses") is not None:
+        return {"FF_Pulses": list(g.get("FF_Pulses"))}
     if not entry or entry == NONE_LABEL:
         return None
-    return {"Pulse_FF": resolve_drive_entry(jd, entry)["Pulse_FF"]}
+    return {"FF_Pulses": QubitParams(jd).drive_ff("FF_Pulses", group, entry)}
 
 
 def resolve_ramp_section(jd: dict, group: str,
                          entry: str) -> Optional[dict]:
     if not group or group == NONE_LABEL:
         return None
-    rg = jd.get("ramp_groups", {}).get(group)
+    rg = _groups(jd, "ramp_groups").get(group)
     if rg is None:
         raise KeyError(f"Ramp group {group!r} not in ramp_groups.")
-    base = jd.get("base_params", {})
     if entry and entry != NONE_LABEL:
-        return resolve_ramp_entry(jd, entry)
-    expt_base = rg.get("Expt_FF")
+        return {"Init_FF": None, "FF_Expt": QubitParams(jd).get_ff("ramp_groups", group, entry, "FF_Expt")}  # Init_FF no longer resolved
+    expt_base = rg.get("FF_Expt")
     if expt_base is None:
         raise KeyError(
-            f"Ramp group {group!r} is missing Expt_FF."
+            f"Ramp group {group!r} is missing FF_Expt."
         )
     return {"Init_FF": None,
-            "Expt_FF": list(deref_base(expt_base, base))}
+            "FF_Expt": list(expt_base)}
 
 
 def resolve_dynamics_section(jd: dict, group: str,
@@ -103,20 +103,23 @@ def resolve_dynamics_section(jd: dict, group: str,
         return None
     if not entry or entry == NONE_LABEL:
         return None
-    return resolve_dynamics_entry(jd, entry)
+    e = _entries("dynamics_groups", _groups(jd, "dynamics_groups").get(group)).get(entry)
+    if e is None:
+        raise KeyError(f"dynamics entry {entry!r} not in dynamics group {group!r}")
+    return {k: list(e[k]) for k in ("FF_Dynamics", "FF_BS") if k in e}
 
 
 # kind -> (namespace tuple for groups, has-fallback-sentinel?)
 STAGE_KIND_NAMESPACES = {
-    "readout":  (("readout_groups",),                  False),
-    "drive":    (("drive_groups", "readout_groups"),   True),
-    "ramp":     (("ramp_groups",),                     False),
-    "dynamics": (("dynamics_groups",),                 False),
+    "readout":  (("readout_groups",),   False),
+    "drive":    (("drive_groups",),     True),
+    "ramp":     (("ramp_groups",),      False),
+    "dynamics": (("dynamics_groups",),  False),
 }
 
 
 def entries_for_group(jd: dict, kind: str, group: str) -> list[str]:
-    """Return entries under jd[ns][group] for the first ns that has them.
+    """Return the entry names of `group` in the stage's namespace.
 
     Mirrors FFFrequenciesTab._refresh_entry_combo's namespace-walk logic.
     """
@@ -124,9 +127,10 @@ def entries_for_group(jd: dict, kind: str, group: str) -> list[str]:
         return []
     namespaces, _ = STAGE_KIND_NAMESPACES.get(kind, ((), False))
     for ns in namespaces:
-        grp = jd.get(ns, {}).get(group)
+        ns = "drive_groups" if ns == "readout_groups" else ns
+        grp = _groups(jd, ns).get(group)
         if isinstance(grp, dict):
-            entries = grp.get("entries", {}) or {}
+            entries = _entries(ns, grp)
             if entries:
                 return list(entries.keys())
     return []
@@ -150,24 +154,24 @@ def resolve_stage_ff(jd: dict, kind: str, group: str,
     """Return the single FF gain array (length 8) representing this stage's
     'rest frequency' — what to use for the qubit-line y-positions.
 
-    For ramp: returns Expt_FF (the held value during the experiment).
-    For dynamics: Dynamics_FF or BS_FF, whichever is present.
-    For readout: Readout_FF.
-    For drive: Pulse_FF.
+    For ramp: returns FF_Expt (the held value during the experiment).
+    For dynamics: FF_Dynamics or FF_BS, whichever is present.
+    For readout: FF_Readouts.
+    For drive: FF_Pulses.
     Returns None when the stage can't resolve a FF array.
     """
     if kind == "readout":
         sec = resolve_readout_section(jd, group, entry)
-        return None if sec is None else sec.get("Readout_FF")
+        return None if sec is None else sec.get("FF_Readouts")
     if kind == "drive":
         sec = resolve_drive_section(jd, group, entry)
-        return None if sec is None else sec.get("Pulse_FF")
+        return None if sec is None else sec.get("FF_Pulses")
     if kind == "ramp":
         sec = resolve_ramp_section(jd, group, entry)
-        return None if sec is None else sec.get("Expt_FF")
+        return None if sec is None else sec.get("FF_Expt")
     if kind == "dynamics":
         sec = resolve_dynamics_section(jd, group, entry)
         if sec is None:
             return None
-        return sec.get("Dynamics_FF") or sec.get("BS_FF")
+        return sec.get("FF_Dynamics") or sec.get("FF_BS")
     return None

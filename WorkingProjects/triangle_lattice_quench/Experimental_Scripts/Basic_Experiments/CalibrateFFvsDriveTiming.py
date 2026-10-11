@@ -84,7 +84,7 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
     def _initialize(self, cfg):
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -96,11 +96,11 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
 
         FF.FFDefinitions(self)
         if cfg.get('invert') == True: # swap readouts and pulse, look for negative instead
-            self.FFPulse, self.FFReadouts = self.FFReadouts, self.FFPulse
+            self.FFPulses, self.FFReadouts = self.FFReadouts, self.FFPulses
         # for FFreadout in self.FFReadouts:
         #     assert FFreadout == 0, "Use 0 for FFReadouts for this experiment."
         # longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
-        # FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
+        # FFLoad16Waveforms(self, self.FFPulses, "FFExpt", longest_length)
 
         # Qubit (Test one qubit at a time)
         self.qubit_length_us = 4 * cfg["sigma"][0]
@@ -112,8 +112,8 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
 
         # Make the step FF pulse
         self.IQArray = [None] *  len(self.FFChannels)
-        idx = cfg['qubit_index'] - 1
-        FF_impulse = np.full(16*self.us2cycles(self.qubit_length_us), self.FFPulse[idx])
+        idx = cfg['qubit_swept'] - 1
+        FF_impulse = np.full(16*self.us2cycles(self.qubit_length_us), self.FFPulses[idx])
         self.IQArray[idx] = np.concatenate([FF_impulse, np.full(16, self.FFReadouts[idx])])
         # 1 cycle = 16 samples
         # cycle_counter: always 2+length of waveform in cycles
@@ -158,7 +158,7 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
 
         self.FFLoad16Waveforms(self.FFReadouts, self.FFReadouts, self.IQArray)
 
-        self.FFPulses(self.FFReadouts, 10, t_start=0, stdysel='last')
+        self.FFPlay_Const(self.FFReadouts, 10, t_start=0, stdysel='last')
         self.delay(10)
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive', t=self.cycles2us(cfg['qubit_delay_cycles']+2))
 
@@ -168,14 +168,14 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
         self.delay(self.cycles2us(3 + self.us2cycles(self.qubit_length_us)))
 
         # Ensure drive actually finishes before readout
-        self.FFPulses(self.FFReadouts, self.cycles2us(cfg['qubit_delay_cycles']) + 0.100, t_start=0)
+        self.FFPlay_Const(self.FFReadouts, self.cycles2us(cfg['qubit_delay_cycles']) + 0.100, t_start=0)
         self.delay(self.cycles2us(cfg['qubit_delay_cycles']) + 0.100)
 
         # 3: FFReadouts
         if self.cfg.get('invert'):
-            self.FFPulses(self.FFPulse, self.cfg["res_length"], t_start=0)
+            self.FFPlay_Const(self.FFPulses, self.cfg["res_length"], t_start=0)
         else:
-            self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+            self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"], t_start=0)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
@@ -184,14 +184,14 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         if self.cfg.get('invert'):
-            self.FFPulses(-1 * self.FFPulse, self.cfg["res_length"], t_start=0)
+            self.FFPlay_Const(-1 * self.FFPulses, self.cfg["res_length"], t_start=0)
         else:
-            self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
-        self.FFPulses(-1 * self.FFReadouts, self.cfg['qubit_delay_cycles']+0.1, t_start=0)
+            self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg['qubit_delay_cycles']+0.1, t_start=0)
         self.delay(self.cfg["res_length"]+self.cfg["qubit_delay_cycles"]+0.1)
         self.FFInvert_arb_predelay(t_start=0)
         self.delay(self.cycles2us(3 + self.us2cycles(self.qubit_length_us)))
-        self.FFPulses(-1 * self.FFReadouts, 10, t_start=0)
+        self.FFPlay_Const(-1 * self.FFReadouts, 10, t_start=0)
         self.delay(10)
 
     def loop_pts(self):
@@ -209,7 +209,8 @@ class CalibrateFFvsDriveTiming(SweepExperiment1D_lines):
         self.z_value = 'population'  # contrast or population
         self.xlabel = 'FF pulse delay relative to qubit (samples)'  # for plotting
 
-        self.cfg.pop('confusion_matrix')
+        if 'confusion_matrix' in self.cfg:
+            self.cfg.pop('confusion_matrix')
 
 
     def _display_plot(self, data=None, fig_axs=None):
@@ -218,7 +219,7 @@ class CalibrateFFvsDriveTiming(SweepExperiment1D_lines):
         print(NS_PER_SAMPLE)
 
         ax.secondary_xaxis('top', (lambda t: t * NS_PER_SAMPLE, lambda t: t / NS_PER_SAMPLE))
-        ax.set_title(f"Qubit {self.cfg['qubit_index']} FF pulse delay relative to qubit (ns)")
+        ax.set_title(f"Qubit {self.cfg['qubit_swept']} FF pulse delay relative to qubit (ns)")
 
         # def lorentzian_fit(x, x0, a, b, c):
         #     return a / (1 + (x - x0) ** 2 / b ** 2) + c

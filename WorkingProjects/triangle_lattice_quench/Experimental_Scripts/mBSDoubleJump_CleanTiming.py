@@ -15,12 +15,12 @@ from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperim
 from triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
 
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR import \
     RampDoubleJumpGainR, RampDoubleJumpIntermediateSamplesR, RampCurrentCorrelationsR
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 
 class BSClean(SweepExperimentND):
     def init_sweep_vars(self):
@@ -35,7 +35,7 @@ class BSClean(SweepExperimentND):
         # Assign intermediate gains into cfg['FF_Qubits'] for crosstalk processing
         for j, ijump_gain in enumerate(self.cfg['intermediate_jump_gains']):
             if ijump_gain is None:
-                self.cfg['intermediate_jump_gains'][j] = self.cfg['FF_Qubits'][str(j+1)]['Gain_BS']
+                self.cfg['intermediate_jump_gains'][j] = self.cfg['FF_BS'][j]
                 self.cfg['intermediate_jump_samples'][j] = 0
 
         # bs_samples allows you to have a different number of beamsplitter samples per qubit,
@@ -110,7 +110,7 @@ class BSClean_offset(BSClean, SweepExperiment2D_plots):
 class BSClean_BSGain(BSClean, GainSweepOscillationsR):
     def init_sweep_vars(self):
         super().init_sweep_vars()
-        self.y_key = ('FF_Qubits', str(self.cfg['swept_qubit']), 'Gain_BS')
+        self.y_key = ('FF_BS', int(self.cfg['swept_qubit']) - 1)
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
         self.ylabel = f'FF gain (Qubit {self.cfg["swept_qubit"]})'  # for plotting
 
@@ -199,7 +199,7 @@ class BSClean_Correlations(BSClean, RampCurrentCorrelationsR):
         q3, q4 = self.cfg['readout_pair_2']
         ylabel = rf'$\langle n_{{ {q2}{q1}}} n_{{{q4}{q3}}}\rangle$'
 
-        x_key_name = SweepHelpers.key_savename(self.x_key)
+        x_key_name = NDSweepHelpers.key_savename(self.x_key)
         X = data['data'][x_key_name]
         self.X = X
 

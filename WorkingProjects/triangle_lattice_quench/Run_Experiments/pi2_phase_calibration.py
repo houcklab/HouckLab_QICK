@@ -12,7 +12,7 @@ import numpy as np
 
 from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 

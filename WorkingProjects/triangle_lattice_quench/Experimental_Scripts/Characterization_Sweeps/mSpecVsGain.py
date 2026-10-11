@@ -1,13 +1,13 @@
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class SpecVsGain(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
         if self.cfg['Gauss']:
             print("'Gauss' is enabled, whereas this experiment sweeps CW gain.")
         self.y_key = "qubit_gain"

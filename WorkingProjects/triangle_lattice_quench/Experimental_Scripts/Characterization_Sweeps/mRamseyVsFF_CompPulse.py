@@ -37,8 +37,8 @@ class RamseyCompPulseProgram(SweepCyclesAveragerProgram):
 
     def _body(self, cfg):
 
-        IDataArray = [Compensated_Pulse(fgain, 0, Qubit=j+1) for j, fgain in enumerate(self.FFPulse)]
-        self.FFLoad1Waveform(self.FFPulse, [0]*len(self.FFPulse), IDataArray)
+        IDataArray = [Compensated_Pulse(fgain, 0, Qubit=j+1) for j, fgain in enumerate(self.FFPulses)]
+        self.FFLoad1Waveform(self.FFPulses, [0]*len(self.FFPulses), IDataArray)
 
 
         # schedule second qubit drive to end right before the compensated pulse
@@ -51,14 +51,14 @@ class RamseyCompPulseProgram(SweepCyclesAveragerProgram):
         self.delay(self.qubit_length_us)
 
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"], t_start=0)
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"], t_start=0)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
         self.wait(self.cfg["res_length"] + 1)
         self.delay(self.cfg["res_length"] + 10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"], t_start=0)
+        self.FFPlay_Const(-1 * self.FFReadouts, cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
         self.FFInvert_arb_cycles_and_delay(t_start=0)
 
@@ -86,7 +86,7 @@ class RamseyVsFFComp(RamseyVsFF):
 
         self.Program = RamseyCompPulseProgram
 
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Pulse")
+        self.y_key = ("FF_Pulses", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg["FF_gain_start"], self.cfg["FF_gain_stop"], self.cfg["FF_gain_steps"],
                                     dtype=int)
 

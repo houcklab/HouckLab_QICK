@@ -1,9 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 
-from triangle_lattice_quench.Helpers.IQ_contrast import frequency_guess
-
-
+# Fit functions
 def cosfit(t, freq, A, y0, tau, phi):
     return y0 + np.abs(A) * np.exp(-t / np.abs(tau)) * np.cos(2 * np.pi * freq * t + phi)
 
@@ -11,6 +9,21 @@ def freqfit(d, d0, b, g):
     '''frequency of oscillations, = 2g at Δ=0.'''
     return 2 * np.sqrt(b * (d - d0) ** 2 + g ** 2)
 
+# Helpers to get initial guess for frequencies
+def frequency_guess(t, y):
+    '''Given a real y(t), find a guess for the oscillation frequency of y(t).
+    Use to fit to chevrons.'''
+    fft_ampl = np.abs(np.fft.rfft(y))
+    freqs = np.fft.rfftfreq(len(y)) / (t[1] - t[0])  # units of 1/time
+
+    return freqs[np.argmax(fft_ampl[1:])+1]
+
+def omega_guess(t, y):
+    '''frequency_guess but multiplied by 2π'''
+    return 2 * np.pi * frequency_guess(t, y)
+
+
+# Quick chevron fit
 def fit_chevron(gains, times, pop_matrix, b_guess=1.36055267e-04, return_fit_points=False):
     '''gains: array of gains (y-axis)
        times: array of times (x-axis)

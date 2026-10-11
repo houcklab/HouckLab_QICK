@@ -16,7 +16,7 @@ class SingleShotProgram(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])
         # print(cfg["res_freqs"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -40,7 +40,7 @@ class SingleShotProgram(FFAveragerProgramV2):
     def _body(self, cfg):
         # print(cfg["readout_lengths"])
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.cfg['number_of_pulses'] * self.qubit_total_length_us + FF_Delay_time)
         if self.cfg["Pulse"]:
             for i in range(len(self.cfg["qubit_gains"])):
                 for pulse_num in range(self.cfg["number_of_pulses"]):
@@ -52,7 +52,7 @@ class SingleShotProgram(FFAveragerProgramV2):
 
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
@@ -60,8 +60,8 @@ class SingleShotProgram(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 
@@ -71,8 +71,8 @@ class SingleShotFFMUX(ExperimentClass):
     Basic SingleShot experiement that takes a single piece of data
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
         self.threshold = []
         self.angle = []
         self.ne_contrast = []
@@ -166,18 +166,14 @@ class SingleShotFFMUX(ExperimentClass):
         #     plt.clf()
         #     plt.close()
 
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-
 
 class SingleShot_2QFFMUX(ExperimentClass):
     """
     2Q Single shot characterization for generating a 2 qubit confusion matrix
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
         self.data = None
         self.fid = []
@@ -398,8 +394,3 @@ class SingleShot_2QFFMUX(ExperimentClass):
         if plotDisp:
             plt.show(block=block)
             plt.pause(0.1)
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

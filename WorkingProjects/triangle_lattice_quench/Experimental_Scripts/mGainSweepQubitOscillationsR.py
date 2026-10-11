@@ -1,6 +1,7 @@
 from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
 from triangle_lattice_quench.Helpers.Coupling_strength_fit import fit_chevron, freqfit
 from triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram_SweepWaveform import ThreePartProgram_SweepOneFF
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
@@ -11,7 +12,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.Program = ThreePartProgram_SweepOneFF
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Expt")
+        self.y_key = ("FF_Expt", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
         self.x_name = 'expt_samples'
         # self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
@@ -57,7 +58,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
             time = data_dict['expt_samples']
         except KeyError:
             time = data_dict['expt_samples2']
-        gains = data_dict.get('Gain_Expt', data_dict.get('Gain_BS'))
+        gains = data_dict.get(NDSweepHelpers.key_savename(self.y_key), data_dict.get('Gain_BS'))
         self.popt_list = []
         self.pcov_list = []
         self.perr_list = []
@@ -89,7 +90,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
         fig, axs = super()._display_plot(data, fig_axs)
 
         if 'popt_list' in self.__dict__:
-            gains = data['data'].get('Gain_Expt', data['data'].get('Gain_BS'))
+            gains = data['data'].get(NDSweepHelpers.key_savename(self.y_key), data['data'].get('Gain_BS'))
             gain_step = gains[1] - gains[0]
             gain_linspace = np.linspace(gains[0]-gain_step/2, gains[-1]+gain_step/2, 80)
             for ro_ind in range(len(axs)):

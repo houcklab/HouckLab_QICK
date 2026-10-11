@@ -3,8 +3,8 @@ from scipy.optimize import curve_fit
 
 from qick.asm_v2 import QickSweep1D
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
-    QubitSpecSliceFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import \
+    QubitSpecSlice
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,7 +18,7 @@ class QubitSpecSlice2ndProg(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -50,33 +50,33 @@ class QubitSpecSlice2ndProg(FFAveragerProgramV2):
                        phase=90, gain=cfg["qubit_gains"][1])
         self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
-        # print(self.FFPulse)
+        # print(self.FFPulses)
 
 
     def _body(self, cfg):
-        # print(self.FFPulse)
+        # print(self.FFPulses)
         FF_pulse_delay = 1
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_pulse_delay + 0.05)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_pulse_delay + 0.05)
         self.pulse(ch=cfg["qubit_ch"], name="qubit01_drive", t = FF_pulse_delay)
         self.pulse(ch=cfg["qubit_ch"], name="qubit12_drive", t = FF_pulse_delay+4*cfg["sigma"][0])  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_pulse_delay + 0.05)
+        self.FFPlay_Const(-1 * self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_pulse_delay + 0.05)
 
     def loop_pts(self):
         return (self.get_pulse_param("qubit12_drive", "freq", as_array=True) + self.cfg.get('qubit_LO', 0),)
 # ====================================================== #
 
-class QubitSpecSlice2nd(QubitSpecSliceFFMUX):
+class QubitSpecSlice2nd(QubitSpecSlice):
     """
     Basic spec experiment that takes a single slice of data
     """

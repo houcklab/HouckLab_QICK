@@ -1,16 +1,16 @@
-# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# os.add_dll_directory(os.getcwd() + '\\Equipment_Drivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
 import numpy
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
-    QubitSpecSliceFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import \
+    QubitSpecSlice
 from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import \
     SpecVsQblox
 
 voltage_arrs = []
 
-from triangle_lattice_quench.Flux_Files.SET_QBLOX_VOLTAGES import reset_voltages
+from triangle_lattice_quench.Device_Calibration.SET_QBLOX_VOLTAGES import reset_voltages
 from triangle_lattice_quench.build_config import build_config
 from triangle_lattice_quench.socProxy import makeProxy
 
@@ -21,7 +21,8 @@ soc, soccfg = makeProxy()
 
 for Q in [1,2,3,4,5,6]:
     # voltages = voltage_arrs[Q-1]
-    DACs, voltages = reset_voltages(rf"C:\Users\houck\Documents\HouckLab_QICK\WorkingProjects\triangle_lattice_quench\Flux_Files\Voltage_jsons\8QV1\couplers_calib\Q{Q}_high.json")
+    DACs, voltages = reset_voltages(
+        rf"/triangle_lattice_quench/Device_Calibration\Voltage_jsons\8QV1\couplers_calib\Q{Q}_high.json")
     # spi_rack.close()
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
@@ -51,8 +52,8 @@ for Q in [1,2,3,4,5,6]:
 
 
     if Run2ToneSpec:
-        QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Spec_relevant_params,
-                            soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
+        QubitSpecSlice(path="QubitSpecFF", cfg=config | Spec_relevant_params,
+                       soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 
     if Run_Spec_v_Qblox:

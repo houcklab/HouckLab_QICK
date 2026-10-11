@@ -1,6 +1,6 @@
 
 
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
@@ -24,7 +24,7 @@ class SweepExperiment1D_IQplots(SweepExperimentND):
         else:
             ylabel = None
 
-        x_key_name = SweepHelpers.key_savename(self.x_key)
+        x_key_name = NDSweepHelpers.key_savename(self.x_key)
         X = data['data'][x_key_name]
         self.X = X
 
@@ -52,8 +52,3 @@ class SweepExperiment1D_IQplots(SweepExperimentND):
             lines[1].set_data(self.X, Q_mat[ro_index])
             axs[ro_index].relim()
             axs[ro_index].autoscale()
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

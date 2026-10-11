@@ -13,29 +13,40 @@ here, and the package ``__init__`` re-exports ``AutoCalibWorker`` from here.
 from __future__ import annotations
 
 import copy
+import glob
+import os
+import tempfile
 import time
 import traceback
 from typing import Any, Callable, Optional
 
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QCoreApplication, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QGridLayout, QGroupBox, QHBoxLayout,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
     QStackedWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .. import style as st
 from ..state import (
     CalibState,
     STAGE_DEFAULTS,
     MUX_STAGES,
     READOUT_SIDE_STAGES,
     _jd_entry_for,
+    get_autocalib_params,
+    set_autocalib_params,
 )
+from .. import abortable_soc
+from ..abortable_soc import AbortableSoc, AcquisitionAborted
 from ..helpers import (
     build_cfg_for_qubit,
+    groups_of,
+    readout_group_names,
+    pulse_group_names,
     _readout_qubit_for_entry,
     _mux_readout_list,
     _pulse_chain_entries,
@@ -429,16 +440,19 @@ class TransmissionTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-        return CavitySpecFFMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import TransmissionSweep
+        return TransmissionSweep(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="TransmissionFF", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="TransmissionFF", cfg=cfg,
         )
 
     def on_success(self, expt, data):
         f_if = expt.peakFreq_min
         f_actual = f_if + expt.cfg["res_LO"]
         return f"f_r = {f_actual:.3f} MHz (IF = {f_if:.3f}, LO = {expt.cfg['res_LO']})"
+
+    def cell_summary(self, expt, data) -> str:
+        return f"{expt.peakFreq_min + expt.cfg['res_LO']:.1f}"
 
     def on_apply(self, expt, data):
         Q = str(self.state.target_qubit)
@@ -470,14 +484,17 @@ class SpecSliceTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-        return QubitSpecSliceFFMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSlice
+        return QubitSpecSlice(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="QubitSpec", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="QubitSpec", cfg=cfg,
         )
 
     def on_success(self, expt, data):
         return f"f_q = {expt.qubitFreq:.3f} MHz"
+
+    def cell_summary(self, expt, data) -> str:
+        return f"{expt.qubitFreq:.0f}"
 
     def on_apply(self, expt, data):
         Q = str(self.state.target_qubit)
@@ -503,10 +520,10 @@ class AmplitudeRabiTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
-        return AmplitudeRabiFFMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabi import AmplitudeRabi
+        return AmplitudeRabi(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="AmplitudeRabi", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="AmplitudeRabi", cfg=cfg,
         )
 
     def on_success(self, expt, data):
@@ -514,6 +531,10 @@ class AmplitudeRabiTab(StageTab):
         if pi_gain is None:
             return "Rabi: fit failed (try wider/narrower max_gain)"
         return f"pi-pulse gain = {pi_gain:.0f} DAC"
+
+    def cell_summary(self, expt, data) -> str:
+        pi_gain = data["data"].get("pi_gain_fit")
+        return "OK" if pi_gain is None else f"{pi_gain:.0f}"
 
     def on_apply(self, expt, data):
         Q = str(self.state.target_qubit)
@@ -591,7 +612,7 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
         return {}
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
+        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import (
             ReadOpt_wSingleShotFFMUX,
         )
 
@@ -599,7 +620,7 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
             def acquire(self_inner, progress=False, live_callback=None):
                 # Suppress in-acquire matplotlib calls; we re-render onto the GUI canvas.
                 return ReadOpt_wSingleShotFFMUX.acquire(
-                    self_inner, progress=progress, plotDisp=False, ax=None,
+                    self_inner, plotDisp=False, ax=None,
                     live_callback=live_callback,
                 )
 
@@ -608,7 +629,7 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
         return _ReadOptForGui(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="SingleShot_OptReadout",
-            outerFolder=self.state.outer_folder, cfg=cfg,
+            cfg=cfg,
         )
 
     def _best_index(self, fid_mat):
@@ -656,6 +677,11 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
         gain = int(round(float(d["gain_pts"][iy])))
         return f"max F = {fid_mat[iy, ix] * 100:.1f}%, f_r = {f_actual:.2f} MHz, gain = {gain}"
 
+    def cell_summary(self, expt, data) -> str:
+        import numpy as np
+        fid_mat = np.asarray(data["data"]["fid_mat"])
+        return f"{np.nanmax(fid_mat) * 100:.1f}%" if np.isfinite(fid_mat).any() else "OK"
+
     def on_apply(self, expt, data):
         import numpy as np
         d = data["data"]
@@ -671,7 +697,6 @@ class ReadoutOptTab(RecenterZoomMixin, StageTab):
             ro = entry.setdefault("Readout", {})
             ro["Frequency"] = float(f_actual)
             ro["Gain"] = gain
-            ro["fidelity"] = float(np.nanmax(fid_mat))
 
 
 class PulseOptTab(RecenterZoomMixin, StageTab):
@@ -745,14 +770,14 @@ class PulseOptTab(RecenterZoomMixin, StageTab):
         return {}
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import (
+        from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import (
             QubitPulseOpt_wSingleShotFFMUX,
         )
 
         class _PulseOptForGui(QubitPulseOpt_wSingleShotFFMUX):
             def acquire(self_inner, progress=False, live_callback=None):
                 return QubitPulseOpt_wSingleShotFFMUX.acquire(
-                    self_inner, progress=progress, plotDisp=False, ax=None,
+                    self_inner, plotDisp=False, ax=None,
                     live_callback=live_callback,
                 )
 
@@ -762,7 +787,7 @@ class PulseOptTab(RecenterZoomMixin, StageTab):
         return _PulseOptForGui(
             soc=self.state.soc, soccfg=self.state.soccfg,
             path="SingleShot_OptQubit",
-            outerFolder=self.state.outer_folder, cfg=cfg,
+            cfg=cfg,
         )
 
     def _best_index(self, fid_mat):
@@ -810,6 +835,11 @@ class PulseOptTab(RecenterZoomMixin, StageTab):
         gain = int(round(float(d["gain_pts"][iy])))
         return f"max F = {fid_mat[iy, ix] * 100:.1f}%, f_q = {f_actual:.3f} MHz, gain = {gain}"
 
+    def cell_summary(self, expt, data) -> str:
+        import numpy as np
+        fid_mat = np.asarray(data["data"]["fid_mat"])
+        return f"{np.nanmax(fid_mat) * 100:.1f}%" if np.isfinite(fid_mat).any() else "OK"
+
     def on_apply(self, expt, data):
         import numpy as np
         d = data["data"]
@@ -825,7 +855,6 @@ class PulseOptTab(RecenterZoomMixin, StageTab):
             q = entry.setdefault("Qubit", {})
             q["Frequency"] = float(f_actual)
             q["Gain"] = gain
-            entry.setdefault("Readout", {})["fidelity"] = float(np.nanmax(fid_mat))
 
 
 class SingleShotTab(StageTab):
@@ -843,10 +872,10 @@ class SingleShotTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-        return SingleShotFFMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShot
+        return SingleShot(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="SingleShot", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="SingleShot", cfg=cfg,
         )
 
     def render_into(self, ax, expt, data, qubit_id=None):
@@ -893,9 +922,8 @@ class SingleShotTab(StageTab):
 
     def on_apply(self, expt, data):
         # Mirrors angle/threshold (+ optional ne/ng_contrast) into the JSON
-        # entry's SingleShot sub-dict, where they PERSIST to disk; only
-        # `fidelity` stays in the Readout block, which is session-only (stripped
-        # at save). build_cfg_for_qubit reads the SingleShot block to populate
+        # entry's SingleShot sub-dict, where they PERSIST to disk.
+        # build_cfg_for_qubit reads the SingleShot block to populate
         # cfg['angle']/['threshold']/['confusion_matrix'], which SweepExperimentND
         # needs to build population_corrected. The user persists via the
         # QubitParametersTab Save buttons. setdefault (not a fresh dict) keeps
@@ -906,8 +934,6 @@ class SingleShotTab(StageTab):
         entry = _jd_entry_for(self.state, Q)
         if entry is None:
             return
-        ro = entry.setdefault("Readout", {})
-        ro["fidelity"] = float(d["fid"][0])
         ss = entry.setdefault("SingleShot", {})
         ss["angle"] = float(d["angle"][0])
         ss["threshold"] = float(d["threshold"][0])
@@ -936,10 +962,10 @@ class T1Tab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
-        return T1MUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1
+        return T1(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="T1", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="T1", cfg=cfg,
         )
 
     def display_kwargs(self):
@@ -986,10 +1012,10 @@ class T2RTab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-        return T2RMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2R
+        return T2R(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="T2R", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="T2R", cfg=cfg,
         )
 
     def display_kwargs(self):
@@ -1034,15 +1060,15 @@ class T2ETab(StageTab):
         ]
 
     def make_experiment(self, cfg):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
-        return T2EMUX(
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2E
+        return T2E(
             soc=self.state.soc, soccfg=self.state.soccfg,
-            path="T2E", outerFolder=self.state.outer_folder, cfg=cfg,
+            path="T2E", cfg=cfg,
         )
 
     @staticmethod
     def _ensure_fit(expt, data):
-        """Fit the echo decay once and cache it on ``expt`` (T2RMUX fits inside
+        """Fit the echo decay once and cache it on ``expt`` (T2R fits inside
         acquire; T2EMUX does not). Idempotent - render / on_success /
         cell_summary / on_apply each call it, and render runs first.
 
@@ -1057,7 +1083,7 @@ class T2ETab(StageTab):
         from triangle_lattice_quench.Helpers.IQ_contrast import (
             IQ_contrast, omega_guess,
         )
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2R
 
         expt._t2e_fit_done = True
         expt.T2 = None
@@ -1076,12 +1102,12 @@ class T2ETab(StageTab):
                 p0 = [x[-1] / 5, (np.max(y) - np.min(y)) / 2, y[-1],
                       omega_guess(x, y), 1e-2]
                 (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(
-                    T2RMUX._t2r_fit_func, x, y, p0=p0)
-                curve = T2RMUX._t2r_fit_func(x, T2, A, y0, omega, phi)
+                    T2R._t2r_fit_func, x, y, p0=p0)
+                curve = T2R._t2r_fit_func(x, T2, A, y0, omega, phi)
             else:
                 p0 = [x[-1] / 3, y[0] - y[-1], y[-1]]
                 (T2, A, y0), _ = scipy.optimize.curve_fit(
-                    T2RMUX._t2r_envelope, x, y, p0=p0)
+                    T2R._t2r_envelope, x, y, p0=p0)
                 curve = None
         except Exception as exc:
             print(f"T2E fit failed: {exc}")
@@ -1094,7 +1120,7 @@ class T2ETab(StageTab):
         expt.t2e_env = (float(A), float(y0))
 
     def render_into(self, ax, expt, data, qubit_id=None):
-        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+        from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2R
         self._ensure_fit(expt, data)
         cfg = data["config"]
         x = data["data"]["x_pts"]
@@ -1108,8 +1134,8 @@ class T2ETab(StageTab):
             A, y0 = expt.t2e_env
             if expt.t2e_curve is not None:
                 ax.plot(x, expt.t2e_curve, color='black')
-                ax.plot(x, T2RMUX._t2r_envelope(x, T2, -A, y0), color='black', ls='--')
-            ax.plot(x, T2RMUX._t2r_envelope(x, T2, A, y0), color='black', ls='--',
+                ax.plot(x, T2R._t2r_envelope(x, T2, -A, y0), color='black', ls='--')
+            ax.plot(x, T2R._t2r_envelope(x, T2, A, y0), color='black', ls='--',
                     label=f'T2E = {T2:.3f} us')
         ax.legend(prop={'size': 10})
 
@@ -1154,20 +1180,68 @@ class AutoCalibWorker(QThread):
     live_update  = pyqtSignal(str, str, object)                       # qubit, stage, snapshot data dict
 
     def __init__(self, state: CalibState, schedule: list[tuple[str, str, dict]],
-                 stages_by_name: dict[str, "StageTab"]):
+                 stages_by_name: dict[str, "StageTab"], save_all: bool = False):
         super().__init__()
+        self.save_all = save_all
         self.state = state
         self.schedule = schedule
         self.stages_by_name = stages_by_name
         self._stop = False
+        self._guard = None
 
     def stop(self):
         self._stop = True
 
     def run(self):
-        for Q, stage_name, params in self.schedule:
+        # Stop can interrupt a running acquisition only if QICK's poll loop comes back to us,
+        # so the soc handed to every stage is wrapped for the duration of the run.
+        real_soc = self.state.soc
+        guard = None
+        if real_soc is not None:
+            guard = AbortableSoc(real_soc, lambda: self._stop)
+            self._guard = guard
+            self.state.soc = guard
+        self._route_outputs()
+        try:
+            self._run_jobs()
+        finally:
+            self._restore_outputs()
+            self.state.soc = real_soc
+            for err in (guard.interrupt_errors if guard else []):
+                self.log_msg.emit(f"[STOP] board-side call failed: {err}")
+        self.finished_all.emit()
+
+    def _route_outputs(self) -> None:
+        """Without "Save all results", point every experiment's own png/h5/json paths at a scratch file,
+        so the savefig calls inside the experiment classes write nothing into the data folders."""
+        if self.save_all:
+            return
+        scratch = os.path.join(tempfile.gettempdir(), "calib_gui_unsaved")
+
+        def scratch_paths(make):
+            def wrapped(cfg):
+                expt = make(cfg)
+                expt.iname, expt.fname, expt.cname = scratch + ".png", scratch + ".h5", scratch + ".json"
+                return expt
+            return wrapped
+
+        for stage in self.stages_by_name.values():
+            stage.make_experiment = scratch_paths(stage.make_experiment)
+
+    def _restore_outputs(self) -> None:
+        for stage in self.stages_by_name.values():
+            stage.__dict__.pop("make_experiment", None)
+
+    def _skip_rest(self, start: int) -> None:
+        """Mark jobs that will never run, so their cells stop saying "queued"."""
+        for Q, stage_name, _ in self.schedule[start:]:
+            self.progress.emit(Q, stage_name, "skipped")
+
+    def _run_jobs(self):
+        for i, (Q, stage_name, params) in enumerate(self.schedule):
             if self._stop:
                 self.log_msg.emit(f"--- aborted before Q{Q}/{stage_name} ---")
+                self._skip_rest(i)
                 break
             stage = self.stages_by_name.get(stage_name)
             if stage is None:
@@ -1205,6 +1279,7 @@ class AutoCalibWorker(QThread):
                     qp = [str(Q)] if drive_active else None
                 cfg = build_cfg_for_qubit(
                     self.state, ro_q,
+                    pulse_group=self.state.current_drive_group if drive_active else None,
                     qubit_pulse=qp,
                     qubit_readout=qr,
                     overrides=params,
@@ -1252,6 +1327,12 @@ class AutoCalibWorker(QThread):
                         data = expt.acquire(live_callback=_on_point)
                     else:
                         data = expt.acquire()
+                if self.save_all:
+                    try:
+                        expt.save_data(data)
+                        expt.save_config()   # not part of save_data: writes the .json next to the .h5
+                    except Exception as exc:
+                        self.log_msg.emit(f"[save failed] Q{Q} {stage_name}: {exc}")
                 self.progress.emit(Q, stage_name, "applying")
                 # Snapshot before on_apply so we can tag calibration-touched
                 # leaves for the italic-bold styling on the params tab.
@@ -1274,6 +1355,16 @@ class AutoCalibWorker(QThread):
                 except Exception:
                     summary = "(no summary)"
                 self.stage_done.emit(Q, stage_name, summary, expt, data, time.perf_counter() - t0)
+            except AcquisitionAborted:
+                # Stop pressed mid-acquisition: the board has been stopped, the partial
+                # data is discarded, and nothing after this job runs.
+                self.progress.emit(Q, stage_name, "stopped")
+                board = ("tProc stopped" if self._guard.tproc_stopped
+                         else "the board finishes the sequence it is running")
+                self.log_msg.emit(f"[STOPPED] Q{Q} {stage_name}: acquisition interrupted, "
+                                  f"{board} ({time.perf_counter() - t0:.1f} s in)")
+                self._skip_rest(i + 1)
+                break
             except Exception as exc:
                 # Acquire (or anything before it) failed — no usable data.
                 self.stage_failed.emit(
@@ -1281,7 +1372,6 @@ class AutoCalibWorker(QThread):
                     f"{exc}\n{traceback.format_exc()}",
                     None, None, time.perf_counter() - t0,
                 )
-        self.finished_all.emit()
 
 
 class AutoCalibTab(QWidget):
@@ -1365,6 +1455,8 @@ class AutoCalibTab(QWidget):
         # (Q, stage) whose zoom/pan the live plot currently holds; a mismatch
         # (new stage or new run) lets the next frame autoscale from scratch.
         self._live_view_key: Optional[tuple[str, str]] = None
+        # (Q, stage) the user clicked to inspect; live/final frames of other cells leave it alone.
+        self._pinned_key: Optional[tuple[str, str]] = None
 
         # --- readout / drive group selectors (moved from MainWindow toolbar) ---
         self.readout_group_combo = QComboBox()
@@ -1378,7 +1470,7 @@ class AutoCalibTab(QWidget):
         self.drive_group_combo = QComboBox()
         self.drive_group_combo.setMinimumWidth(160)
         self.drive_group_combo.setToolTip(
-            "Drive (Pulse) point. Optional; empty = use readout group's Pulse_FF."
+            "Drive (Pulse) point. Optional; empty = use readout group's FF_Pulses."
         )
         self.drive_group_combo.currentIndexChanged.connect(
             self._on_drive_group_changed
@@ -1403,7 +1495,14 @@ class AutoCalibTab(QWidget):
         self.mux_strip.selection_changed.connect(self._on_mux_changed)
         mux_row = QHBoxLayout()
         mux_row.addWidget(QLabel("MUX with:"))
-        mux_row.addWidget(self.mux_strip, 1)
+        mux_row.addWidget(self.mux_strip)
+        mux_sep = QFrame(); mux_sep.setFrameShape(QFrame.VLine); mux_sep.setFrameShadow(QFrame.Sunken)
+        mux_row.addWidget(mux_sep)
+        mux_all_btn = QPushButton("All")
+        mux_all_btn.setToolTip("Select every qubit, or clear them all if all are already selected.")
+        mux_all_btn.clicked.connect(self.mux_strip.toggle_all)
+        mux_row.addWidget(mux_all_btn)
+        mux_row.addStretch(1)
         mux_widget = QWidget(); mux_widget.setLayout(mux_row)
 
         # Pulse chain chip strip — qubits in the experimental drive sequence.
@@ -1441,6 +1540,14 @@ class AutoCalibTab(QWidget):
         self.select_none_btn.clicked.connect(self._deselect_all_cells)
         button_row.addWidget(self.run_btn)
         button_row.addWidget(self.stop_btn)
+        self.save_all_check = QCheckBox("Save all results")
+        self.save_all_check.setToolTip(
+            "Off (default): nothing is written to the data folders. "
+            "On: every finished stage saves its .h5 and .json, plus a plot of the live canvas "
+            "when the experiment doesn't save one itself."
+        )
+        self._run_saves_all = False
+        button_row.addWidget(self.save_all_check)
         button_row.addSpacing(20)
         button_row.addWidget(self.select_all_btn)
         button_row.addWidget(self.select_none_btn)
@@ -1467,8 +1574,7 @@ class AutoCalibTab(QWidget):
         # --- log area (left side, under the table) ---
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Per-stage status messages will appear here.")
 
         # --- right side: stacked plot page + per-stage param-form pages ---
@@ -1543,6 +1649,38 @@ class AutoCalibTab(QWidget):
             v.addStretch(1)
             idx = self.right_stack.addWidget(page)
             self._stage_page_index[s.name] = idx
+        self._stage_forms = {s.name: s.param_form for s in stages}
+        self._restore_params()
+        self._params_timer = QTimer(self)               # one save per burst of edits
+        self._params_timer.setSingleShot(True)
+        self._params_timer.setInterval(400)
+        self._params_timer.timeout.connect(self._save_params)
+        for form in self._stage_forms.values():
+            form.changed.connect(self._params_timer.start)
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._save_params)
+
+    def _restore_params(self) -> None:
+        """Re-apply the parameter values saved by the last session. Only values the user
+        had changed from the code defaults are stored, so everything else keeps following
+        the defaults; unknown stages/keys (from an older version) are ignored."""
+        saved, n = get_autocalib_params(), 0
+        for name, form in self._stage_forms.items():
+            values = saved.get(name)
+            if isinstance(values, dict):
+                form.blockSignals(True)                 # restoring is not an edit
+                try:
+                    n += len(form.apply(values))
+                finally:
+                    form.blockSignals(False)
+        if n:
+            self.log.appendPlainText(
+                f"[params] restored {n} saved parameter value(s) from the last session")
+
+    def _save_params(self) -> None:
+        set_autocalib_params({name: nd for name, form in self._stage_forms.items()
+                              if (nd := form.non_default_values())})
 
     # ---- group selectors ----
 
@@ -1575,11 +1713,11 @@ class AutoCalibTab(QWidget):
     def _rebuild_mux_strip(self) -> None:
         jd = self.state.qubit_parameters_json or {}
         rg = self.state.current_readout_group or ""
-        entries = list(((jd.get("readout_groups") or {}).get(rg, {})
+        entries = list(((groups_of(jd, "drive_groups") or {}).get(rg, {})
                                                       .get("entries") or {}).keys())
-        # Default: every qubit in the readout group is MUXed.
-        self.mux_strip.set_qubits(entries, entries)
-        self.state.mux_readouts = list(entries)
+        # Default: nothing is MUXed with the target (the All button selects every qubit).
+        self.mux_strip.set_qubits(entries, [])
+        self.state.mux_readouts = []
 
     def _on_mux_changed(self, selected: list) -> None:
         self.state.mux_readouts = list(selected)
@@ -1599,7 +1737,7 @@ class AutoCalibTab(QWidget):
             self.pulse_chain_strip.set_qubits([], [])
             self.state.pulse_chain = []
             return
-        entries = list(((jd.get("drive_groups") or {}).get(dg, {})
+        entries = list(((groups_of(jd, "drive_groups") or {}).get(dg, {})
                                                      .get("entries") or {}).keys())
         # Parse qubit labels from entry names; preserve JSON order and dedupe.
         seen: set = set()
@@ -1626,8 +1764,8 @@ class AutoCalibTab(QWidget):
         Called by MainWindow after the params JSON is (re)loaded.
         """
         jd = self.state.qubit_parameters_json or {}
-        readout_groups = list((jd.get("readout_groups") or {}).keys())
-        drive_groups = list((jd.get("drive_groups") or {}).keys())
+        readout_groups = readout_group_names(jd)
+        drive_groups = pulse_group_names(jd)
 
         self.readout_group_combo.blockSignals(True)
         self.readout_group_combo.clear()
@@ -1673,10 +1811,10 @@ class AutoCalibTab(QWidget):
         drive_name = getattr(self.state, "current_drive_group", "") or ""
 
         entries: list[str] = []
-        if drive_name and drive_name in (jd.get("drive_groups") or {}):
-            entries = list(jd["drive_groups"][drive_name].get("entries", {}).keys())
-        elif readout_name and readout_name in (jd.get("readout_groups") or {}):
-            entries = list(jd["readout_groups"][readout_name].get("entries", {}).keys())
+        if drive_name and drive_name in (groups_of(jd, "drive_groups") or {}):
+            entries = list(groups_of(jd, "drive_groups")[drive_name].get("entries", {}).keys())
+        elif readout_name and readout_name in (groups_of(jd, "drive_groups") or {}):
+            entries = list(groups_of(jd, "drive_groups")[readout_name].get("entries", {}).keys())
         if not entries:
             # Legacy fallback: number qubits 1..N from CalibState.
             entries = [str(i + 1) for i in range(self.state.n_qubits)]
@@ -1903,6 +2041,7 @@ class AutoCalibTab(QWidget):
         if key is None:
             return
         Q, stage_name = key
+        self._pinned_key = key
         entry = self.results.get(Q, {}).get(stage_name)
         if entry is None:
             self.live_canvas.reset()
@@ -1939,7 +2078,31 @@ class AutoCalibTab(QWidget):
     # ---- run / stop ----
 
     def _enabled_pairs(self) -> list[tuple[str, str]]:
-        return [k for k, v in self._cell_enabled.items() if v]
+        """Enabled cells in run order: top-left first, down each stage column before
+        moving right. Every qubit's own stages still run left to right, so calibration
+        dependencies hold. A cell whose qubit is not in the current table sorts after the
+        others in its column."""
+        col = {name: c for c, (name, _) in enumerate(self.STAGE_KEYS)}
+        row = {q: r for r, q in enumerate(self._row_qubit)}
+        pairs = [k for k, v in self._cell_enabled.items() if v]
+        return sorted(pairs, key=lambda k: (col.get(k[1], len(col)), row.get(k[0], len(row))))
+
+    def _reset_for_run(self, run_pairs) -> None:
+        """Clear outcomes and cached results ONLY for the cells about to run. Stages of the
+        same qubit that are not re-run keep their results, so their plots and the qubit's
+        "View" button stay valid."""
+        for Q, stage_name in run_pairs:
+            self._cell_outcome[(Q, stage_name)] = None
+            self._set_cell_status_text(Q, stage_name, "queued")
+            self.results.get(Q, {}).pop(stage_name, None)
+        for Q in {q for q, _ in run_pairs}:
+            if self.results.get(Q):
+                continue                     # earlier stages of this qubit are still viewable
+            self.results.pop(Q, None)
+            btn = self._result_buttons.get(Q)
+            if btn is not None:
+                btn.setText("-")
+                btn.setEnabled(False)
 
     def on_run(self):
         if self.worker is not None and self.worker.isRunning():
@@ -1973,16 +2136,8 @@ class AutoCalibTab(QWidget):
             return
 
         run_pairs = {(Q, name) for Q, name, _ in schedule}
-        # Reset stale results/outcomes for cells about to run; clear status text.
-        for Q, stage_name in run_pairs:
-            self._cell_outcome[(Q, stage_name)] = None
-            self._set_cell_status_text(Q, stage_name, "queued")
-        for Q, _ in run_pairs:
-            self.results.pop(Q, None)
-            btn = self._result_buttons.get(Q)
-            if btn is not None:
-                btn.setText("-")
-                btn.setEnabled(False)
+        self._save_params()                  # what is about to run is what gets remembered
+        self._reset_for_run(run_pairs)
         # Repaint the touched cells.
         for Q, stage_name in run_pairs:
             try:
@@ -1994,6 +2149,7 @@ class AutoCalibTab(QWidget):
                 self._paint_cell(r, c)
 
         # Reset live canvas + UI.
+        self._pinned_key = None
         self.live_canvas.reset()
         self.live_label.setText("Live plot — waiting for the first stage to acquire...")
         self.log.clear()
@@ -2005,7 +2161,8 @@ class AutoCalibTab(QWidget):
         self.readout_group_combo.setEnabled(False)
         self.drive_group_combo.setEnabled(False)
 
-        self.worker = AutoCalibWorker(self.state, schedule, stages_by_name)
+        self._run_saves_all = self.save_all_check.isChecked()
+        self.worker = AutoCalibWorker(self.state, schedule, stages_by_name, save_all=self._run_saves_all)
         self.worker.progress.connect(self._on_progress)
         self.worker.stage_done.connect(self._on_stage_done)
         self.worker.stage_failed.connect(self._on_stage_failed)
@@ -2017,7 +2174,11 @@ class AutoCalibTab(QWidget):
     def on_stop(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
-            self.log.appendPlainText("[STOP] requested — finishing current stage...")
+            board = ("and stopping the tProc" if abortable_soc.STOP_TPROC_ON_ABORT else
+                     "the board then finishes the sequence it is running")
+            self.log.appendPlainText(
+                f"[STOP] requested — interrupting the acquisition (within ~0.3 s), {board}; "
+                "a stage that is not acquiring stops at its next step.")
             self.stop_btn.setEnabled(False)
 
     # ---- worker signal handlers (GUI thread) ----
@@ -2054,10 +2215,12 @@ class AutoCalibTab(QWidget):
 
         # Cache result + render to live.
         self.results.setdefault(Q, {})[stage_name] = (expt, data)
-        try:
-            self._render_live(Q, stage_name, expt, data)
-        except Exception:
-            traceback.print_exc()
+        if self._pinned_key in (None, (Q, stage_name)):
+            try:
+                self._render_live(Q, stage_name, expt, data)
+                self._save_plot_if_missing(expt)
+            except Exception:
+                traceback.print_exc()
 
         btn = self._result_buttons.get(Q)
         if btn is not None:
@@ -2070,12 +2233,18 @@ class AutoCalibTab(QWidget):
         except Exception:
             pass
 
-    def _render_live(self, Q: str, stage_name: str, expt, data, switch_page: bool = True):
-        # Switch to plot page before rendering so the user sees the plot. Live
-        # per-point frames pass switch_page=False so they don't yank the user
-        # off the log page every update; only the final stage_done frame switches.
-        if switch_page:
-            self.right_stack.setCurrentIndex(0)
+    def _save_plot_if_missing(self, expt) -> None:
+        """With "Save all results": save the live canvas as the run's png unless the experiment already did."""
+        iname = getattr(expt, "iname", None)
+        if not (self._run_saves_all and iname) or glob.glob(glob.escape(iname[:-4]) + "*.png"):
+            return
+        self.live_canvas.figure.savefig(iname[:-4] + ".png")
+
+    def _render_live(self, Q: str, stage_name: str, expt, data, final: bool = True):
+        # Never switches the right-hand page: a plot that finishes or updates must not
+        # pull the user off the log / parameter page they are reading. The latest plot
+        # waits on the plot page, and clicking a cell shows it. ``final`` is False for
+        # per-point live frames and True for a finished stage's result frame.
         try:
             main = self.get_main()
             stages_by_name = {s.name: s for s in main.stages}
@@ -2087,13 +2256,13 @@ class AutoCalibTab(QWidget):
         # Preserve the user's zoom/pan across per-point live frames. reset()
         # rebuilds the axes (autoscale), which would snap the view back to the
         # full sweep every ~0.2 s while ROpt/PulseOpt fill in. Live frames
-        # (switch_page=False) keep a fixed sweep extent, so restoring the prior
+        # (final=False) keep a fixed sweep extent, so restoring the prior
         # view is exact when un-zoomed and honors the user's zoom otherwise. Gate
         # on _live_view_key so only a repeat frame of the SAME (Q, stage) holds
         # its view: the first frame of a new stage/run (or a text-only axes)
-        # autoscales, as does the final frame (switch_page=True) showing the result.
+        # autoscales, as does the final frame (final=True) showing the result.
         keep_view = (
-            (not switch_page)
+            (not final)
             and self._live_view_key == (Q, stage_name)
             and self.live_canvas.ax.has_data()
         )
@@ -2130,7 +2299,9 @@ class AutoCalibTab(QWidget):
             return
         if (Q, stage_name) != self._live_running:
             return
-        self._render_live(Q, stage_name, None, snapshot, switch_page=False)
+        if self._pinned_key not in (None, (Q, stage_name)):
+            return   # the user is inspecting another cell's plot
+        self._render_live(Q, stage_name, None, snapshot, final=False)
 
     def _on_result_clicked(self, Q: str):
         res = self.results.get(Q)
@@ -2217,7 +2388,8 @@ class ResultsDialog(QDialog):
     def __init__(self, qubit_id, results_for_q: dict, stages_by_name: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Q{qubit_id} - calibration results")
-        self.resize(1400, 950)
+        avail = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1400, int(avail.width() * 0.95)), min(950, int(avail.height() * 0.9)))
 
         grid = QGridLayout()
         grid.setSpacing(8)

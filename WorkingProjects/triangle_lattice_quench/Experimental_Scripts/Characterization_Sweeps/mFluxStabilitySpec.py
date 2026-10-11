@@ -2,14 +2,14 @@ import time
 
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class FluxStabilitySpec(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
 
         self.y_key = "minutes_passed"
         self.y_points = self.cfg["delay_minutes"] * np.arange(self.cfg["num_steps"])

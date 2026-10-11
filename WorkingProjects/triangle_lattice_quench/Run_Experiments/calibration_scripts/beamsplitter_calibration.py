@@ -6,7 +6,7 @@ This assumes that the ramps (12,34,45,56,67,78) are all defined in the qubit par
 '''
 
 
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR
 
 from triangle_lattice_quench.build_config import update_config
@@ -134,8 +134,8 @@ def calibrate_rung_gains(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
@@ -230,8 +230,8 @@ def calibrate_rung_offset(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())

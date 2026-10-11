@@ -1,4 +1,4 @@
-# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# os.add_dll_directory(os.getcwd() + '\\Equipment_Drivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
 from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mSweepXPhase import SweepXPhase
@@ -7,7 +7,7 @@ from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchDyna
 
 from triangle_lattice_quench.build_config import build_config
 from Calibrate_muxed_readouts import characterize_readout
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.socProxy import makeProxy
 soc, soccfg = makeProxy()
 
@@ -68,7 +68,7 @@ quench_dynamics_dict = {'samples_start': 0, 'samples_end': 10000,
 
 
 run_quench_dynamics_sweep_gain = True
-quench_dynamics_sweep_gain_dict = {'qubit_FF_index': 3,
+quench_dynamics_sweep_gain_dict = {'qubit_FF_index': 2,
                                    'samples_start': 0, 'samples_end': 1000,
                                    'samples_num_points': 51,
                                    'gain_start': 0, 'gain_end': 10000,
@@ -77,15 +77,15 @@ quench_dynamics_sweep_gain_dict = {'qubit_FF_index': 3,
 
 swept_qubit = str(quench_dynamics_sweep_gain_dict['qubit_FF_index'])
 gain_range = 2000
-quench_dynamics_sweep_gain_dict['gain_start'] = config["FF_Qubits"][swept_qubit]["Gain_Dynamics"] - gain_range//2
-quench_dynamics_sweep_gain_dict['gain_end'] = config["FF_Qubits"][swept_qubit]["Gain_Dynamics"] + gain_range//2
+quench_dynamics_sweep_gain_dict['gain_start'] = config["FF_Dynamics"][int(swept_qubit)] - gain_range//2
+quench_dynamics_sweep_gain_dict['gain_end'] = config["FF_Dynamics"][int(swept_qubit)] + gain_range//2
 
 
 # This ends the working section of the file.
 # ----------------------------------------
 
-for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_Dynamics', 'Gain_RampInit']:
-    print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_Dynamics', 'FF_RampInit']:
+    print(f'{label}: {[int(g) for g in config[label]]}')
 
 # This ends the translation of the Qubit_Parameters dict
 # --------------------------------------------------

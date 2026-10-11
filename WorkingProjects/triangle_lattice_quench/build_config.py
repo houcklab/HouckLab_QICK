@@ -1,249 +1,109 @@
-"""Resolver from qubit_parameters.json to a flat experiment cfg dict.
+"""Retrieval helpers over qubit_parameters.json (data only). Every FF array key starts with FF_.
 
-Pipeline:
-    qubit_parameters.json  ->  build_config(**kwargs)  ->  cfg dict
+JSON top level: `drive_groups` (readout + drive groups; entries carry Readout/Qubit/SingleShot blocks) and
+`ff_groups` (free-form FF data, e.g. ramp_groups/<group>/<entry>/FF_Expt).
+FF placement rule in drive_groups: FF_Readouts / FF_Pulses live on the group. An entry's "Readout" / "Qubit" object (the dict
+holding Frequency, Gain, ...) may carry FF_override: a list replaces the whole group array, a single number replaces only the
+index int(entry_name[0]) - 1 (entry names start with their qubit number, e.g. "3", "5A", "3_3800+"). FF_Readouts / FF_Pulses
+inside those objects, or on the entry itself, are an error. Retrievers return deep copies; the QubitParams data is never mutated.
 
-The JSON replaces the legacy per-stage *_params.py / Qubit_Parameters dict structure
-entirely. There is no intermediate Qubit_Parameters object exposed.
-
-Caller specifies which named entries to use from each pipeline-stage namespace:
-    build_config(
-        jd             = qubit_parameters,       # REQUIRED: loaded JSON dict, or a path to it
-        Qubit_Readout  = [3, 4, 5, 6, 7, 8],     # required: list of readout-entry labels
-        Readout_Point  = 'readout_3800',         # REQUIRED: key in readout_groups (no default)
-        Qubit_Pulse    = ['3_3800+', '6_3800+'], # optional: list of drive-entry labels
-        Ramp_State     = '6Q_right_half_mid_k',  # optional: key in ramp_groups
-        Dynamics_Point = '34',                   # optional: key in dynamics_groups
-    )
+    qp = QubitParams(jd)                                                   # jd: loaded dict or path to the JSON
+    qp.get_ff('ramp_groups', 'ramp_3800', '34', 'FF_Expt')                 # any value under ff_groups (deep copy)
+    qp.drive_ff('FF_Pulses', 'ramsey_3800+', '1_3800+')                    # FF array under drive_groups (placement rule)
+    qp.res_config('readout_3800', ['3', '4'])                              # res_*, readout_lengths, adc_trig_delays, ro_chs, Qubit_Readout_List, FF_Readouts (+ angle, threshold, confusion_matrix if SingleShot exists)
+    qp.qubit_config('ramsey_3800+', ['3_3800+'])                           # qubit_freqs, qubit_gains, sigma, Qubit_Pulse, FF_Pulses
+    qp.res_qubit_config('readout_3800', ['3', '4'], ['3'])                 # pulses looked up in the readout group
 """
+import copy
 import json
 import warnings
 
 from triangle_lattice_quench.MUXInitialize import BaseConfig
 
-def _deref_base(value, base_params):
-    """If `value` names an entry in base_params, return that array. Else value unchanged."""
-    if isinstance(value, str) and value in base_params:
-        return list(base_params[value])
-    return value
+def _walk(root, keys, label):
+    """Walks the json using keys, does a  deepcopy of root[k0][k1]..."""
+    node = root
+    for i, k in enumerate(keys):
+        if not isinstance(node, dict) or k not in node:
+            avail = list(node) if isinstance(node, dict) else type(node).__name__
+            raise KeyError(f"{label}/{'/'.join(map(str, keys))}: {k!r} not found at "
+                           f"{'/'.join([label, *map(str, keys[:i])])}; available: {avail}")
+        node = node[k]
+    return copy.deepcopy(node)
 
 
-def _apply_recipe(base_arr, method, recipe_arg, recipe_kwargs):
-    """Apply an FF_gains-like recipe (subsys / set / add) to base_arr. Returns a plain list."""
-    base = list(base_arr)
-    if method == 'subsys':
-        det = recipe_kwargs.get('det', 0)
-        out = [b + det for b in base]
-        for q in recipe_arg:
-            out[q - 1] = base[q - 1]
-        return out
-    if method == 'set':
-        out = list(base)
-        for q_name, val in recipe_arg.items():
-            out[int(q_name[1:]) - 1] = val
-        return out
-    if method == 'add':
-        out = list(base)
-        for q_name, val in recipe_arg.items():
-            out[int(q_name[1:]) - 1] += val
-        return out
-    raise ValueError(f"Unknown _recipe method: {method!r}")
+class QubitParams:
+    """Read-only lookups into a qubit_parameters.json dict (or a path to one)."""
 
+    def __init__(self, jd):
+        if not isinstance(jd, dict):
+            with open(jd) as fh:
+                jd = json.load(fh)
+        self.jd = jd
 
-# ---------------------------------------------------------------------------
-# Per-stage resolvers. Each returns a FLAT dict (Readout / Qubit sub-dicts are
-# spread to top level for convenient indexing in the build_config comprehensions).
-# ---------------------------------------------------------------------------
+    def get_ff(self, *keys):
+        """Getter for jd['ff_groups'][k0][k1]..."""
+        return _walk(self.jd.get('ff_groups', {}), keys, 'ff_groups')
 
-def _resolve_readout(jd, name, group_name):
-    """Returns flat: {Frequency, Gain, Readout_Time, ADC_Offset, Readout_FF, Pulse_FF}.
+    def drive_ff(self, name, group, qubit_entry=None):
+        """FF array ("FF_Readouts" or "FF_Pulses") of drive_groups[group],
+        If needed, apply qubit_entry's FF_override:
+            a list replaces the array, a number replaces a single value."""
 
-    Looks up `name` inside the readout group `group_name`.
-    """
-    base = jd.get('base_params', {})
-    group = jd['readout_groups'][group_name]
-    if name in group.get('entries', {}):
-        entry = group['entries'][name]
+        g = _walk(self.jd, ('drive_groups', group), 'jd')
+        if qubit_entry is None:
+            return _walk(g, (name,), f'drive_groups/{group}')
+        else:
+            # entry given, check for FF_override (a list needs no group-level array, so look that up after)
+            e = _walk(g, ('entries', qubit_entry), f'drive_groups/{group}')
+            FF_override = e.get({'FF_Readouts': 'Readout', 'FF_Pulses': 'Qubit'}[name], {}).get('FF_override')
+            if isinstance(FF_override, list):
+                return FF_override
+
+            FF_array = _walk(g, (name,), f'drive_groups/{group}')
+            if FF_override is not None:
+                qubit_index = int(qubit_entry[0]) - 1
+                assert 0 <= qubit_index < len(FF_array), f"{qubit_entry}: FF_override index {qubit_index} outside {len(FF_array)} FF channels"
+                FF_array[qubit_index] = FF_override
+            return FF_array
+
+    def res_config(self, group, entries):
+        """ResConfig from drive_groups[group] entries: res_freqs (MHz, rel. res_LO), res_gains (DAC/32766 x N_mux), readout_lengths (us), adc_trig_delays (us), ro_chs, Qubit_Readout_List, FF_Readouts, plus angle, threshold, confusion_matrix when every entry has a SingleShot object."""
+        ros = [_walk(self.jd.get('drive_groups', {}), (group, 'entries', str(Q), 'Readout'), 'drive_groups') for Q in entries]
+        sss = [_walk(self.jd.get('drive_groups', {}), (group, 'entries', str(Q)), 'drive_groups').get('SingleShot') for Q in entries]
+        N = len(entries)
+        cfg = {
+            'res_gains':       [r['Gain'] / 32766. * N                for r in ros],
+            'res_freqs':       [r['Frequency'] - BaseConfig['res_LO'] for r in ros],
+            'readout_lengths': [r['Readout_Time']                      for r in ros],
+            'adc_trig_delays': [r['ADC_Offset']                        for r in ros],
+            'ro_chs': list(range(len(entries))),
+            'Qubit_Readout_List' : entries,
+            'FF_Readouts' : self.drive_ff("FF_Readouts", group, qubit_entry=str(entries[0]) if len(entries)==1 else None)
+        }
+        if all(sss):
+            cfg['angle'] = [ss['angle'] for ss in sss]
+            cfg['threshold'] = [ss['threshold'] for ss in sss]
+            cfg['confusion_matrix'] = [[[1 - ss['ng_contrast'], ss['ne_contrast']], [ss['ng_contrast'], 1 - ss['ne_contrast']]] for ss in sss]
+        return cfg
+
+    def qubit_config(self, group, entries):
+        """QubitConfig from drive_groups[group] entries: qubit_freqs (MHz, rel. qubit_LO), qubit_gains (DAC/32766), sigma (us),
+        Qubit_Pulse (the entry labels), FF_Pulses (first entry's by the placement rule; the group-level array if entries is empty)."""
+        drs = [_walk(self.jd.get('drive_groups', {}), (group, 'entries', str(e), 'Qubit'), 'drive_groups') for e in entries]
+        ffs = [self.drive_ff('FF_Pulses', group, str(e)) for e in entries]
+        if len({tuple(f) for f in ffs}) > 1:  # Multiple pulses should share one FF point
+            warnings.warn(f"drive_groups/{group} entries do not share the same FF_Pulses: "
+                          + str({str(e): f for e, f in zip(entries, ffs)}), stacklevel=2)
         return {
-            **entry.get('Readout', {}),
-            'Readout_FF': list(_deref_base(group.get('Readout_FF'), base)),
-            'Pulse_FF':   list(_deref_base(group.get('Pulse_FF'),   base)),
-        }
-    raise KeyError(f"readout entry {name!r} not found in readout group {group_name!r}")
-
-
-def _resolve_drive(jd, name):
-    """Returns flat: {Frequency, Gain, sigma, Pulse_FF}.
-
-    Searches drive_groups first, then readout_groups (so a readout's associated
-    drive is reachable through Qubit_Pulse even when defined alongside its readout).
-    """
-    base = jd.get('base_params', {})
-    for ns in ('drive_groups', 'readout_groups'):
-        for group in jd.get(ns, {}).values():
-            if name in group.get('entries', {}):
-                entry = group['entries'][name]
-                if 'Pulse_FF_abs' in entry:
-                    Pulse_FF = list(entry['Pulse_FF_abs'])
-                elif '_recipe' in group and '_recipe_arg' in entry:
-                    rec    = group['_recipe']
-                    kwargs = {k: v for k, v in rec.items() if k not in ('base', 'method')}
-                    Pulse_FF = _apply_recipe(_deref_base(rec['base'], base),
-                                             rec['method'], entry['_recipe_arg'], kwargs)
-                else:
-                    Pulse_FF = list(_deref_base(group.get('Pulse_FF'), base))
-                return {**entry.get('Qubit', {}), 'Pulse_FF': Pulse_FF}
-    raise KeyError(f"drive entry {name!r} not found in drive_groups or readout_groups")
-
-
-def _resolve_ramp(jd, ramp_state):
-    """Returns {'Init_FF': [...] or None, 'Expt_FF': [...]}.
-
-    Init_FF=None means "no init segment; caller falls back to Gain_Pulse".
-    """
-    base = jd.get('base_params', {})
-    for group in jd['ramp_groups'].values():
-        if ramp_state in group.get('entries', {}):
-            entry = group['entries'][ramp_state]
-            Expt_base = _deref_base(group.get('Expt_FF'), base)
-            if 'Expt_FF_abs' in entry:
-                Expt_FF = list(entry['Expt_FF_abs'])
-            elif 'Expt_FF_delta' in entry and entry['Expt_FF_delta'] is not None:
-                Expt_FF = [b + d for b, d in zip(Expt_base, entry['Expt_FF_delta'])]
-            else:
-                Expt_FF = list(Expt_base)
-            if 'Init_FF_abs' in entry:
-                Init_FF = list(entry['Init_FF_abs'])
-            elif 'Init_FF_delta' in entry:
-                d = entry['Init_FF_delta']
-                Init_FF = None if d is None else [b + di for b, di in zip(Expt_base, d)]
-            else:
-                Init_FF = list(Expt_FF)
-            return {'Init_FF': Init_FF, 'Expt_FF': Expt_FF}
-    raise KeyError(f"ramp entry {ramp_state!r} not found in any ramp_groups")
-
-
-def _resolve_dynamics(jd, dynamics_point):
-    """Returns the resolved dynamics entry. May contain 'Dynamics_FF', 'BS_FF',
-    't_offset', 'exact_t_bs', 'ij_samples', etc. *_FF_abs keys have their suffix
-    stripped; string values naming a base_params array are dereferenced."""
-    base = jd.get('base_params', {})
-    for group in jd['dynamics_groups'].values():
-        if dynamics_point in group.get('entries', {}):
-            entry = group['entries'][dynamics_point]
-            out = {}
-            for k, v in entry.items():
-                if k.endswith('_FF_abs'):
-                    out[k[:-len('_abs')]] = list(_deref_base(v, base))
-                elif k.endswith('_abs'):
-                    out[k[:-len('_abs')]] = v
-                else:
-                    out[k] = v
-            return out
-    raise KeyError(f"dynamics entry {dynamics_point!r} not found in any dynamics_groups")
-
-
-# ---------------------------------------------------------------------------
-# Public entry point — mirrors the Template's build_config signature/output.
-# ---------------------------------------------------------------------------
-
-def build_config(**kwargs):
-    valid = {'Qubit_Readout', 'Qubit_Pulse', 'Ramp_State', 'Dynamics_Point', 'Readout_Point', 'jd'}
-    for k in kwargs:
-        assert k in valid, f"Unrecognized key in build_config: {k}"
-
-    Qubit_Readout  = kwargs['Qubit_Readout']
-    Qubit_Pulse    = kwargs.get('Qubit_Pulse', [])
-    Ramp_State     = kwargs.get('Ramp_State')
-    Dynamics_Point = kwargs.get('Dynamics_Point')
-
-    jd = kwargs.get('jd')
-    if jd is None:
-        raise ValueError(
-            "build_config requires an explicit jd (the loaded qubit_parameters "
-            "dict, or a path to a qubit_parameters.json) -- there is no default."
-        )
-    if not isinstance(jd, dict):
-        with open(jd) as fh:
-            jd = json.load(fh)
-
-    Readout_Point = kwargs.get('Readout_Point')
-    if not Readout_Point:
-        raise ValueError(
-            "build_config requires an explicit Readout_Point (one of "
-            f"{list(jd['readout_groups'])}) -- defaulting is disabled so the active "
-            "readout is never ambiguous when multiple readout_groups exist."
-        )
-
-    
-    readouts = [_resolve_readout(jd, str(Q), Readout_Point) for Q in Qubit_Readout]
-    drives   = [_resolve_drive(jd,   str(P)) for P in Qubit_Pulse]
-
-    # Sanity check: MUX readout / drive sets should share their FF point. Warn if not.
-    if len({tuple(r['Readout_FF']) for r in readouts}) > 1:
-        warnings.warn(
-            "Qubit_Readout entries do not share the same Readout_FF: "
-            + str({str(Q): r['Readout_FF'] for Q, r in zip(Qubit_Readout, readouts)}),
-            stacklevel=2,
-        )
-    if drives and len({tuple(d['Pulse_FF']) for d in drives}) > 1:
-        warnings.warn(
-            "Qubit_Pulse entries do not share the same Pulse_FF: "
-            + str({str(P): d['Pulse_FF'] for P, d in zip(Qubit_Pulse, drives)}),
-            stacklevel=2,
-        )
-
-    N = len(Qubit_Readout)
-    res_config = {
-        'res_gains':       [r['Gain'] / 32766. * N                  for r in readouts],
-        'res_freqs':       [r['Frequency'] - BaseConfig['res_LO']   for r in readouts],
-        'readout_lengths': [r['Readout_Time']                        for r in readouts],
-        'adc_trig_delays': [r['ADC_Offset']                          for r in readouts],
-    }
-    qubit_config = {
-        'qubit_freqs': [d['Frequency'] - BaseConfig['qubit_LO'] for d in drives],
-        'qubit_gains': [d['Gain'] / 32766.                       for d in drives],
-        'sigma':       [d['sigma']                               for d in drives],
-    }
-    config = BaseConfig | res_config | qubit_config
-
-    Qubit_Names  = [str(Q) for Q in range(1, len(config['fast_flux_chs']) + 1)]
-    Gain_Readout = readouts[0]['Readout_FF']
-    Gain_Pulse   = drives[0]['Pulse_FF'] if drives else Gain_Readout
-
-    if Ramp_State:
-        ramp = _resolve_ramp(jd, Ramp_State)
-        Gain_RampInit = ramp['Init_FF'] if ramp['Init_FF'] is not None else Gain_Pulse
-        Gain_Expt     = ramp['Expt_FF']
-    else:
-        Gain_RampInit = list(Gain_Pulse)
-        Gain_Expt     = list(Gain_Pulse)
-
-    if Dynamics_Point:
-        dyn = _resolve_dynamics(jd, Dynamics_Point)
-        Gain_Dynamics = dyn.get('Dynamics_FF') or dyn.get('BS_FF') or list(Gain_Pulse)
-        for k in ('t_offset', 'ij_samples', 'exact_t_bs', 'ij_gains', 'pad_bs',
-                  'meas_pi2_freq', 'meas_pi2_gain', 'pi2_init_gain'):
-            if k in dyn:
-                config[k] = dyn[k]
-    else:
-        Gain_Dynamics = list(Gain_Pulse)
-
-    config['FF_Qubits'] = {}
-    for i, Qubit in enumerate(Qubit_Names):
-        # Gain_BS and Gain_Dynamics are same, have both for backward compatibility
-        config['FF_Qubits'][Qubit] = {
-            'channel':       config['fast_flux_chs'][i],
-            'Additional_Delay_Time': config['fast_flux_delays'][i],
-            'Gain_Readout':  Gain_Readout[i],
-            'Gain_Pulse':    Gain_Pulse[i],
-            'Gain_RampInit': Gain_RampInit[i],
-            'Gain_Expt':     Gain_Expt[i],
-            'Gain_BS':       Gain_Dynamics[i],
-            'Gain_Dynamics': Gain_Dynamics[i],
+            'qubit_freqs': [d['Frequency'] - BaseConfig['qubit_LO'] for d in drs],
+            'qubit_gains': [d['Gain'] / 32766.                       for d in drs],
+            'sigma':       [d['sigma']                               for d in drs],
+            'Qubit_Pulse': list(entries),
+            'FF_Pulses': ffs[0] if ffs else self.drive_ff('FF_Pulses', group),
         }
 
-    config['Qubit_Readout_List'] = Qubit_Readout
-    config['Qubit_Pulse']        = list(Qubit_Pulse)  # chip labels, indexable by 0-based position
-    config['ro_chs']             = list(range(len(Qubit_Readout)))
-    return config
+    def res_qubit_config(self, readout_group, readout_entries, pulse_entries):
+        """res_config(readout_group, readout_entries) | qubit_config(readout_group, pulse_entries)."""
+        return self.res_config(readout_group, readout_entries) | self.qubit_config(readout_group, pulse_entries)
+

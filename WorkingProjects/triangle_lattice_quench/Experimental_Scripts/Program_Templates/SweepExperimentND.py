@@ -1,6 +1,6 @@
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import \
     FFAveragerProgramV2
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 from triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
 from triangle_lattice_quench.Helpers.IQ_contrast import *
 from triangle_lattice_quench.socProxy import makeProxy
@@ -19,7 +19,7 @@ import scipy
 import functools
 import operator
 import itertools
-import triangle_lattice_quench.Helpers.SweepHelpers
+import triangle_lattice_quench.Helpers.NDSweepHelpers
 from qick.asm_v2 import AveragerProgramV2
 
 
@@ -59,10 +59,8 @@ class SweepExperimentND(ExperimentClass):
         print("Update fig not implemented for this experiment: did you mean to inherit one of the plotting classes?")
 
 
-    def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg=None, config_file=None,
-                 liveplot_enabled=False, **kwargs):
-        super().__init__(path=path, prefix=prefix, soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file,
-                         liveplot_enabled=liveplot_enabled, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.keys = tuple()
         self.sweep_arrays = tuple()
@@ -81,7 +79,7 @@ class SweepExperimentND(ExperimentClass):
         '''Compile the program once to inspect the defined QICK loops'''
         for key, sweep in zip(self.keys, self.sweep_arrays):
             print(f"Sweeping {key} over the array {sweep}.")
-            SweepHelpers.set_nested_item(self.cfg, key, sweep[0])
+            NDSweepHelpers.set_nested_item(self.cfg, key, sweep[0])
         self.set_up_instance()
         prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         
@@ -107,7 +105,7 @@ class SweepExperimentND(ExperimentClass):
 
         ### ------------   DATA DICT SETUP      ---------- ###
         readout_list = self.cfg["Qubit_Readout_List"]
-        key_names = [SweepHelpers.key_savename(key) for key in self.keys]
+        key_names = [NDSweepHelpers.key_savename(key) for key in self.keys]
         self.data = {
             'config': self.cfg,
             'data': { 'readout_list': readout_list,
@@ -161,7 +159,7 @@ class SweepExperimentND(ExperimentClass):
         for sweep_indices, sweep_values in zip(index_iterator, value_iterator): 
             # Update config entries based on sweep
             for key, pt in zip(self.keys, sweep_values):
-                SweepHelpers.set_nested_item(self.cfg, key, pt)
+                NDSweepHelpers.set_nested_item(self.cfg, key, pt)
 
             # set up the AveragerProgramV2
             self.set_up_instance()
@@ -178,12 +176,14 @@ class SweepExperimentND(ExperimentClass):
                 for ro_index in range(len(readout_list)):
                     data_dict["I"][ro_index][*sweep_indices, ...] = avgi[ro_index]
                     data_dict["Q"][ro_index][*sweep_indices, ...] = avgq[ro_index]
-                    # slices = tuple(slice(j+1) for j in sweep_indices)
-                    #
-                    # rotated_i = IQ_contrast(data_dict["I"][ro_index][*slices], data_dict["Q"][ro_index][*slices])
-                    #
-                    # data_dict["contrast"][ro_index][*slices] = rotated_i
-                    data_dict["contrast"][ro_index][*sweep_indices, ...] = IQ_contrast(avgi[ro_index], avgq[ro_index])
+
+                    if True: # optimize contrast for all rows at once
+                        slices = tuple(slice(j+1) for j in sweep_indices)
+                        rotated_i = IQ_contrast(data_dict["I"][ro_index][*slices], data_dict["Q"][ro_index][*slices])
+                        data_dict["contrast"][ro_index][*slices] = rotated_i
+
+                    else: # optimize contrast per row
+                        data_dict["contrast"][ro_index][*sweep_indices, ...] = IQ_contrast(avgi[ro_index], avgq[ro_index])
 
             elif self.z_value == 'population' or self.z_value == 'population_corrected':
                 excited_populations = prog.acquire_populations(soc=self.soc, return_shots=False,
@@ -285,10 +285,6 @@ class SweepExperimentND(ExperimentClass):
             plt.pause(0.1)
 
         return fig, axs
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
 
     def _make_subplots(self, figNum, count):
         if plt.fignum_exists(num=figNum):  # if figure with number already exists

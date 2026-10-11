@@ -4,7 +4,7 @@ from matplotlib.pyplot import tight_layout
 # from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.MixedShots_analysis import *
 
 # from triangle_lattice_quench.mTransmissionFF import SingleToneSpectroscopyProgramFF
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShotProgram
 # from triangle_lattice_quench.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
 
 from triangle_lattice_quench.Experiment import ExperimentClass
@@ -32,9 +32,9 @@ class SNROpt_wSingleShot(ExperimentClass):
 
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path,  suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1, ax=None):
         #### function used to actually find the cavity parameters
@@ -201,9 +201,3 @@ class SNROpt_wSingleShot(ExperimentClass):
         # self.angle = angle
 
         return i_g, q_g, i_e, q_e
-
-
-    def save_data(self, data=None):
-        ##### save the data to a .h5 file
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

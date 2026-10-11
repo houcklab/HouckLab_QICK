@@ -10,7 +10,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -32,19 +32,19 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
     def _body(self, cfg):
         # 1: FFPulses
         FF_Delay_time = 9
-        self.FFPulses(self.FFPulse, 1.01 + self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, 1.01 + self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
         self.delay_auto()
         # 2: FFExpt
-        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"],
+        self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples"], self.FFPulses, IQPulseArray= self.cfg["IDataArray"],
                              waveform_label='FFExpts')
         self.delay_auto()
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        # self.FFPlay_Const(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
         # FF.FFPulses_compensated(self, self.FFReadouts, self.FFExpts, self.cfg["res_length"])
         # self.delay(0.1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
@@ -54,16 +54,16 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
 
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
+        # self.FFPlay_Const(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform
         ###         but invert the gain on the generator channel.
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in self.cfg["IDataArray"]]
-        self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
+        self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time + 1.1)
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time + 1.1)
         self.delay_auto()
 
 class ThreePartProgramTwoFF(ThreePartProgramOneFF):
@@ -71,7 +71,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         # 1: FFPulses
         FF_Delay_time = 9
         self.delay_auto()
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + 1.01 + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + 1.01 + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1.0 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_ )
@@ -82,14 +82,14 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         # print(self.cfg["IDataArray1"], self.cfg["IDataArray2"])
         concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])
                                     for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
-        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"],
-                             self.FFPulse, IQPulseArray=concat_IQarray, waveform_label='FFExpts')
+        self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"],
+                             self.FFPulses, IQPulseArray=concat_IQarray, waveform_label='FFExpts')
         self.delay_auto()
 
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        # self.FFPlay_Const(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
         # self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
@@ -98,22 +98,22 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         self.delay_auto(10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        # self.FFPlay_Const(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform
         ###         but invert the gain on the generator channel.
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in concat_IQarray]
-        self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
+        self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + 1.01 + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + 1.01 + FF_Delay_time)
         self.delay_auto()
 
 # class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 #     def body(self):
 #         # 1: FFPulses
 #         self.sync_all(gen_t0=self.gen_t0)
-#         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+#         self.FFPlay_Const(self.FFPulses, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
 #         for i in range(len(self.cfg["qubit_gains"])):
 #             gain_ = self.cfg["qubit_gains"][i]
 #             freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
@@ -133,17 +133,17 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 #         #     ax.plot(arr,marker='o', label=i)
 #         # ax.legend()
 #         # plt.show(block=True)
-#         self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"],
-#                              self.FFPulse, IQPulseArray=concat_IQarray)
+#         self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"],
+#                              self.FFPulses, IQPulseArray=concat_IQarray)
 #         self.sync_all(gen_t0=self.gen_t0)
 #
 #
 #         if 'ReadoutIQ' in self.cfg:
 #             print("Using loaded FFReadouts envelope")
-#             self.FFPulses_direct(self.FFReadouts, int(3.0 / 0.145e-3 // 16 * 16 + 16),
+#             self.FFPlay_Arb(self.FFReadouts, int(3.0 / 0.145e-3 // 16 * 16 + 16),
 #                                  [g[-1] for g in concat_IQarray], IQPulseArray=self.cfg['ReadoutIQ'], waveform_label='FFRO')
 #             # Not enough waveform memory for the entire 20 us res_length so compensate the first 3 us
-#         self.FFPulses(self.FFReadouts, self.cfg["res_length"]-3.0)
+#         self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"]-3.0)
 #         self.measure(pulse_ch=self.cfg["res_ch"],
 #                      adcs=self.cfg["ro_chs"],
 #                      adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]),
@@ -151,16 +151,16 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 #                      syncdelay=self.us2cycles(10))
 #
 #         # End: invert FF pulses to ensure pulses integrate to 0
-#         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-#         # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
+#         self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+#         # self.FFPlay_Const(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 #
 #         ###     If waveform memory becomes a problem, change this code to use the same waveform
 #         ###         but invert the gain on the generator channel.
 #         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in concat_IQarray]
-#         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], - 1 * self.FFReadouts,
+#         self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], - 1 * self.FFReadouts,
 #                              IQPulseArray=IQ_Array_Negative,
 #                              waveform_label='FF2')
-#         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+#         self.FFPlay_Const(-1 * self.FFPulses, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
 #         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 #
 #

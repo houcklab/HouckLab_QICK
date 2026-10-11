@@ -1,24 +1,21 @@
 """Session state, module-level constants, path anchors, and QSettings helpers.
 
 This is the foundation layer of the calibration_gui package: it imports only
-stdlib / third-party code plus the hardware-free flux defaults (``build_config``
+stdlib / third-party code plus the hardware-free flux defaults (``build_config.QubitParams``
 and the ``MUXInitialize`` defaults, both load-safe). Nothing else in the package
 is imported here, so ``state`` has no intra-package back-edges.
 """
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 from PyQt5.QtCore import QSettings
 
-from triangle_lattice_quench.MUXInitialize import (
-    BaseConfig  as DEFAULT_BASE_CONFIG,
-    outerFolder as DEFAULT_OUTER_FOLDER,
-)
-from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.MUXInitialize import BaseConfig as DEFAULT_BASE_CONFIG
 
 # Single readable anchor for the package's on-disk neighbours. From
 # ``calibration_gui/state.py``: parent -> calibration_gui, parent -> Run_Experiments.
@@ -26,7 +23,7 @@ _RUN_EXPT_DIR = Path(__file__).resolve().parent.parent
 
 # Default Qblox D5a coupler-bias setpoint file (mirrors SET_QBLOX_VOLTAGES.py).
 DEFAULT_D5A_VOLTAGES_FILE = (
-    _RUN_EXPT_DIR.parent / "Flux_Files"
+    _RUN_EXPT_DIR.parent / "Device_Calibration"
     / "SET_QBLOX_VOLTAGES.py"
 )
 
@@ -39,7 +36,7 @@ DEFAULT_D5A_DAC_MAP: dict[str, int] = {
 }
 
 # Hardcoded coupled-pair list copied from
-# triangle_lattice_quench.Flux_Files.plot_frequencies
+# triangle_lattice_quench.Device_Calibration.plot_frequencies
 # (PlotFrequenciesExperiment.coupled_pairs). Kept inline so the FF-frequency and
 # pi/2-phase tabs can warn about crossings even when plot_frequencies fails to import.
 _FF_FREQ_COUPLED_PAIRS: list[tuple[int, int]] = [
@@ -79,10 +76,26 @@ SETTING_D5A_LAST_APPLIED = "d5a_last_applied_at"
 SETTING_LAST_RECIPE_PATH = "last_recipe_path"
 SETTING_NS_HOST = "ns_host"   # Pyro4 nameserver host (RFSoC), remembered across sessions
 SETTING_NS_PORT = "ns_port"
+SETTING_PROXY_NAME = "proxy_name"          # RFSoC Pyro4 proxy name of the last connection
+SETTING_CHANNEL_MAP = "channel_map"          # JSON {res_ch, qubit_ch, n_qubits, ff_channels} of the last applied map
+SETTING_AUTOCALIB_PARAMS = "autocalib_params"   # JSON {stage: {key: value}}, only non-default values
 
 
 def get_settings() -> QSettings:
     return QSettings(SETTINGS_ORG, SETTINGS_APP)
+
+
+def get_autocalib_params() -> dict:
+    """Auto-Calibration parameter values saved by the last session ({} if none/unreadable)."""
+    try:
+        saved = json.loads(str(get_settings().value(SETTING_AUTOCALIB_PARAMS, "", type=str) or "{}"))
+    except ValueError:
+        return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def set_autocalib_params(params: dict) -> None:
+    get_settings().setValue(SETTING_AUTOCALIB_PARAMS, json.dumps(params))
 
 
 def get_last_qubit_params_path() -> str:
@@ -206,46 +219,6 @@ STAGE_DEFAULTS: dict[str, dict] = {
 }
 
 
-def _singleshot_cal_for(jd: dict, readout_group, qubit) -> dict:
-    """SingleShot calibration values for one readout entry.
-
-    They live in the entry's ``SingleShot`` block; the legacy ``Readout``
-    block is merged underneath so a JSON written before the split still
-    resolves. Returns {} when the group or entry is missing.
-    """
-    if not readout_group:
-        return {}
-    entry = (jd.get("readout_groups", {})
-               .get(readout_group, {})
-               .get("entries", {})
-               .get(str(qubit), {})) or {}
-    legacy = entry.get("Readout", {}) or {}
-    ss = entry.get("SingleShot", {}) or {}
-    return {**legacy, **ss}
-
-
-def _confusion_matrix_for(readout_dict: dict):
-    """Build the 2x2 readout confusion matrix from a per-qubit SingleShot dict (legacy: Readout).
-
-    Layout matches mSingleShotProgramFFMUX.py:124-127:
-        [[1 - ng,   ne],
-         [    ng, 1-ne]]
-    where ne = ne_contrast (P(measured=excited|prepared=ground) — readout error
-    on |g>) and ng = ng_contrast (the equivalent on |e>).
-    Returns the 2x2 identity if either contrast is missing — a no-op
-    correction that still satisfies SweepExperimentND.acquire's gating check
-    `"confusion_matrix" in self.cfg`, so `population_corrected` gets built.
-    """
-    import numpy as np
-    ne = readout_dict.get("ne_contrast")
-    ng = readout_dict.get("ng_contrast")
-    if ne is None or ng is None:
-        return np.eye(2)
-    ne = float(ne); ng = float(ng)
-    return np.array([[1.0 - ng,        ne],
-                     [      ng, 1.0 - ne]])
-
-
 def _jd_entry_for(state: "CalibState", Q: str) -> Optional[dict]:
     """Locate the entry on_apply should mutate.
 
@@ -261,7 +234,7 @@ def _jd_entry_for(state: "CalibState", Q: str) -> Optional[dict]:
     label = state.current_qubit_label or str(Q)
     dg = state.current_drive_group or ""
     if dg:
-        entry = (jd.get("drive_groups", {})
+        entry = (groups_of(jd, "drive_groups")
                    .get(dg, {})
                    .get("entries", {})
                    .get(label))
@@ -270,7 +243,7 @@ def _jd_entry_for(state: "CalibState", Q: str) -> Optional[dict]:
     rg = state.current_readout_group or ""
     if not rg:
         return None
-    entry = (jd.get("readout_groups", {})
+    entry = (groups_of(jd, "drive_groups")
                .get(rg, {})
                .get("entries", {})
                .get(label))
@@ -289,12 +262,69 @@ MUX_STAGES = frozenset({"ReadoutOpt", "PulseOpt", "SingleShot"})
 READOUT_SIDE_STAGES = frozenset({"Transmission", "ReadoutOpt", "SingleShot"})
 
 
+
+# ---------------------------------------------------------------------------
+# qubit_parameters.json layout accessors (real layout, no translation):
+#   drive_groups/<g>/{FF_Readouts?, FF_Pulses?, description, entries/<e>}
+#   ff_groups/<ns>/<g>/{description, <e>...}   ns in FF_NAMESPACES (entries flat next to description)
+# A drive group is a "readout group" when it has a group-level FF_Readouts.
+# ---------------------------------------------------------------------------
+FF_NAMESPACES = ("ramp_groups", "dynamics_groups")
+_FF_GROUP_KEYS = ("description",)
+
+
+def groups_of(jd, ns, create=False):
+    """Live groups dict for ns: 'drive_groups', else ff_groups[ns] (e.g. ramp_groups, dynamics_groups)."""
+    jd = jd if jd is not None else {}
+    if ns == "drive_groups":
+        return jd.setdefault("drive_groups", {}) if create else (jd.get("drive_groups") or {})
+    return jd.setdefault("ff_groups", {}).setdefault(ns, {}) if create else ((jd.get("ff_groups") or {}).get(ns) or {})
+
+
+def entries_of(ns, group) -> dict:
+    """Entries of one group. drive_groups: the live group['entries']; ff namespaces: a NEW dict of the flat entries."""
+    group = group or {}
+    if ns == "drive_groups":
+        return group.get("entries") or {}
+    return {k: v for k, v in group.items() if k not in _FF_GROUP_KEYS}
+
+
+def set_entries(ns, group, entries) -> None:
+    """Replace a group's entries in place (keeps description first for ff groups)."""
+    if ns == "drive_groups":
+        group["entries"] = entries
+        return
+    clash = set(entries) & set(_FF_GROUP_KEYS)
+    if clash:
+        raise ValueError(f"entry names collide with group keys {sorted(clash)}")
+    head = {k: group[k] for k in _FF_GROUP_KEYS if k in group}
+    group.clear(); group.update(head); group.update(entries)
+
+
+def entry_path(ns, group, entry) -> tuple:
+    """JSON key path of one entry."""
+    return ("drive_groups", group, "entries", entry) if ns == "drive_groups" else ("ff_groups", ns, group, entry)
+
+
+def group_path(ns, group) -> tuple:
+    return ("drive_groups", group) if ns == "drive_groups" else ("ff_groups", ns, group)
+
+
+def readout_group_names(jd) -> list:
+    """drive_groups that are readout points (have a group-level FF_Readouts)."""
+    return [g for g, b in groups_of(jd, "drive_groups").items() if isinstance(b, dict) and "FF_Readouts" in b]
+
+
+def pulse_group_names(jd) -> list:
+    """drive_groups that are pure drive groups (no group-level FF_Readouts)."""
+    return [g for g, b in groups_of(jd, "drive_groups").items() if isinstance(b, dict) and "FF_Readouts" not in b]
+
+
 @dataclass
 class CalibState:
     """Mutable session state shared between tabs."""
     base_config: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_BASE_CONFIG))
     ff_qubits: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_FF_QUBITS))
-    outer_folder: str = DEFAULT_OUTER_FOLDER
     target_qubit: int = 1            # the qubit currently being calibrated
     n_qubits: int = 8                # number of qubits being calibrated
     soc: Any = None                  # set by ConnectionDialog
@@ -343,67 +373,42 @@ class CalibState:
     # this set AND that come before the target, with the target appended last.
     pulse_chain: list = field(default_factory=list)
 
+    @property
+    def outer_folder(self) -> str:
+        return self.base_config["outerFolder"]  # single source: MUXInitialize.BaseConfig (session copy)
+
+    @outer_folder.setter
+    def outer_folder(self, value: str) -> None:
+        self.base_config["outerFolder"] = value
+
     def is_connected(self) -> bool:
         return self.soc is not None and self.soccfg is not None
 
     def build_two_qubit_chevron_config(self, q_i: int, q_j: int,
                                        sweep_qubit: int,
-                                       ramp_state: Optional[str] = None,
+                                       ramp_state: Optional[tuple] = None,
                                        overrides: Optional[dict] = None) -> dict:
         """Build a 2-readout / 1-pulse cfg for ``GainSweepOscillationsR``.
 
-        Routes through ``build_config`` (same pipeline as single-qubit stages),
+        Routes through ``compose_cfg`` (same pipeline as single-qubit stages),
         then overlays chevron-specific cfg: ``qubit_FF_index`` for the swept
-        FF channel, SingleShot cals from each readout-entry, and explicit
-        ``Gain_Expt=0`` / ``Gain_BS=0`` / ``Gain_Dynamics=0`` on every FF
-        qubit (build_config emits None when Ramp_State/Dynamics_Point are
-        absent; the chevron sweep needs a numeric baseline). The pulse
-        fires on the *non-swept* qubit.
+        FF channel, and ``FF_Expt`` =
+        the ramp's FF_Expt (``ramp_state`` = ff_groups path ('ramp_groups', group, entry)), or all-zero when no Ramp_State is given (the
+        chevron sweep needs a DC baseline). The pulse fires on the *non-swept* qubit.
         """
         Qubit_Readout = [int(q_i), int(q_j)]
         sweep_qubit = int(sweep_qubit)
         pulse_qubit = int(q_i if sweep_qubit == q_j else q_j)
         rg = self.current_readout_group or None
 
-        cfg = build_config(
-            Qubit_Readout=[str(q) for q in Qubit_Readout],
-            Qubit_Pulse=[str(pulse_qubit)],
-            Readout_Point=rg,
-            Ramp_State=ramp_state or None,
-            jd=self.qubit_parameters_json or None,
-        )
-
-        # SingleShot cals (build_config doesn't promote these). Read from the
-        # JSON readout-entry's SingleShot block (legacy: Readout), one per
-        # readout qubit.
+        from .helpers import compose_cfg  # lazy: helpers imports state
         jd = self.qubit_parameters_json or {}
-        angle_list, threshold_list, confusion_matrix = [], [], []
-        for Q in Qubit_Readout:
-            ro = _singleshot_cal_for(jd, rg, Q)
-            angle_list.append(float(ro.get("angle", 0.0)))
-            threshold_list.append(float(ro.get("threshold", 0.0)))
-            confusion_matrix.append(_confusion_matrix_for(ro))
-        cfg["angle"] = angle_list
-        cfg["threshold"] = threshold_list
-        cfg["confusion_matrix"] = confusion_matrix
+        cfg = compose_cfg(jd, rg, [str(q) for q in Qubit_Readout], rg, [str(pulse_qubit)],
+                          ff_expt_path=(*ramp_state, "FF_Expt") if ramp_state else None)
+        if not ramp_state:
+            cfg["FF_Expt"] = [0] * len(cfg["fast_flux_chs"])  # DC baseline; the chevron moves only the swept qubit
 
-        # FF baseline during the swap dwell. With NO Ramp_State, hold every qubit at its
-        # DC baseline (Gain_Expt=0) and let the chevron move only the swept qubit (original
-        # behaviour -- finds the bare resonance). With a Ramp_State, KEEP each qubit at the
-        # ramp's Expt_FF (build_config already set Gain_Expt = Expt_FF), so the swap is
-        # measured AT that ramp point; the chevron still overwrites only the swept qubit's
-        # Gain_Expt at runtime. Gain_BS / Gain_Dynamics are zeroed either way (no BS stage).
-        for q, entry in cfg.get("FF_Qubits", {}).items():
-            if not ramp_state:
-                entry["Gain_Expt"] = 0
-            elif entry.get("Gain_Expt") is None:
-                entry["Gain_Expt"] = 0   # defensive: ramp didn't define this qubit
-            entry["Gain_BS"] = 0
-            entry["Gain_Dynamics"] = 0
-            if entry.get("Gain_RampInit") is None:
-                entry["Gain_RampInit"] = entry.get("Gain_Pulse", 0)
-
-        cfg["qubit_FF_index"] = sweep_qubit
+        cfg["qubit_FF_index"] = sweep_qubit - 1  # 0-based FF channel index of the swept (chip) qubit
 
         if overrides:
             cfg.update(overrides)

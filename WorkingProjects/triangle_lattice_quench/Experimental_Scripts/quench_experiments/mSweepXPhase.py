@@ -20,7 +20,7 @@ class NGateProgram(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])
         # print(cfg["res_freqs"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -54,7 +54,7 @@ class NGateProgram(FFAveragerProgramV2):
         ############
         # print(cfg["readout_lengths"])
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.cfg['number_of_pulses'] * self.qubit_total_length_us + FF_Delay_time)
 
         for i in range(len(self.cfg["qubit_gains"])):
             for j in range(self.cfg.get("number_of_pulses", 1)):
@@ -64,7 +64,7 @@ class NGateProgram(FFAveragerProgramV2):
 
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
@@ -72,8 +72,8 @@ class NGateProgram(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 

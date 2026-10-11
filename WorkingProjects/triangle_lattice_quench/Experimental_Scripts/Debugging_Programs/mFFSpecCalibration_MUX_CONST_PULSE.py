@@ -15,7 +15,7 @@ from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperim
 class FFSpecCalCONSTProgram(FFAveragerProgramV2):
     def _initialize(self, cfg):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -45,23 +45,23 @@ class FFSpecCalCONSTProgram(FFAveragerProgramV2):
         self.cfg['delay'] = int(cfg["delay"])
 
     def _body(self, cfg):
-        self.FFPulses(self.FFExpts, 2.0 + self.cycles2us(8)) # used to be 2.02
-        # self.FFPulses(self.FFExpts,self.cycles2us(self.delay) + 0.5)
-        self.FFPulses(self.FFBS, self.cycles2us(cfg['delay'] + self.qubit_length_cycles + 8 + 23))
+        self.FFPlay_Const(self.FFExpts, 2.0 + self.cycles2us(8)) # used to be 2.02
+        # self.FFPlay_Const(self.FFExpts,self.cycles2us(self.delay) + 0.5)
+        self.FFPlay_Const(self.FFBS, self.cycles2us(cfg['delay'] + self.qubit_length_cycles + 8 + 23))
         self.pulse(ch=cfg["qubit_ch"], name='qubit_drive', t=2.0 + self.cycles2us(cfg['delay']))  # play probe pulse
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(cfg["ro_chs"], cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        # self.FFPulses(-1 * self.FFRamp, 2.05)
-        self.FFPulses(-1 * self.FFExpts, 2.0 + self.cycles2us(8))
-        self.FFPulses(-1 * self.FFBS, self.cycles2us(cfg['delay']+self.qubit_length_cycles+8+22))
-        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
+        # self.FFPlay_Const(-1 * self.FFRamp, 2.05)
+        self.FFPlay_Const(-1 * self.FFExpts, 2.0 + self.cycles2us(8))
+        self.FFPlay_Const(-1 * self.FFBS, self.cycles2us(cfg['delay']+self.qubit_length_cycles+8+22))
+        self.FFPlay_Const(-1 * self.FFReadouts, cfg["res_length"])
         self.delay_auto()
 
     def loop_pts(self):

@@ -136,7 +136,7 @@ class QuenchDynamicsSweepGain(QuenchDynamicsSweepBase):
         super().init_sweep_vars()
 
 
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Dynamics")
+        self.y_key = ("FF_Dynamics", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg['gain_start'], self.cfg['gain_end'],
                                     self.cfg['gain_num_points'])
         self.ylabel = 'FF gain (a.u.)'  # for plotting

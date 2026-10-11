@@ -20,7 +20,7 @@ class QuenchProgram(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])
         # print(cfg["res_freqs"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -58,7 +58,7 @@ class QuenchProgram(FFAveragerProgramV2):
 
         ### Init Pulse
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         if self.cfg['init_pulse']:
             for i in range(len(self.cfg["qubit_gains"])):
@@ -69,14 +69,14 @@ class QuenchProgram(FFAveragerProgramV2):
 
         ### Ramp
         if self.cfg["expt_samples_ramp"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_ramp"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_ramp"], waveform_label='FFRamp')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_ramp"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_ramp"], waveform_label='FFRamp')
             self.delay_auto()
 
         ### Quench
         if self.cfg["expt_samples_quench"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_quench"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_quench"], waveform_label='FFQuench')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_quench"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_quench"], waveform_label='FFQuench')
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_quench', t='auto')
             self.delay_auto()
 
@@ -84,13 +84,13 @@ class QuenchProgram(FFAveragerProgramV2):
         # print(f'dynamics')
         # print(self.cfg["IQArray_dynamics"])
         if self.cfg["expt_samples_dynamics"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_dynamics"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_dynamics"], waveform_label='FFDynamics')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_dynamics"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_dynamics"], waveform_label='FFDynamics')
             self.delay_auto()
 
         ### Readout
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
@@ -98,8 +98,8 @@ class QuenchProgram(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 

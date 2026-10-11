@@ -24,7 +24,7 @@ class BaseRampExperiment(SweepExperiment1D_lines):
         self.z_value = 'population_corrected'
         self.xlabel = None
 
-        self.cfg["IDataArray"] = [None]*len(self.cfg['FF_Qubits'])
+        self.cfg["IDataArray"] = [None]*len(self.cfg['fast_flux_chs'])
 
     def set_up_instance(self):
         '''Create the Ramp '''
@@ -171,10 +171,10 @@ class RampDurationVsPopulation(BaseRampExperiment):
         for i, Q in zip([0, 1, 2, 3, 4, 5, 6, 7], ['1', '2', '3', '4', '5', '6', '7', '8']):
 
             ramp_on = RampHelpers.generate_cubic_ramp(
-                initial_gain=self.cfg['FF_Qubits'][Q]['Gain_RampInit'],
-                final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
+                initial_gain=self.cfg['FF_RampInit'][int(Q) - 1],
+                final_gain=self.cfg['FF_Expt'][int(Q) - 1],
                 ramp_duration=self.cfg['ramp_duration'])
-            ramp_delay = np.full(self.cfg['ramp_wait_timesteps'], self.cfg['FF_Qubits'][Q]['Gain_Expt'])
+            ramp_delay = np.full(self.cfg['ramp_wait_timesteps'], self.cfg['FF_Expt'][int(Q) - 1])
             ramp_off = np.array([]) if not self.cfg['double'] else np.flip(ramp_on)
 
             self.cfg["IDataArray"][i] = np.concatenate([ramp_on, ramp_delay, ramp_off])
@@ -186,7 +186,7 @@ class RampDurationVsPopulation(BaseRampExperiment):
 class FFExptVsPopulation(BaseRampExperiment):
     def init_sweep_vars(self):
         super().init_sweep_vars()
-        self.x_key = ('FF_Qubits', self.cfg['swept_qubit'], 'Gain_Expt')
+        self.x_key = ('FF_Expt', int(self.cfg['swept_qubit']) - 1)
         self.x_points = np.linspace(self.cfg['gain_start'], self.cfg['gain_end'], self.cfg['gain_num_points'])
         self.xlabel = f'FF gain index {self.cfg["swept_qubit"]} (DAC units)'
 
@@ -324,24 +324,24 @@ class PopulationVsTime_GainSweep(BaseRampExperiment, SweepExperiment2D_plots):
 
         self.z_value = 'population_corrected'
 
-        self.initial_ramp_gains = np.array([self.cfg['FF_Qubits'][str(i+1)]['Gain_Expt'] for i in range(len(self.cfg['FF_Qubits']))])
+        self.initial_ramp_gains = np.array(self.cfg['FF_Expt'])
 
         print(f'initial ramp gains: {self.initial_ramp_gains}')
 
-        self.cfg["IDataArray"] = [None] * len(self.cfg['FF_Qubits'])
+        self.cfg["IDataArray"] = [None] * len(self.cfg['fast_flux_chs'])
 
 
 
     def set_up_instance(self):
 
-        for i in range(len(self.cfg['FF_Qubits'])):
-            self.cfg['FF_Qubits'][str(i+1)]['Gain_Expt'] = self.initial_ramp_gains[i] + self.cfg['ramp_gain_offset']
+        for i in range(len(self.cfg['fast_flux_chs'])):
+            self.cfg['FF_Expt'][i] = self.initial_ramp_gains[i] + self.cfg['ramp_gain_offset']
 
         # Ramp + constant gain after the ramp
         self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_RampInit', 'Gain_Expt',
                                                                     self.cfg['ramp_duration'])
         for i in range(len(self.cfg["IDataArray"])):
             ramp_part = self.cfg["IDataArray"][i]
-            const_part = np.full(self.cfg['time_end'], self.cfg['FF_Qubits'][str(i + 1)]['Gain_Expt'])
+            const_part = np.full(self.cfg['time_end'], self.cfg['FF_Expt'][i])
             self.cfg["IDataArray"][i] = np.concatenate([ramp_part, const_part])
 

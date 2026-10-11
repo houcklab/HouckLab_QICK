@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
@@ -17,7 +17,7 @@ class SweepExperiment2D_plots(SweepExperimentND):
 
         fig.suptitle(str(self.titlename), fontsize=16)
 
-        y_key_name = SweepHelpers.key_savename(self.y_key)
+        y_key_name = NDSweepHelpers.key_savename(self.y_key)
         try:
             x_key_name = self.x_key
         except:

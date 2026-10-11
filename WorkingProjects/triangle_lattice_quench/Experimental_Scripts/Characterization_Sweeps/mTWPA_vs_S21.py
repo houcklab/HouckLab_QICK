@@ -1,8 +1,8 @@
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import \
-    CavitySpecFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import \
+    ResonatorSpecProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 from windfreak import SynthHD
@@ -10,7 +10,7 @@ from windfreak import SynthHD
 class FFvsSpec(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
-        self.Program = CavitySpecFFProg
+        self.Program = ResonatorSpecProg
 
         self.y_key = "pump_power"
         self.y_points = np.linspace(self.cfg["power_start"], self.cfg["power_stop"], self.cfg["power_steps"],

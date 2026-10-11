@@ -44,8 +44,11 @@ class ParamForm(QGroupBox):
     """Generic dict<->form editor.
 
     spec is a list of (key, label, kind, default) where kind is one of
-    'int', 'float', 'bool'. Read back with .values().
+    'int', 'float', 'bool'. Read back with .values(). ``changed`` fires when any
+    widget is edited (user or .apply()), so an owner can persist the form.
     """
+    changed = pyqtSignal()
+
     def __init__(self, title: str, spec: list[tuple[str, str, str, Any]]):
         super().__init__(title)
         self.spec = spec
@@ -55,6 +58,8 @@ class ParamForm(QGroupBox):
             w = self._make_widget(kind, default)
             self.widgets[key] = w
             layout.addRow(label, w)
+            (w.stateChanged if kind == "bool" else w.valueChanged).connect(
+                lambda *_: self.changed.emit())
         self.setLayout(layout)
 
     def _make_widget(self, kind: str, default: Any) -> QWidget:
@@ -85,6 +90,17 @@ class ParamForm(QGroupBox):
                 out[key] = float(w.value())
             elif kind == "bool":
                 out[key] = bool(w.isChecked())
+        return out
+
+    def non_default_values(self) -> dict:
+        """Current values that differ from the spec defaults. Persisting only these means
+        a field the user never touched keeps following the code's defaults."""
+        out, vals = {}, self.values()
+        for key, _, kind, default in self.spec:
+            v = vals[key]
+            same = (round(v, 4) == round(float(default), 4)) if kind == "float" else v == type(v)(default)
+            if not same:
+                out[key] = v
         return out
 
     def apply(self, overrides: dict) -> list[str]:
@@ -261,6 +277,13 @@ class MuxChipStrip(QWidget):
 
     def selected(self) -> list:
         return [q for q, c in self._chips.items() if c.isChecked()]
+
+    def toggle_all(self) -> None:
+        """Select every chip, or clear them all when every chip is already selected."""
+        on = not all(c.isChecked() for c in self._chips.values())
+        for c in self._chips.values():
+            c.setChecked(on)
+        self.selection_changed.emit(self.selected())
 
     def _chip_at(self, pos) -> Optional[str]:
         for q, c in self._chips.items():

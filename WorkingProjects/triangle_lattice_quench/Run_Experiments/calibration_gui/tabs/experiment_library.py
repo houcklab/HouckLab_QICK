@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from .. import style as st
 from ..state import (
     CalibState,
     EXPERIMENTAL_SCRIPTS_DIR,
@@ -240,8 +241,7 @@ class ExperimentLibraryTab(QWidget):
         self.class_info = QPlainTextEdit()
         self.class_info.setReadOnly(True)
         self.class_info.setMaximumHeight(140)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.class_info.setFont(f)
+        st.make_mono(self.class_info)
         self.class_info.setPlaceholderText("Class docstring will appear here.")
 
         left_layout = QVBoxLayout()
@@ -265,7 +265,7 @@ class ExperimentLibraryTab(QWidget):
         recipe_form_w = QWidget(); recipe_form_w.setLayout(recipe_form)
 
         self.cfg_editor = QPlainTextEdit()
-        self.cfg_editor.setFont(f)
+        st.make_mono(self.cfg_editor)
         self.cfg_editor.setPlaceholderText(
             'cfg JSON. "Seed from current state" fills in res_freqs, '
             "qubit_freqs, FF_Qubits, ... for the active target qubit."
@@ -314,7 +314,7 @@ class ExperimentLibraryTab(QWidget):
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Run progress / errors appear here.")
 
         right_layout = QVBoxLayout()

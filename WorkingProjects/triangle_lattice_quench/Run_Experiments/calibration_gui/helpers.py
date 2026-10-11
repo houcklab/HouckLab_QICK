@@ -1,18 +1,16 @@
 """Pure (non-Qt) logic shared across tabs.
 
 Three clusters:
-  * config / entry helpers that wrap ``build_config`` (``build_cfg_for_qubit``
-    and friends) plus the ``build_config`` resolver aliases re-exported here so
-    tabs import them from one place;
+  * config / entry helpers: ``compose_cfg`` (the GUI's single cfg composer over
+    ``build_config.QubitParams``), ``build_cfg_for_qubit`` and friends, plus
+    ``QubitParams`` and the JSON layout accessors re-exported so tabs import them from one place;
   * the recenter-and-zoom step function and its GUI-only param-key constants;
   * the qubit_parameters diff machinery used by the Save dialog and the
     dirty-styling in the table tabs, and the JSON pretty-printers.
 
-This layer imports only stdlib / third-party (+ ``build_config`` and the
-``state`` foundation). It pulls ``_confusion_matrix_for`` from ``state`` (its
-canonical home, since ``CalibState`` also calls it); ``CalibState`` itself is
-referenced only via string annotations, so there is no module-level
-helpers->state back-edge beyond that one symbol.
+This layer imports only stdlib / third-party (+ ``build_config.QubitParams`` and the
+``state`` foundation). ``CalibState`` is referenced only via string annotations, so there is
+no module-level helpers->state back-edge for it.
 """
 from __future__ import annotations
 
@@ -21,30 +19,31 @@ import json
 import re
 from typing import Optional, TYPE_CHECKING
 
-from triangle_lattice_quench.build_config import (
-    build_config,
-    _deref_base       as _build_deref_base,
-    _resolve_readout  as _build_resolve_readout,
-    _resolve_drive    as _build_resolve_drive,
-    _resolve_ramp     as _build_resolve_ramp,
-    _resolve_dynamics as _build_resolve_dynamics,
-)
+from triangle_lattice_quench.MUXInitialize import BaseConfig
+from triangle_lattice_quench.build_config import QubitParams
 
-from .state import _confusion_matrix_for, _singleshot_cal_for
+from .state import (FF_NAMESPACES, groups_of,
+                    entries_of, set_entries, entry_path, group_path, readout_group_names, pulse_group_names)
 
-if TYPE_CHECKING:  # avoid a runtime helpers->state edge beyond _confusion_matrix_for
+if TYPE_CHECKING:  # CalibState is only used in string annotations
     from .state import CalibState
 
-# build_config and its private resolver aliases are re-exported here so the tab
+# QubitParams and the layout accessors are re-exported here so the tab
 # modules import them from one place; list them in __all__ so they read as a
 # deliberate re-export rather than dead imports.
 __all__ = [
-    "build_config",
-    "_build_deref_base",
-    "_build_resolve_readout",
-    "_build_resolve_drive",
-    "_build_resolve_ramp",
-    "_build_resolve_dynamics",
+    "QubitParams",
+    "compose_cfg",
+    "ff_entry_items",
+    "combo_path",
+    "FF_NAMESPACES",
+    "groups_of",
+    "entries_of",
+    "set_entries",
+    "entry_path",
+    "group_path",
+    "readout_group_names",
+    "pulse_group_names",
     "build_cfg_for_qubit",
     "_readout_qubit_for_entry",
     "_mux_readout_list",
@@ -110,7 +109,7 @@ def _pulse_chain_entries(state: "CalibState", target_entry: str) -> list[str]:
     dg = state.current_drive_group or ""
     if not dg:
         return [target_entry]
-    entries = list((jd.get("drive_groups") or {}).get(dg, {}).get("entries", {}).keys())
+    entries = list(entries_of("drive_groups", groups_of(jd, "drive_groups").get(dg, {})).keys())
     selection = set(state.pulse_chain or [])
     chain: list[str] = []
     for ename in entries:
@@ -121,21 +120,45 @@ def _pulse_chain_entries(state: "CalibState", target_entry: str) -> list[str]:
     return chain + [target_entry]
 
 
+def ff_entry_items(jd, ns) -> list:
+    """(label, path) for every entry of ff_groups/<ns>: label 'group/entry', path (ns, group, entry) -- for combos."""
+    return [(f"{g}/{e}", (ns, g, e)) for g, body in groups_of(jd, ns).items() for e in entries_of(ns, body)]
+
+
+def combo_path(combo):
+    """The ff_groups path stored as a combo item's data, or None for the (none) item."""
+    d = combo.currentData()
+    return tuple(d) if d else None
+
+
+def compose_cfg(jd, readout_group, readout_entries, pulse_group, pulse_entries, ff_expt_path=None) -> dict:
+    """The GUI's cfg, composed the way a script would: BaseConfig | res_config | qubit_config (+ FF_Expt).
+
+    Keys from the retrievers: res_*, readout_lengths, adc_trig_delays, ro_chs, Qubit_Readout_List, FF_Readouts
+    (readout group) and qubit_freqs, qubit_gains, sigma, Qubit_Pulse, FF_Pulses (pulse group, single group only).
+    ``ff_expt_path`` (a key path into ff_groups, e.g. ('ramp_groups', 'ramp_3800', '34', 'FF_Expt')) sets cfg['FF_Expt'].
+    """
+    qp = QubitParams(jd)
+    cfg = copy.deepcopy(BaseConfig) | qp.res_config(readout_group, readout_entries) | qp.qubit_config(pulse_group, pulse_entries)
+    if ff_expt_path:
+        cfg["FF_Expt"] = qp.get_ff(*ff_expt_path)
+    return cfg
+
+
 def build_cfg_for_qubit(state: "CalibState", Q: str, *,
+                        pulse_group: Optional[str] = None,
                         qubit_pulse: Optional[list] = None,
                         qubit_readout: Optional[list] = None,
                         readout_group: Optional[str] = None,
                         overrides: Optional[dict] = None) -> dict:
-    """GUI-side wrapper around ``build_config`` for single-qubit stages.
+    """GUI-side wrapper around ``compose_cfg`` for single-qubit stages.
 
-    Routes through the canonical pipeline (qubit_parameters.json -> build_config
-    -> flat cfg) so GUI runs match external scripts. Layers on per-readout
-    SingleShot calibration (angle/threshold/confusion_matrix) read from the
-    JSON entry's SingleShot block (legacy: Readout), then applies stage-form
-    overrides last.
+    Routes through QubitParams (qubit_parameters.json -> flat cfg) the same way a
+    script composes its cfg (angle/threshold/confusion_matrix come from res_config when the
+    entry has a SingleShot object), then applies stage-form overrides last.
 
-    ``qubit_pulse`` defaults to ``[Q]`` (the drive resolver finds it inside the
-    readout group's entry); pass an explicit list to override.
+    ``pulse_group`` defaults to the readout group and ``qubit_pulse`` (entry labels inside
+    ``pulse_group``) to ``[Q]``; pass both to drive from a pure drive group.
 
     ``qubit_readout`` defaults to ``[Q]``. AutoCalib passes an explicit value
     when iterating drive-group rows whose entry name (e.g. ``'1_3800+'``)
@@ -143,30 +166,12 @@ def build_cfg_for_qubit(state: "CalibState", Q: str, *,
     """
     Q = str(Q)
     rg = readout_group or state.current_readout_group or None
-    qp = list(qubit_pulse) if qubit_pulse is not None else [Q]
+    pg = pulse_group or rg
+    qp = [str(e) for e in qubit_pulse] if qubit_pulse is not None else [Q]
     qr = list(qubit_readout) if qubit_readout is not None else [Q]
 
-    cfg = build_config(
-        Qubit_Readout=qr,
-        Qubit_Pulse=qp,
-        Readout_Point=rg,
-        jd=state.qubit_parameters_json or None,   # falls back to disk if None
-    )
-
-    # SingleShot cals — build_config does not promote angle/threshold/confusion_matrix
-    # to top-level cfg keys; downstream experiments (notably SweepExperimentND's
-    # population_corrected branch) require them. One entry per qubit in qr so
-    # MUX stages (qr len > 1) have a matching-length list.
-    jd = state.qubit_parameters_json or {}
-    angles, thresholds, confusion_matrices = [], [], []
-    for ro_key in (qr if qr else [Q]):
-        ro_entry = _singleshot_cal_for(jd, rg, ro_key)
-        angles.append(float(ro_entry.get("angle", 0.0)))
-        thresholds.append(float(ro_entry.get("threshold", 0.0)))
-        confusion_matrices.append(_confusion_matrix_for(ro_entry))
-    cfg["angle"] = angles
-    cfg["threshold"] = thresholds
-    cfg["confusion_matrix"] = confusion_matrices
+    cfg = compose_cfg(state.qubit_parameters_json or {}, rg, qr, pg, qp)
+    cfg["outerFolder"] = state.outer_folder   # experiments read their save folder from cfg, as in a script
 
     if overrides:
         cfg.update(overrides)
@@ -250,16 +255,11 @@ def recenter_zoom_step(prev_opt, new_opt, span_f, span_g,
 # The `Readout` tuple below deliberately still lists angle/threshold/contrasts:
 # JSONs written before the split hold legacy copies there, and stripping them on
 # save cleans up the old location while the SingleShot block becomes the single
-# source of truth. `_singleshot_cal_for` reads SingleShot over Readout, so a
-# legacy file keeps working until it is next saved.
+# source of truth.
 SESSION_ONLY_FIELDS = {
     "Readout": ("fidelity", "angle", "threshold", "ne_contrast", "ng_contrast"),
     "Qubit":   ("T1", "T2R", "T2E"),
 }
-
-_GROUP_NAMESPACES = ("readout_groups", "drive_groups", "ramp_groups",
-                     "dynamics_groups")
-
 
 def strip_session_only_entry(entry):
     """Copy of one entry dict with SESSION_ONLY_FIELDS dropped."""
@@ -282,11 +282,10 @@ def strip_session_only(jd: dict) -> dict:
     left alone — the live values stay usable for the rest of the session.
     """
     out = copy.deepcopy(jd or {})
-    for ns in _GROUP_NAMESPACES:
-        for group in (out.get(ns) or {}).values():
-            entries = (group or {}).get("entries") or {}
-            for ename, entry in entries.items():
-                entries[ename] = strip_session_only_entry(entry)
+    for group in groups_of(out, "drive_groups").values():  # session-only fields live in drive entries' Readout/Qubit blocks
+        entries = (group or {}).get("entries") or {}
+        for ename, entry in entries.items():
+            entries[ename] = strip_session_only_entry(entry)
     return out
 
 
@@ -418,7 +417,7 @@ _MISSING = _MissingType()
 def _diff_entries(snapshot: dict, live: dict) -> list[dict]:
     """Compute per-entry diffs between two qubit_parameters dicts.
 
-    Walks ``readout_groups[*].entries[*]`` and ``drive_groups[*].entries[*]``.
+    Walks ``drive_groups[*].entries[*]``.
     The diff unit is a single ``(kind, group, entry)`` triple. Within each
     matched entry, fields are walked recursively into nested dicts (e.g.
     ``Readout.angle``, ``Qubit.Frequency``). Groups or entries that exist on
@@ -429,7 +428,7 @@ def _diff_entries(snapshot: dict, live: dict) -> list[dict]:
 
     Returns a list of records:
         {
-            'kind':    'readout_groups' | 'drive_groups',
+            'kind':    'drive_groups',
             'group':   group name,
             'entry':   entry name,
             'changes': [(path_str, old, new), ...],   # empty for structural
@@ -437,9 +436,9 @@ def _diff_entries(snapshot: dict, live: dict) -> list[dict]:
         }
     """
     records: list[dict] = []
-    for kind in ("readout_groups", "drive_groups"):
-        snap_groups = (snapshot or {}).get(kind, {}) or {}
-        live_groups = (live or {}).get(kind, {}) or {}
+    for kind in ("drive_groups",):
+        snap_groups = groups_of(snapshot or {}, kind)
+        live_groups = groups_of(live or {}, kind)
         group_names = sorted(set(snap_groups.keys()) | set(live_groups.keys()))
         for gname in group_names:
             snap_entries = (snap_groups.get(gname, {}) or {}).get("entries", {}) or {}

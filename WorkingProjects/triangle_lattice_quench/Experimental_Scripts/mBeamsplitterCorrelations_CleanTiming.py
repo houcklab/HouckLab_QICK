@@ -10,9 +10,9 @@ from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperim
     SweepExperiment2D_plots
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import \
     ThreePartProgramTwoFF, ThreePartProgramOneFF
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR import \
     RampCurrentCorrelationsR
-from triangle_lattice_quench.Helpers import FFEnvelope_Helpers, SweepHelpers
+from triangle_lattice_quench.Helpers import FFEnvelope_Helpers, NDSweepHelpers
 from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
 
 
@@ -173,7 +173,7 @@ class CleanTimingCorrelations(RampBeamsplitterCleanTiming, RampCurrentCorrelatio
         ylabel = rf'$\langle n_{{ {q2}{q1}}} n_{{{q4}{q3}}}\rangle$'
 
         try:
-            x_key_name = SweepHelpers.key_savename(self.x_key)
+            x_key_name = NDSweepHelpers.key_savename(self.x_key)
         except:
             x_key_name = self.loop_names[0]
         X = data['data'][x_key_name]

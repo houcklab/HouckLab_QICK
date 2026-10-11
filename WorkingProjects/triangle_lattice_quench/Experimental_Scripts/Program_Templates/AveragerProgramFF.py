@@ -18,14 +18,14 @@ from qick.asm_v2 import AveragerProgramV2
 class FFAveragerProgramV2(AveragerProgramV2):
     '''Averager Program but adds FF and acquire helpers'''
 
-    def FFPulses(self, list_of_gains, length_us, t_start='auto', **kwargs):
-        FF.FFPulses(self, list_of_gains, length_us, t_start, **kwargs)
+    def FFPlay_Const(self, list_of_gains, length_us, t_start='auto', **kwargs):
+        FF.FFPlay_Const(self, list_of_gains, length_us, t_start, **kwargs)
 
 
-    def FFPulses_direct(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None,
+    def FFPlay_Arb(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None,
                         waveform_label = "FF"):
-        FF.FFPulses_direct(self, list_of_gains, length_dt, previous_gains= previous_gains, t_start = t_start,
-                           IQPulseArray=IQPulseArray, waveform_label = waveform_label)
+        FF.FFPlay_Arb(self, list_of_gains, length_dt, previous_gains= previous_gains, t_start = t_start,
+                      IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
     def loop_pts(self):
         '''This is purely for easy plotting purposes'''

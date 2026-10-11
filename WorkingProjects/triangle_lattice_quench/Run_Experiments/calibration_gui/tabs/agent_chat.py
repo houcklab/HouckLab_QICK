@@ -610,10 +610,6 @@ class AgentChatTab(QWidget):
                       + "; ".join(f"{s} Q{q}" for q, s, _ in schedule))
         self.stop_btn.setEnabled(True)
         self._last_run_results = []
-        try:
-            main.tabs.setCurrentWidget(main.auto_calib_tab)   # show the live auto-calib plot
-        except Exception:
-            pass
         self.calib_worker = AutoCalibWorker(self.state, schedule, stages_by_name)
         self.calib_worker.log_msg.connect(self.transcript.appendPlainText)
         self.calib_worker.stage_done.connect(self._on_stage_done)
@@ -669,10 +665,6 @@ class AgentChatTab(QWidget):
                                 f"the tab's required selections). Status: {status}")
             return
         self._append("gui", f"auto-running {cal_id}: {status}")
-        try:
-            main.tabs.setCurrentWidget(tab)   # show the live calibration plot
-        except Exception:
-            pass
         self.stop_btn.setEnabled(True)
         tw.finished.connect(lambda t=tab, c=cal_id: self._on_tab_cal_finished(t, c))
 

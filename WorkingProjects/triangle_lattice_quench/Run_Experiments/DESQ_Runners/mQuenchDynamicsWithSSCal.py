@@ -59,8 +59,8 @@ import numpy as np
 from triangle_lattice_quench.Experimental_Scripts.quench_experiments.mQuenchExperiment import (
     RampQuenchDynamics,
 )
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import (
-    SingleShotFFMUX,
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import (
+    SingleShot,
 )
 
 # Module-level fallback so the user doesn't HAVE to put Qubit_Parameters in
@@ -123,7 +123,7 @@ class QuenchDynamicsWithSSCal(RampQuenchDynamics):
             # quench cfg (self.cfg) and the IQArrays already built in
             # set_up_instance() are not affected.
             ss_cfg = copy.deepcopy(self.cfg)
-            ss_cfg["FF_Qubits"] = copy.deepcopy(self.cfg["FF_Qubits"])
+            ss_cfg["FF_Pulses"] = copy.deepcopy(self.cfg["FF_Pulses"])
             ss_cfg["Shots"] = n_shots
             # Point the single drive at THIS qubit
             ss_cfg["qubit_freqs"] = [qpQ["Qubit"]["Frequency"] - qubit_LO]
@@ -133,9 +133,9 @@ class QuenchDynamicsWithSSCal(RampQuenchDynamics):
             # (the same crosstalk-compensated array used during quench-prep
             # pulses). Matches characterize_readout exactly.
             for q_idx, gain in enumerate(qpQ["Pulse_FF"]):
-                ss_cfg["FF_Qubits"][str(q_idx + 1)]["Gain_Pulse"] = gain
+                ss_cfg["FF_Pulses"][q_idx] = gain
 
-            ss_expt = SingleShotFFMUX(
+            ss_expt = SingleShot(
                 soc=self.soc, soccfg=self.soccfg,
                 path=f"SingleShot_PreQuench_Q{Qubit}",
                 outerFolder=self.outerFolder,

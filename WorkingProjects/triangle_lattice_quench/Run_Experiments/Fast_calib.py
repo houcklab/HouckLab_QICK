@@ -15,14 +15,14 @@ import matplotlib.gridspec as gridspec
 import time
 from datetime import datetime
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSlice
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import TransmissionSweep
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabi import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShot
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1
 from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from triangle_lattice_quench.Flux_Files.LEGACY.Calculate_FF import CalculateFFExperiment
+from triangle_lattice_quench.Device_Calibration.LEGACY.Calculate_FF import CalculateFFExperiment
 
 from triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
@@ -256,7 +256,7 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
     }
 
     try:
-        expt = CalculateFFExperiment(path='', prefix='CalculateFF', soc=None, soccfg=None, cfg=calib_FF_config)
+        expt = CalculateFFExperiment(path='', suffix='CalculateFF', soc=None, soccfg=None, cfg=calib_FF_config)
         expt.acquire()
         expt.display(plotDisplay=False, ax=ax_ff)
     except Exception as e:
@@ -472,7 +472,7 @@ class EnhancedCalibration:
 
     def run_transmission(self, params):
         """Step 1: Find cavity frequency"""
-        expt = CavitySpecFFMUX(
+        expt = TransmissionSweep(
             path="TransmissionFF",
             cfg=self.config | params,
             soc=self.soc,
@@ -496,7 +496,7 @@ class EnhancedCalibration:
         """Step 2/3: Find qubit frequency (coarse then fine)"""
         nominal_freq = self.config.get("qubit_freqs", [None])[0]
 
-        expt = QubitSpecSliceFFMUX(
+        expt = QubitSpecSlice(
             path=f"QubitSpec_{'Coarse' if coarse else 'Fine'}",
             cfg=self.config | params,
             soc=self.soc,
@@ -618,7 +618,7 @@ class EnhancedCalibration:
 
     def run_singleshot_verification(self, params):
         """Step 7: Final single-shot verification"""
-        expt = SingleShotFFMUX(
+        expt = SingleShot(
             path="SingleShot",
             outerFolder=self.outerFolder,
             cfg=self.config | params,
@@ -647,7 +647,7 @@ class EnhancedCalibration:
 
         # Quick T1 (5 time points)
         try:
-            t1_expt = T1MUX(
+            t1_expt = T1(
                 path="T1",
                 cfg=self.config | t1_params,
                 soc=self.soc,

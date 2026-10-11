@@ -25,7 +25,7 @@ class TwoPartProgram(FFAveragerProgramV2):
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -43,7 +43,7 @@ class TwoPartProgram(FFAveragerProgramV2):
     def body(self):
         # 1: FFPulse
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        self.FFPlay_Const(self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["f_ges"][i], gen_ch=self.cfg["qubit_ch"])
@@ -55,7 +55,7 @@ class TwoPartProgram(FFAveragerProgramV2):
 
         # 2: FFReadouts
         self.sync_all(self.cfg['delay_cycles'], gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
@@ -64,8 +64,8 @@ class TwoPartProgram(FFAveragerProgramV2):
                      syncdelay=self.us2cycles(10))
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 4.65515/1e3*3)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 4.65515/1e3*3)
 
-        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        self.FFPlay_Const(-1 * self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))

@@ -17,7 +17,7 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
 
         FFLoad1Waveform(self, list_of_gains, previous_gains, IDataArray) once
 
-        FFPulses_arb_cycles_and_delay(self, t_start) in place of FFPulses_direct and
+        FFPulses_arb_cycles_and_delay(self, t_start) in place of FFPlay_Arb and
         FFInvert_arb_cycles_and_delay(self, t_start) to invert the pulse at the end.
 
         Both functions include a delay() by the correct number of cycles.
@@ -95,7 +95,7 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
     def _initialize(self, cfg):
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -107,7 +107,7 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
 
         FF.FFDefinitions(self)
         # longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
-        # FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
+        # FFLoad16Waveforms(self, self.FFPulses, "FFExpt", longest_length)
 
         # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.qubit_length_us = [4 * s for s in cfg["sigma"]]

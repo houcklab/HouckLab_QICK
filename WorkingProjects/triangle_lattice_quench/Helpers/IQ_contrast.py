@@ -39,5 +39,5 @@ def frequency_guess(t, y):
     return freqs[np.argmax(fft_ampl[1:])+1]
 
 def omega_guess(t, y):
-    '''Above but multiplied by 2π'''
+    '''frequency_guess but multiplied by 2π'''
     return 2 * np.pi * frequency_guess(t, y)

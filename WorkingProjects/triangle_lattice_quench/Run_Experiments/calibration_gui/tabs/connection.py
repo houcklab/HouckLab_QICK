@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import copy
 import json
+import threading
 import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -24,6 +25,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .. import style as st
 from ..state import (
     CalibState,
     make_default_ff_qubits,
@@ -35,8 +37,10 @@ from ..state import (
     DEFAULT_D5A_MODULE,
     DEFAULT_D5A_RAMP_STEP,
     DEFAULT_D5A_RAMP_INTERVAL,
+    SETTING_CHANNEL_MAP,
     SETTING_NS_HOST,
     SETTING_NS_PORT,
+    SETTING_PROXY_NAME,
     get_settings,
     set_d5a_settings,
 )
@@ -93,8 +97,8 @@ def load_d5a_voltages_from_file(path: str) -> dict[str, float]:
         def unlock(self): pass
 
     targets = [
-        "triangle_lattice_quench.PythonDrivers.SPIRackvoltage",
-        "triangle_lattice_quench.Client_modules.PythonDrivers.SPIRackvoltage",
+        "triangle_lattice_quench.Equipment_Drivers.SPIRackvoltage",
+        "triangle_lattice_quench.Client_modules.Equipment_Drivers.SPIRackvoltage",
     ]
     saved = {t: sys.modules.get(t) for t in targets}
     fake = types.ModuleType("spirack_stub")
@@ -153,7 +157,7 @@ class D5aApplyWorker(QThread):
         spi = None
         try:
             self.log.emit(f"Opening SPI rack on {self.port} (module={self.module})...")
-            from triangle_lattice_quench.PythonDrivers.SPIRackvoltage import (
+            from triangle_lattice_quench.Equipment_Drivers.SPIRackvoltage import (
                 SPIRack, D5aModule,
             )
             spi = SPIRack(self.port, self.baud, self.timeout)
@@ -270,8 +274,7 @@ class D5aCouplerDialog(QDialog):
         # ---- log ----
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Apply progress will appear here.")
 
         layout = QVBoxLayout(self)
@@ -475,23 +478,163 @@ DEFAULT_NS_PORT = 8888
 DEFAULT_SERVER_NAME = "myqick"
 
 
-class ConnectionDialog(QDialog):
-    """Pre-step dialog: nameserver lookup + RFSoC proxy + channel mapping.
+CONNECT_TIMEOUT_S = 15.0   # per-proxy timeout for the get_cfg() call of one attempt
 
-    Acts as a thin client over Pyro4 and the RFSoC's ``soc.get_cfg()``: nothing
-    is hardcoded, the user supplies the address. On accept, ``self.state`` holds
-    a fully populated :class:`CalibState` (soc, soccfg, channel map, n_qubits).
+
+def pyro_connect(host: str, port: int, name: str):
+    """Blocking lookup + get_cfg; returns (soc, soccfg, cfg_dict). Runs on a worker thread."""
+    import Pyro4
+    from qick import QickConfig
+    Pyro4.config.SERIALIZER = "pickle"
+    Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
+    ns = Pyro4.locateNS(host=host, port=port)
+    soc = Pyro4.Proxy(ns.lookup(name))
+    soc._pyroTimeout = CONNECT_TIMEOUT_S      # this proxy only; cleared so long acquire() calls are unaffected
+    cfg_dict = soc.get_cfg()
+    soc._pyroTimeout = None
+    return soc, QickConfig(cfg_dict), cfg_dict
+
+
+class ConnectionController(QObject):
+    """One RFSoC connection attempt at a time, on a daemon thread.
+
+    A blocked Pyro call cannot be interrupted, so abort() / a newer connect_to() just bump a
+    generation counter and the stale attempt's result is dropped when it finally arrives.
+    """
+    started = pyqtSignal(str)
+    succeeded = pyqtSignal(object, object, dict, dict)   # soc, soccfg, cfg_dict, {host, port, name}
+    failed = pyqtSignal(str)
+    aborted = pyqtSignal()
+    disconnected = pyqtSignal()
+    _result = pyqtSignal(int, bool, object)
+
+    def __init__(self, connector=None, parent=None):
+        super().__init__(parent)
+        self._connector = connector or pyro_connect
+        self._gen = 0
+        self.pending = False
+        self.params: dict = {}
+        self._result.connect(self._on_result)
+
+    def connect_to(self, host: str, port: int, name: str) -> None:
+        """Start an attempt; one already in flight is abandoned (its result will be ignored)."""
+        self._gen += 1
+        self.pending = True
+        self.params = {"host": host, "port": int(port), "name": name}
+        self.started.emit(f"Connecting to '{name}' at {host}:{int(port)}...")
+        threading.Thread(target=self._work, args=(self._gen, host, int(port), name),
+                         daemon=True, name="rfsoc-connect").start()
+
+    def _work(self, gen: int, host: str, port: int, name: str) -> None:
+        try:
+            ok, payload = True, self._connector(host, port, name)
+        except Exception as exc:
+            ok, payload = False, f"{type(exc).__name__}: {exc}"
+        self._result.emit(gen, ok, payload)
+
+    def _on_result(self, gen: int, ok: bool, payload) -> None:
+        if gen != self._gen:
+            return                                 # aborted or superseded
+        self.pending = False
+        if ok:
+            soc, soccfg, cfg_dict = payload
+            self.succeeded.emit(soc, soccfg, cfg_dict, dict(self.params))
+        else:
+            self.failed.emit(str(payload))
+
+    def abort(self) -> None:
+        if self.pending:
+            self._gen += 1
+            self.pending = False
+            self.aborted.emit()
+
+    def disconnect_(self) -> None:
+        self._gen += 1
+        self.pending = False
+        self.disconnected.emit()
+
+
+def saved_connection_params() -> dict:
+    """Host / port / proxy name of the previous session (the defaults when there is none)."""
+    s = get_settings()
+    return {"host": str(s.value(SETTING_NS_HOST, DEFAULT_NS_HOST, type=str) or DEFAULT_NS_HOST),
+            "port": int(s.value(SETTING_NS_PORT, DEFAULT_NS_PORT, type=int) or DEFAULT_NS_PORT),
+            "name": str(s.value(SETTING_PROXY_NAME, DEFAULT_SERVER_NAME, type=str) or DEFAULT_SERVER_NAME)}
+
+
+def save_connection_params(host: str, port: int, name: str) -> None:
+    s = get_settings()
+    s.setValue(SETTING_NS_HOST, host)
+    s.setValue(SETTING_NS_PORT, int(port))
+    s.setValue(SETTING_PROXY_NAME, name)
+
+
+def default_channel_map() -> dict:
+    ff = [int(c) for c in DEFAULT_BASE_CONFIG["fast_flux_chs"]]
+    return {"res_ch": int(DEFAULT_BASE_CONFIG["res_ch"]), "qubit_ch": int(DEFAULT_BASE_CONFIG["qubit_ch"]),
+            "n_qubits": len(ff), "ff_channels": ff}
+
+
+def initial_channel_map() -> dict:
+    """The channel map applied last time, else the BaseConfig defaults."""
+    try:
+        m = json.loads(str(get_settings().value(SETTING_CHANNEL_MAP, "", type=str) or ""))
+        ff = [int(c) for c in m["ff_channels"]]
+        n = int(m["n_qubits"])
+        if len(ff) == n and 1 <= n <= len(DEFAULT_BASE_CONFIG["fast_flux_chs"]):
+            return {"res_ch": int(m["res_ch"]), "qubit_ch": int(m["qubit_ch"]), "n_qubits": n, "ff_channels": ff}
+    except Exception:
+        pass
+    return default_channel_map()
+
+
+def state_from_channel_map(cmap: dict) -> CalibState:
+    """A disconnected CalibState (soc/soccfg unset) carrying this channel map."""
+    base = copy.deepcopy(DEFAULT_BASE_CONFIG)
+    n = int(cmap["n_qubits"])
+    base.update(res_ch=int(cmap["res_ch"]), qubit_ch=int(cmap["qubit_ch"]),
+                ro_chs=list(range(n)), fast_flux_chs=list(cmap["ff_channels"]))
+    return CalibState(base_config=base, ff_qubits=make_default_ff_qubits(n, cmap["ff_channels"]), n_qubits=n)
+
+
+def apply_channel_map(state: CalibState, cmap: dict) -> bool:
+    """Update the channel map of a live state in place (tabs keep their reference).
+
+    The qubit COUNT is fixed once the tabs are built: returns False, leaving the FF map alone,
+    when cmap asks for a different one (restart needed)."""
+    state.base_config["res_ch"] = int(cmap["res_ch"])
+    state.base_config["qubit_ch"] = int(cmap["qubit_ch"])
+    if int(cmap["n_qubits"]) != state.n_qubits:
+        return False
+    state.base_config["fast_flux_chs"] = list(cmap["ff_channels"])
+    for i, ch in enumerate(cmap["ff_channels"]):
+        state.ff_qubits.setdefault(str(i + 1), {})["channel"] = int(ch)
+    return True
+
+
+class ConnectionDialog(QDialog):
+    """RFSoC connection panel: nameserver lookup, proxy, channel map. Opened on demand.
+
+    The connection itself is made by the shared :class:`ConnectionController` (background
+    thread, abortable); this panel edits the parameters, starts / aborts attempts, shows their
+    status, and emits ``channel_map_applied`` when Apply is pressed.
     """
 
-    def __init__(self, parent=None):
+    channel_map_applied = pyqtSignal(dict)
+
+    def __init__(self, controller: ConnectionController, state: CalibState, busy_check=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("RFSoC connection — nameserver & channel map")
         self.resize(1000, 780)
 
-        self.soc: Any = None
-        self.soccfg: Any = None
+        self.ctrl = controller
+        self.state = state
+        self._busy_check = busy_check or (lambda: False)   # True while an experiment is running
+        self._seed = {"res_ch": int(state.base_config["res_ch"]), "qubit_ch": int(state.base_config["qubit_ch"]),
+                      "n_qubits": int(state.n_qubits),
+                      "ff_channels": [int(c) for c in state.base_config["fast_flux_chs"]]}
+        self._gens: list = []
         self.ns: Any = None
-        self.state: Optional[CalibState] = None  # set on accept()
 
         # cached so we know how many channels are available for the dropdowns
         self.n_gens = 0
@@ -500,11 +643,11 @@ class ConnectionDialog(QDialog):
         # ---- Nameserver group ----
         ns_box = QGroupBox("Pyro4 nameserver")
         ns_form = QFormLayout()
-        _s = get_settings()  # seed from the saved nameserver default (falls back to the constant)
-        self.host_edit = QLineEdit(str(_s.value(SETTING_NS_HOST, DEFAULT_NS_HOST, type=str) or DEFAULT_NS_HOST))
+        _saved = saved_connection_params()  # the previous session's values (else the constants)
+        self.host_edit = QLineEdit(_saved["host"])
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
-        self.port_spin.setValue(int(_s.value(SETTING_NS_PORT, DEFAULT_NS_PORT, type=int) or DEFAULT_NS_PORT))
+        self.port_spin.setValue(_saved["port"])
         self.list_btn = QPushButton("List nameserver entries")
         self.list_btn.clicked.connect(self.on_list_ns)
         self.ns_list = QListWidget()
@@ -522,7 +665,7 @@ class ConnectionDialog(QDialog):
         # ---- Proxy group ----
         proxy_box = QGroupBox("RFSoC proxy")
         proxy_form = QFormLayout(proxy_box)
-        self.proxy_name_edit = QLineEdit(DEFAULT_SERVER_NAME)
+        self.proxy_name_edit = QLineEdit(_saved["name"])
         self.connect_btn = QPushButton("Connect to RFSoC")
         self.connect_btn.clicked.connect(self.on_connect)
         self.disconnect_btn = QPushButton("Disconnect")
@@ -544,8 +687,7 @@ class ConnectionDialog(QDialog):
         cfg_layout = QVBoxLayout(cfg_box)
         self.cfg_view = QPlainTextEdit()
         self.cfg_view.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.cfg_view.setFont(f)
+        st.make_mono(self.cfg_view)
         cfg_layout.addWidget(self.cfg_view)
 
         # ---- Channels (editable; defaults from BaseConfig) ----
@@ -572,7 +714,7 @@ class ConnectionDialog(QDialog):
         nq_row.addWidget(QLabel("Number of qubits (= MUXed readouts to enable):"))
         self.n_qubits_spin = QSpinBox()
         self.n_qubits_spin.setRange(1, len(DEFAULT_BASE_CONFIG["fast_flux_chs"]))
-        self.n_qubits_spin.setValue(len(DEFAULT_BASE_CONFIG["fast_flux_chs"]))
+        self.n_qubits_spin.setValue(self._seed["n_qubits"])
         self.n_qubits_spin.valueChanged.connect(self.on_n_qubits_changed)
         nq_row.addWidget(self.n_qubits_spin)
         nq_row.addStretch(1)
@@ -608,8 +750,7 @@ class ConnectionDialog(QDialog):
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        self.button_box.button(QDialogButtonBox.Ok).setText("Continue")
-        self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
+        self.button_box.button(QDialogButtonBox.Ok).setText("Apply channel map")
         self.button_box.accepted.connect(self.on_accept)
         self.button_box.rejected.connect(self.reject)
 
@@ -636,6 +777,13 @@ class ConnectionDialog(QDialog):
 
         # initial empty table
         self.on_n_qubits_changed(self.n_qubits_spin.value())
+
+        self.ctrl.started.connect(self._on_started)
+        self.ctrl.succeeded.connect(self._on_succeeded)
+        self.ctrl.failed.connect(self._on_failed)
+        self.ctrl.aborted.connect(self._on_aborted)
+        self.ctrl.disconnected.connect(self._on_disconnected)
+        self._refresh_buttons()
 
     # ------------------ nameserver / proxy actions ------------------
 
@@ -690,64 +838,72 @@ class ConnectionDialog(QDialog):
             self.proxy_name_edit.setText(name)
 
     def on_connect(self):
+        """Start (or restart) a background connection with the parameters shown; an attempt
+        already in flight is abandoned."""
+        if self._busy_check():
+            QMessageBox.information(self, "Experiment running",
+                                    "Stop the running experiment before changing the connection.")
+            return
         name = self.proxy_name_edit.text().strip()
         if not name:
             QMessageBox.warning(self, "Missing name",
                                 "Enter a Pyro4 proxy name (or pick one from the list).")
             return
-        if self.ns is None:
-            # try to locate the nameserver implicitly
-            self.on_list_ns()
-            if self.ns is None:
-                return
-        try:
-            import Pyro4
-            from qick import QickConfig
-        except ImportError as exc:
-            QMessageBox.critical(self, "Import failed",
-                                 f"Pyro4 / qick not importable: {exc}")
-            return
-        self._busy(f"Looking up '{name}'...")
-        try:
-            uri = self.ns.lookup(name)
-            soc = Pyro4.Proxy(uri)
-            cfg_dict = soc.get_cfg()
-            soccfg = QickConfig(cfg_dict)
-        except Exception as exc:
-            QMessageBox.critical(self, "Connection failed",
-                                 f"Could not connect to '{name}':\n{exc}")
-            self.connection_status.setText("Connect failed.")
-            return
+        host, port = self.host_edit.text().strip(), int(self.port_spin.value())
+        save_connection_params(host, port, name)
+        self.ctrl.connect_to(host, port, name)
 
-        self.soc = soc
-        self.soccfg = soccfg
-        # Persist the nameserver host/port as the new default for future sessions.
-        _s = get_settings()
-        _s.setValue(SETTING_NS_HOST, self.host_edit.text().strip())
-        _s.setValue(SETTING_NS_PORT, int(self.port_spin.value()))
+    def on_disconnect(self):
+        """"Abort" while an attempt is pending, "Disconnect" once connected."""
+        if self.ctrl.pending:
+            self.ctrl.abort()
+            return
+        if self._busy_check():
+            QMessageBox.information(self, "Experiment running",
+                                    "Stop the running experiment before disconnecting.")
+            return
+        self.ctrl.disconnect_()
+
+    def _refresh_buttons(self) -> None:
+        pending, connected = self.ctrl.pending, self.state.is_connected()
+        self.connect_btn.setEnabled(True)           # always: restarts an attempt / reconnects
+        self.disconnect_btn.setText("Abort" if pending else "Disconnect")
+        self.disconnect_btn.setEnabled(pending or connected)
+
+    def _on_started(self, msg: str) -> None:
+        self.connection_status.setText(msg + " (Abort to stop, or Connect again with new parameters)")
+        self._refresh_buttons()
+
+    def _on_failed(self, msg: str) -> None:
+        self.connection_status.setText(f"Connect failed: {msg}")
+        self._refresh_buttons()
+
+    def _on_aborted(self) -> None:
+        self.connection_status.setText("Connection attempt aborted.")
+        self._refresh_buttons()
+
+    def _on_disconnected(self) -> None:
+        self.cfg_view.clear()
+        self.connection_status.setText("Disconnected.")
+        self._refresh_buttons()
+
+    def _on_succeeded(self, soc, soccfg, cfg_dict: dict, params: dict) -> None:
+        """Show the soccfg and relabel the channel combos with the live gens (selections kept).
+        MainWindow stores soc / soccfg in the shared state; this only updates the panel."""
         self.connection_status.setText(
-            f"Connected to '{name}' at {self.host_edit.text()}:{self.port_spin.value()}."
-        )
+            f"Connected to '{params['name']}' at {params['host']}:{params['port']}.")
         try:
             self.cfg_view.setPlainText(soccfg.description())
         except Exception:
             self.cfg_view.setPlainText(repr(cfg_dict))
-        self.connect_btn.setEnabled(False)
-        self.disconnect_btn.setEnabled(True)
-        self.button_box.button(QDialogButtonBox.Ok).setEnabled(True)
 
-        # Repopulate the channel combos from the live gens list, preserving
-        # whatever the user had selected (data value) — typically the
-        # BaseConfig defaults seeded at construction time.
         gens = cfg_dict.get("gens", []) or []
-        readouts = cfg_dict.get("readouts", []) or []
-        self.n_gens = len(gens)
-        self.n_readouts = len(readouts)
+        self._gens = list(gens)
 
         # Capture prior selections so we can restore them after clear/refill.
         prev_res = self.res_ch_combo.currentData()
         prev_qubit = self.qubit_ch_combo.currentData()
-        prev_ff: list[int | None] = []
+        prev_ff: list = []
         for i in range(self.qubit_table.rowCount()):
             w = self.qubit_table.cellWidget(i, 1)
             prev_ff.append(w.currentData() if w is not None else None)
@@ -761,31 +917,13 @@ class ConnectionDialog(QDialog):
             for i, gen in enumerate(gens):
                 combo.addItem(_gen_label(i, gen), i)
             combo.blockSignals(False)
-
-        # Restore prior selections; fall back to BaseConfig default if missing.
         self._select_combo_value(
-            self.res_ch_combo,
-            prev_res if prev_res is not None else DEFAULT_BASE_CONFIG["res_ch"],
-        )
+            self.res_ch_combo, prev_res if prev_res is not None else self._seed["res_ch"])
         self._select_combo_value(
-            self.qubit_ch_combo,
-            prev_qubit if prev_qubit is not None else DEFAULT_BASE_CONFIG["qubit_ch"],
-        )
-
-        # Rebuild FF rows (keeps prior per-row selection where possible).
+            self.qubit_ch_combo, prev_qubit if prev_qubit is not None else self._seed["qubit_ch"])
         self._populate_qubit_table(prev_ff=prev_ff)
-        # Refresh ro_chs label.
         self.on_n_qubits_changed(self.n_qubits_spin.value())
-
-    def on_disconnect(self):
-        # Pyro4 proxies clean up on garbage collection; just drop the references.
-        self.soc = None
-        self.soccfg = None
-        self.cfg_view.clear()
-        self.connection_status.setText("Disconnected.")
-        self.connect_btn.setEnabled(True)
-        self.disconnect_btn.setEnabled(False)
-        self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
+        self._refresh_buttons()
 
     def on_n_qubits_changed(self, n: int):
         # ro_chs = first n MUXed ADC channels of the 8-channel firmware.
@@ -816,15 +954,16 @@ class ConnectionDialog(QDialog):
         identically before and after a connect (where the labels become
         richer fs/type strings but the data values stay the same).
         """
-        default_ff_chs = list(DEFAULT_BASE_CONFIG["fast_flux_chs"])
+        default_ff_chs = list(self._seed["ff_channels"])
         # The two shared combos: list every plausible channel index. We don't
         # have a soccfg yet, so use the union of BaseConfig's res/qubit/FF
         # channels — enough to surface the default and any sibling channel
         # the user might want to pick before connecting.
         candidate_chs = sorted(set(
-            [int(DEFAULT_BASE_CONFIG["res_ch"]),
-             int(DEFAULT_BASE_CONFIG["qubit_ch"])]
+            [int(self._seed["res_ch"]),
+             int(self._seed["qubit_ch"])]
             + [int(c) for c in default_ff_chs]
+            + [int(c) for c in DEFAULT_BASE_CONFIG["fast_flux_chs"]]
         ))
         for combo in (self.res_ch_combo, self.qubit_ch_combo):
             combo.blockSignals(True)
@@ -832,8 +971,8 @@ class ConnectionDialog(QDialog):
             for ch in candidate_chs:
                 combo.addItem(f"ch {ch} (BaseConfig default)", ch)
             combo.blockSignals(False)
-        self._select_combo_value(self.res_ch_combo, int(DEFAULT_BASE_CONFIG["res_ch"]))
-        self._select_combo_value(self.qubit_ch_combo, int(DEFAULT_BASE_CONFIG["qubit_ch"]))
+        self._select_combo_value(self.res_ch_combo, int(self._seed["res_ch"]))
+        self._select_combo_value(self.qubit_ch_combo, int(self._seed["qubit_ch"]))
         # Build the FF rows for the initial n_qubits.
         self._populate_qubit_table(prev_ff=None)
 
@@ -846,15 +985,8 @@ class ConnectionDialog(QDialog):
         the default per-qubit FF channel from BaseConfig is used.
         """
         n = int(self.n_qubits_spin.value())
-        default_ff_chs = list(DEFAULT_BASE_CONFIG["fast_flux_chs"])
-        # If we have a live cfg with gens, drive the combos from it.
-        if self.soccfg is not None and self.n_gens > 0:
-            try:
-                gens = self.soc.get_cfg().get("gens", []) or []
-            except Exception:
-                gens = []
-        else:
-            gens = []
+        default_ff_chs = list(self._seed["ff_channels"])
+        gens = self._gens          # from the last successful connect (empty before the first)
 
         self.qubit_table.setRowCount(n)
         for i in range(n):
@@ -876,7 +1008,7 @@ class ConnectionDialog(QDialog):
             else:
                 # Pre-connect: list BaseConfig's FF channels as candidates so
                 # the user can change a mapping before connecting if needed.
-                for ch in sorted(set(int(c) for c in default_ff_chs)):
+                for ch in sorted(set(int(c) for c in default_ff_chs) | set(int(c) for c in DEFAULT_BASE_CONFIG["fast_flux_chs"])):
                     combo.addItem(f"ch {ch} (BaseConfig default)", ch)
             combo.blockSignals(False)
             # Restore prior data, else fall back to BaseConfig default for Q_i.
@@ -889,59 +1021,36 @@ class ConnectionDialog(QDialog):
 
     # ------------------ accept ------------------
 
-    def on_accept(self):
-        if self.soc is None or self.soccfg is None:
-            QMessageBox.warning(self, "Not connected",
-                                "Connect to the RFSoC before continuing.")
-            return
-
+    def channel_map(self) -> Optional[dict]:
+        """The channel map as currently entered, or None (after a warning) when incomplete."""
         n_qubits = int(self.n_qubits_spin.value())
-
-        # Read per-qubit FF channels from the table combos.
         ff_channels: list[int] = []
         for i in range(n_qubits):
             combo = self.qubit_table.cellWidget(i, 1)
             if combo is None or combo.currentData() is None:
-                QMessageBox.warning(
-                    self, "Missing FF channel",
-                    f"Q{i + 1} has no FF DAC channel selected.",
-                )
-                return
+                QMessageBox.warning(self, "Missing FF channel", f"Q{i + 1} has no FF DAC channel selected.")
+                return None
             ff_channels.append(int(combo.currentData()))
+        return {"res_ch": int(self.res_ch_combo.currentData()), "qubit_ch": int(self.qubit_ch_combo.currentData()),
+                "n_qubits": n_qubits, "ff_channels": ff_channels}
 
-        # Warn (don't block) on duplicate FF channel assignments — the
-        # underlying firmware will happily accept it, but it's almost always
-        # a mistake.
-        if len(set(ff_channels)) != len(ff_channels):
+    def on_accept(self):
+        """Apply the channel map to the live state (and remember it), then close the panel."""
+        cmap = self.channel_map()
+        if cmap is None:
+            return
+        # Warn (don't block) on duplicate FF channel assignments: the firmware accepts it,
+        # but it is almost always a mistake.
+        if len(set(cmap["ff_channels"])) != len(cmap["ff_channels"]):
             res = QMessageBox.question(
                 self, "Duplicate FF channels",
-                "Two or more qubits are assigned to the same FF DAC channel. "
-                "Continue anyway?",
+                "Two or more qubits are assigned to the same FF DAC channel. Apply anyway?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if res != QMessageBox.Yes:
                 return
-
-        # Start from DEFAULT_BASE_CONFIG so non-channel fields (mixer_freq,
-        # nqz, relax_delay, ...) flow through, then override the channels from
-        # the dialog selections.
-        base = copy.deepcopy(DEFAULT_BASE_CONFIG)
-        base["res_ch"] = int(self.res_ch_combo.currentData())
-        base["qubit_ch"] = int(self.qubit_ch_combo.currentData())
-        # ro_chs is derived from n_qubits (MUX firmware), not user-editable.
-        base["ro_chs"] = list(range(n_qubits))
-        base["fast_flux_chs"] = list(ff_channels)
-
-        self.state = CalibState(
-            base_config=base,
-            ff_qubits=make_default_ff_qubits(n_qubits, ff_channels),
-            n_qubits=n_qubits,
-            soc=self.soc,
-            soccfg=self.soccfg,
-            ns_host=self.host_edit.text().strip(),
-            ns_port=int(self.port_spin.value()),
-            server_name=self.proxy_name_edit.text().strip(),
-        )
+        get_settings().setValue(SETTING_CHANNEL_MAP, json.dumps(cmap))
+        self.channel_map_applied.emit(cmap)
         self.accept()
 
 

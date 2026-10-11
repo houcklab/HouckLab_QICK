@@ -9,7 +9,7 @@ from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamse
     RamseyVsFF_Ramp
 # from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
 
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.build_config import build_config
 from triangle_lattice_quench.socProxy import makeProxy
 
@@ -26,9 +26,9 @@ for Q in [5]:
 
     FF_sweep_Ramsey_relevant_params = {"stop_delay_us": 1,
                                        "expts": 71, "reps": 200,
-                                       "qubit_FF_index": int(str(Qubit_Readout[0])[0]),
-                                       "FF_gain_start": config["FF_Qubits"][str(Q)]["Gain_Expt"] - 200,
-                                       "FF_gain_stop": config["FF_Qubits"][str(Q)]["Gain_Expt"] + 200,
+                                       "qubit_FF_index": int(str(Qubit_Readout[0])[0]) - 1,
+                                       "FF_gain_start": config["FF_Expt"][int(Q) - 1] - 200,
+                                       "FF_gain_stop": config["FF_Expt"][int(Q) - 1] + 200,
                                        "FF_gain_steps":7,
                                        "relax_delay": 100, 'populations': False,  # "qubit_drive_freq":3950.0
                                        }

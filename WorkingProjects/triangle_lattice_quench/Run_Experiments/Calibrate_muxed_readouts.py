@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
     SingleShotProgram
 from triangle_lattice_quench.Helpers.hist_analysis import hist_process
 
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.build_config import build_config
 
 def characterize_readout(Qubit_Readout, soc, soccfg, Readout_Point=None, shots=4000):

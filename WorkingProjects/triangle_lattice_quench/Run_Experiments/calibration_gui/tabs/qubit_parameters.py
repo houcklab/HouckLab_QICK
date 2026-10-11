@@ -16,25 +16,27 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QEvent, Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
+    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
     QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
     QWidget,
 )
 
+from .. import style as st
 from ..state import CalibState, QUBIT_PARAMETERS_JSON
 from ..helpers import (
     SESSION_ONLY_FIELDS,
     strip_session_only,
     strip_session_only_entry,
-    _build_resolve_readout,
-    _build_resolve_drive,
-    _build_resolve_ramp,
-    _build_resolve_dynamics,
+    QubitParams,
+    groups_of,
+    entries_of,
+    entry_path,
+    group_path,
     dumps_pretty,
     dump_pretty,
     _make_jsonable,
@@ -292,14 +294,13 @@ class QubitParametersTab(QWidget):
         self.tree.setHeaderLabel("qubit_parameters.json")
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree.currentItemChanged.connect(self._on_tree_selection)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
 
         # Pane 1: JSON pretty-print.
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
-        f = QFont()
-        f.setStyleHint(QFont.Monospace)
-        f.setFamily("Consolas")
-        self.detail.setFont(f)
+        st.make_mono(self.detail)
 
         # Pane 2: tabular entry view (for group nodes with `entries`). Cells
         # carrying a JSON leaf path (UserRole = path tuple) are editable; the
@@ -310,9 +311,12 @@ class QubitParametersTab(QWidget):
         # Qt.ItemIsEditable; locked cells stay read-only because they don't
         # carry that flag.
         self.detail_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+            QAbstractItemView.DoubleClicked | QAbstractItemView.AnyKeyPressed
         )
-        self.detail_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.detail_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.detail_table.installEventFilter(self)   # Enter/Return also starts an edit
+        self._in_selection_fix = False
+        self.detail_table.selectionModel().selectionChanged.connect(self._keep_selection_in_column)
         self.detail_table.horizontalHeader().setStretchLastSection(True)
         # itemChanged fires on every edit commit; the leaf path stored in
         # UserRole tells us which JSON leaf to mutate.
@@ -449,11 +453,11 @@ class QubitParametersTab(QWidget):
                     if snap_arr is not None:
                         live_bp[gname] = copy.deepcopy(snap_arr)
                 continue
-            snap_entry = (snapshot.get(kind, {})
+            snap_entry = (groups_of(snapshot, kind)
                                  .get(gname, {})
                                  .get("entries", {})
                                  .get(ename))
-            live_entries = (live.get(kind, {})
+            live_entries = (groups_of(live, kind)
                                 .get(gname, {})
                                 .get("entries"))
             if rec['status'] == 'added':
@@ -463,7 +467,7 @@ class QubitParametersTab(QWidget):
             elif rec['status'] == 'removed':
                 # Revert removal: restore snapshot copy.
                 if snap_entry is not None:
-                    entries = (live.setdefault(kind, {})
+                    entries = (groups_of(live, kind, create=True)
                                    .setdefault(gname, {})
                                    .setdefault("entries", {}))
                     entries[ename] = self._revert_entry(entries, ename, snap_entry)
@@ -608,14 +612,45 @@ class QubitParametersTab(QWidget):
         file at state.qubit_parameters_json_path.
         """
         if self.state.qubit_parameters_json:
-            self._populate_tree()
-            if self.tree.topLevelItemCount() > 0:
-                self.tree.setCurrentItem(self.tree.topLevelItem(0))
+            self._repopulate_keeping_view()
             # Repaint per-cell bold styling against the (possibly newly
             # calibration-touched) snapshot.
             self._refresh_styles()
             return
         self._load_json(self._json_path, silent=True)
+
+    def _repopulate_keeping_view(self) -> None:
+        """Rebuild the tree, restoring expanded nodes, selection and scroll position."""
+        def walk(item):
+            yield item
+            for i in range(item.childCount()):
+                yield from walk(item.child(i))
+
+        def items():
+            for i in range(self.tree.topLevelItemCount()):
+                yield from walk(self.tree.topLevelItem(i))
+
+        expanded = {it.data(0, Qt.UserRole) for it in items() if it.isExpanded()}
+        cur = self.tree.currentItem()
+        cur_tag = cur.data(0, Qt.UserRole) if cur is not None else None
+        bars = [self.tree.verticalScrollBar(), self.detail_table.verticalScrollBar(),
+                self.detail_table.horizontalScrollBar(), self.detail.verticalScrollBar()]
+        scrolls = [b.value() for b in bars]
+        self._populate_tree()
+        self.tree.collapseAll()
+        target = None
+        for it in items():
+            tag = it.data(0, Qt.UserRole)
+            if tag in expanded:
+                it.setExpanded(True)
+            if cur_tag is not None and tag == cur_tag:
+                target = it
+        if target is None and self.tree.topLevelItemCount() > 0:
+            target = self.tree.topLevelItem(0)
+        self.tree.setCurrentItem(target)
+        restore = lambda: [b.setValue(v) for b, v in zip(bars, scrolls)]
+        restore()
+        QTimer.singleShot(0, restore)   # scrollbar ranges settle after the table lays out
 
     def _load_json(self, path: Path, *, silent: bool) -> None:
         """Read `path` into self._jd and rebuild the tree. silent=True swallows
@@ -677,66 +712,121 @@ class QubitParametersTab(QWidget):
 
     # ----- tree construction -----
 
-    # Path-encoding scheme stored in QTreeWidgetItem.UserRole. A node's path
-    # is a tuple of (namespace, group_name, sub_key, entry_name). Subkey is
-    # used for group-level scalar/array fields like "Readout_FF", "Pulse_FF",
-    # "_recipe", "Expt_FF". `entries` is encoded as sub_key="entries" with
-    # `entry_name` set on the leaf level.
-    NS_KEYS = ("base_params", "readout_groups", "drive_groups",
-               "ramp_groups", "dynamics_groups")
+    # The tree mirrors the file: drive_groups/<group>/{fields, entries/<entry>} and
+    # ff_groups/<ns>/<group>/<entry> (ff entries sit directly under their group).
+    # Node tags (QTreeWidgetItem.UserRole): ("ff_root",), ("ns", ns), ("group", ns, g),
+    # ("group_field", ns, g, key), ("entries_root", "drive_groups", g), ("entry", ns, g, e);
+    # ns is 'drive_groups' or a key of ff_groups (see state.groups_of / entry_path).
 
     def _populate_tree(self) -> None:
         self.tree.clear()
         if not self._jd:
             return
-        for ns in self.NS_KEYS:
-            if ns not in self._jd:
-                continue
+        top = QTreeWidgetItem(["drive_groups"])
+        top.setData(0, Qt.UserRole, ("ns", "drive_groups"))
+        self.tree.addTopLevelItem(top)
+        self._add_groups(top, "drive_groups")
+        ff_root = QTreeWidgetItem(["ff_groups"])
+        ff_root.setData(0, Qt.UserRole, ("ff_root",))
+        self.tree.addTopLevelItem(ff_root)
+        for ns in (self._jd.get("ff_groups") or {}):
             ns_item = QTreeWidgetItem([ns])
             ns_item.setData(0, Qt.UserRole, ("ns", ns))
-            self.tree.addTopLevelItem(ns_item)
-
-            if ns == "base_params":
-                # base_params is flat: name -> array.
-                for name in self._jd[ns]:
-                    leaf = QTreeWidgetItem([name])
-                    leaf.setData(0, Qt.UserRole, ("base", name))
-                    ns_item.addChild(leaf)
-                continue
-
-            # Group-bearing namespaces.
-            for group_name, group_body in self._jd[ns].items():
-                if not isinstance(group_body, dict):
-                    continue
-                g_item = QTreeWidgetItem([group_name])
-                g_item.setData(0, Qt.UserRole, ("group", ns, group_name))
-                desc = group_body.get("description")
-                if isinstance(desc, str) and desc:
-                    g_item.setToolTip(0, desc)
-                ns_item.addChild(g_item)
-
-                # Group-level non-entry fields shown as children (Readout_FF,
-                # Pulse_FF, _recipe, Expt_FF). description is hidden because
-                # it's already exposed as the tooltip.
-                for key, val in group_body.items():
-                    if key in ("entries", "description"):
-                        continue
-                    sub_item = QTreeWidgetItem([key])
-                    sub_item.setData(0, Qt.UserRole, ("group_field", ns, group_name, key))
-                    g_item.addChild(sub_item)
-
-                # entries node (always present in non-base namespaces).
-                entries = group_body.get("entries", {})
-                if isinstance(entries, dict) and entries:
-                    e_root = QTreeWidgetItem(["entries"])
-                    e_root.setData(0, Qt.UserRole, ("entries_root", ns, group_name))
-                    g_item.addChild(e_root)
-                    for ename in entries:
-                        e_leaf = QTreeWidgetItem([ename])
-                        e_leaf.setData(0, Qt.UserRole, ("entry", ns, group_name, ename))
-                        e_root.addChild(e_leaf)
-
+            ff_root.addChild(ns_item)
+            self._add_groups(ns_item, ns)
         self.tree.expandToDepth(0)
+
+    def _add_groups(self, parent: QTreeWidgetItem, ns: str) -> None:
+        """Add ns's groups under `parent`, keeping the file's own nesting."""
+        for group_name, group_body in groups_of(self._jd, ns).items():
+            if not isinstance(group_body, dict):
+                continue
+            g_item = QTreeWidgetItem([group_name])
+            g_item.setData(0, Qt.UserRole, ("group", ns, group_name))
+            desc = group_body.get("description")
+            if isinstance(desc, str) and desc:
+                g_item.setToolTip(0, desc)  # description is shown as the tooltip
+            parent.addChild(g_item)
+            g_entries = entries_of(ns, group_body)
+            for key in group_body:  # group-level fields (FF_Readouts, FF_Pulses, ...)
+                if key in ("entries", "description") or key in g_entries:
+                    continue
+                sub_item = QTreeWidgetItem([key])
+                sub_item.setData(0, Qt.UserRole, ("group_field", ns, group_name, key))
+                g_item.addChild(sub_item)
+            e_parent = g_item
+            if ns == "drive_groups" and g_entries:  # drive entries live under a real 'entries' key
+                e_parent = QTreeWidgetItem(["entries"])
+                e_parent.setData(0, Qt.UserRole, ("entries_root", ns, group_name))
+                g_item.addChild(e_parent)
+            for ename in g_entries:
+                e_leaf = QTreeWidgetItem([ename])
+                e_leaf.setData(0, Qt.UserRole, ("entry", ns, group_name, ename))
+                e_parent.addChild(e_leaf)
+
+    # ----- group duplication (tree right-click) -----
+
+    def _on_tree_context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        tag = item.data(0, Qt.UserRole) if item is not None else None
+        if not tag or tag[0] != "group":
+            return
+        self.tree.setCurrentItem(item)
+        menu = QMenu(self.tree)
+        act = menu.addAction(f"Duplicate '{tag[2]}'...")
+        if menu.exec_(self.tree.viewport().mapToGlobal(pos)) is act:
+            self._prompt_duplicate_group(tag[1], tag[2])
+
+    def _prompt_duplicate_group(self, ns: str, name: str) -> None:
+        new_name = f"{name}_copy"
+        while True:
+            new_name, ok = QInputDialog.getText(
+                self, "Duplicate group", f"Name for the copy of '{name}':", text=new_name)
+            if not ok:
+                return
+            new_name = new_name.strip()
+            problem = self._group_name_problem(ns, new_name)
+            if problem is None:
+                break
+            QMessageBox.warning(self, "Duplicate group", problem)
+        self.duplicate_group(ns, name, new_name)
+
+    def _group_name_problem(self, ns: str, new_name: str) -> Optional[str]:
+        if not new_name:
+            return "Enter a name."
+        if new_name in groups_of(self._jd, ns):
+            return f"A group named '{new_name}' already exists."
+        return None
+
+    def duplicate_group(self, ns: str, name: str, new_name: str) -> None:
+        """Deep-copy group `name` to `new_name` (placed right after it), then select the copy."""
+        problem = self._group_name_problem(ns, new_name)
+        if problem is not None:
+            raise ValueError(problem)
+        groups = groups_of(self._jd, ns, create=True)
+        items = list(groups.items())
+        groups.clear()                                  # live dict: keep identity, restore order
+        for key, body in items:
+            groups[key] = body
+            if key == name:
+                groups[new_name] = copy.deepcopy(body)
+        self._repopulate_keeping_view()
+        for i in range(self.tree.topLevelItemCount()):
+            stack = [self.tree.topLevelItem(i)]
+            while stack:
+                node = stack.pop()
+                if node.data(0, Qt.UserRole) == ("group", ns, new_name):
+                    self.tree.setCurrentItem(node)
+                    self.tree.scrollToItem(node)
+                    stack = []
+                    break
+                stack.extend(node.child(k) for k in range(node.childCount()))
+        try:
+            main = self.get_main()
+            main._on_qubit_params_loaded()              # other tabs' group combos
+            main.status.showMessage(f"Duplicated '{name}' as '{new_name}' (unsaved until you Save).", 6000)
+        except Exception:
+            traceback.print_exc()
 
     # ----- detail rendering -----
 
@@ -776,10 +866,14 @@ class QubitParametersTab(QWidget):
         jd = self._jd
         kind = tag[0]
 
+        if kind == "ff_root":
+            ff = jd.get("ff_groups") or {}
+            return dumps_pretty({"ff_groups": {ns: list(groups) for ns, groups in ff.items() if isinstance(groups, dict)}})
+
         if kind == "ns":
             ns = tag[1]
             # Show top-level keys (names of groups / base entries) as a summary.
-            body = jd.get(ns, {})
+            body = groups_of(jd, ns)
             if ns == "base_params":
                 return dumps_pretty(body)
             summary = {name: list(grp.keys()) for name, grp in body.items()
@@ -792,14 +886,14 @@ class QubitParametersTab(QWidget):
 
         if kind == "group":
             _, ns, gname = tag
-            return dumps_pretty(jd.get(ns, {}).get(gname, {}))
+            return dumps_pretty(groups_of(jd, ns).get(gname, {}))
 
         if kind == "group_field":
             _, ns, gname, key = tag
-            group = jd.get(ns, {}).get(gname, {})
+            group = groups_of(jd, ns).get(gname, {})
             val = group.get(key)
             base = jd.get("base_params", {})
-            # If this is a name-reference (e.g. Expt_FF: "Expt_3800"), show
+            # If this is a name-reference (e.g. FF_Expt: "Expt_3800"), show
             # both the raw form and the dereferenced array.
             if isinstance(val, str) and val in base:
                 return dumps_pretty({
@@ -810,31 +904,21 @@ class QubitParametersTab(QWidget):
 
         if kind == "entries_root":
             _, ns, gname = tag
-            entries = jd.get(ns, {}).get(gname, {}).get("entries", {})
+            entries = entries_of(ns, groups_of(jd, ns).get(gname, {}))
             return dumps_pretty({"entries": list(entries.keys())})
 
         if kind == "entry":
             _, ns, gname, ename = tag
-            entry = jd.get(ns, {}).get(gname, {}).get("entries", {}).get(ename, {})
+            entry = entries_of(ns, groups_of(jd, ns).get(gname, {})).get(ename, {})
             # Start from the raw entry, then layer in _resolved_* keys.
             out: dict = dict(entry)  # shallow copy preserves key order
             try:
-                if ns == "readout_groups":
-                    resolved = _build_resolve_readout(jd, ename, gname)
-                    out["_resolved_Readout_FF"] = resolved["Readout_FF"]
-                    out["_resolved_Pulse_FF"] = resolved["Pulse_FF"]
-                elif ns == "drive_groups":
-                    resolved = _build_resolve_drive(jd, ename)
-                    out["_resolved_Pulse_FF"] = resolved["Pulse_FF"]
-                elif ns == "ramp_groups":
-                    resolved = _build_resolve_ramp(jd, ename)
-                    out["_resolved_Init_FF"] = resolved["Init_FF"]
-                    out["_resolved_Expt_FF"] = resolved["Expt_FF"]
-                elif ns == "dynamics_groups":
-                    resolved = _build_resolve_dynamics(jd, ename)
-                    for k, v in resolved.items():
-                        if k not in entry:
-                            out[f"_resolved_{k}"] = v
+                qp = QubitParams(jd)
+                if ns == "drive_groups":
+                    if "FF_Readouts" in groups_of(jd, ns).get(gname, {}):
+                        out["_resolved_FF_Readouts"] = qp.drive_ff("FF_Readouts", gname, ename)
+                    out["_resolved_FF_Pulses"] = qp.drive_ff("FF_Pulses", gname, ename)
+                # ff_groups entries already hold their arrays (FF_Expt / FF_Dynamics / FF_BS) directly
             except Exception as exc:
                 out["_resolved_ERROR"] = f"{type(exc).__name__}: {exc}"
             return dumps_pretty(out)
@@ -849,7 +933,7 @@ class QubitParametersTab(QWidget):
 
         Readout/drive groups have nested Readout / Qubit sub-dicts; we prefix
         their keys (e.g. `Readout.Frequency`). Ramp/dynamics entries are flat;
-        array values are stringified (so e.g. Expt_FF_delta shows as
+        array values are stringified (so e.g. FF_Expt_delta shows as
         '[0, -6000, ...]').
         """
         out: dict = {}
@@ -862,16 +946,22 @@ class QubitParametersTab(QWidget):
         return out
 
     @staticmethod
-    def _fmt_cell(v) -> str:
+    def _digits_for(column: str) -> int:
+        """Decimals shown for floats (display only; the JSON keeps full precision)."""
+        return 2 if column.split(".")[-1] in ("angle", "threshold") else 3
+
+    @staticmethod
+    def _fmt_cell(v, digits: int = 3) -> str:
         if v is None:
             return ""
         if isinstance(v, bool):
             return "true" if v else "false"
         if isinstance(v, float):
-            return f"{v:g}"
+            text = f"{v:.{digits}f}".rstrip("0").rstrip(".")
+            return "0" if text in ("", "-0") else text
         if isinstance(v, (list, tuple)):
             # Compact list display; tooltip can hold the full thing.
-            inner = ", ".join(QubitParametersTab._fmt_cell(x) for x in v)
+            inner = ", ".join(QubitParametersTab._fmt_cell(x, digits) for x in v)
             return f"[{inner}]"
         return str(v)
 
@@ -893,13 +983,15 @@ class QubitParametersTab(QWidget):
         self._suppress_table_changed = True
         try:
             table.clear()
+            table.horizontalHeader().setVisible(True)   # the group view hides it for its own header rows
+            table.verticalHeader().setVisible(True)
 
             # The only really useful tabular views are group nodes and entries_root
             # nodes: both expand the per-entry dict for that group. Other nodes get
             # a "(switch to JSON view)" placeholder.
             if kind in ("group", "entries_root"):
                 ns, gname = tag[1], tag[2]
-                entries = jd.get(ns, {}).get(gname, {}).get("entries", {})
+                entries = entries_of(ns, groups_of(jd, ns).get(gname, {}))
                 if not isinstance(entries, dict) or not entries:
                     table.setRowCount(1); table.setColumnCount(1)
                     table.setHorizontalHeaderLabels(["(no entries)"])
@@ -921,10 +1013,12 @@ class QubitParametersTab(QWidget):
                     for k in flat:
                         if k not in cols:
                             cols.append(k)
-                table.setRowCount(len(row_dicts))
+                table.clearSpans()
+                table.setRowCount(2 + len(row_dicts))   # rows 0-1: object names, then field names
                 table.setColumnCount(1 + len(cols))
-                table.setHorizontalHeaderLabels(["entry"] + cols)
-                for r, (name, flat, leaf_paths) in enumerate(row_dicts):
+                self._add_header_rows(cols)
+                table.verticalHeader().setVisible(False)   # the entry column already names each row
+                for r, (name, flat, leaf_paths) in enumerate(row_dicts, start=2):
                     name_item = QTableWidgetItem(str(name))
                     name_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                     # Bold the entry name when any leaf under the entry is dirty.
@@ -933,7 +1027,7 @@ class QubitParametersTab(QWidget):
                     table.setItem(r, 0, name_item)
                     for c, col in enumerate(cols, start=1):
                         val = flat.get(col, None)
-                        item = QTableWidgetItem(self._fmt_cell(val))
+                        item = QTableWidgetItem(self._fmt_cell(val, self._digits_for(col)))
                         leaf_path = leaf_paths.get(col)
                         # Only "simple" scalar leaves are editable here. Lists
                         # are read-only in the detail table; their full editor
@@ -948,13 +1042,15 @@ class QubitParametersTab(QWidget):
                         if isinstance(val, (list, tuple)):
                             item.setToolTip(json.dumps(_make_jsonable(val)))
                         table.setItem(r, c, item)
-                table.resizeColumnsToContents()
+                self._append_all_row(label_column=True)
+                table.setVerticalHeaderLabels(["", ""] + [str(i) for i in range(1, len(row_dicts) + 1)] + [""])
+                self._fit_columns_to_values()
                 self._apply_table_styles()
                 return
 
             if kind == "entry":
                 _, ns, gname, ename = tag
-                entry = jd.get(ns, {}).get(gname, {}).get("entries", {}).get(ename, {})
+                entry = entries_of(ns, groups_of(jd, ns).get(gname, {})).get(ename, {})
                 flat = self._flatten_entry_row(entry, ns) if isinstance(entry, dict) else {"value": entry}
                 leaf_paths = self._leaf_paths_for_entry(entry, ns, gname, ename) if isinstance(entry, dict) else {}
                 # Bold the entry's row label if any leaf below it is dirty.
@@ -968,7 +1064,7 @@ class QubitParametersTab(QWidget):
                     # below the entry differs from snapshot).
                     if row_dirty:
                         f = fk.font(); f.setBold(True); fk.setFont(f)
-                    fv = QTableWidgetItem(self._fmt_cell(v))
+                    fv = QTableWidgetItem(self._fmt_cell(v, self._digits_for(k)))
                     leaf_path = leaf_paths.get(k)
                     if leaf_path is not None and not isinstance(v, (list, tuple, dict)):
                         fv.setFlags(
@@ -986,12 +1082,12 @@ class QubitParametersTab(QWidget):
                 return
 
             # Editable per-qubit FF-gain grid for group_field nodes whose
-            # selected key is a flat numeric array (e.g. Readout_FF / Pulse_FF).
-            # String name-references (Expt_FF: "Expt_3800"), _recipe, and scalars
+            # selected key is a flat numeric array (e.g. FF_Readouts / FF_Pulses).
+            # String name-references (FF_Expt: "Expt_3800"), _recipe, and scalars
             # fall through to the placeholder below.
             if kind == "group_field":
                 _, ns, gname, key = tag
-                group = self._jd.get(ns, {}).get(gname, {})
+                group = groups_of(self._jd, ns).get(gname, {})
 
                 def _is_flat_numeric(v) -> bool:
                     if not isinstance(v, (list, tuple)):
@@ -1023,10 +1119,11 @@ class QubitParametersTab(QWidget):
                                     Qt.ItemIsEnabled | Qt.ItemIsSelectable
                                     | Qt.ItemIsEditable
                                 )
-                                item.setData(Qt.UserRole + 1, (ns, gname, col, r))
+                                item.setData(Qt.UserRole + 1, group_path(ns, gname) + (col, r))
                             else:
                                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                             table.setItem(r, c, item)
+                    self._append_all_row(label_column=False)
                     table.resizeColumnsToContents()
                     self._apply_table_styles()
                     return
@@ -1040,6 +1137,134 @@ class QubitParametersTab(QWidget):
             ))
         finally:
             self._suppress_table_changed = False
+
+    # ----- "All" row: one entry sets every editable cell of its column -----
+
+    def _add_header_rows(self, cols: list) -> None:
+        """Two header rows replacing the native header: row 0 the object name ("Readout", "Qubit", ...)
+        spanning its columns, row 1 the field names, left-aligned (cut off with "..." when narrow; hover
+        for the full path)."""
+        table = self.detail_table
+        table.horizontalHeader().setVisible(False)
+        header_font = QFont(table.font()); header_font.setBold(True)
+
+        def header_item(text, align, tip=""):
+            item = QTableWidgetItem(text)
+            item.setFlags(Qt.ItemIsEnabled)
+            item.setTextAlignment(align | Qt.AlignVCenter)
+            item.setBackground(QColor(st.HEADER_BG))
+            item.setFont(header_font)
+            item.setToolTip(tip)
+            return item
+
+        table.setItem(1, 0, header_item("entry", Qt.AlignLeft))
+        for c, k in enumerate(cols, start=1):
+            table.setItem(1, c, header_item(k.split(".", 1)[-1], Qt.AlignLeft, k))
+            if k.startswith("SingleShot."):   # discriminator values aren't for reading: unbold
+                f = table.item(1, c).font(); f.setBold(False); table.item(1, c).setFont(f)
+        start = 1
+        while start <= len(cols):
+            obj = cols[start - 1].split(".", 1)[0] if "." in cols[start - 1] else ""
+            end = start
+            while end < len(cols) and "." in cols[end] and cols[end].split(".", 1)[0] == obj and obj:
+                end += 1
+            table.setItem(0, start, header_item(obj, Qt.AlignHCenter))
+            if end > start:
+                table.setSpan(0, start, 1, end - start + 1)
+            start = end + 1
+        table.setItem(0, 0, header_item("", Qt.AlignLeft))
+
+    def _fit_columns_to_values(self, min_px: int = 56, max_px: int = 220) -> None:
+        """Size each column to its values, not its header: a long field name is elided with "..."
+        (hover for the full name) instead of widening a column that holds one short number."""
+        table = self.detail_table
+        fm = table.fontMetrics()
+        for c in range(table.columnCount()):
+            texts = [table.item(r, c).text() for r in range(2, table.rowCount())
+                     if table.item(r, c) is not None]
+            width = max((fm.horizontalAdvance(t) for t in texts), default=0) + 24
+            table.setColumnWidth(c, min(max_px, max(min_px, width)))
+
+    def _append_all_row(self, label_column: bool) -> None:
+        """Add a bottom "All" row to the populated table. Each column's cell carries (Qt.UserRole + 2)
+        the leaf paths of that column's editable cells; typing a value there writes it to all of them."""
+        table = self.detail_table
+        n = table.rowCount()
+        table.setRowCount(n + 1)
+        first = 1 if label_column else 0
+        if label_column:
+            label = QTableWidgetItem("All")
+            label.setFlags(Qt.ItemIsEnabled)
+            f = label.font(); f.setBold(True); label.setFont(f)
+            table.setItem(n, 0, label)
+        else:
+            table.setVerticalHeaderItem(n, QTableWidgetItem("All"))
+        for c in range(first, table.columnCount()):
+            paths = tuple(tuple(it.data(Qt.UserRole + 1)) for r in range(n)
+                          if (it := table.item(r, c)) is not None and it.data(Qt.UserRole + 1))
+            cell = QTableWidgetItem("")
+            if paths:
+                cell.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable)
+                cell.setData(Qt.UserRole + 2, paths)
+                cell.setToolTip("Type a value to set every cell in this column")
+            else:
+                cell.setFlags(Qt.ItemIsEnabled)
+            table.setItem(n, c, cell)
+
+    def eventFilter(self, obj, event):
+        if (obj is self.detail_table and event.type() == QEvent.KeyPress
+                and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and self.detail_table.state() != QAbstractItemView.EditingState):
+            idx = self.detail_table.currentIndex()
+            if idx.isValid() and self.detail_table.model().flags(idx) & Qt.ItemIsEditable:
+                self.detail_table.edit(idx)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _keep_selection_in_column(self, *_) -> None:
+        """Drag-select is limited to one column: cells outside the current cell's column are dropped."""
+        if self._in_selection_fix:
+            return
+        table = self.detail_table
+        sm = table.selectionModel()
+        col = table.currentColumn()
+        stray = [i for i in sm.selectedIndexes() if i.column() != col]
+        if not stray:
+            return
+        self._in_selection_fix = True
+        try:
+            for i in stray:
+                sm.select(i, sm.Deselect)
+        finally:
+            self._in_selection_fix = False
+
+    def _apply_all_row(self, item: "QTableWidgetItem", paths: tuple) -> None:
+        text = item.text().strip()
+        if not text:
+            return
+        root = self.state.qubit_parameters_json
+        for path in paths:
+            found, prior = _leaf_at_path(root, path)
+            if not found:
+                continue
+            parent = root
+            for seg in path[:-1]:
+                parent = parent[seg] if isinstance(parent, dict) else parent[int(seg)]
+            value = self._coerce_cell_value(text, prior)
+            if isinstance(parent, dict):
+                parent[path[-1]] = value
+            else:
+                parent[int(path[-1])] = value
+            self.state.calibration_touched_paths.discard(path)  # a hand-edit replaces any calibration tag
+        QTimer.singleShot(0, self._rerender_selection)
+
+    def _rerender_selection(self) -> None:
+        cur = self.tree.currentItem()
+        tag = cur.data(0, Qt.UserRole) if cur is not None else None
+        if tag is None:
+            return
+        self.detail.setPlainText(self._render_detail(tag))
+        self._render_detail_table(tag)
 
     # ----- editable-cell support (leaf paths, write-back, style refresh) -----
 
@@ -1056,7 +1281,7 @@ class QubitParametersTab(QWidget):
         out: dict = {}
         if not isinstance(entry, dict):
             return out
-        base = (ns, gname, "entries", ename)
+        base = entry_path(ns, gname, ename)
         for k, v in entry.items():
             if isinstance(v, dict):
                 for kk in v.keys():
@@ -1069,13 +1294,13 @@ class QubitParametersTab(QWidget):
         """True if any leaf below entry path differs from snapshot."""
         snap = self.state.qubit_parameters_json_snapshot or {}
         live = self.state.qubit_parameters_json or {}
-        prefix = (ns, gname, "entries", ename)
+        prefix = entry_path(ns, gname, ename)
         # Check any path in calibration_touched_paths first (cheap), then
         # fall back to a structural diff of the entry subtree.
         if _entry_touched_paths(self.state.calibration_touched_paths, prefix):
             return True
-        snap_entry = (snap.get(ns, {}) or {}).get(gname, {}).get("entries", {}).get(ename)
-        live_entry = (live.get(ns, {}) or {}).get(gname, {}).get("entries", {}).get(ename)
+        snap_entry = entries_of(ns, groups_of(snap, ns).get(gname, {})).get(ename)
+        live_entry = entries_of(ns, groups_of(live, ns).get(gname, {})).get(ename)
         if snap_entry is None and live_entry is None:
             return False
         # Compare the persisted view only: the session-only fields are never in
@@ -1122,9 +1347,20 @@ class QubitParametersTab(QWidget):
         """
         if self._suppress_table_changed:
             return
+        all_paths = item.data(Qt.UserRole + 2)
+        if all_paths:
+            self._apply_all_row(item, all_paths)
+            return
         leaf_path = item.data(Qt.UserRole + 1)
         if not leaf_path:
             return
+        selected = self.detail_table.selectedItems()
+        if len(selected) > 1 and item in selected:  # typed into one of several selected cells: fan out
+            paths = tuple(tuple(it.data(Qt.UserRole + 1)) for it in selected
+                          if it.column() == item.column() and it.data(Qt.UserRole + 1))
+            if len(paths) > 1:
+                self._apply_all_row(item, paths)
+                return
         path = tuple(leaf_path)
         text = item.text().strip()
         # Locate parent container + key/index for write-back.
@@ -1161,24 +1397,12 @@ class QubitParametersTab(QWidget):
         # AND the per-cell style. Suppress reentry on text update.
         self._suppress_table_changed = True
         try:
-            item.setText(self._fmt_cell(new_val))
+            item.setText(self._fmt_cell(new_val, self._digits_for(str(path[-1]))))
         finally:
             self._suppress_table_changed = False
         snap = self.state.qubit_parameters_json_snapshot or {}
         dirty = _path_is_dirty(snap, self.state.qubit_parameters_json, path)
         _apply_dirty_style(item, dirty, calibration_touched=False)
-        # Bubble the dirty/clean transition to the row-label and FF-tab combos
-        # — both are computed at render time. A cheap re-render of the current
-        # selection covers the row-label transition; FF combos restyle below.
-        try:
-            ff_tab = self.get_main().ff_freq_tab if hasattr(self.get_main(), "ff_freq_tab") else None
-        except Exception:
-            ff_tab = None
-        if ff_tab is not None:
-            try:
-                ff_tab._apply_combo_styles()
-            except Exception:
-                pass
 
     @staticmethod
     def _coerce_cell_value(text: str, prior):
@@ -1321,7 +1545,7 @@ class EntryEditDialog(QDialog):
     Three sections, top to bottom:
       1. Name + Group header.
       2. FF gains editor (one row per FF channel, columns dynamic from the
-         entry's actual keys — e.g. Init_FF_delta + Expt_FF_delta for ramp).
+         entry's actual keys — e.g. FF_Init_delta + FF_Expt_delta for ramp).
       3. Calculator (8 rows = qubits, 3 columns = Frequency/Flux/Gain) with
          multi-cell bulk typing and a guaranteed "Set selected to" fallback.
 
@@ -1469,20 +1693,20 @@ class EntryEditDialog(QDialog):
 
         Inspects the source entry's actual keys; falls back to a per-namespace
         default if the source is None (i.e. "New entry"):
-          - ramp_groups:     Init_FF_delta, Expt_FF_delta
-          - dynamics_groups: Dynamics_FF_abs, BS_FF_abs (whichever are present)
+          - ramp_groups:     FF_Expt
+          - dynamics_groups: FF_Dynamics, FF_BS (whichever are present)
         Both branches preserve the source entry's key order if it has any
         array-valued field; unrecognized array fields are appended.
         """
         defaults = {
-            "ramp_groups":     ["Init_FF_delta", "Expt_FF_delta"],
-            "dynamics_groups": ["Dynamics_FF_abs", "BS_FF_abs"],
+            "ramp_groups":     ["FF_Expt"],
+            "dynamics_groups": ["FF_Dynamics", "FF_BS"],
         }
         if not isinstance(source_entry, dict):
             return list(defaults.get(ns, []))
         cols: list[str] = []
         for k, v in source_entry.items():
-            if isinstance(v, list) and (k.endswith("_FF") or "_FF_" in k):
+            if isinstance(v, list) and k.startswith("FF_"):
                 cols.append(k)
         if not cols:
             cols = list(defaults.get(ns, []))
@@ -1509,7 +1733,7 @@ class EntryEditDialog(QDialog):
     # ---- name + collision handling ----
 
     def _existing_names(self) -> set:
-        entries = (self._jd.get(self._ns, {}) or {}).get(self._group, {}).get("entries", {}) or {}
+        entries = entries_of(self._ns, groups_of(self._jd, self._ns).get(self._group, {}))
         names = set(entries.keys())
         if self._mode == "edit" and self._original_name is not None:
             names.discard(self._original_name)
@@ -1624,8 +1848,8 @@ class EntryEditDialog(QDialog):
             )
             return
         # Build the entry dict. Start from the source-entry layout we opened
-        # with so non-FF keys (Expt_FF, _recipe, etc.) round-trip unchanged.
-        entries = (self._jd.get(self._ns, {}) or {}).get(self._group, {}).get("entries", {}) or {}
+        # with so non-FF keys (FF_Expt, _recipe, etc.) round-trip unchanged.
+        entries = entries_of(self._ns, groups_of(self._jd, self._ns).get(self._group, {}))
         src = entries.get(self._original_name) if self._mode == "edit" else (
             entries.get(self._opening_name) if self._mode == "duplicate" else None
         )

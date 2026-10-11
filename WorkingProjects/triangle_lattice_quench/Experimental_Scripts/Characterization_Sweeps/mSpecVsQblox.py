@@ -4,13 +4,13 @@ import numpy as np
 
 from triangle_lattice_quench.Helpers.Qblox_Functions import Qblox
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 
 
 class SpecVsQblox(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
 
         self.y_key = "Qblox_voltage"
         self.y_points = np.linspace(self.cfg["Qblox_start"], self.cfg["Qblox_stop"], self.cfg["Qblox_steps"])

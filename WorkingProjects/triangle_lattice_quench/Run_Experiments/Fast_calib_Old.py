@@ -1,20 +1,20 @@
-# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# os.add_dll_directory(os.getcwd() + '\\Equipment_Drivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 import numpy as np
 import matplotlib.pyplot as plt
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
-    QubitSpecSliceFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import \
+    QubitSpecSlice
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import TransmissionSweep
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabi import AmplitudeRabiFFMUX
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShot
 from triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
-from triangle_lattice_quench.MUXInitialize import outerFolder
+
 from triangle_lattice_quench.build_config import build_config
 from triangle_lattice_quench.socProxy import makeProxy
 
@@ -118,8 +118,8 @@ for Readout_Point in [None]:
 
 
         if RunTransmissionSweep:
-            Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
-                                             soc=soc, soccfg=soccfg)
+            Instance_trans = TransmissionSweep(path="TransmissionFF", cfg=config | Trans_relevant_params,
+                                               soc=soc, soccfg=soccfg)
             data = Instance_trans.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
 
             #update the transmission frequency to be the peak
@@ -127,15 +127,15 @@ for Readout_Point in [None]:
             print("Cavity frequency found at: ", config["res_freqs"][0] + config["res_LO"])
 
         if RunFirst2ToneSpec:
-            Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | First_Spec_params,
-                                soc=soc, soccfg=soccfg)
+            Instance_spec = QubitSpecSlice(path="QubitSpecFF", cfg=config | First_Spec_params,
+                                           soc=soc, soccfg=soccfg)
             data = Instance_spec.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
             config["qubit_freqs"][0] = Instance_spec.qubitFreq
             print("Qubit frequency found at: ", config["qubit_freqs"][0])
 
         if RunSecond2ToneSpec:
-            Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Second_Spec_params,
-                                soc=soc, soccfg=soccfg)
+            Instance_spec = QubitSpecSlice(path="QubitSpecFF", cfg=config | Second_Spec_params,
+                                           soc=soc, soccfg=soccfg)
             data = Instance_spec.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
             config["qubit_freqs"][0] = Instance_spec.qubitFreq
             print("Qubit frequency found at: ", config["qubit_freqs"][0])
@@ -193,8 +193,8 @@ for Readout_Point in [None]:
             print("Qubit frequency found at: ", config["qubit_freqs"][sweep_index])
 
         if SingleShot:
-            ss = SingleShotFFMUX(path="SingleShot", 
-                                   cfg=config | SS_params, soc=soc,soccfg=soccfg)
+            ss = SingleShot(path="SingleShot",
+                            cfg=config | SS_params, soc=soc, soccfg=soccfg)
             ss_data = ss.acquire()
             try:
                 ss.display(ss_data, plotDisp=True, block=False, display_indices=[Q])

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from triangle_lattice_quench.Experiment import ExperimentClass
 import triangle_lattice_quench.Helpers.FF_utils as FF
 from triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, frequency_guess
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShotProgram
 from triangle_lattice_quench.Helpers.rotate_SS_data import correct_occ
 
 
@@ -19,8 +19,8 @@ class ReadoutCrosstalkPopulation(ExperimentClass):
     Uses the SingleShot Program, as it has the same logic.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg,)
 
     def acquire(self, progress=False):
         if "number_of_pulses" not in self.cfg.keys():
@@ -70,7 +70,3 @@ class ReadoutCrosstalkPopulation(ExperimentClass):
 
 
         fig.suptitle(str(self.titlename), fontsize=16)
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

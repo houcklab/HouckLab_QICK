@@ -48,7 +48,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])
@@ -63,7 +63,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
     def body(self):
         # 1: FFPulses
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        self.FFPlay_Const(self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
@@ -76,10 +76,10 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
 
         # To get wait times of < 3 clock cycles
         padded_IDataArray = [np.pad(arr, (THREE * 16, 0), constant_values=prev_gain) for arr, prev_gain in
-                             zip(self.cfg["IDataArray"], self.FFPulse)]
-        FF.FFPulses_directSET_REGS(self, self.FFExpts,
+                             zip(self.cfg["IDataArray"], self.FFPulses)]
+        FF.FFPlay_ArbSET_REGS(self, self.FFExpts,
                                    16 * (THREE + self.cfg["start"] + self.cfg["step"] * self.cfg["expts"]),
-                                   self.FFPulse,
+                                   self.FFPulses,
                                    IQPulseArray=padded_IDataArray)
         # Update pulse length, which is stored in the last 16 bits of the generator's "mode" register
         for ff_page, mode_reg in zip(self.ff_rps, self.r_mode):
@@ -88,12 +88,12 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
             self.bitwi(ff_page, mode_reg, mode_reg, '^', 0b0_1111_1111_1111_1111)
             self.mathi(ff_page, mode_reg, mode_reg, '+', self.r_length)
 
-        FF.FFPulses_directPULSE(self)
+        FF.FFPlay_ArbPULSE(self)
 
         self.sync(self.ff_rps[0], self.r_length)
 
         # Pre-measurement Pi/2 pulse to measure in either X or Y basis
-        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        self.FFPlay_Const(self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
@@ -103,8 +103,8 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
                                  gain=gain_, waveform=f"qubit{i}", t=time_)
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
-        FF.FFPulses(self, self.FFReadouts, self.cfg["res_length"], t_start=0)
+        # self.FFPlay_Const(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
+        FF.FFPlay_Const(self, self.FFReadouts, self.cfg["res_length"], t_start=0)
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
@@ -113,21 +113,21 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
                      syncdelay=self.us2cycles(10))
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
-        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        # self.FFPlay_Const(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
+        self.FFPlay_Const(-1 * self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
         inverted_IDataArray = [-1 * np.flip(arr) for arr in padded_IDataArray]
-        FF.FFPulses_directSET_REGS(self, self.FFExpts,
+        FF.FFPlay_ArbSET_REGS(self, self.FFExpts,
                                    16 * (THREE + self.cfg["start"] + self.cfg["step"] * self.cfg["expts"]),
-                                   self.FFPulse,
+                                   self.FFPulses,
                                    IQPulseArray=inverted_IDataArray)
         for ff_page, mode_reg in zip(self.ff_rps, self.r_mode):
             # self.bitwi(ff_page, mode_reg, mode_reg, '&', 0b111_1111_1111_1111_0000_0000_0000_0000)
             self.bitwi(ff_page, mode_reg, mode_reg, '|', 0b0_1111_1111_1111_1111)
             self.bitwi(ff_page, mode_reg, mode_reg, '^', 0b0_1111_1111_1111_1111)
             self.mathi(ff_page, mode_reg, mode_reg, '+', self.r_length)
-        FF.FFPulses_directPULSE(self)
-        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
+        FF.FFPlay_ArbPULSE(self)
+        self.FFPlay_Const(-1 * self.FFPulses, 4 * sum(self.cfg["sigma"]) + 1.01)
 
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
@@ -141,19 +141,15 @@ class TimeDomainSpec(ExperimentClass):
     Basic T2R
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False):
         self.cfg["IDataArray"] = [None] * 4
-        self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'], self.cfg['FF_Qubits'][
-            '1']['Gain_Pulse'], 1)
-        self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Expt'], self.cfg['FF_Qubits'][
-            '2']['Gain_Pulse'], 2)
-        self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Expt'], self.cfg['FF_Qubits'][
-            '3']['Gain_Pulse'], 3)
-        self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
-            '4']['Gain_Pulse'], 4)
+        self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Expt'][0], self.cfg['FF_Pulses'][0], 1)
+        self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Expt'][1], self.cfg['FF_Pulses'][1], 2)
+        self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Expt'][2], self.cfg['FF_Pulses'][2], 3)
+        self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Expt'][3], self.cfg['FF_Pulses'][3], 4)
 
         # Relative to defining qubit drive as +sigma_y type.
         # Measure <sigma X>

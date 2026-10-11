@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 
-LEN_FF_ARRAY = 8
+
 
 class FF_gains:
     '''Summary:
@@ -42,7 +42,8 @@ class FF_gains:
             return FF_gains(self.arr + other)
 
     def set(self, **kwargs):
-        '''Usage:
+        '''Sets {value} as Qubit {key}'s FF gain
+        Usage:
              ExptFF.set(Q1=4000, (q3,q4)=2000, Q5=PulseFF) -> FF_gains([4000,0,2000,2000,1000,0,0,0]
         '''
         new_arr = self.arr.copy()
@@ -65,7 +66,8 @@ class FF_gains:
         return FF_gains(new_arr)
 
     def add(self, **kwargs):
-        '''Usage:
+        '''Adds {value} to Qubit {key}'s FF gain
+        Usage:
              ExptFF.add(Q1=4000, q4=2000) -> FF_gains([4000,0,0,2000,0,0,0,0]
         '''
         new_arr = self.arr.copy()
@@ -78,7 +80,8 @@ class FF_gains:
         return FF_gains(new_arr)
 
     def subsys(self, *args, det=4000):
-        '''Usage:
+        '''Adds {det} FF gain to all qubits EXCEPT those listed in {args}.
+        Usage:
             ExptFF.subsys(3,4) -> FF_gains([4000,4000,0,0,4000,4000,4000,4000])
         '''
         detuning_list = np.full_like(self.arr, det)
@@ -87,7 +90,10 @@ class FF_gains:
 
         return FF_gains(self.arr + detuning_list)
 
-class QubitParams(defaultdict):
+# old class for building old Qubit_Parameters dicts, replaced by JSON construction
+# May use these as a template to rework for easy writing of new qubit_parameters json files
+LEGACY_LEN_FF_ARRAY = 8
+class LEGACY_QubitParams(defaultdict):
     """defaultdict(dict) with convenience methods for building qubit-param entries.
 
     Each stage (drive/readout/expt) lives at top-level key `name`, e.g.
@@ -119,7 +125,8 @@ class QubitParams(defaultdict):
     def add_expt(self, name, ff_array, ff_init=None):
         self[name]['Expt'] = {'Expt_FF': ff_array, 'Init_FF': ff_init}
 
-class QubitConfig:
+# old class for generating Qubit_Parameters string.
+class LEGACY_QubitConfig:
     def __init__(self, cfg, Qubit, L, OptReadout_index, OptQubit_index, varname_FF=None):
         self.Q = Qubit
         self.qubit_freq = cfg["qubit_freqs"][OptQubit_index]
@@ -131,8 +138,8 @@ class QubitConfig:
         self.adc_offset = cfg["adc_trig_delays"][OptReadout_index]
 
         if varname_FF is None:
-            self.ReadoutFF = [int(cfg['FF_Qubits'][Q]['Gain_Readout']) for Q in cfg['FF_Qubits']]
-            self.PulseFF = [int(cfg['FF_Qubits'][Q]['Gain_Pulse']) for Q in cfg['FF_Qubits']]
+            self.ReadoutFF = [int(g) for g in cfg['FF_Readouts']]
+            self.PulseFF = [int(g) for g in cfg['FF_Pulses']]
         else:
             self.ReadoutFF = varname_FF
             self.PulseFF = varname_FF

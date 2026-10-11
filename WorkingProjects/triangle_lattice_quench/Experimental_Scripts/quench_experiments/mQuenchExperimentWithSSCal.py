@@ -103,7 +103,7 @@ import triangle_lattice_quench.Helpers.FF_utils as FF
 import copy
 import traceback
 from datetime import datetime
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShot
 
 try:
     from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import Qubit_Parameters as _MODULE_QP
@@ -121,7 +121,7 @@ class QuenchProgram_SS(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])
         # print(cfg["res_freqs"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -159,7 +159,7 @@ class QuenchProgram_SS(FFAveragerProgramV2):
 
         ### Init Pulse
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         if self.cfg['init_pulse']:
             for i in range(len(self.cfg["qubit_gains"])):
@@ -170,14 +170,14 @@ class QuenchProgram_SS(FFAveragerProgramV2):
 
         ### Ramp
         if self.cfg["expt_samples_ramp"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_ramp"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_ramp"], waveform_label='FFRamp')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_ramp"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_ramp"], waveform_label='FFRamp')
             self.delay_auto()
 
         ### Quench
         if self.cfg["expt_samples_quench"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_quench"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_quench"], waveform_label='FFQuench')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_quench"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_quench"], waveform_label='FFQuench')
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_quench', t='auto')
             self.delay_auto()
 
@@ -185,13 +185,13 @@ class QuenchProgram_SS(FFAveragerProgramV2):
         # print(f'dynamics')
         # print(self.cfg["IQArray_dynamics"])
         if self.cfg["expt_samples_dynamics"] >= 1:
-            self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples_dynamics"],
-                                 self.FFPulse, IQPulseArray=self.cfg["IQArray_dynamics"], waveform_label='FFDynamics')
+            self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples_dynamics"],
+                                 self.FFPulses, IQPulseArray=self.cfg["IQArray_dynamics"], waveform_label='FFDynamics')
             self.delay_auto()
 
         ### Readout
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
@@ -199,8 +199,8 @@ class QuenchProgram_SS(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 
@@ -361,7 +361,7 @@ class RampQuenchBase_SS(SweepExperiment1D_lines):
             qpQ = Qubit_Parameters[str(Qubit)]
 
             ss_cfg = copy.deepcopy(self.cfg)
-            ss_cfg["FF_Qubits"] = copy.deepcopy(self.cfg["FF_Qubits"])
+            ss_cfg["FF_Pulses"] = copy.deepcopy(self.cfg["FF_Pulses"])
             ss_cfg["Shots"] = n_shots
 
             ss_cfg["qubit_freqs"] = [qpQ["Qubit"]["Frequency"] - qubit_LO]
@@ -369,9 +369,9 @@ class RampQuenchBase_SS(SweepExperiment1D_lines):
             ss_cfg["sigma"] = [qpQ["Qubit"]["sigma"]]
 
             for q_idx, gain in enumerate(qpQ["Pulse_FF"]):
-                ss_cfg["FF_Qubits"][str(q_idx + 1)]["Gain_Pulse"] = gain
+                ss_cfg["FF_Pulses"][q_idx] = gain
 
-            ss_expt = SingleShotFFMUX(
+            ss_expt = SingleShot(
                 soc=self.soc,
                 soccfg=self.soccfg,
                 path=f"SingleShot_PreQuench_Q{Qubit}",

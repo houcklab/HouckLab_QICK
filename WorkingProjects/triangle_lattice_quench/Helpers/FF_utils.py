@@ -6,53 +6,47 @@ from triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
 from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 
 
-def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start='auto', IQPulseArray=None, waveform_label = "FF"):
+def FFPlay_Arb(instance, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None, waveform_label ="FF"):
     """
     Same as FFPulses_hires, but directly in units of the full gain range [-32766, 32766]
     :param instance: Instance of program (e.g. AveragerProgram or RAveragerProgram)
     :param list_of_gains: gains for all FF channels
     :param length_dt: length in units of 1/16 clock cycle, often corresponds to variable wait
     :param previous_gains: value to pad beginning of IQPulse for commensurability with clock cycles
-    :param waveform_label: string to label waveform
     :param t_start: time offset to start pulse
     :param IQPulseArray: Assumed to be sampled in units of 1/16 clock cycle
+    :param waveform_label: string to label waveform
     :return:
     """
     # if length_dt == 0:
     #     pass
     if IQPulseArray is None:
-        print("FFPulses_direct: IQPulseArray is None, prefer using FFPulses for const pulses instead.")
+        print("FFPlay_Arb: IQPulseArray is None, prefer using FFPulses for const pulses instead.")
 
     IQPulseArray = [None] * len(instance.FFChannels) if IQPulseArray is None else IQPulseArray
 
     for i, (gain, IQPulse) in enumerate(zip(list_of_gains, IQPulseArray)):
         channel = instance.FFChannels[i]
         gencfg = instance.soccfg['gens'][channel]
-        # print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
         if IQPulse is None:
             IQPulse = np.ones(length_dt) * gain
         else:
-            if np.max(IQPulse) > gencfg['maxv'] or np.min(IQPulse) < -gencfg['maxv']:
-                # print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'],
-                #                                                                 gencfg['maxv']))
+            if np.max(IQPulse) > gencfg['maxv']:
+                print(f"IQPulseArray[{i}] goes out of range, exceeds +{+gencfg['maxv']}, clipping.")
+                IQPulse[IQPulse > gencfg['maxv']] = gencfg['maxv']
+            if np.min(IQPulse) < -gencfg['maxv']:
+                print(f"IQPulseArray[{i}] goes out of range, exceeds -{-gencfg['maxv']}, clipping.")
                 IQPulse[IQPulse < -gencfg['maxv']] = -gencfg['maxv']
-                IQPulse[IQPulse > gencfg['maxv']] =  gencfg['maxv']
 
         IQPulse = IQPulse[:length_dt]  # truncate pulse to desired length
-        # print(f'truncated IQPulse: {IQPulse}')
-        if len(IQPulse) % 16 != 0:  # need to pad beginning
+        if len(IQPulse) % 16 != 0:  # Pad beginning, len must be a multiple of 16
             extralen = 16 - (len(IQPulse) % 16)
-            # print("  Padding pulse beginning: length {}, value {}".format(extralen, padval))
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
-        if len(IQPulse) // 16 < 3:
-            # print("  Padding pulse to 3ccs")
+        if len(IQPulse) // 16 < 3: # Pad beginning, len is minimum 3 clock cycles * 16 = 48
             extralen = 48 - len(IQPulse)
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
-            # print(IQPulse[:48])
-        # figure out name and add pulse
-        # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
-        # print("IQPulse[:48]:", i, IQPulse[:48], IQPulse[-48:])
-        # print(len(IQPulse)/16)
+
+
         instance.add_envelope(ch=channel, name=f"{waveform_label}_{channel}",
                            idata=IQPulse)
         instance.add_pulse(ch=channel, name=f"{waveform_label}_{channel}",
@@ -69,7 +63,7 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
 
 
 # For constant FF pulses
-def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=None, **kwargs):
+def FFPlay_Const(instance, list_of_gains, length_us, t_start='auto', waveform_label=None, **kwargs):
     if kwargs:
         print("FFPulses: kwargs:", kwargs)
 
@@ -81,11 +75,9 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
         channel = instance.FFChannels[i]
 
         waveform_name = f"{waveform_label}_{channel}"
-        # print(waveform_name)
         # length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
         # gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
         if IQPulseArray[i] is None:
-            # print(instance.FFChannels[i])
             instance.add_pulse(ch=channel, name=waveform_name,
                            style="const",
                            length=length_us,
@@ -96,13 +88,12 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
 
         if t_start != 'auto':
             t_start_ = t_start + instance.gen_t0[channel]
-            # t_start_ += instance.dac_t0[channel]
         else:
             t_start_ = 'auto'
 
         instance.pulse(ch=channel, name=waveform_name, t=t_start_)
 
-def FFPulses_compensated(instance, list_of_gains, previous_gains, length_us, t_start='auto', compensated_cycles=80, waveform_label = None):
+def FFPlay_CompensatedConst(instance, list_of_gains, previous_gains, length_us, t_start='auto', compensated_cycles=80, waveform_label = None):
     """
     Convenience function to do a compensated step pulse followed by a const pulse of arbitrary length, to preserve waveform memory.
     :param instance: Instance of program (e.g. AveragerProgram or RAveragerProgram)
@@ -126,10 +117,12 @@ def FFPulses_compensated(instance, list_of_gains, previous_gains, length_us, t_s
         channel = instance.FFChannels[i]
         gencfg = instance.soccfg['gens'][channel]
         # print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
-        if np.max(IQPulse) > gencfg['maxv'] or np.min(IQPulse) < -gencfg['maxv']:
-            print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'], gencfg['maxv']))
+        if np.max(IQPulse) > gencfg['maxv']:
+            print(f"IQPulseArray[{i}] goes out of range, exceeds +{+gencfg['maxv']}, clipping.")
+            IQPulse[IQPulse > gencfg['maxv']] = gencfg['maxv']
+        if np.min(IQPulse) < -gencfg['maxv']:
+            print(f"IQPulseArray[{i}] goes out of range, exceeds -{-gencfg['maxv']}, clipping.")
             IQPulse[IQPulse < -gencfg['maxv']] = -gencfg['maxv']
-            IQPulse[IQPulse > gencfg['maxv']] =  gencfg['maxv']
 
         IQPulse = IQPulse[:16*compensated_cycles]  # truncate pulse to desired length
 
@@ -167,33 +160,26 @@ def FFPulses_compensated(instance, list_of_gains, previous_gains, length_us, t_s
 
 def FFDefinitions(instance):
     # Start fast flux
-    instance.FFQubits = sorted(instance.cfg["FF_Qubits"].keys())
-    instance.FFChannels = [instance.cfg["FF_Qubits"][q]['channel'] for q in instance.FFQubits]
+    instance.FFChannels = instance.cfg["fast_flux_chs"]
+    instance.FFQubits = list(range(len(instance.FFChannels)))
 
     for channel in instance.FFChannels:
         instance.declare_gen(ch=int(channel))
 
-    instance.FFReadouts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Readout"] for q in instance.FFQubits])
+    instance.FFReadouts = np.asarray(instance.cfg["FF_Readouts"])
     instance.FFReadouts = FF_Crosstalk_Helper.correct(instance.FFReadouts)
 
-    if "Gain_Expt" in instance.cfg["FF_Qubits"][str(1)]:
-        instance.FFExpts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Expt"] for q in instance.FFQubits])
+    if "FF_Pulses" in instance.cfg:
+        instance.FFPulses = np.asarray(instance.cfg["FF_Pulses"])
+        instance.FFPulses = FF_Crosstalk_Helper.correct(instance.FFPulses)
+
+    if "FF_Expts" in instance.cfg:
+        instance.FFExpts = np.asarray(instance.cfg["FF_Expts"])
         instance.FFExpts = FF_Crosstalk_Helper.correct(instance.FFExpts)
 
-    if "Gain_Pulse" in instance.cfg["FF_Qubits"][str(1)]:
-        instance.FFPulse = np.array([instance.cfg["FF_Qubits"][q]["Gain_Pulse"] for q in instance.FFQubits])
-        instance.FFPulse = FF_Crosstalk_Helper.correct(instance.FFPulse)
-
-    if "Gain_BS" in instance.cfg["FF_Qubits"][str(1)]:
-        instance.FFBS = np.array([instance.cfg["FF_Qubits"][q]["Gain_BS"] for q in instance.FFQubits])
-        instance.FFBS = FF_Crosstalk_Helper.correct(instance.FFBS)
-
-
     # Additional delay added to every non-"auto" t value for each channel
-    FFDelays = np.array([instance.cfg["FF_Qubits"][q]["Additional_Delay_Time"] for q in instance.FFQubits])
-    instance.gen_t0 = FFDelays
+    instance.gen_t0 = np.asarray(instance.cfg["fast_flux_delays"])
 
-    # print(instance.gen_t0)
 
 '''These assume that each pulse name has the format f"{waveform_label}_{channel_num}"'''
 def FFPlayWaveforms(instance, waveform_label, t_start='auto'):

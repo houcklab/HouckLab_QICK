@@ -32,7 +32,7 @@ class ConstantTone(AveragerProgramV2):
         # freq = self.freq2reg(self.cfg["freq"], gen_ch=self.cfg["channel"])#, ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
         # self.declare_gen(ch=self.cfg["channel"], nqz=self.cfg["nqz"])
         self.declare_gen(ch=cfg["channel"], nqz=cfg["nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["freqs"],
                          mux_gains=[gain/32766 for gain in cfg["gains"]],
                          ro_ch=0)
@@ -62,8 +62,8 @@ class ConstantTone_Experiment(ExperimentClass):
     This experiment just sets the RFSOC to output a constant tone on a given chanel at a given frequency and gain.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=0)
@@ -100,7 +100,7 @@ UpdateConfig = {
     "gains": gains,  # [DAC units]
     "reps": 1000000,
     "rounds":1,
-    "mixer_freq": MIXER_FREQ,
+    "res_mixer_freq": MIXER_FREQ,
     "freqs": [freq-LO_FREQ for freq in freqs], # [MHz]
 
     "channel": 8, #0,  # TODO default value # 8 is resonator, 9 is qubit

@@ -1,9 +1,11 @@
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ProgramBuilder import ProgramBuilder
-from triangle_lattice_quench.build_config import build_config
+from triangle_lattice_quench.build_config import QubitParams
 from triangle_lattice_quench.socProxy import makeProxy
 
 
 soc, soccfg = makeProxy()
+
+print(soccfg)
 
 '''A test file for the program builder. Use with the oscilloscope (to verify timings) and test different
 programs with the plot() function.'''
@@ -13,15 +15,11 @@ for Q in [5]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
 
-    config = build_config(
-        Readout_Point='readout_3800_new',
-        Qubit_Readout=Qubit_Readout,  # required: list of readout-entry labels
-        Qubit_Pulse=Qubit_Pulse,  # optional: list of drive-entry labels
-        Ramp_State=None,  # optional: key in ramp_groups
-        Dynamics_Point=None,  # optional: key in dynamics_groups
-    )
+    QP = QubitParams("Qubit_Parameters\\qubit_parameters.json")
+    config = QP.res_qubit_config("readout_3800", Qubit_Readout, Qubit_Pulse)
 
     FFSegments = []
+    config["ProgramBuilderInfo"] = FFSegments
 
     prog = ProgramBuilder(soccfg=soccfg, cfg=config, reps=1000000, final_delay=10)
     prog.plot()

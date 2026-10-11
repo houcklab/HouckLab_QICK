@@ -8,8 +8,8 @@ import triangle_lattice_quench.Helpers.RampHelpers as RampHelpers
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
 from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
 from triangle_lattice_quench.Experiment import ExperimentClass
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShotProgram
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration import RampCurrentCalibration1D
 from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
 
@@ -148,16 +148,12 @@ class PopulationShots(ExperimentClass):
         plt.suptitle(self.titlename)
         plt.show()
 
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-
 ### Ramp Correlation
 class RampPopulationShots(ExperimentClass):
 
     def acquire(self, progress=False, plotDisp=True, plotSave=True, figNum=1):
 
-        self.cfg["IDataArray"] = [None]*len(self.cfg['FF_Qubits'])
+        self.cfg["IDataArray"] = [None]*len(self.cfg['fast_flux_chs'])
 
         '''Create the Ramp '''
         ramp_delay_time = self.cfg.get('ramp_wait_timesteps', 0)
@@ -165,10 +161,10 @@ class RampPopulationShots(ExperimentClass):
         for i in range(len(self.cfg['IDataArray'])):
             Q = str(i+1)
             ramp_on = RampHelpers.generate_cubic_ramp(
-                initial_gain=self.cfg['FF_Qubits'][Q]['Gain_Pulse'],
-                final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
+                initial_gain=self.cfg['FF_Pulses'][int(Q) - 1],
+                final_gain=self.cfg['FF_Expt'][int(Q) - 1],
                 ramp_duration=self.cfg['ramp_duration'])
-            ramp_delay = np.full(ramp_delay_time, self.cfg['FF_Qubits'][Q]['Gain_Expt'])
+            ramp_delay = np.full(ramp_delay_time, self.cfg['FF_Expt'][int(Q) - 1])
             ramp_off = np.array([]) if not double_ramp else np.flip(ramp_on)
 
             self.cfg["IDataArray"][i] = np.concatenate([ramp_on, ramp_delay, ramp_off])
@@ -228,12 +224,6 @@ class RampPopulationShots(ExperimentClass):
         display_counts(counts, self.titlename)
 
 
-
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
 
 
 

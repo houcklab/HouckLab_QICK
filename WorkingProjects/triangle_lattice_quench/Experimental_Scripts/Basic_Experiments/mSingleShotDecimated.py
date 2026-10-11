@@ -4,7 +4,7 @@ import matplotlib
 import numpy as np
 from tqdm import tqdm
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
     SingleShotProgram
 
 matplotlib.use("Qt5agg")
@@ -22,8 +22,8 @@ class SingleShotDecimated(ExperimentClass):
     SingleShot experiment that takes decimated data
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg,)
         self.threshold = []
         self.angle = []
         self.ne_contrast = []
@@ -158,7 +158,3 @@ class SingleShotDecimated(ExperimentClass):
         # else:
         #     plt.clf()
         #     plt.close()
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

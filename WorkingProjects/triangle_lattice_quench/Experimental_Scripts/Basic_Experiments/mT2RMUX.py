@@ -15,7 +15,7 @@ class T2RProgram(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -49,33 +49,33 @@ class T2RProgram(FFAveragerProgramV2):
 
     def _body(self, cfg):
         expt_length = self.qubit_length_us + 10.05 + self.delay_loop + self.qubit_length_us + 1
-        self.FFPulses(self.FFPulse, expt_length)
+        self.FFPlay_Const(self.FFPulses, expt_length)
         self.delay(10.0)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_1", t=0)  # pi/2
         self.delay(self.qubit_length_us)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_2", t=self.delay_loop, tag='swept_delay')  # pi/2, with phase
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, expt_length)
+        self.FFPlay_Const(-1 * self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, expt_length)
 
     def loop_pts(self):
         return (self.get_time_param("swept_delay", "t", as_array=True),)
 
-class T2RMUX(ExperimentClass):
+class T2R(ExperimentClass):
     """
     Basic T2R
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg,)
 
     @staticmethod
     def _t2r_fit_func(t, T2, A, y0, omega, phi):
@@ -136,7 +136,7 @@ class T2RMUX(ExperimentClass):
 
         iq_list = prog.acquire(self.soc, load_envelopes=True,
                                rounds=self.cfg.get('rounds', 1),
-                               progress=progress)
+                              )
 
         # shape of results: [num of ROs, 1 (num triggers), expts, 2 (I or Q)],
         #              e.g. [1, 1, 71, 2]
@@ -201,10 +201,6 @@ class T2RMUX(ExperimentClass):
             if own_fig:
                 fig.clf(True)
                 plt.close(fig)
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
 
 # from scipy import curve_fit
 # def fit_T2

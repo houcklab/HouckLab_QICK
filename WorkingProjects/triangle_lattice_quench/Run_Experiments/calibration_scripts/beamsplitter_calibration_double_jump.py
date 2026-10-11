@@ -6,20 +6,20 @@ This assumes that the ramps (12,34,45,56,67,78) are all defined in the qubit par
 '''
 
 
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
-    SingleShotFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
+    SingleShot
 from triangle_lattice_quench.Helpers.Beamsplitter_Fit import reconstruct_double_beamsplitter_fit, \
     reconstruct_beamsplitter_offset_fit
-from triangle_lattice_quench.Helpers import SweepHelpers
+from triangle_lattice_quench.Helpers import NDSweepHelpers
 
 from triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
 
 from triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR, RampBeamsplitterR1D, RampCurrentCorrelationsR, RampDoubleJumpGainR, \
     RampDoubleJumpIntermediateSamplesR, RampDoubleJumpR1D, RampDoubleJumpCorrelations, SweepRampLengthCorrelations, \
     RampDoubleJump_BS_GainR, RampCorrelations_Sweep_BS_Gain, RampCorrelations_Sweep_BS_Offset
@@ -142,8 +142,8 @@ def calibrate_rung_gains(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
@@ -231,8 +231,8 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
@@ -244,7 +244,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
         if 'popt' in data['data']:
 
             x = np.asarray(data['data'][experiment.loop_names[0]], float)
-            y = np.asarray(data['data'][SweepHelpers.key_savename(experiment.y_key)], float)
+            y = np.asarray(data['data'][NDSweepHelpers.key_savename(experiment.y_key)], float)
             Z = np.asarray(data['data'][experiment.z_value], float)
             R, O, T = Z.shape
 
@@ -343,8 +343,8 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+        for label in ['FF_Readouts', 'FF_Expt', 'FF_Pulses', 'FF_BS', 'FF_RampInit']:
+            print(f'{label}: {[int(g) for g in config[label]]}')
 
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
@@ -355,7 +355,7 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
 
         if 'popt' in data['data']:
-            y = np.asarray(data['data'][SweepHelpers.key_savename(experiment.y_key)], float)
+            y = np.asarray(data['data'][NDSweepHelpers.key_savename(experiment.y_key)], float)
             Z = np.asarray(data['data'][experiment.z_value], float)
             R, G, T = Z.shape
             popt = data['data']['popt']

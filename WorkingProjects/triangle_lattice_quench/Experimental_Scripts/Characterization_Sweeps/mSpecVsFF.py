@@ -1,15 +1,15 @@
 import numpy as np
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSlice import QubitSpecSliceProg
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class SpecVsFF(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
-        self.Program = QubitSpecSliceFFProg
+        self.Program = QubitSpecSliceProg
 
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Pulse")
+        self.y_key = ("FF_Pulses", int(self.cfg["qubit_FF_index"]))
         self.y_points = np.linspace(self.cfg["FF_gain_start"], self.cfg["FF_gain_stop"], self.cfg["FF_gain_steps"],
                                     dtype=int)
 

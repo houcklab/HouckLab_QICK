@@ -15,7 +15,7 @@ class T1Program(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -41,7 +41,7 @@ class T1Program(FFAveragerProgramV2):
 
     def _body(self, cfg):
         expt_length =  self.qubit_length_us + 1.05 + self.delay_loop
-        self.FFPulses(self.FFPulse, expt_length)
+        self.FFPlay_Const(self.FFPulses, expt_length)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t=1)  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.delay(self.qubit_length_us + 1.05)
@@ -49,26 +49,23 @@ class T1Program(FFAveragerProgramV2):
         # Sweep this delay time
         self.delay(self.delay_loop, tag = 'swept_delay')
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch],  t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, expt_length)
+        self.FFPlay_Const(-1 * self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, expt_length)
 
     def loop_pts(self):
         return (self.get_time_param("swept_delay", "t", as_array=True),)
 
-class T1MUX(ExperimentClass):
+class T1(ExperimentClass):
     """
     Basic T1
     """
-
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     @staticmethod
     def _t1_fit_func(t, T1, A, y0):
@@ -113,7 +110,7 @@ class T1MUX(ExperimentClass):
 
         iq_list = prog.acquire(self.soc, load_envelopes=True,
                                rounds=self.cfg.get('rounds', 1),
-                               progress=progress)
+                              )
 
         # shape of results: [num of ROs, 1 (num triggers), expts, 2 (I or Q)],
         #              e.g. [1, 1, 71, 2]
@@ -180,9 +177,3 @@ class T1MUX(ExperimentClass):
             if own_fig:
                 fig.clf(True)
                 plt.close(fig)
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-

@@ -20,8 +20,9 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
-from ..state import CalibState, EXPERIMENTAL_SCRIPTS_DIR
-from ..helpers import _build_resolve_ramp
+from .. import style as st
+from ..state import CalibState, EXPERIMENTAL_SCRIPTS_DIR, groups_of, entries_of, readout_group_names, pulse_group_names
+from ..helpers import ff_entry_items, combo_path
 from ..widgets import MplCanvas, ParamForm, _agent_set_combo
 from .experiment_library import import_experiment_class
 
@@ -116,10 +117,8 @@ class TwoQubitCalibTab(QWidget):
     gain on the swept qubit at which the two come into resonance — same as
     ``Run_Experiments/calibration_scripts/coupling_strength_calibration.py``.
 
-    Apply mirrors the (coupling, resonance_gain) pair into the readout-group
-    entry for each qubit (``entries[q]['TwoQubit'][partner]``) symmetrically.
-    No existing reader consumes that slot — it's informational state the
-    user can persist via Save on the Qubit Parameters tab.
+    The fitted coupling is only reported; nothing is written for it (it has no home in
+    qubit_parameters.json yet). "Apply -> Ramp FF_Expt" writes the resonance gain.
     """
 
     name = "Two-Qubit Calib"
@@ -132,7 +131,7 @@ class TwoQubitCalibTab(QWidget):
         self._last_data: Any = None
         self._last_expt: Any = None
         self._last_pair: Optional[tuple[int, int, int]] = None  # (q_i, q_j, sweep_qubit)
-        self._last_ramp_state: Optional[str] = None  # ramp used for the last chevron
+        self._last_ramp_state: Optional[tuple] = None  # ff_groups path of the ramp used for the last chevron
 
         # ---- readout/drive group selectors (item 7: mirror AutoCalibTab) ----
         self.readout_group_combo = QComboBox()
@@ -146,7 +145,7 @@ class TwoQubitCalibTab(QWidget):
         self.drive_group_combo = QComboBox()
         self.drive_group_combo.setMinimumWidth(160)
         self.drive_group_combo.setToolTip(
-            "Drive (Pulse) point. Optional; empty = use readout group's Pulse_FF."
+            "Drive (Pulse) point. Optional; empty = use readout group's FF_Pulses."
         )
         self.drive_group_combo.currentIndexChanged.connect(
             self._on_drive_group_changed
@@ -155,7 +154,7 @@ class TwoQubitCalibTab(QWidget):
         self.ramp_state_combo.setMinimumWidth(140)
         self.ramp_state_combo.setToolTip(
             "Optional Ramp_State. Empty = sweep the swept qubit's FF from DC baseline "
-            "(bare resonance). Selected = hold every qubit at that ramp's Expt_FF and "
+            "(bare resonance). Selected = hold every qubit at that ramp's FF_Expt and "
             "sweep only the swept qubit's FF around it -- measures the swap AT that ramp."
         )
         group_row = QHBoxLayout()
@@ -217,12 +216,9 @@ class TwoQubitCalibTab(QWidget):
         self.run_btn = QPushButton("Run chevron")
         self.run_btn.setStyleSheet("font-weight: bold;")
         self.run_btn.clicked.connect(self._on_run)
-        self.apply_btn = QPushButton("Apply -> Qubit_Parameters")
-        self.apply_btn.setEnabled(False)
-        self.apply_btn.clicked.connect(self._on_apply)
-        self.apply_ramp_btn = QPushButton("Apply -> Ramp Expt_FF")
+        self.apply_ramp_btn = QPushButton("Apply -> Ramp FF_Expt")
         self.apply_ramp_btn.setToolTip(
-            "Write the fitted resonance gain into the selected Ramp_State's Expt_FF "
+            "Write the fitted resonance gain into the selected Ramp_State's FF_Expt "
             "for the swept qubit (in memory; Save Qubit_Parameters JSON to persist)."
         )
         self.apply_ramp_btn.setEnabled(False)
@@ -231,7 +227,6 @@ class TwoQubitCalibTab(QWidget):
         self.result_lbl.setStyleSheet("font-weight: bold; color: #555;")
         run_row = QHBoxLayout()
         run_row.addWidget(self.run_btn)
-        run_row.addWidget(self.apply_btn)
         run_row.addWidget(self.apply_ramp_btn)
         run_row.addStretch(1)
         run_w = QWidget(); run_w.setLayout(run_row)
@@ -241,8 +236,7 @@ class TwoQubitCalibTab(QWidget):
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
-        self.log.setFont(f)
+        st.make_mono(self.log)
         self.log.setPlaceholderText("Chevron progress / fit results appear here.")
 
         # ---- layout (group selectors on top, splitter under) ----
@@ -329,8 +323,8 @@ class TwoQubitCalibTab(QWidget):
         their own visible combos but share state.current_readout_group.
         """
         jd = self.state.qubit_parameters_json or {}
-        readout_groups = list((jd.get("readout_groups") or {}).keys())
-        drive_groups = list((jd.get("drive_groups") or {}).keys())
+        readout_groups = readout_group_names(jd)
+        drive_groups = pulse_group_names(jd)
 
         self.readout_group_combo.blockSignals(True)
         self.readout_group_combo.clear()
@@ -354,13 +348,12 @@ class TwoQubitCalibTab(QWidget):
         self.drive_group_combo.blockSignals(False)
 
         # Ramp_State entries (any entry in any ramp_groups), like the Pi2 Phase tab.
-        ramp_entries = [e for grp in (jd.get("ramp_groups") or {}).values()
-                        if isinstance(grp, dict) for e in (grp.get("entries") or {})]
+        ramp_entries = ff_entry_items(jd, "ramp_groups")  # (label 'group/entry', path)
         self.ramp_state_combo.blockSignals(True)
         self.ramp_state_combo.clear()
         self.ramp_state_combo.addItem("(none)", "")
-        for n in ramp_entries:
-            self.ramp_state_combo.addItem(n, n)
+        for label, path in ramp_entries:
+            self.ramp_state_combo.addItem(label, path)
         self.ramp_state_combo.setCurrentIndex(0)
         self.ramp_state_combo.blockSignals(False)
 
@@ -380,7 +373,7 @@ class TwoQubitCalibTab(QWidget):
                                     "Q_i and Q_j must differ.")
             return
         sweep_qubit = qj if self.sweep_combo.currentIndex() == 0 else qi
-        ramp_state = str(self.ramp_state_combo.currentData() or "") or None
+        ramp_state = combo_path(self.ramp_state_combo)  # ('ramp_groups', group, entry) or None
         overrides = self.param_form.values()
 
         try:
@@ -398,19 +391,17 @@ class TwoQubitCalibTab(QWidget):
         self.canvas.reset()
         self.log.clear()
         self.run_btn.setEnabled(False)
-        self.apply_btn.setEnabled(False)
         self.result_lbl.setText(f"Running Q{qi}-Q{qj} (sweep Q{sweep_qubit})...")
         self._last_pair = (qi, qj, sweep_qubit)
         self._last_ramp_state = ramp_state
         self.apply_ramp_btn.setEnabled(False)
         if ramp_state:
-            ffq = cfg.get("FF_Qubits", {})
-            full_expt = [ffq.get(str(k), {}).get("Gain_Expt") for k in range(1, len(ffq) + 1)]
-            g_expt = ffq.get(str(sweep_qubit), {}).get("Gain_Expt")
+            full_expt = cfg.get("FF_Expt")
+            g_expt = full_expt[int(sweep_qubit) - 1] if full_expt else None
             self.log.appendPlainText(
-                f"Holding all qubits at Ramp_State '{ramp_state}' Expt_FF = {full_expt}")
+                f"Holding all qubits at Ramp_State '{ramp_state}' FF_Expt = {full_expt}")
             self.log.appendPlainText(
-                f"Sweeping only Q{sweep_qubit}; its Expt_FF gain = {g_expt} "
+                f"Sweeping only Q{sweep_qubit}; its FF_Expt gain = {g_expt} "
                 f"-- center the gain sweep there.")
 
         self.worker = TwoQubitChevronWorker(
@@ -426,7 +417,7 @@ class TwoQubitCalibTab(QWidget):
     # Measurement-Agent hook: run this calibration without UI clicks.
     AGENT_ACTION = "two_qubit_chevron"
     AGENT_PARAMS = ("q_i (chip int), q_j (chip int), sweep_qubit (chip int, default q_j), "
-                    "ramp_state (str or null); sweep sizes: gainStart, gainStop, "
+                    "ramp_state (str 'group/entry' or null); sweep sizes: gainStart, gainStop, "
                     "gainNumPoints, expts, start, step, reps (int), relax_delay (float)")
 
     def agent_run(self, params: dict) -> str:
@@ -467,7 +458,6 @@ class TwoQubitCalibTab(QWidget):
             f"resonance gain = {gain_str} ---"
         )
         self.run_btn.setEnabled(True)
-        self.apply_btn.setEnabled(True)
         self.apply_ramp_btn.setEnabled(bool(self._last_ramp_state))
         self.worker = None
 
@@ -478,7 +468,6 @@ class TwoQubitCalibTab(QWidget):
             self.log.appendPlainText(f"       {line}")
         self.result_lbl.setText("FAILED")
         self.run_btn.setEnabled(True)
-        self.apply_btn.setEnabled(False)
         self.worker = None
 
     def _render(self, expt, data):
@@ -490,7 +479,8 @@ class TwoQubitCalibTab(QWidget):
             self.log.appendPlainText("(no population_corrected in data)")
             return
         time = np.asarray(d.get("expt_samples", d.get("expt_samples2", [])))
-        gains = np.asarray(d.get("Gain_Expt", d.get("Gain_BS", [])))
+        from triangle_lattice_quench.Helpers import NDSweepHelpers
+        gains = np.asarray(d.get(NDSweepHelpers.key_savename(expt.y_key), d.get("Gain_BS", [])))
         n_ros = len(Z)
         # Two side-by-side panels, one per readout.
         self.canvas.fig.clf()
@@ -558,62 +548,8 @@ class TwoQubitCalibTab(QWidget):
         avg_g = sum(gains) / len(gains)
         return f"g = {avg_c:.2f} MHz", f"{avg_g:.0f}"
 
-    def _on_apply(self):
-        if self._last_data is None or self._last_pair is None:
-            return
-        d = self._last_data["data"]
-        popts = d.get("popt_list") or []
-        if not popts:
-            QMessageBox.warning(self, "No fit", "Cannot apply: chevron fit was not produced.")
-            return
-        couplings = [float(p[2]) for p in popts if hasattr(p, "__getitem__")]
-        gains = [float(p[0]) for p in popts if hasattr(p, "__getitem__")]
-        if not couplings:
-            QMessageBox.warning(self, "No fit", "popt_list contains no usable rows.")
-            return
-        from datetime import datetime
-        avg_coupling = sum(couplings) / len(couplings)
-        avg_gain = sum(gains) / len(gains)
-        qi, qj, sweep_qubit = self._last_pair
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        record = {
-            "coupling_MHz": avg_coupling,
-            "resonance_gain": avg_gain,
-            "swept_qubit": sweep_qubit,
-            "calibrated_at": ts,
-        }
-        # Stash on the readout-group entry. The JSON schema doesn't have a
-        # canonical TwoQubit slot; no existing reader consumes this — it's
-        # informational state the user can persist via Save.
-        jd = self.state.qubit_parameters_json or {}
-        rg = self.state.current_readout_group or ""
-        for q, partner in ((qi, qj), (qj, qi)):
-            if not jd or not rg:
-                break
-            entry = (jd.get("readout_groups", {})
-                       .get(rg, {})
-                       .get("entries", {})
-                       .get(str(q)))
-            if isinstance(entry, dict):
-                entry.setdefault("TwoQubit", {})[str(partner)] = dict(record)
-        self.log.appendPlainText(
-            f"Applied: Q{qi}<->Q{qj} g = {avg_coupling:.2f} MHz, "
-            f"gain = {avg_gain:.0f}"
-        )
-        # Mirror into the params tab + summary line.
-        try:
-            self.get_main().refresh_qubit_summary()
-        except Exception:
-            pass
-        QMessageBox.information(
-            self, "Applied",
-            f"Wrote Q{qi} <-> Q{qj} into Qubit_Parameters.TwoQubit.\n\n"
-            f"coupling = {avg_coupling:.2f} MHz at FF gain {avg_gain:.0f} on Q{sweep_qubit}.\n"
-            "Use 'Save Qubit_Parameters JSON' on the toolbar to persist.",
-        )
-
     def _on_apply_ramp(self):
-        """Write the fitted resonance gain into the selected Ramp_State's Expt_FF for
+        """Write the fitted resonance gain into the selected Ramp_State's FF_Expt for
         the swept qubit. In-memory; persisted via Save Qubit_Parameters JSON. Only the
         swept qubit's value changes; the entry's delta/abs representation is preserved.
         """
@@ -623,7 +559,7 @@ class TwoQubitCalibTab(QWidget):
         if not ramp_state:
             QMessageBox.warning(
                 self, "No Ramp_State",
-                "This chevron was run without a Ramp_State, so there is no ramp Expt_FF "
+                "This chevron was run without a Ramp_State, so there is no ramp FF_Expt "
                 "to update. Re-run with a Ramp_State selected.")
             return
         popts = self._last_data["data"].get("popt_list") or []
@@ -635,46 +571,25 @@ class TwoQubitCalibTab(QWidget):
         qi, qj, sweep_qubit = self._last_pair
         idx = int(sweep_qubit) - 1
         jd = self.state.qubit_parameters_json or {}
-        base = jd.get("base_params", {})
-
-        # Locate the ramp group that owns this entry.
-        grp = None
-        for g in (jd.get("ramp_groups") or {}).values():
-            if isinstance(g, dict) and ramp_state in (g.get("entries") or {}):
-                grp = g
-                break
-        if grp is None:
+        _, rgroup, rentry = ramp_state  # ('ramp_groups', group, entry)
+        entry = entries_of("ramp_groups", groups_of(jd, "ramp_groups").get(rgroup, {})).get(rentry)
+        if entry is None:
             QMessageBox.critical(self, "Not found",
-                                 f"Ramp_State {ramp_state!r} not found in ramp_groups.")
+                                 f"ff_groups/ramp_groups/{rgroup}/{rentry} not found.")
             return
-        entry = grp["entries"][ramp_state]
 
-        # Current resolved Expt_FF (handles delta/abs + base deref) for the old value.
-        try:
-            resolved = list(_build_resolve_ramp(jd, ramp_state)["Expt_FF"])
-        except Exception as exc:
-            QMessageBox.critical(self, "Resolve failed",
-                                 f"Could not resolve ramp Expt_FF:\n{exc}")
+        # FF_Expt is stored explicitly on the ramp entry; overwrite the swept qubit's slot.
+        if not isinstance(entry.get("FF_Expt"), list):
+            QMessageBox.critical(self, "Resolve failed", f"Ramp_State {ramp_state!r} has no FF_Expt array.")
             return
-        old_resolved = int(round(resolved[idx]))
-
-        abs_arr = entry.get("Expt_FF_abs")
-        if abs_arr is not None:
-            # Absolute representation (may be a base_params name-reference).
-            arr = list(base.get(abs_arr, resolved)) if isinstance(abs_arr, str) else list(abs_arr)
-            arr[idx] = res_gain
-            entry["Expt_FF_abs"] = [int(round(x)) for x in arr]
-            mode = "Expt_FF_abs"
-        else:
-            # Delta representation: bump only the swept qubit's delta so the resolved
-            # Expt_FF lands exactly on the measured resonance gain.
-            delta = list(entry.get("Expt_FF_delta") or [0] * len(resolved))
-            delta[idx] = int(round(delta[idx] + (res_gain - old_resolved)))
-            entry["Expt_FF_delta"] = delta
-            mode = "Expt_FF_delta"
+        arr = list(entry["FF_Expt"])
+        old_resolved = int(round(arr[idx]))
+        arr[idx] = res_gain
+        entry["FF_Expt"] = [int(round(x)) for x in arr]
+        mode = "FF_Expt"
 
         self.log.appendPlainText(
-            f"Applied to Ramp_State '{ramp_state}' ({mode}): Q{sweep_qubit} Expt_FF "
+            f"Applied to Ramp_State '{ramp_state}' ({mode}): Q{sweep_qubit} FF_Expt "
             f"{old_resolved} -> {res_gain} (resonance gain).")
         try:
             self.get_main().refresh_qubit_summary()
@@ -682,5 +597,5 @@ class TwoQubitCalibTab(QWidget):
             pass
         QMessageBox.information(
             self, "Applied to ramp",
-            f"Set Q{sweep_qubit} Expt_FF in Ramp_State '{ramp_state}' to {res_gain} "
+            f"Set Q{sweep_qubit} FF_Expt in Ramp_State '{ramp_state}' to {res_gain} "
             f"(was {old_resolved}).\n\nUse 'Save Qubit_Parameters JSON' on the toolbar to persist.")

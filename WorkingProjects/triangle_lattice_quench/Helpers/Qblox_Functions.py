@@ -1,5 +1,5 @@
 # Vendored from Inductive_Coupler so this project stays self-contained.
-from triangle_lattice_quench.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
+from triangle_lattice_quench.Equipment_Drivers.SPIRackvoltage import SPIRack, D5aModule
 import numpy as np
 import time
 

@@ -1,8 +1,8 @@
 '''File to automatically calibrate and run 2Q single shot experiments on arbitrary qubit pairs.'''
 
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
-    SingleShotFFMUX, SingleShot_2QFFMUX
-from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import \
+    SingleShot, SingleShot_2QFFMUX
+from triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 import itertools
 

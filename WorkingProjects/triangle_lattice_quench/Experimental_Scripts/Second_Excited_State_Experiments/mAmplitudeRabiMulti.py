@@ -15,7 +15,7 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -44,19 +44,19 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
 
     def _body(self, cfg):
 
-        self.FFPulses(self.FFPulse, self.cfg["sigma"][-1] * 4 + 1)
+        self.FFPlay_Const(self.FFPulses, self.cfg["sigma"][-1] * 4 + 1)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"][-1] * 4 + 1)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.cfg["sigma"][-1] * 4 + 1)
 
 
 def fit_func_simple(gain, ampl, pi_gain):
@@ -70,8 +70,8 @@ class AmplitudeRabiFFMUX(ExperimentClass):
     Basic AmplitudeRabi
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False):
         # You would overwrite these in the config if you wanted to
@@ -216,10 +216,3 @@ class AmplitudeRabiFFMUX(ExperimentClass):
 
         plt.show(block=block)
         plt.pause(0.1)
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-
-

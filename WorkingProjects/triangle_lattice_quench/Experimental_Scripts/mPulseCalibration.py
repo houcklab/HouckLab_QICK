@@ -10,8 +10,8 @@ from triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartPro
 from triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
 from triangle_lattice_quench.Experiment import ExperimentClass
 import triangle_lattice_quench.Helpers.FF_utils as FF
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgram import SingleShotProgram
+from triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration import RampCurrentCalibration1D
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 from triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
@@ -27,7 +27,7 @@ class BB1(FFAveragerProgramV2):
                          mixer_freq=cfg["qubit_mixer_freq"])
         # print(cfg["res_freqs"])
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -76,7 +76,7 @@ class BB1(FFAveragerProgramV2):
     def _body(self, cfg):
         # print(cfg["readout_lengths"])
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, 4 * self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, 4 * self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             if i == 0:
                 time = FF_Delay_time
@@ -94,15 +94,15 @@ class BB1(FFAveragerProgramV2):
 
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 
@@ -110,7 +110,7 @@ class BB1(FFAveragerProgramV2):
     # def acquire(self, soc, threshold=None, angle=None, load_envelopes=True, readouts_per_experiment=1, save_experiments=None,
     #             start_src="internal", progress=False):
     #     start = time.time()
-    #     super().acquire(soc, load_envelopes=load_envelopes, progress=progress)
+    #     super().acquire(soc, load_envelopes=load_envelopes)
     #     end = time.time()
     #
     #     return self.collect_shots()
@@ -229,10 +229,6 @@ class BB1_Base(ExperimentClass):
         plt.tight_layout()
         plt.suptitle(self.titlename)
         plt.show()
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
 
 
 class BB1_SweepGain(SweepExperiment1D_plots):

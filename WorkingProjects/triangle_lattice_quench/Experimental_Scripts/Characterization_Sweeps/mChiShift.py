@@ -10,14 +10,14 @@ import traceback
 from tqdm import tqdm
 import triangle_lattice_quench.Helpers.FF_utils as FF
 from triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFProg
+from triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmission import ResonatorSpecProg
 
 class CavitySpecExciteProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"],
                          mixer_freq=cfg["qubit_mixer_freq"])
         self.declare_gen(ch=cfg['res_ch'], ro_ch=cfg['ro_chs'][0], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg['res_freqs'],
                          mux_gains=cfg['res_gains'],
                          mux_phases=[0]*len(cfg['res_freqs']))
@@ -40,7 +40,7 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
 
     def _body(self, cfg):
         FF_Delay_time = 1
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             if i == 0:
                 time = FF_Delay_time
@@ -49,7 +49,7 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time)
 
         self.delay_auto()
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         # self.delay(0.1)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
@@ -58,8 +58,8 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
     # ====================================================== #
 
@@ -68,8 +68,8 @@ class ChiShift(ExperimentClass):
     Transmission Experiment basic
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder=None, suffix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path,   suffix=suffix, cfg=cfg)
 
     def acquire(self, progress=False, use_lorentzian=False):
         cfg = self.cfg
@@ -82,8 +82,8 @@ class ChiShift(ExperimentClass):
             cfg['res_gains'][0] = cfg['cav_gain'] / 32766
         for f in tqdm(fpts, position=0, disable=False):
             cfg["res_freqs"][0] = f
-            prog = CavitySpecFFProg(self.soccfg, reps=self.cfg['reps'],cfg=self.cfg, final_delay=self.cfg['cav_relax_delay'])
-            results_g.append(prog.acquire(self.soc, rounds=self.cfg.get('rounds',1), load_envelopes=True, progress=progress))
+            prog = ResonatorSpecProg(self.soccfg, reps=self.cfg['reps'], cfg=self.cfg, final_delay=self.cfg['cav_relax_delay'])
+            results_g.append(prog.acquire(self.soc, rounds=self.cfg.get('rounds',1), load_envelopes=True))
         print(f'Time: {time.time() - start}')
         results_g = np.array(results_g)
 
@@ -93,7 +93,7 @@ class ChiShift(ExperimentClass):
             cfg["res_freqs"][0] = f
             prog = CavitySpecExciteProg(self.soccfg, reps=self.cfg['reps'], cfg=self.cfg,
                                     final_delay=self.cfg['cav_relax_delay'])
-            results_e.append(prog.acquire(self.soc, rounds=self.cfg.get('rounds', 1), load_envelopes=True, progress=progress))
+            results_e.append(prog.acquire(self.soc, rounds=self.cfg.get('rounds', 1), load_envelopes=True))
         print(f'Time: {time.time() - start}')
         results_e = np.array(results_e)
 
@@ -248,8 +248,3 @@ class ChiShift(ExperimentClass):
             plt.show(block=block)
             plt.pause(0.1)
         # plt.close(figNum)
-
-
-    def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])

@@ -23,7 +23,7 @@ class MottQuenchBasicProgram(FFAveragerProgramV2):
 
         # Qubit Readout pulses
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
-                         mixer_freq=cfg["mixer_freq"],
+                         mixer_freq=cfg["res_mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
@@ -60,7 +60,7 @@ class MottQuenchBasicProgram(FFAveragerProgramV2):
 
         ### Init Pulse
         FF_Delay_time = 0.2
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
 
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = FF_Delay_time if i == 0 else 'auto'
@@ -74,19 +74,19 @@ class MottQuenchBasicProgram(FFAveragerProgramV2):
 
 
         ### Dynamics
-        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"],
-                             self.FFPulse, IQPulseArray=self.cfg["IQArray"], waveform_label='FFDynamics')
+        self.FFPlay_Arb(self.FFExpts, self.cfg["expt_samples"],
+                             self.FFPulses, IQPulseArray=self.cfg["IQArray"], waveform_label='FFDynamics')
         self.delay_auto()
 
         ### Readout
         Second_FFPulse_delay = 0.100
-        self.FFPulses(self.FFPulse, self.qubit_total_length_us + Second_FFPulse_delay)
+        self.FFPlay_Const(self.FFPulses, self.qubit_total_length_us + Second_FFPulse_delay)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = Second_FFPulse_delay if i == 0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_measurement_pi2_{i}', t=time_)
         self.delay_auto()
 
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(self.FFReadouts, self.cfg["res_length"])
 
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], t=adc_trig_delay)
@@ -94,11 +94,11 @@ class MottQuenchBasicProgram(FFAveragerProgramV2):
         self.wait_auto()
         self.delay_auto(10)  # us
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
-        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + Second_FFPulse_delay)
-        self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"],
-                             -1 * self.FFPulse, IQPulseArray=[-arr for arr in self.cfg["IQArray"]], waveform_label='FFDynamicsInverse')
+        self.FFPlay_Const(-1 * self.FFReadouts, self.cfg["res_length"])
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + FF_Delay_time)
+        self.FFPlay_Const(-1 * self.FFPulses, self.qubit_total_length_us + Second_FFPulse_delay)
+        self.FFPlay_Arb(-1 * self.FFExpts, self.cfg["expt_samples"],
+                             -1 * self.FFPulses, IQPulseArray=[-arr for arr in self.cfg["IQArray"]], waveform_label='FFDynamicsInverse')
 
         self.delay_auto()
 

@@ -24,16 +24,20 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
-from triangle_lattice_quench.Flux_Files.LEGACY.Initialize_Qubit_Information import model_mapping
-from triangle_lattice_quench.Flux_Files.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
-from triangle_lattice_quench.Flux_Files.LEGACY.Device_calibration import full_device_calib
+from triangle_lattice_quench.Device_Calibration.LEGACY.Initialize_Qubit_Information import model_mapping
+from triangle_lattice_quench.Device_Calibration.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
+from triangle_lattice_quench.Device_Calibration.LEGACY.Device_calibration import full_device_calib
 
 from ..state import CalibState, _FF_FREQ_COUPLED_PAIRS
 from ..helpers import (
-    _build_resolve_drive,
-    _build_resolve_ramp,
-    _build_resolve_dynamics,
-    _build_deref_base,
+    QubitParams,
+    groups_of,
+    entries_of,
+    set_entries,
+    entry_path,
+    group_path,
+    readout_group_names,
+    pulse_group_names,
     _values_differ,
     _leaf_at_path,
     _entry_touched_paths,
@@ -54,10 +58,10 @@ class FFFrequenciesTab(QWidget):
     Resolution rules per stage (see _resolve_*_section docstrings for the
     precise per-stage decision table):
       - If the selected group has a group-level FF (e.g. `readout_3800` with
-        `Readout_FF`+`Pulse_FF`, or `ramp_3800` with `Expt_FF`), that FF is
+        `FF_Readouts`+`FF_Pulses`, or `ramp_3800` with `FF_Expt`), that FF is
         used and the entry is OPTIONAL — picking an entry only affects
         non-FF fields (and, for ramp entries, can supply an Init section
-        and/or override Expt_FF via delta arrays).
+        and/or override FF_Expt via delta arrays).
       - If the group has NO group-level FF (e.g. `ramsey_3800+` is recipe-
         only; `dynamics_FF_points` is per-entry), an entry MUST be picked
         for the stage to contribute a section. Group-only is skipped.
@@ -108,16 +112,13 @@ class FFFrequenciesTab(QWidget):
         self.readout_group_combo.currentTextChanged.connect(
             lambda _t: (self._refresh_entry_combo(
                 self.readout_group_combo, self.readout_entry_combo,
-                "readout_groups",
+                "drive_groups",
             ), self._on_plot())
         )
         self.drive_group_combo.currentTextChanged.connect(
             lambda _t: (self._refresh_entry_combo(
                 self.drive_group_combo, self.drive_entry_combo,
-                # Drive group combo includes BOTH drive_groups and
-                # readout_groups (parity with _build_resolve_drive's
-                # fallback search).
-                ("drive_groups", "readout_groups"),
+                "drive_groups",
             ), self._on_plot())
         )
         self.ramp_group_combo.currentTextChanged.connect(
@@ -276,7 +277,7 @@ class FFFrequenciesTab(QWidget):
 
     def _group_names(self, namespace: str) -> list[str]:
         """Return the group keys under `jd[namespace]` in insertion order."""
-        ns = self._jd.get(namespace, {})
+        ns = groups_of(self._jd, namespace)
         if not isinstance(ns, dict):
             return []
         return [n for n, g in ns.items() if isinstance(g, dict)]
@@ -291,7 +292,7 @@ class FFFrequenciesTab(QWidget):
         # real group (preserving prior UX where the readout combo was
         # never blank by default — the trajectory needs a readout anchor
         # at the right edge). The other three stages stay at (none). ---
-        readout_groups = self._group_names("readout_groups")
+        readout_groups = readout_group_names(self._jd)
         self._fill_group_combo(self.readout_group_combo, readout_groups)
         if readout_groups:
             # findText is +1 because index 0 is the (none) sentinel.
@@ -300,12 +301,12 @@ class FFFrequenciesTab(QWidget):
         # for clarity (idempotent).
         self._refresh_entry_combo(
             self.readout_group_combo, self.readout_entry_combo,
-            "readout_groups",
+            "drive_groups",
         )
 
         # --- Drive: groups from `drive_groups` AND `readout_groups` (parity
         # with _build_resolve_drive's fallback search). Order: drives first,
-        # then readouts. No filtering by "has group Pulse_FF" — recipe-only
+        # then readouts. No filtering by "has group FF_Pulses" — recipe-only
         # groups like ramsey_3800+ MUST be exposed so the user can pick an
         # entry under them. ---
         # Drive combo lists only true drive_groups. Sentinel at index 0 is
@@ -313,13 +314,13 @@ class FFFrequenciesTab(QWidget):
         self.drive_group_combo.blockSignals(True)
         self.drive_group_combo.clear()
         self.drive_group_combo.addItem(self.DRIVE_FALLBACK_LABEL)
-        for n in self._group_names("drive_groups"):
+        for n in pulse_group_names(self._jd):
             self.drive_group_combo.addItem(n)
         self.drive_group_combo.setCurrentIndex(0)
         self.drive_group_combo.blockSignals(False)
         self._refresh_entry_combo(
             self.drive_group_combo, self.drive_entry_combo,
-            ("drive_groups", "readout_groups"),
+            "drive_groups",
         )
 
         # --- Ramp: groups from `ramp_groups`. ---
@@ -370,9 +371,9 @@ class FFFrequenciesTab(QWidget):
         namespaces = (namespace,) if isinstance(namespace, str) else tuple(namespace)
         entries: dict = {}
         for ns in namespaces:
-            group = self._jd.get(ns, {}).get(group_name)
+            group = groups_of(self._jd, ns).get(group_name)
             if isinstance(group, dict):
-                entries = group.get("entries", {}) or {}
+                entries = entries_of(ns, group)
                 if entries:
                     break
 
@@ -458,112 +459,90 @@ class FFFrequenciesTab(QWidget):
 
     def _resolve_readout_section(self, jd: dict, group_name: str,
                                  entry_name: str):
-        """Return {'Readout_FF': [...], 'Pulse_FF': [...]} for the readout stage,
+        """Return {'FF_Readouts': [...], 'FF_Pulses': [...]} for the readout stage,
         or None when no group is selected.
 
-        Readout groups in the current schema always have group-level
-        `Readout_FF` and `Pulse_FF`, so the entry is purely optional
-        (entry-level non-FF fields aren't consumed by the trajectory plot).
+        Resolved with QubitParams.drive_ff, so an entry's FF_override applies
+        exactly as it does in a script (no entry -> the group arrays).
         """
         if not group_name or group_name == self.NONE_LABEL:
             return None
-        rg = jd.get("readout_groups", {}).get(group_name)
+        rg = groups_of(jd, "drive_groups").get(group_name)
         if rg is None:
             raise KeyError(f"Readout group {group_name!r} not in readout_groups.")
-        base = jd.get("base_params", {})
-        # readout_3800 always has Readout_FF + Pulse_FF; defensively allow
-        # either to be missing by skipping that part of the section.
-        readout_ff = rg.get("Readout_FF")
-        pulse_ff = rg.get("Pulse_FF")
-        if readout_ff is None:
-            raise KeyError(
-                f"Readout group {group_name!r} is missing Readout_FF; "
-                f"cannot plot a Readout section."
-            )
+        qp = QubitParams(jd)
+        entry = None if not entry_name or entry_name == self.NONE_LABEL else entry_name
+        if "FF_Readouts" not in rg:
+            raise KeyError(f"Readout group {group_name!r} is missing FF_Readouts; cannot plot a Readout section.")
         return {
-            "Readout_FF": list(_build_deref_base(readout_ff, base)),
-            "Pulse_FF":   (None if pulse_ff is None
-                           else list(_build_deref_base(pulse_ff, base))),
+            "FF_Readouts": qp.drive_ff("FF_Readouts", group_name, entry),
+            "FF_Pulses":   (qp.drive_ff("FF_Pulses", group_name, entry)
+                            if entry is not None or "FF_Pulses" in rg else None),
         }
 
     def _resolve_drive_section(self, jd: dict, group_name: str,
                                entry_name: str):
-        """Return {'Pulse_FF': [...]} for the drive stage, or None to skip.
+        """Return {'FF_Pulses': [...]} for the drive stage, or None to skip.
 
         Decision tree:
           - No group selected -> None.
-          - Group has a group-level Pulse_FF (e.g. `4Q_readout`, or any
-            readout_groups entry) -> use that array; entry is optional.
-          - Group has NO group-level Pulse_FF (recipe-only, e.g.
-            `ramsey_3800+`) -> require an entry; resolve via the existing
-            `_build_resolve_drive` (which walks drive_groups +
-            readout_groups, handles `_recipe` + `_recipe_arg`).
-            If no entry selected, return None (skip the stage).
+          - Entry selected -> `QubitParams.drive_ff('FF_Pulses', group, entry)`, so the
+            entry's Qubit.FF_override applies exactly as in a script.
+          - No entry, group has a group-level FF_Pulses -> that array.
+          - No entry and no group-level FF_Pulses (e.g. `ramsey_3800+`) -> None (skip the stage).
         """
         # Sentinel "(readout)" means "fall back to readout group" — handled
         # by the caller (resolve via the readout group's entry).
         if not group_name or group_name in (self.NONE_LABEL, self.DRIVE_FALLBACK_LABEL):
             return None
-        base = jd.get("base_params", {})
-        group = jd.get("drive_groups", {}).get(group_name)
+        group = groups_of(jd, "drive_groups").get(group_name)
         if not isinstance(group, dict):
             raise KeyError(f"Drive group {group_name!r} not in drive_groups.")
 
-        # Group-level Pulse_FF wins when present — entry just contributes
-        # non-FF fields (frequency / gain / sigma), which the trajectory
-        # plot doesn't consume.
-        if group.get("Pulse_FF") is not None:
-            return {"Pulse_FF": list(_build_deref_base(group.get("Pulse_FF"), base))}
-
-        # No group Pulse_FF -> entry is required.
-        if not entry_name or entry_name == self.NONE_LABEL:
-            return None
-        return {"Pulse_FF": _build_resolve_drive(jd, entry_name)["Pulse_FF"]}
+        qp = QubitParams(jd)
+        if entry_name and entry_name != self.NONE_LABEL:
+            return {"FF_Pulses": qp.drive_ff("FF_Pulses", group_name, entry_name)}
+        if group.get("FF_Pulses") is not None:
+            return {"FF_Pulses": qp.drive_ff("FF_Pulses", group_name)}
+        return None
 
     def _resolve_ramp_sections(self, jd: dict, group_name: str,
                                entry_name: str):
-        """Return {'Init_FF': [...] | None, 'Expt_FF': [...]} for ramp,
+        """Return {'Init_FF': [...] | None, 'FF_Expt': [...]} for ramp,
         or None when no group is selected.
 
         - If no entry is selected, only the Expt section is plotted: use the
-          group-level `Expt_FF` directly (always present in current schema's
+          group-level `FF_Expt` directly (always present in current schema's
           ramp_groups).
-        - If an entry is selected, hand off to `_build_resolve_ramp`, which
-          applies any `Expt_FF_delta` / `Expt_FF_abs` override and supplies
-          an Init array (or None) from `Init_FF_delta` / `Init_FF_abs`.
+        - If an entry is selected, hand off to the entry's `FF_Expt`. Init_FF is
+          no longer resolved (always None; the Init section falls back to FF_Pulses).
         """
         if not group_name or group_name == self.NONE_LABEL:
             return None
-        rg = jd.get("ramp_groups", {}).get(group_name)
+        rg = groups_of(jd, "ramp_groups").get(group_name)
         if rg is None:
             raise KeyError(f"Ramp group {group_name!r} not in ramp_groups.")
-        base = jd.get("base_params", {})
         if entry_name and entry_name != self.NONE_LABEL:
-            return _build_resolve_ramp(jd, entry_name)
-        # Group only: Expt_FF from the group, no Init.
-        expt_base = rg.get("Expt_FF")
+            return {"Init_FF": None, "FF_Expt": QubitParams(jd).get_ff("ramp_groups", group_name, entry_name, "FF_Expt")}  # Init_FF no longer resolved
+        # Group only: FF_Expt from the group, no Init.
+        expt_base = rg.get("FF_Expt")
         if expt_base is None:
             raise KeyError(
-                f"Ramp group {group_name!r} is missing Expt_FF; "
+                f"Ramp group {group_name!r} is missing FF_Expt; "
                 f"cannot plot a ramp Expt section without an entry."
             )
         return {"Init_FF": None,
-                "Expt_FF": list(_build_deref_base(expt_base, base))}
+                "FF_Expt": list(expt_base)}
 
     def _resolve_dynamics_section(self, jd: dict, group_name: str,
                                   entry_name: str):
-        """Return {'Dynamics_FF' | 'BS_FF': [...]} for the dynamics stage,
-        or None to skip.
+        """Return {'FF_Dynamics' | 'FF_BS': [...]} for the dynamics stage, or None to skip.
 
-        Current schema has no group-level dynamics FF; every dynamics entry
-        carries its own `Dynamics_FF_abs` or `BS_FF_abs`, so an entry MUST
-        be selected. Reuses `_build_resolve_dynamics`.
+        build_config no longer resolves dynamics_groups; reuses exptui_demo.freq_resolve's
+        raw-entry reader (entry MUST be selected).
         """
-        if not group_name or group_name == self.NONE_LABEL:
-            return None
-        if not entry_name or entry_name == self.NONE_LABEL:
-            return None
-        return _build_resolve_dynamics(jd, entry_name)
+        from triangle_lattice_quench.Run_Experiments.exptui_demo.freq_resolve import resolve_dynamics_section
+        return resolve_dynamics_section(jd, group_name, entry_name)
 
     def _resolve_sections(self) -> tuple[list[list[int]], list[str], list[str]]:
         """Build the section FF list across all four stages.
@@ -601,19 +580,19 @@ class FFFrequenciesTab(QWidget):
         sections: list[list[int]] = []
         labels: list[str] = []
 
-        # 1. Pulse: drive group's Pulse_FF (or readout group's Pulse_FF, if
+        # 1. Pulse: drive group's FF_Pulses (or readout group's FF_Pulses, if
         # the user picked a readout-namespace group for the drive stage; or
-        # if no drive group selected, fall back to readout's Pulse_FF so the
+        # if no drive group selected, fall back to readout's FF_Pulses so the
         # left edge of the trajectory is still anchored).
-        if drive_sec is not None and drive_sec.get("Pulse_FF") is not None:
-            pulse_ff = list(drive_sec["Pulse_FF"])
-        elif readout_sec.get("Pulse_FF") is not None:
-            pulse_ff = list(readout_sec["Pulse_FF"])
+        if drive_sec is not None and drive_sec.get("FF_Pulses") is not None:
+            pulse_ff = list(drive_sec["FF_Pulses"])
+        elif readout_sec.get("FF_Pulses") is not None:
+            pulse_ff = list(readout_sec["FF_Pulses"])
         else:
             pulse_ff = None
             warnings.append(
-                "No Pulse_FF available (no drive group selected and readout "
-                "group has no Pulse_FF); skipping Pulse section."
+                "No FF_Pulses available (no drive group selected and readout "
+                "group has no FF_Pulses); skipping Pulse section."
             )
         if pulse_ff is not None:
             sections.append(pulse_ff)
@@ -629,27 +608,27 @@ class FFFrequenciesTab(QWidget):
                 labels.append("Init")
             elif rp_entry and rp_entry != self.NONE_LABEL and pulse_ff is not None:
                 # When an entry IS selected but its Init_FF is null (e.g.
-                # "8Q_1854"), historical behaviour was to use Pulse_FF as
+                # "8Q_1854"), historical behaviour was to use FF_Pulses as
                 # the Init reference so the ramp's start point is visible.
                 sections.append(list(pulse_ff))
                 labels.append("Init")
-            sections.append(list(ramp_sec["Expt_FF"]))
+            sections.append(list(ramp_sec["FF_Expt"]))
             labels.append("Ramp")
 
         # 4. Dynamics.
         if dynamics_sec is not None:
-            dyn_ff = dynamics_sec.get("Dynamics_FF") or dynamics_sec.get("BS_FF")
+            dyn_ff = dynamics_sec.get("FF_Dynamics") or dynamics_sec.get("FF_BS")
             if dyn_ff is None:
                 warnings.append(
-                    f"Dynamics entry {dy_entry!r} has neither Dynamics_FF nor "
-                    f"BS_FF; skipping dynamics section."
+                    f"Dynamics entry {dy_entry!r} has neither FF_Dynamics nor "
+                    f"FF_BS; skipping dynamics section."
                 )
             else:
                 sections.append(list(dyn_ff))
                 labels.append("Dynamics")
 
         # 5. Readout — always last, anchors the right edge.
-        sections.append(list(readout_sec["Readout_FF"]))
+        sections.append(list(readout_sec["FF_Readouts"]))
         labels.append("Readout")
 
         return sections, labels, warnings
@@ -657,7 +636,7 @@ class FFFrequenciesTab(QWidget):
     def _compute_frequencies(self, sections):
         """Run each 8-element FF gain array through the flux-model.
 
-        Direct copy of `Flux_Files/plot_frequencies.py::ff_gains_to_freqs`;
+        Direct copy of `Device_Calibration/plot_frequencies.py::ff_gains_to_freqs`;
         inlined to avoid that module's import-time failure path.
         """
         import numpy as np
@@ -830,12 +809,12 @@ class FFFrequenciesTab(QWidget):
                 f"Select a {ns.replace('_groups','')} group before adding or editing entries."
             )
             return
-        groups = jd.setdefault(ns, {})
+        groups = groups_of(jd, ns, create=True)
         group = groups.get(gname)
         if not isinstance(group, dict):
             QMessageBox.warning(self, "Unknown group", f"{ns}/{gname} is not a dict.")
             return
-        entries = group.setdefault("entries", {})
+        entries = entries_of(ns, group)
 
         source_entry: Optional[dict] = None
         suggested_name = ""
@@ -875,18 +854,19 @@ class FFFrequenciesTab(QWidget):
             self._commit_edit_entry(ns, gname, original, new_name, new_entry)
         else:
             # new / duplicate -> insert (collision already caught in dialog).
-            entries[new_name] = new_entry
+            set_entries(ns, group, {**entries, new_name: new_entry})
             self._after_jd_mutation(select_group=gname, select_entry=new_name)
 
     def _commit_edit_entry(self, ns: str, gname: str, original: str,
                            new_name: str, new_entry: dict) -> None:
         """Replace the existing entry; on rename, optionally rewrite refs."""
-        entries = self._jd.get(ns, {}).get(gname, {}).get("entries", {})
+        group = groups_of(self._jd, ns).get(gname, {})
+        entries = entries_of(ns, group)
         if original != new_name:
             # Find string-leaf references to `original` anywhere in the JSON.
             ref_paths = self._find_string_refs(self._jd, original)
             # Filter out the self-reference at this entry's own key.
-            self_path = (ns, gname, "entries", original)
+            self_path = entry_path(ns, gname, original)
             ref_paths = [p for p in ref_paths if p[:len(self_path)] != self_path]
             if ref_paths:
                 msg_box = QMessageBox(self)
@@ -911,9 +891,9 @@ class FFFrequenciesTab(QWidget):
                     new_entries[new_name] = new_entry
                 else:
                     new_entries[k] = v
-            self._jd[ns][gname]["entries"] = new_entries
+            set_entries(ns, group, new_entries)
         else:
-            entries[new_name] = new_entry
+            set_entries(ns, group, {**entries, new_name: new_entry})
         self._after_jd_mutation(select_group=gname, select_entry=new_name)
 
     def _on_crud_group(self, ns: str, group_combo: QComboBox,
@@ -922,7 +902,7 @@ class FFFrequenciesTab(QWidget):
         jd = self.state.qubit_parameters_json
         if not isinstance(jd, dict):
             return
-        groups = jd.setdefault(ns, {})
+        groups = groups_of(jd, ns, create=True)
         gname = group_combo.currentText()
         if action == "new":
             new_name = self._prompt_group_name(
@@ -930,7 +910,7 @@ class FFFrequenciesTab(QWidget):
             )
             if not new_name:
                 return
-            groups[new_name] = {"entries": {}}
+            groups[new_name] = {"entries": {}} if ns == "drive_groups" else {}
             self._after_jd_mutation(select_group=new_name)
         elif action == "duplicate":
             if not gname or gname == self.NONE_LABEL:
@@ -960,15 +940,15 @@ class FFFrequenciesTab(QWidget):
             new_groups = {}
             for k, v in groups.items():
                 new_groups[new_name if k == gname else k] = v
-            jd[ns] = new_groups
+            groups.clear(); groups.update(new_groups)
             # Group names rarely appear as string leaves elsewhere, but if
             # they do (e.g. an experiment cfg pointing to a Readout_Point),
             # walk the JSON and offer to rewrite. Skip our own entry-name
             # subtree under the renamed group (those are entry names, not
             # group refs).
             ref_paths = self._find_string_refs(jd, gname)
-            old_prefix = (ns, new_name)  # the renamed group lives under new_name now
-            ref_paths = [p for p in ref_paths if tuple(p[:2]) != old_prefix]
+            old_prefix = group_path(ns, new_name)  # the renamed group lives under new_name now
+            ref_paths = [p for p in ref_paths if tuple(p[:len(old_prefix)]) != old_prefix]
             if ref_paths:
                 box = QMessageBox(self)
                 box.setWindowTitle("Rename references?")
@@ -984,9 +964,9 @@ class FFFrequenciesTab(QWidget):
                 if choice == QMessageBox.Cancel:
                     # Roll back the rename.
                     rb_groups = {}
-                    for k, v in jd[ns].items():
+                    for k, v in groups.items():
                         rb_groups[gname if k == new_name else k] = v
-                    jd[ns] = rb_groups
+                    groups.clear(); groups.update(rb_groups)
                     return
                 if choice == QMessageBox.Yes:
                     self._rewrite_string_refs(jd, ref_paths, new_name)
@@ -1114,7 +1094,7 @@ class FFFrequenciesTab(QWidget):
         """Bold combo items whose JSON subtree differs from snapshot.
 
         Each group combo's items map to (ns, group_name); entry combos map to
-        (ns, group_name, "entries", entry_name). Compared via _values_differ.
+        their JSON entry path (entry_path). Compared via _values_differ.
         """
         snap = self.state.qubit_parameters_json_snapshot or {}
         live = self.state.qubit_parameters_json or {}
@@ -1146,24 +1126,24 @@ class FFFrequenciesTab(QWidget):
 
         # Group combos.
         _style_combo(self.readout_group_combo,
-                     lambda t: ("readout_groups", t))
+                     lambda t: ("drive_groups", t))
         _style_combo(self.ramp_group_combo,
-                     lambda t: ("ramp_groups", t))
+                     lambda t: ("ff_groups", "ramp_groups", t))
         _style_combo(self.dynamics_group_combo,
-                     lambda t: ("dynamics_groups", t))
+                     lambda t: ("ff_groups", "dynamics_groups", t))
         _style_combo(self.drive_group_combo,
                      lambda t: ("drive_groups", t))
 
         # Entry combos: prefix from the current group selection.
         rg = self.readout_group_combo.currentText()
         _style_combo(self.readout_entry_combo,
-                     lambda t, _g=rg: ("readout_groups", _g, "entries", t) if _g and _g != self.NONE_LABEL else None)
+                     lambda t, _g=rg: ("drive_groups", _g, "entries", t) if _g and _g != self.NONE_LABEL else None)
         dg = self.drive_group_combo.currentText()
         _style_combo(self.drive_entry_combo,
                      lambda t, _g=dg: ("drive_groups", _g, "entries", t) if _g and _g not in (self.NONE_LABEL, self.DRIVE_FALLBACK_LABEL) else None)
         rp = self.ramp_group_combo.currentText()
         _style_combo(self.ramp_entry_combo,
-                     lambda t, _g=rp: ("ramp_groups", _g, "entries", t) if _g and _g != self.NONE_LABEL else None)
+                     lambda t, _g=rp: ("ff_groups", "ramp_groups", _g, t) if _g and _g != self.NONE_LABEL else None)
         dy = self.dynamics_group_combo.currentText()
         _style_combo(self.dynamics_entry_combo,
-                     lambda t, _g=dy: ("dynamics_groups", _g, "entries", t) if _g and _g != self.NONE_LABEL else None)
+                     lambda t, _g=dy: ("ff_groups", "dynamics_groups", _g, t) if _g and _g != self.NONE_LABEL else None)
