@@ -43,6 +43,8 @@ The central area hosts experiment and data tabs. Each tab (:class:`QDesqTab`) pr
     - **Experiment Info Bar**: Source file, estimated runtime, hardware requirements (Collapsible)
     - **Experiment Config Panel**: Experiment-specific configuration parameters
 
+.. image:: assets/Desq_central_tabs_layout.png
+
 For detailed implementation, see :mod:`DesqTab`.
 
 Configuration Panels
