@@ -11,6 +11,7 @@ import pytest
 
 from tests.regression import capture
 
+# 3a-i transitional: mUndrivenSingleShot moves in 3a-ii.
 CLIENT = "WorkingProjects.QM_Team.qubit_measurements.Client_modules"
 
 
@@ -19,15 +20,15 @@ def legacy():
     import importlib
 
     def get(module, name):
-        return getattr(importlib.import_module(f"{CLIENT}.{module}"), name)
+        return getattr(importlib.import_module(module), name)
 
     return {
-        "BaseConfig": get("Calib.initialize4Q", "BaseConfig"),
-        "MR": get("Experiments.mModifiedRamsey", "ModifiedRamseyProgram"),
-        "US": get("Experiments.mUndrivenSingleShot", "UndrivenSingleShotProgram"),
-        "SS": get("Experiments.mSingleShotProgramFFMUX", "SingleShotProgram"),
-        "ARV": get("Experiments.mActiveResetVerify", "ActiveResetVerifyProgram"),
-        "T1": get("Experiments.mT1FF", "T1Program"),
+        "BaseConfig": get("qicklab.hardware.board", "BaseConfig"),
+        "MR": get("qicklab.experiments.modified_ramsey", "ModifiedRamseyProgram"),
+        "US": get(f"{CLIENT}.Experiments.mUndrivenSingleShot", "UndrivenSingleShotProgram"),
+        "SS": get("qicklab.experiments.single_shot", "SingleShotProgram"),
+        "ARV": get("qicklab.experiments.active_reset_verify", "ActiveResetVerifyProgram"),
+        "T1": get("qicklab.experiments.t1", "T1Program"),
     }
 
 

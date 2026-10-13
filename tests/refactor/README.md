@@ -160,8 +160,8 @@ because the earlier binding is dead at runtime and would hide behind a passing A
 comparison.
 
 **Self-test** (`--self-test`, `test_checker_self_test`):
-- *identity*: legacy@0f0a51f against the working-tree copy of the same files. It must
-  pass: 541 AST + 541 bindings.
+- *identity*: legacy@0f0a51f against a copy of itself (the files leave the working tree
+  during 3a). It must pass: 541 AST + 541 bindings.
 - *constant*: `ramp_to(step=0.001→0.002)` in a temp copy must fail. It does, with an AST
   failure on `ramp_to` and binding failures in all 5 callers.
 - *shadow*: a single appended `from ...utils import fit_rabi_cosine` in mAmplitudeRabiFF

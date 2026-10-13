@@ -1,7 +1,7 @@
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mOptimizeReadoutandPulse_FF import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mActiveResetVerify import ActiveResetVerify
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
+from qicklab.experiments.readout_optimize import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
+from qicklab.experiments.active_reset_verify import ActiveResetVerify
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mUndrivenSingleShot import UndrivenSingleShot
 import numpy as np
 import matplotlib.pyplot as plt

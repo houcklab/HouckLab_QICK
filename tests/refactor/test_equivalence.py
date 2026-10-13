@@ -1,6 +1,8 @@
 """Phase-3a equivalence gate. The ledger runs always; the old-vs-new check once qicklab/ exists.
 
-Set REFACTOR_PHASE=3a-i or 3a-ii to require every entry of that phase to be in place.
+CURRENT_PHASE is the phase the tree is in (bumped by the 3a commits: 3a-i -> 3a-ii -> 3b);
+REFACTOR_PHASE overrides it. With a phase, every entry of that phase must be in place and
+entries of later phases are skipped; with REFACTOR_PHASE="" the check is phase-less.
 """
 
 import os
@@ -12,6 +14,7 @@ import pytest
 from tests.refactor import equivalence as eq
 from tests.refactor.symbol_map import FILE_PHASE, SYMBOLS
 
+CURRENT_PHASE = "3a-i"
 HAS_QICKLAB = (eq.REPO / "qicklab").is_dir()
 
 
@@ -34,14 +37,18 @@ def test_ledger_accounts_for_every_legacy_statement(legacy_root):
 
 @pytest.mark.skipif(not HAS_QICKLAB, reason="phase 3a not reached: qicklab/ does not exist yet")
 def test_qicklab_is_equivalent_to_legacy():
-    phase = os.environ.get("REFACTOR_PHASE")
+    phase = os.environ.get("REFACTOR_PHASE", CURRENT_PHASE)
     code, out = _run(*(["--phase", phase] if phase else []))
     assert code == 0, out
 
 
 @pytest.mark.slow
 def test_checker_self_test():
-    """Identity mapping passes; a changed constant and an import-only re-binding both fail."""
+    """Identity mapping passes; a changed constant and an import-only re-binding both fail.
+
+    Runs against a copy of the legacy worktree, so it stays valid while the legacy files
+    leave the working tree during 3a.
+    """
     code, out = _run("--self-test")
     assert code == 0, out
     assert "[identity]" in out and "SELF-TEST: PASS" in out

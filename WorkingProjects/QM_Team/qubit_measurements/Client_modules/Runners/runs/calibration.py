@@ -1,5 +1,5 @@
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 import numpy as np
 from .context import Context
 

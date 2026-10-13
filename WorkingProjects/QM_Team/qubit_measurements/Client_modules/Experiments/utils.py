@@ -1279,7 +1279,7 @@ if __name__ == "__main__":
     # the stitched dict by hand, which silently sidestepped the question of
     # whether chunked_acquire itself propagates metadata.
     import tempfile, h5py, os
-    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mZeroSpanParity import ZeroSpanParity
+    from qicklab.experiments.zero_span_parity import ZeroSpanParity
 
     real_stitched = chunked_acquire(_MetaFakeExp(n_per_chunk=10), n_chunks=3)
     # Sanity: the helper returns the metadata we expect to save.

@@ -22,7 +22,7 @@ from qick import get_version
 
 from tests.regression import capture as core
 
-DRIVER = "tests.regression.driver_legacy"  # post-refactor: tests.regression.driver_qicklab
+DRIVER = "tests.regression.driver_qicklab"  # pre-refactor: tests.regression.driver_legacy
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")
 META = "__meta__"
 IGNORED_KEYS = frozenset({"traceback"})
@@ -54,7 +54,7 @@ def _check_qick_version():
         )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")  # module, not session: the teardown below must run before other test modules
 def capture():
     if not UPDATE:
         _check_qick_version()
@@ -73,7 +73,11 @@ def capture():
                 merged[variant] = {**base, **result[variant]}
         text = json.dumps(merged, indent=2, sort_keys=True, allow_nan=True)
         GOLDEN.write_text(text + "\n", encoding="utf-8")
-    return result
+    yield result
+    # Undo every patch (savefig/show/pause/sleep no-ops, virtual clock, proxy
+    # fakes, experiment instrumentation) so later test modules in the same
+    # process see the real library again.
+    core._ACTIVE.undo()
 
 
 def _diff(expected, actual, path):

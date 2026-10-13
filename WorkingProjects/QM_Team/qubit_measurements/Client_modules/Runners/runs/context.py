@@ -16,8 +16,8 @@ from dataclasses import dataclass
 
 import pyvisa
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q import *
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.socProxy import *
+from qicklab.hardware.board import BaseConfig, FF_Qubits
+from qicklab.hardware.rfsoc import makeProxy
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
 
 

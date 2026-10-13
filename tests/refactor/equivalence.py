@@ -897,12 +897,21 @@ def self_test(legacy_root: Path, verbose: bool = False) -> int:
         report(findings, verbose, out=buf)
         return findings, buf.getvalue()
 
-    findings, text = run("working-tree", REPO)
+    # The legacy files leave the working tree during 3a, so the identity case and the
+    # perturbations start from a copy of the legacy worktree, not from the repo.
+    tmp = Path(tempfile.mkdtemp(prefix="qicklab_identity_"))
+    try:
+        shutil.copytree(
+            legacy_root / LEGACY_DIR, tmp / LEGACY_DIR, ignore=shutil.ignore_patterns("__pycache__")
+        )
+        findings, text = run("copy", tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     fails = [f for f in findings if f.status == "FAIL"]
     n_ast = sum(f.check == "ast" and f.status == "OK" for f in findings)
     n_bind = sum(f.check == "binding" and f.status == "OK" for f in findings)
     print(
-        f"[identity] legacy@{LEGACY_COMMIT} vs working tree: {len(fails)} failures, {n_ast} AST ok, {n_bind} bindings ok"
+        f"[identity] legacy@{LEGACY_COMMIT} vs a copy of itself: {len(fails)} failures, {n_ast} AST ok, {n_bind} bindings ok"
     )
     if fails:
         print(text)
@@ -922,7 +931,7 @@ def self_test(legacy_root: Path, verbose: bool = False) -> int:
     for name, (rel, old, new) in PERTURBATIONS.items():
         tmp = Path(tempfile.mkdtemp(prefix=f"qicklab_perturb_{name}_"))
         try:
-            _perturbed_copy(REPO, tmp, rel, old, new)
+            _perturbed_copy(legacy_root, tmp, rel, old, new)
             findings, text = run(f"perturbed-{name}", tmp)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

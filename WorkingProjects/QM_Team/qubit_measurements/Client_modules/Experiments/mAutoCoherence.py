@@ -50,12 +50,12 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from scipy.signal import find_peaks, savgol_filter
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSpecSliceFF import QubitSpecSliceFF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAmplitudeRabiFF import AmplitudeRabiFF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF import T1FF
+from qicklab.experiments.qubit_spec import QubitSpecSliceFF
+from qicklab.experiments.rabi import AmplitudeRabiFF
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
+from qicklab.experiments.t1 import T1FF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2R import T2R
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2EFF import T2EMUX
+from qicklab.experiments.t2_echo import T2EMUX
 
 # ---------------------------------------------------------------------------
 # Hardware clock quantisation constant (microseconds per QICK cycle × factor).

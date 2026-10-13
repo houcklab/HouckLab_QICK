@@ -14,9 +14,9 @@ import numpy as np
 from scipy import optimize
 from qick import *
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from qicklab.core.experiment import ExperimentClass
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import ramp_to
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.shot_buffers import raw_shot_buffers
+from qicklab.core.acquisition import raw_shot_buffers
 
 
 class UndrivenSingleShotProgram(AveragerProgram):

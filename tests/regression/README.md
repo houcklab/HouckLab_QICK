@@ -323,13 +323,12 @@ golden captured on a different architecture will show the same 15 labels.
 
 ## After the refactor
 
-Write `driver_qicklab.py` exposing `capture_all(labels=None)` with the same
-output shape, built on `capture.install_mocks(<new ExperimentClass>,
-make_proxy_targets=[...], pyvisa_targets=[...])` and `capture.begin_run` /
-`end_run`, reading the same frozen fixture with `RUNS_PACKAGE` pointing at the
-new runs package, then point `DRIVER` in `test_golden.py` at it. The variant
-loop lives in `capture.capture_variants`, so the driver does not handle boards.
-Run labels must stay the legacy flag names so the golden still keys correctly.
+`driver_qicklab.py` (now the `DRIVER` in `test_golden.py`) is `driver_legacy.py`
+with only the package constants switched (`RUNS_PACKAGE = "qicklab.runs"`, the
+`ExperimentClass` from `qicklab.core.experiment`, `make_proxy` and its alias
+`makeProxy` in `qicklab.hardware.rfsoc`), reading the same frozen fixture with the
+same legacy run labels; until phase 3a-ii it also installs the virtual clock in the
+modules still under `WorkingProjects.`.
 Differences that are intentional must be justified one by one before the
 golden is regenerated.
 

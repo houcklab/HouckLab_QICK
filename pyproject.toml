@@ -36,6 +36,21 @@ select = ["E", "F", "W", "I", "UP", "B"]
 # B905: zip(strict=) would change behaviour on length mismatch. B008: call-in-default is used deliberately.
 ignore = ["E501", "E741", "B905", "B008"]
 
+# Transitional (phases 3a-i..3a-iii: bodies move verbatim). Every entry is a legacy body-level
+# finding that phase 3b removes with the code it sits in; the runner's star import goes in phase 5.
+[tool.ruff.lint.per-file-ignores]
+"runners/CSTQ03_BFC.py" = ["F403", "F405"]
+"qicklab/analysis/readout.py" = ["F841"]
+"qicklab/experiments/chi_shift.py" = ["F841"]
+"qicklab/experiments/transmission.py" = ["F841"]
+"qicklab/experiments/zero_span_parity.py" = ["F841"]
+"qicklab/experiments/readout_optimize.py" = ["F821"]   # SingleShotProgramFF_2StatesMUX in the dead *_Higher classes
+"qicklab/hardware/attenuator.py" = ["F821", "F841"]     # legacy NameError `result` (known bug, own fix commit)
+"qicklab/hardware/yoko.py" = ["F841"]
+"qicklab/runs/zero_span.py" = ["F841"]
+"qicklab/twpa/flux_sweep.py" = ["F541"]
+"qicklab/twpa/set_pump.py" = ["F541"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["qicklab", "devices"]
 

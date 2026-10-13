@@ -2,7 +2,7 @@ from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from qicklab.core.experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time

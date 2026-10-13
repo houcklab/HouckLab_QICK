@@ -575,8 +575,8 @@ SYMBOLS = [
     Entry(L + '.Experiments.validate_ZeroSpanParity', '<main>', 'tests.test_zero_span_validation', '<main>', 'main_to_test', '3a-i', 'inline self-test L442-590 (6 blocks, ~40 s)'),
     # --- Experiments.verify_ModifiedRamsey_timing  [3a-i] ---
     Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '<module>', 'tests.hardware.verify_modified_ramsey_timing', '<module>', 'moved', '3a-i', 'module header: docstring + imports (imports rewritten explicit, no star)'),
-    Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '_REPO_ROOT', 'tests.hardware.verify_modified_ramsey_timing', '_REPO_ROOT', 'moved', '3a-i', ''),
-    Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '<if:_REPO_ROOT not in sys.path>', 'tests.hardware.verify_modified_ramsey_timing', '<if:_REPO_ROOT not in sys.path>', 'moved', '3a-i', ''),
+    Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '_REPO_ROOT', 'tests.hardware.verify_modified_ramsey_timing', '_REPO_ROOT', 'main_to_test', '3a-i', 'sys.path hack of the HIL script: parents depth 5 -> 2 for tests/hardware/ (HANDOFF gotcha; same treatment as the offline test\'s _REPO_ROOT)'),
+    Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '<if:_REPO_ROOT not in sys.path>', 'tests.hardware.verify_modified_ramsey_timing', '<if:_REPO_ROOT not in sys.path>', 'main_to_test', '3a-i', 'sys.path hack, depends on _REPO_ROOT above'),
     Entry(L + '.Experiments.verify_ModifiedRamsey_timing', 'PASS,FAIL', 'tests.hardware.verify_modified_ramsey_timing', 'PASS,FAIL', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.verify_ModifiedRamsey_timing', 'check', 'tests.hardware.verify_modified_ramsey_timing', 'check', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.verify_ModifiedRamsey_timing', 'base_cfg', 'tests.hardware.verify_modified_ramsey_timing', 'base_cfg', 'moved', '3a-i', ''),

@@ -1,9 +1,9 @@
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF import T1FF
+from qicklab.experiments.t1 import T1FF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2R import T2R
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2EFF import T2EMUX
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1_SS import T1_SS
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+from qicklab.experiments.t2_echo import T2EMUX
+from qicklab.experiments.t1_single_shot import T1_SS
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAutoCoherence import run_auto_coherence as _run_auto_coherence, AUTO_COHERENCE_PARAMS, find_sweet_spot
 import numpy as np
 import matplotlib.pyplot as plt

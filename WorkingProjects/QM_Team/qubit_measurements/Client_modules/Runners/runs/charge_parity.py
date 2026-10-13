@@ -1,7 +1,7 @@
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mChargeDispersionQuasiCW import ChargeDispersionQuasiCW
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mChargeDispersion import ChargeDispersion
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mModifiedRamsey import (
+from qicklab.experiments.charge_dispersion import ChargeDispersionQuasiCW
+from qicklab.experiments.charge_dispersion import ChargeDispersion
+from qicklab.experiments.modified_ramsey import (
     ModifiedRamsey,
     build_control_variants,
 )
@@ -10,9 +10,9 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analy
     calibrate_readout_from_labeled_shots,
     compare_parity_controls,
 )
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSpecSliceFF import QubitSpecSliceFF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mTransmissionFF import CavitySpecFF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+from qicklab.experiments.qubit_spec import QubitSpecSliceFF
+from qicklab.experiments.transmission import CavitySpecFF
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 import numpy as np
 import matplotlib.pyplot as plt
 import os
