@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after phase 3a-iii).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, during phase 3b: areas 1,2,3,7 landed; runs, experiments basic/advanced in flight).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -55,6 +55,21 @@ Orchestrate with dynamic workflows dispatching Opus 5.5 agents; the orchestrator
     equivalence strict + phase-less PASS (505 AST / 505 bindings), pytest 170 passed, golden byte-identical.
 11. `bd2d85ec` style: 3a-iii — `ruff format` + isort only (listed in `.git-blame-ignore-revs`); equivalence
     PASS, pytest 170 passed, golden byte-identical.
+
+12. `a3924c28` refactor(hardware) — area 1 (+ the equivalence gate enters 3b: structural only, pending deletions allowed)
+13. `62e3a660` refactor(core) — area 2 (pure `data_paths()`, dead go/load_data, comments)
+14. `3b405ba4` test(refactor): 3b gate follows `final_module`; synthhd import allowlist
+15. `98f70b8c` refactor(analysis) — area 3 (min_q_range_phase, fit_exp_decay, fit_rabi_cosine, spec Lorentzians,
+    hist_process(normalize=...) merge, classify_thermal_tail, dead code, verified identical-result improvements)
+16. `791d395c` refactor(twpa) — area 7 (hardware/pnax.py, hardware/synthhd.py, yoko ramp_current, twpa/common.py;
+    all five scripts kept)
+Each 3b area commit: full pytest 170 passed on an isolated snapshot worktree, golden byte-identical,
+adversarial old-vs-new review (reject → fix → approve where needed). Workflow script per area:
+`~/.claude/projects/.../workflows/scripts/qicklab-3b-area-*.js` (cleanup agent, reviewer, fix loop, args =
+area brief). User decisions 2026-10-13: functionality-preserving improvements are applied inside 3b
+commits with a proof of identical results (reviewer re-verifies); behaviour-changing improvements and the
+known bugs become a separate phase of individual commits after 3b (user: "make these improvements as you
+see fit"), preceded by a research-effectiveness review workflow (one Opus agent per measurement domain).
 
 The repo now IS the qicklab package: `qicklab/`, `devices/` (empty init), `runners/CSTQ03_BFC.py` (legacy
 runner, star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code runs on the original
