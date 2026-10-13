@@ -7,9 +7,6 @@ from scipy import optimize, signal
 from scipy.ndimage import uniform_filter1d
 
 
-# =========================================================================
-# 2. Slow-drift removal
-# =========================================================================
 def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None, min_timescale_ratio=20.0):
     """
     Conservative slow-drift estimate and subtraction.
@@ -83,9 +80,6 @@ def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None, min_tim
     }
 
 
-# =========================================================================
-# 3. Two-state continuous-emission HMM
-# =========================================================================
 def transition_matrix_2state(gamma01, gamma10, dt_s):
     """
     Exact expm(Q*dt) for the 2-state generator
@@ -161,9 +155,6 @@ def simulate_telegraph_trace(
     return {"states": states, "v": v, "t_s": t_s}
 
 
-# =========================================================================
-# 4. HMM-independent rate estimators: autocorrelation and Welch PSD
-# =========================================================================
 def autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5):
     """
     Switching rate from the exponential decay of the analog autocorrelation.

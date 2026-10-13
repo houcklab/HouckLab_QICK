@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import RAveragerProgram
-from scipy.optimize import curve_fit
 
 from qicklab.analysis.iq import project_iq_signal
+from qicklab.analysis.spectroscopy import fit_lorentzian_near_peak
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -180,65 +180,6 @@ class QubitSpecSliceFF(ExperimentClass):
         return data
 
     def display(self, data=None, plotDisp=False, figNum=1, min_sep=0.1, **kwargs):
-        def _lorentzian(x, y0, A, x0, gamma):
-            return y0 + A * (gamma**2 / ((x - x0) ** 2 + gamma**2))
-
-        def _fit_lorentzian_near_peak(x, y, peak_x, fit_window_mhz):
-            x = np.asarray(x, dtype=float)
-            y = np.asarray(y, dtype=float)
-
-            mask = np.abs(x - peak_x) <= fit_window_mhz
-            if np.sum(mask) < 6:
-                return None
-
-            xf = x[mask]
-            yf = y[mask]
-
-            y0_guess = np.median(yf)
-            A_guess = np.max(yf) - y0_guess
-            gamma_guess = max((np.max(xf) - np.min(xf)) / 8, 1e-6)
-
-            p0 = [y0_guess, A_guess, peak_x, gamma_guess]
-
-            bounds = (
-                [-np.inf, 0, np.min(xf), 1e-9],
-                [np.inf, np.inf, np.max(xf), np.max(xf) - np.min(xf)],
-            )
-
-            try:
-                popt, pcov = curve_fit(_lorentzian, xf, yf, p0=p0, bounds=bounds, maxfev=50000)
-
-                yfit = _lorentzian(xf, *popt)
-                ss_res = np.sum((yf - yfit) ** 2)
-                ss_tot = np.sum((yf - np.mean(yf)) ** 2)
-                r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
-
-                y0, A, x0, gamma = popt
-
-                # reject bad/unphysical fits
-                if not np.isfinite(r2) or r2 < 0.60:
-                    return None
-                if gamma <= 0 or gamma >= (np.max(xf) - np.min(xf)):
-                    return None
-                if x0 < np.min(xf) or x0 > np.max(xf):
-                    return None
-
-                return {
-                    "popt": popt,
-                    "pcov": pcov,
-                    "x_fit": xf,
-                    "y_fit": yfit,
-                    "r2": r2,
-                    "center": x0,
-                    "gamma": gamma,
-                    "fwhm": 2 * gamma,
-                    "amplitude": A,
-                    "offset": y0,
-                }
-
-            except Exception:
-                return None
-
         if data is None:
             data = self.data
 
@@ -300,7 +241,7 @@ class QubitSpecSliceFF(ExperimentClass):
         # -----------------------------
         lorentz_fits = []
         for idx in selected_peaks:
-            fit = _fit_lorentzian_near_peak(
+            fit = fit_lorentzian_near_peak(
                 x=x_pts, y=avgamp0, peak_x=x_pts[idx], fit_window_mhz=fit_window_mhz
             )
             if fit is not None:
@@ -398,16 +339,6 @@ class QubitSpecSliceFF(ExperimentClass):
             plt.pause(0.1)
         fig.clf(True)
         plt.close(fig)
-
-    def get_amplitude_slice(self, data=None):
-        if data is None:
-            data = self.data
-        x_pts = data["data"]["x_pts"]
-        avgi = data["data"]["avgi"][0][0]
-        avgq = data["data"]["avgq"][0][0]
-        sig = avgi + 1j * avgq
-        avgamp0 = np.abs(sig)
-        return x_pts, avgamp0, avgi, avgq
 
     def save_data(self, data=None):
         print(f"Saving {self.fname}")

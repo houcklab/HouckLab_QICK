@@ -65,7 +65,9 @@ Evidence:
 | single shot (`hist_process`) | line through the g and e medians | see section 4 |
 
 Principal axis and min-Q-range aim at the same thing with different estimators and can differ
-slightly; the refactor keeps each caller's method and grid size so results do not change.
+slightly; the refactor keeps each caller's method and grid size so results do not change. The
+min-Q-range search is `qicklab.analysis.iq.min_q_range_phase(i, q, n)`; each caller passes its own
+`n` (500 for `AmplitudeRabiFF_N`, 200 for `T1FF` and `T2EMUX`).
 
 ## 4. Single-shot readout: angle, threshold, "fidelity"
 
@@ -87,7 +89,8 @@ F_assign = 72.45%. The display clips the value to at most 1.0.
 Two variants exist and give different numbers: the QM-team version (pooled normalisation as
 above) and the version relocated from the Inductive_Coupler project, used by `readout_optimize`
 and `qubit_optimize` (per-class signed normalisation, `print_fidelities=`). The refactor keeps
-both (`normalize="pooled" | "per_class"`).
+both as one function, `hist_process(..., normalize="pooled" | "per_class", print_fidelities=False)`;
+`single_shot` uses the default `"pooled"`, `readout_optimize` passes `"per_class"`.
 
 Readout quality gates used by the parity analysis: analog SNR < 1 warns; contrast < 0.3 warns;
 fewer than 500 labelled shots per class warns.
@@ -144,7 +147,7 @@ used. Consequences:
 ## 7. Thermal-tail classifier (single shot without a pi pulse)
 
 With `number_of_pulses` = 0 `single_shot` acquires only undriven shots and estimates the excited
-(thermal) population:
+(thermal) population (`qicklab.analysis.readout.classify_thermal_tail`):
 
 1. robust centre and covariance of the main blob with MinCovDet (support fraction 0.75,
    `random_state` 0);

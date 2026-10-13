@@ -6,7 +6,7 @@ import numpy as np
 from qick import AveragerProgram, RAveragerProgram, helpers  # noqa: F401
 from tqdm.notebook import tqdm  # noqa: F401
 
-from qicklab.analysis.readout import hist_process
+from qicklab.analysis.readout import classify_thermal_tail, hist_process
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -410,112 +410,16 @@ class SingleShotProgramFFMUX(ExperimentClass):
             for i, read_index in enumerate(read_indices):
                 i_th = np.asarray(shots_i[i][0])
                 q_th = np.asarray(shots_q[i][0])
-                iq = np.column_stack([i_th, q_th])
-
-                try:
-                    from sklearn.covariance import MinCovDet
-
-                    # Robust fit to dominant/main blob
-                    mcd = MinCovDet(support_fraction=0.75, random_state=0).fit(iq)
-                    center_g = mcd.location_
-                    cov_g = mcd.covariance_
-                    inv_cov_g = np.linalg.pinv(cov_g)
-
-                    # Mahalanobis distance from main blob
-                    diff = iq - center_g
-                    md2 = np.einsum("ij,jk,ik->i", diff, inv_cov_g, diff)
-
-                    # Find outlier / protrusion candidates
-                    # 95% chi-square threshold for 2D is ~5.99; use 6-9 depending on overlap
-                    tail_md2_threshold = self.cfg.get("thermal_tail_md2_threshold", 6.0)
-                    tail_candidates = md2 > tail_md2_threshold
-
-                    # Direction of protrusion: use mean of farthest points
-                    n_tail_seed = max(10, int(0.05 * len(iq)))
-                    far_idx = np.argsort(md2)[-n_tail_seed:]
-                    center_e_seed = np.mean(iq[far_idx], axis=0)
-
-                    axis = center_e_seed - center_g
-                    axis_norm = np.linalg.norm(axis)
-
-                    if axis_norm < 1e-12:
-                        raise RuntimeError("Could not determine thermal protrusion axis.")
-
-                    axis = axis / axis_norm
-
-                    # Project all points along protrusion axis
-                    proj = diff @ axis
-
-                    # Robust width of main blob along that axis
-                    proj_main = proj[~tail_candidates]
-                    if len(proj_main) < 10:
-                        proj_main = proj
-
-                    med_proj = np.median(proj_main)
-                    mad_proj = np.median(np.abs(proj_main - med_proj))
-                    sigma_proj = 1.4826 * mad_proj
-
-                    if sigma_proj <= 1e-12:
-                        sigma_proj = np.std(proj_main)
-
-                    # Classify excited-like population as one-sided positive protrusion
-                    # Use 2.0-3.0 depending on desired aggressiveness
-                    tail_sigma_threshold = self.cfg.get("thermal_tail_sigma_threshold", 2.5)
-                    threshold_proj = med_proj + tail_sigma_threshold * sigma_proj
-
-                    binary_states = (proj > threshold_proj).astype(int)
-
-                    # Soft-ish population estimate from tail probability
-                    # This is conservative: only counts points sticking out of main blob
-                    thermal_population = float(np.mean(binary_states))
-
-                    i_g = i_th[binary_states == 0]
-                    q_g = q_th[binary_states == 0]
-                    i_e = i_th[binary_states == 1]
-                    q_e = q_th[binary_states == 1]
-
-                    center_e = np.array(
-                        [
-                            np.mean(i_e) if len(i_e) > 0 else np.nan,
-                            np.mean(q_e) if len(q_e) > 0 else np.nan,
-                        ]
-                    )
-
-                    angle = -np.arctan2(axis[1], axis[0])
-                    threshold = (
-                        center_g[0] * np.cos(angle) - center_g[1] * np.sin(angle) + threshold_proj
-                    )
-
-                    fid = np.nan
-
-                    print(
-                        f"[Thermal protrusion] Read {read_index}: "
-                        f"P_excited_tail={thermal_population:.5f}, "
-                        f"N_excited={np.sum(binary_states)}, "
-                        f"threshold_proj={threshold_proj:.4f}, "
-                        f"sigma_proj={sigma_proj:.4f}, "
-                        f"angle={angle:.4f}"
-                    )
-
-                except Exception as err:
-                    print(f"[SingleShot thermal mode] protrusion fit failed: {err}")
-
-                    binary_states = np.zeros(len(i_th), dtype=int)
-                    thermal_population = np.nan
-                    angle = 0.0
-                    threshold = np.nan
-                    fid = np.nan
-
-                    i_g = i_th
-                    q_g = q_th
-                    i_e = np.array([])
-                    q_e = np.array([])
-
-                    center_g = np.array([np.nan, np.nan])
-                    center_e = np.array([np.nan, np.nan])
-                    md2 = np.full(len(i_th), np.nan)
-                    proj = np.full(len(i_th), np.nan)
-                    threshold_proj = np.nan
+                tail = classify_thermal_tail(i_th, q_th, self.cfg, read_index)
+                i_g, q_g, i_e, q_e = tail["i_g"], tail["q_g"], tail["i_e"], tail["q_e"]
+                binary_states, thermal_population = tail["labels"], tail["population"]
+                center_g, center_e = tail["center_g"], tail["center_e"]
+                md2, proj, threshold_proj = (
+                    tail["md2"],
+                    tail["projection"],
+                    tail["projection_threshold"],
+                )
+                angle, threshold, fid = tail["angle"], tail["threshold"], tail["fid"]
 
                 self.data["data"]["i_g" + str(read_index)] = i_g
                 self.data["data"]["q_g" + str(read_index)] = q_g

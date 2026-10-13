@@ -1,31 +1,6 @@
-"""
-Offline analysis for the zero-span charge-parity measurement.
-
-Sequential pipeline (orchestrated end-to-end by analyze_parity_run):
-
-  classify_parity_trace      Project (I,Q) -> parity bits via separator or KMeans
-  sliding_window_switch_rate Switch rate vs time
-  detect_bursts              Find anomalous high-rate intervals
-  dwell_time_statistics      Per-state run-length statistics + exponential fits
-  analyze_parity_run         Load saved .h5, run all of the above, save plots/sidecars
-
-Validation primitives (consumed by validate_ZeroSpanParity.py, NOT part of the
-sequential pipeline above):
-
-  verify_modulation          Confirm a recovered trace carries an injected square wave
-  contrast_from_sweeps       |Z_on - Z_off|(f), best probe freq, robust contrast SNR
-  projected_histogram_snr    Two-Gaussian bimodality test on projected V(t)
-  bin_size_sweep             Reprocess raw IQ at several bin sizes
-  threshold_stability        Dwell-tau stability across classification thresholds
-
-Most functions are pure (arrays in, dicts out); the exceptions are
-analyze_parity_run (file + plot I/O) and the classifiers, which import sklearn
-(KMeans / GaussianMixture) on the kmeans / bimodality paths.
-
-Tests live under the `if __name__ == "__main__":` block at the end of this file
-and are run with:
-    python -m WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity
-"""
+"""Offline zero-span parity analysis: classify_parity_trace, sliding_window_switch_rate,
+detect_bursts and the analyze_parity_run pipeline (validation primitives: zero_span_checks).
+Method: docs/experiments/zero_span_parity.md#analysis. Tests: tests/test_zero_span_analysis.py."""
 
 import json
 import os
@@ -34,7 +9,7 @@ import h5py
 import matplotlib
 import numpy as np
 
-matplotlib.use("Agg")  # non-interactive backend safe in headless runs
+matplotlib.use("Agg")  # B1: stays until its own fix commit (design.md)
 import matplotlib.pyplot as plt
 
 from qicklab.analysis.dwell import _gap_segment_edges, dwell_time_statistics
@@ -100,16 +75,9 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
         centers = km.cluster_centers_  # shape (2, 2)
 
-        # Remap so label 0 = cluster with the lower projection on the e-g
-        # (inter-centroid) axis, per spec §3.1. Ordering by raw I-coordinate
-        # (the previous rule) is meaningless when the g/e separation lies along
-        # Q (or any non-I direction). Projecting the centroids onto the
-        # inter-centroid axis is the right idea, but the raw axis sign depends
-        # on KMeans' arbitrary centroid order (proj[1]-proj[0] = |axis|^2 > 0
-        # always, so argmin would just echo that order). Canonicalize the axis
-        # sign — point it along its dominant +component (I-dominant -> +I,
-        # Q-dominant -> +Q) — so the assignment is deterministic and
-        # orientation-independent.
+        # Label 0 = lower projection on the inter-centroid axis. The axis sign is canonicalised to
+        # its dominant +component: KMeans' centroid order is arbitrary, so the raw sign would
+        # just echo it (docs/experiments/zero_span_parity.md#analysis).
         axis = centers[1] - centers[0]
         if abs(axis[0]) >= abs(axis[1]):
             if axis[0] < 0:
@@ -183,11 +151,9 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap
     # assign that switch event the timestamp t[i+1].
     t_event = t[1:]
 
-    # Build windows
     t_start = t[0]
     t_end = t[-1]
     if t_end - t_start < window_us:
-        # Single window covering the whole trace
         starts = np.array([t_start])
     else:
         starts = np.arange(t_start, t_end - window_us + step_us, step_us)
@@ -284,7 +250,6 @@ def detect_bursts(
     if not np.any(above):
         return []
 
-    # Find contiguous runs of True
     edges = np.diff(above.astype(int))
     starts = list(np.where(edges == 1)[0] + 1)
     ends = list(np.where(edges == -1)[0] + 1)
@@ -293,7 +258,6 @@ def detect_bursts(
     if above[-1]:
         ends = ends + [above.size]
 
-    # Window stride for duration calculation
     if centers.size >= 2:
         stride = float(np.median(np.diff(centers)))
     else:
@@ -314,9 +278,7 @@ def detect_bursts(
                 "duration_us": duration,
                 "peak_rate_Hz": float(np.max(seg)),
                 "mean_rate_Hz": float(np.mean(seg)),
-                "integrated_excess_switches": float(
-                    np.sum((seg - baseline_rate)) * (stride * 1e-6)
-                ),
+                "integrated_excess_switches": float(np.sum(seg - baseline_rate) * (stride * 1e-6)),
                 "baseline_rate_Hz": baseline_rate,
                 "threshold_Hz": threshold,
             }
@@ -584,7 +546,6 @@ def analyze_parity_run(
         "classifier_method": cls["method"],
     }
 
-    # Write sidecars
     with open(os.path.join(out_dir, base + "_analysis.json"), "w") as f:
         json.dump(
             {

@@ -7,11 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm.notebook import tqdm  # noqa: F401
 
-# hist_analysis_opt is the relocated Inductive_Coupler hist_analysis (its hist_process
-# takes print_fidelities= and uses a different contrast calc than QM_Team's own
-# Helpers/hist_analysis, so it is kept as a separate module to preserve behavior).
-from qicklab.analysis.readout import MixedShots
-from qicklab.analysis.readout import hist_process_per_class as hist_process
+from qicklab.analysis.readout import MixedShots, hist_process
 from qicklab.core.experiment import ExperimentClass
 from qicklab.experiments.single_shot import SingleShotProgram
 
@@ -144,6 +140,7 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
                     ran=None,
                     figNum=10,
                     print_fidelities=False,
+                    normalize="per_class",
                 )
                 print(
                     "Fidelity: ",
@@ -281,7 +278,11 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
 
         ### use the helper histogram to find the fidelity and such
         fid, threshold, angle = hist_process(
-            data=[i_g, q_g, i_e, q_e], plot=False, ran=None, print_fidelities=False
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            print_fidelities=False,
+            normalize="per_class",
         )
 
         self.fid = fid
@@ -414,7 +415,12 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
                     plt.close(10)
 
                 fid, threshold, angle = hist_process(
-                    data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10
+                    data=[i_g, q_g, i_e, q_e],
+                    plot=False,
+                    ran=None,
+                    figNum=10,
+                    normalize="per_class",
+                    print_fidelities=True,
                 )
 
                 # plt.show(block=False)
@@ -547,7 +553,13 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
         q_e = shots_qe[0][0]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -682,7 +694,12 @@ class ReadOpt_wSingleShotFF_Higher(ExperimentClass):
                     plt.close(10)
 
                 fid, threshold, angle = hist_process(
-                    data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10
+                    data=[i_g, q_g, i_e, q_e],
+                    plot=False,
+                    ran=None,
+                    figNum=10,
+                    normalize="per_class",
+                    print_fidelities=True,
                 )
 
                 # plt.show(block=False)
@@ -815,7 +832,13 @@ class ReadOpt_wSingleShotFF_Higher(ExperimentClass):
         q_e = shots_qe[0][0]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -839,7 +862,13 @@ class ReadOpt_wSingleShotFF_Higher(ExperimentClass):
         q_e = data["Q1"]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -974,7 +1003,12 @@ class ReadOpt_wSingleShotFF_HigherMUXOLD(ExperimentClass):
                     plt.close(10)
 
                 fid, threshold, angle = hist_process(
-                    data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10
+                    data=[i_g, q_g, i_e, q_e],
+                    plot=False,
+                    ran=None,
+                    figNum=10,
+                    normalize="per_class",
+                    print_fidelities=True,
                 )
 
                 # plt.show(block=False)
@@ -1099,7 +1133,13 @@ class ReadOpt_wSingleShotFF_HigherMUXOLD(ExperimentClass):
         q_e = shots_qe[0][0]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -1123,7 +1163,13 @@ class ReadOpt_wSingleShotFF_HigherMUXOLD(ExperimentClass):
         q_e = data["Q1"]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -1273,7 +1319,12 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
                     plt.close(10)
 
                 fid, threshold, angle = hist_process(
-                    data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10
+                    data=[i_g, q_g, i_e, q_e],
+                    plot=False,
+                    ran=None,
+                    figNum=10,
+                    normalize="per_class",
+                    print_fidelities=True,
                 )
 
                 # plt.show(block=False)
@@ -1398,7 +1449,13 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
         q_e = shots_qe[0][0]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold
@@ -1422,7 +1479,13 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
         q_e = data["Q1"]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+        fid, threshold, angle = hist_process(
+            data=[i_g, q_g, i_e, q_e],
+            plot=False,
+            ran=None,
+            normalize="per_class",
+            print_fidelities=True,
+        )
 
         self.fid = fid
         self.threshold = threshold

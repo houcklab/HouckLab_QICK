@@ -5,18 +5,82 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, savgol_filter
 
 from qicklab.analysis.fitting import fit_lorentzian_feature, lorentzian_peak
 from qicklab.analysis.iq import project_iq_signal
 
 
+def spec_lorentzian(x, y0, A, x0, gamma):
+    """Peak Lorentzian (HWHM gamma) as QubitSpecSliceFF evaluates it. Algebraically equal to
+    fitting.lorentzian_peak but rounds differently, so the two are kept apart."""
+    return y0 + A * (gamma**2 / ((x - x0) ** 2 + gamma**2))
+
+
+def fit_lorentzian_near_peak(x, y, peak_x, fit_window_mhz):
+    """Fit spec_lorentzian within +/- fit_window_mhz of peak_x; None unless the fit passes the
+    acceptance gates (docs/experiments/two_tone_spec.md: R^2, gamma, centre, >= 6 points)."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    mask = np.abs(x - peak_x) <= fit_window_mhz
+    if np.sum(mask) < 6:
+        return None
+
+    xf = x[mask]
+    yf = y[mask]
+
+    y0_guess = np.median(yf)
+    A_guess = np.max(yf) - y0_guess
+    gamma_guess = max((np.max(xf) - np.min(xf)) / 8, 1e-6)
+
+    p0 = [y0_guess, A_guess, peak_x, gamma_guess]
+
+    bounds = (
+        [-np.inf, 0, np.min(xf), 1e-9],
+        [np.inf, np.inf, np.max(xf), np.max(xf) - np.min(xf)],
+    )
+
+    try:
+        popt, pcov = curve_fit(spec_lorentzian, xf, yf, p0=p0, bounds=bounds, maxfev=50000)
+
+        yfit = spec_lorentzian(xf, *popt)
+        ss_res = np.sum((yf - yfit) ** 2)
+        ss_tot = np.sum((yf - np.mean(yf)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+        y0, A, x0, gamma = popt
+
+        if not np.isfinite(r2) or r2 < 0.60:
+            return None
+        if gamma <= 0 or gamma >= (np.max(xf) - np.min(xf)):
+            return None
+        if x0 < np.min(xf) or x0 > np.max(xf):
+            return None
+
+        return {
+            "popt": popt,
+            "pcov": pcov,
+            "x_fit": xf,
+            "y_fit": yfit,
+            "r2": r2,
+            "center": x0,
+            "gamma": gamma,
+            "fwhm": 2 * gamma,
+            "amplitude": A,
+            "offset": y0,
+        }
+
+    except Exception:
+        return None
+
+
 def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
     x_pts = np.asarray(data_spec["data"]["x_pts"], dtype=float)
     avgi = np.asarray(data_spec["data"]["avgi"][0][0], dtype=float)
     avgq = np.asarray(data_spec["data"]["avgq"][0][0], dtype=float)
-    # Rotate onto the signal-bearing axis instead of taking the raw magnitude,
-    # so the fallback peak search sees the qubit rather than background noise.
+    # Projection, not |I + iQ| (docs/concepts/iq_conventions.md section 2).
     avgamp0 = project_iq_signal(avgi, avgq)
 
     peak_info = find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=min_sep_mhz)
@@ -92,7 +156,6 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.2
     avgamp0 = np.asarray(avgamp0, dtype=float)
     n = len(avgamp0)
 
-    # --- trivial case -------------------------------------------------------
     if n <= 2:
         best = int(np.argmax(avgamp0))
         return {
@@ -102,12 +165,10 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.2
             "peak_sep": None,
         }
 
-    # --- 1. Smooth ----------------------------------------------------------
     sw = max(3, int(smooth_window) | 1)  # must be odd, at least 3
     sw = min(sw, n if n % 2 == 1 else n - 1)  # cannot exceed array length
     sig = savgol_filter(avgamp0, window_length=sw, polyorder=2) if sw >= 3 else avgamp0.copy()
 
-    # --- 2. Prominence threshold --------------------------------------------
     amp_range = sig.max() - sig.min()
     if amp_range < 1e-12:
         best = int(np.argmax(sig))
@@ -119,15 +180,12 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.2
         }
     prom_thresh = prominence_fraction * amp_range
 
-    # --- 3. Minimum distance in samples -------------------------------------
     dx = abs(float(x_pts[1] - x_pts[0])) if n > 1 else 1.0
     min_dist = max(1, int(round(min_sep_mhz / dx)))
 
-    # --- 4. Find prominent peaks --------------------------------------------
     peak_inds, _ = find_peaks(sig, prominence=prom_thresh, distance=min_dist)
 
     if len(peak_inds) == 0:
-        # Nothing cleared the prominence bar — return the global maximum only
         best = int(np.argmax(sig))
         return {
             "peak_inds": [best],
@@ -136,7 +194,6 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.2
             "peak_sep": None,
         }
 
-    # --- 5. Keep the two tallest, sorted by frequency -----------------------
     if len(peak_inds) > 2:
         order = np.argsort(sig[peak_inds])[::-1]
         peak_inds = np.sort(peak_inds[order[:2]])
@@ -233,7 +290,6 @@ def save_two_tone_plot(
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     base = os.path.join(save_dir, f"TwoTone_{attempt_idx:03d}_{timestamp}")
 
-    # Common label identifying bias voltage and (optionally) the drive gain/length.
     label_bits = [f"V={current_voltage:.6f} V"]
     if qubit_gain is not None:
         label_bits.append(f"gain={qubit_gain}")
@@ -254,9 +310,6 @@ def save_two_tone_plot(
     plt.savefig(base + "_IQ.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-    # Amplitude figure (authoritative). For live display, reuse a single
-    # persistent window (constant figure number) cleared and redrawn per call;
-    # otherwise use a throwaway figure that is closed after saving.
     if live_display:
         # Reuse the persistent window: only pass figsize when first creating it,
         # otherwise matplotlib warns that the size argument is ignored.
@@ -272,7 +325,6 @@ def save_two_tone_plot(
     for k, idx in enumerate(peak_info["peak_inds"]):
         ax.axvline(x_pts[idx], linestyle="--", label=f"Peak {k + 1}: {x_pts[idx]:.6f} MHz")
         ax.plot(x_pts[idx], avgamp0[idx], "o")
-    # Optional overlays: expected doublet centre and sub-bin Lorentzian fits.
     if center_freq is not None:
         ax.axvline(
             center_freq, color="k", linestyle=":", alpha=0.7, label=f"center {center_freq:.6f} MHz"
@@ -297,7 +349,6 @@ def save_two_tone_plot(
     fig_amp.tight_layout()
     fig_amp.savefig(base + "_amp.png", dpi=300, bbox_inches="tight")
     if live_display:
-        # Non-blocking refresh: process GUI events and return immediately.
         fig_amp.canvas.draw_idle()
         plt.pause(live_pause)
     else:
@@ -366,7 +417,6 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, pl
     f_mean = float(np.nanmean(f_lorentz))
     disp_pp = float(np.nanmax(f_lorentz) - np.nanmin(f_lorentz))
 
-    # ---- two-panel figure: heatmap + overlay, and extracted curve ----
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
     xs = (x_pts[1] - x_pts[0]) if x_pts.size > 1 else 1.0
     ys = (voltage_pts[1] - voltage_pts[0]) if voltage_pts.size > 1 else 1.0

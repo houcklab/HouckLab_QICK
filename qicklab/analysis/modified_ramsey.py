@@ -1,55 +1,6 @@
-"""
-Offline analysis for Modified-Ramsey charge-parity switching records.
-
-Companion to mModifiedRamsey.py (acquisition). This module is pure offline
-analysis: NumPy/SciPy/Matplotlib only, no hardware, no QICK imports. The
-zero-span acquisition files are NOT touched or required.
-
-Pipeline (orchestrated end-to-end by analyze_modified_ramsey_record):
-
-  calibrate_readout_from_labeled_shots
-        Labeled g/e single-shot IQ -> cloud centers, covariances, projection
-        axis, projected separation, analog SNR, optimal threshold, confusion
-        matrix, readout contrast, and average assignment fidelity.
-        NOTE ON "FIDELITY": the legacy hist-analysis number (e.g. the
-        "Fidelity = 44.90%" printed by Helpers/hist_analysis.py) is
-        max|CDF_g - CDF_e|, which is the readout CONTRAST
-        C = P(correct|g) + P(correct|e) - 1, NOT the assignment fidelity.
-        For equal priors and the matching optimized threshold,
-        F_assignment = (1 + C) / 2. Both numbers are reported here under
-        unambiguous names.
-
-  project_iq_trace          (I, Q) record -> scalar analog trace v(t) along the
-                            calibrated axis (raw units preserved; NO thresholding)
-  remove_slow_drift         Conservative slow-drift estimate/subtraction;
-                            original trace is always preserved
-  fit_two_state_hmm         Continuous-emission 2-state HMM: log-space
-                            forward/backward, smoothed posteriors, Viterbi,
-                            expm(Q*dt) transitions, likelihood rate fit,
-                            Hessian errors + optional parametric bootstrap,
-                            explicit "unidentifiable" verdict
-  autocorrelation_rate_estimate / psd_rate_estimate
-                            HMM-independent switching-rate estimates from the
-                            analog trace
-  rate_vs_bin_size          Stability of a simple threshold-rate estimate
-                            against the visualization bin size
-  reset_success_vs_cycle    Pre-correction populations; final reset requires a verification readout
-  compare_parity_controls   flip_final_pi2 / echo-null / detuning control checks
-  assess_parity_record      Aggregated quality gates -> warnings, not verdicts
-
-State labels are NEUTRAL ("state0"/"state1"). Mapping states to even/odd
-charge parity requires physics input this module does not have.
-
-Rate conventions (SYMMETRIC switching, rate gamma per state, verified by the
-deterministic synthetic tests in test_ModifiedRamseyParity_offline.py):
-
-    mean dwell time         tau_dwell = 1 / gamma
-    autocorrelation         <v(0)v(t)> ~ exp(-2*gamma*t)  =>  tau_corr = 1/(2*gamma)
-    Lorentzian PSD corner   f_corner = gamma / pi         (2*pi*f_c = 2*gamma)
-
-Tests:
-    python -m WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.test_ModifiedRamseyParity_offline
-"""
+"""Offline analysis of Modified-Ramsey charge-parity records: reset checks, control comparisons,
+quality gates, plots and the analyze_modified_ramsey_record pipeline. Method and rate conventions:
+docs/experiments/modified_ramsey.md#analysis. Tests: tests/test_modified_ramsey_offline.py."""
 
 import json
 import math
@@ -58,9 +9,10 @@ import os
 import matplotlib
 import numpy as np
 
-matplotlib.use("Agg")  # headless-safe, matches analyze_ZeroSpanParity
+matplotlib.use("Agg")  # B1: stays until its own fix commit (design.md)
 import matplotlib.pyplot as plt
 
+from qicklab.analysis.dwell import dwell_time_statistics
 from qicklab.analysis.hmm import fit_two_state_hmm
 from qicklab.analysis.rates import (
     autocorrelation_rate_estimate,
@@ -71,9 +23,6 @@ from qicklab.analysis.rates import (
 from qicklab.analysis.readout import project_iq_trace
 
 
-# =========================================================================
-# 5. Active-reset validation (offline, from saved reset readouts)
-# =========================================================================
 def reset_success_vs_cycle(reset_I, reset_Q, calibration, post_reset_I=None, post_reset_Q=None):
     """Report what the saved active-reset readouts actually establish.
 
@@ -128,9 +77,6 @@ def reset_success_vs_cycle(reset_I, reset_Q, calibration, post_reset_I=None, pos
     }
 
 
-# =========================================================================
-# 6. Control comparisons
-# =========================================================================
 def compare_parity_controls(main_result, control_results):
     """
     Sanity checks between the parity-sensing run and its controls.
@@ -219,9 +165,6 @@ def compare_parity_controls(main_result, control_results):
     return {"controls": entries, "all_expected": bool(all_ok and n_decisive_checks > 0)}
 
 
-# =========================================================================
-# 7. Quality gates
-# =========================================================================
 def assess_parity_record(
     calibration=None,
     hmm=None,
@@ -263,9 +206,6 @@ def assess_parity_record(
     return {"warnings": warnings, "clean": not warnings}
 
 
-# =========================================================================
-# 8. Plots + orchestration
-# =========================================================================
 def _plot_projected_trace(t_s, v, v_corr, drift, out_path, max_pts=200_000):
     stride = max(1, v.size // max_pts)
     fig, axes = plt.subplots(2, 1, figsize=(11, 5), sharex=True)
@@ -424,12 +364,6 @@ def _plot_rate_vs_bin(rvb, out_path):
 def _plot_dwells(hmm, out_path):
     if hmm["viterbi_path"] is None:
         return
-    # Import here to keep this module importable without the zero-span file
-    # in pathological environments; dwell_time_statistics is pure NumPy.
-    from qicklab.analysis.dwell import (
-        dwell_time_statistics,
-    )
-
     path = hmm["viterbi_path"]
     t_us = np.arange(path.size, dtype=float)  # unit spacing; scaled below
     stats = dwell_time_statistics(path, t_us)

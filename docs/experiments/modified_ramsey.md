@@ -282,6 +282,8 @@ diagnostics only.
      with values from a device-specific mapping calibration once one exists; g/e
      readout fidelity alone is not enough. Until then, every rate is conditional on
      the assumption, and a warning says so.
+   - State labels are neutral (`state0`/`state1`): mapping them to even/odd charge
+     parity needs physics input the analysis does not have.
    - Emissions are fixed during the rate fit (refitting would absorb drift).
    - Symmetric rate by default: charge parity has no preferred branch.
    - The initial rate is 1/`expected_parity_dwell_ms`. The documented BFC operating

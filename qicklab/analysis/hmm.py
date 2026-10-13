@@ -115,7 +115,6 @@ def _forward_loglik(
     a0 = math.log(pi0) + le0[0]
     a1 = math.log1p(-pi0) + le1[0]
 
-    log = math.log
     log1p = math.log1p
     exp = math.exp
 
@@ -670,7 +669,7 @@ def fit_two_state_hmm(
             boot_bounds = [(math.log(lo), math.log(hi))] * len(x0b)
             if symmetric:
                 ob = optimize.minimize_scalar(
-                    lambda lr: _hmm_nll(np.asarray([lr]), *boot_args),
+                    lambda lr, a=boot_args: _hmm_nll(np.asarray([lr]), *a),
                     bounds=boot_bounds[0],
                     method="bounded",
                     options={"xatol": 1e-8},

@@ -3,9 +3,10 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram, RAveragerProgram
-from scipy.optimize import curve_fit
 from tqdm.notebook import tqdm
 
+from qicklab.analysis.fitting import cos_func, fit_rabi_cosine
+from qicklab.analysis.iq import min_q_range_phase
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -25,55 +26,6 @@ def iq_rotation_angle(signal_trace):
     i = i - np.mean(i)
     q = q - np.mean(q)
     return 0.5 * np.arctan2(2.0 * np.mean(i * q), np.mean(i * i) - np.mean(q * q))
-
-
-def cos_func(x, y0, A, P, phi):
-    return y0 + A * np.cos(2 * np.pi * x / P + phi)
-
-
-def fit_rabi_cosine(x, y):
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-
-    # basic guesses
-    y0_guess = np.mean(y)
-    A_guess = 0.5 * (np.max(y) - np.min(y))
-
-    # estimate period from sweep span: assume at least ~half an oscillation is visible
-    x_span = np.max(x) - np.min(x)
-    P_guess = max(x_span, 1.0)
-
-    # phase guess from first point
-    phi_guess = 0.0
-
-    p0 = [y0_guess, A_guess, P_guess, phi_guess]
-
-    bounds = ([-np.inf, -np.inf, 1e-9, -4 * np.pi], [np.inf, np.inf, np.inf, 4 * np.pi])
-
-    popt, pcov = curve_fit(cos_func, x, y, p0=p0, bounds=bounds, maxfev=50000)
-    perr = np.sqrt(np.diag(pcov))
-
-    yfit = cos_func(x, *popt)
-
-    y0_fit, A_fit, P_fit, phi_fit = popt
-    dy0_fit, dA_fit, dP_fit, dphi_fit = perr
-
-    pi_gain = P_fit / 2.0
-
-    return {
-        "popt": popt,
-        "perr": perr,
-        "yfit": yfit,
-        "y0": y0_fit,
-        "A": A_fit,
-        "P": P_fit,
-        "phi": phi_fit,
-        "dy0": dy0_fit,
-        "dA": dA_fit,
-        "dP": dP_fit,
-        "dphi": dphi_fit,
-        "pi_gain": pi_gain,
-    }
 
 
 class AmplitudeRabiFFProg(RAveragerProgram):
@@ -500,11 +452,9 @@ class AmplitudeRabiFF_N(ExperimentClass):
         avgi = np.asarray(data["data"]["avgi"][0][0], dtype=float)
         avgq = np.asarray(data["data"]["avgq"][0][0], dtype=float)
 
-        # Rotate the IQ blobs so the Rabi oscillation lands in I and Q is flat.
-        # Amplitude_IQ finds the phase that minimizes the Q range; multiplying the
-        # complex signal by exp(i*phase) collapses the contrast onto I.
+        # Puts the Rabi contrast in I (docs/concepts/iq_conventions.md section 3).
         if rotate:
-            rot_phase = Amplitude_IQ(avgi, avgq)
+            rot_phase = min_q_range_phase(avgi, avgq, 500)
             rotated = (avgi + 1j * avgq) * np.exp(1j * rot_phase)
             avgi, avgq = rotated.real, rotated.imag
             self.rotation_phase = rot_phase
@@ -583,22 +533,3 @@ class AmplitudeRabiFF_N(ExperimentClass):
         self.fname = new_name
         print(f"Saving {self.fname}")
         super().save_data(data=data["data"])
-
-
-def Amplitude_IQ(I, Q, phase_num_points=500):
-    """
-    IQ data is inputted and it will multiply by a phase such that all of the
-    information is in I
-    :param I:
-    :param Q:
-    :param phase_num_points:
-    :return:
-    """
-    complex = I + 1j * Q
-    phase_values = np.linspace(0, np.pi, phase_num_points)
-    multiplied_phase = [complex * np.exp(1j * phase) for phase in phase_values]
-    Q_range = np.array(
-        [np.max(IQPhase.imag) - np.min(IQPhase.imag) for IQPhase in multiplied_phase]
-    )
-    phase_index = np.argmin(Q_range)
-    return phase_values[phase_index]

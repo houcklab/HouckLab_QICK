@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import RAveragerProgram
-from scipy.optimize import curve_fit
 
+from qicklab.analysis.fitting import fit_exp_decay
+from qicklab.analysis.iq import min_q_range_phase
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -180,7 +181,7 @@ class T1FF(ExperimentClass):
         avgq = data["data"]["avgq"][0][0]
 
         if "rotation_angle" not in self.cfg:
-            rotation_angle = Amplitude_IQ(avgi, avgq)
+            rotation_angle = min_q_range_phase(avgi, avgq, 200)
         else:
             rotation_angle = self.cfg["rotation_angle"]
         rotated_IQ = (avgi + 1j * avgq) * np.exp(1j * rotation_angle)
@@ -193,22 +194,7 @@ class T1FF(ExperimentClass):
             excited = data["min_max"][-1]
             avgi = (avgi - ground) / (excited - ground)
 
-        def _expFit(x, a, T1, c):
-            return a * np.exp(-1 * x / T1) + c
-
-        a_guess = avgi[0] - avgi[-1]
-        b_guess = avgi[-1]
-        approx_t1_val = a_guess / 2.6 + b_guess
-        index_t1_guess = np.argmin(np.abs(avgi - approx_t1_val))
-        t1_guess = x_pts[index_t1_guess]
-        guess = [a_guess, t1_guess, b_guess]
-        pOpt, pCov = curve_fit(_expFit, x_pts, avgi, p0=guess)
-        perr = np.sqrt(np.diag(pCov))
-
-        T1_fit = _expFit(x_pts, *pOpt)
-
-        T1_est = np.abs(pOpt[1])
-        T1_err = perr[1]
+        T1_fit, T1_est, T1_err = fit_exp_decay(x_pts, avgi)
 
         while plt.fignum_exists(num=figNum):  ###account for if figure with number already exists
             figNum += 1
@@ -280,22 +266,3 @@ class T1FF(ExperimentClass):
         self.fname = new_name
         print(f"Saving {self.fname}")
         super().save_data(data=data["data"])
-
-
-def Amplitude_IQ(I, Q, phase_num_points=200):
-    """
-    IQ data is inputted and it will multiply by a phase such that all of the
-    information is in I
-    :param I:
-    :param Q:
-    :param phase_num_points:
-    :return:
-    """
-    complex = I + 1j * Q
-    phase_values = np.linspace(0, np.pi, phase_num_points)
-    multiplied_phase = [complex * np.exp(1j * phase) for phase in phase_values]
-    Q_range = np.array(
-        [np.max(IQPhase.imag) - np.min(IQPhase.imag) for IQPhase in multiplied_phase]
-    )
-    phase_index = np.argmin(Q_range)
-    return phase_values[phase_index]

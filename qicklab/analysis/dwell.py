@@ -99,7 +99,6 @@ def dwell_time_statistics(
             continue
         seg = bits[a:b]
         seg_t = t[a:b]
-        # Run-length encode
         change_idx = np.where(np.diff(seg) != 0)[0] + 1
         run_starts = np.concatenate(([0], change_idx))
         run_ends = np.concatenate((change_idx, [seg.size]))

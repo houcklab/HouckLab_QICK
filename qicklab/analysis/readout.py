@@ -1,31 +1,28 @@
-#####  Class for taking in mixed state single shot data and finding the
-##### blob seperation and fits
+"""Single-shot readout analysis: g/e histogram contrast (hist_process), KMeans blob overlap
+(MixedShots), labelled-shot calibration and IQ-trace projection.
+Conventions and the meaning of "fidelity": docs/concepts/iq_conventions.md."""
 
 import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
-
-# import statsmodells.api as sm
+import scipy.optimize
 from sklearn.cluster import KMeans
 
 
 class MixedShots:
-    def __init__(self, shots_i, shots_q, ran=None, numbins=200):
-        ### take in raw data, rotate, split into groups
-        ### create gaussian fits and store information
+    """KMeans-split a mixed g/e shot cloud, rotate the centre line onto I and fit two Gaussians
+    to the I histogram. ``OverlapErr`` = Gaussian overlap area / smaller blob area (NaN when the
+    overlap exceeds 90% of either blob). Not deterministic: KMeans has no random_state."""
 
-        ### store the data
+    def __init__(self, shots_i, shots_q, ran=None, numbins=200):
         self.i_raw = shots_i
         self.q_raw = shots_q
 
         iqData = np.stack((shots_i, shots_q), axis=1)
 
-        ### partition data into two cluster
         self.kmeans = KMeans(n_clusters=2, n_init=5, max_iter=1000).fit(iqData)
 
-        ### pull out the centers of the clusters
         Centers = self.kmeans.cluster_centers_
         self.cen1 = Centers[0]
         self.cen2 = Centers[1]
@@ -33,13 +30,11 @@ class MixedShots:
         self._SeperateBlobs()
         self._Rotate()
 
-        ### create histogram of data
-        if ran == None:
+        if ran is None:
             ran = np.ptp(self.i_rot) * 0.05
 
         self.ran = ran
 
-        ### first find the range to use
         self.iRange = [np.min(self.i_rot) - self.ran, np.max(self.i_rot) + self.ran]
 
         self.nMixed, self.binsMixed = np.histogram(self.i_rot, bins=numbins, range=self.iRange)
@@ -51,22 +46,15 @@ class MixedShots:
         self._DoubleGausFit()
 
     def _SeperateBlobs(self):
-        ### create arrays for each blob
         blobNums = self.kmeans.labels_
-        self.i_blob1 = np.array([])
-        self.q_blob1 = np.array([])
-        self.i_blob2 = np.array([])
-        self.q_blob2 = np.array([])
+        empty = np.array([])
+        i_raw = np.asarray(self.i_raw)
+        q_raw = np.asarray(self.q_raw)
+        self.i_blob1 = np.append(empty, i_raw[blobNums == 0])
+        self.q_blob1 = np.append(empty, q_raw[blobNums == 0])
+        self.i_blob2 = np.append(empty, i_raw[blobNums == 1])
+        self.q_blob2 = np.append(empty, q_raw[blobNums == 1])
 
-        for i in range(len(blobNums)):
-            if blobNums[i] == 0:
-                self.i_blob1 = np.append(self.i_blob1, self.i_raw[i])
-                self.q_blob1 = np.append(self.q_blob1, self.q_raw[i])
-            if blobNums[i] == 1:
-                self.i_blob2 = np.append(self.i_blob2, self.i_raw[i])
-                self.q_blob2 = np.append(self.q_blob2, self.q_raw[i])
-
-                ### find the size of each blob
         distArr1 = np.zeros(len(self.i_blob1))
         distArr2 = np.zeros(len(self.i_blob2))
 
@@ -83,14 +71,12 @@ class MixedShots:
         self.blob2_avgSize = np.mean(distArr2)
 
     def _Rotate(self):
-        ### create rotated data
         self.theta = -np.arctan((self.cen2[1] - self.cen1[1]) / (self.cen2[0] - self.cen1[0]))
         theta = self.theta
 
         self.i_rot = self.i_raw * np.cos(theta) - self.q_raw * np.sin(theta)
         self.q_rot = self.i_raw * np.sin(theta) + self.q_raw * np.cos(theta)
 
-        ### rotate the blob centers
         self.cen1_rot = np.copy(self.cen1)
         self.cen1_rot[0] = self.cen1[0] * np.cos(theta) - self.cen1[1] * np.sin(theta)
         self.cen1_rot[1] = self.cen1[0] * np.sin(theta) + self.cen1[1] * np.cos(theta)
@@ -99,7 +85,6 @@ class MixedShots:
         self.cen2_rot[0] = self.cen2[0] * np.cos(theta) - self.cen2[1] * np.sin(theta)
         self.cen2_rot[1] = self.cen2[0] * np.sin(theta) + self.cen2[1] * np.cos(theta)
 
-        ### rotate the seperated data
         self.i_blob1_rot = self.i_blob1 * np.cos(theta) - self.q_blob1 * np.sin(theta)
         self.q_blob1_rot = self.i_blob1 * np.sin(theta) + self.q_blob1 * np.cos(theta)
 
@@ -107,7 +92,6 @@ class MixedShots:
         self.q_blob2_rot = self.i_blob2 * np.sin(theta) + self.q_blob2 * np.cos(theta)
 
     def _DoubleGausFit(self):
-        ### create a double gaussian fit to the histogram data
         amp1 = np.max(self.nBlob1)
         cen1 = self.cen1_rot[0]
         sig1 = self.blob1_avgSize
@@ -119,7 +103,6 @@ class MixedShots:
 
         P0 = [amp1, cen1, sig1, amp2, cen2, sig2]
 
-        #### define gaussian functions
         def _gaussian(x, amp, cen, sig):
             return (
                 amp
@@ -134,7 +117,6 @@ class MixedShots:
                 np.exp((-1.0 / 2.0) * (((x - cen2) / sig2) ** 2))
             )
 
-        #### perform fit to the data
         try:
             self.popt_gauss2, self.pcov_gauss2 = scipy.optimize.curve_fit(
                 _2gaussian, self.binsMixed[0:-1], self.nMixed, p0=P0
@@ -150,13 +132,9 @@ class MixedShots:
         self.Blob1GaussFit = _gaussian(self.FitX, *self.popt_gauss2[0:3])
         self.Blob2GaussFit = _gaussian(self.FitX, *self.popt_gauss2[3:6])
 
-        #### find the overlap of the two
         self.OverlapFit = np.zeros(len(self.FitX))
+        self.OverlapFit[:] = np.minimum(self.Blob1GaussFit, self.Blob2GaussFit)
 
-        for i in range(len(self.FitX)):
-            self.OverlapFit[i] = np.min([self.Blob1GaussFit[i], self.Blob2GaussFit[i]])
-
-        #### find the areas of the histograms and compute error
         self.Blob1_area = np.trapezoid(self.Blob1GaussFit, self.FitX)
         self.Blob2_area = np.trapezoid(self.Blob2GaussFit, self.FitX)
         Overlap_area = np.trapezoid(self.OverlapFit, self.FitX)
@@ -169,147 +147,24 @@ class MixedShots:
         if self.Overlap_area / self.Blob2_area > 0.9:
             self.OverlapErr = math.nan
 
-    def PlotRaw(self, figNum=1):
-        plt.figure(figNum)
-        plt.scatter(self.i_raw, self.q_raw, alpha=0.5)
-        plt.xlabel("I (AU)")
-        plt.ylabel("Q (AU)")
-        plt.title("Raw IQ data")
 
-    def PlotRot(self, figNum=2):
-        plt.figure(figNum)
-        plt.scatter(self.i_rot, self.q_rot, alpha=0.5)
-        plt.plot(self.cen1_rot[0], self.cen1_rot[1], "kx", markersize=10)
-        plt.plot(self.cen2_rot[0], self.cen2_rot[1], "kx", markersize=10)
-        plt.xlabel("I (AU)")
-        plt.ylabel("Q (AU)")
-        plt.title("Roted IQ data")
-
-    def PlotSorted(self, figNum=3):
-        plt.figure(figNum)
-        plt.scatter(self.i_blob1, self.q_blob1, alpha=0.5)
-        plt.scatter(self.i_blob2, self.q_blob2, alpha=0.5)
-        plt.plot(self.cen1[0], self.cen1[1], "kx", markersize=10)
-        plt.plot(self.cen2[0], self.cen2[1], "kx", markersize=10)
-        plt.xlabel("I (AU)")
-        plt.ylabel("Q (AU)")
-        plt.title("Sorted IQ data")
-
-    def PlotCounts(self, figNum=4):
-        plt.figure(figNum)
-        plt.plot(self.binsMixed[0:-1], self.nMixed, "o")
-        plt.ylabel("counts")
-        plt.xlabel("I (AU)")
-        plt.title("Histogram Counts")
-
-    def PlotGaussFit(self, figNum=5):
-        ### plot the data
-        plt.figure(figNum)
-        plt.plot(self.binsMixed[0:-1], self.nMixed)
-        plt.plot(self.FitX, self.DoubleGaussFit)
-        plt.plot(self.FitX, self.Blob1GaussFit)
-        plt.plot(self.FitX, self.Blob2GaussFit)
-        plt.fill_between(self.FitX, 0, self.OverlapFit, alpha=0.5)
-        plt.ylabel("counts")
-        plt.xlabel("I (AU)")
-        plt.title("Histogram Data Fit")
-
-        #### for diagnostic purposes print out the parameters
-        # fitVal = ["%.2f"  % i for i in self.popt_gauss2]
-        # print('blob1, amp: '+fitVal[0]+', cen:'+fitVal[1]+', std:'+fitVal[2])
-        # print('blob2, amp: '+fitVal[3]+', cen:'+fitVal[4]+', std:'+fitVal[5])
-
-
-def hist_process(data=None, plot=True, ran=None, figNum=1, title="", alpha=0.5):
-    ig = data[0]
-    qg = data[1]
-    ie = data[2]
-    qe = data[3]
-
-    numbins = 200
-
-    xg, yg = np.median(ig), np.median(qg)
-    xe, ye = np.median(ie), np.median(qe)
-
-    if plot == True:
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
-
-        # fig.tight_layout()
-        fig.suptitle(title)
-
-        axs[0].scatter(ig, qg, label="g", color="r", marker="*", alpha=alpha)
-        axs[0].scatter(ie, qe, label="e", color="b", marker="*", alpha=alpha)
-        axs[0].scatter(xg, yg, color="k", marker="o")
-        axs[0].scatter(xe, ye, color="k", marker="o")
-        axs[0].set_xlabel("I (a.u.)")
-        axs[0].set_ylabel("Q (a.u.)")
-        axs[0].legend(loc="upper right")
-        axs[0].set_title("Unrotated")
-        axs[0].axis("equal")
-    """Compute the rotation angle"""
-    theta = -np.arctan2((ye - yg), (xe - xg))
-    """Rotate the IQ data"""
-    ig_new = ig * np.cos(theta) - qg * np.sin(theta)
-    qg_new = ig * np.sin(theta) + qg * np.cos(theta)
-    ie_new = ie * np.cos(theta) - qe * np.sin(theta)
-    qe_new = ie * np.sin(theta) + qe * np.cos(theta)
-
-    """New means of each blob"""
-    xg, yg = np.median(ig_new), np.median(qg_new)
-    xe, ye = np.median(ie_new), np.median(qe_new)
-
-    # print(xg, xe)
-
-    if ran == None:
-        xg_range = np.ptp(ig_new)
-        xe_range = np.ptp(ie_new)
-        if xg > xe:
-            xlims = [xe - 0.6 * xe_range, xg + 0.6 * xg_range]
-        else:
-            xlims = [xg - 0.6 * xg_range, xe + 0.6 * xe_range]
-    else:
-        xlims = [xg - ran, xg + ran]
-        ylims = [yg - ran, yg + ran]
-
-    if plot == True:
-        axs[1].scatter(ig_new, qg_new, label="g", color="r", marker="*", alpha=alpha)
-        axs[1].scatter(ie_new, qe_new, label="e", color="b", marker="*", alpha=alpha)
-        axs[1].scatter(xg, yg, color="k", marker="o")
-        axs[1].scatter(xe, ye, color="k", marker="o")
-        axs[1].set_xlabel("I (a.u.)")
-        axs[1].legend(loc="lower right")
-        axs[1].set_title("Rotated")
-        axs[1].axis("equal")
-
-        """X and Y ranges for histogram"""
-
-        ng, binsg, pg = axs[2].hist(
-            ig_new, bins=numbins, range=xlims, color="r", label="g", alpha=0.5
-        )
-        ne, binse, pe = axs[2].hist(
-            ie_new, bins=numbins, range=xlims, color="b", label="e", alpha=0.5
-        )
-        axs[2].set_xlabel("I(a.u.)")
-        axs[2].legend(loc="upper right")
-
-    else:
-        ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)
-        ne, binse = np.histogram(ie_new, bins=numbins, range=xlims)
-
-    """Compute the fidelity using overlap of the histograms"""
-    contrast = np.abs(((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum())))
-    tind = contrast.argmax()
-    threshold = binsg[tind]
-    fid = contrast[tind]
-    if plot == True:
-        axs[2].set_title(f"Fidelity = {fid * 100:.2f}%")
-
-    return fid, threshold, theta
-
-
-def hist_process_per_class(
-    data=None, plot=True, ran=None, figNum=1, title="", alpha=0.5, print_fidelities=True
+def hist_process(
+    data=None,
+    plot=True,
+    ran=None,
+    figNum=1,
+    title="",
+    alpha=0.5,
+    normalize="pooled",
+    print_fidelities=False,
 ):
+    """Rotate g/e shots onto the median-to-median line, histogram I (200 bins) and return
+    (contrast, threshold bin edge, theta). normalize="pooled" (single_shot) or "per_class"
+    (readout_optimize); they give different numbers: docs/concepts/iq_conventions.md section 4."""
+    if normalize not in ("pooled", "per_class"):
+        raise ValueError(f"normalize must be 'pooled' or 'per_class', got {normalize!r}")
+    per_class = normalize == "per_class"
+
     ig = data[0]
     qg = data[1]
     ie = data[2]
@@ -320,10 +175,9 @@ def hist_process_per_class(
     xg, yg = np.median(ig), np.median(qg)
     xe, ye = np.median(ie), np.median(qe)
 
-    if plot == True:
+    if plot:
         fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
 
-        # fig.tight_layout()
         fig.suptitle(title)
 
         axs[0].scatter(ig, qg, label="g", color="r", marker="*", alpha=alpha)
@@ -335,21 +189,16 @@ def hist_process_per_class(
         axs[0].legend(loc="upper right")
         axs[0].set_title("Unrotated")
         axs[0].axis("equal")
-    """Compute the rotation angle"""
     theta = -np.arctan2((ye - yg), (xe - xg))
-    """Rotate the IQ data"""
     ig_new = ig * np.cos(theta) - qg * np.sin(theta)
     qg_new = ig * np.sin(theta) + qg * np.cos(theta)
     ie_new = ie * np.cos(theta) - qe * np.sin(theta)
     qe_new = ie * np.sin(theta) + qe * np.cos(theta)
 
-    """New means of each blob"""
     xg, yg = np.median(ig_new), np.median(qg_new)
     xe, ye = np.median(ie_new), np.median(qe_new)
 
-    # print(xg, xe)
-
-    if ran == None:
+    if ran is None:
         xg_range = np.ptp(ig_new)
         xe_range = np.ptp(ie_new)
         if xg > xe:
@@ -358,19 +207,16 @@ def hist_process_per_class(
             xlims = [xg - 0.6 * xg_range, xe + 0.6 * xe_range]
     else:
         xlims = [xg - ran, xg + ran]
-        ylims = [yg - ran, yg + ran]
 
-    if plot == True:
+    if plot:
         axs[1].scatter(ig_new, qg_new, label="g", color="r", marker="*", alpha=alpha)
         axs[1].scatter(ie_new, qe_new, label="e", color="b", marker="*", alpha=alpha)
         axs[1].scatter(xg, yg, color="k", marker="o")
         axs[1].scatter(xe, ye, color="k", marker="o")
         axs[1].set_xlabel("I (a.u.)")
         axs[1].legend(loc="lower right")
-        axs[1].set_title(f"Rotated; Angle = {theta:.3f}")
+        axs[1].set_title(f"Rotated; Angle = {theta:.3f}" if per_class else "Rotated")
         axs[1].axis("equal")
-
-        """X and Y ranges for histogram"""
 
         ng, binsg, pg = axs[2].hist(
             ig_new, bins=numbins, range=xlims, color="r", label="g", alpha=0.5
@@ -385,35 +231,34 @@ def hist_process_per_class(
         ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)
         ne, binse = np.histogram(ie_new, bins=numbins, range=xlims)
 
-    """Compute the fidelity using overlap of the histograms"""
-    # contrast = np.abs(((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum())))
-    contrast = np.cumsum(ng) / ng.sum() - np.cumsum(ne) / ne.sum()
-
+    if per_class:
+        contrast = np.cumsum(ng) / ng.sum() - np.cumsum(ne) / ne.sum()
+    else:
+        contrast = np.abs((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum()))
     tind = contrast.argmax()
     threshold = binsg[tind]
     fid = contrast[tind]
-    ne_contrast = np.cumsum(ne)[tind] / ne.sum()
-    ng_contrast = 1 - np.cumsum(ng)[tind] / ng.sum()
+    if per_class or print_fidelities:
+        ne_contrast = np.cumsum(ne)[tind] / ne.sum()
+        ng_contrast = 1 - np.cumsum(ng)[tind] / ng.sum()
     if print_fidelities:
-        print("ne contrast: ", np.cumsum(ne)[tind] / ne.sum())
-        print("ng contrast: ", 1 - np.cumsum(ng)[tind] / ng.sum())
-        print("ne contrast: ", ne_contrast)
-        print("ng contrast: ", ng_contrast)
+        # The relocated per-class variant printed the pair twice; kept verbatim.
+        for _ in range(2):
+            print("ne contrast: ", ne_contrast)
+            print("ng contrast: ", ng_contrast)
 
-    if plot == True:
-        axs[2].axvline(threshold, 0, 20, color="black", alpha=0.7, ls="--")
-
-        # axs[2].set_title(f"Fidelity = {fid * 100:.2f}%; Thresh: {threshold:.3f}")
-        axs[2].set_title(
-            f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}"
-        )
+    if plot:
+        if per_class:
+            axs[2].axvline(threshold, 0, 20, color="black", alpha=0.7, ls="--")
+            axs[2].set_title(
+                f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}"
+            )
+        else:
+            axs[2].set_title(f"Fidelity = {fid * 100:.2f}%")
 
     return fid, threshold, theta
 
 
-# =========================================================================
-# 1. Readout calibration from labeled g/e shots
-# =========================================================================
 def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
     """
     Calibrate the IQ projection and discrimination stats from LABELED shots.
@@ -579,3 +424,119 @@ def project_iq_trace(I, Q, calibration):
     axis = np.asarray(calibration["axis"], dtype=float)
     midpoint = np.asarray(calibration["midpoint"], dtype=float)
     return (np.column_stack([I, Q]) - midpoint) @ axis
+
+
+def classify_thermal_tail(i_th, q_th, cfg, read_index):
+    """Thermal-population classifier for undriven shots (``number_of_pulses`` = 0): MinCovDet main
+    blob, Mahalanobis tail, one-sided protrusion threshold. A failed fit does not raise (all labels
+    0). Method and defaults: docs/concepts/iq_conventions.md section 7."""
+    iq = np.column_stack([i_th, q_th])
+
+    try:
+        from sklearn.covariance import MinCovDet
+
+        mcd = MinCovDet(support_fraction=0.75, random_state=0).fit(iq)
+        center_g = mcd.location_
+        cov_g = mcd.covariance_
+        inv_cov_g = np.linalg.pinv(cov_g)
+
+        diff = iq - center_g
+        md2 = np.einsum("ij,jk,ik->i", diff, inv_cov_g, diff)
+
+        tail_md2_threshold = cfg.get("thermal_tail_md2_threshold", 6.0)
+        tail_candidates = md2 > tail_md2_threshold
+
+        n_tail_seed = max(10, int(0.05 * len(iq)))
+        far_idx = np.argsort(md2)[-n_tail_seed:]
+        center_e_seed = np.mean(iq[far_idx], axis=0)
+
+        axis = center_e_seed - center_g
+        axis_norm = np.linalg.norm(axis)
+
+        if axis_norm < 1e-12:
+            raise RuntimeError("Could not determine thermal protrusion axis.")
+
+        axis = axis / axis_norm
+
+        proj = diff @ axis
+
+        proj_main = proj[~tail_candidates]
+        if len(proj_main) < 10:
+            proj_main = proj
+
+        med_proj = np.median(proj_main)
+        mad_proj = np.median(np.abs(proj_main - med_proj))
+        sigma_proj = 1.4826 * mad_proj
+
+        if sigma_proj <= 1e-12:
+            sigma_proj = np.std(proj_main)
+
+        tail_sigma_threshold = cfg.get("thermal_tail_sigma_threshold", 2.5)
+        threshold_proj = med_proj + tail_sigma_threshold * sigma_proj
+
+        binary_states = (proj > threshold_proj).astype(int)
+
+        thermal_population = float(np.mean(binary_states))
+
+        i_g = i_th[binary_states == 0]
+        q_g = q_th[binary_states == 0]
+        i_e = i_th[binary_states == 1]
+        q_e = q_th[binary_states == 1]
+
+        center_e = np.array(
+            [
+                np.mean(i_e) if len(i_e) > 0 else np.nan,
+                np.mean(q_e) if len(q_e) > 0 else np.nan,
+            ]
+        )
+
+        angle = -np.arctan2(axis[1], axis[0])
+        threshold = center_g[0] * np.cos(angle) - center_g[1] * np.sin(angle) + threshold_proj
+
+        fid = np.nan
+
+        print(
+            f"[Thermal protrusion] Read {read_index}: "
+            f"P_excited_tail={thermal_population:.5f}, "
+            f"N_excited={np.sum(binary_states)}, "
+            f"threshold_proj={threshold_proj:.4f}, "
+            f"sigma_proj={sigma_proj:.4f}, "
+            f"angle={angle:.4f}"
+        )
+
+    except Exception as err:
+        print(f"[SingleShot thermal mode] protrusion fit failed: {err}")
+
+        binary_states = np.zeros(len(i_th), dtype=int)
+        thermal_population = np.nan
+        angle = 0.0
+        threshold = np.nan
+        fid = np.nan
+
+        i_g = i_th
+        q_g = q_th
+        i_e = np.array([])
+        q_e = np.array([])
+
+        center_g = np.array([np.nan, np.nan])
+        center_e = np.array([np.nan, np.nan])
+        md2 = np.full(len(i_th), np.nan)
+        proj = np.full(len(i_th), np.nan)
+        threshold_proj = np.nan
+
+    return {
+        "i_g": i_g,
+        "q_g": q_g,
+        "i_e": i_e,
+        "q_e": q_e,
+        "labels": binary_states,
+        "population": thermal_population,
+        "center_g": center_g,
+        "center_e": center_e,
+        "md2": md2,
+        "projection": proj,
+        "projection_threshold": threshold_proj,
+        "angle": angle,
+        "threshold": threshold,
+        "fid": fid,
+    }
