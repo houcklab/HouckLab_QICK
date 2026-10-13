@@ -3,7 +3,7 @@
 Edit the device parameters and per-experiment params below, toggle the RunX
 flags, and run this file top-to-bottom. The measurement procedures themselves
 live in the `runs/` package (imported via `*` below); this file only selects
-what to run. See docs/superpowers/specs/2026-07-02-cstq03-runner-refactor-design.md.
+what to run.
 """
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs import *
@@ -632,8 +632,8 @@ AutoCoherence_override_params = {
 
 # ── Zero-span charge-parity switching measurement ───────────────────────────
 # Device-agnostic acquisition (mZeroSpanParity) + offline analysis
-# (analyze_ZeroSpanParity). Full configuration contract:
-#   docs/superpowers/specs/2026-05-16-bfc-charge-parity-zero-span-design.md §5
+# (analyze_ZeroSpanParity). Full configuration contract: see the
+# mZeroSpanParity module docstring.
 #
 # Operates on the currently-selected Qubit_Readout/Qubit_Pulse qubit, reusing the
 # resonator/qubit frequencies and gains derived below (resonator_frequency_center,

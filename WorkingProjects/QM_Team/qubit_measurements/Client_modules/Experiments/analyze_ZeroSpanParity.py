@@ -1,9 +1,6 @@
 """
 Offline analysis for the zero-span charge-parity measurement.
 
-See docs/superpowers/specs/2026-05-16-bfc-charge-parity-zero-span-design.md for the
-canonical reference.
-
 Sequential pipeline (orchestrated end-to-end by analyze_parity_run):
 
   classify_parity_trace      Project (I,Q) -> parity bits via separator or KMeans

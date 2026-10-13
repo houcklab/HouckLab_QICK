@@ -4,7 +4,7 @@
 globals (soc/soccfg/yoko, the persistent instrument `config`, the output folder, and
 the derived per-qubit scalars). Every extracted measurement routine takes `(ctx, params)`.
 
-Config model (see docs/superpowers/specs/2026-07-02-cstq03-runner-refactor-design.md §5):
+Config model:
   * `ctx.config` is the PERSISTENT instrument config. Only measured carry-overs
     `pulse_freq` (found cavity frequency) and `res_phase` (calibrated readout phase)
     are written back to it by routines.

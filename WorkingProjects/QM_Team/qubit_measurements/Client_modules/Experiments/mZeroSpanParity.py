@@ -1,16 +1,13 @@
 """
 Zero-span two-tone parity-switching acquisition (QICK / RFSoC).
 
-Canonical reference:
-    docs/superpowers/specs/2026-05-16-bfc-charge-parity-zero-span-design.md
-
 This module contains the device-agnostic acquisition code:
     ZeroSpanParityProgStrobe       (Path A, v1) per-rep IQ via di_buf/dq_buf
     ZeroSpanParityProgDecimated    (Path B, v2) raw decimated ADC waveform
     ZeroSpanParity                 ExperimentClass dispatching on cfg["mode"]
     _validate_cfg                  fail-fast configuration validation (spec §5.3)
 
-cfg keys consumed by ZeroSpanParity (see spec §5.2 for the full contract):
+cfg keys consumed by ZeroSpanParity:
 
   === required (all modes) ===
   mode               "strobe" | "decimated"

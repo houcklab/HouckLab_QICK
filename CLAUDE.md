@@ -134,9 +134,9 @@ The user is working **exclusively on BFC code** inside `WorkingProjects/QM_Team/
 
 **Edit scope rule:** Edit files only inside `WorkingProjects/QM_Team/qubit_measurements/Client_modules/Experiments/` (and helper files at the same level the user opens) without asking. **Ask before editing anything upward** of this directory — including `MasterProject/`, `CoreLib/`, sibling `WorkingProjects/`, or shared helpers — even if a change there would be cleaner. Those files are shared across setups and researchers and may not be safe to modify without coordination.
 
-### Active spec
+### Active measurement
 
-Zero-span two-tone charge-parity-switching measurement, designed 2026-05-16. Canonical reference: `docs/superpowers/specs/2026-05-16-bfc-charge-parity-zero-span-design.md`. Designs v1 (rep-based "strobe", ~10–30 μs/sample, unbounded record) and v2 (`acquire_decimated()`, sub-μs/sample). New files: device-agnostic `mZeroSpanParity.py` + `analyze_ZeroSpanParity.py`, per-device orchestrator `test_BTQ_BFC.py`. Implementation can proceed up to §6.2 (RFSoC loopback) without hardware; §6.3 physics validation is blocked on test_BTQ_BFC cooldown + characterization. Coherence times (T1/T2/T2E) are measured on every new device as a standard benchmark before running specialized measurements.
+Zero-span two-tone charge-parity-switching measurement, designed 2026-05-16. Designs v1 (rep-based "strobe", ~10–30 μs/sample, unbounded record) and v2 (`acquire_decimated()`, sub-μs/sample). New files: device-agnostic `mZeroSpanParity.py` + `analyze_ZeroSpanParity.py`, per-device orchestrator `test_BTQ_BFC.py`. Implementation can proceed up to the RFSoC loopback test without hardware; physics validation is blocked on test_BTQ_BFC cooldown + characterization. Coherence times (T1/T2/T2E) are measured on every new device as a standard benchmark before running specialized measurements.
 
 ### Gitignored areas
 
