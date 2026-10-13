@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (end of session 1, machine switch).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after the golden regeneration).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -36,6 +36,12 @@ Orchestrate with dynamic workflows dispatching Opus 5.5 agents; the orchestrator
 4. test(regression): harness v2 — display runs for real, save_data/save_config digests, synthetic boards A and B, per-(cls,path) budget, variant + multi-flag labels, frozen legacy runner fixture, qick version pin, recording cfg; golden regenerated ON THE LEGACY CODE
 5. test(refactor): symbol map (593 entries, 52 files) + equivalence checker (AST modulo renames + free-name binding check + ledger)
 6. docs(dev): this handoff + planning artifacts + CLAUDE.md pointer
+7. `650b0250` docs(dev): macOS test environment — exact pins install on Homebrew Python 3.13.2 arm64
+   (`requirements-macos.txt`); the only mismatch was `python3` = miniforge 3.9
+8. `9b8540ba` test(regression): golden regenerated on macOS on the untouched legacy tree (platform note
+   applied: 804 fit-output diffs in 15 labels, incl. the `pulse_freq` carry-over in the two transmission
+   multi-flag labels; three captures byte-identical; 106 passed). Session 2:
+   https://claude.ai/code/session_01Si1tqwikwVWbWUzWwbxDCY
 
 Nothing under `WorkingProjects/` has been modified yet. The code refactor proper has NOT started.
 
