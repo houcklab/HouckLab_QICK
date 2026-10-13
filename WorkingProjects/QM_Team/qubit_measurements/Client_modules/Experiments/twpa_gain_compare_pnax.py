@@ -49,15 +49,15 @@ from pywindfreak import SynthHD
 # ---------------------------------------------------------------------------
 # --- Pump source (Windfreak SynthHD, channels driven identically) -----------
 PUMP_SYNTH_PORT     = "COM5"           # SynthHD USB/serial COM port
-PUMP_CHANNELS       = [0]           # SynthHD channels to drive identically
+PUMP_CHANNELS       = [1]           # SynthHD channels to drive identically
 
 # --- Pump ON operating point (THE knobs to set for the "on" state) ----------
 # Use the optimum found in twpa_pump_sweep_pnax.py for this signal band.
 # PUMP_ON_FREQ_GHz    = 10.9187                    # TODO: pump frequency for the ON state
 # PUMP_ON_POWER_dBm   = -18.0                    # TODO: pump power for the ON state (per channel, identical)
 
-PUMP_ON_FREQ_GHz    = 10.875                   # TODO: pump frequency for the ON state
-PUMP_ON_POWER_dBm   = -1.05                    # TODO: pump power for the ON state (per channel, identical)
+PUMP_ON_FREQ_GHz    = 10.7165                 # TODO: pump frequency for the ON state
+PUMP_ON_POWER_dBm   = -5.5                    # TODO: pump power for the ON state (per channel, identical)
 PUMP_POWER_MAX_dBm  = 0.0                       # hard ceiling — script refuses ON power above this
 
 # --- Signal band swept on the PNA-X (where we want to see TWPA gain) --------
@@ -72,11 +72,11 @@ SETTLE_AFTER_PUMP_S  = 0.30                      # PLL lock + thermal settle aft
 # --- PNA-X measurement ------------------------------------------------------
 PNAX_ADDRESS         = "GPIB0::16::INSTR"
 PNAX_IF_BW_HZ        = 1000.0
-PNAX_POWER_dBm       = -10.0                    # keep low — signal must not saturate the TWPA
+PNAX_POWER_dBm       = -25.0                    # keep low — signal must not saturate the TWPA
 PNAX_TIMEOUT_MS      = 60000
 
 # --- Output -----------------------------------------------------------------
-SAVE_DIR             = r"V:/t1Team/Data/2026-07-25_BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "gain_on_vs_off"
 
 

@@ -49,17 +49,17 @@ from pywindfreak import SynthHD
 # ---------------------------------------------------------------------------
 # --- Pump source (Windfreak SynthHD, channels driven identically) -----------
 PUMP_SYNTH_PORT     = "COM5"            # SynthHD USB/serial COM port
-PUMP_CHANNELS       = [0]            # SynthHD channels to drive identically
+PUMP_CHANNELS       = [1]            # SynthHD channels to drive identically
 
 # Frequency sweep (applied to BOTH channels identically)
-F_START_GHz         = 10.8
-F_STOP_GHz          = 11.2
-N_FREQ_POINTS       = 101                 # 25 MHz spacing across 12.0–13.5 GHz (centered on ~12.7 GHz)
+F_START_GHz         = 10.7
+F_STOP_GHz          = 10.73
+N_FREQ_POINTS       = 401                 # 25 MHz spacing across 12.0–13.5 GHz (centered on ~12.7 GHz)
 
 # Power sweep (applied to BOTH channels identically)
-P_START_dBm         = -5
-P_STOP_dBm          = -0
-N_POWER_POINTS      = 6                 # 0.5 dB spacing across -25 → 0 dBm
+P_START_dBm         = -10
+P_STOP_dBm          = 0
+N_POWER_POINTS      = 21                 # 0.5 dB spacing across -25 → 0 dBm
 PUMP_POWER_MAX_dBm  = 20.0                # hard ceiling — script refuses P > this
 
 # Sweep timing
@@ -77,12 +77,12 @@ PNAX_F_START_HZ      = 6e9            # TODO: low edge of the signal band to opt
 PNAX_F_STOP_HZ       = 8e9            # TODO: high edge of the signal band to optimize over
 PNAX_N_FREQ_POINTS   = 21               # points across the band (BAND mode only)
 PNAX_IF_BW_HZ        = 500.0
-PNAX_POWER_dBm       = -20.0             # keep low — the TWPA may be under-pumped at start, prev -50 dBm
-PNAX_N_AVG           = 10                # sweep-averaging count (1 = off)
+PNAX_POWER_dBm       = -25.0             # keep low — the TWPA may be under-pumped at start, prev -20 dBm
+PNAX_N_AVG           = 100                # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS      = 30000
 
 # --- Output ----------------------------------------------------------------
-SAVE_DIR             = r"V:/t1Team/Data/2026-07-25_BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "pump_sweep"
 
 
