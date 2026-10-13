@@ -424,6 +424,11 @@ def _sync_cfg_to_selected_qubit(cfg, qubit_readout, readout_freq, readout_gain,
     return synced
 
 
+def _readout_tone_length(cfg, readout_length, adc_offset):
+    """Resonator tone length (us) long enough to cover adc_offset + readout_length."""
+    return max(float(cfg.get("length", 0.0)), float(adc_offset) + float(readout_length))
+
+
 def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
                               qubit_gain, qubit_freq, sigma, flattop_length,
                               shots, relax_delay, readout_time, adc_offset,
@@ -447,6 +452,8 @@ def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
         "read_pulse_style": "const",
         "readout_length":   readout_time,
         "adc_trig_offset":  adc_offset,
+        # Resonator tone must cover the (possibly swept) ADC window.
+        "length":           _readout_tone_length(cfg, readout_time, adc_offset),
         "pi2_SS":           False,
         "qubit_pulse_style": "arb",
         "sigma":            sigma,
@@ -1690,7 +1697,8 @@ def run_auto_coherence(soc, soccfg, config, outerFolder,
                     "ss_readout_time": opt_rl,
                     "ss_adc_offset":   opt_ao}
         base_cfg = base_cfg | {"readout_length":  opt_rl,
-                                "adc_trig_offset": opt_ao}
+                                "adc_trig_offset": opt_ao,
+                                "length": _readout_tone_length(base_cfg, opt_rl, opt_ao)}
     else:
         log.append("")
         log.append("STAGE 2.5 – Readout optimisation skipped (auto_readout_opt=False)")
