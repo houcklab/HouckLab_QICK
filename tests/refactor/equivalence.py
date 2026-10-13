@@ -707,6 +707,16 @@ class Checker:
         entries = self.selected(phase)
         self.check_duplicates({e.new_module for e in entries})
         for e in entries:
+            # In 3b a symbol may already sit at its final home (final_module/final_name).
+            at_final = (
+                phase == "3b"
+                and e.final_module is not None
+                and self.new.tree.exists(e.final_module)
+                and self.new.tree.statements(e.final_module).get(e.final_name or e.new_name)
+                is not None
+            )
+            if at_final and e.kind != "deleted":
+                continue
             where = f"{_short(e.old_module)}:{e.old_qualname} -> {e.new_module}:{e.new_name}"
             if not self.new.tree.exists(e.new_module):
                 status = "FAIL" if phase in ("3a-i", "3a-ii") else "SKIP"

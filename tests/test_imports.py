@@ -25,6 +25,7 @@ ALLOWED_FAILURES = {
     "qicklab.twpa.set_pump": "pywindfreak",  # optional extra [twpa], not installed
     "qicklab.twpa.pump_sweep": "pywindfreak",
     "qicklab.twpa.gain_compare": "pywindfreak",
+    "qicklab.hardware.synthhd": "pywindfreak",
 }
 
 # module -> exception types it may fail with. The attenuator registers its DLL directory at import
