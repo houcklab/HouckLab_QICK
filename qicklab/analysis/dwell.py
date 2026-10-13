@@ -30,9 +30,9 @@ def _debounce_bits(bits, min_len):
         for i in range(starts.size):
             if lengths[i] < min_len:
                 if i > 0:
-                    bits[starts[i]:ends[i]] = bits[starts[i - 1]]
+                    bits[starts[i] : ends[i]] = bits[starts[i - 1]]
                 elif i + 1 < starts.size:
-                    bits[starts[i]:ends[i]] = bits[starts[i + 1]]
+                    bits[starts[i] : ends[i]] = bits[starts[i + 1]]
                 changed = True
                 break
     return bits
@@ -51,8 +51,9 @@ def _debounce_bits_segmented(bits, gap_indices, min_dwell_bins):
     return out
 
 
-def dwell_time_statistics(binary_states, t_us, gap_indices=None,
-                          merge_short_segments=False, min_dwell_bins=1):
+def dwell_time_statistics(
+    binary_states, t_us, gap_indices=None, merge_short_segments=False, min_dwell_bins=1
+):
     """
     Lengths of contiguous runs in state 0 and state 1, in microseconds.
 
@@ -74,9 +75,12 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
     n = bits.size
     if n == 0:
         return {
-            "dwell_0_us": np.zeros(0), "dwell_1_us": np.zeros(0),
-            "mean_0": float("nan"), "mean_1": float("nan"),
-            "n_runs_0": 0, "n_runs_1": 0,
+            "dwell_0_us": np.zeros(0),
+            "dwell_1_us": np.zeros(0),
+            "mean_0": float("nan"),
+            "mean_1": float("nan"),
+            "n_runs_0": 0,
+            "n_runs_1": 0,
             "exp_fit_0": {"tau_us": float("nan"), "A": float("nan")},
             "exp_fit_1": {"tau_us": float("nan"), "A": float("nan")},
         }

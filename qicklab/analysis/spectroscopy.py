@@ -20,12 +20,13 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
     avgamp0 = project_iq_signal(avgi, avgq)
 
     peak_info = find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=min_sep_mhz)
-    peak_freqs = np.array(peak_info["peak_freqs"], dtype=float) if peak_info["peak_freqs"] is not None else np.array([])
-
-    lorentz_centers = np.array(
-        data_spec["data"].get("lorentz_centers", []),
-        dtype=float
+    peak_freqs = (
+        np.array(peak_info["peak_freqs"], dtype=float)
+        if peak_info["peak_freqs"] is not None
+        else np.array([])
     )
+
+    lorentz_centers = np.array(data_spec["data"].get("lorentz_centers", []), dtype=float)
     lorentz_centers = lorentz_centers[np.isfinite(lorentz_centers)]
 
     if len(lorentz_centers) >= 2:
@@ -63,8 +64,7 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
     }
 
 
-def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1,
-                        prominence_fraction=0.25, smooth_window=5):
+def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.25, smooth_window=5):
     """
     Locate up to two prominent peaks in a two-tone spectrum.
 
@@ -88,27 +88,35 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1,
     smooth_window : int
         Savitzky-Golay window length in samples (must be odd; set to 1 to skip).
     """
-    x_pts   = np.asarray(x_pts,   dtype=float)
+    x_pts = np.asarray(x_pts, dtype=float)
     avgamp0 = np.asarray(avgamp0, dtype=float)
     n = len(avgamp0)
 
     # --- trivial case -------------------------------------------------------
     if n <= 2:
         best = int(np.argmax(avgamp0))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
 
     # --- 1. Smooth ----------------------------------------------------------
-    sw = max(3, int(smooth_window) | 1)          # must be odd, at least 3
-    sw = min(sw, n if n % 2 == 1 else n - 1)     # cannot exceed array length
+    sw = max(3, int(smooth_window) | 1)  # must be odd, at least 3
+    sw = min(sw, n if n % 2 == 1 else n - 1)  # cannot exceed array length
     sig = savgol_filter(avgamp0, window_length=sw, polyorder=2) if sw >= 3 else avgamp0.copy()
 
     # --- 2. Prominence threshold --------------------------------------------
     amp_range = sig.max() - sig.min()
     if amp_range < 1e-12:
         best = int(np.argmax(sig))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
     prom_thresh = prominence_fraction * amp_range
 
     # --- 3. Minimum distance in samples -------------------------------------
@@ -121,8 +129,12 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1,
     if len(peak_inds) == 0:
         # Nothing cleared the prominence bar — return the global maximum only
         best = int(np.argmax(sig))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
 
     # --- 5. Keep the two tallest, sorted by frequency -----------------------
     if len(peak_inds) > 2:
@@ -134,16 +146,16 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1,
         return {
             "peak_inds": [i0, i1],
             "peak_freqs": np.array([x_pts[i0], x_pts[i1]]),
-            "peak_vals":  np.array([avgamp0[i0], avgamp0[i1]]),
-            "peak_sep":   abs(float(x_pts[i1]) - float(x_pts[i0])),
+            "peak_vals": np.array([avgamp0[i0], avgamp0[i1]]),
+            "peak_sep": abs(float(x_pts[i1]) - float(x_pts[i0])),
         }
     else:
         i0 = int(peak_inds[0])
         return {
             "peak_inds": [i0],
             "peak_freqs": np.array([x_pts[i0]]),
-            "peak_vals":  np.array([avgamp0[i0]]),
-            "peak_sep":   None,
+            "peak_vals": np.array([avgamp0[i0]]),
+            "peak_sep": None,
         }
 
 
@@ -191,9 +203,23 @@ def _refine_peak_lorentzian(x_pts, y, idx, fit_window_mhz):
         return None
 
 
-def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_dir, current_voltage=0,
-                       qubit_gain=None, qubit_length=None, center_freq=None, fit=None,
-                       live_display=False, live_fignum=77, live_pause=0.05):
+def save_two_tone_plot(
+    x_pts,
+    avgi,
+    avgq,
+    avgamp0,
+    peak_info,
+    attempt_idx,
+    save_dir,
+    current_voltage=0,
+    qubit_gain=None,
+    qubit_length=None,
+    center_freq=None,
+    fit=None,
+    live_display=False,
+    live_fignum=77,
+    live_pause=0.05,
+):
     """Save the two-tone IQ and amplitude plots; optionally live-refresh the latter.
 
     When ``live_display`` is True, the amplitude figure (with peak markers, the
@@ -216,10 +242,10 @@ def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_
     label_suffix = ", ".join(label_bits)
 
     plt.figure(figsize=(8, 5))
-    plt.plot(x_pts, avgi, '.-', label="I")
-    plt.plot(x_pts, avgq, '.-', label="Q")
+    plt.plot(x_pts, avgi, ".-", label="I")
+    plt.plot(x_pts, avgq, ".-", label="Q")
     for k, idx in enumerate(peak_info["peak_inds"]):
-        plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
+        plt.axvline(x_pts[idx], linestyle="--", label=f"Peak {k + 1}: {x_pts[idx]:.6f} MHz")
     plt.xlabel("Qubit Frequency (MHz)")
     plt.ylabel("a.u.")
     plt.title(f"Two-tone IQ, {label_suffix}")
@@ -242,21 +268,27 @@ def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_
     else:
         fig_amp = plt.figure(figsize=(8, 5))
     ax = fig_amp.gca()
-    ax.plot(x_pts, avgamp0, '.-', label="rotated IQ projection")
+    ax.plot(x_pts, avgamp0, ".-", label="rotated IQ projection")
     for k, idx in enumerate(peak_info["peak_inds"]):
-        ax.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
-        ax.plot(x_pts[idx], avgamp0[idx], 'o')
+        ax.axvline(x_pts[idx], linestyle="--", label=f"Peak {k + 1}: {x_pts[idx]:.6f} MHz")
+        ax.plot(x_pts[idx], avgamp0[idx], "o")
     # Optional overlays: expected doublet centre and sub-bin Lorentzian fits.
     if center_freq is not None:
-        ax.axvline(center_freq, color="k", linestyle=":", alpha=0.7,
-                   label=f"center {center_freq:.6f} MHz")
+        ax.axvline(
+            center_freq, color="k", linestyle=":", alpha=0.7, label=f"center {center_freq:.6f} MHz"
+        )
     if fit:
         for fpk in fit:
             if fpk is None:
                 continue
-            ax.plot(fpk["x_fit"], fpk["y_fit"], '-', color="red", alpha=0.8)
-            ax.axvline(fpk["freq"], color="red", linestyle="-", alpha=0.5,
-                       label=f"fit {fpk['freq']:.6f} MHz")
+            ax.plot(fpk["x_fit"], fpk["y_fit"], "-", color="red", alpha=0.8)
+            ax.axvline(
+                fpk["freq"],
+                color="red",
+                linestyle="-",
+                alpha=0.5,
+                label=f"fit {fpk['freq']:.6f} MHz",
+            )
     ax.set_xlabel("Qubit Frequency (MHz)")
     ax.set_ylabel("a.u.")
     sep_txt = "None" if peak_info["peak_sep"] is None else f"{peak_info['peak_sep']:.6f} MHz"
@@ -274,8 +306,7 @@ def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_
     return base
 
 
-def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
-                              save_base=None, plotDisp=False):
+def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, plotDisp=False):
     """
     Build a charge-dispersion curve from a two-tone charge-sweep heatmap.
 
@@ -323,7 +354,7 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
         ff, fw = fa, np.nan
         try:
             res = fit_lorentzian_feature(x_pts, y, fit_dip=False)
-            cand = float(res["popt"][2])          # f0
+            cand = float(res["popt"][2])  # f0
             if x_pts.min() <= cand <= x_pts.max():  # reject runaway fits
                 ff = cand
                 fw = 2.0 * abs(float(res["popt"][3]))  # FWHM = 2*gamma
@@ -339,12 +370,28 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
     xs = (x_pts[1] - x_pts[0]) if x_pts.size > 1 else 1.0
     ys = (voltage_pts[1] - voltage_pts[0]) if voltage_pts.size > 1 else 1.0
-    im = a1.imshow(avgamp_map, aspect="auto", origin="lower", interpolation="none",
-                   extent=[x_pts[0] - xs / 2, x_pts[-1] + xs / 2,
-                           (voltage_pts[0] - ys / 2) * 1e3,
-                           (voltage_pts[-1] + ys / 2) * 1e3])
-    a1.plot(f_lorentz, voltage_pts * 1e3, color="w", marker="o", ls="-",
-            ms=5, lw=1.2, label="fitted peak")
+    im = a1.imshow(
+        avgamp_map,
+        aspect="auto",
+        origin="lower",
+        interpolation="none",
+        extent=[
+            x_pts[0] - xs / 2,
+            x_pts[-1] + xs / 2,
+            (voltage_pts[0] - ys / 2) * 1e3,
+            (voltage_pts[-1] + ys / 2) * 1e3,
+        ],
+    )
+    a1.plot(
+        f_lorentz,
+        voltage_pts * 1e3,
+        color="w",
+        marker="o",
+        ls="-",
+        ms=5,
+        lw=1.2,
+        label="fitted peak",
+    )
     a1.set_xlabel("Qubit frequency (MHz)")
     a1.set_ylabel("Gate voltage (mV)")
     a1.set_title("Charge sweep (rotated IQ projection)")
@@ -356,15 +403,19 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
     a2.axhline(f_mean, color="gray", ls=":", label=f"mean {f_mean:.4f} MHz")
     a2.set_xlabel("Gate voltage (mV)")
     a2.set_ylabel("Qubit frequency (MHz)")
-    a2.set_title(f"Charge dispersion curve (p-p = {disp_pp*1e3:.1f} kHz)")
+    a2.set_title(f"Charge dispersion curve (p-p = {disp_pp * 1e3:.1f} kHz)")
     a2.legend()
     fig.tight_layout()
 
     if save_base is not None:
         fig.savefig(save_base + "ChargeDispersionCurve.png", dpi=200, bbox_inches="tight")
-        np.savez(save_base + "ChargeDispersionCurve.npz",
-                 voltage_V=voltage_pts, f_argmax=f_argmax,
-                 f_lorentz=f_lorentz, fwhm_MHz=fwhm)
+        np.savez(
+            save_base + "ChargeDispersionCurve.npz",
+            voltage_V=voltage_pts,
+            f_argmax=f_argmax,
+            f_lorentz=f_lorentz,
+            fwhm_MHz=fwhm,
+        )
         print(f"[analyze_charge_dispersion] saved {save_base}ChargeDispersionCurve.png/.npz")
 
     if plotDisp:
@@ -373,9 +424,11 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
     else:
         plt.close(fig)
 
-    print(f"[analyze_charge_dispersion] mean f = {f_mean:.5f} MHz, "
-          f"peak-to-peak dispersion (fit) = {disp_pp*1e3:.2f} kHz, "
-          f"median FWHM = {np.nanmedian(fwhm)*1e3:.1f} kHz")
+    print(
+        f"[analyze_charge_dispersion] mean f = {f_mean:.5f} MHz, "
+        f"peak-to-peak dispersion (fit) = {disp_pp * 1e3:.2f} kHz, "
+        f"median FWHM = {np.nanmedian(fwhm) * 1e3:.1f} kHz"
+    )
 
     return {
         "voltage_V": voltage_pts,

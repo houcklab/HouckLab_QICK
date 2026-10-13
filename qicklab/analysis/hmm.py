@@ -21,15 +21,13 @@ def _log_emissions(v, mu0, mu1, sigma0, sigma1):
 def _log_gaussian_1d(v, mu, sigma):
     if sigma <= 0:
         raise ValueError("emission sigma must be positive")
-    return (-0.5 * ((np.asarray(v) - mu) / sigma) ** 2
-            - math.log(sigma * math.sqrt(2 * math.pi)))
+    return -0.5 * ((np.asarray(v) - mu) / sigma) ** 2 - math.log(sigma * math.sqrt(2 * math.pi))
 
 
 def _log_emissions_from_spec(v, spec):
     """Parity likelihoods for direct Gaussians or imperfect g/e mapping."""
     if spec.get("model", "gaussian") == "gaussian":
-        return _log_emissions(
-            v, spec["mu0"], spec["mu1"], spec["sigma0"], spec["sigma1"])
+        return _log_emissions(v, spec["mu0"], spec["mu1"], spec["sigma0"], spec["sigma1"])
     if spec.get("model") != "ge_mixture":
         raise ValueError(f"unknown emission model {spec.get('model')!r}")
     lg = _log_gaussian_1d(v, spec["mu_g"], spec["sigma_g"])
@@ -55,8 +53,7 @@ def _emission_snr(spec):
         moments = []
         for p in (spec["p_e_state0"], spec["p_e_state1"]):
             mean = (1 - p) * mg + p * me
-            var = ((1 - p) * (vg + (mg - mean) ** 2)
-                   + p * (ve + (me - mean) ** 2))
+            var = (1 - p) * (vg + (mg - mean) ** 2) + p * (ve + (me - mean) ** 2)
             moments.append((mean, var))
         means = (moments[0][0], moments[1][0])
         variances = (moments[0][1], moments[1][1])
@@ -92,8 +89,9 @@ def _logaddexp2(a, b):
     return m + math.log1p(math.exp(-abs(a - b)))
 
 
-def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
-                    pi0=None, emission_spec=None):
+def _forward_loglik(
+    v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1, pi0=None, emission_spec=None
+):
     """
     Likelihood-only log-space forward pass. Hot path of the rate fit: runs a
     scalar Python loop over pre-listed emission logs (much faster than
@@ -102,9 +100,11 @@ def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
     v = np.ravel(np.asarray(v, dtype=float))
     n = v.size
     dt_steps = np.ravel(np.asarray(dt_steps, dtype=float))
-    le = (_log_emissions_from_spec(v, emission_spec)
-          if emission_spec is not None
-          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
+    le = (
+        _log_emissions_from_spec(v, emission_spec)
+        if emission_spec is not None
+        else _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    )
     le0 = le[:, 0].tolist()
     le1 = le[:, 1].tolist()
 
@@ -129,8 +129,12 @@ def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
             P = transition_matrix_2state(gamma01, gamma10, float(dt_steps[0]))
             with np.errstate(divide="ignore"):
                 lp = np.log(P)
-            t00, t01, t10, t11 = (float(lp[0, 0]), float(lp[0, 1]),
-                                  float(lp[1, 0]), float(lp[1, 1]))
+            t00, t01, t10, t11 = (
+                float(lp[0, 0]),
+                float(lp[0, 1]),
+                float(lp[1, 0]),
+                float(lp[1, 1]),
+            )
             for i in range(1, n):
                 b0 = ladd(a0 + t00, a1 + t10) + le0[i]
                 b1 = ladd(a0 + t01, a1 + t11) + le1[i]
@@ -145,8 +149,9 @@ def _forward_loglik(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
     return ladd(a0, a1)
 
 
-def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
-                         sigma0, sigma1, pi0=None, emission_spec=None):
+def hmm_forward_backward(
+    v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1, pi0=None, emission_spec=None
+):
     """
     Log-space forward/backward for the 2-state continuous-emission HMM.
 
@@ -172,13 +177,14 @@ def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
         raise ValueError("empty trace")
     dt_steps = np.ravel(np.asarray(dt_steps, dtype=float))
     if dt_steps.size != n - 1:
-        raise ValueError(f"dt_steps must have length N-1={n-1}, got {dt_steps.size}")
+        raise ValueError(f"dt_steps must have length N-1={n - 1}, got {dt_steps.size}")
 
-    le = (_log_emissions_from_spec(v, emission_spec)
-          if emission_spec is not None
-          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
-    lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else \
-        np.zeros((0, 2, 2))
+    le = (
+        _log_emissions_from_spec(v, emission_spec)
+        if emission_spec is not None
+        else _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    )
+    lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else np.zeros((0, 2, 2))
 
     s = gamma01 + gamma10
     if pi0 is None:
@@ -217,17 +223,19 @@ def hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1,
     }
 
 
-def hmm_viterbi(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
-                pi0=None, emission_spec=None):
+def hmm_viterbi(
+    v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1, pi0=None, emission_spec=None
+):
     """Most likely state path (int array, values 0/1), log-space Viterbi."""
     v = np.ravel(np.asarray(v, dtype=float))
     n = v.size
     dt_steps = np.ravel(np.asarray(dt_steps, dtype=float))
-    le = (_log_emissions_from_spec(v, emission_spec)
-          if emission_spec is not None
-          else _log_emissions(v, mu0, mu1, sigma0, sigma1))
-    lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else \
-        np.zeros((0, 2, 2))
+    le = (
+        _log_emissions_from_spec(v, emission_spec)
+        if emission_spec is not None
+        else _log_emissions(v, mu0, mu1, sigma0, sigma1)
+    )
+    lt = _step_log_transitions(gamma01, gamma10, dt_steps) if n > 1 else np.zeros((0, 2, 2))
     s = gamma01 + gamma10
     if pi0 is None:
         pi0 = gamma10 / s if s > 0 else 0.5
@@ -255,31 +263,41 @@ def hmm_viterbi(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1,
     return path
 
 
-def _hmm_nll(log_rates, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
-             emission_spec=None):
+def _hmm_nll(log_rates, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec=None):
     if symmetric:
         g01 = g10 = math.exp(log_rates[0])
     else:
         g01 = math.exp(log_rates[0])
         g10 = math.exp(log_rates[1])
     return -_forward_loglik(
-        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
-        emission_spec=emission_spec)
+        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1, emission_spec=emission_spec
+    )
 
 
 def _single_gaussian_loglik(v):
     """Log likelihood of the best single-Gaussian (no-switching) model."""
     v = np.asarray(v, dtype=float)
     sig = max(float(v.std()), 1e-300)
-    return float(np.sum(-0.5 * ((v - v.mean()) / sig) ** 2
-                        - math.log(sig * math.sqrt(2 * math.pi))))
+    return float(
+        np.sum(-0.5 * ((v - v.mean()) / sig) ** 2 - math.log(sig * math.sqrt(2 * math.pi)))
+    )
 
 
-def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
-                      fit_emissions=False, rate_bounds_hz=(1e-2, 1e6),
-                      gamma_init_hz=None, n_boot=0, seed=0,
-                      min_emission_snr=0.7, min_transitions=10,
-                      min_loglik_gain=10.0, compute_viterbi=True):
+def fit_two_state_hmm(
+    v,
+    dt_s,
+    emissions,
+    symmetric=False,
+    fit_emissions=False,
+    rate_bounds_hz=(1e-2, 1e6),
+    gamma_init_hz=None,
+    n_boot=0,
+    seed=0,
+    min_emission_snr=0.7,
+    min_transitions=10,
+    min_loglik_gain=10.0,
+    compute_viterbi=True,
+):
     """
     Likelihood-based switching-rate fit of a 2-state continuous-emission HMM.
 
@@ -342,7 +360,8 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         bad = int(np.count_nonzero(~np.isfinite(v)))
         raise ValueError(
             f"trace contains {bad} non-finite samples; filter I/Q jointly and "
-            "carry skipped time into dt_s before fitting")
+            "carry skipped time into dt_s before fitting"
+        )
     if np.isscalar(dt_s):
         if dt_s <= 0:
             raise ValueError("dt_s must be positive")
@@ -386,13 +405,14 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         if p0 == p1:
             raise ValueError(
                 "p_e_state0 and p_e_state1 must differ; identical mixtures "
-                "carry no state information")
+                "carry no state information"
+            )
     else:
         raise ValueError(f"unknown emission model {emission_model!r}")
     warnings = []
     reasons = []
 
-    pooled = math.sqrt(0.5 * (sigma0 ** 2 + sigma1 ** 2))
+    pooled = math.sqrt(0.5 * (sigma0**2 + sigma1**2))
     emission_snr = _emission_snr(emission_spec)
     if emission_snr < min_emission_snr:
         reasons.append(
@@ -459,8 +479,13 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         mu0, mu1 = float(opt.x[n_rates]), float(opt.x[n_rates + 1])
         sigma0 = float(math.exp(opt.x[n_rates + 2]))
         sigma1 = float(math.exp(opt.x[n_rates + 3]))
-        emission_spec = {"model": "gaussian", "mu0": mu0, "mu1": mu1,
-                         "sigma0": sigma0, "sigma1": sigma1}
+        emission_spec = {
+            "model": "gaussian",
+            "mu0": mu0,
+            "mu1": mu1,
+            "sigma0": sigma0,
+            "sigma1": sigma1,
+        }
         result["emissions_used"] = dict(emission_spec)
         warnings.append(
             "emissions were REFIT on the parity record (fit_emissions=True); "
@@ -469,36 +494,40 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     else:
         x0 = [math.log(g0)] if symmetric else [math.log(g0), math.log(g0)]
         bounds = [(math.log(lo), math.log(hi))] * len(x0)
-        nll_args = (v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
-                    emission_spec)
+        nll_args = (v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
         if symmetric:
             opt = optimize.minimize_scalar(
                 lambda lr: _hmm_nll(np.asarray([lr]), *nll_args),
-                bounds=bounds[0], method="bounded",
+                bounds=bounds[0],
+                method="bounded",
                 options={"xatol": 1e-8},
             )
             opt.x = np.asarray([opt.x])
         else:
             opt = optimize.minimize(
-                _hmm_nll, x0, args=nll_args,
-                method="L-BFGS-B", bounds=bounds,
+                _hmm_nll,
+                x0,
+                args=nll_args,
+                method="L-BFGS-B",
+                bounds=bounds,
             )
-            if not (opt.success and np.all(np.isfinite(opt.x))
-                    and math.isfinite(float(opt.fun))):
-                warnings.append(
-                    "L-BFGS-B rate fit did not converge; retried with Powell")
+            if not (opt.success and np.all(np.isfinite(opt.x)) and math.isfinite(float(opt.fun))):
+                warnings.append("L-BFGS-B rate fit did not converge; retried with Powell")
                 opt = optimize.minimize(
-                    _hmm_nll, x0, args=nll_args,
-                    method="Powell", bounds=bounds,
+                    _hmm_nll,
+                    x0,
+                    args=nll_args,
+                    method="Powell",
+                    bounds=bounds,
                     options={"xtol": 1e-7, "ftol": 1e-9},
                 )
-        log_rates = np.asarray(opt.x)[:len(x0)]
+        log_rates = np.asarray(opt.x)[: len(x0)]
 
-    optimizer_ok = bool(opt.success and np.all(np.isfinite(opt.x))
-                        and math.isfinite(float(opt.fun)))
+    optimizer_ok = bool(
+        opt.success and np.all(np.isfinite(opt.x)) and math.isfinite(float(opt.fun))
+    )
     if not optimizer_ok:
-        reasons.append(
-            f"HMM optimizer failed: {getattr(opt, 'message', 'non-finite result')}")
+        reasons.append(f"HMM optimizer failed: {getattr(opt, 'message', 'non-finite result')}")
         result["unidentifiable_reasons"] = reasons
         result["warnings"].append("HMM optimization did not converge")
         return result
@@ -510,16 +539,17 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     loglik = -float(opt.fun)
 
     fb = hmm_forward_backward(
-        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
-        emission_spec=emission_spec)
+        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1, emission_spec=emission_spec
+    )
     post = fb["posteriors"]
     ambiguity = float(np.mean(1.0 - post.max(axis=1)))
     occupancy = post.mean(axis=0)
 
-    viterbi = hmm_viterbi(
-        v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1,
-        emission_spec=emission_spec) \
-        if compute_viterbi else None
+    viterbi = (
+        hmm_viterbi(v, dt_steps, g01, g10, mu0, mu1, sigma0, sigma1, emission_spec=emission_spec)
+        if compute_viterbi
+        else None
+    )
     n_trans = int(np.count_nonzero(np.diff(viterbi))) if viterbi is not None else 0
 
     # Pairwise posterior xi_t(i,j), not a product of adjacent marginals.
@@ -529,7 +559,8 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     exp_trans = 0.0
     for k_step in range(n - 1):
         log_xi = (
-            fb["log_alpha"][k_step, :, None] + lt[k_step]
+            fb["log_alpha"][k_step, :, None]
+            + lt[k_step]
             + le[k_step + 1, None, :]
             + fb["log_beta"][k_step + 1, None, :]
         )
@@ -549,9 +580,7 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
             "few switches in the record to constrain a rate"
         )
     log_lo, log_hi = math.log(lo), math.log(hi)
-    at_bound = any(
-        lr <= log_lo + 1e-3 or lr >= log_hi - 1e-3 for lr in log_rates
-    )
+    at_bound = any(lr <= log_lo + 1e-3 or lr >= log_hi - 1e-3 for lr in log_rates)
     if at_bound:
         reasons.append(
             "fitted rate pinned to a fit bound; the likelihood does not "
@@ -561,9 +590,7 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
 
     # Hessian errors in log-rate space via central finite differences.
     def nll_rates(lr):
-        return _hmm_nll(
-            lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric,
-            emission_spec)
+        return _hmm_nll(lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
 
     errs = [float("nan")] * len(log_rates)
     if not at_bound:
@@ -573,19 +600,22 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
             H = np.zeros((k, k))
             f0 = nll_rates(log_rates)
             for i in range(k):
-                ei = np.zeros(k); ei[i] = h
+                ei = np.zeros(k)
+                ei[i] = h
                 for j in range(i, k):
-                    ej = np.zeros(k); ej[j] = h
+                    ej = np.zeros(k)
+                    ej[j] = h
                     if i == j:
-                        H[i, i] = (nll_rates(log_rates + ei)
-                                   - 2 * f0 + nll_rates(log_rates - ei)) / h ** 2
+                        H[i, i] = (
+                            nll_rates(log_rates + ei) - 2 * f0 + nll_rates(log_rates - ei)
+                        ) / h**2
                     else:
                         H[i, j] = H[j, i] = (
                             nll_rates(log_rates + ei + ej)
                             - nll_rates(log_rates + ei - ej)
                             - nll_rates(log_rates - ei + ej)
                             + nll_rates(log_rates - ei - ej)
-                        ) / (4 * h ** 2)
+                        ) / (4 * h**2)
             cov = np.linalg.inv(H)
             diag = np.diag(cov)
             if np.all(diag > 0):
@@ -597,7 +627,8 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
     if symmetric:
         e = errs[0]
         result["gamma01_err_hz"] = result["gamma10_err_hz"] = (
-            g01 * e if math.isfinite(e) else float("nan"))
+            g01 * e if math.isfinite(e) else float("nan")
+        )
     else:
         result["gamma01_err_hz"] = g01 * errs[0] if math.isfinite(errs[0]) else float("nan")
         result["gamma10_err_hz"] = g10 * errs[1] if math.isfinite(errs[1]) else float("nan")
@@ -608,49 +639,57 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         boots = []
         for _ in range(int(n_boot)):
             sim = simulate_telegraph_trace(
-                n=n, dt_s=dt_steps, gamma01_hz=g01, gamma10_hz=g10,
-                mu0=0.0, mu1=1.0, sigma0=1e-9, sigma1=1e-9,
-                seed=int(rng.integers(0, 2 ** 31 - 1)),
+                n=n,
+                dt_s=dt_steps,
+                gamma01_hz=g01,
+                gamma10_hz=g10,
+                mu0=0.0,
+                mu1=1.0,
+                sigma0=1e-9,
+                sigma1=1e-9,
+                seed=int(rng.integers(0, 2**31 - 1)),
             )
             if emission_spec["model"] == "ge_mixture":
                 hidden = sim["states"]
                 p_e = np.where(
-                    hidden == 0, emission_spec["p_e_state0"],
-                    emission_spec["p_e_state1"])
+                    hidden == 0, emission_spec["p_e_state0"], emission_spec["p_e_state1"]
+                )
                 prepared_e = rng.random(n) < p_e
                 sim_v = rng.normal(
-                    np.where(prepared_e, emission_spec["mu_e"],
-                             emission_spec["mu_g"]),
-                    np.where(prepared_e, emission_spec["sigma_e"],
-                             emission_spec["sigma_g"]),
+                    np.where(prepared_e, emission_spec["mu_e"], emission_spec["mu_g"]),
+                    np.where(prepared_e, emission_spec["sigma_e"], emission_spec["sigma_g"]),
                 )
             else:
                 hidden = sim["states"]
                 sim_v = rng.normal(
-                    np.where(hidden == 0, emission_spec["mu0"],
-                             emission_spec["mu1"]),
-                    np.where(hidden == 0, emission_spec["sigma0"],
-                             emission_spec["sigma1"]),
+                    np.where(hidden == 0, emission_spec["mu0"], emission_spec["mu1"]),
+                    np.where(hidden == 0, emission_spec["sigma0"], emission_spec["sigma1"]),
                 )
             x0b = [math.log(g01)] if symmetric else [math.log(g01), math.log(g10)]
-            boot_args = (sim_v, dt_steps, mu0, mu1, sigma0, sigma1,
-                         symmetric, emission_spec)
+            boot_args = (sim_v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
             boot_bounds = [(math.log(lo), math.log(hi))] * len(x0b)
             if symmetric:
                 ob = optimize.minimize_scalar(
                     lambda lr: _hmm_nll(np.asarray([lr]), *boot_args),
-                    bounds=boot_bounds[0], method="bounded",
+                    bounds=boot_bounds[0],
+                    method="bounded",
                     options={"xatol": 1e-8},
                 )
                 ob.x = np.asarray([ob.x])
             else:
                 ob = optimize.minimize(
-                    _hmm_nll, x0b, args=boot_args, method="L-BFGS-B",
+                    _hmm_nll,
+                    x0b,
+                    args=boot_args,
+                    method="L-BFGS-B",
                     bounds=boot_bounds,
                 )
                 if not (ob.success and np.all(np.isfinite(ob.x))):
                     ob = optimize.minimize(
-                        _hmm_nll, x0b, args=boot_args, method="Powell",
+                        _hmm_nll,
+                        x0b,
+                        args=boot_args,
+                        method="Powell",
                         bounds=boot_bounds,
                     )
             if ob.success and np.all(np.isfinite(ob.x)):
@@ -661,10 +700,12 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
         if boots:
             boots = np.asarray(boots)
             result["gamma_boot_ci"] = {
-                "gamma01_hz": dict(zip(("p16", "p50", "p84"),
-                                       np.percentile(boots[:, 0], [16, 50, 84]))),
-                "gamma10_hz": dict(zip(("p16", "p50", "p84"),
-                                       np.percentile(boots[:, 1], [16, 50, 84]))),
+                "gamma01_hz": dict(
+                    zip(("p16", "p50", "p84"), np.percentile(boots[:, 0], [16, 50, 84]))
+                ),
+                "gamma10_hz": dict(
+                    zip(("p16", "p50", "p84"), np.percentile(boots[:, 1], [16, 50, 84]))
+                ),
                 "n_boot": int(boots.shape[0]),
             }
         else:
@@ -695,18 +736,20 @@ def fit_two_state_hmm(v, dt_s, emissions, symmetric=False,
             "record judged UNIDENTIFIABLE: rate estimates withheld (nan). "
             "Do not read a switching rate off the Viterbi trace."
         )
-    result.update({
-        "identifiable": bool(identifiable),
-        "loglik": float(loglik),
-        "delta_loglik": float(delta_ll),
-        "posteriors": post,
-        "posterior_ambiguity": ambiguity,
-        "viterbi_path": viterbi,
-        "n_viterbi_transitions": n_trans,
-        "expected_transitions": exp_trans,
-        "occupancy": occupancy,
-        "dwell_mean_s": dwell_mean,
-    })
+    result.update(
+        {
+            "identifiable": bool(identifiable),
+            "loglik": float(loglik),
+            "delta_loglik": float(delta_ll),
+            "posteriors": post,
+            "posterior_ambiguity": ambiguity,
+            "viterbi_path": viterbi,
+            "n_viterbi_transitions": n_trans,
+            "expected_transitions": exp_trans,
+            "occupancy": occupancy,
+            "dwell_mean_s": dwell_mean,
+        }
+    )
     if ambiguity > 0.25:
         warnings.append(
             f"posterior ambiguity {ambiguity:.2f} > 0.25: state assignments "

@@ -26,59 +26,72 @@ def run_zero_span_parity(ctx, p):
     if p["ZSP_RecalibrateParityFreqs"]:
         cfg = ctx.working_config()
         spec_cfg = cfg.copy()
-        spec_cfg["reps"]              = p["ZSP_ParitySpec_params"]["reps"]
-        spec_cfg["rounds"]            = p["ZSP_ParitySpec_params"]["rounds"]
-        spec_cfg["relax_delay"]       = p["ZSP_ParitySpec_params"]["relax_delay"]
-        spec_cfg["Gauss"]             = p["ZSP_ParitySpec_params"]["Gauss"]
-        spec_cfg["sigma"]             = p["ZSP_ParitySpec_params"]["sigma"]
-        spec_cfg["qubit_gain"]        = p["ZSP_ParitySpec_params"]["gain"]
-        spec_cfg["qubit_length"]      = p["ZSP_ParitySpec_params"]["qubit_length"]
+        spec_cfg["reps"] = p["ZSP_ParitySpec_params"]["reps"]
+        spec_cfg["rounds"] = p["ZSP_ParitySpec_params"]["rounds"]
+        spec_cfg["relax_delay"] = p["ZSP_ParitySpec_params"]["relax_delay"]
+        spec_cfg["Gauss"] = p["ZSP_ParitySpec_params"]["Gauss"]
+        spec_cfg["sigma"] = p["ZSP_ParitySpec_params"]["sigma"]
+        spec_cfg["qubit_gain"] = p["ZSP_ParitySpec_params"]["gain"]
+        spec_cfg["qubit_length"] = p["ZSP_ParitySpec_params"]["qubit_length"]
         spec_cfg["qubit_pulse_style"] = "const"
-        spec_cfg["SpecSpan"]          = p["ZSP_ParitySpec_params"]["SpecSpan"]
-        spec_cfg["SpecNumPoints"]     = p["ZSP_ParitySpec_params"]["SpecNumPoints"]
-        spec_cfg["step"]  = 2 * spec_cfg["SpecSpan"] / spec_cfg["SpecNumPoints"]
+        spec_cfg["SpecSpan"] = p["ZSP_ParitySpec_params"]["SpecSpan"]
+        spec_cfg["SpecNumPoints"] = p["ZSP_ParitySpec_params"]["SpecNumPoints"]
+        spec_cfg["step"] = 2 * spec_cfg["SpecSpan"] / spec_cfg["SpecNumPoints"]
         spec_cfg["start"] = ctx.qubit_frequency_center - spec_cfg["SpecSpan"]
         spec_cfg["expts"] = spec_cfg["SpecNumPoints"]
         spec_cfg.setdefault("current_voltage", ctx.start_voltage)
 
         Instance_paritySpec = QubitSpecSliceFF(
-            path="ZeroSpanParity_Spec", cfg=spec_cfg,
-            soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=zsp_outerFolder)
+            path="ZeroSpanParity_Spec",
+            cfg=spec_cfg,
+            soc=ctx.soc,
+            soccfg=ctx.soccfg,
+            outerFolder=zsp_outerFolder,
+        )
         data_paritySpec = Instance_paritySpec.acquire()
         Instance_paritySpec.display(
-            data_paritySpec, plotDisp=False, figNum=2,
+            data_paritySpec,
+            plotDisp=False,
+            figNum=2,
             min_sep=p["ZSP_ParitySpec_params"]["min_sep_MHz"],
             fit_window_mhz=p["ZSP_ParitySpec_params"]["fit_window_mhz"],
-            prominent_ratio=p["ZSP_ParitySpec_params"]["prominent_ratio"])
+            prominent_ratio=p["ZSP_ParitySpec_params"]["prominent_ratio"],
+        )
         Instance_paritySpec.save_data(data_paritySpec)
         Instance_paritySpec.save_config()
 
         chosen = pick_parity_drive_freq(
-            data_paritySpec, which=p["ZSP_ParityFreqs_Cached"]["which_to_park"])
-        p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"]  = chosen["lower"]
+            data_paritySpec, which=p["ZSP_ParityFreqs_Cached"]["which_to_park"]
+        )
+        p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"] = chosen["lower"]
         p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"] = chosen["higher"]
         parity_drive_freq_MHz = chosen["picked"]
-        print(f"[ZeroSpanParity] parity doublet: lower={chosen['lower']:.6f} "
-              f"higher={chosen['higher']:.6f} MHz; parking at "
-              f"{p['ZSP_ParityFreqs_Cached']['which_to_park']} "
-              f"({parity_drive_freq_MHz:.6f} MHz)")
+        print(
+            f"[ZeroSpanParity] parity doublet: lower={chosen['lower']:.6f} "
+            f"higher={chosen['higher']:.6f} MHz; parking at "
+            f"{p['ZSP_ParityFreqs_Cached']['which_to_park']} "
+            f"({parity_drive_freq_MHz:.6f} MHz)"
+        )
     else:
         which = p["ZSP_ParityFreqs_Cached"]["which_to_park"]
-        parity_drive_freq_MHz = (p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"]
-                                 if which == "lower"
-                                 else p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"])
+        parity_drive_freq_MHz = (
+            p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"]
+            if which == "lower"
+            else p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"]
+        )
         if parity_drive_freq_MHz is None:
             raise RuntimeError(
                 "[ZeroSpanParity] No cached parity freq and "
                 "ZSP_RecalibrateParityFreqs=False. Populate ZSP_ParityFreqs_Cached "
-                "or set ZSP_RecalibrateParityFreqs=True.")
+                "or set ZSP_RecalibrateParityFreqs=True."
+            )
 
     # ---- Step 2: optional g/e separator pre-calibration ---------------------
     if p["ZSP_RecalibrateSeparator"]:
         sep = get_apriori_separator_from_singleshot(ctx)
         p["ZSP_Separator_Cached"]["g_center"] = sep["g_center"]
         p["ZSP_Separator_Cached"]["e_center"] = sep["e_center"]
-        p["ZSP_Separator_Cached"]["normal"]   = sep["normal"]
+        p["ZSP_Separator_Cached"]["normal"] = sep["normal"]
         p["ZSP_Separator_Cached"]["midpoint"] = sep["midpoint"]
     elif p["ZSP_AnalysisParams"]["classifier_method"] == "apriori":
         # Spec §5.3 rule 7: with RecalibrateSeparator=False and apriori
@@ -92,42 +105,49 @@ def run_zero_span_parity(ctx, p):
                     f"[ZeroSpanParity §5.3 rule 7] ZSP_Separator_Cached['{_k}'] "
                     f"is None and classifier_method='apriori'. Populate "
                     f"ZSP_Separator_Cached, set ZSP_RecalibrateSeparator=True, or "
-                    f"use classifier_method='kmeans'.")
+                    f"use classifier_method='kmeans'."
+                )
             _arr = np.asarray(_v, dtype=float)
             if _arr.shape != (2,):
                 raise RuntimeError(
                     f"[ZeroSpanParity §5.3 rule 7] ZSP_Separator_Cached['{_k}'] "
                     f"has shape {_arr.shape}, expected (2,) — an (I, Q) "
-                    f"coordinate.")
+                    f"coordinate."
+                )
             p["ZSP_Separator_Cached"][_k] = _arr  # normalize to ndarray
 
     # ---- Step 3: build the ZeroSpanParity cfg -------------------------------
-    zsp_mode_params = (p["ZSP_StrobeParams"] if p["ZSP_RunMode"] == "strobe"
-                       else p["ZSP_DecimatedParams"])
-    zsp_qubit_gain = (p["ZSP_DriveParams"]["qubit_gain"]
-                      if p["ZSP_DriveParams"]["qubit_gain"] is not None
-                      else ctx.qubit_gain)
-    zsp_pulse_gain = (p["ZSP_DriveParams"]["pulse_gain"]
-                      if p["ZSP_DriveParams"]["pulse_gain"] is not None
-                      else ctx.cavity_gain)
+    zsp_mode_params = (
+        p["ZSP_StrobeParams"] if p["ZSP_RunMode"] == "strobe" else p["ZSP_DecimatedParams"]
+    )
+    zsp_qubit_gain = (
+        p["ZSP_DriveParams"]["qubit_gain"]
+        if p["ZSP_DriveParams"]["qubit_gain"] is not None
+        else ctx.qubit_gain
+    )
+    zsp_pulse_gain = (
+        p["ZSP_DriveParams"]["pulse_gain"]
+        if p["ZSP_DriveParams"]["pulse_gain"] is not None
+        else ctx.cavity_gain
+    )
     cfg = ctx.working_config()
     zsp_cfg = {
         # Channel routing sourced from BaseConfig (Calib/initialize4Q.py)
-        "res_ch":     cfg["res_ch"],
-        "qubit_ch":   cfg["qubit_ch"],
-        "ro_chs":     cfg["ro_chs"],
-        "nqz":        cfg["nqz"],
-        "qubit_nqz":  cfg["qubit_nqz"],
+        "res_ch": cfg["res_ch"],
+        "qubit_ch": cfg["qubit_ch"],
+        "ro_chs": cfg["ro_chs"],
+        "nqz": cfg["nqz"],
+        "qubit_nqz": cfg["qubit_nqz"],
         "mixer_freq": cfg["mixer_freq"],
         # Frequencies (active qubit's tuned readout + picked parity peak)
-        "read_pulse_freq":   ctx.resonator_frequency_center,
+        "read_pulse_freq": ctx.resonator_frequency_center,
         "parity_drive_freq": parity_drive_freq_MHz,
         # Drive
         "qubit_gain": zsp_qubit_gain,
         "pulse_gain": zsp_pulse_gain,
-        "res_phase":  p["ZSP_DriveParams"]["res_phase"],
+        "res_phase": p["ZSP_DriveParams"]["res_phase"],
         # Mode + trigger source
-        "mode":      p["ZSP_RunMode"],
+        "mode": p["ZSP_RunMode"],
         "start_src": p["ZSP_StartSrc"],
         # Mode-specific params (read_length, adc_trig_offset, + mode extras)
         **zsp_mode_params,
@@ -137,24 +157,34 @@ def run_zero_span_parity(ctx, p):
     # run_* helper calls experiment.set_qubit_gain(), which raises in decimated
     # mode. Fail fast here — before the (potentially long) acquisition — rather
     # than crashing partway through the validation tail.
-    _validate_flags = ("Validate_StaticContrast", "Validate_ContrastVsQubitFreq",
-                       "Validate_ModulationCheck", "Validate_ControlSuite",
-                       "Validate_EnvironmentSweep")
+    _validate_flags = (
+        "Validate_StaticContrast",
+        "Validate_ContrastVsQubitFreq",
+        "Validate_ModulationCheck",
+        "Validate_ControlSuite",
+        "Validate_EnvironmentSweep",
+    )
     if p["ZSP_RunMode"] != "strobe" and any(p.get(f) for f in _validate_flags):
         raise RuntimeError(
             f"[ZeroSpanParity] the validation harness (Validate_*) is strobe-only "
             f"but ZSP_RunMode={p['ZSP_RunMode']!r}. Set ZSP_RunMode='strobe' or "
-            f"disable the Validate_* flags.")
+            f"disable the Validate_* flags."
+        )
 
     # ---- Step 4: run acquisition --------------------------------------------
     zsp_exp = ZeroSpanParity(
-        soc=ctx.soc, soccfg=ctx.soccfg, path="ZeroSpanParity",
-        outerFolder=zsp_outerFolder, cfg=zsp_cfg)
+        soc=ctx.soc,
+        soccfg=ctx.soccfg,
+        path="ZeroSpanParity",
+        outerFolder=zsp_outerFolder,
+        cfg=zsp_cfg,
+    )
     if p["ZSP_RunMode"] == "strobe" and p["ZSP_StrobeParams"]["n_chunks"] > 1:
         # chunked_acquire sets zsp_exp.data = {"data": stitched} itself, so the
         # bare save_data() below persists the full stitched record.
         zsp_data = chunked_acquire(
-            zsp_exp, n_chunks=p["ZSP_StrobeParams"]["n_chunks"], progress=True)
+            zsp_exp, n_chunks=p["ZSP_StrobeParams"]["n_chunks"], progress=True
+        )
     else:
         zsp_data = zsp_exp.acquire(progress=True)
     zsp_exp.save_data()
@@ -166,9 +196,11 @@ def run_zero_span_parity(ctx, p):
     _run_dir = os.path.dirname(zsp_exp.fname)
 
     # ---- Step 5: offline analysis -------------------------------------------
-    zsp_separator = (p["ZSP_Separator_Cached"]
-                     if p["ZSP_AnalysisParams"]["classifier_method"] == "apriori"
-                     else None)
+    zsp_separator = (
+        p["ZSP_Separator_Cached"]
+        if p["ZSP_AnalysisParams"]["classifier_method"] == "apriori"
+        else None
+    )
     analyze_parity_run(
         h5_path=zsp_exp.fname,
         separator=zsp_separator,
@@ -192,44 +224,76 @@ def run_zero_span_parity(ctx, p):
         # already have their separator validated in Step 2).
         _f0 = zsp_cfg["read_pulse_freq"]
         _span = p["StaticContrast_params"]["freq_span_mhz"]
-        _flist = np.linspace(_f0 - _span / 2, _f0 + _span / 2, p["StaticContrast_params"]["n_points"])
+        _flist = np.linspace(
+            _f0 - _span / 2, _f0 + _span / 2, p["StaticContrast_params"]["n_points"]
+        )
         # run_static_contrast's set_qubit_gain rebuilds the strobe program from
         # cfg["reps"], so update both keys — otherwise reps_per_point only lands
         # in the sidecar metadata and the acquisition keeps the original count.
         zsp_exp.cfg["reps_per_chunk"] = p["StaticContrast_params"]["reps_per_point"]
         zsp_exp.cfg["reps"] = p["StaticContrast_params"]["reps_per_point"]
-        _sc = run_static_contrast(zsp_exp, _flist, qubit_gain_on=zsp_cfg["qubit_gain"], out_dir=_val_out_dir)
-        print(f"[stage 1] best read_pulse_freq = {_sc['best_freq']:.4f} MHz  (contrast SNR {_sc['contrast_snr']:.1f})")
+        _sc = run_static_contrast(
+            zsp_exp, _flist, qubit_gain_on=zsp_cfg["qubit_gain"], out_dir=_val_out_dir
+        )
+        print(
+            f"[stage 1] best read_pulse_freq = {_sc['best_freq']:.4f} MHz  (contrast SNR {_sc['contrast_snr']:.1f})"
+        )
 
     if p["Validate_ContrastVsQubitFreq"]:
         _q0 = zsp_cfg["parity_drive_freq"]
         _qspan = p["ContrastVsQubit_params"]["qfreq_span_mhz"]
-        _qlist = np.linspace(_q0 - _qspan / 2, _q0 + _qspan / 2, p["ContrastVsQubit_params"]["n_points"])
+        _qlist = np.linspace(
+            _q0 - _qspan / 2, _q0 + _qspan / 2, p["ContrastVsQubit_params"]["n_points"]
+        )
         _s2 = run_contrast_vs_qubit_freq(zsp_exp, _qlist, out_dir=_val_out_dir)
         print(f"[stage 2] parity peak sep = {_s2['peaks'].get('peak_sep')}")
 
     if p["Validate_ModulationCheck"]:
-        _m = run_modulation_check(zsp_exp, separator=zsp_separator,
-                                  modulation_freq_hz=p["Modulation_params"]["modulation_freq_hz"],
-                                  n_periods=p["Modulation_params"]["n_periods"], out_dir=_val_out_dir)
-        print(f"[stage 3] modulation corr={_m['correlation']:.2f} depth={_m['modulation_depth']:.2f} "
-              f"snr={_m['snr']:.2f}  (gate: proceed only if recovered)")
+        _m = run_modulation_check(
+            zsp_exp,
+            separator=zsp_separator,
+            modulation_freq_hz=p["Modulation_params"]["modulation_freq_hz"],
+            n_periods=p["Modulation_params"]["n_periods"],
+            out_dir=_val_out_dir,
+        )
+        print(
+            f"[stage 3] modulation corr={_m['correlation']:.2f} depth={_m['modulation_depth']:.2f} "
+            f"snr={_m['snr']:.2f}  (gate: proceed only if recovered)"
+        )
 
     if p["Validate_ControlSuite"]:
-        _pf = {"lower": p["ZSP_ParityFreqs_Cached"].get("lower_peak_MHz"),
-               "higher": p["ZSP_ParityFreqs_Cached"].get("higher_peak_MHz")}
-        _c = run_control_suite(zsp_exp, separator=zsp_separator, variants=tuple(p["Control_params"]["variants"]),
-                               detune_mhz=p["Control_params"]["detune_mhz"], parity_freqs=_pf, out_dir=_val_out_dir)
-        print(f"[stage 8] controls: {[(k, v.get('separation_snr', v.get('separation_snr_lower'))) for k, v in _c['variants'].items()]}")
+        _pf = {
+            "lower": p["ZSP_ParityFreqs_Cached"].get("lower_peak_MHz"),
+            "higher": p["ZSP_ParityFreqs_Cached"].get("higher_peak_MHz"),
+        }
+        _c = run_control_suite(
+            zsp_exp,
+            separator=zsp_separator,
+            variants=tuple(p["Control_params"]["variants"]),
+            detune_mhz=p["Control_params"]["detune_mhz"],
+            parity_freqs=_pf,
+            out_dir=_val_out_dir,
+        )
+        print(
+            f"[stage 8] controls: {[(k, v.get('separation_snr', v.get('separation_snr_lower'))) for k, v in _c['variants'].items()]}"
+        )
 
     if p["Validate_EnvironmentSweep"]:
+
         def _set_power(_exp, _val):
-            _exp.cfg["pulse_gain"] = _val  # NOTE: replace with attenuator/YOKO call for real power sweep
+            _exp.cfg["pulse_gain"] = (
+                _val  # NOTE: replace with attenuator/YOKO call for real power sweep
+            )
             _exp.prog = type(_exp.prog)(_exp.soccfg, _exp.cfg)
-        _e = run_environment_sweep(zsp_exp, separator=zsp_separator,
-                                   param_name=p["Environment_params"]["param_name"],
-                                   param_values=p["Environment_params"]["values"],
-                                   set_param=_set_power, out_dir=_val_out_dir)
+
+        _e = run_environment_sweep(
+            zsp_exp,
+            separator=zsp_separator,
+            param_name=p["Environment_params"]["param_name"],
+            param_values=p["Environment_params"]["values"],
+            set_param=_set_power,
+            out_dir=_val_out_dir,
+        )
         print(f"[stage 7] swept {p['Environment_params']['param_name']}: {_e['table']}")
 
     if p["Build_EvidenceReport"]:

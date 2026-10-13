@@ -5,6 +5,7 @@ Ported from the legacy inline self-test (mZeroSpanParity.py ``if __name__ == "__
 block, L581-737) with the same assertions: _validate_cfg rules against a fake soccfg, the
 decimated soft_avgs opt-in gate, and the strobe I/Q normalisation to single-shot units.
 """
+
 import numpy as np
 import pytest
 
@@ -39,13 +40,23 @@ def sc():
 @pytest.fixture
 def base():
     return {
-        "mode": "strobe", "start_src": "internal",
-        "res_ch": 0, "qubit_ch": 1, "ro_chs": [0],
-        "nqz": 2, "qubit_nqz": 2, "mixer_freq": 0.0,
-        "read_pulse_freq": 7000.0, "parity_drive_freq": 3050.0,
-        "qubit_gain": 5000, "pulse_gain": 1000, "res_phase": 0,
-        "adc_trig_offset": 0.5, "read_length": 5.0,
-        "sample_period_us": 20.0, "reps_per_chunk": 1000,
+        "mode": "strobe",
+        "start_src": "internal",
+        "res_ch": 0,
+        "qubit_ch": 1,
+        "ro_chs": [0],
+        "nqz": 2,
+        "qubit_nqz": 2,
+        "mixer_freq": 0.0,
+        "read_pulse_freq": 7000.0,
+        "parity_drive_freq": 3050.0,
+        "qubit_gain": 5000,
+        "pulse_gain": 1000,
+        "res_phase": 0,
+        "adc_trig_offset": 0.5,
+        "read_length": 5.0,
+        "sample_period_us": 20.0,
+        "reps_per_chunk": 1000,
     }
 
 
@@ -130,6 +141,7 @@ def test_soft_avgs_gate_requires_opt_in(base, sc):
     class _StubExp:
         """Minimal ZeroSpanParity stand-in to exercise _acquire_decimated's
         soft_avgs gate without instantiating QICK programs."""
+
         _acquire_decimated = ZeroSpanParity._acquire_decimated
 
         def __init__(self, cfg, soccfg):
@@ -139,9 +151,15 @@ def test_soft_avgs_gate_requires_opt_in(base, sc):
             self.prog = None
 
     cfg_soft = dict(base)
-    cfg_soft.update({"mode": "decimated", "capture_length_us": 50.0,
-                     "soft_avgs": 4, "read_length": 5.0,
-                     "adc_trig_offset": 0.5})
+    cfg_soft.update(
+        {
+            "mode": "decimated",
+            "capture_length_us": 50.0,
+            "soft_avgs": 4,
+            "read_length": 5.0,
+            "adc_trig_offset": 0.5,
+        }
+    )
     del cfg_soft["sample_period_us"]
     del cfg_soft["reps_per_chunk"]
     with pytest.raises(RuntimeError) as exc:

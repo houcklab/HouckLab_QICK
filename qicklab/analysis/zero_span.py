@@ -27,12 +27,13 @@ and are run with:
     python -m WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity
 """
 
-import os
 import json
+import os
 
-import numpy as np
 import h5py
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")  # non-interactive backend safe in headless runs
 import matplotlib.pyplot as plt
 
@@ -82,6 +83,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         }
     elif method == "kmeans":
         from sklearn.cluster import KMeans
+
         I = np.ravel(np.asarray(I, dtype=float))
         Q = np.ravel(np.asarray(Q, dtype=float))
         if I.size == 0:
@@ -132,8 +134,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         raise ValueError(f"Unknown method: {method!r}")
 
 
-def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
-                                gap_indices=None):
+def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap_indices=None):
     """
     Sliding-window switch rate in Hz from a binary parity trace.
 
@@ -214,8 +215,9 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
     }
 
 
-def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
-                  min_duration_us=None, window_us=None):
+def detect_bursts(
+    rate_Hz, window_t_us, baseline_rate=None, k_sigma=5, min_duration_us=None, window_us=None
+):
     """
     Identify contiguous high-rate windows as bursts above a robust baseline.
 
@@ -305,34 +307,38 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
         if min_duration_us is not None and duration < min_duration_us:
             continue
         seg = rate[s:e]
-        bursts.append({
-            "t_start_us": t_start,
-            "t_end_us": t_end,
-            "duration_us": duration,
-            "peak_rate_Hz": float(np.max(seg)),
-            "mean_rate_Hz": float(np.mean(seg)),
-            "integrated_excess_switches": float(
-                np.sum((seg - baseline_rate)) * (stride * 1e-6)
-            ),
-            "baseline_rate_Hz": baseline_rate,
-            "threshold_Hz": threshold,
-        })
+        bursts.append(
+            {
+                "t_start_us": t_start,
+                "t_end_us": t_end,
+                "duration_us": duration,
+                "peak_rate_Hz": float(np.max(seg)),
+                "mean_rate_Hz": float(np.mean(seg)),
+                "integrated_excess_switches": float(
+                    np.sum((seg - baseline_rate)) * (stride * 1e-6)
+                ),
+                "baseline_rate_Hz": baseline_rate,
+                "threshold_Hz": threshold,
+            }
+        )
     return bursts
 
 
 def _plot_iq_scatter(I, Q, bits, separator, out_path):
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(np.asarray(I)[bits == 0], np.asarray(Q)[bits == 0],
-               s=1, alpha=0.3, label="state 0")
-    ax.scatter(np.asarray(I)[bits == 1], np.asarray(Q)[bits == 1],
-               s=1, alpha=0.3, label="state 1")
+    ax.scatter(np.asarray(I)[bits == 0], np.asarray(Q)[bits == 0], s=1, alpha=0.3, label="state 0")
+    ax.scatter(np.asarray(I)[bits == 1], np.asarray(Q)[bits == 1], s=1, alpha=0.3, label="state 1")
     g = np.asarray(separator["g_center"], dtype=float)
     e = np.asarray(separator["e_center"], dtype=float)
     ax.plot([g[0], e[0]], [g[1], e[1]], "k--", lw=1)
     ax.scatter([g[0], e[0]], [g[1], e[1]], c="k", marker="x", s=60, label="separator")
-    ax.set_xlabel("I"); ax.set_ylabel("Q"); ax.legend(loc="best", markerscale=4)
+    ax.set_xlabel("I")
+    ax.set_ylabel("Q")
+    ax.legend(loc="best", markerscale=4)
     ax.set_title("Parity IQ scatter")
-    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def _plot_parity_vs_time(bits, t_us, out_path, max_pts=100_000):
@@ -353,7 +359,9 @@ def _plot_parity_vs_time(bits, t_us, out_path, max_pts=100_000):
         ax.set_ylabel("parity state")
     ax.set_xlabel("time (s)")
     ax.set_title("Parity vs time")
-    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def _plot_switch_rate(rate_out, bursts, out_path):
@@ -365,12 +373,14 @@ def _plot_switch_rate(rate_out, bursts, out_path):
         ax.axhline(baseline, color="gray", ls=":", label=f"baseline {baseline:.1f} Hz")
         ax.axhline(threshold, color="red", ls="--", label=f"threshold {threshold:.1f} Hz")
         for b in bursts:
-            ax.axvspan(b["t_start_us"] / 1e6, b["t_end_us"] / 1e6,
-                       color="red", alpha=0.15)
+            ax.axvspan(b["t_start_us"] / 1e6, b["t_end_us"] / 1e6, color="red", alpha=0.15)
         ax.legend(loc="best")
-    ax.set_xlabel("time (s)"); ax.set_ylabel("switch rate (Hz)")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("switch rate (Hz)")
     ax.set_title("Sliding-window switch rate")
-    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def _plot_dwell_histograms(stats, out_path):
@@ -387,12 +397,18 @@ def _plot_dwell_histograms(stats, out_path):
             ax.hist(dwells, bins=int(nb), log=True, alpha=0.7)
             if np.isfinite(fit["tau_us"]):
                 xs = np.linspace(dwells.min(), dwells.max(), 200)
-                ax.plot(xs, fit["A"] * np.exp(-xs / fit["tau_us"]), "r-",
-                        label=f"tau={fit['tau_us']:.1f} us")
+                ax.plot(
+                    xs,
+                    fit["A"] * np.exp(-xs / fit["tau_us"]),
+                    "r-",
+                    label=f"tau={fit['tau_us']:.1f} us",
+                )
                 ax.legend()
         ax.set_xlabel("dwell (us)")
         ax.set_title(title)
-    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def _bin_iq_time(I, Q, t_us, bin_us, gap_indices=None):
@@ -425,23 +441,38 @@ def _bin_iq_time(I, Q, t_us, bin_us, gap_indices=None):
         if n_bins == 0:
             continue
         keep = n_bins * bin_samples
-        I_seg = I[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
-        Q_seg = Q[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
-        t_seg = t[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
-        I_parts.append(I_seg); Q_parts.append(Q_seg); t_parts.append(t_seg)
+        I_seg = I[a : a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        Q_seg = Q[a : a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        t_seg = t[a : a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        I_parts.append(I_seg)
+        Q_parts.append(Q_seg)
+        t_parts.append(t_seg)
         if seg_idx > 0:
             new_gaps.append(cum)
         cum += n_bins
     if not I_parts:
         return (np.zeros(0), np.zeros(0), np.zeros(0), [], int(n_dropped))
-    return (np.concatenate(I_parts), np.concatenate(Q_parts),
-            np.concatenate(t_parts), new_gaps, int(n_dropped))
+    return (
+        np.concatenate(I_parts),
+        np.concatenate(Q_parts),
+        np.concatenate(t_parts),
+        new_gaps,
+        int(n_dropped),
+    )
 
 
-def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
-                       classifier_method="apriori", step_us=None,
-                       min_burst_duration_us=None, save_plots=True, out_dir=None,
-                       analysis_bin_us=None):
+def analyze_parity_run(
+    h5_path,
+    separator=None,
+    window_us=1000.0,
+    k_sigma=5.0,
+    classifier_method="apriori",
+    step_us=None,
+    min_burst_duration_us=None,
+    save_plots=True,
+    out_dir=None,
+    analysis_bin_us=None,
+):
     """
     Load a ZeroSpanParity raw .h5, classify into parity bits, compute switch rate,
     detect bursts, compute dwell statistics, save plots and a sidecar.
@@ -480,8 +511,9 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
         Q = np.array(f["Q"])
         t_us = np.array(f["t_us"])
         gap_indices = list(np.array(f["gap_indices"])) if "gap_indices" in f else []
-        sample_period_us = float(f.attrs.get("sample_period_us",
-                                              (t_us[1] - t_us[0]) if t_us.size > 1 else 0.0))
+        sample_period_us = float(
+            f.attrs.get("sample_period_us", (t_us[1] - t_us[0]) if t_us.size > 1 else 0.0)
+        )
         mode = str(f.attrs.get("mode", "strobe"))
 
     raw_sample_period_us = sample_period_us
@@ -505,27 +537,32 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
     bits = cls["binary_states"]
     sep_used = cls["separator_used"]
 
-    rate_out = sliding_window_switch_rate(bits, t_us, window_us=window_us,
-                                          step_us=step_us, gap_indices=gap_indices)
-    bursts = detect_bursts(rate_out["rate_Hz"], rate_out["window_t_us"],
-                           baseline_rate=None, k_sigma=k_sigma,
-                           min_duration_us=min_burst_duration_us,
-                           window_us=rate_out["window_us"])
+    rate_out = sliding_window_switch_rate(
+        bits, t_us, window_us=window_us, step_us=step_us, gap_indices=gap_indices
+    )
+    bursts = detect_bursts(
+        rate_out["rate_Hz"],
+        rate_out["window_t_us"],
+        baseline_rate=None,
+        k_sigma=k_sigma,
+        min_duration_us=min_burst_duration_us,
+        window_us=rate_out["window_us"],
+    )
     stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
 
     if save_plots:
-        _plot_iq_scatter(I, Q, bits, sep_used,
-                          os.path.join(out_dir, base + "_iq_scatter.png"))
-        _plot_parity_vs_time(bits, t_us,
-                              os.path.join(out_dir, base + "_parity_vs_time.png"))
-        _plot_switch_rate(rate_out, bursts,
-                           os.path.join(out_dir, base + "_switch_rate_vs_time.png"))
-        _plot_dwell_histograms(stats,
-                                os.path.join(out_dir, base + "_dwell_histograms.png"))
+        _plot_iq_scatter(I, Q, bits, sep_used, os.path.join(out_dir, base + "_iq_scatter.png"))
+        _plot_parity_vs_time(bits, t_us, os.path.join(out_dir, base + "_parity_vs_time.png"))
+        _plot_switch_rate(
+            rate_out, bursts, os.path.join(out_dir, base + "_switch_rate_vs_time.png")
+        )
+        _plot_dwell_histograms(stats, os.path.join(out_dir, base + "_dwell_histograms.png"))
 
-    baseline_rate = (bursts[0]["baseline_rate_Hz"] if bursts
-                     else float(np.median(rate_out["rate_Hz"])
-                                if rate_out["rate_Hz"].size else 0.0))
+    baseline_rate = (
+        bursts[0]["baseline_rate_Hz"]
+        if bursts
+        else float(np.median(rate_out["rate_Hz"]) if rate_out["rate_Hz"].size else 0.0)
+    )
     summary = {
         "h5_path": h5_path,
         "sample_period_us": sample_period_us,
@@ -549,12 +586,17 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
 
     # Write sidecars
     with open(os.path.join(out_dir, base + "_analysis.json"), "w") as f:
-        json.dump({**summary,
-                   "bursts": bursts,
-                   "window_us": rate_out["window_us"],
-                   "step_us": rate_out["step_us"]},
-                  f, indent=2, default=lambda x: x.tolist()
-                  if isinstance(x, np.ndarray) else float(x))
+        json.dump(
+            {
+                **summary,
+                "bursts": bursts,
+                "window_us": rate_out["window_us"],
+                "step_us": rate_out["step_us"],
+            },
+            f,
+            indent=2,
+            default=lambda x: x.tolist() if isinstance(x, np.ndarray) else float(x),
+        )
     with h5py.File(os.path.join(out_dir, base + "_analysis.h5"), "w") as f:
         f.create_dataset("binary_states", data=bits)
         f.create_dataset("scores", data=cls["scores"])

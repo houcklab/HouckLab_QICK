@@ -12,34 +12,52 @@ class T2RProgram(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.q_rp=self.ch_page(cfg["qubit_ch"])     # get register page for qubit_ch
+        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_wait = 3
         self.r_phase2 = 4
-        self.r_phase=self.sreg(cfg["qubit_ch"], "phase")
+        self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
         self.regwi(self.q_rp, self.r_wait, cfg["start"])
         self.regwi(self.q_rp, self.r_phase2, 0)
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
-                                 freq=cfg["pulse_freq"], gen_ch=cfg["res_ch"])
+            self.declare_readout(
+                ch=ch,
+                length=self.us2cycles(cfg["readout_length"]),
+                freq=cfg["pulse_freq"],
+                gen_ch=cfg["res_ch"],
+            )
 
-        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])  # conver f_res to dac register value
+        f_res = self.freq2reg(
+            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
+        )  # conver f_res to dac register value
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
         # add qubit and readout pulses to respective channels
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
+        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
+        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+        self.add_gauss(
+            ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_lenth
+        )
 
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-                                 phase=0, gain=cfg["pi2_gain"],
-                                 waveform="qubit")
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=cfg["res_phase"],
-                                 gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=f_ge,
+            phase=0,
+            gain=cfg["pi2_gain"],
+            waveform="qubit",
+        )
+        self.set_pulse_registers(
+            ch=cfg["res_ch"],
+            style="const",
+            freq=f_res,
+            phase=cfg["res_phase"],
+            gain=cfg["pulse_gain"],
+            length=self.us2cycles(cfg["length"]),
+        )
 
         self.sync_all(self.us2cycles(0.2))
 
@@ -54,16 +72,21 @@ class T2RProgram(RAveragerProgram):
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.ro_chs,
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+        self.measure(
+            pulse_ch=self.cfg["res_ch"],
+            adcs=self.ro_chs,
+            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            wait=True,
+            syncdelay=self.us2cycles(self.cfg["relax_delay"]),
+        )
 
     def update(self):
-        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"]))  # update the time between two π/2 pulses
-        self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+',
-                   self.cfg["phase_step"])  # advance the phase of the LO for the second π/2 pulse
+        self.mathi(
+            self.q_rp, self.r_wait, self.r_wait, "+", self.us2cycles(self.cfg["step"])
+        )  # update the time between two π/2 pulses
+        self.mathi(
+            self.q_rp, self.r_phase2, self.r_phase2, "+", self.cfg["phase_step"]
+        )  # advance the phase of the LO for the second π/2 pulse
 
 
 class T2R(ExperimentClass):
@@ -71,8 +94,27 @@ class T2R(ExperimentClass):
     Basic T2R
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress,
+        )
 
     def acquire(self, progress=False, debug=False):
 
@@ -80,10 +122,17 @@ class T2R(ExperimentClass):
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
         prog = T2RProgram(self.soccfg, self.cfg)
 
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False,) # debug=False)
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+        x_pts, avgi, avgq = prog.acquire(
+            self.soc,
+            threshold=None,
+            angle=None,
+            load_pulses=True,
+            readouts_per_experiment=1,
+            save_experiments=None,
+            start_src="internal",
+            progress=False,
+        )  # debug=False)
+        data = {"config": self.cfg, "data": {"x_pts": x_pts, "avgi": avgi, "avgq": avgq}}
         self.data = data
 
         return data
@@ -115,10 +164,7 @@ class T2R(ExperimentClass):
         dominant_fft_freq = None
 
         if len(fft_peaks) > 0:
-            peak_amps = np.array([
-                fft_spec[np.argmin(np.abs(fft_freqs - fp))]
-                for fp in fft_peaks
-            ])
+            peak_amps = np.array([fft_spec[np.argmin(np.abs(fft_freqs - fp))] for fp in fft_peaks])
 
             order = np.argsort(peak_amps)[::-1]
             best_amp = peak_amps[order[0]]
@@ -154,10 +200,7 @@ class T2R(ExperimentClass):
                 )
             else:
                 f_report = f
-                label = (
-                    f"1f fit: T2*={T2:.2f}±{dT2:.2f} us, "
-                    f"f={f:.4f}±{df:.4f} MHz"
-                )
+                label = f"1f fit: T2*={T2:.2f}±{dT2:.2f} us, f={f:.4f}±{df:.4f} MHz"
 
         else:
             A1, A2, T2, f1, f2, phi1, phi2, C = osc_fit["popt"]
@@ -217,11 +260,7 @@ class T2R(ExperimentClass):
             plt.axvline(fp, linestyle="--", alpha=0.6)
 
         if use_fft_freq:
-            plt.axvline(
-                dominant_fft_freq,
-                linewidth=2,
-                label=f"USED {dominant_fft_freq:.4f} MHz"
-            )
+            plt.axvline(dominant_fft_freq, linewidth=2, label=f"USED {dominant_fft_freq:.4f} MHz")
 
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("FFT amplitude")
@@ -238,5 +277,5 @@ class T2R(ExperimentClass):
             plt.close(fig)
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
+        print(f"Saving {self.fname}")
+        super().save_data(data=data["data"])

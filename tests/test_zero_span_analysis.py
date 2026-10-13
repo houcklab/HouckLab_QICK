@@ -38,9 +38,12 @@ def _classify_clouds():
     g_center = np.array([0.0, 0.0])
     e_center = np.array([10.0, 0.0])
     sep = {"g_center": g_center, "e_center": e_center}
-    I_g = rng.normal(g_center[0], 0.5, 1000); Q_g = rng.normal(g_center[1], 0.5, 1000)
-    I_e = rng.normal(e_center[0], 0.5, 1000); Q_e = rng.normal(e_center[1], 0.5, 1000)
-    I = np.concatenate([I_g, I_e]); Q = np.concatenate([Q_g, Q_e])
+    I_g = rng.normal(g_center[0], 0.5, 1000)
+    Q_g = rng.normal(g_center[1], 0.5, 1000)
+    I_e = rng.normal(e_center[0], 0.5, 1000)
+    Q_e = rng.normal(e_center[1], 0.5, 1000)
+    I = np.concatenate([I_g, I_e])
+    Q = np.concatenate([Q_g, Q_e])
     labels_true = np.concatenate([np.zeros(1000, int), np.ones(1000, int)])
     return rng, sep, I, Q, labels_true
 
@@ -48,8 +51,10 @@ def _classify_clouds():
 def _rng_after_kmeans_block():
     """The shared stream after blocks 1-2 (block 2 draws the Q-separated clouds)."""
     rng = _classify_clouds()[0]
-    rng.normal(0.0, 0.5, 1000); rng.normal(0.0, 0.5, 1000)   # Ig_q, Qg_q
-    rng.normal(0.0, 0.5, 1000); rng.normal(10.0, 0.5, 1000)  # Ie_q, Qe_q
+    rng.normal(0.0, 0.5, 1000)
+    rng.normal(0.0, 0.5, 1000)  # Ig_q, Qg_q
+    rng.normal(0.0, 0.5, 1000)
+    rng.normal(10.0, 0.5, 1000)  # Ie_q, Qe_q
     return rng
 
 
@@ -67,9 +72,12 @@ def test_classify_parity_trace_apriori():
     g_center = np.array([0.0, 0.0])
     e_center = np.array([10.0, 0.0])
     sep = {"g_center": g_center, "e_center": e_center}
-    I_g = rng.normal(g_center[0], 0.5, 1000); Q_g = rng.normal(g_center[1], 0.5, 1000)
-    I_e = rng.normal(e_center[0], 0.5, 1000); Q_e = rng.normal(e_center[1], 0.5, 1000)
-    I = np.concatenate([I_g, I_e]); Q = np.concatenate([Q_g, Q_e])
+    I_g = rng.normal(g_center[0], 0.5, 1000)
+    Q_g = rng.normal(g_center[1], 0.5, 1000)
+    I_e = rng.normal(e_center[0], 0.5, 1000)
+    Q_e = rng.normal(e_center[1], 0.5, 1000)
+    I = np.concatenate([I_g, I_e])
+    Q = np.concatenate([Q_g, Q_e])
     labels_true = np.concatenate([np.zeros(1000, int), np.ones(1000, int)])
 
     out = classify_parity_trace(I, Q, separator=sep, method="apriori")
@@ -99,9 +107,12 @@ def test_classify_parity_trace_kmeans():
     # Q-axis-separated clouds: the remap must be orientation-independent (the
     # old I-coordinate rule was arbitrary when the g/e split lies along Q).
     # label 0 should be the lower-Q cluster.
-    Ig_q = rng.normal(0.0, 0.5, 1000); Qg_q = rng.normal(0.0, 0.5, 1000)
-    Ie_q = rng.normal(0.0, 0.5, 1000); Qe_q = rng.normal(10.0, 0.5, 1000)
-    I_q = np.concatenate([Ig_q, Ie_q]); Q_q = np.concatenate([Qg_q, Qe_q])
+    Ig_q = rng.normal(0.0, 0.5, 1000)
+    Qg_q = rng.normal(0.0, 0.5, 1000)
+    Ie_q = rng.normal(0.0, 0.5, 1000)
+    Qe_q = rng.normal(10.0, 0.5, 1000)
+    I_q = np.concatenate([Ig_q, Ie_q])
+    Q_q = np.concatenate([Qg_q, Qe_q])
     out_q = classify_parity_trace(I_q, Q_q, separator=None, method="kmeans")
     label0_mean_Q = np.mean(np.asarray(Q_q)[out_q["binary_states"] == 0])
     label1_mean_Q = np.mean(np.asarray(Q_q)[out_q["binary_states"] == 1])
@@ -137,25 +148,24 @@ def test_sliding_window_switch_rate():
     # Remaining sum: |0| + |1| + |0| + 0 (zeroed) + |0| = 1.
     bits2 = np.array([0, 0, 1, 1, 0, 0])
     t2 = np.array([0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
-    out_gap = sliding_window_switch_rate(bits2, t2, window_us=60.0, step_us=60.0,
-                                          gap_indices=[4])
+    out_gap = sliding_window_switch_rate(bits2, t2, window_us=60.0, step_us=60.0, gap_indices=[4])
     assert out_gap["switches_per_window"][0] == 1, (
         f"expected 1 switch with gap, got {out_gap['switches_per_window']}"
     )
 
     # Default step is window_us // 2 (integer floor, spec §3.2/§3.5).
-    out_step = sliding_window_switch_rate(np.array([0, 1, 0, 1]),
-                                          np.array([0.0, 1.0, 2.0, 3.0]),
-                                          window_us=1001.0)
+    out_step = sliding_window_switch_rate(
+        np.array([0, 1, 0, 1]), np.array([0.0, 1.0, 2.0, 3.0]), window_us=1001.0
+    )
     assert out_step["step_us"] == 500.0, (
         f"default step_us={out_step['step_us']} (expected 500.0 = 1001 // 2)"
     )
 
     # A switch landing exactly at t_end (record length an exact multiple of the
     # window) must be counted by the closed final window, not dropped.
-    out_edge = sliding_window_switch_rate(np.array([0, 0, 0, 1]),
-                                          np.array([0.0, 30.0, 60.0, 90.0]),
-                                          window_us=30.0, step_us=30.0)
+    out_edge = sliding_window_switch_rate(
+        np.array([0, 0, 0, 1]), np.array([0.0, 30.0, 60.0, 90.0]), window_us=30.0, step_us=30.0
+    )
     assert int(out_edge["switches_per_window"].sum()) == 1, (
         f"boundary switch dropped: {out_edge['switches_per_window']}"
     )
@@ -168,8 +178,7 @@ def test_detect_bursts():
     rate[50] = 10_000.0
     centers = np.arange(100) * 100_000.0  # 100 ms per window in us
 
-    bursts = detect_bursts(rate, centers, baseline_rate=None, k_sigma=5,
-                           min_duration_us=None)
+    bursts = detect_bursts(rate, centers, baseline_rate=None, k_sigma=5, min_duration_us=None)
     assert len(bursts) == 1, f"expected 1 burst, got {len(bursts)}"
     b = bursts[0]
     assert b["t_start_us"] <= centers[50] <= b["t_end_us"], (
@@ -188,7 +197,7 @@ def test_detect_bursts():
     # flagged as a burst.
     rng_b = np.random.default_rng(0)
     win_us = 1000.0
-    q_rate = 1.0 / (win_us * 1e-6)        # one switch per window, in Hz
+    q_rate = 1.0 / (win_us * 1e-6)  # one switch per window, in Hz
     sparse = np.zeros(400)
     sparse[rng_b.random(400) < 0.10] = q_rate
     sparse_cen = np.arange(400) * (win_us / 2.0)
@@ -205,8 +214,7 @@ def test_detect_bursts():
     # floor (q*k_sigma = 5000 Hz), NOT by a baseline-0-centered MAD (~74132 Hz).
     rate_mc = np.array([10000.0] * 8 + [30000.0, 200000.0])
     cen_mc = np.arange(rate_mc.size) * 500.0
-    b_mc = detect_bursts(rate_mc, cen_mc, baseline_rate=0.0, k_sigma=5,
-                         window_us=win_us)
+    b_mc = detect_bursts(rate_mc, cen_mc, baseline_rate=0.0, k_sigma=5, window_us=win_us)
     assert b_mc and abs(b_mc[0]["threshold_Hz"] - 5000.0) < 1.0, (
         f"MAD not centered on median: threshold {b_mc[0]['threshold_Hz'] if b_mc else None}"
     )
@@ -219,8 +227,8 @@ def test_dwell_time_statistics():
     # Generate a Markov-style binary trace with known mean dwell times
     # tau_0 = 200 samples, tau_1 = 400 samples, at 20 us/sample.
     n = 200_000
-    p01 = 1.0 / 200.0   # prob 0 -> 1 per sample
-    p10 = 1.0 / 400.0   # prob 1 -> 0 per sample
+    p01 = 1.0 / 200.0  # prob 0 -> 1 per sample
+    p10 = 1.0 / 400.0  # prob 1 -> 0 per sample
     bits_mc = np.zeros(n, dtype=int)
     state = 0
     for i in range(n):
@@ -261,9 +269,9 @@ def test_dwell_time_statistics():
 
     # A single-sample segment (e.g. split off by a gap) yields ~one sample
     # period of dwell, not 0.0 (which would bias mean dwell times down).
-    s_single = dwell_time_statistics(np.array([0, 0, 1]),
-                                     np.array([0.0, 10.0, 20.0]),
-                                     gap_indices=[2])
+    s_single = dwell_time_statistics(
+        np.array([0, 0, 1]), np.array([0.0, 10.0, 20.0]), gap_indices=[2]
+    )
     assert abs(s_single["mean_1"] - 10.0) < 1e-9, (
         f"single-sample dwell = {s_single['mean_1']} (expected ~10 us)"
     )
@@ -318,8 +326,12 @@ def test_dwell_time_statistics_debounce():
     mean_clean = 0.5 * (stats_clean["mean_0"] + stats_clean["mean_1"])
     mean_nodb = 0.5 * (stats_nodb["mean_0"] + stats_nodb["mean_1"])
     mean_db = 0.5 * (stats_db["mean_0"] + stats_db["mean_1"])
-    assert mean_nodb < 0.5 * mean_clean, f"expected flickers to bias mean low, got {mean_nodb} vs {mean_clean}"
-    assert abs(mean_db - mean_clean) / mean_clean < 0.30, f"debounced mean {mean_db} far from clean {mean_clean}"
+    assert mean_nodb < 0.5 * mean_clean, (
+        f"expected flickers to bias mean low, got {mean_nodb} vs {mean_clean}"
+    )
+    assert abs(mean_db - mean_clean) / mean_clean < 0.30, (
+        f"debounced mean {mean_db} far from clean {mean_clean}"
+    )
     # Debounce must respect gaps: a gap index must never merge across the boundary
     g = [clean.size // 2]
     _ = dwell_time_statistics(noisy, t, gap_indices=g, merge_short_segments=True, min_dwell_bins=2)
@@ -335,9 +347,9 @@ def test_analyze_parity_run_end_to_end():
         rng_syn = np.random.default_rng(7)
         # Two IQ clouds, parity-modulated
         labels_syn = (np.cumsum(rng_syn.random(n_syn) < 0.005) % 2).astype(int)
-        I_syn = np.where(labels_syn == 1,
-                         rng_syn.normal(10.0, 0.5, n_syn),
-                         rng_syn.normal(0.0, 0.5, n_syn))
+        I_syn = np.where(
+            labels_syn == 1, rng_syn.normal(10.0, 0.5, n_syn), rng_syn.normal(0.0, 0.5, n_syn)
+        )
         Q_syn = rng_syn.normal(0.0, 0.5, n_syn)
         t_syn = np.arange(n_syn) * sample_period_us_syn
 
@@ -350,8 +362,7 @@ def test_analyze_parity_run_end_to_end():
             f.attrs["sample_period_us"] = sample_period_us_syn
             f.attrs["mode"] = "strobe"
 
-        sep_syn = {"g_center": np.array([0.0, 0.0]),
-                   "e_center": np.array([10.0, 0.0])}
+        sep_syn = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([10.0, 0.0])}
         results = analyze_parity_run(
             h5_path=h5_path,
             separator=sep_syn,
@@ -365,13 +376,17 @@ def test_analyze_parity_run_end_to_end():
         assert "mean_dwell_0_us" in results and "mean_dwell_1_us" in results
 
         base = os.path.splitext(os.path.basename(h5_path))[0]
-        for suffix in ["_iq_scatter.png", "_parity_vs_time.png",
-                       "_switch_rate_vs_time.png", "_dwell_histograms.png"]:
+        for suffix in [
+            "_iq_scatter.png",
+            "_parity_vs_time.png",
+            "_switch_rate_vs_time.png",
+            "_dwell_histograms.png",
+        ]:
             png = os.path.join(tmpdir, base + suffix)
             assert os.path.exists(png), f"missing plot: {png}"
 
         sidecar_json = os.path.join(tmpdir, base + "_analysis.json")
-        sidecar_h5   = os.path.join(tmpdir, base + "_analysis.h5")
+        sidecar_h5 = os.path.join(tmpdir, base + "_analysis.h5")
         assert os.path.exists(sidecar_json)
         assert os.path.exists(sidecar_h5)
         with open(sidecar_json) as f:
@@ -390,8 +405,10 @@ def test_markov_dwell_at_two_cadences():
         st = 0
         for k in range(n):
             bits_[k] = st
-            if st == 0 and rng_.random() < p01: st = 1
-            elif st == 1 and rng_.random() < p10: st = 0
+            if st == 0 and rng_.random() < p01:
+                st = 1
+            elif st == 1 and rng_.random() < p10:
+                st = 0
         return bits_
 
     rng_mc = np.random.default_rng(42)
@@ -405,9 +422,11 @@ def test_markov_dwell_at_two_cadences():
         st = dwell_time_statistics(bits_mc, t_mc)
         # Expected mean dwells: 2 ms (state 0), 4 ms (state 1).
         assert abs(st["mean_0"] - 2000.0) / 2000.0 < 0.2, (
-            f"sample_us={sample_us}: mean_0={st['mean_0']:.1f} vs 2000")
+            f"sample_us={sample_us}: mean_0={st['mean_0']:.1f} vs 2000"
+        )
         assert abs(st["mean_1"] - 4000.0) / 4000.0 < 0.2, (
-            f"sample_us={sample_us}: mean_1={st['mean_1']:.1f} vs 4000")
+            f"sample_us={sample_us}: mean_1={st['mean_1']:.1f} vs 4000"
+        )
 
 
 def test_bin_iq_time():
@@ -475,12 +494,15 @@ def test_analyze_parity_run_decimated_explicit_bin():
             f.attrs["mode"] = "decimated"
             f.attrs["read_length_us"] = bin_us
 
-        sep_dec = {"g_center": np.array([0.0, 0.0]),
-                   "e_center": np.array([10.0, 0.0])}
+        sep_dec = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([10.0, 0.0])}
         # Caller-supplied analysis_bin_us recovers parity bits at >95% accuracy.
         res_dec = analyze_parity_run(
-            h5_path=h5_dec, separator=sep_dec,
-            window_us=100.0, k_sigma=5.0, save_plots=False, out_dir=tmpdir,
+            h5_path=h5_dec,
+            separator=sep_dec,
+            window_us=100.0,
+            k_sigma=5.0,
+            save_plots=False,
+            out_dir=tmpdir,
             analysis_bin_us=bin_us,
         )
         # Sidecar records the binning provenance so post-hoc readers can
@@ -494,9 +516,7 @@ def test_analyze_parity_run_decimated_explicit_bin():
         with h5py.File(os.path.join(tmpdir, "ZeroSpanParity_dec_synth_analysis.h5"), "r") as f:
             bits_out = np.array(f["binary_states"])
         # Bins are aligned to the underlying labels_bins
-        assert bits_out.size == n_bins, (
-            f"expected {n_bins} binned bits, got {bits_out.size}"
-        )
+        assert bits_out.size == n_bins, f"expected {n_bins} binned bits, got {bits_out.size}"
         acc = np.mean(bits_out == labels_bins)
         assert acc > 0.95, f"decimated bin accuracy too low: {acc}"
 
@@ -532,7 +552,8 @@ def test_strobe_vs_decimated_equivalence():
         n_raw = n_samples * raw_per_period
         labels_raw = np.repeat(labels_eq, raw_per_period)
         I_dec = np.where(labels_raw == 1, 10.0, 0.0) + rng_eq.normal(
-            0, 0.3 * np.sqrt(raw_per_period), n_raw)
+            0, 0.3 * np.sqrt(raw_per_period), n_raw
+        )
         Q_dec = rng_eq.normal(0.0, 0.3 * np.sqrt(raw_per_period), n_raw)
         t_dec = np.arange(n_raw, dtype=float) * raw_sp
         h5_dec = os.path.join(tmpdir, "eq_dec.h5")
@@ -546,15 +567,20 @@ def test_strobe_vs_decimated_equivalence():
             # No read_length_us attr: analyze_parity_run does not auto-bin by it
             # (binning is opt-in via the explicit analysis_bin_us arg below).
 
-        sep_eq = {"g_center": np.array([0.0, 0.0]),
-                  "e_center": np.array([10.0, 0.0])}
-        analyze_parity_run(h5_path=h5_strobe, separator=sep_eq, window_us=100.0,
-                           save_plots=False, out_dir=tmpdir)
+        sep_eq = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([10.0, 0.0])}
+        analyze_parity_run(
+            h5_path=h5_strobe, separator=sep_eq, window_us=100.0, save_plots=False, out_dir=tmpdir
+        )
         # Caller asks for explicit binning at sample_period_us_eq to match the
         # strobe cadence; without it, raw decimated noise dominates per sample.
-        analyze_parity_run(h5_path=h5_dec, separator=sep_eq, window_us=100.0,
-                           save_plots=False, out_dir=tmpdir,
-                           analysis_bin_us=sample_period_us_eq)
+        analyze_parity_run(
+            h5_path=h5_dec,
+            separator=sep_eq,
+            window_us=100.0,
+            save_plots=False,
+            out_dir=tmpdir,
+            analysis_bin_us=sample_period_us_eq,
+        )
         with h5py.File(os.path.join(tmpdir, "eq_strobe_analysis.h5"), "r") as f:
             bits_s = np.array(f["binary_states"])
         with h5py.File(os.path.join(tmpdir, "eq_dec_analysis.h5"), "r") as f:
@@ -595,12 +621,14 @@ def test_analyze_parity_run_preserves_rate_provenance():
             f.attrs["read_length_us"] = N * sp_attr
             f.attrs["decimated_fs_source"] = "soccfg.f_output_unverified"
 
-        sep_meta = {"g_center": np.array([0.0, 0.0]),
-                    "e_center": np.array([10.0, 0.0])}
+        sep_meta = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([10.0, 0.0])}
         bin_us_meta = 32 * sp_attr  # bin 32 raw samples together
         summary = analyze_parity_run(
-            h5_path=h5_t, separator=sep_meta, window_us=10.0,
-            save_plots=False, out_dir=tmpdir,
+            h5_path=h5_t,
+            separator=sep_meta,
+            window_us=10.0,
+            save_plots=False,
+            out_dir=tmpdir,
             analysis_bin_us=bin_us_meta,
         )
         assert summary["mode"] == "decimated"
@@ -612,8 +640,13 @@ def test_analyze_parity_run_preserves_rate_provenance():
         # Sidecar JSON carries the same fields
         with open(os.path.join(tmpdir, "t_axis_analysis.json")) as f:
             sj = json.load(f)
-        for k in ("raw_sample_period_us", "n_raw_samples", "n_binned_samples",
-                  "analysis_bin_us", "mode"):
+        for k in (
+            "raw_sample_period_us",
+            "n_raw_samples",
+            "n_binned_samples",
+            "analysis_bin_us",
+            "mode",
+        ):
             assert k in sj, f"sidecar missing {k}: {sj.keys()}"
 
 
@@ -639,9 +672,11 @@ def test_verify_modulation():
 def test_contrast_from_sweeps():
     # --- Task 5: contrast_from_sweeps ---
     f = np.linspace(99.0, 101.0, 201)
+
     # Two slightly shifted Lorentzian complex responses
     def _lor(f0):
         return 1.0 / (1 + 1j * (f - f0) / 0.05)
+
     Z_off = _lor(100.0)
     Z_on = _lor(100.05)
     c = contrast_from_sweeps(f, Z_on, Z_off)
@@ -682,7 +717,7 @@ def test_bin_size_sweep():
             state ^= 1
         bits[i] = state
     centers = np.array([[0.0, 0.0], [4.0, 0.0]])
-    I = centers[bits, 0] + rng.normal(0, 3.0, n)   # noisy: small bins won't separate
+    I = centers[bits, 0] + rng.normal(0, 3.0, n)  # noisy: small bins won't separate
     Q = centers[bits, 1] + rng.normal(0, 3.0, n)
     t = np.arange(n) * sp_raw
     sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([4.0, 0.0])}

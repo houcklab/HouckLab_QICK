@@ -1,28 +1,31 @@
 import numpy as np
 
+
 def rotate_data(data, theta):
     i = data[0]
     q = data[1]
     i_new = i * np.cos(theta) - q * np.sin(theta)
     q_new = i * np.sin(theta) + q * np.cos(theta)
 
-    return((i_new, q_new))
+    return (i_new, q_new)
+
 
 def count_percentage(data, threshold):
     i = data[0][0]
 
     excited_population = sum(val > threshold for val in i)
-    return(excited_population / len(i))
+    return excited_population / len(i)
+
 
 def average_data(data):
     i = data[0][0]
-    return(np.mean(i))
+    return np.mean(i)
 
 
 def rotate_iq(avgi, avgq):
-    sig = np.asarray(avgi) + 1j*np.asarray(avgq)
+    sig = np.asarray(avgi) + 1j * np.asarray(avgq)
     theta = -np.angle(np.mean(sig))
-    sig_rot = sig * np.exp(1j*theta)
+    sig_rot = sig * np.exp(1j * theta)
     return sig_rot
 
 
@@ -73,7 +76,7 @@ def project_iq_signal(avgi, avgq, edge_frac=0.15):
     # variation into the real part.
     if np.allclose(dev, 0):
         return np.zeros_like(avgi)
-    ang = 0.5 * np.angle(np.sum(dev ** 2))
+    ang = 0.5 * np.angle(np.sum(dev**2))
     proj = (dev * np.exp(-1j * ang)).real
 
     # Baseline and orientation.
@@ -134,7 +137,7 @@ def classify_and_average_iq(raw_i, raw_q, g_center, e_center, average_n_shots=25
 
     n_full = len(binary_states) // average_n_shots
     if n_full > 0:
-        trimmed = binary_states[:n_full * average_n_shots]
+        trimmed = binary_states[: n_full * average_n_shots]
         excited_avg = trimmed.reshape(n_full, average_n_shots).mean(axis=1)
         elapsed_idx_avg = np.arange(n_full)
     else:
@@ -186,8 +189,7 @@ def project_iq_onto_separator(I, Q, separator):
     Q_arr = np.ravel(np.asarray(Q, dtype=float))
     if I_arr.size != Q_arr.size:
         raise ValueError(
-            f"I and Q must have the same length, got I.size={I_arr.size}, "
-            f"Q.size={Q_arr.size}"
+            f"I and Q must have the same length, got I.size={I_arr.size}, Q.size={Q_arr.size}"
         )
     if I_arr.size == 0:
         return np.zeros(0, dtype=float), np.zeros(0, dtype=int)

@@ -62,8 +62,7 @@ def raw_shot_buffers(prog):
 # "Overflowed the averages buffer" is deliberately NOT here: that one means the
 # tProc is outrunning the readout and needs a longer relax_delay, so retrying it
 # would just spin.
-_TRANSIENT_READOUT_MARKERS = ("could not broadcast input array",
-                              "got too much data")
+_TRANSIENT_READOUT_MARKERS = ("could not broadcast input array", "got too much data")
 
 
 def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
@@ -97,8 +96,10 @@ def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
                 raise
             last_err = err
             tag = f" [{label}]" if label else ""
-            print(f"[acquire_with_retry]{tag} transient readout error on attempt "
-                  f"{attempt + 1}/{n_tries}: {err}")
+            print(
+                f"[acquire_with_retry]{tag} transient readout error on attempt "
+                f"{attempt + 1}/{n_tries}: {err}"
+            )
             try:
                 # tProc v1: full reset + program reload, which is what actually
                 # clears the residual counts. Tens of ms, and only on a failure.
@@ -116,11 +117,17 @@ def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
 # to the stitched output so save_data persists them verbatim. Module-level so both
 # chunked_acquire and modulated_strobe_acquire share the same set.
 _META_KEYS = (
-    "mode", "sample_period_us",
-    "read_length_us", "adc_trig_offset_us", "ro_norm_cycles",
-    "decimated_fs_MHz", "decimated_fs_source",
-    "capture_length_us", "samples_per_capture",
-    "soft_avgs", "n_captures",
+    "mode",
+    "sample_period_us",
+    "read_length_us",
+    "adc_trig_offset_us",
+    "ro_norm_cycles",
+    "decimated_fs_MHz",
+    "decimated_fs_source",
+    "capture_length_us",
+    "samples_per_capture",
+    "soft_avgs",
+    "n_captures",
 )
 
 
@@ -169,6 +176,7 @@ def chunked_acquire(experiment, n_chunks, progress=False):
     if progress:
         try:
             from tqdm import tqdm
+
             iterator = tqdm(iterator, desc="chunked_acquire")
         except ImportError:
             pass
@@ -196,12 +204,16 @@ def chunked_acquire(experiment, n_chunks, progress=False):
                 # metadata or the experiment cfg) instead of 0.0 — otherwise the
                 # next chunk's first timestamp would duplicate this one and
                 # break the strictly-increasing t_us guarantee (spec §6.2).
-                sp = float(first_meta.get("sample_period_us", 0.0)
-                           or getattr(experiment, "cfg", {}).get("sample_period_us", 0.0))
+                sp = float(
+                    first_meta.get("sample_period_us", 0.0)
+                    or getattr(experiment, "cfg", {}).get("sample_period_us", 0.0)
+                )
             cum_offset_us = t_parts[-1][-1] + sp
             gap_indices.append(cum_idx)
         t_shifted = t_c + cum_offset_us
-        I_parts.append(I_c); Q_parts.append(Q_c); t_parts.append(t_shifted)
+        I_parts.append(I_c)
+        Q_parts.append(Q_c)
+        t_parts.append(t_shifted)
         wall_clocks.append(out.get("wall_clock_start", None))
         cum_idx += I_c.size
 
@@ -276,7 +288,8 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
         "reps_per_block": int(reps_per_block),
         "sample_period_us": sample_period,
         "modulation_freq_hz": (1.0 / (2.0 * reps_per_block * sample_period * 1e-6))
-                              if reps_per_block > 0 and sample_period > 0 else float("nan"),
+        if reps_per_block > 0 and sample_period > 0
+        else float("nan"),
     }
     stitched.update(first_meta)
     return stitched

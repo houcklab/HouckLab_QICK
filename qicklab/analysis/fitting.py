@@ -61,23 +61,15 @@ def fit_hanger_transmission(freq, amp_linear=None, amp_db=None, startpoint=None,
     if startpoint is None:
         # Similar spirit to MATLAB:
         # [center 4.1e4 4.3e4 1e3 0]
-        offset_guess = np.median(ydata[:max(10, len(ydata)//10)])
+        offset_guess = np.median(ydata[: max(10, len(ydata) // 10)])
         startpoint = [f0_guess, 4.1e4, 4.3e4, 1e3, offset_guess]
 
     if bounds is None:
         f_span = np.max(freq) - np.min(freq)
-        bounds = (
-            [np.min(freq), 1e2, 1e2, -1e7, -200],
-            [np.max(freq), 1e9, 1e9,  1e7,  200]
-        )
+        bounds = ([np.min(freq), 1e2, 1e2, -1e7, -200], [np.max(freq), 1e9, 1e9, 1e7, 200])
 
     popt, pcov = curve_fit(
-        hanger_model_db,
-        freq,
-        ydata,
-        p0=startpoint,
-        bounds=bounds,
-        maxfev=200000
+        hanger_model_db, freq, ydata, p0=startpoint, bounds=bounds, maxfev=200000
     )
 
     perr = np.sqrt(np.diag(pcov))
@@ -133,10 +125,7 @@ def fit_lorentzian_feature(x, y, fit_dip=True):
     model = lorentzian_dip if fit_dip else lorentzian_peak
     p0 = [y0_guess, A_guess, f0_guess, gamma_guess]
 
-    bounds = (
-        [-np.inf, 0.0, np.min(x), 1e-12],
-        [ np.inf, np.inf, np.max(x), x_span]
-    )
+    bounds = ([-np.inf, 0.0, np.min(x), 1e-12], [np.inf, np.inf, np.max(x), x_span])
 
     popt, pcov = curve_fit(model, x, y, p0=p0, bounds=bounds, maxfev=50000)
     perr = np.sqrt(np.diag(pcov))
@@ -216,7 +205,7 @@ def fit_rabi_cosine_gridsearch(x, y):
                         p0=p0,
                         bounds=(
                             [-np.inf, -np.inf, 2 * dx, -8 * np.pi],
-                            [ np.inf,  np.inf, 8 * x_span,  8 * np.pi],
+                            [np.inf, np.inf, 8 * x_span, 8 * np.pi],
                         ),
                         maxfev=20000,
                     )

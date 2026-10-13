@@ -51,19 +51,32 @@ from qicklab.core.experiment import (
 )
 
 _STROBE_REQUIRED = (
-    "sample_period_us", "reps_per_chunk",
+    "sample_period_us",
+    "reps_per_chunk",
 )
 _DECIMATED_REQUIRED = (
-    "capture_length_us", "soft_avgs",
+    "capture_length_us",
+    "soft_avgs",
 )
 # n_captures is optional; defaults to 1. When >1, _acquire_decimated runs the
 # acquire_decimated() call back-to-back and stitches results with gap_indices,
 # mirroring chunked_acquire semantics for strobe mode.
 _SHARED_REQUIRED = (
-    "mode", "start_src", "res_ch", "qubit_ch", "ro_chs", "nqz", "qubit_nqz",
-    "mixer_freq", "read_pulse_freq", "parity_drive_freq",
-    "qubit_gain", "pulse_gain", "res_phase",
-    "adc_trig_offset", "read_length",
+    "mode",
+    "start_src",
+    "res_ch",
+    "qubit_ch",
+    "ro_chs",
+    "nqz",
+    "qubit_nqz",
+    "mixer_freq",
+    "read_pulse_freq",
+    "parity_drive_freq",
+    "qubit_gain",
+    "pulse_gain",
+    "res_phase",
+    "adc_trig_offset",
+    "read_length",
 )
 
 
@@ -77,9 +90,7 @@ def _validate_cfg(cfg, soccfg):
     # Presence checks first — easier to debug than indexing errors below.
     missing = [k for k in _SHARED_REQUIRED if k not in cfg]
     if missing:
-        raise RuntimeError(
-            f"[ZeroSpanParity cfg] missing required keys: {missing}"
-        )
+        raise RuntimeError(f"[ZeroSpanParity cfg] missing required keys: {missing}")
     mode = cfg["mode"]
     if mode not in ("strobe", "decimated"):
         raise RuntimeError(
@@ -88,9 +99,7 @@ def _validate_cfg(cfg, soccfg):
     extra = _STROBE_REQUIRED if mode == "strobe" else _DECIMATED_REQUIRED
     missing_extra = [k for k in extra if k not in cfg]
     if missing_extra:
-        raise RuntimeError(
-            f"[ZeroSpanParity cfg] missing keys for mode={mode!r}: {missing_extra}"
-        )
+        raise RuntimeError(f"[ZeroSpanParity cfg] missing keys for mode={mode!r}: {missing_extra}")
 
     # Rule 1: sample_period floor
     if mode == "strobe":
@@ -113,6 +122,7 @@ def _validate_cfg(cfg, soccfg):
                     f"[ZeroSpanParity §5.3 rule {rule_no}] {length_key} yields "
                     f"{cyc} cycles on {label} > 65535 cap. Reduce {length_key}."
                 )
+
     if mode == "strobe":
         _check_cycle_cap("sample_period_us", 2)
     else:
@@ -123,9 +133,7 @@ def _validate_cfg(cfg, soccfg):
     try:
         ro_info = soccfg["readouts"][ro_ch]
     except (KeyError, IndexError, TypeError) as ex:
-        raise RuntimeError(
-            f"[ZeroSpanParity cfg] cannot read soccfg['readouts'][{ro_ch}]: {ex!r}"
-        )
+        raise RuntimeError(f"[ZeroSpanParity cfg] cannot read soccfg['readouts'][{ro_ch}]: {ex!r}")
     if mode == "strobe":
         avg_maxlen = int(ro_info["avg_maxlen"])
         reps = int(cfg["reps_per_chunk"])
@@ -224,8 +232,9 @@ class _ZeroSpanParityProgBase(AveragerProgram):
 
     def _setup_two_tones(self):
         cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
-                          mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(
+            ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
+        )
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
         for ch in cfg["ro_chs"]:
             self.declare_readout(
@@ -234,8 +243,7 @@ class _ZeroSpanParityProgBase(AveragerProgram):
                 freq=cfg["read_pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
-        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
-                              ro_ch=cfg["ro_chs"][0])
+        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_qub = self.freq2reg(cfg["parity_drive_freq"], gen_ch=cfg["qubit_ch"])
         return f_res, f_qub
 
@@ -246,12 +254,22 @@ class _ZeroSpanParityProgBase(AveragerProgram):
         length_cyc_q = self.us2cycles(length_us, gen_ch=cfg["qubit_ch"])
         length_cyc_r = self.us2cycles(length_us, gen_ch=cfg["res_ch"])
 
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=f_qub,
-                                  phase=0, gain=cfg["qubit_gain"],
-                                  length=length_cyc_q)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res,
-                                  phase=cfg["res_phase"], gain=cfg["pulse_gain"],
-                                  length=length_cyc_r)
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="const",
+            freq=f_qub,
+            phase=0,
+            gain=cfg["qubit_gain"],
+            length=length_cyc_q,
+        )
+        self.set_pulse_registers(
+            ch=cfg["res_ch"],
+            style="const",
+            freq=f_res,
+            phase=cfg["res_phase"],
+            gain=cfg["pulse_gain"],
+            length=length_cyc_r,
+        )
         self.synci(200)
 
     def body(self):
@@ -317,11 +335,27 @@ class ZeroSpanParity(ExperimentClass):
       .png : optional, written by display() if called
     """
 
-    def __init__(self, soc=None, soccfg=None, path="", outerFolder="",
-                 prefix="data", cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
-                         prefix=prefix, cfg=cfg, config_file=config_file,
-                         progress=progress)
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress,
+        )
         _validate_cfg(self.cfg, self.soccfg)
         mode = self.cfg["mode"]
         # AveragerProgram.__init__ reads cfg["reps"] during make_program() —
@@ -367,6 +401,7 @@ class ZeroSpanParity(ExperimentClass):
 
     def _acquire_strobe(self, progress=False):
         import datetime
+
         cfg = self.cfg
         wall_clock_start = datetime.datetime.now().isoformat()
         # cfg["reps"] was already set to reps_per_chunk in __init__ before
@@ -407,7 +442,9 @@ class ZeroSpanParity(ExperimentClass):
         sp = float(cfg["sample_period_us"])
         t_us = np.arange(I.size, dtype=float) * sp
         data = {
-            "I": I, "Q": Q, "t_us": t_us,
+            "I": I,
+            "Q": Q,
+            "t_us": t_us,
             "gap_indices": np.array([], dtype=int),
             "wall_clock_start": wall_clock_start,
             "sample_period_us": sp,
@@ -421,6 +458,7 @@ class ZeroSpanParity(ExperimentClass):
 
     def _acquire_decimated(self, progress=False):
         import datetime
+
         cfg = self.cfg
         wall_clock_start = datetime.datetime.now().isoformat()
         prog = self.prog
@@ -437,9 +475,7 @@ class ZeroSpanParity(ExperimentClass):
 
         n_captures = int(cfg.get("n_captures", 1))
         if n_captures < 1:
-            raise RuntimeError(
-                f"[ZeroSpanParity] n_captures={n_captures} must be >= 1"
-            )
+            raise RuntimeError(f"[ZeroSpanParity] n_captures={n_captures} must be >= 1")
         soft_avgs = int(cfg.get("soft_avgs", 1))
         if soft_avgs > 1:
             # soft_avgs > 1 averages independent captures together — it
@@ -479,9 +515,11 @@ class ZeroSpanParity(ExperimentClass):
             #   (length, 2)       — handled below for robustness.
             arr = np.asarray(dec[0])
             if arr.ndim == 2 and arr.shape[0] == 2:
-                I_c = arr[0]; Q_c = arr[1]
+                I_c = arr[0]
+                Q_c = arr[1]
             elif arr.ndim == 2 and arr.shape[1] == 2:
-                I_c = arr[:, 0]; Q_c = arr[:, 1]
+                I_c = arr[:, 0]
+                Q_c = arr[:, 1]
             elif arr.ndim == 3:
                 # (reps, 2, length): I/Q is axis -2, NOT the trailing axis, so
                 # reshape(-1, 2) would interleave samples. Split on axis -2.
@@ -494,7 +532,9 @@ class ZeroSpanParity(ExperimentClass):
                 cum_offset_us = float(t_parts[-1][-1]) + sp
                 gap_indices.append(cum_idx)
             t_shifted = t_c + cum_offset_us
-            I_parts.append(I_c); Q_parts.append(Q_c); t_parts.append(t_shifted)
+            I_parts.append(I_c)
+            Q_parts.append(Q_c)
+            t_parts.append(t_shifted)
             capture_sizes.append(int(I_c.size))
             cum_idx += I_c.size
 
@@ -502,7 +542,9 @@ class ZeroSpanParity(ExperimentClass):
         Q = np.concatenate(Q_parts)
         t_us = np.concatenate(t_parts)
         data = {
-            "I": I, "Q": Q, "t_us": t_us,
+            "I": I,
+            "Q": Q,
+            "t_us": t_us,
             "gap_indices": np.asarray(gap_indices, dtype=int),
             "wall_clock_start": wall_clock_start,
             "chunk_wall_clock_starts": chunk_wall_clocks,
@@ -528,17 +570,24 @@ class ZeroSpanParity(ExperimentClass):
     def save_data(self, data=None):
         """Write IQ trace + metadata to self.fname (.h5)."""
         import h5py
+
         if data is None:
-            data = self.data["data"] if isinstance(self.data, dict) and "data" in self.data else self.data
+            data = (
+                self.data["data"]
+                if isinstance(self.data, dict) and "data" in self.data
+                else self.data
+            )
         # Append mode ("a", not "w") so a config attr written by the base
         # ExperimentClass.save_config into the same .h5 is not truncated,
         # regardless of save_data/save_config call order. Delete-then-recreate
         # each dataset so re-saving the same file is idempotent.
         with h5py.File(self.fname, "a") as f:
+
             def _put(name, arr):
                 if name in f:
                     del f[name]
                 f.create_dataset(name, data=arr)
+
             _put("I", np.asarray(data["I"]))
             _put("Q", np.asarray(data["Q"]))
             _put("t_us", np.asarray(data["t_us"]))
@@ -552,18 +601,24 @@ class ZeroSpanParity(ExperimentClass):
             # when n_captures > 1 in decimated mode) — needed to reconstruct
             # actual inter-chunk gaps post-hoc.
             if "chunk_wall_clock_starts" in data:
-                wcs = [str(s) if s is not None else "" for s in
-                       data["chunk_wall_clock_starts"]]
-                _put("chunk_wall_clock_starts",
-                     np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
+                wcs = [str(s) if s is not None else "" for s in data["chunk_wall_clock_starts"]]
+                _put("chunk_wall_clock_starts", np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
             # Scalar metadata. Keep this list in sync with whatever the
             # acquire-path dicts return; missing keys are silently skipped.
             scalar_keys = (
-                "wall_clock_start", "sample_period_us", "mode",
-                "decimated_fs_MHz", "decimated_fs_source",
-                "read_length_us", "capture_length_us", "adc_trig_offset_us",
-                "ro_norm_cycles", "samples_per_capture",
-                "n_chunks", "n_captures", "soft_avgs",
+                "wall_clock_start",
+                "sample_period_us",
+                "mode",
+                "decimated_fs_MHz",
+                "decimated_fs_source",
+                "read_length_us",
+                "capture_length_us",
+                "adc_trig_offset_us",
+                "ro_norm_cycles",
+                "samples_per_capture",
+                "n_chunks",
+                "n_captures",
+                "soft_avgs",
             )
             for k in scalar_keys:
                 if k in data:

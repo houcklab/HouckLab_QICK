@@ -83,7 +83,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
         self.q_rp = self.ch_page(cfg["qubit_ch"])
 
         # Free user registers on the qubit page (mirrors ModifiedRamsey).
-        self.r_read = 4    # holds the accumulated I read back from the ADC
+        self.r_read = 4  # holds the accumulated I read back from the ADC
         self.r_thresh = 5  # holds the single-shot discrimination threshold
 
         self.prep_excited = cfg.get("prep_excited", False)
@@ -126,58 +126,38 @@ class ActiveResetVerifyProgram(AveragerProgram):
             )
 
         self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
-        requested_tone_cycles = self.us2cycles(
-            cfg["length"], gen_ch=cfg["res_ch"]
-        )
+        requested_tone_cycles = self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"])
         self.readout_window_cycles = {
-            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch)
-            for ch in cfg["ro_chs"]
+            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in cfg["ro_chs"]
         }
 
         f_time = self.soccfg["tprocs"][0]["f_time"]
         res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
         adc_end_tproc = max(
             self.adc_trig_offset_cycles
-            + self.readout_window_cycles[ch]
-            * f_time / self.soccfg["readouts"][ch]["f_output"]
+            + self.readout_window_cycles[ch] * f_time / self.soccfg["readouts"][ch]["f_output"]
             for ch in cfg["ro_chs"]
         )
-        required_tone_cycles = int(np.ceil(
-            adc_end_tproc * res_f_fabric / f_time - 1e-12
-        ))
-        self.readout_tone_cycles = max(
-            requested_tone_cycles, required_tone_cycles
-        )
-        self.readout_tone_extension_cycles = (
-            self.readout_tone_cycles - requested_tone_cycles
-        )
+        required_tone_cycles = int(np.ceil(adc_end_tproc * res_f_fabric / f_time - 1e-12))
+        self.readout_tone_cycles = max(requested_tone_cycles, required_tone_cycles)
+        self.readout_tone_extension_cycles = self.readout_tone_cycles - requested_tone_cycles
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
-                gen_ch=cfg["res_ch"]
+                gen_ch=cfg["res_ch"],
             )
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"],
-            gen_ch=cfg["res_ch"],
-            ro_ch=cfg["ro_chs"][0]
-        )
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         # Qubit pulses (prep pi, reset corrective pi) play at f_ge.
         self.f_ge_reg = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(
-            cfg["sigma"] * 4,
-            gen_ch=cfg["qubit_ch"]
-        )
+        self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4, gen_ch=cfg["qubit_ch"])
         self.add_gauss(
-            ch=cfg["qubit_ch"],
-            name="qubit",
-            sigma=self.pulse_sigma,
-            length=self.pulse_qubit_length
+            ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length
         )
 
         self.set_pulse_registers(
@@ -186,14 +166,13 @@ class ActiveResetVerifyProgram(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.readout_tone_cycles
+            length=self.readout_tone_cycles,
         )
 
         if self.use_active_reset or self.prep_excited:
             if "pi_gain" not in cfg:
                 raise KeyError(
-                    "prep_excited/use_active_reset require cfg['pi_gain'] for the "
-                    "pi pulse."
+                    "prep_excited/use_active_reset require cfg['pi_gain'] for the pi pulse."
                 )
         if self.use_active_reset:
             if "readout_threshold" not in cfg:
@@ -247,7 +226,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 adcs=self.ro_chs,
                 adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
-                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
+                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)),
             )
 
             self.read(ro_ch, self.q_rp, "lower", self.r_read)
@@ -259,8 +238,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
             self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)
 
             if not self.reset_force_pi:
-                self.condj(self.q_rp, self.r_read, self.reset_skip_op,
-                           self.r_thresh, done_label)
+                self.condj(self.q_rp, self.r_read, self.reset_skip_op, self.r_thresh, done_label)
 
             self.set_pulse_registers(
                 ch=cfg["qubit_ch"],
@@ -268,7 +246,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 freq=self.f_ge_reg,
                 phase=0,
                 gain=cfg["pi_gain"],
-                waveform="qubit"
+                waveform="qubit",
             )
             self.pulse(ch=cfg["qubit_ch"])
 
@@ -289,7 +267,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 freq=self.f_ge_reg,
                 phase=0,
                 gain=cfg["pi_gain"],
-                waveform="qubit"
+                waveform="qubit",
             )
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all()
@@ -310,7 +288,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 adcs=self.ro_chs,
                 adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
-                syncdelay=syncdelay
+                syncdelay=syncdelay,
             )
 
     def acquire(self, soc, load_pulses=True, start_src="internal", progress=False):
@@ -321,7 +299,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
             readouts_per_experiment=self.reads_per_rep,
             load_pulses=load_pulses,
             start_src=start_src,
-            progress=progress
+            progress=progress,
         )
         return self.collect_shots()
 
@@ -350,8 +328,17 @@ class ActiveResetVerify(ExperimentClass):
     from a SingleShot calibration) for shot classification.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='',
-                 prefix='data', cfg=None, config_file=None, progress=None):
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
         super().__init__(
             soc=soc,
             soccfg=soccfg,
@@ -360,16 +347,12 @@ class ActiveResetVerify(ExperimentClass):
             prefix=prefix,
             cfg=cfg,
             config_file=config_file,
-            progress=progress
+            progress=progress,
         )
 
     def acquire(self, progress=False, debug=False):
         prog = ActiveResetVerifyProgram(self.soccfg, self.cfg)
-        verify_i, verify_q = prog.acquire(
-            self.soc,
-            load_pulses=True,
-            progress=progress
-        )
+        verify_i, verify_q = prog.acquire(self.soc, load_pulses=True, progress=progress)
         verify_i = np.asarray(verify_i)
         verify_q = np.asarray(verify_q)
 
@@ -387,22 +370,23 @@ class ActiveResetVerify(ExperimentClass):
             p_ground[k] = float(np.mean(scores <= 0))
 
         data = {
-            'config': self.cfg,
-            'data': {
-                'verify_i': verify_i,
-                'verify_q': verify_q,
-                'p_ground': p_ground,
-                'read_index': np.arange(n_reads),
-                'g_center': g_center,
-                'e_center': e_center,
-                'prep_excited': self.cfg.get("prep_excited", False),
-                'use_active_reset': self.cfg.get("use_active_reset", False),
-                'reset_force_pi': self.cfg.get("reset_force_pi", False),
-                'reset_cycles': (
+            "config": self.cfg,
+            "data": {
+                "verify_i": verify_i,
+                "verify_q": verify_q,
+                "p_ground": p_ground,
+                "read_index": np.arange(n_reads),
+                "g_center": g_center,
+                "e_center": e_center,
+                "prep_excited": self.cfg.get("prep_excited", False),
+                "use_active_reset": self.cfg.get("use_active_reset", False),
+                "reset_force_pi": self.cfg.get("reset_force_pi", False),
+                "reset_cycles": (
                     int(self.cfg.get("reset_cycles", 1))
-                    if self.cfg.get("use_active_reset", False) else 0
+                    if self.cfg.get("use_active_reset", False)
+                    else 0
                 ),
-            }
+            },
         }
         self.data = data
         self.p_ground = p_ground
@@ -412,12 +396,12 @@ class ActiveResetVerify(ExperimentClass):
         if data is None:
             data = self.data
 
-        d = data['data']
-        p_ground = np.asarray(d['p_ground'])
-        read_index = np.asarray(d['read_index'])
-        prep_excited = d.get('prep_excited', False)
-        use_active_reset = d.get('use_active_reset', False)
-        force_pi = d.get('reset_force_pi', False)
+        d = data["data"]
+        p_ground = np.asarray(d["p_ground"])
+        read_index = np.asarray(d["read_index"])
+        prep_excited = d.get("prep_excited", False)
+        use_active_reset = d.get("use_active_reset", False)
+        force_pi = d.get("reset_force_pi", False)
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
@@ -428,14 +412,14 @@ class ActiveResetVerify(ExperimentClass):
         )
 
         fig = plt.figure(figNum)
-        plt.plot(read_index, p_ground, 'o-', linewidth=1.5)
+        plt.plot(read_index, p_ground, "o-", linewidth=1.5)
         plt.xlabel("Verification readout index")
         plt.ylabel("P(|g>)")
         plt.ylim(-0.05, 1.05)
         plt.title(self.titlename + f"\n{cond}")
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.savefig(self.iname[:-4] + '_Pg.png')
+        plt.savefig(self.iname[:-4] + "_Pg.png")
 
         if plotDisp:
             plt.show(block=False)
@@ -445,5 +429,5 @@ class ActiveResetVerify(ExperimentClass):
             plt.close(fig)
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
+        print(f"Saving {self.fname}")
+        super().save_data(data=data["data"])

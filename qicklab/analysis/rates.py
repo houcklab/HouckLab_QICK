@@ -10,8 +10,7 @@ from scipy.ndimage import uniform_filter1d
 # =========================================================================
 # 2. Slow-drift removal
 # =========================================================================
-def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None,
-                      min_timescale_ratio=20.0):
+def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None, min_timescale_ratio=20.0):
     """
     Conservative slow-drift estimate and subtraction.
 
@@ -57,9 +56,9 @@ def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None,
         if ratio < min_timescale_ratio:
             safe = False
             warnings.append(
-                f"drift window {drift_timescale_s*1e3:.1f} ms is only "
+                f"drift window {drift_timescale_s * 1e3:.1f} ms is only "
                 f"{ratio:.1f}x the expected dwell "
-                f"{expected_dwell_s*1e3:.1f} ms (< {min_timescale_ratio:g}x): "
+                f"{expected_dwell_s * 1e3:.1f} ms (< {min_timescale_ratio:g}x): "
                 "drift removal will bleed into the telegraph; increase the "
                 "window or skip drift removal"
             )
@@ -106,15 +105,17 @@ def transition_matrix_2state(gamma01, gamma10, dt_s):
     pi0 = g10 / s
     pi1 = g01 / s
     decay = math.exp(-s * dt_s)
-    return np.array([
-        [pi0 + pi1 * decay, pi1 - pi1 * decay],
-        [pi0 - pi0 * decay, pi1 + pi0 * decay],
-    ])
+    return np.array(
+        [
+            [pi0 + pi1 * decay, pi1 - pi1 * decay],
+            [pi0 - pi0 * decay, pi1 + pi0 * decay],
+        ]
+    )
 
 
-def simulate_telegraph_trace(n, dt_s, gamma01_hz, gamma10_hz, mu0, mu1,
-                             sigma0, sigma1, seed=0, drift=None,
-                             start_state=None):
+def simulate_telegraph_trace(
+    n, dt_s, gamma01_hz, gamma10_hz, mu0, mu1, sigma0, sigma1, seed=0, drift=None, start_state=None
+):
     """
     Deterministic (seeded) synthetic telegraph + Gaussian-emission trace.
 
@@ -137,8 +138,9 @@ def simulate_telegraph_trace(n, dt_s, gamma01_hz, gamma10_hz, mu0, mu1,
     else:
         state = int(start_state)
     # Precompute stay probabilities per unique dt (fast path: uniform dt).
-    uniq, inv = np.unique(dt_steps, return_inverse=True) if n > 1 else \
-        (np.zeros(0), np.zeros(0, dtype=int))
+    uniq, inv = (
+        np.unique(dt_steps, return_inverse=True) if n > 1 else (np.zeros(0), np.zeros(0, dtype=int))
+    )
     p0_by_dt = []  # (P[0,0], P[1,0]) per unique dt
     for dt in uniq:
         P = transition_matrix_2state(gamma01_hz, gamma10_hz, float(dt))
@@ -181,10 +183,16 @@ def autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5):
     """
     v = np.ravel(np.asarray(v, dtype=float))
     warnings = []
-    out = {"tau_corr_s": float("nan"), "gamma_hz": float("nan"),
-           "amplitude": float("nan"), "noise_variance": float("nan"),
-           "acf": np.zeros(0), "lags_s": np.zeros(0),
-           "fit_ok": False, "warnings": warnings}
+    out = {
+        "tau_corr_s": float("nan"),
+        "gamma_hz": float("nan"),
+        "amplitude": float("nan"),
+        "noise_variance": float("nan"),
+        "acf": np.zeros(0),
+        "lags_s": np.zeros(0),
+        "fit_ok": False,
+        "warnings": warnings,
+    }
     n = v.size
     if n < 32:
         warnings.append("trace too short for autocorrelation analysis")
@@ -205,15 +213,15 @@ def autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5):
         # Adaptive: fit out to where the ACF first drops below 1/e^2 of its
         # lag-1 value, capped at n//4 lags.
         ref = acf[1] if n > 1 else 0.0
-        below = np.flatnonzero(acf[1:] < ref / math.e ** 2)
+        below = np.flatnonzero(acf[1:] < ref / math.e**2)
         kmax = int(below[0] + 1) if below.size else n // 4
         kmax = int(np.clip(kmax, min_points + 1, n // 4))
     else:
         kmax = int(np.clip(round(max_lag_s / dt_s), min_points + 1, n // 4))
 
     lags = np.arange(1, kmax + 1) * dt_s
-    y = acov[1:kmax + 1]
-    out["acf"] = acf[:kmax + 1]
+    y = acov[1 : kmax + 1]
+    out["acf"] = acf[: kmax + 1]
     out["lags_s"] = np.arange(kmax + 1) * dt_s
     pos = y > 0
     if pos.sum() < min_points:
@@ -225,7 +233,8 @@ def autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5):
     try:
         popt, _ = optimize.curve_fit(
             lambda t, A, tau: A * np.exp(-t / tau),
-            lags[pos], y[pos],
+            lags[pos],
+            y[pos],
             p0=[max(y[0], 1e-12), max(lags[pos][-1] / 3.0, dt_s)],
             maxfev=10000,
         )
@@ -238,20 +247,22 @@ def autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5):
         return out
     if tau < dt_s:
         warnings.append(
-            f"fitted tau_corr {tau*1e6:.1f} us is below the sample period; "
+            f"fitted tau_corr {tau * 1e6:.1f} us is below the sample period; "
             "the switching is unresolved at this cadence"
         )
     noise_var = float(c0 - A)  # zero-lag excess over the telegraph amplitude
-    out.update({
-        "tau_corr_s": tau,
-        "gamma_hz": 1.0 / (2.0 * tau),
-        "amplitude": A,
-        "noise_variance": noise_var,
-        "fit_ok": True,
-    })
+    out.update(
+        {
+            "tau_corr_s": tau,
+            "gamma_hz": 1.0 / (2.0 * tau),
+            "amplitude": A,
+            "noise_variance": noise_var,
+            "fit_ok": True,
+        }
+    )
     if noise_var > 4 * A:
         warnings.append(
-            f"readout-noise variance is {noise_var/A:.1f}x the telegraph "
+            f"readout-noise variance is {noise_var / A:.1f}x the telegraph "
             "amplitude; the autocorrelation estimate is noise-dominated"
         )
     return out
@@ -270,10 +281,16 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
     """
     v = np.ravel(np.asarray(v, dtype=float))
     warnings = []
-    out = {"f_corner_hz": float("nan"), "gamma_hz": float("nan"),
-           "s0": float("nan"), "white_floor": float("nan"),
-           "freqs_hz": np.zeros(0), "psd": np.zeros(0),
-           "fit_ok": False, "warnings": warnings}
+    out = {
+        "f_corner_hz": float("nan"),
+        "gamma_hz": float("nan"),
+        "s0": float("nan"),
+        "white_floor": float("nan"),
+        "freqs_hz": np.zeros(0),
+        "psd": np.zeros(0),
+        "fit_ok": False,
+        "warnings": warnings,
+    }
     n = v.size
     if n < 256:
         warnings.append("trace too short for Welch PSD analysis")
@@ -281,8 +298,7 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
     fs = 1.0 / float(dt_s)
     if nperseg is None:
         nperseg = int(min(max(256, 2 ** math.floor(math.log2(n / 8))), n))
-    freqs, psd = signal.welch(v - v.mean(), fs=fs, nperseg=nperseg,
-                              detrend="constant")
+    freqs, psd = signal.welch(v - v.mean(), fs=fs, nperseg=nperseg, detrend="constant")
     keep = (freqs > 0) & (freqs <= f_max_factor * fs)
     f, p = freqs[keep], psd[keep]
     out["freqs_hz"], out["psd"] = f, p
@@ -291,8 +307,7 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
         return out
 
     def model(fx, log_s0, log_fc, log_w):
-        return (np.exp(log_s0) / (1.0 + (fx / np.exp(log_fc)) ** 2)
-                + np.exp(log_w))
+        return np.exp(log_s0) / (1.0 + (fx / np.exp(log_fc)) ** 2) + np.exp(log_w)
 
     # Fit in log-power space so the (log-uniform) high-frequency floor does
     # not dominate the least squares.
@@ -300,17 +315,21 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
         return np.log(model(f, *theta)) - np.log(p)
 
     s0_guess = float(np.median(p[: max(3, f.size // 20)]))
-    w_guess = float(np.median(p[-max(3, f.size // 20):]))
+    w_guess = float(np.median(p[-max(3, f.size // 20) :]))
     fc_guess = float(f[min(np.searchsorted(-p, -s0_guess / 2), f.size - 1)])
     fc_guess = float(np.clip(fc_guess, f[0], f[-1]))
     try:
         sol = optimize.least_squares(
             resid,
-            x0=[math.log(max(s0_guess, 1e-300)),
+            x0=[
+                math.log(max(s0_guess, 1e-300)),
                 math.log(max(fc_guess, f[0])),
-                math.log(max(w_guess, 1e-300))],
-            bounds=([-np.inf, math.log(f[0] / 10.0), -np.inf],
-                    [np.inf, math.log(f[-1] * 10.0), np.inf]),
+                math.log(max(w_guess, 1e-300)),
+            ],
+            bounds=(
+                [-np.inf, math.log(f[0] / 10.0), -np.inf],
+                [np.inf, math.log(f[-1] * 10.0), np.inf],
+            ),
         )
     except ValueError:
         warnings.append("PSD Lorentzian fit failed")
@@ -331,13 +350,15 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
             "Lorentzian plateau is < 3x the white noise floor; PSD rate "
             "estimate is weakly constrained"
         )
-    out.update({
-        "f_corner_hz": float(fc),
-        "gamma_hz": float(math.pi * fc),
-        "s0": float(s0),
-        "white_floor": float(white),
-        "fit_ok": True,
-    })
+    out.update(
+        {
+            "f_corner_hz": float(fc),
+            "gamma_hz": float(math.pi * fc),
+            "s0": float(s0),
+            "white_floor": float(white),
+            "fit_ok": True,
+        }
+    )
     return out
 
 
@@ -358,7 +379,8 @@ def rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1, 2, 4, 8, 16, 32)):
         b = int(b)
         nb = v.size // b
         if nb < 4:
-            rates.append(float("nan")); counts.append(0)
+            rates.append(float("nan"))
+            counts.append(0)
             bin_us.append(b * dt_s * 1e6)
             continue
         vb = v[: nb * b].reshape(nb, b).mean(axis=1)
@@ -368,8 +390,7 @@ def rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1, 2, 4, 8, 16, 32)):
         rates.append(n_sw / total_t if total_t > 0 else float("nan"))
         counts.append(n_sw)
         bin_us.append(b * dt_s * 1e6)
-    return {"bin_sizes": list(bin_sizes), "bin_us": bin_us,
-            "rate_hz": rates, "n_switches": counts}
+    return {"bin_sizes": list(bin_sizes), "bin_us": bin_us, "rate_hz": rates, "n_switches": counts}
 
 
 def autocorrelation_rate_us(v, dt_us, min_points=5):
@@ -381,10 +402,16 @@ def autocorrelation_rate_us(v, dt_us, min_points=5):
     """
     v = np.ravel(np.asarray(v, dtype=float))
     warnings = []
-    out = {"tau_corr_us": float("nan"), "gamma_hz": float("nan"),
-           "amplitude": float("nan"), "noise_variance": float("nan"),
-           "acf": np.zeros(0), "lags_us": np.zeros(0),
-           "fit_ok": False, "warnings": warnings}
+    out = {
+        "tau_corr_us": float("nan"),
+        "gamma_hz": float("nan"),
+        "amplitude": float("nan"),
+        "noise_variance": float("nan"),
+        "acf": np.zeros(0),
+        "lags_us": np.zeros(0),
+        "fit_ok": False,
+        "warnings": warnings,
+    }
     n = v.size
     if n < 32:
         warnings.append("trace too short for autocorrelation analysis")
@@ -401,24 +428,27 @@ def autocorrelation_rate_us(v, dt_us, min_points=5):
 
     acf = acov / c0
     ref = acf[1] if n > 1 else 0.0
-    below = np.flatnonzero(acf[1:] < ref / math.e ** 2)
+    below = np.flatnonzero(acf[1:] < ref / math.e**2)
     kmax = int(below[0] + 1) if below.size else n // 4
     kmax = int(np.clip(kmax, min_points + 1, max(n // 4, min_points + 1)))
     kmax = min(kmax, n - 1)
 
     lags = np.arange(1, kmax + 1) * dt_us
-    y = acov[1:kmax + 1]
-    out["acf"] = acf[:kmax + 1]
+    y = acov[1 : kmax + 1]
+    out["acf"] = acf[: kmax + 1]
     out["lags_us"] = np.arange(kmax + 1) * dt_us
     pos = y > 0
     if pos.sum() < min_points:
-        warnings.append("too few positive autocorrelation lags to fit; the "
-                        "telegraph amplitude may be below the readout noise")
+        warnings.append(
+            "too few positive autocorrelation lags to fit; the "
+            "telegraph amplitude may be below the readout noise"
+        )
         return out
     try:
         popt, _ = optimize.curve_fit(
             lambda t, A, tau: A * np.exp(-t / tau),
-            lags[pos], y[pos],
+            lags[pos],
+            y[pos],
             p0=[max(y[0], 1e-12), max(lags[pos][-1] / 3.0, dt_us)],
             maxfev=10000,
         )
@@ -435,13 +465,15 @@ def autocorrelation_rate_us(v, dt_us, min_points=5):
             "period; any switching is unresolved at this cadence"
         )
     noise_var = float(c0 - A)
-    out.update({
-        "tau_corr_us": tau_us,
-        "gamma_hz": 1e6 / (2.0 * tau_us),
-        "amplitude": A,
-        "noise_variance": noise_var,
-        "fit_ok": True,
-    })
+    out.update(
+        {
+            "tau_corr_us": tau_us,
+            "gamma_hz": 1e6 / (2.0 * tau_us),
+            "amplitude": A,
+            "noise_variance": noise_var,
+            "fit_ok": True,
+        }
+    )
     if A > 0 and noise_var > 4 * A:
         warnings.append(
             f"readout-noise variance is {noise_var / A:.1f}x the telegraph "
@@ -469,7 +501,7 @@ def rate_vs_bin_size_us(v, dt_us, threshold, bin_sizes=(1, 2, 4, 8, 16, 32, 64))
             rates.append(float("nan"))
             counts.append(0)
             continue
-        vb = v[:n_bins * b].reshape(n_bins, b).mean(axis=1)
+        vb = v[: n_bins * b].reshape(n_bins, b).mean(axis=1)
         bits = (vb > threshold).astype(int)
         n_switch = int(np.count_nonzero(np.diff(bits)))
         span_us = n_bins * b * dt_us

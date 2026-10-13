@@ -5,6 +5,7 @@ Ported from the legacy inline self-test (validate_ZeroSpanParity.py
 ``if __name__ == "__main__":`` block, L442-590) with the same assertions, one test per
 legacy block. Fake experiments stand in for ZeroSpanParity; no RFSoC, no Pyro4.
 """
+
 import json
 import os
 
@@ -28,10 +29,17 @@ class _StrobeFakeExp:
     contrast stages — NOT parity telegraph (see _ParityFakeExp for that)."""
 
     def __init__(self, n, sp_us, out_dir):
-        self.cfg = {"qubit_gain": 200, "reps_per_chunk": n, "reps": n,
-                    "sample_period_us": sp_us, "read_pulse_freq": 100.0,
-                    "parity_drive_freq": 4000.0, "device": "TEST", "mode": "strobe",
-                    "pulse_gain": 300}
+        self.cfg = {
+            "qubit_gain": 200,
+            "reps_per_chunk": n,
+            "reps": n,
+            "sample_period_us": sp_us,
+            "read_pulse_freq": 100.0,
+            "parity_drive_freq": 4000.0,
+            "device": "TEST",
+            "mode": "strobe",
+            "pulse_gain": 300,
+        }
         self._n = n
         self._sp = sp_us
         self._rng = np.random.default_rng(0)
@@ -46,9 +54,15 @@ class _StrobeFakeExp:
         I = level + self._rng.normal(0, 0.8, self._n)
         Q = self._rng.normal(0, 0.8, self._n)
         t = np.arange(self._n) * self._sp
-        return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
-                "sample_period_us": self._sp, "read_length_us": 5.0,
-                "wall_clock_start": "2026-01-01T00:00:00"}
+        return {
+            "I": I,
+            "Q": Q,
+            "t_us": t,
+            "mode": "strobe",
+            "sample_period_us": self._sp,
+            "read_length_us": 5.0,
+            "wall_clock_start": "2026-01-01T00:00:00",
+        }
 
 
 class _SpecFakeExp(_StrobeFakeExp):
@@ -62,9 +76,15 @@ class _SpecFakeExp(_StrobeFakeExp):
         I = resp + self._rng.normal(0, 0.5, self._n)
         Q = self._rng.normal(0, 0.5, self._n)
         t = np.arange(self._n) * self._sp
-        return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
-                "sample_period_us": self._sp, "read_length_us": 5.0,
-                "wall_clock_start": "2026-01-01T00:00:00"}
+        return {
+            "I": I,
+            "Q": Q,
+            "t_us": t,
+            "mode": "strobe",
+            "sample_period_us": self._sp,
+            "read_length_us": 5.0,
+            "wall_clock_start": "2026-01-01T00:00:00",
+        }
 
 
 class _ParityFakeExp(_StrobeFakeExp):
@@ -75,6 +95,7 @@ class _ParityFakeExp(_StrobeFakeExp):
     This is what the drive-off (A) vs on-peak (D) control comparison needs;
     the plain _StrobeFakeExp only shifts a unimodal cloud and cannot
     exercise the ordering."""
+
     PEAKS = (3998.0, 4002.0)
 
     def acquire(self, progress=False):
@@ -89,9 +110,15 @@ class _ParityFakeExp(_StrobeFakeExp):
             I = self._rng.normal(0, 0.5, self._n)
             Q = self._rng.normal(0, 0.5, self._n)
         t = np.arange(self._n) * self._sp
-        return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
-                "sample_period_us": self._sp, "read_length_us": 5.0,
-                "wall_clock_start": "2026-01-01T00:00:00"}
+        return {
+            "I": I,
+            "Q": Q,
+            "t_us": t,
+            "mode": "strobe",
+            "sample_period_us": self._sp,
+            "read_length_us": 5.0,
+            "wall_clock_start": "2026-01-01T00:00:00",
+        }
 
 
 def test_run_modulation_check(tmp_path):
@@ -102,7 +129,9 @@ def test_run_modulation_check(tmp_path):
     assert res["correlation"] > 0.8, res["correlation"]
     assert res["modulation_depth"] > 2.0, res["modulation_depth"]
     # sidecar written
-    sidecars = [f for f in os.listdir(d) if f.startswith("3_modulation_check") and f.endswith(".json")]
+    sidecars = [
+        f for f in os.listdir(d) if f.startswith("3_modulation_check") and f.endswith(".json")
+    ]
     assert sidecars, "no modulation sidecar json written"
     with open(os.path.join(d, sidecars[0])) as fh:
         meta = json.load(fh)
@@ -135,8 +164,24 @@ def test_run_contrast_vs_qubit_freq(tmp_path):
 
 def test_cross_run_comparison(tmp_path):
     cmp = CrossRunComparison(param_name="power_dB")
-    cmp.add(-10, {"switch_rate": 100.0, "separation_snr": 5.0, "mean_dwell": 2000.0, "mean_signal_level": 4.0})
-    cmp.add(-5, {"switch_rate": 200.0, "separation_snr": 4.0, "mean_dwell": 1000.0, "mean_signal_level": 4.1})
+    cmp.add(
+        -10,
+        {
+            "switch_rate": 100.0,
+            "separation_snr": 5.0,
+            "mean_dwell": 2000.0,
+            "mean_signal_level": 4.0,
+        },
+    )
+    cmp.add(
+        -5,
+        {
+            "switch_rate": 200.0,
+            "separation_snr": 4.0,
+            "mean_dwell": 1000.0,
+            "mean_signal_level": 4.1,
+        },
+    )
     tbl = cmp.table()
     assert tbl["power_dB"] == [-10, -5], tbl
     assert tbl["switch_rate"] == [100.0, 200.0], tbl
@@ -148,25 +193,41 @@ def test_run_control_suite(tmp_path):
     d = str(tmp_path)
     exp = _ParityFakeExp(2000, 20.0, d)
     sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([5.0, 0.0])}
-    res = run_control_suite(exp, separator=sep,
-                            variants=("A", "D"), detune_mhz=50.0,
-                            parity_freqs={"lower": 3998.0, "higher": 4002.0},
-                            out_dir=d)
+    res = run_control_suite(
+        exp,
+        separator=sep,
+        variants=("A", "D"),
+        detune_mhz=50.0,
+        parity_freqs={"lower": 3998.0, "higher": 4002.0},
+        out_dir=d,
+    )
     assert "A" in res["variants"] and "D" in res["variants"], res["variants"]
     # control A (drive off, unimodal) separation must be well below the
     # on-peak driven branch D (bimodal telegraph -> large separation).
     assert res["variants"]["A"]["separation_snr"] < res["variants"]["D"]["separation_snr_lower"], (
-        res["variants"]["A"]["separation_snr"], res["variants"]["D"]["separation_snr_lower"])
+        res["variants"]["A"]["separation_snr"],
+        res["variants"]["D"]["separation_snr_lower"],
+    )
     assert "branch_sign_flip" in res["variants"]["D"], res["variants"]["D"]
 
 
 def test_build_evidence_report(tmp_path):
     d = str(tmp_path)
-    for stage, sc in [("1_static_contrast", {"best_freq": 100.05, "contrast_snr": 8.0}),
-                      ("3_modulation_check", {"correlation": 0.95, "modulation_depth": 4.0})]:
+    for stage, sc in [
+        ("1_static_contrast", {"best_freq": 100.05, "contrast_snr": 8.0}),
+        ("3_modulation_check", {"correlation": 0.95, "modulation_depth": 4.0}),
+    ]:
         with open(os.path.join(d, f"{stage}_2026_01_01_00_00_00.json"), "w") as fh:
-            json.dump({"stage": stage, "timestamp": "t", "mode": "strobe",
-                       "analysis_version": ANALYSIS_VERSION, "scalars": sc}, fh)
+            json.dump(
+                {
+                    "stage": stage,
+                    "timestamp": "t",
+                    "mode": "strobe",
+                    "analysis_version": ANALYSIS_VERSION,
+                    "scalars": sc,
+                },
+                fh,
+            )
     report = build_evidence_report(d, os.path.join(d, "EVIDENCE.md"))
     assert os.path.exists(report)
     with open(report) as fh:

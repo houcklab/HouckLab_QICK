@@ -8,7 +8,6 @@ what to run.
 
 from qicklab.runs import *
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. DEVICE PARAMETERS  (edit every session)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -21,76 +20,180 @@ QubitFolders = {str(q): f"{_QubitFolderRoot}/Q{q}//" for q in range(1, 7)}
 ############## CSTQ03 v2b nu cell ######
 Qubit_Parameters_v2b = {
     # currently working on 3
-    '1': {'Readout': {'Frequency': 6748, 'Gain': 2000}, # 500 okay, 700 too much 520 maybe too much 530 too much
-          'Qubit': {'Frequency': 1752, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.2, "flattop_length": None},
-          'outerfoldername': QubitFolders['1']},
-
+    "1": {
+        "Readout": {
+            "Frequency": 6748,
+            "Gain": 2000,
+        },  # 500 okay, 700 too much 520 maybe too much 530 too much
+        "Qubit": {
+            "Frequency": 1752,
+            "Gain": 5000,
+            "pi2_Gain": 3975 // 2,
+            "sigma": 0.2,
+            "flattop_length": None,
+        },
+        "outerfoldername": QubitFolders["1"],
+    },
     # currently working on 6
-    '2': {'Readout': {'Frequency': 7408.37, 'Gain': 3500}, # coarsely tuned to 4000, seeing behavior at 4500
-          'Qubit': {'Frequency': 4185.6, 'Gain': 2675, "pi2_Gain": 2400 // 2, "sigma": 0.04 , "flattop_length": None}, # qubit, T1 found
-          'outerfoldername': QubitFolders['2']},
-
+    "2": {
+        "Readout": {
+            "Frequency": 7408.37,
+            "Gain": 3500,
+        },  # coarsely tuned to 4000, seeing behavior at 4500
+        "Qubit": {
+            "Frequency": 4185.6,
+            "Gain": 2675,
+            "pi2_Gain": 2400 // 2,
+            "sigma": 0.04,
+            "flattop_length": None,
+        },  # qubit, T1 found
+        "outerfoldername": QubitFolders["2"],
+    },
     # currently working on 4
-    '3': {'Readout': {'Frequency': 6870.8, 'Gain': 1500}, # 600 too much
-          'Qubit': {'Frequency': 2900, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
-          'outerfoldername': QubitFolders['3']},
-
+    "3": {
+        "Readout": {"Frequency": 6870.8, "Gain": 1500},  # 600 too much
+        "Qubit": {
+            "Frequency": 2900,
+            "Gain": 5000,
+            "pi2_Gain": 3975 // 2,
+            "sigma": 1,
+            "flattop_length": 1,
+        },  # qubit found 1719.8273
+        "outerfoldername": QubitFolders["3"],
+    },
     # currently working on
-    '4': {'Readout': {'Frequency': 7535.96, 'Gain': 2000}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
-          'Qubit': {'Frequency':    4590, 'Gain': 2800,  "pi2_Gain": 2800 // 2 ,"sigma": 0.02, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
-          'outerfoldername': QubitFolders['4']},
-    
+    "4": {
+        "Readout": {
+            "Frequency": 7535.96,
+            "Gain": 2000,
+        },  # 7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
+        "Qubit": {
+            "Frequency": 4590,
+            "Gain": 2800,
+            "pi2_Gain": 2800 // 2,
+            "sigma": 0.02,
+            "flattop_length": None,
+        },  # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
+        "outerfoldername": QubitFolders["4"],
+    },
     # currently working on 5
-    '5': {'Readout': {'Frequency': 7050, 'Gain': 3000}, # 4500 with directional coupler 1500 good without-
-          'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
-          'outerfoldername': QubitFolders['5']}, # qubit, T1 found
-
+    "5": {
+        "Readout": {
+            "Frequency": 7050,
+            "Gain": 3000,
+        },  # 4500 with directional coupler 1500 good without-
+        "Qubit": {
+            "Frequency": 2758.3,
+            "Gain": 4000,
+            "pi2_Gain": 4000 // 2,
+            "sigma": 1,
+            "flattop_length": None,
+        },  # 2756.685
+        "outerfoldername": QubitFolders["5"],
+    },  # qubit, T1 found
     # currently working on 2
-    '6': {'Readout': {'Frequency': 7244.8, 'Gain': 2000}, 
-          'Qubit': {'Frequency': 3258.1, 'Gain': 4600,  "pi2_Gain": 4750 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
-          'outerfoldername': QubitFolders['6']},
-    }
+    "6": {
+        "Readout": {"Frequency": 7244.8, "Gain": 2000},
+        "Qubit": {
+            "Frequency": 3258.1,
+            "Gain": 4600,
+            "pi2_Gain": 4750 // 2,
+            "sigma": 0.1,
+            "flattop_length": None,
+        },  # cant find
+        "outerfoldername": QubitFolders["6"],
+    },
+}
 
 
 ############## CSTQ03 ######
 Qubit_Parameters = {
     # currently working on 2
-    '1': {'Readout': {'Frequency': 6791.2, 'Gain': 1000}, 
-          'Qubit': {'Frequency': 2763, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.6, "flattop_length": None},
-          'outerfoldername': QubitFolders['1']},
-
+    "1": {
+        "Readout": {"Frequency": 6791.2, "Gain": 1000},
+        "Qubit": {
+            "Frequency": 2763,
+            "Gain": 5000,
+            "pi2_Gain": 3975 // 2,
+            "sigma": 0.6,
+            "flattop_length": None,
+        },
+        "outerfoldername": QubitFolders["1"],
+    },
     # currently working on 4
-    '2': {'Readout': {'Frequency': 7452.9, 'Gain': 4500}, # coarsely tuned to 4000, seeing behavior at 4500 .. readout length 5 us
-          'Qubit': {'Frequency': 3754.5, 'Gain': 3800, "pi2_Gain": 3800 // 2, "sigma": 0.02 , "flattop_length": None}, # qubit, T1 found
-          'outerfoldername': QubitFolders['2']},
-
+    "2": {
+        "Readout": {
+            "Frequency": 7452.9,
+            "Gain": 4500,
+        },  # coarsely tuned to 4000, seeing behavior at 4500 .. readout length 5 us
+        "Qubit": {
+            "Frequency": 3754.5,
+            "Gain": 3800,
+            "pi2_Gain": 3800 // 2,
+            "sigma": 0.02,
+            "flattop_length": None,
+        },  # qubit, T1 found
+        "outerfoldername": QubitFolders["2"],
+    },
     # currently working on 3
-    '3': {'Readout': {'Frequency': 6916.2, 'Gain': 1000}, # 1200 before
-          'Qubit': {'Frequency': 2512, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.06 , "flattop_length": None}, 
-          'outerfoldername': QubitFolders['3']},
-
+    "3": {
+        "Readout": {"Frequency": 6916.2, "Gain": 1000},  # 1200 before
+        "Qubit": {
+            "Frequency": 2512,
+            "Gain": 5000,
+            "pi2_Gain": 3975 // 2,
+            "sigma": 0.06,
+            "flattop_length": None,
+        },
+        "outerfoldername": QubitFolders["3"],
+    },
     # currently working on 5
-    '4': {'Readout': {'Frequency': 7593, 'Gain': 4000}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
-          'Qubit': {'Frequency':    4117, 'Gain': 4900,  "pi2_Gain": 4900 // 2 ,"sigma": 0.02, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
-          'outerfoldername': QubitFolders['4']},
-    
+    "4": {
+        "Readout": {
+            "Frequency": 7593,
+            "Gain": 4000,
+        },  # 7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
+        "Qubit": {
+            "Frequency": 4117,
+            "Gain": 4900,
+            "pi2_Gain": 4900 // 2,
+            "sigma": 0.02,
+            "flattop_length": None,
+        },  # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
+        "outerfoldername": QubitFolders["4"],
+    },
     # currently workign on 6?
-    '5': {'Readout': {'Frequency': 7095.4, 'Gain': 1500}, 
-          'Qubit': {'Frequency':  2651, 'Gain': 4200, "pi2_Gain": 4200 // 2, "sigma": 0.08, "flattop_length": None}, #2756.685
-          'outerfoldername': QubitFolders['5']}, 
-
+    "5": {
+        "Readout": {"Frequency": 7095.4, "Gain": 1500},
+        "Qubit": {
+            "Frequency": 2651,
+            "Gain": 4200,
+            "pi2_Gain": 4200 // 2,
+            "sigma": 0.08,
+            "flattop_length": None,
+        },  # 2756.685
+        "outerfoldername": QubitFolders["5"],
+    },
     # currently working on
-    '6': {'Readout': {'Frequency': 7285, 'Gain': 1500}, # prev 1400 
-          'Qubit': {'Frequency': 2955.6, 'Gain': 4000,  "pi2_Gain": 4000 // 2, "sigma": 0.04 , "flattop_length": None}, # prev 3056, 3238.7, 2965, 3921.5, 2963.5
-          'outerfoldername': QubitFolders['6']},
-    }
+    "6": {
+        "Readout": {"Frequency": 7285, "Gain": 1500},  # prev 1400
+        "Qubit": {
+            "Frequency": 2955.6,
+            "Gain": 4000,
+            "pi2_Gain": 4000 // 2,
+            "sigma": 0.04,
+            "flattop_length": None,
+        },  # prev 3056, 3238.7, 2965, 3921.5, 2963.5
+        "outerfoldername": QubitFolders["6"],
+    },
+}
 
-start_voltage = 0.000 # sets voltage for the entire experiment #0.0059 working for good T2Rs
+start_voltage = 0.000  # sets voltage for the entire experiment #0.0059 working for good T2Rs
 
 Qubit_Readout = 5
 Qubit_Pulse = 5
 yoko_fixed = False  # during a charge sweep; lazy way of sweeping two tone spec over time
-cavity_min = True   # look for dip, not peak
+cavity_min = True  # look for dip, not peak
 
 # ── Readout window for the NON-single-shot experiments ──────────────────────
 # ADC integration window / trigger offset [us] for every experiment that runs
@@ -103,8 +206,8 @@ cavity_min = True   # look for dip, not peak
 # The single-shot family below (SingleShot / T1SS / readout+qubit optimize /
 # AutoCoherence / ZeroSpanParity) has its OWN window in SS_params, and
 # ZeroSpanParity overrides again via ZSP_*Params["read_length"].
-Readout_Time = 15   # us, ADC integration window
-ADC_Offset   = 0.3 # us, delay from tone start to ADC trigger
+Readout_Time = 15  # us, ADC integration window
+ADC_Offset = 0.3  # us, delay from tone start to ADC trigger
 #                     (None -> keep BaseConfig["adc_trig_offset"])
 
 
@@ -115,17 +218,21 @@ Constant2Tone = False
 tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
-RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 201, 'span': 5}
+RunTransmissionSweep = False  # determine cavity frequency
+Transmission_params = {"reps": 20, "rounds": 20, "num_points": 201, "span": 5}
 
 RunTransmissionSweeps = False
-ts = {"start_ts_gain": 500, "end_ts_gain": 6000, "ts_step" : 100}
+ts = {"start_ts_gain": 500, "end_ts_gain": 6000, "ts_step": 100}
 
 Run2ToneSpec = False
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
-charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.05, "voltage_step": 0.005, } # 0.0001 has two periods in it
+charge_params = {
+    "voltage_start": 0.0,
+    "voltage_end": 0.05,
+    "voltage_step": 0.005,
+}  # 0.0001 has two periods in it
 
 # Cavity transmission sweep repeated at every charge bias -> transmission-vs-
 # (frequency, voltage) heatmap + tracked resonator frequency. Each slice is
@@ -140,27 +247,41 @@ charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.05, "voltage_step": 0.
 # "could not broadcast input array from shape (26,2) into shape (20,2)". Prefer
 # reps; raise rounds only if the accumulation buffer overflows.
 RunChargeTransmissionSweep = False
-ChargeTransmission_params = {"reps": 20, "rounds": 20,
-                             "span": None, "num_points": None,
-                             "fit": False, "settle_s": 0.0,
-                             "voltage_start": 0, "voltage_end": 0.05,
-                             "voltage_step": 0.005}
-Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 10, "SpecNumPoints": 201, # 750 works Q5
-                        "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
-                        "reps": 20, 'rounds': 10,
-                        'Gauss': False, "sigma": 2, "gain": 800,
-                        'relax_delay' : 2500,
-                        "display": True, 'min_sep_MHz':0.2,
-                        "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
-                        # ── RunSpecGainLengthSweep controls ──────────────────────────────────
-                        "sweep_lengths": list(range(10,101,10)),         # qubit_length values to sweep
-                        "sweep_gains":   list(range(200, 5001, 100)),  # qubit_gain values to sweep
-                        }
+ChargeTransmission_params = {
+    "reps": 20,
+    "rounds": 20,
+    "span": None,
+    "num_points": None,
+    "fit": False,
+    "settle_s": 0.0,
+    "voltage_start": 0,
+    "voltage_end": 0.05,
+    "voltage_step": 0.005,
+}
+Spec_relevant_params = {
+    "qubit_gain": 1000,
+    "SpecSpan": 10,
+    "SpecNumPoints": 201,  # 750 works Q5
+    "qubit_length": 50,  # length of 50flattop pulse when gauss = False # 9.5 worked
+    "reps": 20,
+    "rounds": 10,
+    "Gauss": False,
+    "sigma": 2,
+    "gain": 800,
+    "relax_delay": 2500,
+    "display": True,
+    "min_sep_MHz": 0.2,
+    "fit_window_mhz": 0.5,
+    "prominent_ratio": 0.1,  # 500 used for charge sweeps
+    # ── RunSpecGainLengthSweep controls ──────────────────────────────────
+    "sweep_lengths": list(range(10, 101, 10)),  # qubit_length values to sweep
+    "sweep_gains": list(range(200, 5001, 100)),  # qubit_gain values to sweep
+}
 
 StabilizeTwoTone = False
 
 RunChargeDispersionQuasiCW = False
-RunChargeDispersionRamsey = False # uses pi and pi /2 pulses; these should already be tuned up. you should also choose the frequency at one of the extrema
+RunChargeDispersionRamsey = False  # uses pi and pi /2 pulses; these should already be tuned up. you should also choose the frequency at one of the extrema
 
 # middle frequency: 2306.310396009901
 ChargeDispersion_params = {
@@ -171,7 +292,7 @@ ChargeDispersion_params = {
     "repetitions": 500,
 }
 
-Run2ToneChargeDispersionQuasiCW = False   # new automated mode
+Run2ToneChargeDispersionQuasiCW = False  # new automated mode
 
 # Modified Ramsey for charge-parity switching: two-tone search -> fixed-tau Ramsey.
 # tau is automatically set to 1/(2*df) where df is the measured peak separation.
@@ -182,15 +303,14 @@ Run2ToneChargeDispersionQuasiCW = False   # new automated mode
 RunModifiedRamsey = False
 
 TwoToneChargeDispersion_params = {
-    "df": 0.5,                 # required peak separation in MHz
-    "dV": 0.0005,                # voltage step in V
-    "voltage_min": 0.000,       # absolute lower bound
-    "voltage_max": 0.010,       # absolute upper bound
-    "max_voltage_tries": 1000,    # max search steps per cycle
-    "num_cycles": 1000,           # how many times to repeat: search -> quasiCW -> restart
-    "use_upper_peak": True,     # True -> probe higher-frequency peak, False -> lower-frequency peak
+    "df": 0.5,  # required peak separation in MHz
+    "dV": 0.0005,  # voltage step in V
+    "voltage_min": 0.000,  # absolute lower bound
+    "voltage_max": 0.010,  # absolute upper bound
+    "max_voltage_tries": 1000,  # max search steps per cycle
+    "num_cycles": 1000,  # how many times to repeat: search -> quasiCW -> restart
+    "use_upper_peak": True,  # True -> probe higher-frequency peak, False -> lower-frequency peak
     "center_peak_tol_mhz": 0.05,
-
     # two-tone spec settings used during the search
     "SpecSpan": 1.0,
     "SpecNumPoints": 101,
@@ -201,7 +321,6 @@ TwoToneChargeDispersion_params = {
     "sigma": 2,
     "gain": 500,
     "qubit_length": 2,
-
     # quasi-CW settings once the peaks are separated enough
     "qcw_repetitions": 1000,
     "qcw_relax_delay": 850,
@@ -221,7 +340,7 @@ ModifiedRamsey_params = {
     # cd_max_mhz=0.682 in ModifiedRamsey_Control_params below -- reconcile
     # those, or confirm this doublet really is charge parity and not another
     # transition, before trusting expected_parity_dwell_ms.
-    "df": 1,                  # parity branch separation [MHz] -> tau = k/(2*df)
+    "df": 1,  # parity branch separation [MHz] -> tau = k/(2*df)
     # tau = k/(2*df) with ODD k. k=1 gives tau=0.185 us, which CANNOT WORK at
     # sigma=0.1 us because the two pi/2 envelopes already span 4*sigma=0.4 us
     # (the program raises). k=3 -> tau=0.5556 us, gap 0.156 us, realized phase
@@ -247,17 +366,16 @@ ModifiedRamsey_params = {
     # the 90 deg closing phase -- wrong scheme, and it would look like a
     # contrast failure rather than a misconfiguration.
     #   upper branch = doublet centre + df/2
-    "f_ge": 3754.5,             # measured TOP branch (bottom = 4184.0)
+    "f_ge": 3754.5,  # measured TOP branch (bottom = 4184.0)
     # df must leave room for the pi/2 envelopes: ModifiedRamsey requires
     # df < 1/(8*sigma) (no pi) or 1/(16*sigma) (echo) and RAISES otherwise
     # instead of silently running at the wrong effective tau. At sigma=0.1 us
     # that is 1.25 MHz; at sigma=0.22 us only 0.57 MHz.
-    "num_cycles": 1000,         # how many Ramsey records to take
+    "num_cycles": 1000,  # how many Ramsey records to take
     "use_pi_pulse": False,
     "use_apriori_separator": True,
     "ss_calib_shots": 1000,
     "ss_recalib_every_n_cycles": 10,
-
     # --- Modified Ramsey settings ---
     # tau is computed as 1 / (2 * df) above; f_ge is the upper parity branch.
     # No relax delay: the preceding measurement collapses the state, but does
@@ -290,7 +408,7 @@ ModifiedRamsey_params = {
     # instead of ~213x. Per-dwell SNR therefore drops from ~8.8 to ~2.3 -- the
     # telegraph is still detectable but no longer comfortable, so compensate
     # with MANY dwells (see mr_reps) rather than with a lower HMM gate.
-    "mr_relax_delay": 500.0,     # us after the final Ramsey readout (5x T1=50us)
+    "mr_relax_delay": 500.0,  # us after the final Ramsey readout (5x T1=50us)
     # Record length. Rate precision is set by the NUMBER OF DWELLS observed,
     # not by per-shot fidelity. With mr_relax_delay=250 us the rep period is
     # ~262 us, so a 2.5 ms dwell spans ~9.6 shots:
@@ -299,7 +417,7 @@ ModifiedRamsey_params = {
     # 100k is the sensible starting point at 250 us relax -- it already gives
     # far more dwells than the 1880 the 4.7 s relax-0 record did, because the
     # limit was never sample count. The streamer chunks transparently.
-    "mr_reps": 50000,            # number of single-shot Ramsey measurements per cycle
+    "mr_reps": 50000,  # number of single-shot Ramsey measurements per cycle
     # Legacy hard-threshold diagnostic plots only -- NOT used for rate fitting.
     # Keep this well below one dwell or the averaged trace washes the telegraph
     # out: 25 shots ~= 294 us ~= 1/8.5 of a 2.5 ms dwell. (The old 400 spanned
@@ -348,14 +466,14 @@ ModifiedRamsey_params = {
     "control_detuning_mhz": None,
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
     # off preserves the original standard-scheme behavior.
-    "flip_final_pi2": False,      # add 180 deg to closing pi/2 (swap parity->state)
+    "flip_final_pi2": False,  # add 180 deg to closing pi/2 (swap parity->state)
     # Symmetric drive: both branches sit +/- df/2 from the drive instead of one
     # branch sitting df away, which HALVES the branch detuning (0.50 -> 0.25 of
     # the pi/2 Rabi rate at sigma=0.1 us, df=0.5 MHz). The off-resonant branch
     # is then far less under-rotated, so the parity -> state mapping contrast
     # |p1 - p0| improves. The closing pi/2 base phase moves 180 -> 90 deg
     # automatically. REQUIRES "f_ge" above to be the true UPPER branch.
-    "symmetric_ramsey": True,     # drive at midpoint f_avg=f_ge-df/2 instead of upper
+    "symmetric_ramsey": True,  # drive at midpoint f_avg=f_ge-df/2 instead of upper
     # !! UNRESOLVED PHYSICS LIMIT at df=2.7 MHz and sigma=0.1 us.
     # A 4*sigma gaussian pi/2 has peak Rabi 0.0997/sigma = 0.997 MHz. Symmetric
     # drive detunes each branch by df/2 = 1.35 MHz, i.e. ratio 1.354 -- ABOVE
@@ -417,17 +535,18 @@ ActiveResetVerify_params = {
     "plotDisp": True,
 }
 
-RunModifiedRamsey_Control = False  # two-tone search -> half-period step -> sweet-spot interpolation -> Ramsey
+RunModifiedRamsey_Control = (
+    False  # two-tone search -> half-period step -> sweet-spot interpolation -> Ramsey
+)
 
 ModifiedRamsey_Control_params = {
     # --- two-tone search settings (identical role to ModifiedRamsey_params) ---
-    "df": 0.5,                  # required peak separation in MHz to accept V1
-    "dV": 0.0005,               # voltage step [V]
+    "df": 0.5,  # required peak separation in MHz to accept V1
+    "dV": 0.0005,  # voltage step [V]
     "voltage_min": 0.000,
     "voltage_max": 0.010,
     "max_voltage_tries": 1000,
     "num_cycles": 1000,
-
     # two-tone spec hardware settings
     "SpecSpan": 1.0,
     "SpecNumPoints": 101,
@@ -438,63 +557,89 @@ ModifiedRamsey_Control_params = {
     "sigma": 2,
     "gain": 700,
     "qubit_length": 2,
-
     # --- charge-dispersion fit parameters (from independent calibration) ---
     # S(V) ≈ cd_max_mhz * |cos(2π*(V-V0)/T)| where T = cd_period_mv mV
-    "cd_max_mhz": 0.682,         # peak charge dispersion from fit [MHz]
-    "cd_period_mv": 4.37,        # period of dispersion vs yoko voltage [mV]
-
+    "cd_max_mhz": 0.682,  # peak charge dispersion from fit [MHz]
+    "cd_period_mv": 4.37,  # period of dispersion vs yoko voltage [mV]
     # --- sweet-spot verification ---
     # After moving to V_sweet, a new two-tone is taken.  If the measured
     # separation is below this threshold (or only one peak is found) the
     # sweet spot is flagged as verified.  Either way the Ramsey still runs.
     "sweet_spot_max_df_mhz": 0.1,
-
     # --- Modified Ramsey settings at the sweet spot ---
     # tau is computed from S1 (the separation found at V1), NOT from S_sweet
     # (which is ~0), so it matches the tau that ModifiedRamsey would use at V1.
     # f_ge is set from the two-tone at V_sweet (average of peaks, or single peak).
-    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
+    "mr_relax_delay": 0.0,  # us after final readout; separate from search relax_delay
     "mr_reps": 500,
     # hysteresis / moving-average: set via setdefault below (same as ModifiedRamsey)
 }
 
 RunChiShift = False
-ChiShift_params = {"reps": 10,
-                    'rounds': 100,# this will used for all experiements below unless otherwise changed in between trials
-                    "TransSpan": 1,  ### MHz, span will be center+/- this parameter
-                    "TransNumPoints": 101,
-                    "cavity_shift": 0.2,
-                    "relax_delay": 4000}
+ChiShift_params = {
+    "reps": 10,
+    "rounds": 100,  # this will used for all experiements below unless otherwise changed in between trials
+    "TransSpan": 1,  ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 101,
+    "cavity_shift": 0.2,
+    "relax_delay": 4000,
+}
 
 RunAmplitudeRabi = False
-Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 10000, 'number_of_steps': 101,
-                         "reps": 10, 'rounds': 10,
-                         'relax_delay': 3000,
-                         'fit' : False}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+Amplitude_Rabi_params = {
+    "qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["Frequency"],
+    "max_gain": 10000,
+    "number_of_steps": 101,
+    "reps": 10,
+    "rounds": 10,
+    "relax_delay": 3000,
+    "fit": False,
+}  # Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
-T1T2_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
-               "T2_step": 0.1, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
-               "relax_delay": 3000, # 5000
-               'repetitions': 1000}
+T1T2_params = {
+    "T1_step": 5,
+    "T1_expts": 100,
+    "T1_reps": 20,
+    "T1_rounds": 20,  # 80 100 30 30
+    "T2_step": 0.1,
+    "T2_expts": 100,
+    "T2_reps": 20,
+    "T2_rounds": 20,
+    "freq_shift": 0.0,
+    "relax_delay": 3000,  # 5000
+    "repetitions": 1000,
+}
 
 RunT1T2E = False
 
 RunT1T2RT2E = False
 
 RunT2E = False
-T2E_params = {"T2_max_us": 20, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,
-               "relax_delay": 500, 'num_pi_pulses': 1, #need odd number of pulses
-              "rotation_angle": None,
-              "min_max": None,
-              'repetitions': 3000}
+T2E_params = {
+    "T2_max_us": 20,
+    "T2_expts": 121,
+    "T2_reps": 25,
+    "T2_rounds": 25,
+    "freq_shift": 0.0,
+    "relax_delay": 500,
+    "num_pi_pulses": 1,  # need odd number of pulses
+    "rotation_angle": None,
+    "min_max": None,
+    "repetitions": 3000,
+}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 0.3, "Qubit_Pulse": [Qubit_Pulse], # qubit 1: 15 us, qubit 5: 5 us
-             'number_of_pulses': 1, 'relax_delay': 6000, "pi2_SS": False} # keep at 15
+SS_params = {
+    "Shots": 1000,
+    "Readout_Time": 15,
+    "ADC_Offset": 0.3,
+    "Qubit_Pulse": [Qubit_Pulse],  # qubit 1: 15 us, qubit 5: 5 us
+    "number_of_pulses": 1,
+    "relax_delay": 6000,
+    "pi2_SS": False,
+}  # keep at 15
 
 # Single-shot readout with NO qubit drive: just look at the IQ blobs the readout
 # produces on an undriven qubit. Uses the same readout tone/window as SingleShot
@@ -509,31 +654,33 @@ SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 0.3, "Qubit_Pulse"
 # a threshold-free autocorrelation rate). Sampling faster needs a shorter
 # relax_delay: parity dwells are a few ms, so relax_delay = 3000 us is barely
 # Nyquist -- expect rates to read as a lower bound until it comes down.
-RunUndrivenSingleShot = True   # not "UndrivenSingleShot": that name is the imported experiment class
-US_params = {"Shots": 1000000,            # more shots than SS: a small secondary blob needs statistics
-             "relax_delay": 300,      # us, omit to inherit SS_params['relax_delay']
-             "min_separation_sigma": 2.0,  # blobs must be this far apart (combined sigma) to be called two
-             # Average this many CONSECUTIVE shots into one time-series point:
-             # readout noise falls as 1/sqrt(n) so marginal blobs resolve, but
-             # switching faster than n * rep_period averages away. 1 = off.
-             # Read the rate-vs-averaging panel and set this on the plateau.
-             "average_shots": 1,
-             "bin_sizes": (1, 2, 4, 8, 16, 32, 64),  # rate-vs-averaging sweep
-             # Sweep the charge bias with the yoko: one acquisition per bias
-             # point, all in one h5, plus a summary plot vs voltage. Returns to
-             # the starting voltage afterwards. The range lives here (not in
-             # charge_params) because rebuild_singleshot_config drops those.
-             # voltage_end is exclusive, as in np.arange.
-             "charge_sweep": False,
-             "voltage_start": 0.0,
-             "voltage_end": 0.05,
-             "voltage_step": 0.005,
-             "charge_settle_s": 1.0,   # extra wait after each ramp, if filtered
-             # Run the whole acquisition this many times back to back. Each pass
-             # gets its own timestamped h5/png/json; only the last is shown on
-             # screen (plotDisp blocks until closed).
-             "Repeat": 10000,
-             "plotDisp": True}
+RunUndrivenSingleShot = True  # not "UndrivenSingleShot": that name is the imported experiment class
+US_params = {
+    "Shots": 1000000,  # more shots than SS: a small secondary blob needs statistics
+    "relax_delay": 300,  # us, omit to inherit SS_params['relax_delay']
+    "min_separation_sigma": 2.0,  # blobs must be this far apart (combined sigma) to be called two
+    # Average this many CONSECUTIVE shots into one time-series point:
+    # readout noise falls as 1/sqrt(n) so marginal blobs resolve, but
+    # switching faster than n * rep_period averages away. 1 = off.
+    # Read the rate-vs-averaging panel and set this on the plateau.
+    "average_shots": 1,
+    "bin_sizes": (1, 2, 4, 8, 16, 32, 64),  # rate-vs-averaging sweep
+    # Sweep the charge bias with the yoko: one acquisition per bias
+    # point, all in one h5, plus a summary plot vs voltage. Returns to
+    # the starting voltage afterwards. The range lives here (not in
+    # charge_params) because rebuild_singleshot_config drops those.
+    # voltage_end is exclusive, as in np.arange.
+    "charge_sweep": False,
+    "voltage_start": 0.0,
+    "voltage_end": 0.05,
+    "voltage_step": 0.005,
+    "charge_settle_s": 1.0,  # extra wait after each ramp, if filtered
+    # Run the whole acquisition this many times back to back. Each pass
+    # gets its own timestamped h5/png/json; only the last is shown on
+    # screen (plotDisp blocks until closed).
+    "Repeat": 10000,
+    "plotDisp": True,
+}
 
 # ── Interleaved UndrivenSingleShot + coherence loop ─────────────────────────
 # One cycle = UndrivenSingleShot -> T1 -> T2R -> T2E (in that order), each step
@@ -549,25 +696,34 @@ RunInterleavedCoherence = False
 Interleave_params = {
     "cycles": 10000,
     "UndrivenSingleShot": True,
-    "T1":  True,
+    "T1": True,
     "T2R": True,
     "T2E": False,
 }
 
 RunT1SS = False
-T1SS_params = {"T1_step": 80, "T1_expts": 100,
-               "reps": 2000,
-               'angle': 0, 'threshold': 0,
-               "relax_delay": 8000,
-               'calibrate_SS': True,
-               'repetitions': 3000}
+T1SS_params = {
+    "T1_step": 80,
+    "T1_expts": 100,
+    "reps": 2000,
+    "angle": 0,
+    "threshold": 0,
+    "relax_delay": 8000,
+    "calibrate_SS": True,
+    "repetitions": 3000,
+}
 
 SingleShot_ReadoutOptimize = False
 SS_R_params = {"gain_start": 3000, "gain_stop": 3600, "gain_pts": 7, "span": 0.1, "trans_pts": 21}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 500, "q_gain_pts" : 21, "q_freq_span": 2, "q_freq_pts": 21,
-               'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
+SS_Q_params = {
+    "q_gain_span": 500,
+    "q_gain_pts": 21,
+    "q_freq_span": 2,
+    "q_freq_pts": 21,
+    "number_of_pulses": 1,
+}  # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 # ── Automated T1 / T2 / T2Echo calibration ──────────────────────────────────
 # Set RunAutoCoherence = True to run the full automated calibration pipeline.
@@ -586,7 +742,7 @@ CalibrateQubitFreq = False
 
 AutoCoherence_override_params = {
     "skip_sweet_spot_search": SkipSweetSpotSearch,
-    "calibrate_qubit_freq":   CalibrateQubitFreq,
+    "calibrate_qubit_freq": CalibrateQubitFreq,
     # Examples (uncomment and edit to override defaults):
     # "spec_span":        1.0,    # MHz, ±span for two-tone spec
     # "spec_sigma":       2.0,    # us,  Gaussian sigma for spec drive
@@ -596,38 +752,33 @@ AutoCoherence_override_params = {
     # "T2_repetitions":   1,
     # "T2E_repetitions":  1,
     # "cd_period_mv":     4.37,   # mV, charge-dispersion period if known
-
     # "extended_pi_pi2_opt":  False, # use extended pi and pi/2 optimization
-    "ss_gain_span_frac": 0.6, # how much of single shot to search
-    "ss_gain_pts": 100, # how many points in single shot space to search
-
-    "auto_readout_opt":      True,
-
-        # ── T1 ──────────────────────────────────────────────────────────────────
-    "T1_step":         5,        # us – wait-time step
+    "ss_gain_span_frac": 0.6,  # how much of single shot to search
+    "ss_gain_pts": 100,  # how many points in single shot space to search
+    "auto_readout_opt": True,
+    # ── T1 ──────────────────────────────────────────────────────────────────
+    "T1_step": 5,  # us – wait-time step
     # "T1_expts":        60,        # number of time points
     # "T1_reps":         20,
     # "T1_rounds":       20,
     # "T1_relax_delay":  3500,      # us
-    "T1_repetitions":  3,         # number of consecutive T1 runs
-
+    "T1_repetitions": 3,  # number of consecutive T1 runs
     # ── T2 Ramsey ───────────────────────────────────────────────────────────
-    "T2_step":         0.1,       # us – Ramsey delay step
-    "T2_expts":        401,
+    "T2_step": 0.1,  # us – Ramsey delay step
+    "T2_expts": 401,
     # "T2_reps":         20,
     # "T2_rounds":       20,
     # "T2_relax_delay":  3500,      # us
-    "T2_repetitions":  3,
+    "T2_repetitions": 3,
     # "T2_freq_shift":   0.0,       # MHz – artificial detuning from f_ge
-
     # ── T2Echo ──────────────────────────────────────────────────────────────
-    "T2E_max_us":       500,      # us – maximum echo time
+    "T2E_max_us": 500,  # us – maximum echo time
     # "T2E_expts":        201,
     # "T2E_reps":         25,
     # "T2E_rounds":       25,
     # "T2E_relax_delay":  3500,     # us
     # "T2E_num_pi_pulses": 1,       # must be odd
-    "T2E_repetitions":  3,
+    "T2E_repetitions": 3,
 }
 
 # ── Zero-span charge-parity switching measurement ───────────────────────────
@@ -648,30 +799,41 @@ AutoCoherence_override_params = {
 RunZeroSpanParity = False
 
 # Acquisition mode + trigger source
-ZSP_RunMode  = "strobe"      # "strobe" (Path A, v1) | "decimated" (Path B, v2)
-ZSP_StartSrc = "internal"    # "internal" (spontaneous) | "external" (triggered)
+ZSP_RunMode = "strobe"  # "strobe" (Path A, v1) | "decimated" (Path B, v2)
+ZSP_StartSrc = "internal"  # "internal" (spontaneous) | "external" (triggered)
 
 # Recalibration toggles
-ZSP_RecalibrateParityFreqs = True   # run a narrow QubitSpecSliceFF first
-ZSP_RecalibrateSeparator   = True   # run single-shot pi-pulse g/e calibration
+ZSP_RecalibrateParityFreqs = True  # run a narrow QubitSpecSliceFF first
+ZSP_RecalibrateSeparator = True  # run single-shot pi-pulse g/e calibration
 
 # Calibration cache (used when the matching Recalibrate flag is False)
 ZSP_ParityFreqs_Cached = {
-    "lower_peak_MHz":  None,
+    "lower_peak_MHz": None,
     "higher_peak_MHz": None,
-    "which_to_park":   "lower",     # "lower" | "higher"
+    "which_to_park": "lower",  # "lower" | "higher"
 }
 ZSP_Separator_Cached = {
-    "g_center": None, "e_center": None, "normal": None, "midpoint": None,
+    "g_center": None,
+    "e_center": None,
+    "normal": None,
+    "midpoint": None,
 }
 
 # Narrow two-tone spec used when ZSP_RecalibrateParityFreqs=True (mirrors the
 # Run2ToneSpec block; centered on qubit_frequency_center).
 ZSP_ParitySpec_params = {
-    "SpecSpan": 1.0, "SpecNumPoints": 201,
-    "reps": 10, "rounds": 10, "relax_delay": 3500,
-    "Gauss": True, "sigma": 2, "gain": 500, "qubit_length": 2,
-    "min_sep_MHz": 0.2, "fit_window_mhz": 0.5, "prominent_ratio": 0.1,
+    "SpecSpan": 1.0,
+    "SpecNumPoints": 201,
+    "reps": 10,
+    "rounds": 10,
+    "relax_delay": 3500,
+    "Gauss": True,
+    "sigma": 2,
+    "gain": 500,
+    "qubit_length": 2,
+    "min_sep_MHz": 0.2,
+    "fit_window_mhz": 0.5,
+    "prominent_ratio": 0.1,
 }
 
 # Strobe-mode params (Path A). sample_period_us floor = adc_trig_offset +
@@ -679,10 +841,10 @@ ZSP_ParitySpec_params = {
 # reps_per_chunk * n_chunks * sample_period_us * 1e-6 (~12 s for defaults below).
 ZSP_StrobeParams = {
     "sample_period_us": 20.0,
-    "reps_per_chunk":   10000,
-    "n_chunks":         60,
-    "read_length":      5.0,
-    "adc_trig_offset":  0.488,
+    "reps_per_chunk": 10000,
+    "n_chunks": 60,
+    "read_length": 5.0,
+    "adc_trig_offset": 0.488,
 }
 
 # Decimated-mode params (Path B). capture_length_us must cover the readout window
@@ -692,11 +854,11 @@ ZSP_StrobeParams = {
 # gap_indices.
 ZSP_DecimatedParams = {
     "capture_length_us": 100.0,
-    "soft_avgs":         1,
-    "n_captures":        1,
-    "read_length":       80.0,
-    "adc_trig_offset":   0.488,
-    "allow_soft_avgs":   False,
+    "soft_avgs": 1,
+    "n_captures": 1,
+    "read_length": 80.0,
+    "adc_trig_offset": 0.488,
+    "allow_soft_avgs": False,
 }
 
 # Drive params (mode-independent). qubit_gain/pulse_gain = None -> use the active
@@ -704,30 +866,30 @@ ZSP_DecimatedParams = {
 ZSP_DriveParams = {
     "qubit_gain": None,
     "pulse_gain": None,
-    "res_phase":  0,
+    "res_phase": 0,
 }
 
 # Offline-analysis params (see analyze_parity_run docstring).
 ZSP_AnalysisParams = {
-    "classifier_method":     "apriori",   # "apriori" | "kmeans"
-    "window_us":             1000.0,
-    "k_sigma":               5.0,
-    "step_us":               None,
+    "classifier_method": "apriori",  # "apriori" | "kmeans"
+    "window_us": 1000.0,
+    "k_sigma": 5.0,
+    "step_us": None,
     "min_burst_duration_us": None,
-    "analysis_bin_us":       None,        # set < read_length for decimated apriori
-    "save_plots":            True,
+    "analysis_bin_us": None,  # set < read_length for decimated apriori
+    "save_plots": True,
 }
 
 # ============================ VALIDATION HARNESS (spec 2026-06-01) ============================
 # Strobe-only. Each block reuses ZSP_Separator_Cached / ZSP_ParityFreqs_Cached and the
 # zsp_cfg already built for ZeroSpanParity. Run order: stage1 -> stage2 -> stage1 refine ->
 # stage3 (gate) -> stage4 -> 5/6 -> 8 -> 7 -> 9.  See spec 6.3.
-Validate_StaticContrast      = False
+Validate_StaticContrast = False
 Validate_ContrastVsQubitFreq = False
-Validate_ModulationCheck     = False     # pipeline-sanity gate -- run first
-Validate_ControlSuite        = False
-Validate_EnvironmentSweep    = False
-Build_EvidenceReport         = False
+Validate_ModulationCheck = False  # pipeline-sanity gate -- run first
+Validate_ControlSuite = False
+Validate_EnvironmentSweep = False
+Build_EvidenceReport = False
 
 StaticContrast_params = {"freq_span_mhz": 2.0, "n_points": 41, "reps_per_point": 2000}
 ContrastVsQubit_params = {"qfreq_span_mhz": 10.0, "n_points": 81}
@@ -739,76 +901,116 @@ Environment_params = {"param_name": "power_dB", "values": [-10, -8, -6, -4]}
 # 3. EXECUTE  (don't edit below)
 # ══════════════════════════════════════════════════════════════════════════════
 ctx = build_context(
-    Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage,
+    Qubit_Parameters,
+    Qubit_Readout,
+    Qubit_Pulse,
+    start_voltage,
     Transmission_params=Transmission_params,
     Spec_relevant_params=Spec_relevant_params,
-    tl=tl, ts=ts, charge_params=charge_params,
-    cavity_min=cavity_min, yoko_fixed=yoko_fixed,
-    readout_length_us=Readout_Time, adc_trig_offset_us=ADC_Offset,
+    tl=tl,
+    ts=ts,
+    charge_params=charge_params,
+    cavity_min=cavity_min,
+    yoko_fixed=yoko_fixed,
+    readout_length_us=Readout_Time,
+    adc_trig_offset_us=ADC_Offset,
 )
 
 # ── Regime A: transmission / spectroscopy / charge-parity / coherence / ARV ──
-if Constant2Tone:                    run_constant_two_tone(ctx)
-if ConstantTone:                     run_constant_tone(ctx)
-if RunTransmissionSweep:             run_transmission_fit(ctx, Transmission_params)
-if RunTransmissionSweeps:            run_transmission_sweep(ctx, Transmission_params)
-if Run2ToneSpec:                     run_two_tone_spec(ctx, Spec_relevant_params)
-if RunSpecGainLengthSweep:           run_spec_gain_length_sweep(ctx, Spec_relevant_params)
-if RunChiShift:                      run_chi_shift(ctx, ChiShift_params)
-if Run2ToneChargeDispersionQuasiCW:  run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params)
-if RunModifiedRamsey:                run_modified_ramsey(ctx, ModifiedRamsey_params)
-if RunModifiedRamsey_Control:        run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params)
-if RunChargeDispersionQuasiCW:       run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_params)
-if RunChargeDispersionRamsey:        run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params)
-if RunAmplitudeRabi:                 run_amplitude_rabi(ctx, Amplitude_Rabi_params)
-if RunT1:                            run_t1(ctx, T1T2_params)
-if RunT1T2E:                         run_t1_t2e(ctx, T1T2_params, T2E_params)
-if RunT1T2RT2E:                      run_t1_t2r_t2e(ctx, T1T2_params, T2E_params)
-if RunT2:                            run_t2(ctx, T1T2_params)
-if RunT2E:                           run_t2e(ctx, T2E_params)
-if RunTrans_QubitSpec:               run_trans_qubit_spec(ctx, Spec_relevant_params, T1T2_params)
-if RunChargeSweep:                   run_charge_sweep(ctx, Spec_relevant_params)
-if RunChargeTransmissionSweep:       run_charge_transmission_sweep(ctx, ChargeTransmission_params)
-if RunActiveResetVerify:             run_active_reset_verify(ctx, ActiveResetVerify_params)
+if Constant2Tone:
+    run_constant_two_tone(ctx)
+if ConstantTone:
+    run_constant_tone(ctx)
+if RunTransmissionSweep:
+    run_transmission_fit(ctx, Transmission_params)
+if RunTransmissionSweeps:
+    run_transmission_sweep(ctx, Transmission_params)
+if Run2ToneSpec:
+    run_two_tone_spec(ctx, Spec_relevant_params)
+if RunSpecGainLengthSweep:
+    run_spec_gain_length_sweep(ctx, Spec_relevant_params)
+if RunChiShift:
+    run_chi_shift(ctx, ChiShift_params)
+if Run2ToneChargeDispersionQuasiCW:
+    run_two_tone_charge_dispersion_quasicw(
+        ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params
+    )
+if RunModifiedRamsey:
+    run_modified_ramsey(ctx, ModifiedRamsey_params)
+if RunModifiedRamsey_Control:
+    run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params)
+if RunChargeDispersionQuasiCW:
+    run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_params)
+if RunChargeDispersionRamsey:
+    run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params)
+if RunAmplitudeRabi:
+    run_amplitude_rabi(ctx, Amplitude_Rabi_params)
+if RunT1:
+    run_t1(ctx, T1T2_params)
+if RunT1T2E:
+    run_t1_t2e(ctx, T1T2_params, T2E_params)
+if RunT1T2RT2E:
+    run_t1_t2r_t2e(ctx, T1T2_params, T2E_params)
+if RunT2:
+    run_t2(ctx, T1T2_params)
+if RunT2E:
+    run_t2e(ctx, T2E_params)
+if RunTrans_QubitSpec:
+    run_trans_qubit_spec(ctx, Spec_relevant_params, T1T2_params)
+if RunChargeSweep:
+    run_charge_sweep(ctx, Spec_relevant_params)
+if RunChargeTransmissionSweep:
+    run_charge_transmission_sweep(ctx, ChargeTransmission_params)
+if RunActiveResetVerify:
+    run_active_reset_verify(ctx, ActiveResetVerify_params)
 
 # ── Interleaved UndrivenSingleShot + coherence (spans both config regimes) ──
 if RunInterleavedCoherence:
-    run_interleaved_coherence(ctx, Interleave_params, US_params, T1T2_params,
-                              T2E_params, SS_params)
+    run_interleaved_coherence(ctx, Interleave_params, US_params, T1T2_params, T2E_params, SS_params)
 
 # ── switch to the single-shot config regime (original top-level rebuild @ old line 2990) ──
 rebuild_singleshot_config(ctx, SS_params)
 
 # ── Regime B: single-shot family ──
-if SingleShot:                       run_single_shot(ctx, SS_params)
-if RunUndrivenSingleShot:            run_undriven_single_shot(ctx, US_params)
-if RunT1SS:                          run_t1_ss(ctx, T1SS_params, SS_params)
-if SingleShot_ReadoutOptimize:       run_readout_optimize(ctx, SS_R_params)
-if SingleShot_QubitOptimize:         run_qubit_optimize(ctx, SS_Q_params, SS_params)
-if RunAutoCoherence:                 run_auto_coherence(ctx, AutoCoherence_override_params)
+if SingleShot:
+    run_single_shot(ctx, SS_params)
+if RunUndrivenSingleShot:
+    run_undriven_single_shot(ctx, US_params)
+if RunT1SS:
+    run_t1_ss(ctx, T1SS_params, SS_params)
+if SingleShot_ReadoutOptimize:
+    run_readout_optimize(ctx, SS_R_params)
+if SingleShot_QubitOptimize:
+    run_qubit_optimize(ctx, SS_Q_params, SS_params)
+if RunAutoCoherence:
+    run_auto_coherence(ctx, AutoCoherence_override_params)
 if RunZeroSpanParity:
-    run_zero_span_parity(ctx, {
-        "ZSP_RunMode": ZSP_RunMode, "ZSP_StartSrc": ZSP_StartSrc,
-        "ZSP_RecalibrateParityFreqs": ZSP_RecalibrateParityFreqs,
-        "ZSP_RecalibrateSeparator": ZSP_RecalibrateSeparator,
-        "ZSP_ParityFreqs_Cached": ZSP_ParityFreqs_Cached,
-        "ZSP_Separator_Cached": ZSP_Separator_Cached,
-        "ZSP_ParitySpec_params": ZSP_ParitySpec_params,
-        "ZSP_StrobeParams": ZSP_StrobeParams,
-        "ZSP_DecimatedParams": ZSP_DecimatedParams,
-        "ZSP_DriveParams": ZSP_DriveParams,
-        "ZSP_AnalysisParams": ZSP_AnalysisParams,
-        "Validate_StaticContrast": Validate_StaticContrast,
-        "StaticContrast_params": StaticContrast_params,
-        "Validate_ContrastVsQubitFreq": Validate_ContrastVsQubitFreq,
-        "ContrastVsQubit_params": ContrastVsQubit_params,
-        "Validate_ModulationCheck": Validate_ModulationCheck,
-        "Modulation_params": Modulation_params,
-        "Validate_ControlSuite": Validate_ControlSuite,
-        "Control_params": Control_params,
-        "Validate_EnvironmentSweep": Validate_EnvironmentSweep,
-        "Environment_params": Environment_params,
-        "Build_EvidenceReport": Build_EvidenceReport,
-    })
+    run_zero_span_parity(
+        ctx,
+        {
+            "ZSP_RunMode": ZSP_RunMode,
+            "ZSP_StartSrc": ZSP_StartSrc,
+            "ZSP_RecalibrateParityFreqs": ZSP_RecalibrateParityFreqs,
+            "ZSP_RecalibrateSeparator": ZSP_RecalibrateSeparator,
+            "ZSP_ParityFreqs_Cached": ZSP_ParityFreqs_Cached,
+            "ZSP_Separator_Cached": ZSP_Separator_Cached,
+            "ZSP_ParitySpec_params": ZSP_ParitySpec_params,
+            "ZSP_StrobeParams": ZSP_StrobeParams,
+            "ZSP_DecimatedParams": ZSP_DecimatedParams,
+            "ZSP_DriveParams": ZSP_DriveParams,
+            "ZSP_AnalysisParams": ZSP_AnalysisParams,
+            "Validate_StaticContrast": Validate_StaticContrast,
+            "StaticContrast_params": StaticContrast_params,
+            "Validate_ContrastVsQubitFreq": Validate_ContrastVsQubitFreq,
+            "ContrastVsQubit_params": ContrastVsQubit_params,
+            "Validate_ModulationCheck": Validate_ModulationCheck,
+            "Modulation_params": Modulation_params,
+            "Validate_ControlSuite": Validate_ControlSuite,
+            "Control_params": Control_params,
+            "Validate_EnvironmentSweep": Validate_EnvironmentSweep,
+            "Environment_params": Environment_params,
+            "Build_EvidenceReport": Build_EvidenceReport,
+        },
+    )
 
 ctx.yoko.close()

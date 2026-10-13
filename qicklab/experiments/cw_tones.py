@@ -25,7 +25,7 @@ class ConstantTwoToneProg(AveragerProgram):
             freq=f_res,
             phase=0,
             gain=cfg["pulse_gain"],
-            length=res_len
+            length=res_len,
         )
 
         self.set_pulse_registers(
@@ -34,7 +34,7 @@ class ConstantTwoToneProg(AveragerProgram):
             freq=f_qub,
             phase=0,
             gain=cfg["qubit_gain"],
-            length=qub_len
+            length=qub_len,
         )
 
         self.synci(200)
@@ -46,14 +46,30 @@ class ConstantTwoToneProg(AveragerProgram):
 
 
 class ConstantTwoTone(ExperimentClass):
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
-                 cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
-                         prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress,
+        )
 
     def acquire(self, progress=False, debug=False):
         prog = ConstantTwoToneProg(self.soccfg, self.cfg)
-
 
         prog.config_all(self.soc)
         self.soc.start_src("internal")
@@ -66,7 +82,7 @@ class ConstantTwoTone(ExperimentClass):
 
         print("pulse_freq =", self.cfg["pulse_freq"])
         print("res_ch =", self.cfg["res_ch"])
-        print(self.cfg['nqz'])
+        print(self.cfg["nqz"])
         print("mixer_freq =", self.cfg.get("mixer_freq", None))
         print("cavity_LO =", self.cfg.get("cavity_LO", None))
         print("ro_chs =", self.cfg.get("ro_chs", None))
@@ -79,7 +95,7 @@ class ConstantTwoTone(ExperimentClass):
                 "qubit_freq_MHz": self.cfg["qubit_freq"],
                 "qubit_gain": self.cfg["qubit_gain"],
                 "tone_length_us": self.cfg["tone_length"],
-            }
+            },
         }
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
@@ -92,42 +108,66 @@ class ConstantTwoTone(ExperimentClass):
 class ConstantTone(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
-        cfg['reps'] = 100000
-        cfg['rounds'] = 1000
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])  # Readout
-        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"],
-                             ro_ch=cfg["ro_chs"][0])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0, gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        cfg["reps"] = 100000
+        cfg["rounds"] = 1000
+        self.declare_gen(
+            ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
+        )  # Readout
+        freq = self.freq2reg(
+            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
+        )  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        self.set_pulse_registers(
+            ch=cfg["res_ch"],
+            style="const",
+            freq=freq,
+            phase=0,
+            gain=cfg["pulse_gain"],
+            length=self.us2cycles(cfg["length"]),
+        )
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.pulse(ch = self.cfg["res_ch"])
+        self.pulse(ch=self.cfg["res_ch"])
         self.sync_all()
-        print('oh yeah')
+        print("oh yeah")
 
     # ====================================================== #
+
 
 class SingleTone(ExperimentClass):
     """
     Transmission Experiment basic
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress,
+        )
 
     def acquire(self, progress=False):
         for i in range(100):
             prog = ConstantTone(self.soccfg, self.cfg)
             a, b = prog.acquire(self.soc, load_pulses=True)
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         pass
 
     def save_data(self, data=None):
         pass
-
-
-
-
-

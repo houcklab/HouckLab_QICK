@@ -3,6 +3,7 @@
 Composes ZeroSpanParity acquisition + analyze_ZeroSpanParity primitives into the
 9-stage contrast/SNR validation chain. Strobe-only. Collate-only report.
 """
+
 import datetime
 import json
 import os
@@ -70,8 +71,10 @@ def _stage_sidecar(experiment, stage, scalars, arrays=None, extra_meta=None, out
         "analysis_version": ANALYSIS_VERSION,
     }
     meta.update(extra_meta or {})
-    meta["scalars"] = {k: (None if v is None else (float(v) if np.isscalar(v) and not isinstance(v, str) else v))
-                       for k, v in scalars.items()}
+    meta["scalars"] = {
+        k: (None if v is None else (float(v) if np.isscalar(v) and not isinstance(v, str) else v))
+        for k, v in scalars.items()
+    }
     json_path = base + ".json"
     with open(json_path, "w") as fh:
         json.dump(meta, fh, indent=2, default=str)
@@ -94,24 +97,30 @@ def _stage_sidecar(experiment, stage, scalars, arrays=None, extra_meta=None, out
 
 def _plot_modulation(scores, t_us, reference, vm, out_path):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_us / 1e6, scores, lw=0.5, label="V(t) recovered")
     span = np.nanmax(scores) - np.nanmin(scores) if scores.size else 1.0
-    ax.plot(t_us / 1e6, np.nanmin(scores) + reference * span, "r-", alpha=0.5,
-            label="injected on/off")
+    ax.plot(
+        t_us / 1e6, np.nanmin(scores) + reference * span, "r-", alpha=0.5, label="injected on/off"
+    )
     ax.set_xlabel("time (s)")
     ax.set_ylabel("projected V")
-    ax.set_title(f"Modulation check  corr={vm['correlation']:.2f}  depth={vm['modulation_depth']:.2f}  snr={vm['snr']:.2f}")
+    ax.set_title(
+        f"Modulation check  corr={vm['correlation']:.2f}  depth={vm['modulation_depth']:.2f}  snr={vm['snr']:.2f}"
+    )
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
 
-def run_modulation_check(experiment, separator, modulation_freq_hz=25.0, n_periods=10,
-                         progress=False, out_dir=None):
+def run_modulation_check(
+    experiment, separator, modulation_freq_hz=25.0, n_periods=10, progress=False, out_dir=None
+):
     """Stage 3: artificial square-wave modulation sanity gate.
 
     One block = one half-period (explicit factor of 2). Builds an alternating
@@ -125,18 +134,37 @@ def run_modulation_check(experiment, separator, modulation_freq_hz=25.0, n_perio
     schedule = [g_on, 0] * int(n_periods)
     acq = modulated_strobe_acquire(experiment, schedule, reps_per_block, progress=progress)
     cls = classify_parity_trace(acq["I"], acq["Q"], separator=separator, method="apriori")
-    vm = verify_modulation(cls["scores"], acq["t_us"], acq["modulation_reference"],
-                           gap_indices=acq["gap_indices"])
+    vm = verify_modulation(
+        cls["scores"], acq["t_us"], acq["modulation_reference"], gap_indices=acq["gap_indices"]
+    )
     vm["injected_freq_hz"] = actual_freq
-    arrays = {"I": acq["I"], "Q": acq["Q"], "t_us": acq["t_us"],
-              "scores": cls["scores"], "modulation_reference": acq["modulation_reference"],
-              "gap_indices": acq["gap_indices"]}
-    json_path, _ = _stage_sidecar(experiment, "3_modulation_check", scalars=vm, arrays=arrays,
-                                  extra_meta={"reps_per_block": reps_per_block,
-                                              "n_periods": n_periods,
-                                              "modulation_freq_hz": actual_freq}, out_dir=out_dir)
-    _plot_modulation(cls["scores"], acq["t_us"], acq["modulation_reference"], vm,
-                     json_path.replace(".json", ".png"))
+    arrays = {
+        "I": acq["I"],
+        "Q": acq["Q"],
+        "t_us": acq["t_us"],
+        "scores": cls["scores"],
+        "modulation_reference": acq["modulation_reference"],
+        "gap_indices": acq["gap_indices"],
+    }
+    json_path, _ = _stage_sidecar(
+        experiment,
+        "3_modulation_check",
+        scalars=vm,
+        arrays=arrays,
+        extra_meta={
+            "reps_per_block": reps_per_block,
+            "n_periods": n_periods,
+            "modulation_freq_hz": actual_freq,
+        },
+        out_dir=out_dir,
+    )
+    _plot_modulation(
+        cls["scores"],
+        acq["t_us"],
+        acq["modulation_reference"],
+        vm,
+        json_path.replace(".json", ".png"),
+    )
     return {**vm, "acq": acq, "classification": cls, "sidecar": json_path}
 
 
@@ -147,8 +175,10 @@ def _mean_complex_response(experiment, progress=False):
 
 def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(c["freqs"], np.abs(c["Z_on"]), label="|Z_on|")
     ax.plot(c["freqs"], np.abs(c["Z_off"]), label="|Z_off|")
@@ -189,12 +219,22 @@ def run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, ou
             Z_off[i] = _mean_complex_response(experiment, progress=progress)
     experiment.set_qubit_gain(base_gain)
     c = contrast_from_sweeps(freq_list, Z_on, Z_off)
-    arrays = {"freqs": c["freqs"], "Z_on_real": c["Z_on"].real, "Z_on_imag": c["Z_on"].imag,
-              "Z_off_real": c["Z_off"].real, "Z_off_imag": c["Z_off"].imag, "contrast": c["contrast"]}
-    scalars = {"best_freq": c["best_freq"], "max_contrast": c["max_contrast"],
-               "contrast_snr": c["contrast_snr"]}
-    json_path, _ = _stage_sidecar(experiment, "1_static_contrast", scalars=scalars, arrays=arrays,
-                                  out_dir=out_dir)
+    arrays = {
+        "freqs": c["freqs"],
+        "Z_on_real": c["Z_on"].real,
+        "Z_on_imag": c["Z_on"].imag,
+        "Z_off_real": c["Z_off"].real,
+        "Z_off_imag": c["Z_off"].imag,
+        "contrast": c["contrast"],
+    }
+    scalars = {
+        "best_freq": c["best_freq"],
+        "max_contrast": c["max_contrast"],
+        "contrast_snr": c["contrast_snr"],
+    }
+    json_path, _ = _stage_sidecar(
+        experiment, "1_static_contrast", scalars=scalars, arrays=arrays, out_dir=out_dir
+    )
     _plot_contrast(c, json_path.replace(".json", ".png"))
     return {**c, "sidecar": json_path}
 
@@ -221,19 +261,40 @@ def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=N
             contrast[i] = abs(z_on[i] - z_off)
     experiment.set_qubit_gain(base_gain)
     peaks = find_two_tone_peaks(qfreq_list, contrast)
-    arrays = {"qfreqs": qfreq_list, "contrast": contrast,
-              "z_on_real": z_on.real, "z_on_imag": z_on.imag}
-    scalars = {"z_off_real": z_off.real, "z_off_imag": z_off.imag,
-               "peak_sep": peaks.get("peak_sep")}
-    json_path, _ = _stage_sidecar(experiment, "2_contrast_vs_qubit_freq", scalars=scalars,
-                                  arrays=arrays, out_dir=out_dir)
-    _plot_contrast({"freqs": qfreq_list, "Z_on": z_on, "Z_off": np.full(qfreq_list.size, z_off),
-                    "contrast": contrast,
-                    "best_freq": float(qfreq_list[int(np.argmax(contrast))]) if contrast.size else np.nan,
-                    "contrast_snr": np.nan},
-                   json_path.replace(".json", ".png"), xlabel="parity_drive_freq (MHz)")
-    return {"qfreqs": qfreq_list, "contrast": contrast, "z_on": z_on, "z_off": z_off,
-            "peaks": peaks, "sidecar": json_path}
+    arrays = {
+        "qfreqs": qfreq_list,
+        "contrast": contrast,
+        "z_on_real": z_on.real,
+        "z_on_imag": z_on.imag,
+    }
+    scalars = {
+        "z_off_real": z_off.real,
+        "z_off_imag": z_off.imag,
+        "peak_sep": peaks.get("peak_sep"),
+    }
+    json_path, _ = _stage_sidecar(
+        experiment, "2_contrast_vs_qubit_freq", scalars=scalars, arrays=arrays, out_dir=out_dir
+    )
+    _plot_contrast(
+        {
+            "freqs": qfreq_list,
+            "Z_on": z_on,
+            "Z_off": np.full(qfreq_list.size, z_off),
+            "contrast": contrast,
+            "best_freq": float(qfreq_list[int(np.argmax(contrast))]) if contrast.size else np.nan,
+            "contrast_snr": np.nan,
+        },
+        json_path.replace(".json", ".png"),
+        xlabel="parity_drive_freq (MHz)",
+    )
+    return {
+        "qfreqs": qfreq_list,
+        "contrast": contrast,
+        "z_on": z_on,
+        "z_off": z_off,
+        "peaks": peaks,
+        "sidecar": json_path,
+    }
 
 
 class CrossRunComparison:
@@ -244,6 +305,7 @@ class CrossRunComparison:
     real parity dynamics. (Stages 5/6 are declared in _STAGE_ORDER but not yet
     implemented here; stage 8 builds its own results dict.)
     """
+
     METRICS = ("switch_rate", "separation_snr", "mean_dwell", "mean_signal_level")
 
     def __init__(self, param_name):
@@ -265,11 +327,15 @@ class CrossRunComparison:
 
     def plot(self, out_path):
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         tbl = self.table()
         metrics = [k for k in self.METRICS if k in tbl]
-        fig, axes = plt.subplots(len(metrics), 1, figsize=(8, 2.4 * max(1, len(metrics))), sharex=True)
+        fig, axes = plt.subplots(
+            len(metrics), 1, figsize=(8, 2.4 * max(1, len(metrics))), sharex=True
+        )
         if len(metrics) == 1:
             axes = [axes]
         x = tbl[self.param_name]
@@ -289,17 +355,28 @@ def _trace_metrics(experiment, separator, window_us=1000.0, progress=False):
     data = experiment.acquire(progress=progress)
     cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori")
     rate = sliding_window_switch_rate(cls["binary_states"], data["t_us"], window_us)
-    dw = dwell_time_statistics(cls["binary_states"], data["t_us"],
-                              merge_short_segments=True, min_dwell_bins=2)
+    dw = dwell_time_statistics(
+        cls["binary_states"], data["t_us"], merge_short_segments=True, min_dwell_bins=2
+    )
     h = projected_histogram_snr(cls["scores"])
-    return {"switch_rate": float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
-            "separation_snr": h["separation_snr"],
-            "mean_dwell": 0.5 * (dw["mean_0"] + dw["mean_1"]),
-            "mean_signal_level": float(np.mean(np.abs(data["I"] + 1j * data["Q"])))}
+    return {
+        "switch_rate": float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
+        "separation_snr": h["separation_snr"],
+        "mean_dwell": 0.5 * (dw["mean_0"] + dw["mean_1"]),
+        "mean_signal_level": float(np.mean(np.abs(data["I"] + 1j * data["Q"]))),
+    }
 
 
-def run_environment_sweep(experiment, separator, param_name, param_values, set_param,
-                          window_us=1000.0, progress=False, out_dir=None):
+def run_environment_sweep(
+    experiment,
+    separator,
+    param_name,
+    param_values,
+    set_param,
+    window_us=1000.0,
+    progress=False,
+    out_dir=None,
+):
     """Stage 7: vary an environment knob (power/detuning/drive-off), record 4 metrics each.
 
     set_param(experiment, value) applies the swept parameter (caller-provided so this
@@ -310,9 +387,14 @@ def run_environment_sweep(experiment, separator, param_name, param_values, set_p
         set_param(experiment, v)
         cmp.add(v, _trace_metrics(experiment, separator, window_us=window_us, progress=progress))
     tbl = cmp.table()
-    json_path, _ = _stage_sidecar(experiment, f"7_environment_{param_name}",
-                                  scalars={"n_points": len(param_values)},
-                                  arrays=None, extra_meta={"table": tbl}, out_dir=out_dir)
+    json_path, _ = _stage_sidecar(
+        experiment,
+        f"7_environment_{param_name}",
+        scalars={"n_points": len(param_values)},
+        arrays=None,
+        extra_meta={"table": tbl},
+        out_dir=out_dir,
+    )
     cmp.plot(json_path.replace(".json", ".png"))
     return {"table": tbl, "comparison": cmp, "sidecar": json_path}
 
@@ -325,16 +407,26 @@ def _signed_level(experiment, separator, progress=False):
     return float(np.mean(cls["scores"])), h["separation_snr"]
 
 
-def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detune_mhz=50.0,
-                      parity_freqs=None, progress=False, out_dir=None):
+def run_control_suite(
+    experiment,
+    separator,
+    variants=("A", "B", "C", "D"),
+    detune_mhz=50.0,
+    parity_freqs=None,
+    progress=False,
+    out_dir=None,
+):
     """Stage 8: A=drive off, B=detuned, C=probe off-res, D=swap branch (auto both).
 
     Contrast should vanish for A/B/C; assignment should reverse for D
     (branch_sign_flip True is the strong evidence).
     """
     cfg = experiment.cfg
-    base = {"qubit_gain": cfg["qubit_gain"], "parity_drive_freq": cfg.get("parity_drive_freq"),
-            "read_pulse_freq": cfg.get("read_pulse_freq")}
+    base = {
+        "qubit_gain": cfg["qubit_gain"],
+        "parity_drive_freq": cfg.get("parity_drive_freq"),
+        "read_pulse_freq": cfg.get("read_pulse_freq"),
+    }
     results = {}
 
     with _preserve_cfg(experiment, "qubit_gain", "parity_drive_freq", "read_pulse_freq"):
@@ -357,10 +449,17 @@ def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detu
         if "C" in variants:
             experiment.cfg["read_pulse_freq"] = (base["read_pulse_freq"] or 0.0) + detune_mhz
             lvl, snr = _signed_level(experiment, separator, progress=progress)
-            results["C"] = {"label": "probe_off_resonance", "mean_level": lvl, "separation_snr": snr}
+            results["C"] = {
+                "label": "probe_off_resonance",
+                "mean_level": lvl,
+                "separation_snr": snr,
+            }
             experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
         if "D" in variants:
-            pf = parity_freqs or {"lower": base["parity_drive_freq"], "higher": base["parity_drive_freq"]}
+            pf = parity_freqs or {
+                "lower": base["parity_drive_freq"],
+                "higher": base["parity_drive_freq"],
+            }
             experiment.cfg["parity_drive_freq"] = float(pf["lower"])
             experiment.set_qubit_gain(base["qubit_gain"])
             lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress)
@@ -368,22 +467,40 @@ def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detu
             lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress)
             sgn_lo = int(np.sign(lvl_lo - off_level))
             sgn_hi = int(np.sign(lvl_hi - off_level))
-            results["D"] = {"label": "swap_branch", "mean_level_lower": lvl_lo, "mean_level_higher": lvl_hi,
-                            "separation_snr_lower": snr_lo, "separation_snr_higher": snr_hi,
-                            "sign_lower": sgn_lo, "sign_higher": sgn_hi,
-                            "branch_sign_flip": bool(sgn_lo != sgn_hi)}
+            results["D"] = {
+                "label": "swap_branch",
+                "mean_level_lower": lvl_lo,
+                "mean_level_higher": lvl_hi,
+                "separation_snr_lower": snr_lo,
+                "separation_snr_higher": snr_hi,
+                "sign_lower": sgn_lo,
+                "sign_higher": sgn_hi,
+                "branch_sign_flip": bool(sgn_lo != sgn_hi),
+            }
             experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
     experiment.set_qubit_gain(base["qubit_gain"])
 
-    json_path, _ = _stage_sidecar(experiment, "8_control_suite",
-                                  scalars={"off_level": off_level},
-                                  arrays=None, extra_meta={"variants": results}, out_dir=out_dir)
+    json_path, _ = _stage_sidecar(
+        experiment,
+        "8_control_suite",
+        scalars={"off_level": off_level},
+        arrays=None,
+        extra_meta={"variants": results},
+        out_dir=out_dir,
+    )
     return {"variants": results, "off_level": off_level, "sidecar": json_path}
 
 
-_STAGE_ORDER = ["1_static_contrast", "2_contrast_vs_qubit_freq", "3_modulation_check",
-                "4_telegraph", "5_bin_size_sweep", "6_threshold_stability",
-                "7_environment", "8_control_suite"]
+_STAGE_ORDER = [
+    "1_static_contrast",
+    "2_contrast_vs_qubit_freq",
+    "3_modulation_check",
+    "4_telegraph",
+    "5_bin_size_sweep",
+    "6_threshold_stability",
+    "7_environment",
+    "8_control_suite",
+]
 
 
 def build_evidence_report(run_dir, out_path):
@@ -411,14 +528,20 @@ def build_evidence_report(run_dir, out_path):
         return (len(_STAGE_ORDER), m.get("timestamp", ""))
 
     sidecars.sort(key=_order_key)
-    lines = ["# Zero-Span Parity — Evidence Chain", "",
-             f"_Collated from `{run_dir}` — no automated pass/fail; human judgment required._", ""]
+    lines = [
+        "# Zero-Span Parity — Evidence Chain",
+        "",
+        f"_Collated from `{run_dir}` — no automated pass/fail; human judgment required._",
+        "",
+    ]
     for m in sidecars:
         lines.append(f"## {m['stage']}")
         lines.append("")
         if m.get("analysis_version") != ANALYSIS_VERSION:
-            lines.append(f"> ⚠ stale analysis_version {m.get('analysis_version')} "
-                         f"(current {ANALYSIS_VERSION}) — consider re-analysis.")
+            lines.append(
+                f"> ⚠ stale analysis_version {m.get('analysis_version')} "
+                f"(current {ANALYSIS_VERSION}) — consider re-analysis."
+            )
             lines.append("")
         sc = m.get("scalars", {})
         if sc:

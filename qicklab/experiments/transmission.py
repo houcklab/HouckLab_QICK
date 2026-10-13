@@ -13,39 +13,76 @@ from qicklab.core.experiment import ExperimentClass
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])  # Readout
+        self.declare_gen(
+            ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
+        )  # Readout
         for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
-                                 freq=cfg["pulse_freq"], gen_ch=cfg["res_ch"])
-        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"],
-                             ro_ch=cfg["ro_chs"][0])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0, gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+            self.declare_readout(
+                ch=ch,
+                length=self.us2cycles(cfg["readout_length"]),
+                freq=cfg["pulse_freq"],
+                gen_ch=cfg["res_ch"],
+            )
+        freq = self.freq2reg(
+            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
+        )  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        self.set_pulse_registers(
+            ch=cfg["res_ch"],
+            style="const",
+            freq=freq,
+            phase=0,
+            gain=cfg["pulse_gain"],
+            length=self.us2cycles(cfg["length"]),
+        )
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         self.sync_all(200)
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(10))
+        self.measure(
+            pulse_ch=self.cfg["res_ch"],
+            adcs=self.cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            wait=True,
+            syncdelay=self.us2cycles(10),
+        )
         self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]))
 
     # ====================================================== #
+
 
 class CavitySpecFF(ExperimentClass):
     """
     Transmission Experiment basic
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress,
+        )
 
     def acquire(self, progress=False, debug=False):
-        fpts = np.linspace(self.cfg["pulse_freq"] - self.cfg["TransSpan"],
-                           self.cfg["pulse_freq"] + self.cfg["TransSpan"],
-                           self.cfg["TransNumPoints"])
+        fpts = np.linspace(
+            self.cfg["pulse_freq"] - self.cfg["TransSpan"],
+            self.cfg["pulse_freq"] + self.cfg["TransSpan"],
+            self.cfg["TransNumPoints"],
+        )
         results = []
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
@@ -53,24 +90,27 @@ class CavitySpecFF(ExperimentClass):
             # One CavitySpecFF slice starts TransNumPoints * rounds tProc programs,
             # and a charge sweep runs many slices; retry the rare stale-shot-counter
             # failure instead of losing the sweep. See acquire_with_retry().
-            results.append(acquire_with_retry(
-                lambda: CavitySpecFFProg(self.soccfg, self.cfg),
-                self.soc,
-                label=f"CavitySpecFF f={f:.4f} MHz",
-                load_pulses=True, readouts_per_experiment=1,
-            ))
-        print(f'Time: {time.time() - start}')
+            results.append(
+                acquire_with_retry(
+                    lambda: CavitySpecFFProg(self.soccfg, self.cfg),
+                    self.soc,
+                    label=f"CavitySpecFF f={f:.4f} MHz",
+                    load_pulses=True,
+                    readouts_per_experiment=1,
+                )
+            )
+        print(f"Time: {time.time() - start}")
         results = np.transpose(results)
-        data={'config': self.cfg, 'data': {'results': results, 'fpts':fpts}}
-        self.data=data
+        data = {"config": self.cfg, "data": {"results": results, "fpts": fpts}}
+        self.data = data
 
         #### find the frequency corresponding to the peak
-        sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
+        sig = data["data"]["results"][0][0][0] + 1j * data["data"]["results"][0][0][1]
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
-        self.peakFreq_min = data['data']['fpts'][peak_loc]
+        self.peakFreq_min = data["data"]["fpts"][peak_loc]
         peak_loc = np.argmax(avgamp0)
-        self.peakFreq_max = data['data']['fpts'][peak_loc]
+        self.peakFreq_max = data["data"]["fpts"][peak_loc]
 
         return data
 
@@ -98,8 +138,10 @@ class CavitySpecFF(ExperimentClass):
             try:
                 # Better automatic starting point from the actual trace
                 span_mhz = float(np.max(fpts) - np.min(fpts))
-                y_edge = 0.5 * (np.median(y_db[:max(3, len(y_db) // 10)]) +
-                                np.median(y_db[-max(3, len(y_db) // 10):]))
+                y_edge = 0.5 * (
+                    np.median(y_db[: max(3, len(y_db) // 10)])
+                    + np.median(y_db[-max(3, len(y_db) // 10) :])
+                )
                 depth_db = float(y_edge - raw_min_val_db)
 
                 center_guess = raw_min_freq_mhz
@@ -111,14 +153,10 @@ class CavitySpecFF(ExperimentClass):
                     Qtot_guess,  # Qtot
                     Qext_guess,  # Qext
                     0.0,  # asym
-                    0.0  # offset
+                    0.0,  # offset
                 ]
 
-                fit_result = fit_hanger_transmission(
-                    freq=fpts,
-                    amp_db=y_db,
-                    startpoint=startpoint
-                )
+                fit_result = fit_hanger_transmission(freq=fpts, amp_db=y_db, startpoint=startpoint)
 
                 popt = fit_result["popt"]
                 perr = fit_result["perr"]
@@ -150,10 +188,12 @@ class CavitySpecFF(ExperimentClass):
 
                 print("Hanger resonator fit:")
                 print(
-                    f"  raw minimum      = {raw_min_freq_mhz:.6f} MHz / {raw_min_freq_ghz:.9f} GHz, {raw_min_val_db:.3f} dB")
+                    f"  raw minimum      = {raw_min_freq_mhz:.6f} MHz / {raw_min_freq_ghz:.9f} GHz, {raw_min_val_db:.3f} dB"
+                )
                 print(f"  fit f0 parameter = {f0_fit:.6f} ± {df0_fit:.6f} MHz")
                 print(
-                    f"  fit minimum      = {fit_min_freq_mhz:.6f} MHz / {fit_min_freq_ghz:.9f} GHz, {fit_min_val_db:.3f} dB")
+                    f"  fit minimum      = {fit_min_freq_mhz:.6f} MHz / {fit_min_freq_ghz:.9f} GHz, {fit_min_val_db:.3f} dB"
+                )
                 print(f"  Qtot             = {Qtot_fit:.6e} ± {dQtot_fit:.6e}")
                 print(f"  Qext             = {Qext_fit:.6e} ± {dQext_fit:.6e}")
                 print(f"  Qint             = {Qint_fit:.6e}")
@@ -176,7 +216,7 @@ class CavitySpecFF(ExperimentClass):
             raw_min_freq_ghz,
             linestyle=":",
             color="blue",
-            label=f"Raw min = {raw_min_freq_ghz:.9f} GHz"
+            label=f"Raw min = {raw_min_freq_ghz:.9f} GHz",
         )
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
@@ -212,28 +252,28 @@ class CavitySpecFF(ExperimentClass):
                 x_plot,
                 y_db,
                 "o",
-                label=f"Data | raw min = {raw_min_freq_ghz:.9f} GHz, {raw_min_val_db:.2f} dB"
+                label=f"Data | raw min = {raw_min_freq_ghz:.9f} GHz, {raw_min_val_db:.2f} dB",
             )
             plt.plot(
                 x_fit_plot,
                 y_fit,
                 "-",
                 linewidth=2,
-                label=f"Fit | fit min = {fit_min_freq_ghz:.9f} GHz, {fit_min_val_db:.2f} dB"
+                label=f"Fit | fit min = {fit_min_freq_ghz:.9f} GHz, {fit_min_val_db:.2f} dB",
             )
             plt.axvline(
                 raw_min_freq_ghz,
                 linestyle=":",
                 color="blue",
                 linewidth=2,
-                label=f"Raw minimum = {raw_min_freq_ghz:.9f} GHz"
+                label=f"Raw minimum = {raw_min_freq_ghz:.9f} GHz",
             )
             plt.axvline(
                 fit_min_freq_ghz,
                 linestyle=":",
                 color="red",
                 linewidth=2,
-                label=f"Fit minimum = {fit_min_freq_ghz:.9f} GHz"
+                label=f"Fit minimum = {fit_min_freq_ghz:.9f} GHz",
             )
             plt.xlabel("Cavity Frequency (GHz)")
             plt.ylabel("Transmission (dB)")
@@ -250,10 +290,5 @@ class CavitySpecFF(ExperimentClass):
                 plt.close(fig)
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
-
-
-
-
-
+        print(f"Saving {self.fname}")
+        super().save_data(data=data["data"])

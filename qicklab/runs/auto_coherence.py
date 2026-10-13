@@ -58,7 +58,6 @@ from qicklab.experiments.t1 import T1FF
 from qicklab.experiments.t2_echo import T2EMUX
 from qicklab.experiments.t2_ramsey import T2R
 
-
 # ---------------------------------------------------------------------------
 # Hardware clock quantisation constant (microseconds per QICK cycle × factor).
 # Must match the constant in CSTQ02_BFC.py's T2E step calculation.
@@ -71,15 +70,14 @@ _T2E_CLOCK_STEP_US = 0.00232515
 # ===========================================================================
 AUTO_COHERENCE_PARAMS = {
     # ── two-tone spec (sweet-spot search) ───────────────────────────────────
-    "spec_span":          1.0,   # MHz, ± span around qubit centre frequency
-    "spec_num_pts":       101,   # number of frequency points per spec run
-    "spec_reps":          10,
-    "spec_rounds":        10,
-    "spec_relax_delay":   1500,  # us
-    "spec_sigma":         2.0,   # us  Gaussian drive sigma (sharp peaks → larger σ)
-    "spec_gain":          700,   # qubit drive gain for spec (DAC units)
-    "spec_qubit_length":  2.0,   # us  flat-top length (unused when Gauss=True)
-
+    "spec_span": 1.0,  # MHz, ± span around qubit centre frequency
+    "spec_num_pts": 101,  # number of frequency points per spec run
+    "spec_reps": 10,
+    "spec_rounds": 10,
+    "spec_relax_delay": 1500,  # us
+    "spec_sigma": 2.0,  # us  Gaussian drive sigma (sharp peaks → larger σ)
+    "spec_gain": 700,  # qubit drive gain for spec (DAC units)
+    "spec_qubit_length": 2.0,  # us  flat-top length (unused when Gauss=True)
     # ── sweet-spot voltage search ────────────────────────────────────────────
     # Set skip_sweet_spot_search=True to bypass Stage 1 entirely: the qubit
     # frequency is taken straight from qubit_params and the yoko is left at its
@@ -92,64 +90,59 @@ AUTO_COHERENCE_PARAMS = {
     #      step by cd_period_mv/2 (if known) or walk toward minimum sep.
     #   3. Repeat up to ss_max_tries times.
     "ss_search_df_trigger": 0.50,  # MHz – peak sep that flags "off sweet spot"
-    "ss_accept_sep":        0.08,  # MHz – sep small enough to call "sweet spot"
-    "ss_dV":                5e-4,  # V   – voltage step per attempt
-    "ss_voltage_min":       0.000,
-    "ss_voltage_max":       0.010,
-    "ss_max_tries":         200,
-    "cd_period_mv":         None,  # mV  – if known; enables half-period step
-
+    "ss_accept_sep": 0.08,  # MHz – sep small enough to call "sweet spot"
+    "ss_dV": 5e-4,  # V   – voltage step per attempt
+    "ss_voltage_min": 0.000,
+    "ss_voltage_max": 0.010,
+    "ss_max_tries": 200,
+    "cd_period_mv": None,  # mV  – if known; enables half-period step
     # ── Qubit-frequency calibration (Stage 1.5) ─────────────────────────────
     # Runs one two-tone spec at the current voltage and re-centres f_ge on the
     # measured peak(s) before AmplitudeRabi.  Unlike the sweet-spot search it
     # does NOT move the yoko.  Reuses the spec_* parameters above.
-    "calibrate_qubit_freq":    True,
+    "calibrate_qubit_freq": True,
     # If the two-tone peak is not clearly above the noise floor
     # (SNR < freqcal_min_snr), the spec is re-run at higher gain
     # (×freqcal_gain_growth each time) up to freqcal_max_gain or
     # freqcal_max_gain_retries attempts.  Set freqcal_auto_gain=False to keep
     # spec_gain fixed (just warn when the peak is weak).
-    "freqcal_auto_gain":        True,
-    "freqcal_min_snr":          4.0,    # peak SNR below this triggers a gain bump
-    "freqcal_gain_growth":      1.8,    # spec_gain multiplier per retry
-    "freqcal_max_gain":         30000,  # DAC units; stays under the 32767 ceiling
+    "freqcal_auto_gain": True,
+    "freqcal_min_snr": 4.0,  # peak SNR below this triggers a gain bump
+    "freqcal_gain_growth": 1.8,  # spec_gain multiplier per retry
+    "freqcal_max_gain": 30000,  # DAC units; stays under the 32767 ceiling
     "freqcal_max_gain_retries": 5,
-
     # ── AmplitudeRabi ────────────────────────────────────────────────────────
-    "rabi_max_gain":           12000,
-    "rabi_num_steps":          201,
-    "rabi_reps":               15,
-    "rabi_rounds":             15,
-    "rabi_relax_delay":        3500,  # us
-    "rabi_sigma":              None,  # us – None → use qubit_params sigma
-    "rabi_sigma_min":          0.01,  # us – hard lower bound for auto-reduction
-    "rabi_max_osc_peaks":      3,     # if # peaks > this, sigma is halved
-    "rabi_max_sigma_retries":  10,     # max sigma reduction attempts
-
+    "rabi_max_gain": 12000,
+    "rabi_num_steps": 201,
+    "rabi_reps": 15,
+    "rabi_rounds": 15,
+    "rabi_relax_delay": 3500,  # us
+    "rabi_sigma": None,  # us – None → use qubit_params sigma
+    "rabi_sigma_min": 0.01,  # us – hard lower bound for auto-reduction
+    "rabi_max_osc_peaks": 3,  # if # peaks > this, sigma is halved
+    "rabi_max_sigma_retries": 10,  # max sigma reduction attempts
     # ── SingleShot pi-pulse optimisation ────────────────────────────────────
-    "ss_shots":            1000,  # shots per gain point (fast scan)
-    "ss_full_shots":       2000,  # shots for final fidelity measurement
-    "ss_relax_delay":      3500,  # us
-    "ss_readout_time":     15,    # us
-    "ss_adc_offset":       1,     # us  adc_trig_offset
-    "ss_target_fidelity":  0.70,  # minimum acceptable fidelity (70 %)
-    "ss_gain_pts":         21,    # number of gain points in optimisation scan
+    "ss_shots": 1000,  # shots per gain point (fast scan)
+    "ss_full_shots": 2000,  # shots for final fidelity measurement
+    "ss_relax_delay": 3500,  # us
+    "ss_readout_time": 15,  # us
+    "ss_adc_offset": 1,  # us  adc_trig_offset
+    "ss_target_fidelity": 0.70,  # minimum acceptable fidelity (70 %)
+    "ss_gain_pts": 21,  # number of gain points in optimisation scan
     "ss_max_scan_expansions": 2,  # expand/recenter if best point is on scan edge
-    "ss_gain_span_growth":  1.8,  # multiplier for each edge-hit expansion
-    "ss_gain_span_frac":   0.20,  # ± fraction of estimated pi_gain to scan
-
+    "ss_gain_span_growth": 1.8,  # multiplier for each edge-hit expansion
+    "ss_gain_span_frac": 0.20,  # ± fraction of estimated pi_gain to scan
     # ── Readout parameter optimisation (Stage 2.5) ──────────────────────────
     # Sweeps readout_length × adc_trig_offset at the Rabi pi_gain to find the
     # integration window that maximises single-shot fidelity.
     # Set auto_readout_opt=False to skip (faster runs, fixed readout params).
-    "auto_readout_opt":      True,  # run Stage 2.5
-    "readout_length_start":  5.0,   # us – shortest window to test
-    "readout_length_stop":   30.0,  # us – longest window to test
-    "readout_length_pts":    6,     # number of readout-length values
-    "adc_offset_start":      0.2,   # us – shortest ADC trigger offset
-    "adc_offset_stop":       3.0,   # us – longest ADC trigger offset
-    "adc_offset_pts":        5,     # number of ADC-offset values
-
+    "auto_readout_opt": True,  # run Stage 2.5
+    "readout_length_start": 5.0,  # us – shortest window to test
+    "readout_length_stop": 30.0,  # us – longest window to test
+    "readout_length_pts": 6,  # number of readout-length values
+    "adc_offset_start": 0.2,  # us – shortest ADC trigger offset
+    "adc_offset_stop": 3.0,  # us – longest ADC trigger offset
+    "adc_offset_pts": 5,  # number of ADC-offset values
     # ── Extended pi / pi2 pulse optimisation (error amplification) ──────────
     # When extended_pi_pi2_opt=True, Stage 3 replaces the simple scan with a
     # sequential error-amplification scheme.  For each N in the nsteps list,
@@ -160,45 +153,43 @@ AUTO_COHERENCE_PARAMS = {
     #   pi  uses odd N  [1, 3, 5, 7, 11] – odd N rotations land on |e⟩
     #   pi2 uses N=2(2k+1) [2, 6, 10, 14, 22] – even multiples of 2(2k+1) pi/2
     #       rotations also land on |e⟩
-    "extended_pi_pi2_opt":    False,
-    "pi_nsteps_list":         [1, 3, 5, 7, 11],
-    "pi2_nsteps_list":        [2, 6, 10, 14, 22],
-    "ext_gain_pts":            51,    # gain points scanned at each N step
-    "ext_pi_gain_span_init":   0.20,  # ± fraction of pi_gain_estimate (N=1 step)
-    "ext_pi2_gain_span_init":  0.20,  # ± fraction of pi2_gain_estimate (N=2 step)
-    "ext_gain_span_shrink":    0.40,  # span multiplier applied after each step
-
+    "extended_pi_pi2_opt": False,
+    "pi_nsteps_list": [1, 3, 5, 7, 11],
+    "pi2_nsteps_list": [2, 6, 10, 14, 22],
+    "ext_gain_pts": 51,  # gain points scanned at each N step
+    "ext_pi_gain_span_init": 0.20,  # ± fraction of pi_gain_estimate (N=1 step)
+    "ext_pi2_gain_span_init": 0.20,  # ± fraction of pi2_gain_estimate (N=2 step)
+    "ext_gain_span_shrink": 0.40,  # span multiplier applied after each step
     # ── T1 ──────────────────────────────────────────────────────────────────
-    "T1_step":         40,        # us – wait-time step
-    "T1_expts":        60,        # number of time points
-    "T1_reps":         20,
-    "T1_rounds":       20,
-    "T1_relax_delay":  3500,      # us
-    "T1_repetitions":  1,         # number of consecutive T1 runs
-
+    "T1_step": 40,  # us – wait-time step
+    "T1_expts": 60,  # number of time points
+    "T1_reps": 20,
+    "T1_rounds": 20,
+    "T1_relax_delay": 3500,  # us
+    "T1_repetitions": 1,  # number of consecutive T1 runs
     # ── T2 Ramsey ───────────────────────────────────────────────────────────
-    "T2_step":         0.1,       # us – Ramsey delay step
-    "T2_expts":        201,
-    "T2_reps":         20,
-    "T2_rounds":       20,
-    "T2_relax_delay":  3500,      # us
-    "T2_repetitions":  1,
-    "T2_freq_shift":   0.0,       # MHz – artificial detuning from f_ge
-
+    "T2_step": 0.1,  # us – Ramsey delay step
+    "T2_expts": 201,
+    "T2_reps": 20,
+    "T2_rounds": 20,
+    "T2_relax_delay": 3500,  # us
+    "T2_repetitions": 1,
+    "T2_freq_shift": 0.0,  # MHz – artificial detuning from f_ge
     # ── T2Echo ──────────────────────────────────────────────────────────────
-    "T2E_max_us":       200,      # us – maximum echo time
-    "T2E_expts":        201,
-    "T2E_reps":         25,
-    "T2E_rounds":       25,
-    "T2E_relax_delay":  3500,     # us
-    "T2E_num_pi_pulses": 1,       # must be odd
-    "T2E_repetitions":  1,
+    "T2E_max_us": 200,  # us – maximum echo time
+    "T2E_expts": 201,
+    "T2E_reps": 25,
+    "T2E_rounds": 25,
+    "T2E_relax_delay": 3500,  # us
+    "T2E_num_pi_pulses": 1,  # must be odd
+    "T2E_repetitions": 1,
 }
 
 
 # ===========================================================================
 # ─── Private helpers ────────────────────────────────────────────────────────
 # ===========================================================================
+
 
 def _ramp_to(yoko, target, step=0.001, delay=0.01):
     """Ramp yoko voltage to *target* in small steps (mirrors CSTQ02_BFC.py)."""
@@ -212,33 +203,41 @@ def _ramp_to(yoko, target, step=0.001, delay=0.01):
     yoko.write(f":SOUR:LEV {target}")
 
 
-def _find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.10,
-                         prominence_fraction=0.25, smooth_window=5):
+def _find_two_tone_peaks(
+    x_pts, avgamp0, min_sep_mhz=0.10, prominence_fraction=0.25, smooth_window=5
+):
     """
     Locate up to two prominent peaks in a two-tone spectrum.
     Returns dict with keys: peak_inds, peak_freqs, peak_vals, peak_sep.
     (Mirrors find_two_tone_peaks in CSTQ02_BFC.py.)
     """
-    x_pts   = np.asarray(x_pts,   dtype=float)
+    x_pts = np.asarray(x_pts, dtype=float)
     avgamp0 = np.asarray(avgamp0, dtype=float)
     n = len(avgamp0)
 
     if n <= 2:
         best = int(np.argmax(avgamp0))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
 
     # Smooth
     sw = max(3, int(smooth_window) | 1)
     sw = min(sw, n if n % 2 == 1 else n - 1)
-    sig = savgol_filter(avgamp0, window_length=sw, polyorder=2) if sw >= 3 \
-          else avgamp0.copy()
+    sig = savgol_filter(avgamp0, window_length=sw, polyorder=2) if sw >= 3 else avgamp0.copy()
 
     amp_range = sig.max() - sig.min()
     if amp_range < 1e-12:
         best = int(np.argmax(sig))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
 
     prom_thresh = prominence_fraction * amp_range
     dx = abs(float(x_pts[1] - x_pts[0])) if n > 1 else 1.0
@@ -248,8 +247,12 @@ def _find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.10,
 
     if len(peak_inds) == 0:
         best = int(np.argmax(sig))
-        return {"peak_inds": [best], "peak_freqs": x_pts[[best]],
-                "peak_vals": avgamp0[[best]], "peak_sep": None}
+        return {
+            "peak_inds": [best],
+            "peak_freqs": x_pts[[best]],
+            "peak_vals": avgamp0[[best]],
+            "peak_sep": None,
+        }
 
     if len(peak_inds) > 2:
         order = np.argsort(sig[peak_inds])[::-1]
@@ -260,16 +263,16 @@ def _find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.10,
         return {
             "peak_inds": [i0, i1],
             "peak_freqs": np.array([x_pts[i0], x_pts[i1]]),
-            "peak_vals":  np.array([avgamp0[i0], avgamp0[i1]]),
-            "peak_sep":   abs(float(x_pts[i1]) - float(x_pts[i0])),
+            "peak_vals": np.array([avgamp0[i0], avgamp0[i1]]),
+            "peak_sep": abs(float(x_pts[i1]) - float(x_pts[i0])),
         }
     else:
         i0 = int(peak_inds[0])
         return {
             "peak_inds": [i0],
             "peak_freqs": np.array([x_pts[i0]]),
-            "peak_vals":  np.array([avgamp0[i0]]),
-            "peak_sep":   None,
+            "peak_vals": np.array([avgamp0[i0]]),
+            "peak_sep": None,
         }
 
 
@@ -299,15 +302,15 @@ def _acquire_spec(soc, soccfg, cfg, outerFolder, qubit_freq_center, params):
     peak_info: dict from _find_two_tone_peaks
     """
     spec_cfg = {
-        "reps":          params["spec_reps"],
-        "rounds":        params["spec_rounds"],
-        "Gauss":         True,
-        "sigma":         params["spec_sigma"],
-        "qubit_gain":    params["spec_gain"],
-        "qubit_length":  params["spec_qubit_length"],
-        "SpecSpan":      params["spec_span"],
+        "reps": params["spec_reps"],
+        "rounds": params["spec_rounds"],
+        "Gauss": True,
+        "sigma": params["spec_sigma"],
+        "qubit_gain": params["spec_gain"],
+        "qubit_length": params["spec_qubit_length"],
+        "SpecSpan": params["spec_span"],
         "SpecNumPoints": params["spec_num_pts"],
-        "step":  2.0 * params["spec_span"] / params["spec_num_pts"],
+        "step": 2.0 * params["spec_span"] / params["spec_num_pts"],
         "start": qubit_freq_center - params["spec_span"],
         "expts": params["spec_num_pts"],
         "relax_delay": params["spec_relax_delay"],
@@ -325,9 +328,9 @@ def _acquire_spec(soc, soccfg, cfg, outerFolder, qubit_freq_center, params):
     QubitSpecSliceFF.save_data(inst, data)
     QubitSpecSliceFF.save_config(inst)
 
-    x_pts  = np.array(data["data"]["x_pts"], dtype=float)
-    avgi   = np.array(data["data"]["avgi"][0][0], dtype=float)
-    avgq   = np.array(data["data"]["avgq"][0][0], dtype=float)
+    x_pts = np.array(data["data"]["x_pts"], dtype=float)
+    avgi = np.array(data["data"]["avgi"][0][0], dtype=float)
+    avgq = np.array(data["data"]["avgq"][0][0], dtype=float)
     avgamp0 = np.abs(avgi + 1j * avgq) ** 2
 
     peak_info = _find_two_tone_peaks(x_pts, avgamp0)
@@ -344,8 +347,8 @@ def _find_pi_gain_from_rabi(x_pts, avgi, avgq):
     pi pulse.  Returns (pi_gain_int, n_oscillation_peaks).
     """
     x_pts = np.asarray(x_pts, dtype=float)
-    avgi  = np.asarray(avgi,  dtype=float)
-    avgq  = np.asarray(avgq,  dtype=float)
+    avgi = np.asarray(avgi, dtype=float)
+    avgq = np.asarray(avgq, dtype=float)
 
     if len(x_pts) == 0:
         raise ValueError("AmplitudeRabi returned no gain points.")
@@ -377,7 +380,7 @@ def _find_pi_gain_from_rabi(x_pts, avgi, avgq):
     baseline_pts = max(1, min(5, len(y_norm) // 20 or 1))
     ground_level = float(np.median(y_norm[:baseline_pts]))
     if ground_level > 0.5:
-        y_search = 1.0 - y_norm   # invert so |g⟩ → 0, |e⟩ → 1
+        y_search = 1.0 - y_norm  # invert so |g⟩ → 0, |e⟩ → 1
     else:
         y_search = y_norm
 
@@ -402,8 +405,9 @@ def _find_pi_gain_from_rabi(x_pts, avgi, avgq):
     return pi_gain, n_peaks
 
 
-def _sync_cfg_to_selected_qubit(cfg, qubit_readout, readout_freq, readout_gain,
-                                qubit_freq, qubit_gain, sigma, flattop_length):
+def _sync_cfg_to_selected_qubit(
+    cfg, qubit_readout, readout_freq, readout_gain, qubit_freq, qubit_gain, sigma, flattop_length
+):
     """
     Return a local config copy whose scalar and single-qubit list fields all
     point at the selected qubit.
@@ -412,18 +416,20 @@ def _sync_cfg_to_selected_qubit(cfg, qubit_readout, readout_freq, readout_gain,
     an older config dict in memory from a previous qubit.
     """
     synced = dict(cfg)
-    synced.update({
-        "pulse_freq":      readout_freq,
-        "pulse_gain":      readout_gain,
-        "qubit_gain":      qubit_gain,
-        "f_ge":            qubit_freq,
-        "qubit_gains":     [qubit_gain],
-        "f_ges":           [qubit_freq],
-        "sigma":           sigma,
-        "flattop_length":  flattop_length,
-        "Read_Indeces":    qubit_readout,
-        "Qubit_number":    qubit_readout,
-    })
+    synced.update(
+        {
+            "pulse_freq": readout_freq,
+            "pulse_gain": readout_gain,
+            "qubit_gain": qubit_gain,
+            "f_ge": qubit_freq,
+            "qubit_gains": [qubit_gain],
+            "f_ges": [qubit_freq],
+            "sigma": sigma,
+            "flattop_length": flattop_length,
+            "Read_Indeces": qubit_readout,
+            "Qubit_number": qubit_readout,
+        }
+    )
     return synced
 
 
@@ -432,11 +438,23 @@ def _readout_tone_length(cfg, readout_length, adc_offset):
     return max(float(cfg.get("length", 0.0)), float(adc_offset) + float(readout_length))
 
 
-def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
-                              qubit_gain, qubit_freq, sigma, flattop_length,
-                              shots, relax_delay, readout_time, adc_offset,
-                              qubit_readout, num_pulses=1,
-                              path="auto-SingleShot"):
+def _run_single_shot_at_gain(
+    soc,
+    soccfg,
+    cfg,
+    outerFolder,
+    qubit_gain,
+    qubit_freq,
+    sigma,
+    flattop_length,
+    shots,
+    relax_delay,
+    readout_time,
+    adc_offset,
+    qubit_readout,
+    num_pulses=1,
+    path="auto-SingleShot",
+):
     """
     Run one SingleShot acquisition at the specified qubit gain.
 
@@ -453,22 +471,22 @@ def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
     """
     ss_cfg = {
         "read_pulse_style": "const",
-        "readout_length":   readout_time,
-        "adc_trig_offset":  adc_offset,
+        "readout_length": readout_time,
+        "adc_trig_offset": adc_offset,
         # Resonator tone must cover the (possibly swept) ADC window.
-        "length":           _readout_tone_length(cfg, readout_time, adc_offset),
-        "pi2_SS":           False,
+        "length": _readout_tone_length(cfg, readout_time, adc_offset),
+        "pi2_SS": False,
         "qubit_pulse_style": "arb",
-        "sigma":            sigma,
-        "qubit_gain":       qubit_gain,
-        "f_ge":             qubit_freq,
-        "qubit_gains":      [qubit_gain],
-        "f_ges":            [qubit_freq],
-        "shots":            shots,
-        "relax_delay":      relax_delay,
-        "flattop_length":   flattop_length,
+        "sigma": sigma,
+        "qubit_gain": qubit_gain,
+        "f_ge": qubit_freq,
+        "qubit_gains": [qubit_gain],
+        "f_ges": [qubit_freq],
+        "shots": shots,
+        "relax_delay": relax_delay,
+        "flattop_length": flattop_length,
         "number_of_pulses": num_pulses,
-        "Read_Indeces":     qubit_readout,
+        "Read_Indeces": qubit_readout,
     }
     run_cfg = cfg | ss_cfg
 
@@ -481,12 +499,12 @@ def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
     )
     data = SingleShotProgramFFMUX.acquire(inst)
 
-    fid       = float(inst.fid[0])
+    fid = float(inst.fid[0])
     threshold = float(inst.threshold[0])
-    angle     = float(inst.angle[0])
+    angle = float(inst.angle[0])
 
     SingleShotProgramFFMUX.display(inst, data, plotDisp=False)
-    plt.close('all')   # hist_process always opens a figure; close it after saving
+    plt.close("all")  # hist_process always opens a figure; close it after saving
     SingleShotProgramFFMUX.save_data(inst, data)
     SingleShotProgramFFMUX.save_config(inst)
 
@@ -497,9 +515,10 @@ def _run_single_shot_at_gain(soc, soccfg, cfg, outerFolder,
 # ─── Main automation stages ─────────────────────────────────────────────────
 # ===========================================================================
 
-def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
-                              qubit_freq_center, qubit_readout,
-                              params, yoko, log):
+
+def _stage_sweet_spot_search(
+    soc, soccfg, cfg, auto_folder, qubit_freq_center, qubit_readout, params, yoko, log
+):
     """
     Stage 1 – Two-tone spec sweep to find the sweet spot (single resonance peak).
 
@@ -523,7 +542,7 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
         current_voltage = float(yoko.query(":SOUR:LEV?"))
 
     peak_sep = peak_info["peak_sep"]
-    sep_str  = f"{peak_sep:.4f} MHz" if peak_sep is not None else "None (single peak)"
+    sep_str = f"{peak_sep:.4f} MHz" if peak_sep is not None else "None (single peak)"
     log.append(f"  Initial voltage : {current_voltage}")
     log.append(f"  Initial peaks   : {peak_info['peak_freqs']}")
     log.append(f"  Initial sep     : {sep_str}")
@@ -548,24 +567,24 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
         return qfreq, current_voltage, peak_info
 
     # ── Voltage search ──────────────────────────────────────────────────────
-    dV         = params["ss_dV"]
-    vmin       = params["ss_voltage_min"]
-    vmax       = params["ss_voltage_max"]
-    max_tries  = params["ss_max_tries"]
+    dV = params["ss_dV"]
+    vmin = params["ss_voltage_min"]
+    vmax = params["ss_voltage_max"]
+    max_tries = params["ss_max_tries"]
     df_trigger = params["ss_search_df_trigger"]
-    cd_period  = params["cd_period_mv"]  # None or float in mV
+    cd_period = params["cd_period_mv"]  # None or float in mV
 
     direction = +1  # initial search direction
 
     # ── Strategy A: half-period step if cd_period_mv is known ───────────────
     if cd_period is not None and peak_sep >= df_trigger:
         half_period_V = (cd_period * 1e-3) / 2.0
-        candidate_v   = current_voltage + half_period_V
+        candidate_v = current_voltage + half_period_V
         # Keep within bounds
-        candidate_v   = float(np.clip(candidate_v, vmin, vmax))
+        candidate_v = float(np.clip(candidate_v, vmin, vmax))
         log.append(
             f"  Known cd_period={cd_period} mV → stepping half period "
-            f"({half_period_V*1e3:.2f} mV) to V={candidate_v:.6f} V"
+            f"({half_period_V * 1e3:.2f} mV) to V={candidate_v:.6f} V"
         )
         _ramp_to(yoko, candidate_v)
         current_voltage = candidate_v
@@ -576,8 +595,8 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
         peak_sep = peak_info["peak_sep"]
         log.append(
             f"  After half-period step: sep = {peak_sep:.4f} MHz"
-            if peak_sep is not None else
-            "  After half-period step: single peak"
+            if peak_sep is not None
+            else "  After half-period step: single peak"
         )
         if peak_sep is None or peak_sep < accept_sep:
             qfreq = _qubit_freq_from_peaks(peak_info)
@@ -587,10 +606,10 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
     # ── Strategy B: incremental walk toward minimum separation ───────────────
     # Track the minimum separation and its corresponding voltage.
     best_sep_found = peak_sep if peak_sep is not None else np.inf
-    best_voltage   = current_voltage
+    best_voltage = current_voltage
     best_peak_info = peak_info
 
-    log.append(f"  Starting incremental walk (max {max_tries} steps, dV={dV*1e3:.2f} mV)")
+    log.append(f"  Starting incremental walk (max {max_tries} steps, dV={dV * 1e3:.2f} mV)")
 
     for attempt in range(max_tries):
         next_v, direction = _choose_next_voltage(current_voltage, dV, vmin, vmax, direction)
@@ -608,21 +627,21 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
 
         if peak_sep is None or peak_sep < accept_sep:
             best_sep_found = 0.0
-            best_voltage   = current_voltage
+            best_voltage = current_voltage
             best_peak_info = peak_info
             log.append(
-                f"  Attempt {attempt+1}: V={current_voltage:.6f} V → "
+                f"  Attempt {attempt + 1}: V={current_voltage:.6f} V → "
                 f"sweet spot found (sep={peak_sep})"
             )
             break
 
         if peak_sep < best_sep_found:
             best_sep_found = peak_sep
-            best_voltage   = current_voltage
+            best_voltage = current_voltage
             best_peak_info = peak_info
 
         log.append(
-            f"  Attempt {attempt+1}: V={current_voltage:.6f} V, sep={peak_sep:.4f} MHz "
+            f"  Attempt {attempt + 1}: V={current_voltage:.6f} V, sep={peak_sep:.4f} MHz "
             f"(best so far: {best_sep_found:.4f} MHz)"
         )
 
@@ -637,8 +656,7 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
     final_sep = peak_info["peak_sep"]
     sep_txt = f"sep={final_sep:.4f} MHz" if final_sep is not None else "single peak"
     log.append(
-        f"  Sweet-spot search complete. "
-        f"V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz, {sep_txt}"
+        f"  Sweet-spot search complete. V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz, {sep_txt}"
     )
 
     return qfreq, current_voltage, peak_info
@@ -657,8 +675,8 @@ def _spec_peak_snr(avgamp0, peak_info):
         return 0.0
 
     baseline = float(np.median(avgamp0))
-    mad      = float(np.median(np.abs(avgamp0 - baseline)))
-    noise    = 1.4826 * mad
+    mad = float(np.median(np.abs(avgamp0 - baseline)))
+    noise = 1.4826 * mad
     if noise < 1e-12:
         noise = float(np.std(avgamp0)) or 1e-12
 
@@ -671,9 +689,9 @@ def _spec_peak_snr(avgamp0, peak_info):
     return (peak - baseline) / noise
 
 
-def _stage_calibrate_qubit_freq(soc, soccfg, cfg, auto_folder,
-                                qubit_freq_center, qubit_readout,
-                                params, log):
+def _stage_calibrate_qubit_freq(
+    soc, soccfg, cfg, auto_folder, qubit_freq_center, qubit_readout, params, log
+):
     """
     Stage 1.5 – Two-tone spec at the current voltage to refine the qubit
     frequency before AmplitudeRabi.
@@ -697,12 +715,12 @@ def _stage_calibrate_qubit_freq(soc, soccfg, cfg, auto_folder,
     log.append("STAGE 1.5 – Two-tone qubit-frequency calibration")
     log.append("=" * 60)
 
-    auto_gain   = params.get("freqcal_auto_gain", True)
-    gain        = int(params["spec_gain"])
+    auto_gain = params.get("freqcal_auto_gain", True)
+    gain = int(params["spec_gain"])
     gain_growth = float(params.get("freqcal_gain_growth", 1.8))
-    gain_cap    = int(params.get("freqcal_max_gain", 30000))
+    gain_cap = int(params.get("freqcal_max_gain", 30000))
     max_retries = int(params.get("freqcal_max_gain_retries", 5))
-    min_snr     = float(params.get("freqcal_min_snr", 4.0))
+    min_snr = float(params.get("freqcal_min_snr", 4.0))
 
     peak_info = None
     snr = 0.0
@@ -719,18 +737,24 @@ def _stage_calibrate_qubit_freq(soc, soccfg, cfg, auto_folder,
 
         next_gain = min(gain_cap, int(round(gain * gain_growth)))
         if next_gain <= gain:
-            log.append(f"    Peak weak (SNR {snr:.2f} < {min_snr}) but spec_gain "
-                       f"capped at {gain}; stopping.")
+            log.append(
+                f"    Peak weak (SNR {snr:.2f} < {min_snr}) but spec_gain "
+                f"capped at {gain}; stopping."
+            )
             break
 
-        log.append(f"    Peak not clearly visible (SNR {snr:.2f} < {min_snr}); "
-                   f"raising spec_gain {gain} -> {next_gain}")
+        log.append(
+            f"    Peak not clearly visible (SNR {snr:.2f} < {min_snr}); "
+            f"raising spec_gain {gain} -> {next_gain}"
+        )
         gain = next_gain
 
     if auto_gain and snr < min_snr:
-        log.append(f"  WARNING: no clear two-tone peak (best SNR {snr:.2f} < "
-                   f"{min_snr}) up to spec_gain={gain}. f_ge may be unreliable -- "
-                   f"check spec_span / drive power.")
+        log.append(
+            f"  WARNING: no clear two-tone peak (best SNR {snr:.2f} < "
+            f"{min_snr}) up to spec_gain={gain}. f_ge may be unreliable -- "
+            f"check spec_span / drive power."
+        )
 
     if len(peak_info["peak_freqs"]) == 2:
         qfreq = float(np.mean(peak_info["peak_freqs"]))
@@ -747,9 +771,18 @@ def _stage_calibrate_qubit_freq(soc, soccfg, cfg, auto_folder,
     return qfreq, peak_info
 
 
-def _stage_amplitude_rabi(soc, soccfg, cfg, auto_folder,
-                           qubit_freq, qubit_readout, sigma_initial,
-                           flattop_length, params, log):
+def _stage_amplitude_rabi(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    qubit_readout,
+    sigma_initial,
+    flattop_length,
+    params,
+    log,
+):
     """
     Stage 2 – AmplitudeRabi to find the pi-pulse gain.
 
@@ -765,36 +798,36 @@ def _stage_amplitude_rabi(soc, soccfg, cfg, auto_folder,
     log.append("STAGE 2 – AmplitudeRabi pi-pulse calibration")
     log.append("=" * 60)
 
-    rabi_sigma  = params["rabi_sigma"] if params["rabi_sigma"] is not None else sigma_initial
-    max_gain    = params["rabi_max_gain"]
-    num_steps   = params["rabi_num_steps"]
-    rabi_reps   = params["rabi_reps"]
+    rabi_sigma = params["rabi_sigma"] if params["rabi_sigma"] is not None else sigma_initial
+    max_gain = params["rabi_max_gain"]
+    num_steps = params["rabi_num_steps"]
+    rabi_reps = params["rabi_reps"]
     rabi_rounds = params["rabi_rounds"]
     relax_delay = params["rabi_relax_delay"]
-    sigma_min   = params["rabi_sigma_min"]
-    max_osc     = params["rabi_max_osc_peaks"]
+    sigma_min = params["rabi_sigma_min"]
+    max_osc = params["rabi_max_osc_peaks"]
     max_retries = params["rabi_max_sigma_retries"]
 
     step_size = max(1, int(round(max_gain / max(1, num_steps - 1))))
 
-    pi_gain     = None
-    rabi_data   = None
-    rabi_inst   = None
+    pi_gain = None
+    rabi_data = None
+    rabi_inst = None
 
     for retry in range(max_retries + 1):
-        log.append(f"  Rabi attempt {retry+1}: sigma={rabi_sigma:.4f} us")
+        log.append(f"  Rabi attempt {retry + 1}: sigma={rabi_sigma:.4f} us")
 
         rabi_cfg = {
-            "start":         0,
-            "step":          step_size,
-            "expts":         num_steps,
-            "reps":          rabi_reps,
-            "rounds":        rabi_rounds,
-            "sigma":         rabi_sigma,
-            "f_ge":          qubit_freq,
-            "relax_delay":   relax_delay,
+            "start": 0,
+            "step": step_size,
+            "expts": num_steps,
+            "reps": rabi_reps,
+            "rounds": rabi_rounds,
+            "sigma": rabi_sigma,
+            "f_ge": qubit_freq,
+            "relax_delay": relax_delay,
             "flattop_length": flattop_length,
-            "Qubit_number":  qubit_readout,
+            "Qubit_number": qubit_readout,
         }
         run_cfg = cfg | rabi_cfg
 
@@ -811,26 +844,24 @@ def _stage_amplitude_rabi(soc, soccfg, cfg, auto_folder,
         AmplitudeRabiFF.save_config(inst)
 
         x_pts = np.array(data["data"]["x_pts"], dtype=float)
-        avgi  = np.array(data["data"]["avgi"][0][0], dtype=float)
-        avgq  = np.array(data["data"]["avgq"][0][0], dtype=float)
+        avgi = np.array(data["data"]["avgi"][0][0], dtype=float)
+        avgq = np.array(data["data"]["avgq"][0][0], dtype=float)
 
         pi_gain_candidate, n_peaks = _find_pi_gain_from_rabi(x_pts, avgi, avgq)
 
         log.append(
-            f"    Found {n_peaks} oscillation peak(s), "
-            f"estimated pi_gain = {pi_gain_candidate}"
+            f"    Found {n_peaks} oscillation peak(s), estimated pi_gain = {pi_gain_candidate}"
         )
 
         if n_peaks <= max_osc or retry == max_retries:
             # Accept this result
-            pi_gain   = pi_gain_candidate
+            pi_gain = pi_gain_candidate
             rabi_data = data
             rabi_inst = inst
             break
         else:
             log.append(
-                f"    Too many oscillations ({n_peaks} > {max_osc}). "
-                f"Reducing sigma by 30 %."
+                f"    Too many oscillations ({n_peaks} > {max_osc}). Reducing sigma by 30 %."
             )
             rabi_sigma = max(sigma_min, rabi_sigma * 0.70)
 
@@ -841,9 +872,19 @@ def _stage_amplitude_rabi(soc, soccfg, cfg, auto_folder,
     return pi_gain, rabi_sigma
 
 
-def _stage_optimize_readout(soc, soccfg, cfg, auto_folder,
-                            qubit_freq, pi_gain, sigma, flattop_length,
-                            qubit_readout, params, log):
+def _stage_optimize_readout(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    pi_gain,
+    sigma,
+    flattop_length,
+    qubit_readout,
+    params,
+    log,
+):
     """
     Stage 2.5 – Sweep readout_length × adc_trig_offset at the Rabi pi_gain.
 
@@ -881,14 +922,17 @@ def _stage_optimize_readout(soc, soccfg, cfg, auto_folder,
         f"{params['adc_offset_stop']:.2f} us  ({int(params['adc_offset_pts'])} pts)"
     )
 
-    best_fid            = -1.0
+    best_fid = -1.0
     best_readout_length = float(params["ss_readout_time"])
-    best_adc_offset     = float(params["ss_adc_offset"])
+    best_adc_offset = float(params["ss_adc_offset"])
 
     for rl in readout_lengths:
         for ao in adc_offsets:
             fid, _, _, _, _ = _run_single_shot_at_gain(
-                soc, soccfg, cfg, auto_folder,
+                soc,
+                soccfg,
+                cfg,
+                auto_folder,
                 qubit_gain=pi_gain,
                 qubit_freq=qubit_freq,
                 sigma=sigma,
@@ -901,13 +945,12 @@ def _stage_optimize_readout(soc, soccfg, cfg, auto_folder,
                 path="auto-ReadoutOpt",
             )
             log.append(
-                f"    readout_length={rl:.1f} us, adc_offset={ao:.2f} us "
-                f"-> fidelity={fid:.4f}"
+                f"    readout_length={rl:.1f} us, adc_offset={ao:.2f} us -> fidelity={fid:.4f}"
             )
             if fid > best_fid:
-                best_fid            = fid
+                best_fid = fid
                 best_readout_length = float(rl)
-                best_adc_offset     = float(ao)
+                best_adc_offset = float(ao)
 
     log.append(
         f"  Best: readout_length={best_readout_length:.1f} us, "
@@ -916,10 +959,19 @@ def _stage_optimize_readout(soc, soccfg, cfg, auto_folder,
     return best_readout_length, best_adc_offset
 
 
-def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
-                                qubit_freq, sigma, flattop_length,
-                                pi_gain_estimate, qubit_readout,
-                                params, log):
+def _stage_singleshot_optimize(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    sigma,
+    flattop_length,
+    pi_gain_estimate,
+    qubit_readout,
+    params,
+    log,
+):
     """
     Stage 3 – SingleShot gain scan to find the gain that maximises fidelity.
 
@@ -936,33 +988,34 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
     log.append("STAGE 3 – SingleShot pi-pulse optimisation")
     log.append("=" * 60)
 
-    target_fid    = params["ss_target_fidelity"]
-    scan_pts      = params["ss_gain_pts"]
-    scan_frac     = params["ss_gain_span_frac"]
-    shots         = params["ss_shots"]
-    full_shots    = params["ss_full_shots"]
-    relax_delay   = params["ss_relax_delay"]
-    readout_time  = params["ss_readout_time"]
-    adc_offset    = params["ss_adc_offset"]
+    target_fid = params["ss_target_fidelity"]
+    scan_pts = params["ss_gain_pts"]
+    scan_frac = params["ss_gain_span_frac"]
+    shots = params["ss_shots"]
+    full_shots = params["ss_full_shots"]
+    relax_delay = params["ss_relax_delay"]
+    readout_time = params["ss_readout_time"]
+    adc_offset = params["ss_adc_offset"]
     max_expansions = int(params.get("ss_max_scan_expansions", 0))
-    span_growth    = float(params.get("ss_gain_span_growth", 1.0))
+    span_growth = float(params.get("ss_gain_span_growth", 1.0))
 
-    gain_lo = max(0,     int(pi_gain_estimate * (1.0 - scan_frac)))
+    gain_lo = max(0, int(pi_gain_estimate * (1.0 - scan_frac)))
     gain_hi = min(32767, int(pi_gain_estimate * (1.0 + scan_frac)))
-    gains   = np.unique(
-        np.linspace(gain_lo, gain_hi, scan_pts).astype(int)
-    )
+    gains = np.unique(np.linspace(gain_lo, gain_hi, scan_pts).astype(int))
 
     log.append(f"  Scanning gains: {gain_lo} → {gain_hi}  ({len(gains)} points)")
 
-    best_fid   = -1.0
-    best_gain  = pi_gain_estimate
-    best_thr   = 0.0
+    best_fid = -1.0
+    best_gain = pi_gain_estimate
+    best_thr = 0.0
     best_angle = 0.0
 
     for g in gains:
         fid, thr, ang, _, _ = _run_single_shot_at_gain(
-            soc, soccfg, cfg, auto_folder,
+            soc,
+            soccfg,
+            cfg,
+            auto_folder,
             qubit_gain=int(g),
             qubit_freq=qubit_freq,
             sigma=sigma,
@@ -975,9 +1028,9 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
         )
         log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}")
         if fid > best_fid:
-            best_fid   = fid
-            best_gain  = int(g)
-            best_thr   = thr
+            best_fid = fid
+            best_gain = int(g)
+            best_thr = thr
             best_angle = ang
 
     log.append(f"  Best gain from scan: {best_gain}  fidelity = {best_fid:.4f}")
@@ -991,7 +1044,7 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
         expansion += 1
         scan_center = max(1, int(best_gain))
         scan_frac *= span_growth
-        gain_lo = max(0,     int(scan_center * (1.0 - scan_frac)))
+        gain_lo = max(0, int(scan_center * (1.0 - scan_frac)))
         gain_hi = min(32767, int(scan_center * (1.0 + scan_frac)))
         gains = np.unique(np.linspace(gain_lo, gain_hi, scan_pts).astype(int))
 
@@ -1002,7 +1055,10 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
 
         for g in gains:
             fid, thr, ang, _, _ = _run_single_shot_at_gain(
-                soc, soccfg, cfg, auto_folder,
+                soc,
+                soccfg,
+                cfg,
+                auto_folder,
                 qubit_gain=int(g),
                 qubit_freq=qubit_freq,
                 sigma=sigma,
@@ -1015,9 +1071,9 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
             )
             log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}")
             if fid > best_fid:
-                best_fid   = fid
-                best_gain  = int(g)
-                best_thr   = thr
+                best_fid = fid
+                best_gain = int(g)
+                best_thr = thr
                 best_angle = ang
 
         log.append(f"  Best gain after rescan {expansion}: {best_gain}  fidelity = {best_fid:.4f}")
@@ -1031,7 +1087,10 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
     # Final high-shot measurement at best gain
     log.append(f"  Final SingleShot run at gain={best_gain}, shots={full_shots} …")
     fid_final, thr_final, ang_final, _, _ = _run_single_shot_at_gain(
-        soc, soccfg, cfg, auto_folder,
+        soc,
+        soccfg,
+        cfg,
+        auto_folder,
         qubit_gain=best_gain,
         qubit_freq=qubit_freq,
         sigma=sigma,
@@ -1050,12 +1109,28 @@ def _stage_singleshot_optimize(soc, soccfg, cfg, auto_folder,
     return best_gain, pi2_gain, fid_final, thr_final, ang_final
 
 
-def _optimize_gain_sequence(soc, soccfg, cfg, auto_folder,
-                             qubit_freq, sigma, flattop_length, qubit_readout,
-                             gain_estimate, nsteps_list,
-                             gain_span_init, gain_span_shrink,
-                             gain_pts, shots, relax_delay, readout_time,
-                             adc_offset, pulse_path, log, label):
+def _optimize_gain_sequence(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    sigma,
+    flattop_length,
+    qubit_readout,
+    gain_estimate,
+    nsteps_list,
+    gain_span_init,
+    gain_span_shrink,
+    gain_pts,
+    shots,
+    relax_delay,
+    readout_time,
+    adc_offset,
+    pulse_path,
+    log,
+    label,
+):
     """
     Iterative gain refinement using error amplification.
 
@@ -1069,32 +1144,35 @@ def _optimize_gain_sequence(soc, soccfg, cfg, auto_folder,
     Returns (best_gain, best_fid, best_thr, best_angle).
     """
     current_center = int(gain_estimate)
-    current_span   = float(gain_span_init)
+    current_span = float(gain_span_init)
 
     # Track the overall best across all N steps
-    overall_best_gain  = current_center
-    overall_best_fid   = -1.0
-    overall_best_thr   = 0.0
+    overall_best_gain = current_center
+    overall_best_fid = -1.0
+    overall_best_thr = 0.0
     overall_best_angle = 0.0
 
     for n_pulses in nsteps_list:
-        gain_lo = max(1,     int(current_center * (1.0 - current_span)))
+        gain_lo = max(1, int(current_center * (1.0 - current_span)))
         gain_hi = min(32767, int(current_center * (1.0 + current_span)))
-        gains   = np.unique(np.linspace(gain_lo, gain_hi, gain_pts).astype(int))
+        gains = np.unique(np.linspace(gain_lo, gain_hi, gain_pts).astype(int))
 
         log.append(
             f"  [{label}] N={n_pulses}: scanning {len(gains)} gains "
-            f"[{gain_lo}, {gain_hi}] (span={current_span*100:.1f}%)"
+            f"[{gain_lo}, {gain_hi}] (span={current_span * 100:.1f}%)"
         )
 
-        step_best_fid   = -1.0
-        step_best_gain  = current_center
-        step_best_thr   = 0.0
+        step_best_fid = -1.0
+        step_best_gain = current_center
+        step_best_thr = 0.0
         step_best_angle = 0.0
 
         for g in gains:
             fid, thr, ang, _, _ = _run_single_shot_at_gain(
-                soc, soccfg, cfg, auto_folder,
+                soc,
+                soccfg,
+                cfg,
+                auto_folder,
                 qubit_gain=int(g),
                 qubit_freq=qubit_freq,
                 sigma=sigma,
@@ -1109,33 +1187,41 @@ def _optimize_gain_sequence(soc, soccfg, cfg, auto_folder,
             )
             log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}  (N={n_pulses})")
             if fid > step_best_fid:
-                step_best_fid   = fid
-                step_best_gain  = int(g)
-                step_best_thr   = thr
+                step_best_fid = fid
+                step_best_gain = int(g)
+                step_best_thr = thr
                 step_best_angle = ang
 
         log.append(
-            f"  [{label}] N={n_pulses}: best gain={step_best_gain}, "
-            f"fidelity={step_best_fid:.4f}"
+            f"  [{label}] N={n_pulses}: best gain={step_best_gain}, fidelity={step_best_fid:.4f}"
         )
 
         # Advance centre and shrink span
         current_center = step_best_gain
-        current_span   = current_span * gain_span_shrink
+        current_span = current_span * gain_span_shrink
 
         if step_best_fid > overall_best_fid:
-            overall_best_fid   = step_best_fid
-            overall_best_gain  = step_best_gain
-            overall_best_thr   = step_best_thr
+            overall_best_fid = step_best_fid
+            overall_best_gain = step_best_gain
+            overall_best_thr = step_best_thr
             overall_best_angle = step_best_angle
 
     return overall_best_gain, overall_best_fid, overall_best_thr, overall_best_angle
 
 
-def _stage_extended_pulse_opt(soc, soccfg, cfg, auto_folder,
-                               qubit_freq, sigma, flattop_length,
-                               pi_gain_estimate, qubit_readout,
-                               params, log):
+def _stage_extended_pulse_opt(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    sigma,
+    flattop_length,
+    pi_gain_estimate,
+    qubit_readout,
+    params,
+    log,
+):
     """
     Stage 3 (extended) – Sequential pi and pi/2 gain optimisation using
     error amplification.
@@ -1156,28 +1242,33 @@ def _stage_extended_pulse_opt(soc, soccfg, cfg, auto_folder,
     log.append("STAGE 3 – Extended pi / pi2 pulse optimisation")
     log.append("=" * 60)
 
-    shots        = params["ss_shots"]
-    full_shots   = params["ss_full_shots"]
-    relax_delay  = params["ss_relax_delay"]
+    shots = params["ss_shots"]
+    full_shots = params["ss_full_shots"]
+    relax_delay = params["ss_relax_delay"]
     readout_time = params["ss_readout_time"]
-    adc_offset   = params["ss_adc_offset"]
-    target_fid   = params["ss_target_fidelity"]
+    adc_offset = params["ss_adc_offset"]
+    target_fid = params["ss_target_fidelity"]
 
-    pi_nsteps_list  = params["pi_nsteps_list"]
+    pi_nsteps_list = params["pi_nsteps_list"]
     pi2_nsteps_list = params["pi2_nsteps_list"]
-    gain_pts        = params["ext_gain_pts"]
-    pi_span_init    = params["ext_pi_gain_span_init"]
-    pi2_span_init   = params["ext_pi2_gain_span_init"]
-    span_shrink     = params["ext_gain_span_shrink"]
+    gain_pts = params["ext_gain_pts"]
+    pi_span_init = params["ext_pi_gain_span_init"]
+    pi2_span_init = params["ext_pi2_gain_span_init"]
+    span_shrink = params["ext_gain_span_shrink"]
 
     # ── Optimise pi pulse ────────────────────────────────────────────────────
     log.append(
         f"  Pi optimisation: N sequence={pi_nsteps_list}, "
-        f"initial estimate={pi_gain_estimate}, span=±{pi_span_init*100:.0f}%"
+        f"initial estimate={pi_gain_estimate}, span=±{pi_span_init * 100:.0f}%"
     )
     pi_gain_opt, pi_fid, pi_thr, pi_angle = _optimize_gain_sequence(
-        soc=soc, soccfg=soccfg, cfg=cfg, auto_folder=auto_folder,
-        qubit_freq=qubit_freq, sigma=sigma, flattop_length=flattop_length,
+        soc=soc,
+        soccfg=soccfg,
+        cfg=cfg,
+        auto_folder=auto_folder,
+        qubit_freq=qubit_freq,
+        sigma=sigma,
+        flattop_length=flattop_length,
         qubit_readout=qubit_readout,
         gain_estimate=pi_gain_estimate,
         nsteps_list=pi_nsteps_list,
@@ -1198,11 +1289,16 @@ def _stage_extended_pulse_opt(soc, soccfg, cfg, auto_folder,
     pi2_gain_estimate = pi_gain_opt // 2
     log.append(
         f"  Pi/2 optimisation: N sequence={pi2_nsteps_list}, "
-        f"initial estimate={pi2_gain_estimate}, span=±{pi2_span_init*100:.0f}%"
+        f"initial estimate={pi2_gain_estimate}, span=±{pi2_span_init * 100:.0f}%"
     )
     pi2_gain_opt, pi2_fid, pi2_thr, pi2_angle = _optimize_gain_sequence(
-        soc=soc, soccfg=soccfg, cfg=cfg, auto_folder=auto_folder,
-        qubit_freq=qubit_freq, sigma=sigma, flattop_length=flattop_length,
+        soc=soc,
+        soccfg=soccfg,
+        cfg=cfg,
+        auto_folder=auto_folder,
+        qubit_freq=qubit_freq,
+        sigma=sigma,
+        flattop_length=flattop_length,
         qubit_readout=qubit_readout,
         gain_estimate=pi2_gain_estimate,
         nsteps_list=pi2_nsteps_list,
@@ -1220,11 +1316,12 @@ def _stage_extended_pulse_opt(soc, soccfg, cfg, auto_folder,
     log.append(f"  Pi/2 optimisation done: pi2_gain={pi2_gain_opt}, fidelity={pi2_fid:.4f}")
 
     # ── Final 1-pulse fidelity verification ─────────────────────────────────
-    log.append(
-        f"  Final SingleShot verification (N=1): gain={pi_gain_opt}, shots={full_shots} …"
-    )
+    log.append(f"  Final SingleShot verification (N=1): gain={pi_gain_opt}, shots={full_shots} …")
     fid_final, thr_final, ang_final, _, _ = _run_single_shot_at_gain(
-        soc, soccfg, cfg, auto_folder,
+        soc,
+        soccfg,
+        cfg,
+        auto_folder,
         qubit_gain=pi_gain_opt,
         qubit_freq=qubit_freq,
         sigma=sigma,
@@ -1249,9 +1346,19 @@ def _stage_extended_pulse_opt(soc, soccfg, cfg, auto_folder,
     return pi_gain_opt, pi2_gain_opt, fid_final, thr_final, ang_final
 
 
-def _stage_run_t1(soc, soccfg, cfg, auto_folder,
-                  qubit_freq, pi_gain, sigma, flattop_length,
-                  qubit_readout, params, log):
+def _stage_run_t1(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    pi_gain,
+    sigma,
+    flattop_length,
+    qubit_readout,
+    params,
+    log,
+):
     """Stage 4 – Run T1 measurement(s)."""
     log.append("")
     log.append("=" * 60)
@@ -1262,16 +1369,16 @@ def _stage_run_t1(soc, soccfg, cfg, auto_folder,
 
     for i in range(repetitions):
         t1_cfg = {
-            "start":        0,
-            "step":         params["T1_step"],
-            "expts":        params["T1_expts"],
-            "reps":         params["T1_reps"],
-            "rounds":       params["T1_rounds"],
-            "pi_gain":      pi_gain,
-            "relax_delay":  params["T1_relax_delay"],
-            "sigma":        sigma,
+            "start": 0,
+            "step": params["T1_step"],
+            "expts": params["T1_expts"],
+            "reps": params["T1_reps"],
+            "rounds": params["T1_rounds"],
+            "pi_gain": pi_gain,
+            "relax_delay": params["T1_relax_delay"],
+            "sigma": sigma,
             "flattop_length": flattop_length,
-            "f_ge":         qubit_freq,
+            "f_ge": qubit_freq,
             "Qubit_number": qubit_readout,
         }
         run_cfg = cfg | t1_cfg
@@ -1285,18 +1392,29 @@ def _stage_run_t1(soc, soccfg, cfg, auto_folder,
         )
         dT1 = T1FF.acquire(iT1)
         T1FF.display(iT1, dT1, plotDisp=False, figNum=20)
-        plt.close('all')
+        plt.close("all")
         T1FF.save_data(iT1, dT1)
         T1FF.save_config(iT1)
 
-        log.append(f"  T1 run {i+1}/{repetitions} saved.")
+        log.append(f"  T1 run {i + 1}/{repetitions} saved.")
         time.sleep(5)
         soc.reset_gens()
 
 
-def _stage_run_t2(soc, soccfg, cfg, auto_folder,
-                  qubit_freq, pi_gain, pi2_gain, sigma, flattop_length,
-                  qubit_readout, params, log):
+def _stage_run_t2(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    pi_gain,
+    pi2_gain,
+    sigma,
+    flattop_length,
+    qubit_readout,
+    params,
+    log,
+):
     """Stage 5 – Run T2 Ramsey measurement(s)."""
     log.append("")
     log.append("=" * 60)
@@ -1304,7 +1422,7 @@ def _stage_run_t2(soc, soccfg, cfg, auto_folder,
     log.append("=" * 60)
 
     repetitions = params["T2_repetitions"]
-    freq_shift  = params["T2_freq_shift"]
+    freq_shift = params["T2_freq_shift"]
 
     # phase_step = 0 (no artificial detuning via phase advance)
     # The soccfg.deg2reg call mirrors CSTQ02_BFC.py
@@ -1315,17 +1433,17 @@ def _stage_run_t2(soc, soccfg, cfg, auto_folder,
 
     for i in range(repetitions):
         t2_cfg = {
-            "start":        0,
-            "step":         params["T2_step"],
-            "phase_step":   phase_step,
-            "expts":        params["T2_expts"],
-            "reps":         params["T2_reps"],
-            "rounds":       params["T2_rounds"],
-            "pi_gain":      pi_gain,
-            "pi2_gain":     pi2_gain,
-            "relax_delay":  params["T2_relax_delay"],
-            "f_ge":         qubit_freq + freq_shift,
-            "sigma":        sigma,
+            "start": 0,
+            "step": params["T2_step"],
+            "phase_step": phase_step,
+            "expts": params["T2_expts"],
+            "reps": params["T2_reps"],
+            "rounds": params["T2_rounds"],
+            "pi_gain": pi_gain,
+            "pi2_gain": pi2_gain,
+            "relax_delay": params["T2_relax_delay"],
+            "f_ge": qubit_freq + freq_shift,
+            "sigma": sigma,
             "flattop_length": flattop_length,
         }
         run_cfg = cfg | t2_cfg
@@ -1339,35 +1457,44 @@ def _stage_run_t2(soc, soccfg, cfg, auto_folder,
         )
         dT2R = T2R.acquire(iT2R)
         T2R.display(iT2R, dT2R, plotDisp=False, figNum=21)
-        plt.close('all')
+        plt.close("all")
         T2R.save_data(iT2R, dT2R)
         T2R.save_config(iT2R)
 
-        log.append(f"  T2 run {i+1}/{repetitions} saved.")
+        log.append(f"  T2 run {i + 1}/{repetitions} saved.")
         time.sleep(5)
         soc.reset_gens()
 
 
-def _stage_run_t2e(soc, soccfg, cfg, auto_folder,
-                   qubit_freq, pi_gain, pi2_gain, sigma, flattop_length,
-                   qubit_readout, params, log):
+def _stage_run_t2e(
+    soc,
+    soccfg,
+    cfg,
+    auto_folder,
+    qubit_freq,
+    pi_gain,
+    pi2_gain,
+    sigma,
+    flattop_length,
+    qubit_readout,
+    params,
+    log,
+):
     """Stage 6 – Run T2Echo measurement(s)."""
     log.append("")
     log.append("=" * 60)
     log.append("STAGE 6 – T2Echo measurements")
     log.append("=" * 60)
 
-    repetitions  = params["T2E_repetitions"]
-    num_pulses   = params["T2E_num_pi_pulses"]
-    T2E_max_us   = params["T2E_max_us"]
-    T2E_expts    = params["T2E_expts"]
+    repetitions = params["T2E_repetitions"]
+    num_pulses = params["T2E_num_pi_pulses"]
+    T2E_max_us = params["T2E_max_us"]
+    T2E_expts = params["T2E_expts"]
 
     # Mirror CSTQ02_BFC.py step calculation (hardware quantisation)
     int_steps = int(T2E_max_us // (_T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_expts))
     if int_steps == 0:
-        log.append(
-            "  WARNING: T2E step is 0. Increase T2E_max_us or reduce T2E_expts."
-        )
+        log.append("  WARNING: T2E step is 0. Increase T2E_max_us or reduce T2E_expts.")
         int_steps = 1
     t2e_step = _T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps
     log.append(
@@ -1377,19 +1504,19 @@ def _stage_run_t2e(soc, soccfg, cfg, auto_folder,
 
     for i in range(repetitions):
         t2e_cfg = {
-            "start":         0,
-            "step":          t2e_step,
-            "expts":         T2E_expts,
-            "reps":          params["T2E_reps"],
-            "rounds":        params["T2E_rounds"],
-            "pi_gain":       pi_gain,
-            "pi2_gain":      pi2_gain,
-            "relax_delay":   params["T2E_relax_delay"],
-            "f_ge":          qubit_freq,
+            "start": 0,
+            "step": t2e_step,
+            "expts": T2E_expts,
+            "reps": params["T2E_reps"],
+            "rounds": params["T2E_rounds"],
+            "pi_gain": pi_gain,
+            "pi2_gain": pi2_gain,
+            "relax_delay": params["T2E_relax_delay"],
+            "f_ge": qubit_freq,
             "num_pi_pulses": num_pulses,
-            "sigma":         sigma,
+            "sigma": sigma,
             "flattop_length": flattop_length,
-            "Qubit_number":  qubit_readout,
+            "Qubit_number": qubit_readout,
         }
         run_cfg = cfg | t2e_cfg
 
@@ -1402,11 +1529,11 @@ def _stage_run_t2e(soc, soccfg, cfg, auto_folder,
         )
         dT2E = T2EMUX.acquire(iT2E)
         T2EMUX.display(iT2E, dT2E, plotDisp=False, figNum=22)
-        plt.close('all')
+        plt.close("all")
         T2EMUX.save_data(iT2E, dT2E)
         T2EMUX.save_config(iT2E)
 
-        log.append(f"  T2E run {i+1}/{repetitions} saved.")
+        log.append(f"  T2E run {i + 1}/{repetitions} saved.")
         time.sleep(5)
         soc.reset_gens()
 
@@ -1443,11 +1570,13 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     # Also save as JSON for easy programmatic access
     summary_json = {
         "timestamp": timestamp,
-        "calibration": {k: (v if not isinstance(v, np.floating) else float(v))
-                        for k, v in calibration.items()},
-        "params": {k: (v if v is None or isinstance(v, (int, float, str, bool))
-                       else str(v))
-                   for k, v in params.items()},
+        "calibration": {
+            k: (v if not isinstance(v, np.floating) else float(v)) for k, v in calibration.items()
+        },
+        "params": {
+            k: (v if v is None or isinstance(v, (int, float, str, bool)) else str(v))
+            for k, v in params.items()
+        },
     }
     with open(os.path.join(auto_folder, f"auto_coherence_summary_{timestamp}.json"), "w") as fh:
         json.dump(summary_json, fh, indent=2)
@@ -1456,9 +1585,9 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     return fname
 
 
-def _run_auto_coherence(soc, soccfg, config, outerFolder,
-                       qubit_readout, qubit_params,
-                       yoko=None, auto_params=None):
+def _run_auto_coherence(
+    soc, soccfg, config, outerFolder, qubit_readout, qubit_params, yoko=None, auto_params=None
+):
     """
     Fully-automated T1 / T2 / T2Echo calibration and measurement.
 
@@ -1525,12 +1654,12 @@ def _run_auto_coherence(soc, soccfg, config, outerFolder,
 
     # ── Read initial qubit parameters (read-only) ────────────────────────────
     q_key = str(qubit_readout)
-    readout_freq    = qubit_params[q_key]["Readout"]["Frequency"]
-    readout_gain    = qubit_params[q_key]["Readout"]["Gain"]
+    readout_freq = qubit_params[q_key]["Readout"]["Frequency"]
+    readout_gain = qubit_params[q_key]["Readout"]["Gain"]
     qubit_freq_init = qubit_params[q_key]["Qubit"]["Frequency"]
     qubit_gain_init = qubit_params[q_key]["Qubit"]["Gain"]
-    sigma_init      = qubit_params[q_key]["Qubit"]["sigma"]
-    flattop_length  = qubit_params[q_key]["Qubit"]["flattop_length"]
+    sigma_init = qubit_params[q_key]["Qubit"]["sigma"]
+    flattop_length = qubit_params[q_key]["Qubit"]["flattop_length"]
 
     log = []
     log.append(f"Run started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1613,64 +1742,69 @@ def _run_auto_coherence(soc, soccfg, config, outerFolder,
     # ── Stage 2.5: Readout parameter optimisation ───────────────────────────
     if params.get("auto_readout_opt", True):
         opt_rl, opt_ao = _stage_optimize_readout(
-            soc=soc, soccfg=soccfg, cfg=base_cfg, auto_folder=auto_folder,
-            qubit_freq=qubit_freq, pi_gain=pi_gain,
-            sigma=rabi_sigma, flattop_length=flattop_length,
-            qubit_readout=qubit_readout, params=params, log=log,
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq=qubit_freq,
+            pi_gain=pi_gain,
+            sigma=rabi_sigma,
+            flattop_length=flattop_length,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
         )
         # Propagate to Stage 3 (reads from params) and T1/T2/T2E (read from cfg)
-        params   = {**params,
-                    "ss_readout_time": opt_rl,
-                    "ss_adc_offset":   opt_ao}
-        base_cfg = base_cfg | {"readout_length":  opt_rl,
-                                "adc_trig_offset": opt_ao,
-                                "length": _readout_tone_length(base_cfg, opt_rl, opt_ao)}
+        params = {**params, "ss_readout_time": opt_rl, "ss_adc_offset": opt_ao}
+        base_cfg = base_cfg | {
+            "readout_length": opt_rl,
+            "adc_trig_offset": opt_ao,
+            "length": _readout_tone_length(base_cfg, opt_rl, opt_ao),
+        }
     else:
         log.append("")
         log.append("STAGE 2.5 – Readout optimisation skipped (auto_readout_opt=False)")
 
     # ── Stage 3: SingleShot / extended pi & pi2 pulse optimisation ─────────
     if params.get("extended_pi_pi2_opt", False):
-        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = \
-            _stage_extended_pulse_opt(
-                soc=soc,
-                soccfg=soccfg,
-                cfg=base_cfg,
-                auto_folder=auto_folder,
-                qubit_freq=qubit_freq,
-                sigma=rabi_sigma,
-                flattop_length=flattop_length,
-                pi_gain_estimate=pi_gain,
-                qubit_readout=qubit_readout,
-                params=params,
-                log=log,
-            )
+        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_extended_pulse_opt(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq=qubit_freq,
+            sigma=rabi_sigma,
+            flattop_length=flattop_length,
+            pi_gain_estimate=pi_gain,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
+        )
     else:
-        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = \
-            _stage_singleshot_optimize(
-                soc=soc,
-                soccfg=soccfg,
-                cfg=base_cfg,
-                auto_folder=auto_folder,
-                qubit_freq=qubit_freq,
-                sigma=rabi_sigma,
-                flattop_length=flattop_length,
-                pi_gain_estimate=pi_gain,
-                qubit_readout=qubit_readout,
-                params=params,
-                log=log,
-            )
+        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_singleshot_optimize(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq=qubit_freq,
+            sigma=rabi_sigma,
+            flattop_length=flattop_length,
+            pi_gain_estimate=pi_gain,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
+        )
 
     # ── Collect calibrated parameters ────────────────────────────────────────
     calibration = {
-        "qubit_frequency":   qubit_freq,
-        "pi_gain":           pi_gain_opt,
-        "pi2_gain":          pi2_gain_opt,
-        "rabi_sigma":        rabi_sigma,
-        "flattop_length":    flattop_length,
-        "fidelity":          fidelity,
-        "ss_threshold":      ss_threshold,
-        "ss_angle":          ss_angle,
+        "qubit_frequency": qubit_freq,
+        "pi_gain": pi_gain_opt,
+        "pi2_gain": pi2_gain_opt,
+        "rabi_sigma": rabi_sigma,
+        "flattop_length": flattop_length,
+        "fidelity": fidelity,
+        "ss_threshold": ss_threshold,
+        "ss_angle": ss_angle,
         "sweet_spot_voltage": sweet_spot_voltage,
     }
 
@@ -1681,26 +1815,49 @@ def _run_auto_coherence(soc, soccfg, config, outerFolder,
 
     # ── Stage 4: T1 ─────────────────────────────────────────────────────────
     _stage_run_t1(
-        soc=soc, soccfg=soccfg, cfg=base_cfg, auto_folder=auto_folder,
-        qubit_freq=qubit_freq, pi_gain=pi_gain_opt,
-        sigma=rabi_sigma, flattop_length=flattop_length,
-        qubit_readout=qubit_readout, params=params, log=log,
+        soc=soc,
+        soccfg=soccfg,
+        cfg=base_cfg,
+        auto_folder=auto_folder,
+        qubit_freq=qubit_freq,
+        pi_gain=pi_gain_opt,
+        sigma=rabi_sigma,
+        flattop_length=flattop_length,
+        qubit_readout=qubit_readout,
+        params=params,
+        log=log,
     )
 
     # ── Stage 5: T2 Ramsey ──────────────────────────────────────────────────
     _stage_run_t2(
-        soc=soc, soccfg=soccfg, cfg=base_cfg, auto_folder=auto_folder,
-        qubit_freq=qubit_freq, pi_gain=pi_gain_opt, pi2_gain=pi2_gain_opt,
-        sigma=rabi_sigma, flattop_length=flattop_length,
-        qubit_readout=qubit_readout, params=params, log=log,
+        soc=soc,
+        soccfg=soccfg,
+        cfg=base_cfg,
+        auto_folder=auto_folder,
+        qubit_freq=qubit_freq,
+        pi_gain=pi_gain_opt,
+        pi2_gain=pi2_gain_opt,
+        sigma=rabi_sigma,
+        flattop_length=flattop_length,
+        qubit_readout=qubit_readout,
+        params=params,
+        log=log,
     )
 
     # ── Stage 6: T2Echo ─────────────────────────────────────────────────────
     _stage_run_t2e(
-        soc=soc, soccfg=soccfg, cfg=base_cfg, auto_folder=auto_folder,
-        qubit_freq=qubit_freq, pi_gain=pi_gain_opt, pi2_gain=pi2_gain_opt,
-        sigma=rabi_sigma, flattop_length=flattop_length,
-        qubit_readout=qubit_readout, params=params, log=log,
+        soc=soc,
+        soccfg=soccfg,
+        cfg=base_cfg,
+        auto_folder=auto_folder,
+        qubit_freq=qubit_freq,
+        pi_gain=pi_gain_opt,
+        pi2_gain=pi2_gain_opt,
+        sigma=rabi_sigma,
+        flattop_length=flattop_length,
+        qubit_readout=qubit_readout,
+        params=params,
+        log=log,
     )
 
     # ── Save summary file ────────────────────────────────────────────────────
@@ -1716,9 +1873,7 @@ def _run_auto_coherence(soc, soccfg, config, outerFolder,
     print(f"  fidelity         = {fidelity:.4f}")
     print(f"  sweet_spot_voltage = {sweet_spot_voltage}")
 
-    results = {**calibration,
-               "auto_folder":   auto_folder,
-               "summary_file":  summary_file}
+    results = {**calibration, "auto_folder": auto_folder, "summary_file": summary_file}
     return results
 
 
@@ -1726,11 +1881,11 @@ def run_auto_coherence(ctx, AutoCoherence_override_params):
     auto_results = _run_auto_coherence(
         soc=ctx.soc,
         soccfg=ctx.soccfg,
-        config=ctx.working_config(),                    # full config dict built above
+        config=ctx.working_config(),  # full config dict built above
         outerFolder=ctx.outerFolder,
         qubit_readout=ctx.Qubit_Readout,
         qubit_params=ctx.Qubit_Parameters,
-        yoko=ctx.yoko,                        # set to None if no charge line
+        yoko=ctx.yoko,  # set to None if no charge line
         auto_params=AutoCoherence_override_params,
     )
     print("[AutoCoherence] Results:", auto_results)

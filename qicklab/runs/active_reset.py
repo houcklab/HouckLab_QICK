@@ -10,9 +10,7 @@ from qicklab.experiments.active_reset_verify import ActiveResetVerify
 from qicklab.runs.single_shot import get_apriori_separator_from_singleshot
 
 
-def calibrate_active_reset_readout(
-    ctx, max_align_iter=2, align_tol_frac=0.1
-):
+def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
     """
     Calibrate the readout phase + single-shot I-threshold for hardware active reset.
 
@@ -34,10 +32,7 @@ def calibrate_active_reset_readout(
     phi_deg = float(np.degrees(np.arctan2(n0[1], n0[0])))
     base_phase = int(ctx.config.get("res_phase", 0))
 
-    print(
-        f"[ActiveReset calib] g->e axis at {phi_deg:.2f} deg; rotating res_phase "
-        f"to put it on I."
-    )
+    print(f"[ActiveReset calib] g->e axis at {phi_deg:.2f} deg; rotating res_phase to put it on I.")
 
     # Try rotating by -phi (align g->e with +I); if the sign convention flips it,
     # fall back to +phi. Keep whichever leaves the smallest |Q separation|.
@@ -111,9 +106,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
 
     # 1) Calibrate readout phase + I-threshold (rotates config["res_phase"] so
     #    |g>/|e> separate along I, and measures the threshold off the rotated blobs).
-    arv_calib = calibrate_active_reset_readout(
-        ctx
-    )
+    arv_calib = calibrate_active_reset_readout(ctx)
 
     # 2) Base config shared by all conditions. g_center/e_center are in the
     #    rotated frame (consistent with config["res_phase"] set just above).
@@ -128,9 +121,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
         "n_verify_reads": ActiveResetVerify_params["n_verify_reads"],
         "verify_relax_delay": ActiveResetVerify_params["verify_relax_delay"],
         "reset_cycles": ActiveResetVerify_params["reset_cycles"],
-        "reset_readout_relax_delay": ActiveResetVerify_params[
-            "reset_readout_relax_delay"
-        ],
+        "reset_readout_relax_delay": ActiveResetVerify_params["reset_readout_relax_delay"],
         "post_reset_wait": ActiveResetVerify_params["post_reset_wait"],
         "readout_threshold": arv_calib["readout_threshold"],
         "reset_ground_below_threshold": arv_calib["reset_ground_below_threshold"],
@@ -187,9 +178,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
     timestamp_arv = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     plt.figure(figsize=(8, 5))
     for arv_label, *_ in arv_conditions:
-        plt.plot(
-            read_idx_arv, arv_results[arv_label], "o-", linewidth=1.5, label=arv_label
-        )
+        plt.plot(read_idx_arv, arv_results[arv_label], "o-", linewidth=1.5, label=arv_label)
     plt.xlabel("Verification readout index")
     plt.ylabel("P(|g>)")
     plt.ylim(-0.05, 1.05)
@@ -201,9 +190,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    arv_overlay = os.path.join(
-        arv_dir, f"ActiveResetVerify_overlay_{timestamp_arv}.png"
-    )
+    arv_overlay = os.path.join(arv_dir, f"ActiveResetVerify_overlay_{timestamp_arv}.png")
     plt.savefig(arv_overlay, dpi=300, bbox_inches="tight")
     if ActiveResetVerify_params.get("plotDisp", False):
         plt.show(block=False)

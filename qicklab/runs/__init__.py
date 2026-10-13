@@ -15,10 +15,12 @@ from qicklab.analysis.fitting import (
     estimate_noise_floor,
     fit_hanger_transmission,
     fit_lorentzian_feature,
-    fit_rabi_cosine_gridsearch as fit_rabi_cosine,
     hanger_model_db,
     lorentzian_dip,
     lorentzian_peak,
+)
+from qicklab.analysis.fitting import (
+    fit_rabi_cosine_gridsearch as fit_rabi_cosine,
 )
 from qicklab.analysis.iq import (
     classify_and_average_iq,

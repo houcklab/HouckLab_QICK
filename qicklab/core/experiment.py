@@ -5,6 +5,7 @@ import os
 import h5py
 import numpy as np
 
+
 class H5File(h5py.File):
     def __init__(self, *args, **kwargs):
         h5py.File.__init__(self, *args, **kwargs)
@@ -25,20 +26,29 @@ class H5File(h5py.File):
     def add(self, key, data):
         data = np.array(data)
         try:
-            self.create_dataset(key, shape=data.shape,
-                                maxshape=tuple([None] * len(data.shape)),
-                                dtype=str(data.astype(np.float64).dtype))
+            self.create_dataset(
+                key,
+                shape=data.shape,
+                maxshape=tuple([None] * len(data.shape)),
+                dtype=str(data.astype(np.float64).dtype),
+            )
         except RuntimeError:
             del self[key]
-            self.create_dataset(key, shape=data.shape,
-                                maxshape=tuple([None] * len(data.shape)),
-                                dtype=str(data.astype(np.float64).dtype))
+            self.create_dataset(
+                key,
+                shape=data.shape,
+                maxshape=tuple([None] * len(data.shape)),
+                dtype=str(data.astype(np.float64).dtype),
+            )
         self[key][...] = data
+
 
 MakeFile = H5File
 
+
 class NumpyJSONEncoder(json.JSONEncoder):
-    """ Ensure json dump can handle np arrays """
+    """Ensure json dump can handle np arrays"""
+
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -48,22 +58,33 @@ class NumpyJSONEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NumpyJSONEncoder, self).default(obj)
 
+
 NpEncoder = NumpyJSONEncoder
+
 
 class ExperimentClass:
     """Base class for all experiments"""
 
-    def __init__(self, path='', outerFolder='',
-                    prefix='data', soc=None, soccfg=None, cfg = None, config_file=None,
-                    liveplot_enabled=False, **kwargs):
-        """ Initializes experiment class
-            @param path - directory where data will be stored
-            @param prefix - prefix to use when creating data files
-            @param config_file - parameters for config file specified are loaded into the class dict
-                                 (name relative to expt_directory if no leading /)
-                                 Default = None looks for path/prefix.json
-            @param **kwargs - by default kwargs are updated to class dict
-            also loads InstrumentManager, LivePlotter, and other helpers
+    def __init__(
+        self,
+        path="",
+        outerFolder="",
+        prefix="data",
+        soc=None,
+        soccfg=None,
+        cfg=None,
+        config_file=None,
+        liveplot_enabled=False,
+        **kwargs,
+    ):
+        """Initializes experiment class
+        @param path - directory where data will be stored
+        @param prefix - prefix to use when creating data files
+        @param config_file - parameters for config file specified are loaded into the class dict
+                             (name relative to expt_directory if no leading /)
+                             Default = None looks for path/prefix.json
+        @param **kwargs - by default kwargs are updated to class dict
+        also loads InstrumentManager, LivePlotter, and other helpers
         """
 
         self.__dict__.update(kwargs)
@@ -88,16 +109,31 @@ class ExperimentClass:
         ##### make sure the data directory exists, creating any missing parent
         ##### folders too. os.makedirs (unlike os.mkdir) builds the whole tree
         ##### and exist_ok=True makes it a no-op if the folders already exist.
-        os.makedirs(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring), exist_ok=True)
+        os.makedirs(
+            os.path.join(self.outerFolder + self.path, self.path + "_" + datestring), exist_ok=True
+        )
 
-        self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
-        self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
-        self.titlename = self.path + "_" +datetimestring
+        self.fname = os.path.join(
+            self.outerFolder + self.path,
+            self.path + "_" + datestring,
+            self.path + "_" + datetimestring + "_" + self.prefix + ".h5",
+        )
+        self.iname = os.path.join(
+            self.outerFolder + self.path,
+            self.path + "_" + datestring,
+            self.path + "_" + datetimestring + "_" + self.prefix + ".png",
+        )
+        self.titlename = self.path + "_" + datetimestring
 
         ### define name for the config file
-        self.cname = os.path.join(self.outerFolder +  self.path, self.path + "_" + datestring, self.path + "_" + datetimestring + "_" + self.prefix + '.json')
+        self.cname = os.path.join(
+            self.outerFolder + self.path,
+            self.path + "_" + datestring,
+            self.path + "_" + datetimestring + "_" + self.prefix + ".json",
+        )
         # print(self.fname)
-        #self.load_config()
+        # self.load_config()
+
     #
     # def load_config(self):
     #     if self.config_file is None:
@@ -124,41 +160,41 @@ class ExperimentClass:
     #         traceback.print_exc()
 
     def save_config(self):
-        if self.cname[:-3] != '.h5':
-            with open(self.cname, 'w') as fid:
-                json.dump(self.cfg, fid, cls=NumpyJSONEncoder),
-            self.datafile().attrs['config'] = json.dumps(self.cfg, cls=NumpyJSONEncoder)
+        if self.cname[:-3] != ".h5":
+            with open(self.cname, "w") as fid:
+                (json.dump(self.cfg, fid, cls=NumpyJSONEncoder),)
+            self.datafile().attrs["config"] = json.dumps(self.cfg, cls=NumpyJSONEncoder)
 
-    def datafile(self, group=None, remote=False, data_file = None, swmr=False):
+    def datafile(self, group=None, remote=False, data_file=None, swmr=False):
         """returns a SlabFile instance
-           proxy functionality not implemented yet"""
-        if data_file ==None:
+        proxy functionality not implemented yet"""
+        if data_file == None:
             data_file = self.fname
 
-        f = H5File(data_file, 'a')
+        f = H5File(data_file, "a")
         #     if swmr==True:
-    #         f = SlabFile(data_file, 'w', libver='latest')
-    #     elif swmr==False:
-    #         f = SlabFile(data_file, 'a')
-    #     else:
-    #         raise Exception('ERROR: swmr must be type boolean')
-    #
-    #     if group is not None:
-    #         f = f.require_group(group)
-    #     if 'config' not in f.attrs:
-    #         try:
-    #             f.attrs['config'] = json.dumps(self.cfg, cls=NpEncoder)
-    #         except TypeError as err:
-    #             print(('Error in saving cfg into datafile (experiment.py):', err))
-    #
+        #         f = SlabFile(data_file, 'w', libver='latest')
+        #     elif swmr==False:
+        #         f = SlabFile(data_file, 'a')
+        #     else:
+        #         raise Exception('ERROR: swmr must be type boolean')
+        #
+        #     if group is not None:
+        #         f = f.require_group(group)
+        #     if 'config' not in f.attrs:
+        #         try:
+        #             f.attrs['config'] = json.dumps(self.cfg, cls=NpEncoder)
+        #         except TypeError as err:
+        #             print(('Error in saving cfg into datafile (experiment.py):', err))
+        #
         return f
 
     def go(self, save=False, analyze=False, display=False, progress=False):
         # get data
 
-        data=self.acquire(progress)
+        data = self.acquire(progress)
         if analyze:
-            data=self.analyze(data)
+            data = self.analyze(data)
         if save:
             self.save_data(data)
         if display:
@@ -173,17 +209,19 @@ class ExperimentClass:
     def display(self, data=None, **kwargs):
         pass
 
-    def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
+    def save_data(
+        self, data=None
+    ):  # do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:
-            data=self.data
+            data = self.data
 
         with self.datafile() as f:
             for k, d in data.items():
                 f.add(k, np.array(d))
 
     def load_data(self, f):
-        data={}
+        data = {}
         for k in f.keys():
-            data[k]=np.array(f[k])
-        data['attrs']=f.get_dict()
+            data[k] = np.array(f[k])
+        data["attrs"] = f.get_dict()
         return data

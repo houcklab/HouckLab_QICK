@@ -58,10 +58,23 @@ class Context:
         return cfg
 
 
-def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *,
-                  Transmission_params, Spec_relevant_params, tl, ts, charge_params,
-                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR',
-                  readout_length_us=15, adc_trig_offset_us=None):
+def build_context(
+    Qubit_Parameters,
+    Qubit_Readout,
+    Qubit_Pulse,
+    start_voltage,
+    *,
+    Transmission_params,
+    Spec_relevant_params,
+    tl,
+    ts,
+    charge_params,
+    cavity_min=True,
+    yoko_fixed=False,
+    yoko_addr="GPIB1::9::INSTR",
+    readout_length_us=15,
+    adc_trig_offset_us=None,
+):
     """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
     per-qubit scalars — the setup boilerplate that used to sit at the top of the
     CSTQ03_BFC.py script — returning a populated Context.
@@ -81,7 +94,7 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     """
     soc, soccfg = makeProxy()
 
-    outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
+    outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
 
     # yoko current source
     rm = pyvisa.ResourceManager()
@@ -91,13 +104,13 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     ramp_to(yoko, start_voltage)
 
     # derived scalars for the selected readout/pulse qubit
-    cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
-    resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Frequency']
-    qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
-    pi2_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['pi2_Gain']
-    qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
-    qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
-    qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
+    cavity_gain = Qubit_Parameters[str(Qubit_Readout)]["Readout"]["Gain"]
+    resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]["Readout"]["Frequency"]
+    qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["Gain"]
+    pi2_gain = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["pi2_Gain"]
+    qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["Frequency"]
+    qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["sigma"]
+    qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["flattop_length"]
 
     readout_length_us = float(readout_length_us)
     if readout_length_us <= 0:
@@ -113,9 +126,11 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
             f"adc_trig_offset_us must be >= 0, got {adc_trig_offset_us}. "
             f"Set it from the runner (ADC_Offset)."
         )
-    print(f"[readout window] integration {readout_length_us} us, "
-          f"adc_trig_offset {adc_trig_offset_us} us, "
-          f"resonator tone {adc_trig_offset_us + readout_length_us} us")
+    print(
+        f"[readout window] integration {readout_length_us} us, "
+        f"adc_trig_offset {adc_trig_offset_us} us, "
+        f"resonator tone {adc_trig_offset_us + readout_length_us} us"
+    )
     trans_config = {
         "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
         "pulse_style": "const",  # --Fixed
@@ -129,39 +144,58 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
         "adc_trig_offset": adc_trig_offset_us,
         "pulse_gain": cavity_gain,  # [DAC units]
         "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-        "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter
-        "TransNumPoints": Transmission_params['num_points'],  ### number of points in the transmission frequecny
-        "cav_relax_delay": 30
+        "TransSpan": Transmission_params[
+            "span"
+        ],  ### 0.75 MHz, span will be center+/- this parameter
+        "TransNumPoints": Transmission_params[
+            "num_points"
+        ],  ### number of points in the transmission frequecny
+        "cav_relax_delay": 30,
     }
     qubit_config = {
         "qubit_pulse_style": "const",
         "qubit_gain": Spec_relevant_params["qubit_gain"],
         "qubit_freq": qubit_frequency_center,
         "qubit_length": Spec_relevant_params["qubit_length"],  # 20, 100 # 10 was the best for Q4
-        "SpecSpan": Spec_relevant_params["SpecSpan"],  ### MHz, span will be center+/- this parameter
-        "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],  ### number of points in the transmission frequecny
-        "current_voltage": start_voltage
+        "SpecSpan": Spec_relevant_params[
+            "SpecSpan"
+        ],  ### MHz, span will be center+/- this parameter
+        "SpecNumPoints": Spec_relevant_params[
+            "SpecNumPoints"
+        ],  ### number of points in the transmission frequecny
+        "current_voltage": start_voltage,
     }
     expt_cfg = {
         "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
         "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
-        "expts": qubit_config["SpecNumPoints"]
+        "expts": qubit_config["SpecNumPoints"],
     }
 
     UpdateConfig = trans_config | qubit_config | expt_cfg | tl | ts | charge_params
-    config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
+    config = (
+        BaseConfig | UpdateConfig
+    )  ### note that UpdateConfig will overwrite elements in BaseConfig
     print(config)
     config["FF_Qubits"] = FF_Qubits
     config["cavity_min"] = cavity_min  # look for dip, not peak
 
     return Context(
-        soc=soc, soccfg=soccfg, yoko=yoko,
-        config=config, outerFolder=outerFolder,
-        Qubit_Readout=Qubit_Readout, Qubit_Pulse=Qubit_Pulse,
+        soc=soc,
+        soccfg=soccfg,
+        yoko=yoko,
+        config=config,
+        outerFolder=outerFolder,
+        Qubit_Readout=Qubit_Readout,
+        Qubit_Pulse=Qubit_Pulse,
         Qubit_Parameters=Qubit_Parameters,
-        start_voltage=start_voltage, yoko_fixed=yoko_fixed, cavity_min=cavity_min,
-        cavity_gain=cavity_gain, resonator_frequency_center=resonator_frequency_center,
-        qubit_gain=qubit_gain, pi2_gain=pi2_gain,
+        start_voltage=start_voltage,
+        yoko_fixed=yoko_fixed,
+        cavity_min=cavity_min,
+        cavity_gain=cavity_gain,
+        resonator_frequency_center=resonator_frequency_center,
+        qubit_gain=qubit_gain,
+        pi2_gain=pi2_gain,
         qubit_frequency_center=qubit_frequency_center,
-        qubit_sigma=qubit_sigma, qubit_flattop=qubit_flattop,
+        qubit_sigma=qubit_sigma,
+        qubit_flattop=qubit_flattop,
     )

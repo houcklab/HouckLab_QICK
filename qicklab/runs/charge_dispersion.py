@@ -9,14 +9,19 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 from qicklab.analysis.iq import project_iq_signal
-from qicklab.analysis.spectroscopy import choose_two_tone_freqs_from_lorentz_or_peaks, save_two_tone_plot
+from qicklab.analysis.spectroscopy import (
+    choose_two_tone_freqs_from_lorentz_or_peaks,
+    save_two_tone_plot,
+)
 from qicklab.experiments.charge_dispersion import ChargeDispersion, ChargeDispersionQuasiCW
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.hardware.yoko import ramp_to
 from qicklab.runs.charge_sweep import choose_next_voltage
 
 
-def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params):
+def run_two_tone_charge_dispersion_quasicw(
+    ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params
+):
     cfg = ctx.working_config()
     save_dir = os.path.join(ctx.outerFolder, "TwoToneChargeDispersion")
     os.makedirs(save_dir, exist_ok=True)
@@ -71,7 +76,7 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
                 cfg=cfg,
                 soc=ctx.soc,
                 soccfg=ctx.soccfg,
-                outerFolder=ctx.outerFolder
+                outerFolder=ctx.outerFolder,
             )
             data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
             QubitSpecSliceFF.display(
@@ -112,7 +117,7 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
                 peak_info=peak_info,
                 attempt_idx=attempt_idx + cycle_idx * max_tries,
                 save_dir=save_dir,
-                current_voltage=current_voltage
+                current_voltage=current_voltage,
             )
 
             with open(save_base + "_summary.txt", "w") as f:
@@ -138,13 +143,15 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
                 highest_peak_freq = float(peak_freqs[int(np.argmax(peak_heights))])
 
                 highest_peak_is_centered = (
-                        abs(highest_peak_freq - ctx.qubit_frequency_center) <= center_peak_tol_mhz
+                    abs(highest_peak_freq - ctx.qubit_frequency_center) <= center_peak_tol_mhz
                 )
 
             if highest_peak_is_centered:
                 # Calibration/centered mode: run quasi-CW on the centered strongest peak.
                 chosen_probe_freq = highest_peak_freq
-                chosen_peak_sep = float(peak_info["peak_sep"]) if peak_info["peak_sep"] is not None else 0.0
+                chosen_peak_sep = (
+                    float(peak_info["peak_sep"]) if peak_info["peak_sep"] is not None else 0.0
+                )
 
                 print(
                     f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: centered highest peak found, "
@@ -182,7 +189,7 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
                 dv=dV,
                 vmin=voltage_min,
                 vmax=voltage_max,
-                direction=direction
+                direction=direction,
             )
 
             if abs(next_voltage - current_voltage) < 1e-15:
@@ -194,14 +201,18 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
 
         # ---------- if search failed, record and continue to next cycle ----------
         if not success:
-            print(f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: failed to find sufficient peak separation.")
-            cycle_summary.append({
-                "cycle_idx": cycle_idx,
-                "success": False,
-                "final_voltage": current_voltage,
-                "chosen_probe_freq": None,
-                "peak_sep": None,
-            })
+            print(
+                f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: failed to find sufficient peak separation."
+            )
+            cycle_summary.append(
+                {
+                    "cycle_idx": cycle_idx,
+                    "success": False,
+                    "final_voltage": current_voltage,
+                    "chosen_probe_freq": None,
+                    "peak_sep": None,
+                }
+            )
             continue
 
         # ---------- run quasi-CW for this cycle ----------
@@ -296,8 +307,12 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
         plt.close()
 
         plt.figure(figsize=(6, 6))
-        plt.plot(raw_i[binary_states == 0], raw_q[binary_states == 0], ".", alpha=0.5, label="State 0")
-        plt.plot(raw_i[binary_states == 1], raw_q[binary_states == 1], ".", alpha=0.5, label="State 1")
+        plt.plot(
+            raw_i[binary_states == 0], raw_q[binary_states == 0], ".", alpha=0.5, label="State 0"
+        )
+        plt.plot(
+            raw_i[binary_states == 1], raw_q[binary_states == 1], ".", alpha=0.5, label="State 1"
+        )
         if vertical_line:
             plt.axvline(midpoint[0], linestyle="--", linewidth=2, label="Separator")
         else:
@@ -322,7 +337,6 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
         plt.tight_layout()
         plt.savefig(base + "_amplitude_vs_time.png", dpi=300, bbox_inches="tight")
         plt.close()
-
 
         plt.figure(figsize=(10, 4))
         plt.step(elapsed_s, binary_states, where="post", linewidth=1.5)
@@ -356,21 +370,22 @@ def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, 
         with open(base + "_config.json", "w") as f:
             json.dump(cfg, f, indent=2, default=float)
 
-        cycle_summary.append({
-            "cycle_idx": cycle_idx,
-            "success": True,
-            "final_voltage": current_voltage,
-            "chosen_probe_freq": chosen_probe_freq,
-            "peak_sep": chosen_peak_sep,
-        })
+        cycle_summary.append(
+            {
+                "cycle_idx": cycle_idx,
+                "success": True,
+                "final_voltage": current_voltage,
+                "chosen_probe_freq": chosen_probe_freq,
+                "peak_sep": chosen_peak_sep,
+            }
+        )
 
         # after finishing this cycle, restart the search from the current voltage
         # direction is preserved so the voltage walk continues naturally
 
     # ---------- save summary for all cycles ----------
     summary_path = os.path.join(
-        save_dir,
-        f"CycleSummary_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.json"
+        save_dir, f"CycleSummary_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.json"
     )
     with open(summary_path, "w") as f:
         json.dump(cycle_summary, f, indent=2, default=float)
@@ -448,9 +463,7 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     amps = np.abs(raw_i + 1j * raw_q) ** 2
 
     # approximate time axis per repetition
-    rep_period_us = (
-        1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
-    )
+    rep_period_us = 1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
     elapsed_s = np.arange(len(raw_i)) * rep_period_us * 1e-6
 
     save_dir = os.path.join(ctx.outerFolder, "ChargeDispersion")
@@ -578,7 +591,7 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
 
 def run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params):
     cfg = ctx.working_config()
-    repetitions = T1T2_params['repetitions']
+    repetitions = T1T2_params["repetitions"]
     for i in range(repetitions):
         cd_cfg = {
             "df": ChargeDispersion_params["df"],
@@ -598,7 +611,7 @@ def run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params):
             cfg=config_cd,
             soc=ctx.soc,
             soccfg=ctx.soccfg,
-            outerFolder=ctx.outerFolder
+            outerFolder=ctx.outerFolder,
         )
         dCD = ChargeDispersion.acquire(iCD)
         ChargeDispersion.display(iCD, dCD, plotDisp=True, figNum=5)

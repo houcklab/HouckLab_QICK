@@ -54,7 +54,9 @@ def _check_qick_version():
         )
 
 
-@pytest.fixture(scope="module")  # module, not session: the teardown below must run before other test modules
+@pytest.fixture(
+    scope="module"
+)  # module, not session: the teardown below must run before other test modules
 def capture():
     if not UPDATE:
         _check_qick_version()

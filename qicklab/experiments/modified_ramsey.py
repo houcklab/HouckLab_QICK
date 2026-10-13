@@ -7,19 +7,25 @@ from qicklab.core.experiment import ExperimentClass
 # Numeric codes for the control state saved into the (numeric-only) h5 data.
 # The string itself lives in cfg["mr_control_type"], persisted via save_config.
 MR_CONTROL_TYPE_CODES = {
-    "parity": 0,           # parity-sensing run (no control modification)
-    "flip_final_pi2": 1,   # mapping inversion: parity signal must reverse
-    "echo_null": 2,        # Hahn-echo null: parity contrast must vanish
-    "tau_offset": 3,       # deliberately wrong tau: reduced contrast expected
-    "drive_detuned": 4,    # qubit drive detuned off both branches
-    "drive_off": 5,        # pi/2 pulses disabled (readout-only trace)
+    "parity": 0,  # parity-sensing run (no control modification)
+    "flip_final_pi2": 1,  # mapping inversion: parity signal must reverse
+    "echo_null": 2,  # Hahn-echo null: parity contrast must vanish
+    "tau_offset": 3,  # deliberately wrong tau: reduced contrast expected
+    "drive_detuned": 4,  # qubit drive detuned off both branches
+    "drive_off": 5,  # pi/2 pulses disabled (readout-only trace)
 }
 
 
-def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
-                        symmetric_ramsey=False, flip_final_pi2=False,
-                        max_bandwidth_ratio=1.0, tau_us=None,
-                        drive_freq_offset_mhz=None):
+def plan_parity_mapping(
+    df_mhz,
+    sigma_us,
+    use_pi_pulse=False,
+    symmetric_ramsey=False,
+    flip_final_pi2=False,
+    max_bandwidth_ratio=1.0,
+    tau_us=None,
+    drive_freq_offset_mhz=None,
+):
     """
     Hardware-free feasibility check of the parity -> state mapping.
 
@@ -53,8 +59,7 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
     if sigma_us <= 0:
         raise ValueError("sigma_us must be positive")
 
-    tau_us = (1.0 / (2.0 * df_mhz) if tau_us is None
-              else float(tau_us))
+    tau_us = 1.0 / (2.0 * df_mhz) if tau_us is None else float(tau_us)
     pulse_us = 4.0 * sigma_us
     n_gaps = 2 if use_pi_pulse else 1
     gap_us = (tau_us - n_gaps * pulse_us) / n_gaps
@@ -69,11 +74,10 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
 
     rabi_pi2_mhz = 0.0997 / sigma_us
     if drive_freq_offset_mhz is None:
-        drive_freq_offset_mhz = (-df_mhz / 2.0
-                                 if symmetric_ramsey else 0.0)
+        drive_freq_offset_mhz = -df_mhz / 2.0 if symmetric_ramsey else 0.0
     branch_detuning_mhz = max(
-        abs(float(drive_freq_offset_mhz)),
-        abs(float(drive_freq_offset_mhz) + df_mhz))
+        abs(float(drive_freq_offset_mhz)), abs(float(drive_freq_offset_mhz) + df_mhz)
+    )
     bandwidth_ratio = branch_detuning_mhz / rabi_pi2_mhz
     recommend_symmetric = (not symmetric_ramsey) and bandwidth_ratio > 0.2
     if bandwidth_ratio > max_bandwidth_ratio:
@@ -81,15 +85,13 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
             f"branch detuning {branch_detuning_mhz:.4f} MHz is "
             f"{bandwidth_ratio:.2f}x the pi/2 Rabi rate "
             f"({rabi_pi2_mhz:.4f} MHz): the off-resonant branch cannot be "
-            "rotated; shorten sigma"
-            + ("" if symmetric_ramsey else " or set symmetric_ramsey=True")
+            "rotated; shorten sigma" + ("" if symmetric_ramsey else " or set symmetric_ramsey=True")
         )
     elif bandwidth_ratio > 0.2:
         warnings.append(
             f"branch detuning is {bandwidth_ratio:.2f}x the pi/2 Rabi rate; "
             "the off-resonant branch will be under-rotated"
-            + (" -- symmetric_ramsey=True would halve the detuning"
-               if recommend_symmetric else "")
+            + (" -- symmetric_ramsey=True would halve the detuning" if recommend_symmetric else "")
         )
     if use_pi_pulse:
         warnings.append(
@@ -117,11 +119,12 @@ def plan_parity_mapping(df_mhz, sigma_us, use_pi_pulse=False,
     }
 
 
-def build_control_variants(base_cfg,
-                           include=("parity", "flip_final_pi2", "echo_null",
-                                    "tau_offset", "drive_detuned",
-                                    "drive_off"),
-                           tau_offset_frac=0.25, detuning_mhz=None):
+def build_control_variants(
+    base_cfg,
+    include=("parity", "flip_final_pi2", "echo_null", "tau_offset", "drive_detuned", "drive_off"),
+    tau_offset_frac=0.25,
+    detuning_mhz=None,
+):
     """
     Build the cfg dicts for the parity run plus its validation controls.
 
@@ -161,26 +164,27 @@ def build_control_variants(base_cfg,
         if name == "parity":
             expected = "telegraph parity signal at tau = 1/(2 df)"
         elif name == "flip_final_pi2":
-            cfg["flip_final_pi2"] = not bool(
-                base_cfg.get("flip_final_pi2", False))
+            cfg["flip_final_pi2"] = not bool(base_cfg.get("flip_final_pi2", False))
             expected = "parity->state mapping inverted; same rates/amplitude"
         elif name == "echo_null":
             cfg["use_pi_pulse"] = True
             expected = "parity contrast suppressed (echo refocuses df)"
         elif name == "tau_offset":
             cfg["ramsey_tau_us"] = (
-                1.0 / (2.0 * float(base_cfg["df"]))
-                * (1.0 + float(tau_offset_frac)))
+                1.0 / (2.0 * float(base_cfg["df"])) * (1.0 + float(tau_offset_frac))
+            )
             cfg["mr_control_tau_offset_frac"] = float(tau_offset_frac)
-            expected = (f"tau deliberately {tau_offset_frac:+.0%} off the pi "
-                        "condition; contrast reduced/rotated")
+            expected = (
+                f"tau deliberately {tau_offset_frac:+.0%} off the pi "
+                "condition; contrast reduced/rotated"
+            )
         elif name == "drive_detuned":
-            det = float(detuning_mhz) if detuning_mhz is not None \
-                else float(base_cfg["df"])
+            det = float(detuning_mhz) if detuning_mhz is not None else float(base_cfg["df"])
             base_drive = (
                 float(base_cfg["f_ge"]) - float(base_cfg["df"]) / 2.0
                 if base_cfg.get("symmetric_ramsey", False)
-                else float(base_cfg["f_ge"]))
+                else float(base_cfg["f_ge"])
+            )
             cfg["ramsey_drive_freq_mhz"] = base_drive + det
             cfg["max_drive_bandwidth_ratio"] = 1e12
             cfg["mr_control_detuning_mhz"] = det
@@ -190,23 +194,33 @@ def build_control_variants(base_cfg,
             expected = "no Ramsey drive; readout baseline only"
 
         plan = plan_parity_mapping(
-            cfg["df"], cfg["sigma"],
+            cfg["df"],
+            cfg["sigma"],
             use_pi_pulse=cfg.get("use_pi_pulse", False),
             symmetric_ramsey=cfg.get("symmetric_ramsey", False),
             flip_final_pi2=cfg.get("flip_final_pi2", False),
             tau_us=cfg.get("ramsey_tau_us"),
             drive_freq_offset_mhz=(
                 cfg.get("ramsey_drive_freq_mhz") - cfg["f_ge"]
-                if cfg.get("ramsey_drive_freq_mhz") is not None else None),
-            max_bandwidth_ratio=cfg.get(
-                "max_drive_bandwidth_ratio", 1.0),
+                if cfg.get("ramsey_drive_freq_mhz") is not None
+                else None
+            ),
+            max_bandwidth_ratio=cfg.get("max_drive_bandwidth_ratio", 1.0),
         )
         skip = None
         if not plan["feasible"]:
             skip = "; ".join(plan["errors"])
             cfg = None
-        out.append({"label": name, "control_type": name, "cfg": cfg,
-                    "skip_reason": skip, "expected": expected, "plan": plan})
+        out.append(
+            {
+                "label": name,
+                "control_type": name,
+                "cfg": cfg,
+                "skip_reason": skip,
+                "expected": expected,
+                "plan": plan,
+            }
+        )
     return out
 
 
@@ -337,7 +351,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         # a 1-manager page, 12-31 on a 2-manager page), and AveragerProgram's
         # loop counters (rjj=14, rcount=15) plus trigger()'s output word (16)
         # all live on page 0. Registers 3/4/5 are therefore free on any page.
-        self.r_read = 4    # holds the accumulated I read back from the ADC
+        self.r_read = 4  # holds the accumulated I read back from the ADC
         self.r_thresh = 5  # holds the single-shot discrimination threshold
 
         self.use_active_reset = cfg.get("use_active_reset", False)
@@ -367,8 +381,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         # NOTE: tau is the PULSE-CENTRE-TO-PULSE-CENTRE precession interval, not
         # the inter-pulse gap. The gap actually programmed into r_wait is derived
         # from it below, after the envelope length is known.
-        self.tau_us = float(
-            cfg.get("ramsey_tau_us", 1.0 / (2.0 * cfg["df"])))
+        self.tau_us = float(cfg.get("ramsey_tau_us", 1.0 / (2.0 * cfg["df"])))
         self.use_pi_pulse = cfg.get("use_pi_pulse", False)
         if self.use_pi_pulse:
             # A Hahn echo refocuses STATIC detuning -- and the parity branch
@@ -388,11 +401,8 @@ class ModifiedRamseyProgram(AveragerProgram):
         # the upper peak, so f_avg = f_ge - df/2. Both branches are then detuned by
         # +/- df/2 and rotate +/- 90 deg during tau.
         self.symmetric_ramsey = cfg.get("symmetric_ramsey", False)
-        default_drive = (
-            cfg["f_ge"] - cfg["df"] / 2.0
-            if self.symmetric_ramsey else cfg["f_ge"])
-        self.drive_freq_mhz = float(
-            cfg.get("ramsey_drive_freq_mhz", default_drive))
+        default_drive = cfg["f_ge"] - cfg["df"] / 2.0 if self.symmetric_ramsey else cfg["f_ge"]
+        self.drive_freq_mhz = float(cfg.get("ramsey_drive_freq_mhz", default_drive))
 
         # Closing-pi/2 phase sets the parity -> computational-state mapping. Base
         # phase is 180 deg (standard, undoes the first pi/2) or 90 deg (symmetric).
@@ -417,14 +427,11 @@ class ModifiedRamseyProgram(AveragerProgram):
             )
 
         self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
-        requested_tone_cycles = self.us2cycles(
-            cfg["length"], gen_ch=cfg["res_ch"]
-        )
+        requested_tone_cycles = self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"])
         if not cfg["ro_chs"]:
             raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
         self.readout_window_cycles = {
-            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch)
-            for ch in cfg["ro_chs"]
+            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in cfg["ro_chs"]
         }
 
         # Re-check coverage after every duration has been quantized on its own
@@ -434,49 +441,33 @@ class ModifiedRamseyProgram(AveragerProgram):
         res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
         adc_end_tproc = max(
             self.adc_trig_offset_cycles
-            + self.readout_window_cycles[ch]
-            * f_time / self.soccfg["readouts"][ch]["f_output"]
+            + self.readout_window_cycles[ch] * f_time / self.soccfg["readouts"][ch]["f_output"]
             for ch in cfg["ro_chs"]
         )
-        required_tone_cycles = int(np.ceil(
-            adc_end_tproc * res_f_fabric / f_time - 1e-12
-        ))
+        required_tone_cycles = int(np.ceil(adc_end_tproc * res_f_fabric / f_time - 1e-12))
         # Cross-clock rounding can make length == offset + window a fraction of
         # a cycle short. Extend only by the exact number of resonator-generator
         # cycles needed to cover the quantized ADC window.
-        self.readout_tone_cycles = max(
-            requested_tone_cycles, required_tone_cycles
-        )
-        self.readout_tone_extension_cycles = (
-            self.readout_tone_cycles - requested_tone_cycles
-        )
+        self.readout_tone_cycles = max(requested_tone_cycles, required_tone_cycles)
+        self.readout_tone_extension_cycles = self.readout_tone_cycles - requested_tone_cycles
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
-                gen_ch=cfg["res_ch"]
+                gen_ch=cfg["res_ch"],
             )
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"],
-            gen_ch=cfg["res_ch"],
-            ro_ch=cfg["ro_chs"][0]
-        )
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         # All qubit pulses (reset pi, pi/2s, echo pi) play at the drive frequency:
         # cfg["f_ge"] in the standard scheme, the midpoint f_avg in symmetric_ramsey.
         self.f_ge_reg = self.freq2reg(self.drive_freq_mhz, gen_ch=cfg["qubit_ch"])
 
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(
-            cfg["sigma"] * 4,
-            gen_ch=cfg["qubit_ch"]
-        )
+        self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4, gen_ch=cfg["qubit_ch"])
         # Actual envelope duration after generator-clock quantization.
-        self.pulse_us = float(
-            self.cycles2us(self.pulse_qubit_length, gen_ch=cfg["qubit_ch"])
-        )
+        self.pulse_us = float(self.cycles2us(self.pulse_qubit_length, gen_ch=cfg["qubit_ch"]))
 
         # ---- free-evolution gap -------------------------------------------
         # QICK schedules the gap BETWEEN pulse edges: sync_all() advances the
@@ -515,9 +506,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         # Realized centre-to-centre interval after tProc-cycle quantization of
         # the gap. Saved alongside the requested tau so a run can be reinterpreted.
         self.wait_cycles = self.us2cycles(wait_us)
-        self.effective_tau_us = float(
-            n_gaps * (self.cycles2us(self.wait_cycles) + self.pulse_us)
-        )
+        self.effective_tau_us = float(n_gaps * (self.cycles2us(self.wait_cycles) + self.pulse_us))
         self.regwi(self.q_rp, self.r_wait, self.wait_cycles)
 
         # The pi/2 pulses must be broadband enough to rotate BOTH parity
@@ -530,8 +519,8 @@ class ModifiedRamseyProgram(AveragerProgram):
         branch_upper = float(cfg["f_ge"])
         branch_lower = branch_upper - float(cfg["df"])
         branch_detuning_mhz = max(
-            abs(self.drive_freq_mhz - branch_upper),
-            abs(self.drive_freq_mhz - branch_lower))
+            abs(self.drive_freq_mhz - branch_upper), abs(self.drive_freq_mhz - branch_lower)
+        )
         self.drive_bandwidth_ratio = float(branch_detuning_mhz / rabi_pi2_mhz)
         # Above max_drive_bandwidth_ratio the off-resonant branch is not
         # rotated at all -- the parity mapping is unrealizable, so FAIL rather
@@ -546,8 +535,11 @@ class ModifiedRamseyProgram(AveragerProgram):
                 f"the max_drive_bandwidth_ratio={max_bw_ratio:g} limit: the "
                 "off-resonant parity branch cannot be rotated and the "
                 "parity -> state mapping is unrealizable. Shorten sigma"
-                + ("" if self.symmetric_ramsey
-                   else ", set symmetric_ramsey=True (halves the detuning),")
+                + (
+                    ""
+                    if self.symmetric_ramsey
+                    else ", set symmetric_ramsey=True (halves the detuning),"
+                )
                 + " or raise cfg['max_drive_bandwidth_ratio'] deliberately."
             )
         if self.drive_bandwidth_ratio > 0.2:
@@ -569,10 +561,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         # copies = ~110112 > 65536 -> "AxisSignalGen: buffer length must be
         # 65536 samples or less.") Sharing one envelope halves the footprint.
         self.add_gauss(
-            ch=cfg["qubit_ch"],
-            name="qubit",
-            sigma=self.pulse_sigma,
-            length=self.pulse_qubit_length
+            ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length
         )
 
         self.set_pulse_registers(
@@ -581,7 +570,7 @@ class ModifiedRamseyProgram(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.readout_tone_cycles
+            length=self.readout_tone_cycles,
         )
 
         if self.use_active_reset:
@@ -592,8 +581,7 @@ class ModifiedRamseyProgram(AveragerProgram):
                 )
             if "pi_gain" not in cfg:
                 raise KeyError(
-                    "use_active_reset=True requires cfg['pi_gain'] for the "
-                    "corrective reset flip."
+                    "use_active_reset=True requires cfg['pi_gain'] for the corrective reset flip."
                 )
             # collect_shots() divides the accumulated I by the readout-window
             # length, so the threshold the user reads off the IQ plot is in those
@@ -667,7 +655,7 @@ class ModifiedRamseyProgram(AveragerProgram):
                 adcs=self.ro_chs,
                 adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
-                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
+                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)),
             )
 
             # 2) Read the accumulated in-phase value (lower = I) into r_read.
@@ -679,8 +667,7 @@ class ModifiedRamseyProgram(AveragerProgram):
             self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)
 
             # 3) If already in |g>, skip the corrective pi. Otherwise flip e -> g.
-            self.condj(self.q_rp, self.r_read, self.reset_skip_op,
-                       self.r_thresh, done_label)
+            self.condj(self.q_rp, self.r_read, self.reset_skip_op, self.r_thresh, done_label)
 
             self.set_pulse_registers(
                 ch=cfg["qubit_ch"],
@@ -688,7 +675,7 @@ class ModifiedRamseyProgram(AveragerProgram):
                 freq=self.f_ge_reg,
                 phase=0,
                 gain=cfg["pi_gain"],
-                waveform="qubit"
+                waveform="qubit",
             )
             self.pulse(ch=cfg["qubit_ch"])
 
@@ -717,7 +704,7 @@ class ModifiedRamseyProgram(AveragerProgram):
             freq=self.f_ge_reg,
             phase=0,
             gain=cfg["pi2_gain"],
-            waveform="qubit"
+            waveform="qubit",
         )
         self.pulse(ch=cfg["qubit_ch"])
 
@@ -732,7 +719,7 @@ class ModifiedRamseyProgram(AveragerProgram):
                 freq=self.f_ge_reg,
                 phase=0,
                 gain=cfg["pi_gain"],
-                waveform="qubit"
+                waveform="qubit",
             )
             self.pulse(ch=cfg["qubit_ch"])
 
@@ -747,7 +734,7 @@ class ModifiedRamseyProgram(AveragerProgram):
             freq=self.f_ge_reg,
             phase=self.deg2reg(self.final_pi2_phase_deg, gen_ch=cfg["qubit_ch"]),
             gain=cfg["pi2_gain"],
-            waveform="qubit"
+            waveform="qubit",
         )
         self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
@@ -759,18 +746,23 @@ class ModifiedRamseyProgram(AveragerProgram):
             adcs=self.ro_chs,
             adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
-            syncdelay=self.us2cycles(cfg.get("mr_relax_delay", 0.0))
+            syncdelay=self.us2cycles(cfg.get("mr_relax_delay", 0.0)),
         )
 
-    def acquire(self, soc, threshold=None, angle=None, load_pulses=True,
-                readouts_per_experiment=None, save_experiments=None,
-                start_src="internal", progress=False):
+    def acquire(
+        self,
+        soc,
+        threshold=None,
+        angle=None,
+        load_pulses=True,
+        readouts_per_experiment=None,
+        save_experiments=None,
+        start_src="internal",
+        progress=False,
+    ):
         # One readout per reset cycle plus the single final Ramsey readout.
         self.reads_per_rep = self.reset_cycles + 1
-        if (
-            readouts_per_experiment is not None
-            and readouts_per_experiment != self.reads_per_rep
-        ):
+        if readouts_per_experiment is not None and readouts_per_experiment != self.reads_per_rep:
             raise ValueError(
                 "readouts_per_experiment must equal reset_cycles + 1 "
                 f"({self.reads_per_rep}) for ModifiedRamseyProgram"
@@ -816,14 +808,12 @@ class ModifiedRamseyProgram(AveragerProgram):
         ro_ch = self.cfg["ro_chs"][0]
         norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
         reads_per_rep = getattr(self, "reads_per_rep", n_cycles + 1)
-        reset_i = np.stack([
-            self.di_buf[0][k::reads_per_rep][:reps] / norm
-            for k in range(n_cycles)
-        ])
-        reset_q = np.stack([
-            self.dq_buf[0][k::reads_per_rep][:reps] / norm
-            for k in range(n_cycles)
-        ])
+        reset_i = np.stack(
+            [self.di_buf[0][k::reads_per_rep][:reps] / norm for k in range(n_cycles)]
+        )
+        reset_q = np.stack(
+            [self.dq_buf[0][k::reads_per_rep][:reps] / norm for k in range(n_cycles)]
+        )
         return reset_i, reset_q
 
     def scheduled_rep_period_cycles(self):
@@ -840,8 +830,7 @@ class ModifiedRamseyProgram(AveragerProgram):
         scheduled sampling interval of the parity record.
         """
         plist = self.prog_list
-        start = next(i for i, x in enumerate(plist)
-                     if x.get("label") == "LOOP_J")
+        start = next(i for i, x in enumerate(plist) if x.get("label") == "LOOP_J")
         end = next(i for i, x in enumerate(plist) if x["name"] == "loopnz")
         t = 0
         for inst in plist[start:end]:
@@ -861,8 +850,17 @@ class ModifiedRamsey(ExperimentClass):
     Repeated fixed-tau Ramsey for charge-parity switching time-series.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='',
-                 prefix='data', cfg=None, config_file=None, progress=None):
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path="",
+        outerFolder="",
+        prefix="data",
+        cfg=None,
+        config_file=None,
+        progress=None,
+    ):
         super().__init__(
             soc=soc,
             soccfg=soccfg,
@@ -871,16 +869,12 @@ class ModifiedRamsey(ExperimentClass):
             prefix=prefix,
             cfg=cfg,
             config_file=config_file,
-            progress=progress
+            progress=progress,
         )
 
     def acquire(self, progress=False, debug=False):
         prog = ModifiedRamseyProgram(self.soccfg, self.cfg)
-        shots_i, shots_q = prog.acquire(
-            self.soc,
-            load_pulses=True,
-            progress=progress
-        )
+        shots_i, shots_q = prog.acquire(self.soc, load_pulses=True, progress=progress)
 
         shots_i = np.asarray(shots_i).ravel()
         shots_q = np.asarray(shots_q).ravel()
@@ -896,9 +890,7 @@ class ModifiedRamsey(ExperimentClass):
             last_elapsed_s, last_shots, _, _ = prog.stats[-1]
             streamer_elapsed_s = float(last_elapsed_s)
             if last_shots:
-                streamer_average_rep_period_us = (
-                    streamer_elapsed_s * 1e6 / float(last_shots)
-                )
+                streamer_average_rep_period_us = streamer_elapsed_s * 1e6 / float(last_shots)
 
         # ACTUAL per-shot sampling interval: the emitted tProc schedule,
         # including the full active-reset overhead. This -- not the streamer
@@ -910,87 +902,83 @@ class ModifiedRamsey(ExperimentClass):
 
         ro_ch = self.cfg["ro_chs"][0]
         readout_window_us = float(
-            prog.readout_window_cycles[ro_ch]
-            / float(self.soccfg["readouts"][ro_ch]["f_output"])
+            prog.readout_window_cycles[ro_ch] / float(self.soccfg["readouts"][ro_ch]["f_output"])
         )
         symmetric = self.cfg.get("symmetric_ramsey", False)
         use_reset = self.cfg.get("use_active_reset", False)
         control_type = self.cfg.get("mr_control_type", "parity")
 
         data = {
-            'config': self.cfg,
-            'data': {
+            "config": self.cfg,
+            "data": {
                 # ---- unthresholded per-shot record + time base ------------
-                'shots_i': shots_i,
-                'shots_q': shots_q,
-                'shot_index': shot_index,
-                'shot_time_us': shot_time_us,
-                'scheduled_rep_period_us': rep_period_us,
+                "shots_i": shots_i,
+                "shots_q": shots_q,
+                "shot_index": shot_index,
+                "shot_time_us": shot_time_us,
+                "scheduled_rep_period_us": rep_period_us,
                 # Continuous single acquisition (rounds == 1 enforced): no
                 # record gaps. Kept as an (empty) dataset so offline analysis
                 # can consume the same schema as stitched multi-chunk records.
-                'gap_indices': np.zeros(0, dtype=int),
+                "gap_indices": np.zeros(0, dtype=int),
                 # ---- Ramsey delay: requested vs realized ------------------
                 # Requested centre-to-centre precession time.
-                'tau_us': float(prog.tau_us),
+                "tau_us": float(prog.tau_us),
                 # Centre-to-centre time actually realized after the edge-gap
                 # correction and tProc-cycle quantization; this is the number
                 # the parity phase pi condition is set by.
-                'effective_tau_us': float(prog.effective_tau_us),
+                "effective_tau_us": float(prog.effective_tau_us),
                 # Programmed inter-pulse gap (per gap), i.e. what r_wait holds.
-                'wait_us': float(prog.wait_us),
-                'qubit_pulse_us': float(prog.pulse_us),
-                'sigma_us': float(self.cfg["sigma"]),
-                'drive_bandwidth_ratio': float(prog.drive_bandwidth_ratio),
+                "wait_us": float(prog.wait_us),
+                "qubit_pulse_us": float(prog.pulse_us),
+                "sigma_us": float(self.cfg["sigma"]),
+                "drive_bandwidth_ratio": float(prog.drive_bandwidth_ratio),
                 # ---- parity branches + drive ------------------------------
                 # f_ge is passed as the UPPER parity branch; the lower branch
                 # sits df below it, and df is the branch separation.
-                'f_ge': self.cfg["f_ge"],
-                'f_branch_upper': self.cfg["f_ge"],
-                'f_branch_lower': self.cfg["f_ge"] - self.cfg["df"],
-                'df': self.cfg["df"],
-                'drive_freq': float(prog.drive_freq_mhz),
+                "f_ge": self.cfg["f_ge"],
+                "f_branch_upper": self.cfg["f_ge"],
+                "f_branch_lower": self.cfg["f_ge"] - self.cfg["df"],
+                "df": self.cfg["df"],
+                "drive_freq": float(prog.drive_freq_mhz),
                 # ---- pulse gains and phases -------------------------------
-                'pi2_gain': self.cfg["pi2_gain"],
-                'pi_gain': self.cfg.get("pi_gain", np.nan),
-                'first_pi2_phase_deg': 0.0,
-                'final_pi2_phase_deg': float(prog.final_pi2_phase_deg),
+                "pi2_gain": self.cfg["pi2_gain"],
+                "pi_gain": self.cfg.get("pi_gain", np.nan),
+                "first_pi2_phase_deg": 0.0,
+                "final_pi2_phase_deg": float(prog.final_pi2_phase_deg),
                 # ---- sequence / control state -----------------------------
-                'use_pi_pulse': self.cfg.get("use_pi_pulse", False),
-                'flip_final_pi2': self.cfg.get("flip_final_pi2", False),
-                'symmetric_ramsey': symmetric,
-                'mr_control_type_code': MR_CONTROL_TYPE_CODES.get(
-                    control_type, -1),
+                "use_pi_pulse": self.cfg.get("use_pi_pulse", False),
+                "flip_final_pi2": self.cfg.get("flip_final_pi2", False),
+                "symmetric_ramsey": symmetric,
+                "mr_control_type_code": MR_CONTROL_TYPE_CODES.get(control_type, -1),
                 # ---- readout settings -------------------------------------
-                'read_pulse_freq': self.cfg["pulse_freq"],
-                'read_pulse_gain': self.cfg["pulse_gain"],
-                'res_phase': self.cfg["res_phase"],
-                'readout_length_us': self.cfg["readout_length"],
-                'readout_window_us': readout_window_us,
-                'adc_trig_offset_us': self.cfg["adc_trig_offset"],
-                'mr_relax_delay_us': self.cfg.get("mr_relax_delay", 0.0),
+                "read_pulse_freq": self.cfg["pulse_freq"],
+                "read_pulse_gain": self.cfg["pulse_gain"],
+                "res_phase": self.cfg["res_phase"],
+                "readout_length_us": self.cfg["readout_length"],
+                "readout_window_us": readout_window_us,
+                "adc_trig_offset_us": self.cfg["adc_trig_offset"],
+                "mr_relax_delay_us": self.cfg.get("mr_relax_delay", 0.0),
                 # ---- active reset -----------------------------------------
-                'use_active_reset': use_reset,
-                'reset_cycles': (
-                    int(self.cfg.get("reset_cycles", 1)) if use_reset else 0
-                ),
+                "use_active_reset": use_reset,
+                "reset_cycles": (int(self.cfg.get("reset_cycles", 1)) if use_reset else 0),
                 # Per-cycle reset readouts, shape (reset_cycles, reps): row k
                 # measures the state before corrective flip k, so the ground
                 # fraction of row k validates the preceding k resets.
-                'reset_shots_i': reset_i,
-                'reset_shots_q': reset_q,
-                'readout_threshold': self.cfg.get("readout_threshold", np.nan)
-                if use_reset else np.nan,
-                'reset_ground_below_threshold': self.cfg.get(
-                    "reset_ground_below_threshold", True),
-                'reset_readout_relax_delay_us': self.cfg.get(
-                    "reset_readout_relax_delay", 1.0) if use_reset else 0.0,
-                'post_reset_wait_us': self.cfg.get(
-                    "post_reset_wait", 0.0) if use_reset else 0.0,
+                "reset_shots_i": reset_i,
+                "reset_shots_q": reset_q,
+                "readout_threshold": self.cfg.get("readout_threshold", np.nan)
+                if use_reset
+                else np.nan,
+                "reset_ground_below_threshold": self.cfg.get("reset_ground_below_threshold", True),
+                "reset_readout_relax_delay_us": self.cfg.get("reset_readout_relax_delay", 1.0)
+                if use_reset
+                else 0.0,
+                "post_reset_wait_us": self.cfg.get("post_reset_wait", 0.0) if use_reset else 0.0,
                 # ---- wall-clock throughput diagnostics --------------------
-                'streamer_elapsed_s': streamer_elapsed_s,
-                'streamer_average_rep_period_us': streamer_average_rep_period_us,
-            }
+                "streamer_elapsed_s": streamer_elapsed_s,
+                "streamer_average_rep_period_us": streamer_average_rep_period_us,
+            },
         }
         self.data = data
         return data
@@ -999,13 +987,13 @@ class ModifiedRamsey(ExperimentClass):
         if data is None:
             data = self.data
 
-        shots_i = np.asarray(data['data']['shots_i'])
-        shots_q = np.asarray(data['data']['shots_q'])
-        tau_us = data['data']['tau_us']
-        eff_tau_us = data['data'].get('effective_tau_us', tau_us)
-        wait_us = data['data']['wait_us']
-        df = data['data']['df']
-        use_pi_pulse = data['data'].get('use_pi_pulse', False)
+        shots_i = np.asarray(data["data"]["shots_i"])
+        shots_q = np.asarray(data["data"]["shots_q"])
+        tau_us = data["data"]["tau_us"]
+        eff_tau_us = data["data"].get("effective_tau_us", tau_us)
+        wait_us = data["data"]["wait_us"]
+        df = data["data"]["df"]
+        use_pi_pulse = data["data"].get("use_pi_pulse", False)
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
@@ -1013,17 +1001,17 @@ class ModifiedRamsey(ExperimentClass):
         seq_label = "echo pi" if use_pi_pulse else "no pi"
 
         fig = plt.figure(figNum)
-        plt.plot(shots_i, shots_q, '.', alpha=0.4, markersize=3)
+        plt.plot(shots_i, shots_q, ".", alpha=0.4, markersize=3)
         plt.xlabel("I (a.u.)")
         plt.ylabel("Q (a.u.)")
-        plt.axis('equal')
+        plt.axis("equal")
         plt.title(
             self.titlename
             + f"\n{seq_label}, tau={tau_us:.4f} us (realized {eff_tau_us:.4f} us),"
             + f" gap={wait_us:.4f} us, df={df:.4f} MHz"
         )
         plt.tight_layout()
-        plt.savefig(self.iname[:-4] + '_IQ.png')
+        plt.savefig(self.iname[:-4] + "_IQ.png")
 
         if plotDisp:
             plt.show(block=True)
@@ -1033,8 +1021,8 @@ class ModifiedRamsey(ExperimentClass):
             plt.close(fig)
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
+        print(f"Saving {self.fname}")
+        super().save_data(data=data["data"])
 
 
 def modified_ramsey_timing(soccfg, cfg):
@@ -1070,38 +1058,28 @@ def modified_ramsey_timing(soccfg, cfg):
     # QICK tracks generator/readout timestamps as (native clock cycles converted
     # to tProc cycles), then sync_all() truncates the largest timestamp to an
     # integer tProc cycle. Reproduce that sequence exactly here.
-    requested_tone_native_cycles = soccfg.us2cycles(
-        cfg["length"], gen_ch=res_ch
-    )
+    requested_tone_native_cycles = soccfg.us2cycles(cfg["length"], gen_ch=res_ch)
     adc_offset_tproc_cycles = soccfg.us2cycles(cfg["adc_trig_offset"])
     window_native_cycles_by_ch = {
-        int(ch): soccfg.us2cycles(cfg["readout_length"], ro_ch=ch)
-        for ch in ro_chs
+        int(ch): soccfg.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in ro_chs
     }
     adc_end_tproc_by_ch = {
         int(ch): (
             adc_offset_tproc_cycles
             + window_native_cycles_by_ch[int(ch)]
-            * f_time / float(soccfg["readouts"][ch]["f_output"])
+            * f_time
+            / float(soccfg["readouts"][ch]["f_output"])
         )
         for ch in ro_chs
     }
     adc_window_end_tproc = max(adc_end_tproc_by_ch.values())
-    required_tone_native_cycles = int(np.ceil(
-        adc_window_end_tproc * res_f_fabric / f_time - 1e-12
-    ))
-    tone_native_cycles = max(
-        requested_tone_native_cycles, required_tone_native_cycles
-    )
-    tone_extension_native_cycles = (
-        tone_native_cycles - requested_tone_native_cycles
-    )
+    required_tone_native_cycles = int(np.ceil(adc_window_end_tproc * res_f_fabric / f_time - 1e-12))
+    tone_native_cycles = max(requested_tone_native_cycles, required_tone_native_cycles)
+    tone_extension_native_cycles = tone_native_cycles - requested_tone_native_cycles
     tone_end_tproc = tone_native_cycles * f_time / res_f_fabric
     readout_slot_tproc_cycles = int(max(tone_end_tproc, adc_window_end_tproc))
 
-    qubit_native_cycles = soccfg.us2cycles(
-        cfg["sigma"] * 4, gen_ch=qubit_ch
-    )
+    qubit_native_cycles = soccfg.us2cycles(cfg["sigma"] * 4, gen_ch=qubit_ch)
     qubit_end_tproc = qubit_native_cycles * f_time / qubit_f_fabric
     qubit_pulse_tproc_cycles = int(qubit_end_tproc)
     use_pi_pulse = bool(cfg.get("use_pi_pulse", False))
@@ -1122,25 +1100,18 @@ def modified_ramsey_timing(soccfg, cfg):
         )
     wait_cycles_each = soccfg.us2cycles(wait_request_us)
     wait_tproc_cycles = wait_count * wait_cycles_each
-    effective_tau_us = float(
-        wait_count * (wait_cycles_each / f_time + qubit_pulse_us)
-    )
+    effective_tau_us = float(wait_count * (wait_cycles_each / f_time + qubit_pulse_us))
     final_padding_tproc_cycles = soccfg.us2cycles(0.05)
     mr_relax_tproc_cycles = soccfg.us2cycles(cfg.get("mr_relax_delay", 0.0))
 
-    reset_cycles = (
-        int(cfg.get("reset_cycles", 1))
-        if cfg.get("use_active_reset", False) else 0
-    )
+    reset_cycles = int(cfg.get("reset_cycles", 1)) if cfg.get("use_active_reset", False) else 0
     if reset_cycles < 0:
         raise ValueError("cfg['reset_cycles'] must be non-negative")
     reset_delay_tproc_cycles = (
-        soccfg.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
-        if reset_cycles else 0
+        soccfg.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)) if reset_cycles else 0
     )
     post_reset_wait_tproc_cycles = (
-        soccfg.us2cycles(cfg.get("post_reset_wait", 0.0))
-        if reset_cycles else 0
+        soccfg.us2cycles(cfg.get("post_reset_wait", 0.0)) if reset_cycles else 0
     )
 
     ramsey_sequence_tproc_cycles = (
@@ -1154,24 +1125,18 @@ def modified_ramsey_timing(soccfg, cfg):
         # The corrective pi is conditional at runtime, but QICK's compile-time
         # timestamp tracking sees the pulse before the shared sync_all(). The
         # generated synci therefore reserves its full duration on both branches.
-        reset_cycles * (
-            readout_slot_tproc_cycles
-            + reset_delay_tproc_cycles
-            + qubit_pulse_tproc_cycles
-        )
+        reset_cycles
+        * (readout_slot_tproc_cycles + reset_delay_tproc_cycles + qubit_pulse_tproc_cycles)
         + post_reset_wait_tproc_cycles
     )
-    scheduled_rep_period_tproc_cycles = (
-        ramsey_sequence_tproc_cycles + reset_block_tproc_cycles
-    )
+    scheduled_rep_period_tproc_cycles = ramsey_sequence_tproc_cycles + reset_block_tproc_cycles
 
     to_us = lambda cycles: float(cycles / f_time)
     tone_us = float(tone_end_tproc / f_time)
     adc_offset_us = to_us(adc_offset_tproc_cycles)
     window_us_by_ch = {
         int(ch): float(
-            window_native_cycles_by_ch[int(ch)]
-            / float(soccfg["readouts"][ch]["f_output"])
+            window_native_cycles_by_ch[int(ch)] / float(soccfg["readouts"][ch]["f_output"])
         )
         for ch in ro_chs
     }
@@ -1184,15 +1149,11 @@ def modified_ramsey_timing(soccfg, cfg):
         "readout_slot_us": to_us(readout_slot_tproc_cycles),
         "readout_slot_tproc_cycles": int(readout_slot_tproc_cycles),
         "resonator_tone_us": tone_us,
-        "requested_resonator_tone_us": float(
-            requested_tone_native_cycles / res_f_fabric
-        ),
+        "requested_resonator_tone_us": float(requested_tone_native_cycles / res_f_fabric),
         "tone_quantization_extension_cycles": int(tone_extension_native_cycles),
         "adc_offset_us": adc_offset_us,
         "max_readout_window_us": float(max(window_us_by_ch.values())),
-        "tone_coverage_margin_us": float(
-            (tone_end_tproc - adc_window_end_tproc) / f_time
-        ),
+        "tone_coverage_margin_us": float((tone_end_tproc - adc_window_end_tproc) / f_time),
         "qubit_pulse_us": to_us(qubit_pulse_tproc_cycles),
         "ramsey_qubit_pulse_count": int(ramsey_pulse_count),
         "ramsey_wait_us": to_us(wait_tproc_cycles),
@@ -1208,8 +1169,5 @@ def modified_ramsey_timing(soccfg, cfg):
         "f_time_mhz": f_time,
         "res_f_fabric_mhz": res_f_fabric,
         "qubit_f_fabric_mhz": qubit_f_fabric,
-        "ro_f_output_mhz": {
-            int(ch): float(soccfg["readouts"][ch]["f_output"])
-            for ch in ro_chs
-        },
+        "ro_f_output_mhz": {int(ch): float(soccfg["readouts"][ch]["f_output"]) for ch in ro_chs},
     }

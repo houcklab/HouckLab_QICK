@@ -16,14 +16,19 @@ def run_constant_two_tone(ctx, params=None):
             cfg=ctx.working_config(),
             soc=ctx.soc,
             soccfg=ctx.soccfg,
-            outerFolder=ctx.outerFolder
+            outerFolder=ctx.outerFolder,
         )
         data_trans = Instance_trans.acquire()
 
 
 def run_constant_tone(ctx, params=None):
-    Instance_trans = SingleTone(path="TransmissionFF", cfg=ctx.working_config(), soc=ctx.soc, soccfg=ctx.soccfg,
-                                  outerFolder=ctx.outerFolder)
+    Instance_trans = SingleTone(
+        path="TransmissionFF",
+        cfg=ctx.working_config(),
+        soc=ctx.soc,
+        soccfg=ctx.soccfg,
+        outerFolder=ctx.outerFolder,
+    )
     data_trans = SingleTone.acquire(Instance_trans)
 
 
@@ -32,26 +37,19 @@ def run_transmission_fit(ctx, params):
     cfg = ctx.working_config()
 
     # -------------------- acquire transmission --------------------
-    cfg["reps"] = params['reps']
-    cfg["rounds"] = params['rounds']
+    cfg["reps"] = params["reps"]
+    cfg["rounds"] = params["rounds"]
 
     Instance_trans = CavitySpecFF(
-        path="TransmissionFF",
-        cfg=cfg,
-        soc=ctx.soc,
-        soccfg=ctx.soccfg,
-        outerFolder=ctx.outerFolder
+        path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     data_trans = CavitySpecFF.acquire(Instance_trans)
     CavitySpecFF.display(Instance_trans, data_trans, plotDisp=True, figNum=1)
     CavitySpecFF.save_data(Instance_trans, data_trans)
     CavitySpecFF.save_config(Instance_trans)
 
-    sig = (
-        data_trans['data']['results'][0][0][0]
-        + 1j * data_trans['data']['results'][0][0][1]
-    )
-    x_pts = np.asarray(data_trans['data']['fpts'])
+    sig = data_trans["data"]["results"][0][0][0] + 1j * data_trans["data"]["results"][0][0][1]
+    x_pts = np.asarray(data_trans["data"]["fpts"])
 
     y_mag = np.abs(sig)
     y_db = 20 * np.log10(y_mag)
@@ -60,18 +58,14 @@ def run_transmission_fit(ctx, params):
     center_guess = x_pts[idx_min]
 
     startpoint = [
-        center_guess,   # f0
-        4.1e4,          # Qtot
-        4.3e4,          # Qext
-        1e3,            # asym
-        0.0             # offset
+        center_guess,  # f0
+        4.1e4,  # Qtot
+        4.3e4,  # Qext
+        1e3,  # asym
+        0.0,  # offset
     ]
 
-    fit_result = fit_hanger_transmission(
-        freq=x_pts,
-        amp_db=y_db,
-        startpoint=startpoint
-    )
+    fit_result = fit_hanger_transmission(freq=x_pts, amp_db=y_db, startpoint=startpoint)
 
     popt = fit_result["popt"]
     perr = fit_result["perr"]
@@ -115,23 +109,16 @@ def run_transmission_fit(ctx, params):
     min_freq = x_pts[idx_min]
 
     plt.figure(fig_num_fit)
-    plt.plot(x_pts, y_db, 'o', label='|sig| data (dB)')
-    plt.plot(
-        x_fit, y_fit, '-', linewidth=2,
-        label=f'Hanger fit\nf0={f0_fit:.6f} ± {df0_fit:.6f}'
-    )
+    plt.plot(x_pts, y_db, "o", label="|sig| data (dB)")
+    plt.plot(x_fit, y_fit, "-", linewidth=2, label=f"Hanger fit\nf0={f0_fit:.6f} ± {df0_fit:.6f}")
     plt.axvline(
-        ctx.resonator_frequency_center, linestyle='--', color='gray',
-        label=f'input center = {ctx.resonator_frequency_center:.6f}'
+        ctx.resonator_frequency_center,
+        linestyle="--",
+        color="gray",
+        label=f"input center = {ctx.resonator_frequency_center:.6f}",
     )
-    plt.axvline(
-        fit_min_freq, linestyle=':', color='red',
-        label=f'fit minimum = {fit_min_freq:.6f}'
-    )
-    plt.axvline(
-        min_freq, linestyle=':', color='blue',
-        label=f'min freq = {min_freq:.6f}'
-    )
+    plt.axvline(fit_min_freq, linestyle=":", color="red", label=f"fit minimum = {fit_min_freq:.6f}")
+    plt.axvline(min_freq, linestyle=":", color="blue", label=f"min freq = {min_freq:.6f}")
     plt.xlabel("Frequency")
     plt.ylabel("Transmission (dB)")
     plt.title("Transmission sweep with hanger fit")
@@ -145,8 +132,9 @@ def run_transmission_sweep(ctx, params):
     cfg = ctx.working_config()
     cfg["reps"] = 20  # fast axis number of points
     cfg["rounds"] = 20  # slow axis number of points
-    Instance_trans = CavitySpecFF(path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg,
-                                  outerFolder=ctx.outerFolder)
+    Instance_trans = CavitySpecFF(
+        path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
+    )
     data_trans = CavitySpecFF.acquire(Instance_trans)
     CavitySpecFF.display(Instance_trans, data_trans, plotDisp=True, figNum=1)
     CavitySpecFF.save_data(Instance_trans, data_trans)
@@ -163,12 +151,14 @@ def run_transmission_sweep(ctx, params):
 def run_chi_shift(ctx, params):
     updated_params = {
         "pi_gain": ctx.qubit_gain,
-        "sigma": ctx.qubit_sigma, "f_ge": ctx.qubit_frequency_center,
-        "flattop_length": ctx.qubit_flattop
+        "sigma": ctx.qubit_sigma,
+        "f_ge": ctx.qubit_frequency_center,
+        "flattop_length": ctx.qubit_flattop,
     }
     cfg = ctx.working_config(params, updated_params)
-    iChi = ChiShift(path="ChiShift", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg,
-                    outerFolder=ctx.outerFolder)
+    iChi = ChiShift(
+        path="ChiShift", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
+    )
     dChi = ChiShift.acquire(iChi)
     ChiShift.display(iChi, dChi, plotDisp=True, figNum=1)
     ChiShift.save_data(iChi, dChi)

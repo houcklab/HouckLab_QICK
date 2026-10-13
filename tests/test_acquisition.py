@@ -6,6 +6,7 @@ block, L1108-1345) with the same assertions: project_iq_onto_separator,
 pick_parity_drive_freq, chunked_acquire (stitching, metadata propagation, and the
 ZeroSpanParity.save_data round-trip), and modulated_strobe_acquire.
 """
+
 import os
 import tempfile
 
@@ -32,8 +33,7 @@ class _FakeExp:
         I = np.arange(self.n, dtype=float) + 1000.0 * self.calls
         Q = np.arange(self.n, dtype=float) + 2000.0 * self.calls
         t = np.arange(self.n, dtype=float) * self.sp
-        return {"I": I, "Q": Q, "t_us": t,
-                "wall_clock_start": f"2026-01-01T00:00:{self.calls:02d}"}
+        return {"I": I, "Q": Q, "t_us": t, "wall_clock_start": f"2026-01-01T00:00:{self.calls:02d}"}
 
 
 class _MetaFakeExp:
@@ -59,8 +59,12 @@ class _MetaFakeExp:
 
 class _ModFakeExp:
     def __init__(self, n_per_block, sample_period_us):
-        self.cfg = {"qubit_gain": 0, "reps_per_chunk": n_per_block,
-                    "reps": n_per_block, "sample_period_us": sample_period_us}
+        self.cfg = {
+            "qubit_gain": 0,
+            "reps_per_chunk": n_per_block,
+            "reps": n_per_block,
+            "sample_period_us": sample_period_us,
+        }
         self._n = n_per_block
         self._sp = sample_period_us
 
@@ -74,9 +78,15 @@ class _ModFakeExp:
         I = np.full(self._n, 5.0 if g > 0 else 0.0)
         Q = np.zeros(self._n)
         t = np.arange(self._n) * self._sp
-        return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
-                "sample_period_us": self._sp, "read_length_us": 5.0,
-                "wall_clock_start": "2026-01-01T00:00:00"}
+        return {
+            "I": I,
+            "Q": Q,
+            "t_us": t,
+            "mode": "strobe",
+            "sample_period_us": self._sp,
+            "read_length_us": 5.0,
+            "wall_clock_start": "2026-01-01T00:00:00",
+        }
 
 
 def test_project_iq_onto_separator():
@@ -86,9 +96,12 @@ def test_project_iq_onto_separator():
     sep = {"g_center": g_center, "e_center": e_center}
 
     # Two clouds of 1000 samples each at the centers, plus tight Gaussian noise.
-    I_g = rng.normal(g_center[0], 0.5, 1000); Q_g = rng.normal(g_center[1], 0.5, 1000)
-    I_e = rng.normal(e_center[0], 0.5, 1000); Q_e = rng.normal(e_center[1], 0.5, 1000)
-    I = np.concatenate([I_g, I_e]); Q = np.concatenate([Q_g, Q_e])
+    I_g = rng.normal(g_center[0], 0.5, 1000)
+    Q_g = rng.normal(g_center[1], 0.5, 1000)
+    I_e = rng.normal(e_center[0], 0.5, 1000)
+    Q_e = rng.normal(e_center[1], 0.5, 1000)
+    I = np.concatenate([I_g, I_e])
+    Q = np.concatenate([Q_g, Q_e])
     labels_true = np.concatenate([np.zeros(1000, int), np.ones(1000, int)])
 
     scores, bits = project_iq_onto_separator(I, Q, sep)
@@ -123,19 +136,22 @@ def test_pick_parity_drive_freq():
 
     def _lorentz(x, x0, A, g):
         return A / (1.0 + ((x - x0) / g) ** 2)
+
     amp = _lorentz(x_pts, 3050.0, 1.0, 0.15) + _lorentz(x_pts, 3052.0, 1.0, 0.15)
     avgi = np.sqrt(amp)  # arbitrary, only avgamp0 = i^2 + q^2 is fit-relevant
     avgq = np.zeros_like(avgi)
-    spec_data = {"data": {
-        "x_pts": x_pts.tolist(),
-        "avgi": [[avgi.tolist()]],
-        "avgq": [[avgq.tolist()]],
-        "lorentz_centers": [3050.0, 3052.0],
-    }}
+    spec_data = {
+        "data": {
+            "x_pts": x_pts.tolist(),
+            "avgi": [[avgi.tolist()]],
+            "avgq": [[avgq.tolist()]],
+            "lorentz_centers": [3050.0, 3052.0],
+        }
+    }
 
     picked_low = pick_parity_drive_freq(spec_data, which="lower")
     assert abs(picked_low["picked"] - 3050.0) < 0.1, picked_low
-    assert abs(picked_low["lower"]  - 3050.0) < 0.1
+    assert abs(picked_low["lower"] - 3050.0) < 0.1
     assert abs(picked_low["higher"] - 3052.0) < 0.1
 
     picked_high = pick_parity_drive_freq(spec_data, which="higher")
@@ -187,9 +203,14 @@ def test_chunked_acquire_propagates_metadata():
     # ro_norm_cycles into the stitched output so save_data sees them.
     meta_exp = _MetaFakeExp(n_per_chunk=500)
     meta_stitched = chunked_acquire(meta_exp, n_chunks=3)
-    for k, v in [("mode", "strobe"), ("sample_period_us", 20.0),
-                 ("read_length_us", 5.0), ("adc_trig_offset_us", 0.488),
-                 ("ro_norm_cycles", 1920.0), ("n_chunks", 3)]:
+    for k, v in [
+        ("mode", "strobe"),
+        ("sample_period_us", 20.0),
+        ("read_length_us", 5.0),
+        ("adc_trig_offset_us", 0.488),
+        ("ro_norm_cycles", 1920.0),
+        ("n_chunks", 3),
+    ]:
         assert meta_stitched.get(k) == v, (
             f"chunked_acquire did not propagate {k}: got {meta_stitched.get(k)}, expected {v}"
         )
@@ -208,6 +229,7 @@ def test_save_data_persists_chunked_acquire_metadata():
 
     class _SavingDouble:
         """Mimics enough of ZeroSpanParity to exercise save_data() in-isolation."""
+
         save_data = ZeroSpanParity.save_data
 
         def __init__(self, fname, data):
@@ -219,8 +241,10 @@ def test_save_data_persists_chunked_acquire_metadata():
         _SavingDouble(fname, real_stitched).save_data()
         with h5py.File(fname, "r") as f:
             assert list(np.array(f["gap_indices"])) == [10, 20]
-            wcs = [s.decode("utf-8") if isinstance(s, bytes) else str(s)
-                   for s in np.array(f["chunk_wall_clock_starts"])]
+            wcs = [
+                s.decode("utf-8") if isinstance(s, bytes) else str(s)
+                for s in np.array(f["chunk_wall_clock_starts"])
+            ]
             assert len(wcs) == 3 and all(w.startswith("2026-05-16T") for w in wcs), wcs
             assert int(f.attrs["n_chunks"]) == 3
             assert float(f.attrs["sample_period_us"]) == 20.0
@@ -233,12 +257,14 @@ def test_save_data_persists_chunked_acquire_metadata():
 def test_modulated_strobe_acquire():
     n_per, sp = 500, 20.0
     exp = _ModFakeExp(n_per, sp)
-    schedule = [100, 0] * 4   # 4 periods, on=100/off=0
+    schedule = [100, 0] * 4  # 4 periods, on=100/off=0
     acq = modulated_strobe_acquire(exp, schedule, n_per)
     assert acq["I"].shape == (n_per * len(schedule),), acq["I"].shape
     assert acq["modulation_reference"].shape == acq["I"].shape
     # reference must be 1 exactly where the on-blocks are (I==5.0)
-    assert np.array_equal((acq["modulation_reference"] > 0.5), (acq["I"] > 2.5)), "ref/gain misaligned"
+    assert np.array_equal((acq["modulation_reference"] > 0.5), (acq["I"] > 2.5)), (
+        "ref/gain misaligned"
+    )
     assert acq["gap_indices"] == [n_per * k for k in range(1, len(schedule))], acq["gap_indices"]
     assert np.all(np.diff(acq["t_us"]) > 0), "t_us not monotonic"
     assert acq["block_labels"] == schedule, acq["block_labels"]

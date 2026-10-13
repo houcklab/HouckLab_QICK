@@ -2,14 +2,14 @@
 
 from qicklab.runs.auto_coherence import AUTO_COHERENCE_PARAMS, _stage_sweet_spot_search
 
-
 # ===========================================================================
 # ─── Public entry points ────────────────────────────────────────────────────
 # ===========================================================================
 
-def find_sweet_spot(soc, soccfg, config, save_folder,
-                    qubit_freq_center, qubit_readout,
-                    yoko, sweet_params=None):
+
+def find_sweet_spot(
+    soc, soccfg, config, save_folder, qubit_freq_center, qubit_readout, yoko, sweet_params=None
+):
     """
     Standalone sweet-spot voltage search.
 

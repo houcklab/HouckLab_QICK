@@ -41,17 +41,17 @@ from pywindfreak import SynthHD
 # User-set parameters
 # ---------------------------------------------------------------------------
 # --- Pump source (Windfreak SynthHD) ----------------------------------------
-PUMP_SYNTH_PORT     = "COM5"          # SynthHD USB/serial COM port
+PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 
 # --- Operating point: one (freq_GHz, power_dBm) per SynthHD channel ---------
 # Channels not listed here are left untouched.
 PUMP_SETTINGS = {
     # 0: (10.7831, -1.0),               # ch0: freq [GHz], power [dBm]
-    1: (10.7165, -5.5),             # ch1: uncomment / edit for the second pump
+    1: (10.7165, -5.5),  # ch1: uncomment / edit for the second pump
 }
-PUMP_POWER_MAX_dBm  = 0.0       # hard ceiling — script refuses power above this
+PUMP_POWER_MAX_dBm = 0.0  # hard ceiling — script refuses power above this
 
-DISABLE_PUMP        = True    # True (or pass '--off') to RF-disable the pump and exit
+DISABLE_PUMP = True  # True (or pass '--off') to RF-disable the pump and exit
 
 
 # ---------------------------------------------------------------------------
@@ -143,13 +143,16 @@ def main():
     for idx in channels:
         ch = synth[idx]
         try:
-            print(f"  ch{idx}: f={ch.frequency/1e9:.6f} GHz  "
-                  f"P={ch.power:+.2f} dBm  RF={'ON' if ch.rf_enable else 'OFF'}")
+            print(
+                f"  ch{idx}: f={ch.frequency / 1e9:.6f} GHz  "
+                f"P={ch.power:+.2f} dBm  RF={'ON' if ch.rf_enable else 'OFF'}"
+            )
         except Exception as e:
             print(f"  ch{idx}: readback failed: {e}")
 
-    parked = ", ".join(f"ch{idx} @ {f:.6f} GHz, {p:+.2f} dBm"
-                       for idx, (f, p) in PUMP_SETTINGS.items())
+    parked = ", ".join(
+        f"ch{idx} @ {f:.6f} GHz, {p:+.2f} dBm" for idx, (f, p) in PUMP_SETTINGS.items()
+    )
     print(f"[twpa_set_pump] Done. Pump parked at {parked}.")
 
 

@@ -38,20 +38,22 @@ import pyvisa
 # ---------------------------------------------------------------------------
 # User-set parameters — fill in for the current setup
 # ---------------------------------------------------------------------------
-TWPA_YOKO_ADDRESS   = "GPIB1::12::INSTR"   # TODO: dedicated TWPA YOKO address (NOT the charge-line yoko at ::9::)
+TWPA_YOKO_ADDRESS = (
+    "GPIB1::12::INSTR"  # TODO: dedicated TWPA YOKO address (NOT the charge-line yoko at ::9::)
+)
 
-TARGET_CURRENT_uA   = 0 # 18 (10/7/26)             # optimum from 20260521_144734 flux sweep (max |S21|, broad 3.5–5.5 uA plateau); datasheet nominal ≈ 11 uA
-MAX_RATE_nA_per_s   = 300.0                # datasheet ceiling — do not raise
+TARGET_CURRENT_uA = 0  # 18 (10/7/26)             # optimum from 20260521_144734 flux sweep (max |S21|, broad 3.5–5.5 uA plateau); datasheet nominal ≈ 11 uA
+MAX_RATE_nA_per_s = 300.0  # datasheet ceiling — do not raise
 
-SAFETY_CAP_uA       = 25.0                 # script refuses targets above this in normal operation
-ALLOW_CALIBRATION   = False                # set True for a one-off sweep up to 25 uA (full first flux period)
+SAFETY_CAP_uA = 25.0  # script refuses targets above this in normal operation
+ALLOW_CALIBRATION = False  # set True for a one-off sweep up to 25 uA (full first flux period)
 
-STEP_PERIOD_S       = 0.05                 # GPIB update interval; smaller = smoother, more bus traffic
+STEP_PERIOD_S = 0.05  # GPIB update interval; smaller = smoother, more bus traffic
 
 # YOKO current-source range — discrete steps {1e-3, 10e-3, 100e-3, 200e-3} A.
 # The YOKO clips at the active range; setpoints above it are silently capped.
 # Auto-picked below from |target_A| if left as None.
-YOKO_CURR_RANGE_A   = None                 # e.g. 1e-3 forces the 1 mA range; None = auto-pick
+YOKO_CURR_RANGE_A = None  # e.g. 1e-3 forces the 1 mA range; None = auto-pick
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@ def pick_current_range(required_A):
     for r in (1e-3, 10e-3, 100e-3, 200e-3):
         if abs(required_A) <= r:
             return r
-    raise ValueError(f"|I|={abs(required_A)*1e3:.3f} mA exceeds the YOKO's 200 mA max range.")
+    raise ValueError(f"|I|={abs(required_A) * 1e3:.3f} mA exceeds the YOKO's 200 mA max range.")
 
 
 def slow_ramp_to_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
@@ -75,7 +77,7 @@ def slow_ramp_to_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
     delta_I = target_A - start_I
 
     if abs(delta_I) < 1e-12:
-        print(f"[twpa_set_bias] Already at {start_I*1e6:+.3f} uA, nothing to do.")
+        print(f"[twpa_set_bias] Already at {start_I * 1e6:+.3f} uA, nothing to do.")
         return
 
     step_I = max_rate_A_per_s * dt
@@ -85,10 +87,14 @@ def slow_ramp_to_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
     eff_rate_nA_per_s = abs(delta_I) / (n_steps * dt) * 1e9
     eta_s = n_steps * dt
 
-    print(f"[twpa_set_bias] Ramp {start_I*1e6:+.3f} uA → {target_A*1e6:+.3f} uA "
-          f"(ΔI={delta_I*1e6:+.3f} uA)")
-    print(f"               {n_steps} steps × {dt*1e3:.0f} ms ≈ {eta_s:.1f} s, "
-          f"rate ≈ {eff_rate_nA_per_s:.1f} nA/s (cap {max_rate_A_per_s*1e9:.0f} nA/s)")
+    print(
+        f"[twpa_set_bias] Ramp {start_I * 1e6:+.3f} uA → {target_A * 1e6:+.3f} uA "
+        f"(ΔI={delta_I * 1e6:+.3f} uA)"
+    )
+    print(
+        f"               {n_steps} steps × {dt * 1e3:.0f} ms ≈ {eta_s:.1f} s, "
+        f"rate ≈ {eff_rate_nA_per_s:.1f} nA/s (cap {max_rate_A_per_s * 1e9:.0f} nA/s)"
+    )
 
     progress_every = max(1, n_steps // 10)
     t0 = time.time()
@@ -97,10 +103,10 @@ def slow_ramp_to_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
         time.sleep(dt)
         if (i % progress_every) == 0:
             elapsed = time.time() - t0
-            print(f"  step {i:>5d}/{n_steps}  I={I*1e6:+.3f} uA  t={elapsed:5.1f}s")
+            print(f"  step {i:>5d}/{n_steps}  I={I * 1e6:+.3f} uA  t={elapsed:5.1f}s")
 
     final_I = float(yoko.query(":SOUR:LEV?"))
-    print(f"[twpa_set_bias] Done. Final I={final_I*1e6:+.3f} uA.")
+    print(f"[twpa_set_bias] Done. Final I={final_I * 1e6:+.3f} uA.")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +131,7 @@ def main():
     range_A = YOKO_CURR_RANGE_A if YOKO_CURR_RANGE_A is not None else pick_current_range(target_A)
     if abs(target_A) > range_A:
         raise ValueError(
-            f"YOKO_CURR_RANGE_A = {range_A} A is too small for target I = {target_A*1e6:+.3f} uA. "
+            f"YOKO_CURR_RANGE_A = {range_A} A is too small for target I = {target_A * 1e6:+.3f} uA. "
             "Pick a larger range or leave YOKO_CURR_RANGE_A = None for auto."
         )
 
@@ -134,11 +140,15 @@ def main():
     print("TWPA BIAS RAMP  (YOKO current-source mode)")
     print(f"  YOKO            : {TWPA_YOKO_ADDRESS}")
     print(f"  target current  : {TARGET_CURRENT_uA:+.3f} uA")
-    print(f"  YOKO I range    : {range_A*1e3:g} mA "
-          f"({'auto' if YOKO_CURR_RANGE_A is None else 'forced'})")
+    print(
+        f"  YOKO I range    : {range_A * 1e3:g} mA "
+        f"({'auto' if YOKO_CURR_RANGE_A is None else 'forced'})"
+    )
     print(f"  max rate        : {MAX_RATE_nA_per_s:.0f} nA/s")
-    print(f"  safety cap      : {SAFETY_CAP_uA:.1f} uA "
-          f"({'CALIBRATION OVERRIDE — cap lifted to 25 uA' if ALLOW_CALIBRATION else 'enforced'})")
+    print(
+        f"  safety cap      : {SAFETY_CAP_uA:.1f} uA "
+        f"({'CALIBRATION OVERRIDE — cap lifted to 25 uA' if ALLOW_CALIBRATION else 'enforced'})"
+    )
     print()
     print("BEFORE PROCEEDING, CONFIRM:")
     print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")

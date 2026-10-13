@@ -36,8 +36,7 @@ from qicklab.runs.coherence import run_t1, run_t2, run_t2e
 from qicklab.runs.single_shot import run_undriven_single_shot
 
 
-def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params,
-                              T2E_params, SS_params):
+def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params, T2E_params, SS_params):
     coh_cfg = ctx.config
     rebuild_singleshot_config(ctx, SS_params)
     ss_cfg = ctx.config
@@ -45,10 +44,14 @@ def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params,
     # one pass per cycle, never blocking on a plot window
     once = {"repetitions": 1, "plotDisp": False}
     steps = (
-        ("UndrivenSingleShot", ss_cfg, run_undriven_single_shot,
-         US_params | {"Repeat": 1, "plotDisp": False}),
-        ("T1",  coh_cfg, run_t1,  T1T2_params | once),
-        ("T2R", coh_cfg, run_t2,  T1T2_params | once),
+        (
+            "UndrivenSingleShot",
+            ss_cfg,
+            run_undriven_single_shot,
+            US_params | {"Repeat": 1, "plotDisp": False},
+        ),
+        ("T1", coh_cfg, run_t1, T1T2_params | once),
+        ("T2R", coh_cfg, run_t2, T1T2_params | once),
         ("T2E", coh_cfg, run_t2e, T2E_params | once),
     )
 
@@ -58,8 +61,7 @@ def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params,
         print("[Interleave] no experiments enabled; nothing to do.")
         return
     run_id = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    print(f"[Interleave] run {run_id}: {n_cycles} cycle(s) of: "
-          f"{' -> '.join(enabled)}")
+    print(f"[Interleave] run {run_id}: {n_cycles} cycle(s) of: {' -> '.join(enabled)}")
 
     try:
         for k in range(n_cycles):
@@ -68,10 +70,12 @@ def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params,
                     continue
                 print(f"\n[Interleave] cycle {k + 1}/{n_cycles}: {name}")
                 # tags the .json + h5 config attr of whatever this step saves
-                ctx.config = cfg | {"interleave_run_id": run_id,
-                                    "interleave_cycle": k,
-                                    "interleave_cycles_total": n_cycles,
-                                    "interleave_step": name}
+                ctx.config = cfg | {
+                    "interleave_run_id": run_id,
+                    "interleave_cycle": k,
+                    "interleave_cycles_total": n_cycles,
+                    "interleave_step": name,
+                }
                 run(ctx, params)
     finally:
         ctx.config = coh_cfg

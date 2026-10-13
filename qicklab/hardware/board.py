@@ -5,7 +5,6 @@ file to create basic initialization of things used for RFSOC This will include:
 - defining the basic config dict that will state the channels used for all subsequent code
 """
 
-
 ###### define default configuration
 BASE_CONFIG = {
     "res_ch": 0,  # --Fixed
@@ -13,7 +12,7 @@ BASE_CONFIG = {
     "mixer_freq": 0.0,  # MHz
     "ro_chs": [0],  # --Fixed
     "reps": 1000,  # --Fixed
-    "nqz": 2, #1,  #### refers to cavity
+    "nqz": 2,  # 1,  #### refers to cavity
     "qubit_nqz": 1,
     "relax_delay": 3000,  # --Fixed
     "res_phase": 0,  # --Fixed
@@ -22,14 +21,15 @@ BASE_CONFIG = {
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 1,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
-    "cavity_LO": 0, #6.5e9
+    "cavity_LO": 0,  # 6.5e9
     # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
     # 'cavity_winding_offset': -32.10723885 + np.pi #-15.77597 * 0
     "cavity_winding_freq": 0,
-    'cavity_winding_offset': 0,
-    'trig_buffer_start': 0.02,
+    "cavity_winding_offset": 0,
+    "trig_buffer_start": 0.02,
     "trig_buffer_end": 0.02,
-    'trig_delay': 0.082}
+    "trig_delay": 0.082,
+}
 BaseConfig = BASE_CONFIG
 
 FF_channel1 = 2
@@ -39,9 +39,9 @@ FF_channel4 = 6
 
 
 FF_QUBITS = {
-    str(1): {'channel': FF_channel1, 'delay_time': 0.017 + 0.0045},
-    str(2): {'channel': FF_channel2, 'delay_time': 0},
-    str(3): {'channel': FF_channel3, 'delay_time': 0},
-    str(4): {'channel': FF_channel4, 'delay_time': 0},
+    str(1): {"channel": FF_channel1, "delay_time": 0.017 + 0.0045},
+    str(2): {"channel": FF_channel2, "delay_time": 0},
+    str(3): {"channel": FF_channel3, "delay_time": 0},
+    str(4): {"channel": FF_channel4, "delay_time": 0},
 }
 FF_Qubits = FF_QUBITS

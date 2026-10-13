@@ -1,4 +1,4 @@
-""" Client-side helpers for controlling remote SignalCore SC5510A signal generators.
+"""Client-side helpers for controlling remote SignalCore SC5510A signal generators.
 
 Brought over from the sc5510a-py repo (https://github.com/NPdL-SQTeam/sc5510a-py).
 Run on the *client PC*. The *server PC* (physically connected to the SC5510A
@@ -34,7 +34,7 @@ NAME_PREFIX = "SC5510A#"
 
 
 def locate_nameserver(host=SERVER_HOST, port=NAME_SERVER_PORT):
-    """ Locate the Pyro name server on the server PC. """
+    """Locate the Pyro name server on the server PC."""
     try:
         return Pyro5.api.locate_ns(host=host, port=port)
     except (errors.NamingError, errors.CommunicationError, OSError) as e:
@@ -46,13 +46,13 @@ def locate_nameserver(host=SERVER_HOST, port=NAME_SERVER_PORT):
 
 
 def list_instruments(host=SERVER_HOST, port=NAME_SERVER_PORT):
-    """ Return a sorted list of registered instrument names. """
+    """Return a sorted list of registered instrument names."""
     nameserver = locate_nameserver(host, port)
     return sorted(nameserver.list(prefix=NAME_PREFIX).keys())
 
 
 def connect(name=None, host=SERVER_HOST, port=NAME_SERVER_PORT):
-    """ Return a Pyro proxy to a remote SC5510A.
+    """Return a Pyro proxy to a remote SC5510A.
 
     name : full registered name ("SC5510A#10002D35"), the bare device id
            ("10002D35"), or None to connect to the only/first device.
