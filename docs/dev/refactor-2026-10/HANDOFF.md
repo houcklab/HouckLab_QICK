@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after the golden regeneration).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after phase 3a-i).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -43,19 +43,34 @@ Orchestrate with dynamic workflows dispatching Opus 5.5 agents; the orchestrator
    multi-flag labels; three captures byte-identical; 106 passed). Session 2:
    https://claude.ai/code/session_01Si1tqwikwVWbWUzWwbxDCY
 
-Nothing under `WorkingProjects/` has been modified yet. The code refactor proper has NOT started.
+9. `5dc9e120` refactor: 3a-i — every whole-file row git-mv'd into `qicklab/`, explicit imports, renames +
+   aliases, `driver_qicklab` is the DRIVER, `tests/test_imports.py`; equivalence `--phase 3a-i` PASS
+   (341 AST / 341 bindings), pytest 147 passed, golden byte-identical. Harness fixes in the same commit:
+   the golden fixture undoes the capture patches at module teardown (they leaked `savefig` no-ops into
+   later test modules), `CURRENT_PHASE` in `tests/refactor/test_equivalence.py`, checker self-test runs on
+   a copy of the legacy worktree, transitional ruff per-file ignores in `pyproject.toml` (3b removes them).
 
-## NEXT STEP: phase 3a-i
-Follow `brief_3a.md` section "3a-i" exactly: `git mv` every legacy file to the path in `tests/refactor/symbol_map.py`
-(kind=moved/renamed, phase=3a-i), rewrite imports to explicit ones, keep the listed aliases, no body edits,
-write `tests/regression/driver_qicklab.py`, then verify:
+After 3a-i, `WorkingProjects/` holds only the twelve files the map splits in 3a-ii (utils, analyze_*,
+mAutoCoherence, mT2R, mUndrivenSingleShot, Runners/runs/{basic,calibration,coherence,charge_parity,context,
+singleshot}); qicklab modules import the not-yet-split symbols from there. The lab code runs on the original
+Windows PC in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and
+the TWPA modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
+
+## NEXT STEP: phase 3a-ii
+Split the twelve remaining files per the 3a-ii rows of `tests/refactor/symbol_map.py` (whole functions
+verbatim into the destination modules, 3b rows carried along verbatim, `__main__` blocks → `tests/`),
+retarget every consumer in `qicklab/`, `runners/`, `tests/` to the new modules, drop the transitional bits
+(`driver_qicklab` clock loop for `WorkingProjects.`, `test_program_timing` US import), set
+`CURRENT_PHASE = "3a-ii"`, `git rm -r WorkingProjects`, then verify:
 ```
 python -m compileall -q qicklab devices runners tests
-ruff check --select F qicklab runners tests
-python -m tests.refactor.equivalence --phase 3a-i     # must report 0 failures
-python -m pytest tests                                # golden A and B must match WITHOUT regeneration (~15 min)
+ruff check --select F qicklab runners tests devices
+python -m tests.refactor.equivalence --phase 3a-ii    # must report 0 failures
+python -m pytest tests                                # golden A and B must match WITHOUT regeneration (~9 min here)
 ```
-Then 3a-ii (splits), 3a-iii (format), 3b (per-area cleanup with adversarial review), 5a/5b (Device/Session/
+Note: `brief_3a.md` lists the `Amplitude_IQ → min_q_range_phase` merge under 3a-ii, but the symbol map
+(the contract) puts it in 3b; follow the map.
+Then 3a-iii (format), 3a-iii (format), 3b (per-area cleanup with adversarial review), 5a/5b (Device/Session/
 recipes/PLAN, delete legacy runner), 6 (parameter registry → generated parameters.md; reconcile docs), rewrite
 CLAUDE.md/AGENTS.md/README, then the approved bug-fix commits. Full list and order: design.md "Commit plan".
 
