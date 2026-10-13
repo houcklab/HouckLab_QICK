@@ -1,0 +1,282 @@
+{
+  "summary": "Phase 6 (early start): write the docs/ tree — concept pages, per-experiment pages with migrated lab notes, device page, hardware, bring-up workflow, troubleshooting, glossary",
+  "agentCount": 5,
+  "logs": [
+    "docs written: 43 pages; review remaining: 10"
+  ],
+  "result": {
+    "written": [
+      {
+        "pages": [
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/README.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/config_regimes.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/readout_window.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/averaging.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/timing_and_units.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/iq_conventions.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/hardware.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/troubleshooting.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/glossary.md"
+        ],
+        "notes_migrated": 119,
+        "open_questions": [
+          "Trigger pin 0 (PMOD): nothing in the code says what it drives (an RF switch on the drive line, a scope trigger, or nothing). Rabi, T1, T2E and single shot fire it. Spec, chi shift, T2R, T1_SS, the charge-dispersion steps, ModifiedRamsey, ActiveResetVerify, UndrivenSingleShot and ZeroSpanParity do not. If it gates the drive, those steps play their pulses into a closed switch. Please confirm the wiring.",
+          "Most regime-A programs (CavitySpecFF, QubitSpecSliceFF, both Rabi classes, ChiShift, T1FF, T2EMUX, T2R, ChargeDispersion, QuasiCW, T1_SS), plus ZeroSpanParity, call declare_readout(length=us2cycles(readout_length)) without ro_ch. In qick 0.2.334 that length counts readout samples, so on this board the window comes out 1.4x the requested length: for a 15 us request it runs to about 21.3 us while the tone stops at 15.3 us. I worked this out from the clock values; it has not been measured. Has anyone seen this on hardware? Should it go on the fix list? It is documented as a Known issue in concepts/readout_window.md.",
+          "How were the ADC offsets chosen: 0.3 us for the regime-A and single-shot windows, 0.488 us for zero-span? Nothing records the reason (line latency, ring-up, a scan).",
+          "Board qick version: shot_buffers.py says 'the BFG board runs 0.2.367'. Is the BFG board the same board as myqick at 192.168.0.103?",
+          "DAC sampling rate (gens[ch]['fs']) for res_ch and qubit_ch on the current board, and whether readout near 7.29 GHz with nqz=2 and qubit up to about 3.75 GHz with qubit_nqz=1 are the intended zones. I gave no numbers, only told readers to check soccfg.",
+          "When run() switches from regime B back to A, does it rebuild from scratch (earlier A carry-overs lost) or restore a cached A config, as interleave does? Design v3 does not say. The docs assume the carry-overs are lost.",
+          "Two pages name the single-shot T1 step differently. experiments/README.md and running_a_session.md use 't1_ss'; experiments/t1_single_shot.md uses 't1_single_shot' / R.t1_single_shot(). I used t1_ss. One name needs picking and the pages aligning.",
+          "What does BFC stand for? CLAUDE.md says Broadband Flux Control, the code never spells it out, and the glossary leaves it unexpanded.",
+          "The old cavity winding calibration (0.45917414 / 1.0903695; -32.10723885+pi / -15.77597) has no device or date. Keep it on iq_conventions.md as 'historical, not in use', or drop it?",
+          "The 2026-06-02 'Q6 QubitSpecFF' projection example does not name its device. Is it CSTQ03?",
+          "Kappa of the CSTQ03 resonators has not been measured. The guide reset_readout_relax_delay >= 6/kappa currently rests on the TATQ01/BFE Q2 value (190 kHz, 2026-06-06).",
+          "README.md links quickstart.md and parameters.md, which do not exist yet. troubleshooting.md links experiments/zero_span_parity.md, which another agent has not written yet. All other links and anchors in my nine pages were checked and resolve.",
+          "Per-qubit readout windows: the runner notes give 5 us for CSTQ03 Q2 and 'Q1 15 us, Q5 5 us' for single shot, but the device defaults are 15 us / 0.3 us. Should Q2 and Q5 carry their own Readout.window / ss_window in devices/CSTQ03.py?"
+        ]
+      },
+      {
+        "pages": [
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/README.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/transmission_fit.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/transmission_sweep.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/cw_tones.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/two_tone_spec.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/spec_gain_length_sweep.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/trans_qubit_spec.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/chi_shift.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/amplitude_rabi.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/t1.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/t2_ramsey.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/t2_echo.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/coherence_combos.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/interleaved_coherence.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/auto_coherence.md"
+        ],
+        "notes_migrated": 49,
+        "open_questions": [
+          "Why must T2E num_pi_pulses be odd? The runner and AUTO_COHERENCE_PARAMS state the rule, but nothing in the code records the reason. With pi/2 at 0 deg and pi at 90 deg (CPMG), an even n should also refocus. t2_echo.md says the reason is unknown and calls even values untested.",
+          "What does PMOD pin 0 drive on the current setup (a switch gating the drive path, a scope trigger, ...)? Rabi, T1, T2E and SingleShot fire it; two_tone_spec, chi_shift and T2R do not. If it gates the drive, the chi_shift pi pulse is blocked. The pages say this is undocumented and point to hardware.md.",
+          "Step name for T1_SS: running_a_session.md calls the step `t1_ss`, but the sibling page is t1_single_shot.md and uses `R.t1_single_shot()`. The README index uses t1_ss and links to t1_single_shot.md; one name needs to be chosen.",
+          "Step names for the cw_tones page: I used `constant_two_tone` and `constant_tone`, which match running_a_session.md. Please confirm.",
+          "trans_qubit_spec: what was 'Trans' meant to mean? The code only repeats two_tone_spec at base-config settings `repetitions` times. No transmission is measured, relax_delay falls back to BASE_CONFIG's 3000 us, and the repetition count is borrowed from T1T2_params. Is this the intended behaviour?",
+          "auto_coherence reads drive frequency, gain, sigma and flat-top from Qubit_Parameters[qubit_readout] and ignores qubit_pulse. Is that intended? It matters only when the two differ.",
+          "Two CSTQ03 runner comments are ambiguous: \"500 used for charge sweeps\" in Spec_relevant_params (spec gain or relax_delay?), and \"qubit_length 10 was best for Q4\" (which device and date?). Both are recorded on the pages as not recorded / ambiguous.",
+          "Lab note 'Q6 2026-06-02 QubitSpecFF' (feature at ~3054 MHz missed): which device was this? The docstring gives only the qubit and date. It is attributed on two_tone_spec.md as 'device not recorded'.",
+          "Hanger kappa: should the reported kappa be the total linewidth f0/Qtot (in MHz, without the /1e6)? Today it is (f0/Qext)/1e6. The page tells users to compute f0/Qtot from hanger_fit_popt.",
+          "constant_tone (SingleTone) calls acquire() on a program with no declared readout. Has this ever been run on hardware, and does it return or hang?",
+          "README.md links ../parameters.md, which does not exist yet (it is meant to be generated in phase 6). Five index rows are marked '(pending)' because their pages do not exist yet: two_tone_charge_dispersion_quasicw, charge_dispersion_quasicw, charge_dispersion_ramsey, charge_sweep, charge_transmission_sweep and zero_span_parity. They need links once those pages are written.",
+          "Recipe keyword spellings in the PLAN snippets are provisional, e.g. R.two_tone_spec(gain=..., spec_span=..., spec_num_points=...), R.chi_shift(cavity_shift=..., trans_span=...), R.interleaved_coherence(cycles=..., t2e=...), and the legacy-cased keys in R.auto_coherence(T1_step=...). They should be reconciled with qicklab/runs/recipes.py when it is written.",
+          "The cd_max 0.682 MHz / cd_period 4.37 mV calibration has no device, qubit or date recorded. It is cited on auto_coherence.md as the value for Strategy A."
+        ]
+      },
+      {
+        "pages": [
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/single_shot.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/undriven_single_shot.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/t1_single_shot.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/readout_optimize.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/qubit_optimize.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/active_reset.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/active_reset_verify.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/modified_ramsey.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/modified_ramsey_control.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/charge_dispersion.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/charge_sweep.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/charge_transmission_sweep.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/zero_span_parity.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/twpa.md"
+        ],
+        "notes_migrated": 202,
+        "open_questions": [
+          "Which modified_ramsey relax setting is meant? The CSTQ03 runner has mr_relax_delay=500 and mr_reps=50000, commented '5x T1=50us' (that is 250 us). Your 2026-08-04 acceptance settings were 250 us and 100000 shots, marked 'KEEP'.",
+          "Are the 2026-10-01 cooldown modified_ramsey values measured: f_ge=3754.5, df=1, tau_harmonic_k=1? 3754.5 MHz is Q2's centre frequency, but the session pulse qubit is Q5, and the adjacent comment says 'measured TOP branch (bottom = 4184.0)'.",
+          "Is the CSTQ03 Q2 doublet 4186.7/4184.0 MHz (df = 2.7 MHz, measured 2026-08-04) really charge parity? It is 4x cd_max_mhz = 0.682. Which device and date does the charge-dispersion model (cd_max 0.682 MHz, period 4.37 mV) come from?",
+          "Is the cd_period_mv the period of S(V) or of the cosine inside it? With S(V)=cd_max|cos(2pi(V-V0)/T)| as written, the Strategy-A jump of T/2 lands at the same separation.",
+          "Has kappa been measured for the CSTQ03 readout resonator? reset_readout_relax_delay = 5 us is 6/kappa for TATQ01/BFE Q2 (kappa/2pi = 190 kHz, 2026-06-06).",
+          "Should the active-reset read-latency stall fix (Alex Place, commit 4be2b7a on bfg_code) be ported? It is not in this tree, so active_reset.md and active_reset_verify.md list it as a known issue.",
+          "Some facts come only from your session memory, not from code or audits: the 250 us acceptance-run r(1) values, the randomised tau-sweep null, the TATQ01-SiO2 Q3 read-latency evidence, and the 0.74/0.78 reset ceiling. They are labelled 'lab record'. Confirm they may be published, or say which to drop.",
+          "Which device and date does the charge-dispersion doublet 2306.310396 / 2306.567327 / 2306.032673 MHz belong to? And is ChargeDispersion's 1/df wait intended? The phase argument gives 1/(2df).",
+          "What do these runner notes mean: 'voltage_step ... 0.0001 has two periods in it', and is '500 used for charge sweeps' a gain or a relax delay?",
+          "What does trigger pin 0 drive on the current setup? SingleShot, Rabi, T1 and T2E fire it.",
+          "TWPA bias: does '18 (10/7/26)' mean 18 uA set on 2026-10-07? That is above the ~11 uA datasheet guidance. What is the current operating point? The committed target is 0 and DISABLE_PUMP=True is committed.",
+          "The ZeroSpanParity decimated defaults (read_length 80 us) fail rule 5 at buf_maxlen 1024. What values are intended for Path B?",
+          "modified_ramsey_control accepts a sweet spot at sep < 0.1 MHz, but the peak finder never returns two peaks closer than 0.10 MHz. Is acceptance meant to come only from a single peak?",
+          "Are the single-shot readout times still valid for CSTQ03 ('Q1 15 us, Q5 5 us; keep at 15')?",
+          "The experiments_a index (docs/experiments/README.md, another group's file, not edited) lists my pages as '(pending)' and names the T1_SS step 't1_ss'. My page uses t1_single_shot.md and covers charge_dispersion_quasicw, charge_dispersion_ramsey and two_tone_charge_dispersion_quasicw in one charge_dispersion.md. The index needs reconciling."
+        ]
+      },
+      {
+        "pages": [
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/running_a_session.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/bringup_workflow.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/adding_a_device.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/devices/CSTQ03.md",
+          "C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/architecture.md"
+        ],
+        "notes_migrated": 95,
+        "open_questions": [
+          "Step names: the experiments index (another group) lists 't1_ss' but a page experiments/t1_single_shot.md also exists. I used t1_ss, t2_ramsey, t2_echo and interleaved_coherence. Pick one name per step before the STEPS registry lands.",
+          "Design ambiguity: R.single_shot() appears both as a Session group (single_shot=R.single_shot()) and as a PLAN step. Should one recipe return both a group and a Step, or should the group get its own name? The same question applies to how run_step handles regime switches, and where dry_run writes its files (if anywhere).",
+          "The design layout says runners/session.py; the task and the critique say runners/<device>_session.py. The docs use runners/CSTQ03_session.py.",
+          "CSTQ03 'currently working on N' comments per slot (current Q1->2, Q2->4, Q3->3, Q4->5, Q5->'6?'; v2b Q1->3, Q2->6, Q3->4, Q5->5, Q6->2): what do they mean (physical label, readout line, something else)?",
+          "Is the 'v2b nu cell' table a previous cooldown of CSTQ03 or a sibling chip? The 2026-08-04 Modified Ramsey doublet midpoint (4185.35 MHz) matches v2b Q2 (4185.6), not current Q2 (3754.5), so it was probably measured under the v2b set. Please confirm.",
+          "Reconcile df = 2.7 MHz (CSTQ03 Q2, 2026-08-04) with cd_max_mhz = 0.682 MHz / cd_period_mv = 4.37 mV. Which qubit, cooldown and date does that charge-dispersion calibration belong to?",
+          "Identity (device, qubit, date) of the charge-dispersion doublet 2306.310396 / 2306.567327 / 2306.032673 MHz.",
+          "What do these undated runner notes mean: charge_params '0.0001 has two periods in it', and '500 used for charge sweeps' (relax_delay or gain)? Which qubit is 'start_voltage 0.0059 V working for good T2Rs' for, and which device is 'qubit_length 10 was the best for Q4' for?",
+          "Modified Ramsey: is mr_relax_delay meant to be 500 us or the recommended 250 us (5 x T1)? Is mr_reps meant to be 50k or the recommended 100k? The runner also still has df=1, tau_harmonic_k=1 and f_ge=3754.5 (stale).",
+          "Readout kappa has not been measured for CSTQ03, and reset_readout_relax_delay = 5 us is based on TATQ01/BFE. Who measures it, and for which resonators?",
+          "TWPA bias for the 2026-10-01 cooldown: the committed target is 0 uA with the note '18 (10/7/26)'. Is 18 uA (set 2026-10-07?) the operating point? It is above the datasheet's ~11 uA guidance.",
+          "What does tProc trigger pin 0 drive in the current wiring (switch, scope, ...)?",
+          "Should Q2 and Q5 get per-qubit 5 us readout / single-shot windows? Notes say Q2 'readout length 5 us' and SS 'Q5 5 us', but also 'keep at 15'.",
+          "Q1 and Q3 pi/2 gain is 3975//2 while their pi gain is 5000. Is that intentional or carried over from another qubit?",
+          "Keep the 4-entry FF_Qubits map (persisted but never read) as Setup.ff_qubits for CSTQ03, or drop it?",
+          "The board qick version 0.2.367 comes only from the shot_buffers docstring. Please confirm against the board."
+        ]
+      }
+    ],
+    "review": {
+      "fixed": {
+        "broken_links_and_missing_pages": 6,
+        "experiments_index_pending_entries_relinked": 6,
+        "writer_artifacts_removed": 1,
+        "wrong_module_paths": 1,
+        "contradictions_resolved": 7,
+        "physics_or_code_claims_corrected": 6,
+        "missing_lab_notes_added": 3
+      },
+      "remaining": [
+        "docs/quickstart.md does not exist. Item 1 of the README reading path now points to running_a_session.md#the-session-file and #running until someone writes the page. Write it or drop the item.",
+        "docs/parameters.md does not exist yet (it is generated in phase 6 by scripts/gen_docs.py, which is not written). I removed all 5 links to it (README, running_a_session, experiments/README, undriven_single_shot, charge_transmission_sweep) and left plain-text forward references. Restore the links once the generator exists.",
+        "Code comment is wrong (outside docs/, not edited): mModifiedRamsey.py around line 609 says the fixed 2^24 offset fails 'beyond ~0.5 us'. From its own bound (|raw I| <= ro_norm*2^15) the crossover is 512 readout cycles, about 1.7 us at f_output 307.2 MHz, which matches the '9x too small at 15 us' figure. I corrected architecture.md, active_reset.md and iq_conventions.md (2 places); the code comment needs fixing in the refactor.",
+        "Physics constant to decide: the Modified Ramsey planner and program use rabi_pi2_mhz = 0.0997/sigma. That is the untruncated-Gaussian value; QICK's 4-sigma envelope (cut at +/-2 sigma, no offset subtraction) gives about 0.1045/sigma, so the code overstates the bandwidth ratio by about 5% (the conservative direction). I added a note to modified_ramsey.md and kept the code-derived CSTQ03 numbers (1.354, 2.708, 0.0739, 0.0369 us). Changing the constant would change program behaviour, so it needs a separate fix commit and a golden update.",
+        "Device attribution unknown: the utils.py note on the 2026-06-02 Q6 QubitSpecFF spectroscopy (feature at 3054 MHz, noise spikes at 3038/3069 MHz) does not name the device. devices/CSTQ03.md and bringup_workflow.md had stated it as CSTQ03; they now say 'device not recorded'. Confirm which chip it was.",
+        "Legacy paths left on purpose: running_a_session.md line 9 status note names Runners/CSTQ03_BFC.py as the current working runner (correct for this branch until phase 5), and architecture.md line 98 says 'legacy CoreLib comment' as attribution for the Ge Yang quote. No mT*.py or Runners/runs/... paths were found anywhere in docs/.",
+        "Open device questions already listed under 'Open items' in devices/CSTQ03.md: meaning of 'currently working on N'; df 2.7 MHz (2026-08-04) vs cd_max_mhz 0.682 MHz; kappa never measured for CSTQ03; mr_relax_delay 250 vs 500 us and mr_reps 50k vs 100k; whether Q2 and Q5 get per-qubit 5 us readout windows; identity of the 2306.3 MHz doublet; TWPA bias 18 uA (2026-10-07 note) vs the committed 0.",
+        "modified_ramsey_control Strategy A jumps half a period, but the documented model S(V)=cd_max*|cos(2pi(V-V0)/T)| repeats every T/2, so the jump lands where S is unchanged. It is documented as a known issue; decide whether the model or the jump is intended.",
+        "BFC acronym: glossary.md says the code never spells it out, while CLAUDE.md expands it as 'Broadband Flux Control'. Confirm and add it to the glossary if correct.",
+        "Every page describes the phase-5 API (Session, R.<step> recipes, run, Device dataclasses, record_calibration, core.readout, core.active_reset, core.fakes), and none of it exists on the branch yet. Recipe keyword spellings in the snippets are illustrative and need checking against recipes.py once it lands."
+      ],
+      "missing_notes_added": 3
+    }
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Write"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Review"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "docs:concepts",
+      "phaseIndex": 1,
+      "phaseTitle": "Write",
+      "agentId": "a2f053f178a75b50b",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791916646574,
+      "queuedAt": 1791916646537,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are writing documentation for qicklab, the Houck Lab's QICK/RFSoC superconducting-qubit measurement framework, which is being refactored right now (repo C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK, branch qicklab_refactor). The target layout, the step/recipe API and the comment policy are in C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-…",
+      "promptFramed": true,
+      "lastProgressAt": 1791917702777,
+      "tokens": 340576,
+      "toolCalls": 70,
+      "durationMs": 1056201,
+      "resultPreview": "{\"pages\":[\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/README.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/config_regimes.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/readout_window.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/concepts/averaging.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "docs:experiments_a",
+      "phaseIndex": 1,
+      "phaseTitle": "Write",
+      "agentId": "a3ffeaca41fbdfa31",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791916646575,
+      "queuedAt": 1791916646537,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are writing documentation for qicklab, the Houck Lab's QICK/RFSoC superconducting-qubit measurement framework, which is being refactored right now (repo C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK, branch qicklab_refactor). The target layout, the step/recipe API and the comment policy are in C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-…",
+      "promptFramed": true,
+      "lastProgressAt": 1791917678240,
+      "tokens": 362116,
+      "toolCalls": 76,
+      "durationMs": 1028655,
+      "resultPreview": "{\"pages\":[\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/README.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/transmission_fit.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/transmission_sweep.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/cw_tones.md\",\"C:/Users/ece-houck-j409/PycharmPr…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "docs:experiments_b",
+      "phaseIndex": 1,
+      "phaseTitle": "Write",
+      "agentId": "a9aa919f9f3e04c14",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791916646575,
+      "queuedAt": 1791916646537,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are writing documentation for qicklab, the Houck Lab's QICK/RFSoC superconducting-qubit measurement framework, which is being refactored right now (repo C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK, branch qicklab_refactor). The target layout, the step/recipe API and the comment policy are in C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-…",
+      "promptFramed": true,
+      "lastProgressAt": 1791917985585,
+      "tokens": 515937,
+      "toolCalls": 112,
+      "durationMs": 1335997,
+      "resultPreview": "{\"pages\":[\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/single_shot.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/undriven_single_shot.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/t1_single_shot.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/experiments/readout_optimize.md\",\"C:/Users/ece-houck-j…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "docs:workflow_device",
+      "phaseIndex": 1,
+      "phaseTitle": "Write",
+      "agentId": "ade9bcd8d82d1be8b",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791916646575,
+      "queuedAt": 1791916646537,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are writing documentation for qicklab, the Houck Lab's QICK/RFSoC superconducting-qubit measurement framework, which is being refactored right now (repo C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK, branch qicklab_refactor). The target layout, the step/recipe API and the comment policy are in C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-…",
+      "promptFramed": true,
+      "lastProgressAt": 1791917610732,
+      "tokens": 303007,
+      "toolCalls": 67,
+      "durationMs": 961143,
+      "resultPreview": "{\"pages\":[\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/running_a_session.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/bringup_workflow.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/adding_a_device.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/devices/CSTQ03.md\",\"C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/architec…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "docs:review",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a874fec8f3d099dc3",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791917990607,
+      "queuedAt": 1791917990579,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are reviewing a freshly written documentation tree at C:/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/docs/ for a QICK/RFSoC qubit-measurement framework. Four writers worked in parallel from the same sources (C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-QICK/aa297184-329f-42ba-b908-b7fae8d9cde6/scratchpad/design.md, C:/Users/ECE-HO~1/AppDat…",
+      "promptFramed": true,
+      "lastProgressAt": 1791918771149,
+      "tokens": 394222,
+      "toolCalls": 114,
+      "durationMs": 780541,
+      "resultPreview": "{\"fixed\":{\"broken_links_and_missing_pages\":6,\"experiments_index_pending_entries_relinked\":6,\"writer_artifacts_removed\":1,\"wrong_module_paths\":1,\"contradictions_resolved\":7,\"physics_or_code_claims_corrected\":6,\"missing_lab_notes_added\":3},\"remaining\":[\"docs/quickstart.md does not exist. Item 1 of the README reading path now points to running_a_session.md#the-session-file and #running until someone …"
+    }
+  ],
+  "totalTokens": 1915858,
+  "totalToolCalls": 439
+}

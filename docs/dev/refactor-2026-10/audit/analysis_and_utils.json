@@ -1,0 +1,409 @@
+﻿{
+    "group":  "analysis_and_utils",
+    "report_path":  "NOT WRITTEN: the harness blocked the Write tool for subagents (\"return findings as text\"). The full report content is in this structured output (bugs + cross_cutting_observations). Intended path was C:/Users/ECE-HO~1/AppData/Local/Temp/claude/C--Users-ece-houck-j409-PycharmProjects-HouckLab-QICK/aa297184-329f-42ba-b908-b7fae8d9cde6/scratchpad/audit/analysis_and_utils.md",
+    "files":  [
+                  {
+                      "path":  "Experiments/utils.py",
+                      "lines":  1346,
+                      "proposed_new_path":  "split: qicklab/core/acquisition.py (acquire_with_retry, _TRANSIENT_READOUT_MARKERS, chunked_acquire, modulated_strobe_acquire, _META_KEYS); qicklab/analysis/iq.py (project_iq_signal, project_iq_onto_separator, classify_and_average_iq); qicklab/analysis/fitting.py (lorentzian_dip/peak, fit_lorentzian_feature, hanger_model_db, fit_hanger_transmission, cos_func, fit_rabi_cosine, estimate_noise_floor); qicklab/analysis/spectroscopy.py (find_two_tone_peaks, choose_two_tone_freqs_from_lorentz_or_peaks, pick_parity_drive_freq, save_two_tone_plot, analyze_charge_dispersion, _refine_peak_lorentzian); qicklab/hardware/yoko.py (ramp_to); qicklab/runs/charge_sweep.py or core/sweep.py (choose_next_voltage); __main__ (L1108-1346) -\u003e qicklab/tests/test_acquisition.py, test_iq.py, test_spectroscopy.py",
+                      "public_symbols":  [
+                                             "acquire_with_retry(make_prog, soc, n_tries=3, label=\u0027\u0027, **acquire_kwargs) L20 - retry prog.acquire on stale tProc shot-counter errors, soc.stop_tproc() between tries [acquisition]",
+                                             "project_iq_signal(avgi, avgq, edge_frac=0.15) L65 - bg-subtract + principal-axis rotate spec trace, edge-anchored baseline, orient by excursion mass [IQ projection]",
+                                             "choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1) L143 - choose 2 freqs from data[\u0027lorentz_centers\u0027] or peak finder [two-tone peaks]",
+                                             "classify_and_average_iq(raw_i, raw_q, g_center, e_center, average_n_shots=25) L194 - g/e projection, bits, group means [IQ projection]",
+                                             "hanger_model_db(f, f0, Qtot, Qext, asym, offset) L240 - MATLAB hanger S21 dB [hanger fit]",
+                                             "fit_hanger_transmission(freq, amp_linear=None, amp_db=None, startpoint=None, bounds=None) L268 - hanger curve_fit, returns popt/perr/pcov/model/Qint [hanger fit]",
+                                             "ramp_to(yoko, target, step=0.001, delay=0.01) L333 - raw SCPI :SOUR:LEV stepping ramp, guard target\u003e10 [yoko]",
+                                             "lorentzian_dip L344 / lorentzian_peak L348 [lorentzian]",
+                                             "fit_lorentzian_feature(x, y, fit_dip=True) L352 [lorentzian]",
+                                             "find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1, prominence_fraction=0.25, smooth_window=5) L398 - savgol + prominence, top 2 [two-tone peaks]",
+                                             "estimate_noise_floor(y) L482 - median + 1.4826*MAD",
+                                             "_refine_peak_lorentzian(x_pts, y, idx, fit_window_mhz) L505",
+                                             "save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_dir, current_voltage=0, qubit_gain=None, qubit_length=None, center_freq=None, fit=None, live_display=False, live_fignum=77, live_pause=0.05) L549 [two-tone plot]",
+                                             "analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, plotDisp=False) L632 [charge dispersion]",
+                                             "choose_next_voltage(current_v, dv, vmin, vmax, direction) L745 [voltage sweep]",
+                                             "cos_func(x, y0, A, P, phi) L759 / fit_rabi_cosine(x, y) L763 - grid-search cosine, pi_gain = first opposite extremum [rabi fit]",
+                                             "project_iq_onto_separator(I, Q, separator) L851 [IQ projection]",
+                                             "pick_parity_drive_freq(spec_data, which=\u0027lower\u0027) L897 [two-tone peaks]",
+                                             "chunked_acquire(experiment, n_chunks, progress=False) L950 - stitch acquire() calls, monotonic t_us, gap_indices, sets experiment.data [chunked acq]",
+                                             "modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress=False) L1050 - per-block set_qubit_gain + stitch + on/off reference [chunked acq]",
+                                             "_META_KEYS L941, _TRANSIENT_READOUT_MARKERS L16"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "sample_period_us (experiment.cfg, chunked_acquire L1023 fallback; modulated_strobe_acquire L1065)",
+                                            "data_spec[\u0027data\u0027] keys x_pts, avgi, avgq, lorentz_centers (data dict, not cfg) L144-156",
+                                            "acquire() result keys I, Q, t_us, wall_clock_start + _META_KEYS (mode, sample_period_us, read_length_us, adc_trig_offset_us, ro_norm_cycles, decimated_fs_MHz, decimated_fs_source, capture_length_us, samples_per_capture, soft_avgs, n_captures)"
+                                        ],
+                      "cfg_keys_written":  [
+                                               "qubit_gain and reps (indirectly via experiment.set_qubit_gain in modulated_strobe_acquire L1068; never restored, ends at last schedule value)",
+                                               "experiment.data = {\u0027data\u0027: stitched} (chunked_acquire L1044; NOT done by modulated_strobe_acquire)"
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mAmplitudeRabiFF.py:10 (star)",
+                                          "Experiments/mSpecSliceFF.py:9 (star)",
+                                          "Experiments/mTransmissionFF.py:9 (star)",
+                                          "Runners/runs/basic.py:1 (star)",
+                                          "Runners/runs/calibration.py:1 (star)",
+                                          "Runners/runs/charge_parity.py:1 (star)",
+                                          "Runners/runs/coherence.py:1 (star)",
+                                          "Runners/runs/context.py:21 (star)",
+                                          "Runners/runs/singleshot.py:1 (star)",
+                                          "Runners/runs/zero_span.py:1 (star)",
+                                          "Experiments/analyze_ZeroSpanParity.py:38 (project_iq_onto_separator)",
+                                          "Experiments/validate_ZeroSpanParity.py:14 (modulated_strobe_acquire, find_two_tone_peaks)",
+                                          "Experiments/mUndrivenSingleShot.py:18 (ramp_to)"
+                                      ],
+                      "dead_symbols":  [
+                                           "estimate_noise_floor (dead: referenced nowhere)",
+                                           "_refine_peak_lorentzian (dead: referenced nowhere)",
+                                           "analyze_charge_dispersion (dead: referenced nowhere)",
+                                           "cos_func, fit_rabi_cosine (effectively dead: only consumers mAmplitudeRabiFF.py:30,34 and mAmplitudeRabiFF_noUpdate.py:11,15 define their own identical simpler versions with pi_gain=P/2 that shadow these)",
+                                           "hanger_model_db, lorentzian_dip, lorentzian_peak, fit_lorentzian_feature (unused externally; internal only)",
+                                           "import datetime L6 (shadowed by L7)",
+                                           "import json L9 (unused)",
+                                           "f_span L301 (unused var)",
+                                           "progress param of modulated_strobe_acquire L1050 (unused)"
+                                       ],
+                      "lab_note_count":  8,
+                      "noise_comment_lines":  60
+                  },
+                  {
+                      "path":  "Experiments/analyze_ModifiedRamseyParity.py",
+                      "lines":  1904,
+                      "proposed_new_path":  "split: qicklab/analysis/readout.py (calibrate_readout_from_labeled_shots, project_iq_trace); qicklab/analysis/telegraph.py (transition_matrix_2state, _log_* emissions, _forward_loglik, hmm_forward_backward, hmm_viterbi, fit_two_state_hmm, simulate_telegraph_trace, autocorrelation_rate_estimate, psd_rate_estimate, rate_vs_bin_size, remove_slow_drift); qicklab/analysis/modified_ramsey.py (reset_success_vs_cycle, compare_parity_controls, assess_parity_record, _plot_*, _json_default, analyze_modified_ramsey_record)",
+                      "public_symbols":  [
+                                             "calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True) L71 - LDA axis, CDF-gap threshold, confusion, contrast, assignment_fidelity=(1+C)/2, warnings",
+                                             "project_iq_trace(I, Q, calibration) L226",
+                                             "remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None, min_timescale_ratio=20.0) L244",
+                                             "transition_matrix_2state(gamma01, gamma10, dt_s) L322 - closed-form expm(Q dt)",
+                                             "hmm_forward_backward(v, dt_steps, gamma01, gamma10, mu0, mu1, sigma0, sigma1, pi0=None, emission_spec=None) L483",
+                                             "hmm_viterbi(...) L555",
+                                             "fit_two_state_hmm(v, dt_s, emissions, symmetric=False, fit_emissions=False, rate_bounds_hz=(1e-2,1e6), gamma_init_hz=None, n_boot=0, seed=0, min_emission_snr=0.7, min_transitions=10, min_loglik_gain=10.0, compute_viterbi=True) L613 - rate MLE + identifiability gates + Hessian/bootstrap",
+                                             "simulate_telegraph_trace(n, dt_s, gamma01_hz, gamma10_hz, mu0, mu1, sigma0, sigma1, seed=0, drift=None, start_state=None) L1053",
+                                             "autocorrelation_rate_estimate(v, dt_s, max_lag_s=None, min_points=5) L1104",
+                                             "psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45) L1199",
+                                             "rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1,2,4,8,16,32)) L1283",
+                                             "reset_success_vs_cycle(reset_I, reset_Q, calibration, post_reset_I=None, post_reset_Q=None) L1318",
+                                             "compare_parity_controls(main_result, control_results) L1376",
+                                             "assess_parity_record(calibration=None, hmm=None, acf=None, psd=None, drift=None, reset=None, estimator_agreement_factor=3.0) L1459",
+                                             "analyze_modified_ramsey_record(I, Q, dt_s, calibration, drift_timescale_s=0.2, expected_dwell_s=2.5e-3, symmetric_hmm=True, n_boot=0, seed=0, mapping_probabilities=(0.1,0.9), mapping_probabilities_calibrated=False, reset_I=None, reset_Q=None, out_dir=None, base_name=\u0027mr_parity\u0027, save_plots=True, save_sidecars=True, hmm_kwargs=None) L1650",
+                                             "private: _log_emissions L347, _log_gaussian_1d L356, _log_emissions_from_spec L363, _emission_snr L383, _step_log_transitions L402, _logaddexp2 L420, _forward_loglik L430, _hmm_nll L593, _single_gaussian_loglik L605, _plot_projected_trace L1496, _plot_hmm L1509, _plot_acf_psd L1555, _plot_calibration L1585, _plot_rate_vs_bin L1612, _plot_dwells L1620, _json_default L1640"
+                                         ],
+                      "cfg_keys_read":  [
+
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Runners/runs/charge_parity.py:8-12 (analyze_modified_ramsey_record, calibrate_readout_from_labeled_shots, compare_parity_controls)",
+                                          "Experiments/test_ModifiedRamseyParity_offline.py:25-41 (15 names), :801 (_plot_hmm)"
+                                      ],
+                      "dead_symbols":  [
+                                           "L1801-1802 else-branch dead (dt_steps is never None); t_s recomputed shadowing L1710",
+                                           "_logaddexp2 duplicates inner ladd L457",
+                                           "_log_emissions duplicates _log_gaussian_1d math",
+                                           "reset_success_vs_cycle \u0027g_fraction\u0027 key duplicates \u0027pre_correction_g_fraction\u0027 (legacy alias)",
+                                           "unused externally (tests only): project_iq_trace, remove_slow_drift, transition_matrix_2state, hmm_forward_backward, hmm_viterbi, fit_two_state_hmm, simulate_telegraph_trace, autocorrelation_rate_estimate, psd_rate_estimate, rate_vs_bin_size, reset_success_vs_cycle, assess_parity_record"
+                                       ],
+                      "lab_note_count":  11,
+                      "noise_comment_lines":  30
+                  },
+                  {
+                      "path":  "Experiments/analyze_ZeroSpanParity.py",
+                      "lines":  1547,
+                      "proposed_new_path":  "qicklab/analysis/zero_span.py (classify_parity_trace, sliding_window_switch_rate, detect_bursts, _bin_iq_time, analyze_parity_run, _plot_*, verify_modulation, contrast_from_sweeps, projected_histogram_snr, bin_size_sweep, threshold_stability); move dwell_time_statistics, _fit_exp_dwell, _debounce_bits, _debounce_bits_segmented, _gap_segment_edges -\u003e qicklab/analysis/telegraph.py (shared with MR); __main__ L911-1547 -\u003e qicklab/tests/test_zero_span_analysis.py",
+                      "public_symbols":  [
+                                             "classify_parity_trace(I, Q, separator=None, method=\u0027apriori\u0027) L43 - apriori projection or KMeans with canonical axis",
+                                             "sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap_indices=None) L135",
+                                             "detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5, min_duration_us=None, window_us=None) L217 - MAD + Poisson floor",
+                                             "dwell_time_statistics(binary_states, t_us, gap_indices=None, merge_short_segments=False, min_dwell_bins=1) L371",
+                                             "analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0, classifier_method=\u0027apriori\u0027, step_us=None, min_burst_duration_us=None, save_plots=True, out_dir=None, analysis_bin_us=None) L617 - load h5, classify, rate, bursts, dwell, sidecars",
+                                             "verify_modulation(scores, t_us, modulation_reference, gap_indices=None) L749",
+                                             "contrast_from_sweeps(freqs, Z_on, Z_off) L800",
+                                             "projected_histogram_snr(scores, bins=\u0027auto\u0027) L828 - 1 vs 2 GMM BIC bimodality",
+                                             "bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method=\u0027apriori\u0027) L865",
+                                             "threshold_stability(scores, t_us, threshold_list=None, gap_indices=None, min_dwell_bins=2) L889",
+                                             "private: _gap_segment_edges L323, _debounce_bits L335, _debounce_bits_segmented L358, _fit_exp_dwell L453, _plot_iq_scatter L499, _plot_parity_vs_time L514, _plot_switch_rate L535, _plot_dwell_histograms L552, _bin_iq_time L574"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "(no cfg) h5 datasets I, Q, t_us, gap_indices; h5 attrs sample_period_us, mode (L654-661)"
+                                        ],
+                      "cfg_keys_written":  [
+                                               "(no cfg) sidecar \u003cbase\u003e_analysis.json and \u003cbase\u003e_analysis.h5 (datasets binary_states, scores, window_t_us, rate_Hz, dwell_0_us, dwell_1_us + summary attrs)"
+                                           ],
+                      "imported_by":  [
+                                          "Runners/runs/zero_span.py:3 (analyze_parity_run)",
+                                          "Experiments/validate_ZeroSpanParity.py:18-25 (classify_parity_trace, verify_modulation, projected_histogram_snr, contrast_from_sweeps, dwell_time_statistics, sliding_window_switch_rate)",
+                                          "Experiments/analyze_ModifiedRamseyParity.py:1625 (dwell_time_statistics, function-level)"
+                                      ],
+                      "dead_symbols":  [
+                                           "bin_size_sweep (unused externally; only __main__ self-test; validate stage 5 never implemented)",
+                                           "threshold_stability (unused externally; only __main__; validate stage 6 never implemented)",
+                                           "detect_bursts (unused externally; internal only)",
+                                           "verify_modulation param gap_indices (unused)",
+                                           "__main__ L1115 rng_fit unused; L1172 redundant re-imports; L1271 tautological assert"
+                                       ],
+                      "lab_note_count":  9,
+                      "noise_comment_lines":  90
+                  },
+                  {
+                      "path":  "Experiments/validate_ZeroSpanParity.py",
+                      "lines":  590,
+                      "proposed_new_path":  "qicklab/runs/zero_span_validation.py (hardware orchestration; _stage_sidecar optionally -\u003e qicklab/core/io.py); __main__ L442-590 -\u003e qicklab/tests/test_zero_span_validation.py",
+                      "public_symbols":  [
+                                             "run_modulation_check(experiment, separator, modulation_freq_hz=25.0, n_periods=10, progress=False, out_dir=None) L116 - stage 3",
+                                             "run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, out_dir=None) L176 - stage 1",
+                                             "run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=None) L205 - stage 2",
+                                             "CrossRunComparison(param_name) L242 - add/table/plot, METRICS",
+                                             "run_environment_sweep(experiment, separator, param_name, param_values, set_param, window_us=1000.0, progress=False, out_dir=None) L304 - stage 7",
+                                             "run_control_suite(experiment, separator, variants=(\u0027A\u0027,\u0027B\u0027,\u0027C\u0027,\u0027D\u0027), detune_mhz=50.0, parity_freqs=None, progress=False, out_dir=None) L331 - stage 8",
+                                             "build_evidence_report(run_dir, out_path) L392 - stage 9 markdown",
+                                             "ANALYSIS_VERSION=\u00271.0\u0027 L48, _STAGE_ORDER L387",
+                                             "private: _preserve_cfg L28 (contextmanager), _timestamp L44, _stage_sidecar L51, _plot_modulation L98, _mean_complex_response L146, _plot_contrast L151, _trace_metrics L290, _signed_level L323"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "sample_period_us",
+                                            "qubit_gain",
+                                            "read_pulse_freq",
+                                            "parity_drive_freq",
+                                            "device",
+                                            "mode",
+                                            "reps_per_chunk",
+                                            "reps",
+                                            "pulse_gain"
+                                        ],
+                      "cfg_keys_written":  [
+                                               "read_pulse_freq (L188, L361, L364)",
+                                               "parity_drive_freq (L221, L355, L359, L367, L370, L378)",
+                                               "qubit_gain (via experiment.set_qubit_gain, L189-225, L345-379)",
+                                               "_preserve_cfg restore writes saved values incl. None for keys absent at entry (L41)"
+                                           ],
+                      "imported_by":  [
+                                          "Runners/runs/zero_span.py:4 (run_static_contrast, run_contrast_vs_qubit_freq, run_modulation_check, run_control_suite, run_environment_sweep, build_evidence_report)"
+                                      ],
+                      "dead_symbols":  [
+                                           "_STAGE_ORDER entries 4_telegraph, 5_bin_size_sweep, 6_threshold_stability (declared, never produced)",
+                                           "progress arg forwarded to modulated_strobe_acquire which ignores it",
+                                           "CrossRunComparison (unused externally)"
+                                       ],
+                      "lab_note_count":  5,
+                      "noise_comment_lines":  8
+                  },
+                  {
+                      "path":  "Experiments/test_ModifiedRamseyParity_offline.py",
+                      "lines":  965,
+                      "proposed_new_path":  "qicklab/tests/test_telegraph.py + qicklab/tests/test_modified_ramsey_analysis.py (analysis) + qicklab/tests/test_modified_ramsey_program.py (plan_parity_mapping, build_control_variants, collect_shots/collect_reset_shots/scheduled_rep_period_cycles mock); convert custom check() harness to pytest asserts",
+                      "public_symbols":  [
+                                             "check(name, ok, detail=\u0027\u0027) L46",
+                                             "close(a, b, rel) L54",
+                                             "_make_cal L131, _analyzed L426",
+                                             "test_transition_matrix L62, test_calibration L86, test_hmm_symmetric_strong L143, test_hmm_asymmetric L173, test_hmm_moderate_contrast L194, test_hmm_zero_contrast L226, test_hmm_label_permutation L241, test_hmm_missing_samples L267, test_hmm_few_and_no_switches L289, test_hmm_bootstrap L311, test_rate_conventions L341, test_drift L384, test_controls L437, test_planning_helpers L485, test_reset_and_binsize L581, test_end_to_end L639, test_imperfect_mapping_and_bad_samples L693, test_plot_and_sidecar_paths L744, test_controls_require_evidence L812, test_program_buffer_and_ledger L845, test_forward_backward_consistency L902",
+                                             "main() L925 - runs all, sys.exit(1 if FAIL)"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "asserts on build_control_variants cfg: df, f_ge, flip_final_pi2, use_pi_pulse, ramsey_tau_us, ramsey_drive_freq_mhz, pi2_gain, mr_control_type"
+                                        ],
+                      "cfg_keys_written":  [
+                                               "fixture base cfg: f_ge, df, sigma, pi2_gain, pi_gain (L539)",
+                                               "mock prog.cfg: ro_chs, readout_length, reps (L853); prog attrs reset_cycles, reads_per_rep, us2cycles, di_buf, dq_buf, wait_cycles, prog_list"
+                                           ],
+                      "imported_by":  [
+
+                                      ],
+                      "dead_symbols":  [
+
+                                       ],
+                      "lab_note_count":  3,
+                      "noise_comment_lines":  30
+                  },
+                  {
+                      "path":  "Experiments/verify_ModifiedRamsey_timing.py",
+                      "lines":  326,
+                      "proposed_new_path":  "qicklab/tests/hardware/verify_modified_ramsey_timing.py (HIL, skipped unless --hil); move modified_ramsey_timing out of Runners/runs/charge_parity.py into qicklab/experiments/modified_ramsey.py; reuse hardware/soc.py for Pyro4 connect",
+                      "public_symbols":  [
+                                             "check(name, ok, detail=\u0027\u0027) L43",
+                                             "base_cfg(soccfg, **over) L49 - CSTQ03 qubit-6 MR cfg",
+                                             "walk(prog, r_wait_cycles) L74 - replay LOOP_J synci/sync ledger",
+                                             "pulse_times(prog, r_wait_cycles) L102 - absolute pulse start times",
+                                             "phase1(soccfg) L126 - compile-only checks",
+                                             "phase2(soc, soccfg, reps=4000) L267 - zero-gain cadence",
+                                             "main() L296 - argparse --ns-host 192.168.0.103 --ns-port 8888 --proxy-name myqick --acquire --reps 4000"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "soccfg: tprocs[0].f_time, gens[0|1].f_fabric, gens[1].tproc_ch, readouts[0].f_output/avg_maxlen/buf_maxlen",
+                                            "cfg[\u0027df\u0027] (L184)"
+                                        ],
+                      "cfg_keys_written":  [
+                                               "constructs: res_ch, qubit_ch, ro_chs, nqz, qubit_nqz, res_phase, adc_trig_offset, readout_length, length, pulse_gain, pulse_freq, sigma, flattop_length, pi_gain, pi2_gain, f_ge, df, use_pi_pulse, flip_final_pi2, symmetric_ramsey, use_active_reset, mr_relax_delay, reps, rounds",
+                                               "overrides: reset_cycles, readout_threshold, reset_readout_relax_delay, symmetric_ramsey, use_pi_pulse, use_active_reset, flattop_length, pulse_gain=0, pi_gain=0, pi2_gain=0"
+                                           ],
+                      "imported_by":  [
+
+                                      ],
+                      "dead_symbols":  [
+                                           "L204 \u0027used\u0027 computed then del L215",
+                                           "walk() events return value discarded (L158)"
+                                       ],
+                      "lab_note_count":  7,
+                      "noise_comment_lines":  10
+                  },
+                  {
+                      "path":  "Helpers/hist_analysis.py",
+                      "lines":  87,
+                      "proposed_new_path":  "qicklab/analysis/readout.py::hist_process (merge with hist_analysis_opt via a normalization flag; preserve both outputs bit-exact)",
+                      "public_symbols":  [
+                                             "hist_process(data=None, plot=True, ran=None, figNum=1, title=\u0027\u0027, alpha=0.5) L7 - rotate g/e shots by median centers, histogram, return (fid, threshold, theta); fid = max|cumsum(ng)-cumsum(ne)|/(0.5Ng+0.5Ne) = readout CONTRAST, not assignment fidelity"
+                                         ],
+                      "cfg_keys_read":  [
+
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mSingleShotProgramFFMUX.py:6 (star; calls at L499, L668)"
+                                      ],
+                      "dead_symbols":  [
+                                           "imports File, os, datetime (unused)",
+                                           "ylims L56 unused",
+                                           "pg, pe, binse unused",
+                                           "commented L21, L45"
+                                       ],
+                      "lab_note_count":  0,
+                      "noise_comment_lines":  7
+                  },
+                  {
+                      "path":  "Helpers/hist_analysis_opt.py",
+                      "lines":  100,
+                      "proposed_new_path":  "qicklab/analysis/readout.py::hist_process (normalize=\u0027per_class\u0027 variant, print_fidelities flag)",
+                      "public_symbols":  [
+                                             "hist_process(data=None, plot=True, ran=None, figNum=1, title=\u0027\u0027, alpha=0.5, print_fidelities=True) L7 - same as hist_analysis but signed per-class-normalized CDF gap, prints e/g misassignment fractions, threshold line"
+                                         ],
+                      "cfg_keys_read":  [
+
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mOptimizeReadoutandPulse_FF.py:12 (star; calls L100,221,312,432,520,641,663,753,874,896,995,1117,1139)"
+                                      ],
+                      "dead_symbols":  [
+                                           "imports File, os, datetime (unused)",
+                                           "ylims L56, pg, pe, binse unused",
+                                           "commented L21, L45, L80 (old contrast), L97 (old title)",
+                                           "L89-92 prints same two values twice"
+                                       ],
+                      "lab_note_count":  0,
+                      "noise_comment_lines":  10
+                  },
+                  {
+                      "path":  "Helpers/MixedShots_analysis.py",
+                      "lines":  234,
+                      "proposed_new_path":  "qicklab/analysis/readout.py::MixedShots (or qicklab/analysis/mixed_shots.py); vectorize, snake_case",
+                      "public_symbols":  [
+                                             "MixedShots(shots_i, shots_q, ran=None, numbins=200) L14 - KMeans split, rotate, double-Gaussian hist fit, OverlapErr; methods _SeperateBlobs L57, _Rotate L89, _DoubleGausFit L123, PlotRaw L182, PlotRot L189, PlotSorted L200, PlotCounts L212, PlotGaussFit L219"
+                                         ],
+                      "cfg_keys_read":  [
+
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mOptimizeReadoutandPulse_FF.py:4 (star; MixedShots(...) at L143,154,355,366,563,574,795,806,1037,1048; reads .OverlapErr)"
+                                      ],
+                      "dead_symbols":  [
+                                           "PlotRaw, PlotRot, PlotSorted, PlotCounts, PlotGaussFit (unused externally; only commented calls)",
+                                           "imports pandas, seaborn (unused)",
+                                           "commented import L7; commented code L231-234",
+                                           "q_blob1_rot/q_blob2_rot attrs unused"
+                                       ],
+                      "lab_note_count":  0,
+                      "noise_comment_lines":  25
+                  },
+                  {
+                      "path":  "Helpers/rotate_SS_data.py",
+                      "lines":  21,
+                      "proposed_new_path":  "qicklab/analysis/iq.py (rotate_iq, excited_fraction); delete average_data",
+                      "public_symbols":  [
+                                             "rotate_data(data, theta) L3",
+                                             "count_percentage(data, threshold) L11 - fraction of data[0][0] above threshold",
+                                             "average_data(data) L17"
+                                         ],
+                      "cfg_keys_read":  [
+
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mT1_SS.py:9 (star; calls L99, L101)"
+                                      ],
+                      "dead_symbols":  [
+                                           "average_data (dead: referenced nowhere)"
+                                       ],
+                      "lab_note_count":  0,
+                      "noise_comment_lines":  0
+                  },
+                  {
+                      "path":  "Helpers/shot_buffers.py",
+                      "lines":  56,
+                      "proposed_new_path":  "qicklab/core/buffers.py (adopt in every single-shot program)",
+                      "public_symbols":  [
+                                             "raw_shot_buffers(prog) L32 - (di_buf, dq_buf) in pre-0.2.29x flat per-shot layout from prog.acc_buf; passthrough of di_buf/dq_buf when acc_buf absent"
+                                         ],
+                      "cfg_keys_read":  [
+                                            "prog.acc_buf, prog.di_buf, prog.dq_buf (program attrs, not cfg)"
+                                        ],
+                      "cfg_keys_written":  [
+
+                                           ],
+                      "imported_by":  [
+                                          "Experiments/mUndrivenSingleShot.py:19 (call L102)"
+                                      ],
+                      "dead_symbols":  [
+
+                                       ],
+                      "lab_note_count":  2,
+                      "noise_comment_lines":  2
+                  }
+              ],
+    "bugs":  [
+                 "B1 (VERIFIED by execution) analyze_ModifiedRamseyParity.py:62-63 and analyze_ZeroSpanParity.py:34-35 call matplotlib.use(\u0027Agg\u0027) at import. runs/__init__ -\u003e charge_parity -\u003e analyze_ModifiedRamseyParity, so importing the runner package switches any interactive backend to Agg (tested TkAgg -\u003e Agg). Every plt.show()/plt.pause in runners (charge_parity.py:1544,1566,1581,1752,1764,1923,1937; basic.py:142; singleshot.py:113-114) and save_two_tone_plot(live_display=True) silently become non-interactive. validate_ZeroSpanParity.py:99-100,152-153,270-271 do the same at runtime inside plot functions.",
+                 "B2 (VERIFIED) validate_ZeroSpanParity.py:417-438 build_evidence_report writes U+26A0 with open(out_path,\u0027w\u0027) default encoding; on this machine (Python 3.13, cp1252, utf8_mode=0) any sidecar with a stale analysis_version raises UnicodeEncodeError. Fix: encoding=\u0027utf-8\u0027.",
+                 "B3 validate_ZeroSpanParity.py:128-143 run_modulation_check never restores qubit_gain; modulated_strobe_acquire (utils.py:1067-1068) ends on the last schedule entry (0 for [G_on,0]*n) and leaves the strobe program rebuilt at gain 0. runs/zero_span.py runs stage 3 (L204) before stage 8 (L213) and 7 (L221): run_control_suite takes base qubit_gain = cfg[\u0027qubit_gain\u0027] = 0 (L339), so every control variant incl. D and the environment sweep run with the drive OFF.",
+                 "B4 validate_ZeroSpanParity.py:360-364 control C changes cfg[\u0027read_pulse_freq\u0027] but never rebuilds the program (only set_qubit_gain rebuilds, mZeroSpanParity.py:342-359), so C is measured at the original probe frequency. L370-371 control D sets parity_drive_freq=pf[\u0027higher\u0027] without a rebuild, so lvl_hi is measured at the LOWER branch freq and branch_sign_flip can never be genuinely True. Fake experiments in __main__ read cfg at acquire time, so the self-test cannot catch it.",
+                 "validate_ZeroSpanParity.py:41 _preserve_cfg writes None into cfg for keys absent at entry; L355/L361 \u0027(base[...] or 0.0) + detune_mhz\u0027 drives at 50 MHz when parity/read freq unset; L367 float(pf[\u0027lower\u0027]) raises TypeError when cached parity freqs are None (runner passes .get() values, runs/zero_span.py:211-212).",
+                 "analyze_ZeroSpanParity.py:164 default step_us = window_us // 2 gives 0 for window_us \u003c 2 us (e.g. decimated mode); np.arange(..., step 0) at L192 then raises when record \u003e window.",
+                 "utils.py:1050-1105 modulated_strobe_acquire does not set experiment.data (chunked_acquire does, L1043-1046), so a following save_data() persists only the last block; it also ignores its progress arg.",
+                 "utils.py:6-7 \u0027import datetime\u0027 is shadowed by \u0027from datetime import datetime\u0027; via star import this rebinds datetime to the CLASS in mAmplitudeRabiFF.py, mSpecSliceFF.py, mTransmissionFF.py (which import the module first) - latent breakage for any datetime.datetime use.",
+                 "Star-import leakage is load-bearing: runs/singleshot.py uses os (L13-14,108,119) and datetime.now() (L91), runs/coherence.py uses time.sleep (L31,100,180,199,249,282) without importing them - they come only from utils\u0027 star export. Refactor must add explicit imports or these break.",
+                 "utils.py:763-848 vs mAmplitudeRabiFF.py:34-79 / mAmplitudeRabiFF_noUpdate.py:15-60: three fit_rabi_cosine copies; utils\u0027 grid-search version (pi_gain = first opposite extremum) is shadowed in both consumers by the local single-p0 version (pi_gain = P/2). Behavior-preserving refactor must keep the P/2 version for those experiments.",
+                 "utils.py:334 ramp_to guards only target \u003e 10 V; no lower bound (e.g. -50 V accepted). Same in mAutoCoherence._ramp_to L202.",
+                 "Helpers/hist_analysis.py:82 and hist_analysis_opt.py:84 threshold = binsg[tind] is the LEFT edge of the bin whose cumulative count defines the optimum (off by one bin; right edge is binsg[tind+1]).",
+                 "Helpers/hist_analysis.py:55 / hist_analysis_opt.py:55 with ran given, histogram range is [xg-ran, xg+ran] centred on the g blob only; e blob can fall outside. ylims computed and unused.",
+                 "Helpers/hist_analysis_opt.py:86-92 values printed as \u0027ne contrast\u0027/\u0027ng contrast\u0027 are misassignment fractions P(e-\u003eg), P(g-\u003ee); printed twice. L95 axvline(threshold, 0, 20) ymax=20 is meaningless (axes fraction).",
+                 "Helpers/MixedShots_analysis.py:91 uses np.arctan (not arctan2) -\u003e ZeroDivision/angle ambiguity when cluster centers share I; L151-155 on fit failure pcov is a 1-D tuple so np.diag builds a 6x6 matrix and perr silently becomes 6x6; L65-71 O(N^2) np.append loop; imports unused pandas/seaborn.",
+                 "analyze_ModifiedRamseyParity.py:1801-1802 \u0027dt_steps is not None\u0027 is always True (dead else); :1629 comment says dwell axis \u0027scaled below\u0027 but never scaled (plotted in samples); :1376-1452 flip control docstring claims rate similarity is checked but only amplitude ratio + occupancy are.",
+                 "verify_ModifiedRamsey_timing.py:36-38 imports modified_ramsey_timing from Runners/runs/charge_parity.py (test depends on runner package, pulling pyvisa/sklearn and the Agg side effect); default --ns-host 192.168.0.103 hard-coded (CLAUDE.md says 192.168.1.7, which is stale: .103 answered).",
+                 "Spec section references (Â§3.1, Â§3.2, Â§3.3, Â§3.5, Â§5.3, Â§6, Â§6.2, \u0027Path B\u0027, spec 2026-05-16 / 2026-06-01) in analyze_ZeroSpanParity.py, utils.py:1021, validate_ZeroSpanParity.py:1 now dangle: commit 0f0a51f removed docs/superpowers specs."
+             ],
+    "cross_cutting_observations":  [
+                                       "EXECUTION RESULTS: test_ModifiedRamseyParity_offline.py runs fully OFFLINE (needs qick importable; no soc): 131 passed / 0 failed, exit 0, 42 s. verify_ModifiedRamsey_timing.py is HARDWARE-IN-THE-LOOP (Pyro4 NS 192.168.0.103:8888, proxy myqick; phase 1 = read-only soc.get_cfg + compile): phase 1 run 42 passed / 0 failed, exit 0, 5 s; phase 2 (--acquire, drives tProc at zero gain) NOT run; --help works offline. Inline __main__ self-tests: utils.py OK (6 blocks, 2 s), analyze_ZeroSpanParity.py OK (17 blocks, 180 s - pure-Python Markov loops, vectorize for pytest), validate_ZeroSpanParity.py OK (6 blocks, 40 s). All run with: cd repo root; PYTHONPATH=repo root; .venv/Scripts/python.exe -m WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.\u003cmodule\u003e.",
+                                       "Measured board/firmware values from the verify run (doc: device:CSTQ03 + architecture): tProc f_time 430.08 MHz; gen0/gen1 f_fabric 430.08 MHz; ro0 f_output 307.2 MHz (decimated period 1/307.2 us); avg_maxlen 16384; buf_maxlen 1024; usable Modified-Ramsey df \u003c 1.2502 MHz (no pi) / \u003c 0.6251 MHz (echo) at sigma 0.1 us. Client venv qick 0.2.334 (board qick 0.2.367 per shot_buffers docstring), numpy 2.4.1, scipy 1.17.0, matplotlib 3.10.8, sklearn 1.8.0, Python 3.13.",
+                                       "utils.py split by theme: acquisition helpers (acquire_with_retry, chunked_acquire, modulated_strobe_acquire, _META_KEYS, _TRANSIENT_READOUT_MARKERS) -\u003e core/acquisition.py; IQ projection (project_iq_signal, project_iq_onto_separator, classify_and_average_iq; plus MR project_iq_trace, rotate_SS_data) -\u003e analysis/iq.py; hanger/lorentzian/rabi fits (hanger_model_db, fit_hanger_transmission, lorentzian_dip/peak, fit_lorentzian_feature, cos_func, fit_rabi_cosine, estimate_noise_floor) -\u003e analysis/fitting.py; two-tone peak finding (find_two_tone_peaks, choose_two_tone_freqs_from_lorentz_or_peaks, pick_parity_drive_freq, _refine_peak_lorentzian, save_two_tone_plot) -\u003e analysis/spectroscopy.py; charge dispersion (analyze_charge_dispersion, dead) -\u003e analysis/spectroscopy.py or delete; yoko ramp (ramp_to) -\u003e hardware/yoko.py; voltage stepping (choose_next_voltage) -\u003e runs/charge_sweep.py. Inline tests: utils.py __main__ L1108-1346 (project_iq_onto_separator, pick_parity_drive_freq, chunked_acquire incl. metadata + ZeroSpanParity.save_data round-trip, modulated_strobe_acquire).",
+                                       "Duplicate implementations to consolidate: ramp_to (utils:333 == mAutoCoherence._ramp_to:200); find_two_tone_peaks (utils:398 == mAutoCoherence._find_two_tone_peaks:212 verbatim); choose_next_voltage (utils:745 ~= mAutoCoherence._choose_next_voltage:273); cos_func/fit_rabi_cosine x3 (utils differs semantically); hist_process x2 (Helpers/hist_analysis.py pooled-abs normalization vs hist_analysis_opt.py per-class signed normalization - different numbers, keep both behaviors behind a flag); g/e projection math x4 (utils.classify_and_average_iq, utils.project_iq_onto_separator, MR.project_iq_trace, hist_process rotation); dwell statistics (ZSP dwell_time_statistics vs MR Viterbi dwell loop L1009-1022); MR _logaddexp2 vs inner ladd; MR bootstrap optimizer block duplicates main fit block.",
+                                       "Proposed module map for this group: core/acquisition.py, core/buffers.py (raw_shot_buffers), hardware/yoko.py, analysis/iq.py, analysis/fitting.py, analysis/spectroscopy.py, analysis/readout.py (calibrate_readout_from_labeled_shots, hist_process both variants, MixedShots), analysis/telegraph.py (HMM/ACF/PSD/drift/simulate from MR + dwell_time_statistics/_fit_exp_dwell/_debounce_*/_gap_segment_edges from ZSP), analysis/modified_ramsey.py (reset/controls/gates/plots/orchestrator), analysis/zero_span.py, runs/zero_span_validation.py, tests/ (pytest conversions of all inline tests + test_MR offline), tests/hardware/verify_modified_ramsey_timing.py. Move modified_ramsey_timing out of Runners/runs/charge_parity.py into experiments so tests do not import runners.",
+                                       "LAB NOTES - architecture/troubleshooting: (utils L12-40) back-to-back programs: tProc shot counter can report more shots than run (streamer zeroes counter and starts next program while previous still retiring reps); qick_asm.acquire dies with \u0027ValueError: could not broadcast input array from shape (26,2) into shape (20,2)\u0027 (second = reps, first = reps + leftovers); intermittent, likelier with more programs; soc.stop_tproc() (tProc v1 reset+reload, tens of ms) clears it; retry with a FRESH program object. \u0027Overflowed the averages buffer\u0027 is different: tProc outrunning readout -\u003e lengthen relax_delay, never retry. (shot_buffers L3-26) qick \u003c= ~0.2.28x di_buf/dq_buf = flat raw accumulated stream (len reps*reads_per_shot, x expts for RAverager); from ~0.2.29x _average_buf averages+normalizes so di_buf holds one point per read and old reshapes fail (\u0027cannot reshape array of size 1 into shape (1,1000)\u0027); raw stream in prog.acc_buf shaped (*loop_dims, reads_per_shot, 2) raw units; acc_buf overwritten per round -\u003e single-shot programs force rounds=1. Only mUndrivenSingleShot uses raw_shot_buffers; mSingleShotProgramFFMUX, mActiveResetVerify, mModifiedRamsey, mZeroSpanParity, mT1_SS, mChargeDispersionQuasiCW read di_buf directly (cross-check). (verify L208) framework-reserved tProc registers on page 0: 13-21. (verify L240-243) active-reset cmp_offset = int(ro_norm) \u003c\u003c 15, must be \u003c 2^30 (old fixed 2^24 too small). (ZSP L1410-1421) nominal decimated rate from soccfg may differ from true firmware rate (\u0027soccfg.f_output_unverified\u0027); sidecars keep raw_sample_period_us, n_raw_samples, n_binned_samples, analysis_bin_us, mode. (utils L977-981) inner acquire() leaves only last chunk in experiment.data. NS host in use 192.168.0.103:8888 \u0027myqick\u0027.",
+                                       "LAB NOTES - experiment:qubit_spec / device:CSTQ03 (utils L66-78, L115-128): |I+iQ| buries a qubit response lying in one quadrature on a large offset; 2026-06-02 Q6 QubitSpecFF: real feature in I at ~3054 MHz missed in favour of Q-noise spikes at 3038/3069 MHz -\u003e project onto principal axis. Old whole-trace-median baseline + abs(min)\u003eabs(max) orientation failed for wide features: 2026-09-02 12:03 CSTQ03/Q2 spec broad ~3753 MHz response inverted to a dip, both peaks on edge noise at 3764 MHz -\u003e baseline from outer edge_frac=15% per side (span centred on expected line), orient by total excursion mass. find_two_tone_peaks prominence_fraction 0.25 works for typical two-tone SNR. experiment:transmission (utils L295-298): hanger startpoint mirrors MATLAB [center, Qtot 4.1e4, Qext 4.3e4, asym 1e3, offset 0]; Qint = |1/(1/Qtot - 1/Qext)|.",
+                                       "LAB NOTES - parameters/experiment:singleshot (MR L14-20, L102-106, L160-162): legacy hist_analysis \u0027Fidelity = 44.90%\u0027 is max|CDF_g - CDF_e| = readout CONTRAST C = P(g|g)+P(e|e)-1, NOT assignment fidelity; equal priors + optimal threshold: F_assign = (1+C)/2. Quality gate thresholds: analog SNR \u003c 1 warn; contrast \u003c 0.3 warn; \u003c 500 labeled shots per class warn; HMM min_emission_snr 0.7, min_transitions 10, min_loglik_gain 10; posterior ambiguity \u003e 0.25 warn; HMM vs ACF/PSD disagreement \u003e 3x warn; post-reset ground fraction \u003e 0.9 = converged; ACF noise variance \u003e 4x telegraph amplitude warn; PSD plateau \u003c 3x white floor warn; drift window \u003c 20x dwell = unsafe.",
+                                       "LAB NOTES - experiment:modified_ramsey: rate conventions (symmetric, gamma per state): tau_dwell = 1/gamma; ACF ~ exp(-2 gamma t) so tau_corr = 1/(2 gamma) (lag 0 excluded: carries readout-noise variance); Lorentzian PSD corner f_c = gamma/pi; asymmetric rates: ACF/PSD see gamma_eff = (g01+g10)/2. Drift = centred rolling MEAN over window \u003e\u003e dwell (rolling median tracks the majority state and eats the telegraph). Expected parity dwell 2-3 ms on BFC devices; documented operating point gamma = 200 Hz (2.5 ms dwell); default drift window 0.2 s = 80x 2.5 ms. Symmetric HMM default (charge parity has no preferred branch). mapping_probabilities = P(e|state0), P(e|state1) must come from a device-specific mapping calibration (g/e fidelity alone insufficient); default (0.1, 0.9) is ASSUMED and flagged. Emissions fixed in rate fit by default (refit absorbs drift). A clean Viterbi trace is not evidence of switching; identifiability gates are. Rate falling with bin size = noise crossings; plateau = genuine switching. Controls: flip_final_pi2 must keep telegraph (ACF amplitude ratio \u003e 0.25) with occ1_flip ~ 1 - occ1_main (tol 0.15); echo_null must suppress (ratio \u003c 0.25) or be unidentifiable (echo refocuses static parity detuning); tau_offset/drive_detuned/drive_off informational. Planning conventions (test asserts): tau = 1/(2 df); gap = tau - 4 sigma (no pi); echo gap = (tau - 8 sigma)/2; final pi/2 phase 180 deg standard, 0 flip, 90 symmetric, 270 symmetric+flip; symmetric drive offset -df/2 halves branch detuning; df_max = 1/(8 sigma) no-pi. History: tau was programmed as pulse-edge gap not centre-to-centre (fixed; verify checks realized c2c == 1/(2 df) within 2 tProc cycles); _plot_hmm KeyError \u0027mu0\u0027 with ge_mixture emissions (fixed, test guards). Zero-DAC-gain run is electrically inert; measured rep period within 3% of scheduled.",
+                                       "LAB NOTES - experiment:active_reset (MR L1322-1358): reset readout k is acquired BEFORE corrective flip k; row 0 is the pre-reset population; the final corrective flip is unobservable without an explicit post-reset verification readout -\u003e use mActiveResetVerify before trusting initialization.",
+                                       "LAB NOTES - experiment:zero_span: 9-stage validation chain (spec 2026-06-01), strobe-only, collate-only EVIDENCE.md, no automated pass/fail; stages 4-6 never implemented (bin_size_sweep/threshold_stability exist but unused). Stage 2: no telegraph exists in driven steady state -\u003e use complex-response difference vs drive-off baseline, not histogram bimodality, at the stage-1 probe point. Readout power changes both SNR and real parity dynamics -\u003e record switch_rate, separation_snr, mean_dwell, mean_signal_level per setting; temperature logged manually. Controls: A drive off, B drive detuned, C probe off-resonance -\u003e contrast vanishes; D swap branch -\u003e assignment reverses (branch_sign_flip strong evidence). Z_on/Z_off proportional to S21, not calibrated. Burst sigma = max(1.4826*MAD about median, Poisson floor q*sqrt(max(baseline_counts,1)), q = 1/(window_us*1e-6)) because \u003e50% windows have 0 switches so MAD = 0. Dwell exp fit weighted by sqrt(count): unweighted OLS biases tau ~10% high (fails +/-5% spec). Decimated captures cover one read_length end-to-end; never auto-bin by read_length (collapses to one point); pass explicit analysis_bin_us (fraction of read_length); per-sample SNR in decimated mode \u003c\u003c strobe. is_bimodal requires delta_BIC \u003e 0 AND separation SNR \u003e 1.5 AND weights in (0.1, 0.9). Best bin may precede T_parity. Low tau_cv across thresholds = robust telegraph. reps_per_block must satisfy avg_maxlen (16384). Inter-chunk gaps not modelled in stitched t_us; gap_indices mark boundaries. KMeans label 0 = lower projection on inter-centroid axis with sign canonicalized to dominant +component.",
+                                       "LAB NOTES - device:CSTQ03 (verify base_cfg L50-68): Modified-Ramsey cfg for qubit 6: adc_trig_offset 1 us (initialize4Q.py:30), readout_length 15 us and length 16 us (context.py:152,160), cavity pulse_gain 800, pulse_freq 7285.11 MHz, sigma 0.1 us, pi_gain 4600, pi2_gain 2375, f_ge 3055.2 MHz, df 0.5 MHz, reps 1000, nqz 2, qubit_nqz 1, res_ch 0, qubit_ch 1, ro_chs [0].",
+                                       "NOISE to delete: utils banners/restating L100-102,106-109 (condense), 147-148, 214, 217, 290, 320-321, 343, 345, 349, 356, 385, 427, 433, 438, 446, 450, 459, 565, 586-591, 604, 623, 675, 681-684, 693, 779, 826, 938-940, 1013, 1041-1042, stale L1163, history L1243-1245; MR section banners L67-69, 240-242, 318-320, 1100-1102, 1314-1316, 1372-1374, 1455-1457, 1492-1494, stale L1623-1624, L1629; ZSP L164, 185, 285, 294, 401-403, 415, 421, 425-427, 726 + most __main__ prose; validate L215, 344; test_MR banners L58-60, 82-84, 139-141, 337-339, 380-382, 422-424, 481-483, 577-579, 841-843 (also duplicate test numbering 17/18 x2); verify banners L157, 175, 203, 218, 229, 246; hist_analysis L21, 33, 35, 41, 45, 68, 79; hist_analysis_opt L21, 33, 35, 41, 45, 68, 79, 80, 97; MixedShots L1-2, 7, 16-19, 25, 29, 37, 43, 73, 98, 111, 124, 136, 147, 161, 168, 220, 231-234.",
+                                       "STYLE: 13 consumers star-import these modules (utils x10, hist_analysis, hist_analysis_opt, MixedShots_analysis, rotate_SS_data) - replace with named imports and __all__; module-level matplotlib backend mutation; bare \u0027except Exception: pass\u0027 (utils L545, L685, L811); \u0027== None\u0027 / \u0027== True\u0027 comparisons (hist_*, MixedShots); camelCase/PascalCase (plotDisp, figNum, _SeperateBlobs, PlotRaw); function-level imports (tqdm, h5py, sklearn, dwell_time_statistics); prints instead of logging; very long functions (fit_two_state_hmm ~438 lines, analyze_modified_ramsey_record ~255); sys.path hacks in test/verify scripts; custom check() harness instead of pytest; non-ASCII output without explicit encoding."
+                                   ]
+}

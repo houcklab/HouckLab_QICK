@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **REFACTOR IN PROGRESS (branch `qicklab_refactor`, started 2026-10-13).** Before doing anything on this
+> branch read `docs/dev/refactor-2026-10/HANDOFF.md` — it records exactly where the refactor stopped, the
+> next step, and the rules (golden regression harness is the acceptance test for every commit; bug fixes are
+> separate commits). The design spec is `docs/dev/refactor-2026-10/design.md`; the per-subsystem audits are in
+> `docs/dev/refactor-2026-10/audit/`. Most of the layout description below is STALE on this branch: the repo
+> now contains only `WorkingProjects/QM_Team/qubit_measurements` (being moved into a top-level `qicklab/`
+> package), `tests/`, `docs/`, `pyproject.toml`. The "edit scope" rule below is superseded on this branch — the
+> whole tree is in scope.
+
 ## Overview
 
 HouckLab_QICK is the Houck Lab's RFSoC control framework for superconducting qubit experiments. It is built on top of the open-source QICK (Quantum Instruction Control Kit), which runs on Xilinx RFSoC PYNQ boards. Per the README: "This is the repository for the Houck lab RFSOC code."
