@@ -1,11 +1,14 @@
 """Golden-master check: every runner flag must still send the same thing.
 
-Regenerates the capture in memory with DRIVER and compares it, run label by run
-label, with golden_cstq03.json. Floats compare with a relative tolerance of
-1e-9; ``traceback`` entries are diagnostic only and ignored.
+Regenerates the capture in memory with DRIVER, once per synthetic board
+variant, and compares it, (variant, run label) by (variant, run label), with
+golden_cstq03.json. Floats compare with a relative tolerance of 1e-9;
+``traceback`` entries are diagnostic only and ignored. The golden records the
+QICK version it was captured with; any other installed version fails loudly.
 
   REGRESSION_UPDATE=1          rewrite the golden from the current code
   REGRESSION_LABELS=RunT1,...  capture/compare only these labels (faster)
+  REGRESSION_VARIANTS=A        capture/compare only these board variants
 """
 
 import importlib
@@ -15,23 +18,59 @@ import os
 from pathlib import Path
 
 import pytest
+from qick import get_version
+
+from tests.regression import capture as core
 
 DRIVER = "tests.regression.driver_legacy"  # post-refactor: tests.regression.driver_qicklab
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")
+META = "__meta__"
 IGNORED_KEYS = frozenset({"traceback"})
 REL_TOL = 1e-9
 MAX_DIFF_LINES = 40
 
 UPDATE = os.environ.get("REGRESSION_UPDATE") == "1"
 ONLY = sorted(filter(None, os.environ.get("REGRESSION_LABELS", "").split(",")))
+VARIANTS = tuple(
+    filter(None, os.environ.get("REGRESSION_VARIANTS", ",".join(core.VARIANTS)).split(","))
+)
 GOLDEN_DATA = json.loads(GOLDEN.read_text(encoding="utf-8")) if GOLDEN.exists() else {}
+GOLDEN_META = GOLDEN_DATA.get(META, {})
+CASES = [
+    (variant, label)
+    for variant in GOLDEN_META.get("variants", [])
+    for label in sorted(GOLDEN_DATA.get(variant, {}))
+]
+
+
+def _check_qick_version():
+    golden = GOLDEN_META.get("qick")
+    if golden is not None and golden != get_version():
+        pytest.fail(
+            f"installed qick {get_version()} != qick {golden} the golden was captured with. "
+            "Compiled binaries depend on the QICK version: install the pinned version "
+            "(pyproject.toml) or regenerate the golden on the LEGACY code deliberately.",
+            pytrace=False,
+        )
 
 
 @pytest.fixture(scope="session")
 def capture():
-    result = importlib.import_module(DRIVER).capture_all(ONLY or None)
+    if not UPDATE:
+        _check_qick_version()
+    unknown = set(VARIANTS) - set(core.VARIANTS)
+    if unknown:
+        pytest.fail(f"unknown REGRESSION_VARIANTS {sorted(unknown)}", pytrace=False)
+    driver = importlib.import_module(DRIVER)
+    result = core.capture_variants(driver.capture_all, ONLY or None, VARIANTS)
     if UPDATE:
-        merged = {**GOLDEN_DATA, **result} if ONLY else result
+        merged = result
+        if ONLY or set(VARIANTS) != set(core.VARIANTS):
+            merged = {**GOLDEN_DATA, META: result[META]}
+            merged[META]["variants"] = sorted(set(GOLDEN_META.get("variants", [])) | set(VARIANTS))
+            for variant in VARIANTS:
+                base = GOLDEN_DATA.get(variant, {}) if ONLY else {}
+                merged[variant] = {**base, **result[variant]}
         text = json.dumps(merged, indent=2, sort_keys=True, allow_nan=True)
         GOLDEN.write_text(text + "\n", encoding="utf-8")
     return result
@@ -69,24 +108,38 @@ def _short(x, n=120):
     return text if len(text) <= n else text[: n - 3] + "..."
 
 
+def test_golden_meta():
+    if UPDATE:
+        pytest.skip("golden rewritten")
+    if not GOLDEN_DATA:
+        pytest.fail(f"{GOLDEN.name} missing; generate it with REGRESSION_UPDATE=1")
+    assert GOLDEN_META.get("variants") == list(core.VARIANTS)
+    _check_qick_version()
+
+
 def test_run_labels_match(capture):
     if UPDATE or ONLY:
         pytest.skip("golden rewritten" if UPDATE else "label subset requested")
-    assert sorted(capture) == sorted(GOLDEN_DATA)
+    for variant in VARIANTS:
+        assert sorted(capture[variant]) == sorted(GOLDEN_DATA.get(variant, {})), variant
 
 
 @pytest.mark.parametrize(
-    "label", sorted(GOLDEN_DATA) or ["<no golden: run with REGRESSION_UPDATE=1>"]
+    ("variant", "label"),
+    CASES or [("-", "<no golden: run with REGRESSION_UPDATE=1>")],
+    ids=[f"{v}-{lab}" for v, lab in CASES] or None,
 )
-def test_run_matches_golden(label, capture):
+def test_run_matches_golden(variant, label, capture):
     if UPDATE:
         pytest.skip("golden rewritten")
-    if label not in GOLDEN_DATA:
+    if variant not in GOLDEN_DATA:
         pytest.fail(f"{GOLDEN.name} missing; generate it with REGRESSION_UPDATE=1")
     if ONLY and label not in ONLY:
         pytest.skip("not in REGRESSION_LABELS")
-    assert label in capture, f"driver produced no run labelled {label!r}"
-    diffs = list(_diff(GOLDEN_DATA[label], capture[label], label))
+    if variant not in VARIANTS:
+        pytest.skip("not in REGRESSION_VARIANTS")
+    assert label in capture[variant], f"driver produced no run labelled {label!r} on {variant}"
+    diffs = list(_diff(GOLDEN_DATA[variant][label], capture[variant][label], f"{variant}:{label}"))
     shown = "\n".join(diffs[:MAX_DIFF_LINES])
     more = f"\n... and {len(diffs) - MAX_DIFF_LINES} more" if len(diffs) > MAX_DIFF_LINES else ""
     assert not diffs, f"{len(diffs)} difference(s) from golden:\n{shown}{more}"

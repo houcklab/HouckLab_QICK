@@ -1,22 +1,36 @@
-"""Replay every dispatch of the legacy runner CSTQ03_BFC.py with hardware mocked.
+"""Replay every dispatch of the frozen CSTQ03 runner with hardware mocked.
 
-The runner's sections 1-2 (device parameters, flags, param dicts) are executed
-verbatim. Section 3 (EXECUTE) is parsed, never run as a whole: for each
-``if <Flag>: <body>`` in it, the driver runs the section's unconditional
-statements that precede the ``if`` (build_context, and the
-rebuild_singleshot_config regime switch for regime-B flags), then the body,
-then the unconditional statements after it -- i.e. exactly what the runner does
-with only that flag set, whatever the flag's current value. One extra variant
-re-runs RunZeroSpanParity with every Validate_*/Build_* sub-flag on.
+The runner is read from ``fixtures/cstq03_legacy_runner.py.txt``, a verbatim
+copy of ``Runners/CSTQ03_BFC.py`` at commit 0f0a51f, never from the live file.
+Its single ``from ... import *`` line is dropped; the exec namespace is seeded
+with the names that star-import would bind from ``RUNS_PACKAGE`` instead, so a
+post-refactor driver only changes that constant (and the patch targets).
 
-Usage:  python -m tests.regression.driver_legacy   (rewrites the golden file)
+Sections 1-2 (device parameters, flags, param dicts) are executed verbatim.
+Section 3 (EXECUTE) is parsed, never run as a whole: for a set of flags, the
+driver runs section 3's statements in source order, keeping every
+unconditional statement (build_context, the rebuild_singleshot_config regime
+switch, ctx.yoko.close()) and the bodies of the selected ``if <Flag>:`` blocks
+only -- i.e. exactly what the runner does with only those flags set, whatever
+their current values. Besides one run per flag there are:
+
+* variant labels ``Flag[name]`` that apply a parameter override first
+  (``OVERRIDES``), to reach code the file's own values never reach;
+* multi-flag labels ``FlagA+FlagB`` (``MULTI``), for state carried from one
+  dispatch to the next.
+
+Usage:  python -m tests.regression.driver_legacy          (rewrites the golden)
+        python -m tests.regression.driver_legacy RunT1    (dry run, A and B)
 """
 
 import ast
+import builtins
 import contextlib
+import importlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -30,18 +44,69 @@ from tests.regression import capture  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 CLIENT = "WorkingProjects.QM_Team.qubit_measurements.Client_modules"
-RUNNER = REPO / "WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/CSTQ03_BFC.py"
+RUNS_PACKAGE = f"{CLIENT}.Runners.runs"  # what the frozen runner star-imports
+FIXTURE = Path(__file__).with_name("fixtures") / "cstq03_legacy_runner.py.txt"
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")
 EXECUTE_MARKER = "3. EXECUTE"
-VALIDATE_VARIANT = ("RunZeroSpanParity", "RunZeroSpanParity[validate]", ("Validate_", "Build_"))
+STAR_IMPORT = re.compile(r"^from\s+\S+\s+import\s+\*\s*$")
+
+
+def _set(dict_name, **values):
+    def apply(ns):
+        ns[dict_name].update(values)
+
+    apply.__doc__ = f"{dict_name}.update({values!r})"
+    return apply
+
+
+def _enable(*prefixes):
+    def apply(ns):
+        ns.update({k: True for k in list(ns) if k.startswith(prefixes)})
+
+    apply.__doc__ = f"every flag starting with {prefixes} = True"
+    return apply
+
+
+# label -> (flags, override applied to the namespace before section 3)
+OVERRIDES = {
+    "RunZeroSpanParity[validate]": (("RunZeroSpanParity",), _enable("Validate_", "Build_")),
+    "RunModifiedRamsey[no_reset]": (
+        ("RunModifiedRamsey",),
+        _set("ModifiedRamsey_params", use_active_reset=False),
+    ),
+    "RunModifiedRamsey_Control[verified]": (
+        ("RunModifiedRamsey_Control",),
+        _set("ModifiedRamsey_Control_params", sweet_spot_max_df_mhz=1e9),
+    ),
+    "RunAutoCoherence[fast]": (
+        ("RunAutoCoherence",),
+        _set(
+            "AutoCoherence_override_params",
+            auto_readout_opt=False,
+            ss_gain_pts=3,
+            T1_expts=5,
+            T2_expts=5,
+            T2E_expts=5,
+        ),
+    ),
+    "RunT2E[rotation]": (("RunT2E",), _set("T2E_params", rotation_angle=0.3, min_max=[0.0, 1.0])),
+}
+# label -> override. Flags run in runner order; the label is "+"-joined flags.
+MULTI = {
+    "RunTransmissionSweep+RunAmplitudeRabi": None,  # pulse_freq carried into Rabi
+    # probe_freq leak; one search cycle so the second dispatch is reached at all
+    "Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW": _set(
+        "TwoToneChargeDispersion_params", num_cycles=1
+    ),
+    "RunActiveResetVerify+SingleShot": None,  # res_phase discarded by the rebuild
+    "RunTransmissionSweep+Run2ToneSpec": None,
+}
 
 
 def install():
-    import importlib
-
     import pyvisa
 
-    importlib.import_module(f"{CLIENT}.Runners.runs")  # load every experiment module first
+    importlib.import_module(RUNS_PACKAGE)  # load every experiment module first
     experiment = importlib.import_module(f"{CLIENT}.CoreLib.Experiment")
     return capture.install_mocks(
         experiment.ExperimentClass,
@@ -50,29 +115,52 @@ def install():
     )
 
 
+def star_namespace(module):
+    """The names ``from <module> import *`` binds."""
+    names = getattr(module, "__all__", None)
+    if names is None:
+        names = [n for n in vars(module) if not n.startswith("_")]
+    return {n: getattr(module, n) for n in names}
+
+
 def plan():
-    """Split the runner into (prefix code, [(label, statements, flag_prefixes)])."""
-    lines = RUNNER.read_text(encoding="utf-8").splitlines(keepends=True)
+    """Split the fixture into (prefix code, [(label, statements, override)])."""
+    lines = FIXTURE.read_text(encoding="utf-8").splitlines(keepends=True)
+    imports = [i for i, line in enumerate(lines) if STAR_IMPORT.match(line)]
+    if len(imports) != 1:
+        raise RuntimeError(f"expected one star import in {FIXTURE.name}, found {len(imports)}")
+    lines[imports[0]] = "\n"  # keep line numbers
     cut = next(i for i, line in enumerate(lines) if EXECUTE_MARKER in line)
-    prefix = compile("".join(lines[:cut]), str(RUNNER), "exec")
+    prefix = compile("".join(lines[:cut]), str(FIXTURE), "exec")
     tree = ast.parse("".join(lines[cut:]))
     ast.increment_lineno(tree, cut)
+    body = tree.body
 
     def is_dispatch(node):
         return isinstance(node, ast.If) and isinstance(node.test, ast.Name)
 
-    body = tree.body
+    flags = [node.test.id for node in body if is_dispatch(node)]
+
+    def statements(selected):
+        unknown = set(selected) - set(flags)
+        if unknown:
+            raise RuntimeError(f"no dispatch for {sorted(unknown)} in {FIXTURE.name}")
+        out = []
+        for node in body:
+            if not is_dispatch(node):
+                out.append(node)
+            elif node.test.id in selected:
+                out.extend(node.body)
+        return out
+
     runs = []
-    for i, node in enumerate(body):
-        if not is_dispatch(node):
-            continue
-        pre = [s for s in body[:i] if not is_dispatch(s)]
-        post = [s for s in body[i + 1 :] if not is_dispatch(s)]
-        stmts = pre + node.body + post
-        runs.append((node.test.id, stmts, ()))
-        flag, label, prefixes = VALIDATE_VARIANT
-        if node.test.id == flag:
-            runs.append((label, stmts, prefixes))
+    for flag in flags:
+        runs.append((flag, statements((flag,)), None))
+        for label, (selected, override) in OVERRIDES.items():
+            if selected[0] == flag:
+                runs.append((label, statements(selected), override))
+    for label, override in MULTI.items():
+        runs.append((label, statements(tuple(label.split("+"))), override))
     return prefix, runs
 
 
@@ -104,21 +192,24 @@ def _traceback_tail(exc, n=4):
     return out
 
 
-def run_one(label, stmts, flag_prefixes, prefix_code):
+def run_one(label, stmts, override, prefix_code, runs_names):
     import matplotlib.pyplot as plt
 
     root = tempfile.mkdtemp(prefix="qicklab_regression_")
     capture.begin_run(label, root)
-    code = compile(ast.Module(body=stmts, type_ignores=[]), str(RUNNER), "exec")
+    code = compile(ast.Module(body=stmts, type_ignores=[]), str(FIXTURE), "exec")
     verbose = bool(os.environ.get("REGRESSION_VERBOSE"))
     out_sink = sys.stdout if verbose else io.StringIO()
     err_sink = sys.stderr if verbose else io.StringIO()
     try:
         with contextlib.redirect_stdout(out_sink), contextlib.redirect_stderr(err_sink):
-            ns = {"__name__": "__cstq03_replay__", "__file__": str(RUNNER)}
+            ns = {"__name__": "__cstq03_replay__", "__file__": str(FIXTURE)}
+            ns["__builtins__"] = builtins
+            ns.update(runs_names)
             exec(prefix_code, ns)
             _redirect_data(ns, root)
-            ns.update({k: True for k in ns if k.startswith(flag_prefixes)} if flag_prefixes else {})
+            if override is not None:
+                override(ns)
             exec(code, ns)
         outcome = {"status": "completed"}
     except capture.StopCapture:
@@ -139,23 +230,28 @@ def run_one(label, stmts, flag_prefixes, prefix_code):
         "yoko_writes": result["yoko"],
         "experiments": result["experiments"],
         "hw_outside_experiments": result["hw_outside_experiments"],
+        "skipped": result["skipped"],
+        "cfg_access": result["cfg_access"],
     }
 
 
 def capture_all(labels=None):
-    """{run label: {outcome, yoko_writes, experiments, hw_outside_experiments}}."""
+    """{run label: {...}} on the currently selected board (capture.set_board)."""
     install()
     prefix, runs = plan()
+    runs_names = star_namespace(importlib.import_module(RUNS_PACKAGE))
     out = {}
-    for label, stmts, flag_prefixes in runs:
+    for label, stmts, override in runs:
         if labels is not None and label not in labels:
             continue
         t0 = time.perf_counter()
-        out[label] = run_one(label, stmts, flag_prefixes, prefix)
+        out[label] = run_one(label, stmts, override, prefix, runs_names)
         status = out[label]["outcome"]["status"]
         n = len(out[label]["experiments"])
+        n_skip = sum(out[label]["skipped"].values())
         print(
-            f"[regression] {label:<34} {status:<18} {n:>3} exp  {time.perf_counter() - t0:6.1f}s",
+            f"[regression] {capture.current_board()} {label:<58} {status:<18} "
+            f"{n:>3} exp {n_skip:>4} skip {time.perf_counter() - t0:6.1f}s",
             file=sys.stderr,
         )
     return json.loads(json.dumps(out, allow_nan=True))
@@ -169,7 +265,7 @@ def dump(result, path=GOLDEN):
 
 if __name__ == "__main__":
     if sys.argv[1:]:  # named labels: dry run, golden untouched
-        capture_all(sys.argv[1:])
+        capture.capture_variants(capture_all, sys.argv[1:])
     else:
-        dump(capture_all())
+        dump(capture.capture_variants(capture_all))
         print(f"wrote {GOLDEN}", file=sys.stderr)

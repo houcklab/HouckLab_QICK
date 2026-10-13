@@ -1,85 +1,175 @@
 # Hardware-free regression harness
 
-A golden-master snapshot of what the CSTQ03 runner sends to the hardware. It
-exists so the coming refactor can be checked against the pre-refactor code
-without a fridge, a board or a yoko.
+A golden-master snapshot of what the CSTQ03 runner sends to the hardware, what
+its experiments compute and what they save. It exists so the coming refactor
+can be checked against the pre-refactor code without a fridge, a board or a
+yoko.
 
 ```
-python -m pytest tests/regression -q                       # compare against the golden (~5 min)
-REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression -q   # just some runs
-REGRESSION_UPDATE=1 python -m pytest tests/regression -q   # rewrite the golden from current code
-python -m tests.regression.driver_legacy                   # same as UPDATE, without pytest
-python -m tests.regression.driver_legacy RunT1             # dry run, golden untouched
+python -m pytest tests/regression                                   # compare against the golden (~13 min)
+REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression     # just some runs
+REGRESSION_VARIANTS=A python -m pytest tests/regression             # just one board variant
+REGRESSION_UPDATE=1 python -m pytest tests/regression               # rewrite the golden from current code
+python -m tests.regression.driver_legacy                            # same as UPDATE, without pytest
+python -m tests.regression.driver_legacy RunT1                      # dry run (both variants), golden untouched
+python -m pytest tests/test_program_timing.py                       # pinned schedule/readout numbers (~3 s)
 ```
 
-Run from the repo root (`pyproject.toml` / `tests/conftest.py` put it on `sys.path`).
+Run from the repo root (`pyproject.toml` / `tests/conftest.py` put it on
+`sys.path`). `pyproject.toml` already sets `addopts = "-q"`; adding `-q` on
+the command line makes it `-qq`, which hides the per-test lines.
+`REGRESSION_LABELS` and `REGRESSION_VARIANTS` combine with
+`REGRESSION_UPDATE=1`: only the named entries are rewritten, the rest of the
+golden is kept.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `capture.py` | Layout-agnostic core: fakes, instrumentation, normalisation. Reused unchanged after the refactor. |
-| `driver_legacy.py` | Replays every dispatch of `Runners/CSTQ03_BFC.py`. |
-| `golden_cstq03.json` | The snapshot, keyed by run label. |
-| `test_golden.py` | Re-captures in memory and diffs per label. `DRIVER` at the top selects the driver. |
+| `capture.py` | Layout-agnostic core: fakes, synthetic boards, instrumentation, digests, normalisation. Reused unchanged after the refactor. |
+| `driver_legacy.py` | Replays every dispatch of the frozen runner, plus variant and multi-flag labels. |
+| `fixtures/cstq03_legacy_runner.py.txt` | Verbatim copy of `Runners/CSTQ03_BFC.py` at commit `0f0a51f`. **Never edit** (see `fixtures/README.md`). |
+| `golden_cstq03.json` | The snapshot: `{"__meta__": {"qick", "variants"}, "A": {label: ...}, "B": {label: ...}}`. |
+| `test_golden.py` | Re-captures in memory under both board variants and diffs per (variant, label). `DRIVER` at the top selects the driver. |
+| `../test_program_timing.py` | Unit tests pinning tProc schedule and readout-window integers of the legacy programs under both boards. |
+
+## What changed in v2
+
+1. **`display()` runs for real** (Agg backend; `show`/`pause`/`savefig` are
+   no-ops). After every wrapped call the public, plain-data attributes it
+   added or changed are recorded as `"sets"`: fit results (`fit_i`, `fit_q`,
+   `osc_fit`, `env_fit`), `peakFreq_*`, `qubitFreq`, `fid`/`threshold`/`angle`
+   and so on. A `display` that raises on synthetic data is recorded as
+   `"raised": <type>` and the run continues (currently 5 `T2R.display`
+   `ValueError`s per variant). `acquire`/`save_*` exceptions still propagate.
+   All figures are closed after each `display`: with `show` stubbed, a display
+   that relies on the user closing its window would otherwise leak every
+   figure (the Undriven display alone grew the process past 5 GB).
+2. **Saved payloads are digested.** Every `save_data` entry carries
+   `"data_digest"`: per key (nested dicts flattened with `/`) its shape, dtype,
+   first three values and a sha1 over the values. Floats are hashed after
+   rounding the binary mantissa to 30 bits (about 9 significant digits;
+   `np.frexp` is exact, so this is deterministic). Every `save_config` entry
+   carries `"cfg_digest"` (sha1 of the whole cfg) and `"cfg_delta"` (keys added,
+   changed or removed since `__init__`, with their values). Arrays anywhere in
+   the capture (cfg, kwargs, `sets`) also carry a `sha1`.
+3. **Two synthetic boards.** `A` is the v1 board. `B` breaks the coincidences
+   `A` hides: gen fabric clock 614.4 MHz (DAC 9830.4 MS/s, `fs_mult` 20) instead
+   of the tProc's 430.08 MHz, and readout *i* wired to tProc input *i + 2*. Both
+   keep tProc 430.08 MHz, readout output 307.2 MHz, `avg_maxlen` 16384,
+   `buf_maxlen` 1024. Select with `capture.set_board("A"|"B")`; the golden holds
+   both and every experiment's board digest differs between them (so a
+   gen-clock/tProc-clock or readout/tProc-input mix-up cannot pass).
+4. **Budget per (class, path).** The first `PER_KIND` = 4 instantiations of each
+   `(class name, path)` pair are captured; later ones still run, but are not
+   recorded (their board traffic is discarded too) and are counted in
+   `"skipped": {"cls/path": n}`. A run stops (`StopCapture`, outcome
+   `stopped_at_budget`) at the first of: more than `MAX_TOTAL` = 60
+   instantiations, one pair skipped more than `MAX_SKIPS` = 200 times, or
+   **more than `MAX_IDLE` = 8 consecutive skipped instantiations**. The last rule
+   was added for runtime: without it, loop-only runs execute 60 real
+   acquisitions each (RunUndrivenSingleShot alone took over 9 min per
+   variant). It only ends runs that have stopped producing anything new.
+5. **Variant and multi-flag labels** (table below).
+6. **Frozen runner.** The driver reads `fixtures/cstq03_legacy_runner.py.txt`,
+   drops its single `from ... import *` line (replaced by a blank line, so line
+   numbers hold) and seeds the exec namespace with exactly the names that
+   star-import binds from `RUNS_PACKAGE`. A post-refactor driver changes that
+   constant and the patch targets, nothing else.
+7. **`cfg_access`.** `ExperimentClass.__init__` stores
+   `self.cfg = capture.RecordingDict(cfg)`. Explicit lookups (`[]`, `get`, `in`,
+   `setdefault`) and mutations (`[]=`, `del`, `pop`, `popitem`, `clear`,
+   `update`, `|=`) are logged per experiment class (string keys only); the run
+   records `"cfg_access": {cls: {"read": [...], "written": [...]}}`, unioned
+   over all its experiments, skipped ones included. It is a real `dict`, so
+   `isinstance`, `json.dump`, h5 attrs, `dict(cfg)` and `**cfg` all work. Lookups
+   are answered from the original dict and writes go to both, so the aliasing
+   the code relies on is kept. Copies (`dict(cfg)`, `cfg.copy()`,
+   `copy.copy/deepcopy`, pickling) are plain dicts and are not recorded.
+   Iteration-based reads (`items()`, `**cfg`, `json.dump`) are deliberately not
+   recorded either. A full capture with `REGRESSION_RECORD_CFG=0` (no wrapper)
+   is identical to the golden apart from `cfg_access`, so the wrapper does not
+   change behaviour.
+8. **QICK version.** `__meta__.qick` holds `qick.get_version()` at capture
+   time; any other installed version fails every golden test with a message
+   saying so.
+9. **Determinism.** BLAS/OpenMP thread pools are pinned to one thread
+   (`threadpoolctl`). With several threads, sklearn's `KMeans` (inside
+   `MixedShots`) is not bit-reproducible and `curve_fit` amplified the jitter
+   to about 1e-8 relative in `overlap_mat`, which changed its digest from run
+   to run.
 
 ## What one capture contains
 
-The driver executes the runner's sections 1-2 (parameters, flags, param dicts)
-verbatim, then parses section 3 (EXECUTE). For every `if <Flag>: ...` line it
-runs, with only that flag set: the unconditional statements before it
-(`build_context`, and `rebuild_singleshot_config` for single-shot-regime
-flags), the body, and the unconditional statements after it (`ctx.yoko.close()`).
-Every flag is exercised whatever its value in the file. `RunZeroSpanParity`
-runs twice: once as configured, once (`RunZeroSpanParity[validate]`) with every
-`Validate_*` / `Build_*` sub-flag on.
+The driver executes the fixture's sections 1-2 (parameters, flags, param dicts)
+verbatim, then parses section 3 (EXECUTE). For a set of flags it runs section
+3's statements in source order: every unconditional statement
+(`build_context`, `rebuild_singleshot_config`, `ctx.yoko.close()`) and the
+bodies of the selected `if <Flag>:` blocks only, i.e. exactly what the runner
+does with only those flags set, whatever their values in the file. Every flag
+gets a run of its own.
 
-Per run label the golden holds:
+Per (variant, run label) the golden holds:
 
 * `outcome`: `completed`, `stopped_at_budget`, or `raised` (type, message, traceback tail).
 * `yoko_writes`: every `OPEN`/`W`/`Q`/`CLOSE` on the voltage source, in order.
-* `experiments`: every `ExperimentClass` instantiation, in order, with
+* `experiments`: every captured `ExperimentClass` instantiation, in order, with
   * `cls`, `path`, `outerFolder`, `fname` (data root and timestamps masked);
   * `cfg`: the full config dict right after `ExperimentClass.__init__`;
   * `methods`: `acquire`/`display`/`save_data`/`save_config`/`analyze` calls with
-    their non-data kwargs (identical consecutive calls run-length encoded);
+    their non-data kwargs, `sets`, `raised`, `data_digest`, `cfg_digest`,
+    `cfg_delta` (identical consecutive calls run-length encoded as `count`);
   * `hw`: what that experiment sent to the board while its `acquire` ran: call
     counts, number of (unique) tProc programs, and a sha256 over the ordered
     stream of compiled binaries, pulse envelopes, nyquist/readout/buffer
     configuration and readout requests.
 * `hw_outside_experiments`: board calls made outside any `acquire` (e.g. `reset_gens`).
+* `skipped`: instantiations run but not captured, per `cls/path`.
+* `cfg_access`: cfg keys read and written, per experiment class.
 
 ## How the hardware is faked
 
 | Real | Fake |
 |---|---|
 | `makeProxy()` (Pyro4) | `(FakeSoc(), FakeSocCfg())`, patched in `socProxy` and every module that star-imported it. |
-| `QickConfig` | A genuine `QickConfig` over `SYNTHETIC_SOCCFG`: tProc v1 at 430.08 MHz, 7 mixer-less `axis_signal_gen_v6` gens (fabric 430.08 MHz), 2 `axis_readout_v2` readouts at 307.2 MHz, `avg_maxlen` 16384. Every program compiles through real QICK code. |
+| `QickConfig` | A genuine `QickConfig` over `capture.BOARDS[variant]`: tProc v1 at 430.08 MHz, 7 mixer-less `axis_signal_gen_v6` gens, 2 `axis_readout_v2` readouts at 307.2 MHz. Gen fabric 430.08 MHz (A) or 614.4 MHz (B); readout *i* on tProc input *i* (A) or *i + 2* (B). Every program compiles through real QICK code. |
 | `QickSoc` | `FakeSoc`: records every call; answers readout requests with seeded two-blob IQ data of exactly the shape QICK returns. |
 | `pyvisa.ResourceManager` | `FakeYoko` that tracks its level, so `ramp_to` terminates. |
 | `time.sleep`, `plt.show`, `plt.pause`, `Figure.savefig` | No-ops. |
 | `datetime` in project modules | Virtual clock, +1 s per `now()`, reset each run (otherwise back-to-back experiments with sleeps disabled would share an h5 filename). |
 
-Experiments run their **real** `acquire()` against `FakeSoc`, so the synthetic
-data always has the shape the code expects and every program the code builds is
-compiled. `display()` is a no-op (kwargs are still logged). `save_data` and
-`save_config` run for real into a throw-away temp dir, because downstream
-analysis (`analyze_parity_run`) reads the saved file back. Each run is capped at
-12 instantiations: the 13th raises `StopCapture` (a `BaseException`, so the code
-under test cannot swallow it) and the run is recorded as `stopped_at_budget`.
-RNGs are seeded from the run label, so runs are independent of order.
+Experiments run their real `acquire()` and `display()` against `FakeSoc`, so the
+synthetic data always has the shape the code expects and every program the code
+builds is compiled. `save_data` and `save_config` run for real into a throw-away
+temp dir, because downstream analysis (`analyze_parity_run`) reads the saved file
+back. `StopCapture` is a `BaseException`, so the code under test cannot swallow
+it. RNGs are seeded from the run label, so runs are independent of order.
 
 ## What a passing test proves
 
-For the CSTQ03 parameters in the runner, and for each flag:
+For the CSTQ03 parameters in the frozen runner, for each label, on both boards:
 
 * the same experiment classes are created in the same order, with the same
   `path`/`outerFolder` and an identical `cfg` (every key; `int` vs `float`
   compared strictly, floats to a relative 1e-9);
-* the same experiment methods are called with the same arguments;
+* the same experiment methods are called with the same arguments, set the same
+  attributes to the same values (fits included), and save the same payloads
+  (digest-exact at ~9 significant digits) and the same final cfg;
 * the board receives byte-identical tProc binaries, envelopes and channel
   configuration, in the same order;
-* the yoko receives the same command sequence.
+* the yoko receives the same command sequence;
+* the same cfg keys are read and written by each experiment class.
+
+`tests/test_program_timing.py` additionally pins, on both boards:
+`ModifiedRamseyProgram.scheduled_rep_period_cycles()` without reset and with
+1 and 2 reset cycles; `UndrivenSingleShotProgram.scheduled_rep_period_cycles()`
+and its refusal of a register-based `sync`; `readout_window_cycles`,
+`readout_tone_cycles`, `readout_tone_extension_cycles`, `adc_trig_offset_cycles`
+of SingleShot/ModifiedRamsey/ActiveResetVerify/UndrivenSingleShot (and that B
+gives a different `readout_tone_cycles` than A); compiled program length of
+T1 and ModifiedRamsey; the tProc input of the active-reset `read` (MR resolves
+`tproc_ch`, ARV passes the readout index -- the known ARV bug, pinned as-is)
+and both `cmp_offset`s (MR `ro_norm << 15`, ARV `1 << 24`).
 
 ## What it cannot prove
 
@@ -88,62 +178,107 @@ For the CSTQ03 parameters in the runner, and for each flag:
   voltage a search walks to, how many cycles a loop runs before a criterion is
   met) follows the seeded noise, not physics. Branches that this data never
   takes are not covered.
-* **tProc programs are compiled and fingerprinted but never executed.** Any
-  change to a program body shows up as a digest change, but whether a program is
-  *correct* (timing, conditional reset, loop counts) still rests on code review,
-  and on `verify_ModifiedRamsey_timing.py` against the board.
-* **The board is synthetic.** The tProc, gen-fabric and readout clocks and
-  `avg_maxlen` match what the lab's RFSoC reports; channel count, refclk, DDS
-  widths and buffer sizes are invented. Digests prove "same as before", not
-  "right for the board".
-* **`display()` is not exercised**: plotting and any fit done only inside
-  `display()` are untested, and attributes it would set do not exist.
-* **Only the first 12 instantiations per run** are captured; later loop
-  iterations are assumed to repeat the same pattern.
-* **Only the CSTQ03 parameter set** in the runner is exercised.
+* **tProc programs are compiled and fingerprinted but never executed.** Whether
+  a program is *correct* (timing, conditional reset, loop counts) still rests
+  on code review, on the pinned numbers in `test_program_timing.py`, and on
+  `verify_ModifiedRamsey_timing.py` against the board.
+* **The boards are synthetic.** Clocks and buffer sizes are realistic; channel
+  count, refclk and DDS widths are invented. **No gen has a digital mixer**:
+  with `has_mixer=True` on gen 0 (the resonator) every program that declares it
+  without `mixer_freq` (Rabi, T1, T2, T2E, SingleShot, ARV, MR, Undriven,
+  readout optimisation, ...) raises `RuntimeError` in `declare_gen`, so that
+  board would have tested nothing; only Transmission/SingleTone/ChiShift/ZSP
+  pass `mixer_freq`. The mixer branches of QICK are therefore not exercised.
+* **Only the first 4 instantiations of each (class, path) pair are captured.**
+  Later loop iterations are assumed to repeat the pattern. In particular a
+  periodic variant inside a loop (ModifiedRamsey validation controls every 10
+  cycles, re-calibrations) is not captured if it shares class and path with an
+  already-saturated kind. Runs end after 8 consecutive skips.
+* **Some stages are still not reached** with the file's parameters:
+  `RunModifiedRamsey_Control` spends its budget in the sweet-spot search (use
+  `[verified]`), `RunAutoCoherence` in the readout-gain optimisation (use
+  `[fast]`), and `RunChargeDispersionRamsey` raises before any experiment (a
+  real legacy bug, below).
+* **Float digests are exact at ~9 significant digits.** A refactor that changes
+  arithmetic order can, very rarely, move a value across a rounding boundary
+  and flip a digest even though the value moved by one ulp; the `head` values
+  (compared at 1e-9) show whether that is what happened.
+* **`display` exceptions are swallowed** (recorded as `raised`), unlike on
+  hardware; with real data these displays would normally not raise.
+* **Only the CSTQ03 parameter set** in the frozen runner is exercised.
 * `traceback` entries are diagnostic only and excluded from the comparison
   (their line numbers move with any edit).
 
 ## Run labels (golden at commit time)
 
-31 labels: 30 runner flags plus the `[validate]` variant. Every label but one
-reaches at least one experiment. Full capture takes ~5 min, mostly
-`RunUndrivenSingleShot` (~85 s: the real 1e6-shot GMM analysis inside its
-`acquire`), `SingleShot_QubitOptimize` (~45 s) and `RunZeroSpanParity[validate]` (~30 s).
+39 labels per board variant: 31 runner flags, 5 override variants
+(`Flag[name]`) plus the v1 `[validate]` variant, and 4 multi-flag labels
+(`FlagA+FlagB`, flags run in runner order). Labels stay the legacy flag names.
 
-| Run label | Outcome | Experiments | Classes (count) | tProc programs |
-|---|---|---|---|---|
-| `Constant2Tone` | stopped_at_budget | 12 | ConstantTwoTone x12 | 12 |
-| `ConstantTone` | completed | 1 | SingleTone x1 | 100 |
-| `RunTransmissionSweep` | completed | 1 | CavitySpecFF x1 | 201 |
-| `RunTransmissionSweeps` | completed | 1 | CavitySpecFF x1 | 201 |
-| `Run2ToneSpec` | completed | 1 | QubitSpecSliceFF x1 | 1 |
-| `RunSpecGainLengthSweep` | stopped_at_budget | 12 | QubitSpecSliceFF x12 | 12 |
-| `RunChiShift` | completed | 1 | ChiShift x1 | 202 |
-| `Run2ToneChargeDispersionQuasiCW` | stopped_at_budget | 12 | QubitSpecSliceFF x8, ChargeDispersionQuasiCW x4 | 12 |
-| `RunModifiedRamsey` | stopped_at_budget | 12 | SingleShotProgramFFMUX x5, ModifiedRamsey x7 | 17 |
-| `RunModifiedRamsey_Control` | stopped_at_budget | 12 | QubitSpecSliceFF x12 | 12 |
-| `RunChargeDispersionQuasiCW` | completed | 1 | ChargeDispersionQuasiCW x1 | 1 |
-| `RunChargeDispersionRamsey` | raised (KeyError 'df') | 0 | - | 0 |
-| `RunAmplitudeRabi` | completed | 1 | AmplitudeRabiFF x1 | 1 |
-| `RunT1` | stopped_at_budget | 12 | T1FF x12 | 12 |
-| `RunT1T2E` | stopped_at_budget | 12 | T1FF x6, T2EMUX x6 | 12 |
-| `RunT1T2RT2E` | stopped_at_budget | 12 | T1FF x4, T2EMUX x4, T2R x4 | 12 |
-| `RunT2` | stopped_at_budget | 12 | T2R x12 | 12 |
-| `RunT2E` | stopped_at_budget | 12 | T2EMUX x12 | 12 |
-| `RunTrans_QubitSpec` | stopped_at_budget | 12 | QubitSpecSliceFF x12 | 12 |
-| `RunChargeSweep` | completed | 10 | QubitSpecSliceFF x10 | 10 |
-| `RunChargeTransmissionSweep` | completed | 10 | CavitySpecFF x10 | 2010 |
-| `RunActiveResetVerify` | completed | 9 | SingleShotProgramFFMUX x3, ActiveResetVerify x6 | 12 |
-| `RunInterleavedCoherence` | stopped_at_budget | 12 | UndrivenSingleShot x4, T1FF x4, T2R x4 | 12 |
-| `SingleShot` | completed | 1 | SingleShotProgramFFMUX x1 | 2 |
-| `RunUndrivenSingleShot` | stopped_at_budget | 12 | UndrivenSingleShot x12 | 12 |
-| `RunT1SS` | stopped_at_budget | 12 | SingleShotProgramFFMUX x6, T1_SS x6 | 612 |
-| `SingleShot_ReadoutOptimize` | completed | 1 | ReadOpt_wSingleShotFF x1 | 294 |
-| `SingleShot_QubitOptimize` | completed | 1 | QubitPulseOpt_wSingleShotFF x1 | 882 |
-| `RunAutoCoherence` | stopped_at_budget | 12 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x11 | 23 |
-| `RunZeroSpanParity` | completed | 3 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
-| `RunZeroSpanParity[validate]` | completed | 3 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 257 |
+| Variant label | Override applied after sections 1-2 | Why |
+|---|---|---|
+| `RunZeroSpanParity[validate]` | every `Validate_*` / `Build_*` flag = True | validation harness |
+| `RunModifiedRamsey[no_reset]` | `ModifiedRamsey_params["use_active_reset"] = False` | no-reset MR program path |
+| `RunModifiedRamsey_Control[verified]` | `ModifiedRamsey_Control_params["sweet_spot_max_df_mhz"] = 1e9` | search accepts at once, so the MRC Ramsey stage runs |
+| `RunAutoCoherence[fast]` | `AutoCoherence_override_params` += `auto_readout_opt=False, ss_gain_pts=3, T1_expts=5, T2_expts=5, T2E_expts=5` | reaches T1, T2R and T2E stages |
+| `RunT2E[rotation]` | `T2E_params` += `rotation_angle=0.3, min_max=[0.0, 1.0]` | rotation branch of T2E |
+| `RunTransmissionSweep+RunAmplitudeRabi` | none | `pulse_freq` carried from the transmission fit into Rabi |
+| `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW` | `TwoToneChargeDispersion_params["num_cycles"] = 1` | `probe_freq` leak; one cycle so the second dispatch is reached at all |
+| `RunActiveResetVerify+SingleShot` | none | `res_phase` set by ARV calibration, discarded by the rebuild |
+| `RunTransmissionSweep+Run2ToneSpec` | none | transmission result carried into spectroscopy |
+
+Outcomes are identical on both boards (every experiment's `hw` digest differs
+between them). Full capture: ~13 min for both boards in one process (pytest,
+24-core Windows box, BLAS pinned to one thread), dominated by
+`RunUndrivenSingleShot` (~2 min per board: the real 1e6-shot analysis),
+`RunInterleavedCoherence` (~75 s), `SingleShot_QubitOptimize` (~26 s),
+`RunZeroSpanParity[validate]` (~30 s).
+
+| Run label | Outcome | Captured | Skipped | Classes (count) | tProc programs |
+|---|---|---|---|---|---|
+| `Constant2Tone` | stopped_at_budget | 4 | 9 | ConstantTwoTone x4 | 4 |
+| `ConstantTone` | completed | 1 | 0 | SingleTone x1 | 100 |
+| `RunTransmissionSweep` | completed | 1 | 0 | CavitySpecFF x1 | 201 |
+| `RunTransmissionSweeps` | completed | 1 | 0 | CavitySpecFF x1 | 201 |
+| `Run2ToneSpec` | completed | 1 | 0 | QubitSpecSliceFF x1 | 1 |
+| `RunSpecGainLengthSweep` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
+| `RunChiShift` | completed | 1 | 0 | ChiShift x1 | 202 |
+| `Run2ToneChargeDispersionQuasiCW` | stopped_at_budget | 8 | 13 | QubitSpecSliceFF x4, ChargeDispersionQuasiCW x4 | 8 |
+| `RunModifiedRamsey` | stopped_at_budget | 8 | 10 | SingleShotProgramFFMUX x4, ModifiedRamsey x4 | 12 |
+| `RunModifiedRamsey[no_reset]` | stopped_at_budget | 7 | 15 | SingleShotProgramFFMUX x3, ModifiedRamsey x4 | 10 |
+| `RunModifiedRamsey_Control` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
+| `RunModifiedRamsey_Control[verified]` | stopped_at_budget | 8 | 9 | QubitSpecSliceFF x4, ModifiedRamsey x4 | 8 |
+| `RunChargeDispersionQuasiCW` | completed | 1 | 0 | ChargeDispersionQuasiCW x1 | 1 |
+| `RunChargeDispersionRamsey` | raised (KeyError 'df') | 0 | 0 | - | 0 |
+| `RunAmplitudeRabi` | completed | 1 | 0 | AmplitudeRabiFF x1 | 1 |
+| `RunT1` | stopped_at_budget | 4 | 9 | T1FF x4 | 4 |
+| `RunT1T2E` | stopped_at_budget | 8 | 9 | T1FF x4, T2EMUX x4 | 8 |
+| `RunT1T2RT2E` | stopped_at_budget | 12 | 9 | T1FF x4, T2EMUX x4, T2R x4 | 12 |
+| `RunT2` | stopped_at_budget | 4 | 9 | T2R x4 | 4 |
+| `RunT2E` | stopped_at_budget | 4 | 9 | T2EMUX x4 | 4 |
+| `RunT2E[rotation]` | stopped_at_budget | 4 | 9 | T2EMUX x4 | 4 |
+| `RunTrans_QubitSpec` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
+| `RunChargeSweep` | completed | 4 | 6 | QubitSpecSliceFF x4 | 4 |
+| `RunChargeTransmissionSweep` | completed | 4 | 6 | CavitySpecFF x4 | 804 |
+| `RunActiveResetVerify` | completed | 7 | 2 | SingleShotProgramFFMUX x3, ActiveResetVerify x4 | 10 |
+| `RunInterleavedCoherence` | stopped_at_budget | 12 | 9 | UndrivenSingleShot x4, T1FF x4, T2R x4 | 12 |
+| `SingleShot` | completed | 1 | 0 | SingleShotProgramFFMUX x1 | 2 |
+| `RunUndrivenSingleShot` | stopped_at_budget | 4 | 9 | UndrivenSingleShot x4 | 4 |
+| `RunT1SS` | stopped_at_budget | 8 | 9 | SingleShotProgramFFMUX x4, T1_SS x4 | 408 |
+| `SingleShot_ReadoutOptimize` | completed | 1 | 0 | ReadOpt_wSingleShotFF x1 | 294 |
+| `SingleShot_QubitOptimize` | completed | 1 | 0 | QubitPulseOpt_wSingleShotFF x1 | 882 |
+| `RunAutoCoherence` | stopped_at_budget | 5 | 9 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4 | 9 |
+| `RunAutoCoherence[fast]` | completed | 14 | 3 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4, T1FF x3, T2R x3, T2EMUX x3 | 18 |
+| `RunZeroSpanParity` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
+| `RunZeroSpanParity[validate]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 257 |
+| `RunTransmissionSweep+RunAmplitudeRabi` | completed | 2 | 0 | CavitySpecFF x1, AmplitudeRabiFF x1 | 202 |
+| `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW` | completed | 4 | 0 | QubitSpecSliceFF x2, ChargeDispersionQuasiCW x2 | 4 |
+| `RunActiveResetVerify+SingleShot` | completed | 8 | 2 | SingleShotProgramFFMUX x4, ActiveResetVerify x4 | 12 |
+| `RunTransmissionSweep+Run2ToneSpec` | completed | 2 | 0 | CavitySpecFF x1, QubitSpecSliceFF x1 | 202 |
+
+The multi-flag labels do see their carry-overs: Rabi after the transmission
+fit runs at `pulse_freq` 7099.80 MHz (7095.4 alone), and the quasi-CW after the
+two-tone search starts at 2650.99 MHz (2306.57 alone).
 
 **`RunChargeDispersionRamsey` raises before any capture, and that is a real
 legacy bug, not a harness artefact.** `run_charge_dispersion_ramsey` reads
@@ -152,26 +287,23 @@ no `"df"` key (`upper_freq`, `lower_freq`, `probe_freq`, `relax_delay`,
 `repetitions`). It would raise the same `KeyError` on hardware. The golden
 records the raise so the refactor has to decide on it deliberately.
 
-Other things the golden records as-is: `RunModifiedRamsey_Control` spends its
-whole budget in the sweet-spot search (the synthetic spectra never satisfy the
-acceptance criterion), and `RunAutoCoherence` spends its budget in the
-readout-gain optimisation (`ss_gain_pts` 100), so later stages are not reached.
-
-Checked before committing: two full captures in separate processes are
-byte-identical; each label captured alone in a fresh process equals its entry
-in the full-sequence golden (no state leaks between runs); changing one
-`BaseConfig` value, or adding one `sync_all` to `T1Program.body` while leaving
-the cfg untouched, both fail `RunT1` (the latter only through `hw.digest` /
-`hw.first_program`).
+Checked before committing: the golden was generated with
+`REGRESSION_UPDATE=1`, and a second full capture in a separate process is
+byte-identical to it; `python -m pytest tests` passes against it in a third
+process; a capture with `REGRESSION_RECORD_CFG=0` equals it apart from
+`cfg_access`.
 
 ## After the refactor
 
 Write `driver_qicklab.py` exposing `capture_all(labels=None)` with the same
 output shape, built on `capture.install_mocks(<new ExperimentClass>,
 make_proxy_targets=[...], pyvisa_targets=[...])` and `capture.begin_run` /
-`end_run`, then point `DRIVER` in `test_golden.py` at it. Run labels must stay
-the legacy flag names so the golden still keys correctly. Differences that are
-intentional must be justified one by one before the golden is regenerated.
+`end_run`, reading the same frozen fixture with `RUNS_PACKAGE` pointing at the
+new runs package, then point `DRIVER` in `test_golden.py` at it. The variant
+loop lives in `capture.capture_variants`, so the driver does not handle boards.
+Run labels must stay the legacy flag names so the golden still keys correctly.
+Differences that are intentional must be justified one by one before the
+golden is regenerated.
 
 ## Existing offline scripts
 
