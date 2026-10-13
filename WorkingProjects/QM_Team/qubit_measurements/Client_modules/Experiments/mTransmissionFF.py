@@ -47,8 +47,15 @@ class CavitySpecFF(ExperimentClass):
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
             self.cfg["pulse_freq"] = f
-            prog = CavitySpecFFProg(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=1,))
+            # One CavitySpecFF slice starts TransNumPoints * rounds tProc programs,
+            # and a charge sweep runs many slices; retry the rare stale-shot-counter
+            # failure instead of losing the sweep. See acquire_with_retry().
+            results.append(acquire_with_retry(
+                lambda: CavitySpecFFProg(self.soccfg, self.cfg),
+                self.soc,
+                label=f"CavitySpecFF f={f:.4f} MHz",
+                load_pulses=True, readouts_per_experiment=1,
+            ))
         print(f'Time: {time.time() - start}')
         results = np.transpose(results)
         data={'config': self.cfg, 'data': {'results': results, 'fpts':fpts}}

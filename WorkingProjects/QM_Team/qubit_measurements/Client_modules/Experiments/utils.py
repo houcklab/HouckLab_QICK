@@ -8,6 +8,59 @@ from datetime import datetime
 import os
 import json
 
+# Signatures of a stale tProc shot counter, as opposed to a real config problem.
+# "Overflowed the averages buffer" is deliberately NOT here: that one means the
+# tProc is outrunning the readout and needs a longer relax_delay, so retrying it
+# would just spin.
+_TRANSIENT_READOUT_MARKERS = ("could not broadcast input array",
+                              "got too much data")
+
+
+def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
+    """Run a QICK program, retrying a transient streaming-readout failure.
+
+    When programs run back to back, the tProc shot counter occasionally reports
+    more shots than the program actually ran: the streamer zeroes the counter and
+    starts the next program while the previous one is still retiring its last
+    reps, so those leftover counts land on top of the fresh run. qick_asm.acquire()
+    then tries to write more accumulated points than it allocated and dies with
+
+        ValueError: could not broadcast input array from shape (26,2) into shape (20,2)
+
+    (the second number is reps, the first is reps + leftovers). It is intermittent
+    and gets likelier the more programs a routine starts, so a long sweep can lose
+    hours of acquisition to it. The condition does not persist: resetting the tProc
+    and re-arming the readout clears the counter, so retrying the point recovers.
+
+    `make_prog` is a zero-argument callable returning a FRESH program object — the
+    failed one has a half-written accumulation buffer and must not be reused.
+    Raises the underlying error unchanged if it is not one of the transient ones,
+    or if every attempt fails.
+    """
+    last_err = None
+    for attempt in range(n_tries):
+        prog = make_prog()
+        try:
+            return prog.acquire(soc, **acquire_kwargs)
+        except (ValueError, RuntimeError) as err:
+            if not any(m in str(err) for m in _TRANSIENT_READOUT_MARKERS):
+                raise
+            last_err = err
+            tag = f" [{label}]" if label else ""
+            print(f"[acquire_with_retry]{tag} transient readout error on attempt "
+                  f"{attempt + 1}/{n_tries}: {err}")
+            try:
+                # tProc v1: full reset + program reload, which is what actually
+                # clears the residual counts. Tens of ms, and only on a failure.
+                soc.stop_tproc()
+            except Exception as cleanup_err:
+                print(f"[acquire_with_retry]   stop_tproc() failed: {cleanup_err}")
+            time.sleep(0.1)
+    raise RuntimeError(
+        f"acquire failed {n_tries}x with a transient readout error"
+        f"{f' [{label}]' if label else ''}; last error: {last_err}"
+    ) from last_err
+
 def project_iq_signal(avgi, avgq):
     """Project complex IQ data onto its signal-bearing axis for peak finding.
 
