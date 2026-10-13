@@ -93,6 +93,24 @@ RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.002, } # 0.0001 has two periods in it
+# Cavity transmission sweep repeated at every charge bias -> transmission-vs-
+# (frequency, voltage) heatmap + tracked resonator frequency. Each slice is
+# saved individually under ChargeTransmissionFF/; the map lands beside the last
+# slice as _ChargeTransmissionHeatmap.png/.npz. Voltage keys left at None
+# inherit charge_params above; span/num_points left at None inherit
+# Transmission_params. fit=True adds a per-slice hanger fit (slower).
+# reps are hardware averages inside ONE tProc program; rounds rerun the whole
+# program and average in software. reps=400/rounds=1 and reps=20/rounds=20 both
+# average 400 shots, but the second starts 20x more tProc programs, and every
+# program start is a chance to hit the stale-shot-counter race that surfaces as
+# "could not broadcast input array from shape (26,2) into shape (20,2)". Prefer
+# reps; raise rounds only if the accumulation buffer overflows.
+RunChargeTransmissionSweep = False
+ChargeTransmission_params = {"reps": 20, "rounds": 20,
+                             "span": None, "num_points": None,
+                             "fit": False, "settle_s": 0.0,
+                             "voltage_start": 0, "voltage_end": 0.05,
+                             "voltage_step": 0.005}
 Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
                         "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 20, 'rounds': 10,
@@ -697,6 +715,7 @@ if RunT2:                            run_t2(ctx, T1T2_params)
 if RunT2E:                           run_t2e(ctx, T2E_params)
 if RunTrans_QubitSpec:               run_trans_qubit_spec(ctx, Spec_relevant_params, T1T2_params)
 if RunChargeSweep:                   run_charge_sweep(ctx, Spec_relevant_params)
+if RunChargeTransmissionSweep:       run_charge_transmission_sweep(ctx, ChargeTransmission_params)
 if RunActiveResetVerify:             run_active_reset_verify(ctx, ActiveResetVerify_params)
 
 # ── switch to the single-shot config regime (original top-level rebuild @ old line 2990) ──
