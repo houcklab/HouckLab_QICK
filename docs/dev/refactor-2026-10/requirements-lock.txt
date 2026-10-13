@@ -152,4 +152,5 @@ websocket-client==1.9.0
 websockets==16.0
 widgetsnbextension==4.0.15
 xarray==2026.4.0
-Python 3.13.5
+# (full `pip freeze` of the Windows venv, Python 3.13.5 — for reference only; contains Windows-only
+#  packages such as pywinpty. Install requirements-test.txt instead.)

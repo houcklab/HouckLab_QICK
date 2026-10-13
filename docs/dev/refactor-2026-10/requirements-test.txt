@@ -1,0 +1,18 @@
+# Minimal, cross-platform pinned set for running the refactor test suite (tests/).
+# Versions are those of the Windows machine the golden was generated on (2026-10-13, Python 3.13.5).
+# Hardware-only extras (pywindfreak for TWPA scripts) are deliberately omitted.
+qick==0.2.334
+numpy==2.4.1
+scipy==1.17.0
+matplotlib==3.10.8
+h5py==3.15.1
+pandas==2.3.3
+scikit-learn==1.8.0
+threadpoolctl==3.6.0
+seaborn==0.13.2
+tqdm==4.67.1
+Pyro4==4.82
+Pyro5==5.16
+PyVISA==1.16.1
+pytest==9.1.1
+ruff==0.17.0

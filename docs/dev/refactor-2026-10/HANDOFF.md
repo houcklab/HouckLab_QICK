@@ -68,16 +68,30 @@ Known gotchas for 3a (from the symbol-map agent): `runs/singleshot` needs `from 
 - No hardware access at import time; never regenerate the golden on a machine with a different qick version
   (the golden stores `qick.get_version()`; pin is `qick==0.2.334`).
 
-## Setting up on a new machine
+## Setting up on a new machine (macOS / Linux / Windows)
 ```
 git clone https://github.com/houcklab/HouckLab_QICK.git && cd HouckLab_QICK
 git checkout qicklab_refactor
-python -m venv .venv && .venv\Scripts\activate          # Python 3.13.5 was used; 3.11+ required
-pip install -r docs/dev/refactor-2026-10/requirements-lock.txt   # exact versions (or: pip install -e .[dev])
-python -m pytest tests                                   # expect: all pass, 1 skipped (qicklab/ not yet present)
+python3 -m venv .venv
+source .venv/bin/activate                 # macOS/Linux        (Windows: .venv\Scripts\activate)
+pip install -r docs/dev/refactor-2026-10/requirements-test.txt   # pinned, cross-platform, ~15 packages
+python -m pytest tests                    # ~15 min; expect: all pass, 1 skipped (qicklab/ not yet present)
 ```
-PyCharm: mark the repo root as sources root (the committed `.env` sets PYTHONPATH to the repo root).
-The `.venv` is not in git. The lab's RFSoC/yoko are never needed for the tests.
+Python 3.13.5 was used; 3.11+ is required. `requirements-lock.txt` is the full Windows `pip freeze`, kept for
+reference only — do not install it on macOS. The `.venv` is not in git. The committed `.env` holds a Windows
+PYTHONPATH; pytest does not need it (`pyproject.toml` sets `pythonpath = ["."]`), and `python -m <module>`
+from the repo root works everywhere. PyCharm users: mark the repo root as sources root.
+The lab's RFSoC/yoko are never needed for the tests.
+
+**Platform note on the golden.** The golden was captured on Windows. The tProc program hashes, cfg dicts and
+yoko sequences are platform-independent, but the `data_digest` / `sets` fields hash floats rounded to 9
+significant digits, so a different BLAS (Apple Accelerate vs MKL/OpenBLAS) can in rare cases flip a rounding
+boundary. If the very first `pytest tests` on the new machine fails ONLY in `data_digest`/`sets` entries
+(nothing in `cfg`, `hw`, `methods`, `yoko_writes`), that is a platform artifact, not a code change: BEFORE
+moving any code, run `REGRESSION_UPDATE=1 python -m pytest tests/regression` on the untouched legacy tree,
+commit the regenerated golden with the message "test(regression): regenerate golden on macOS (BLAS rounding)",
+and run the suite twice more to confirm it is stable on that machine. Any diff in `cfg`, `hw` or `methods`
+on an untouched tree means the environment is wrong (check `qick==0.2.334`, numpy/scipy versions).
 
 ## Resuming with Claude Code
 Open the repo on the new machine, start Claude Code, and say: "Continue the qicklab refactor — read
