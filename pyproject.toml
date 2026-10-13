@@ -1,0 +1,52 @@
+[project]
+name = "qicklab"
+version = "0.1.0"
+description = "Houck Lab RFSoC (QICK) measurement framework for superconducting qubits"
+requires-python = ">=3.11"
+dependencies = [
+    "qick==0.2.334",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "h5py",
+    "pandas",
+    "tqdm",
+    "Pyro4",
+    "pyvisa",
+    "scikit-learn",
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest"]
+twpa = ["pywindfreak"]
+signalcore = ["Pyro5"]
+
+[tool.setuptools]
+packages = { find = { include = ["qicklab*", "devices*"] } }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["."]
+extend-exclude = [".venv", ".claude", ".idea", "WorkingProjects"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501: formatter owns line length. E741: I/Q are the physics names for quadratures.
+# B905: zip(strict=) would change behaviour on length mismatch. B008: call-in-default is used deliberately.
+ignore = ["E501", "E741", "B905", "B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["qicklab", "devices"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+markers = [
+    "slow: long-running offline tests (deselect with -m 'not slow')",
+    "hardware: requires the RFSoC / instruments (never run in CI)",
+]
