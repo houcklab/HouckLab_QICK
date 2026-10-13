@@ -8,6 +8,7 @@ from datetime import datetime
 import os
 import json
 
+
 # Signatures of a stale tProc shot counter, as opposed to a real config problem.
 # "Overflowed the averages buffer" is deliberately NOT here: that one means the
 # tProc is outrunning the readout and needs a longer relax_delay, so retrying it
@@ -61,7 +62,7 @@ def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
         f"{f' [{label}]' if label else ''}; last error: {last_err}"
     ) from last_err
 
-def project_iq_signal(avgi, avgq):
+def project_iq_signal(avgi, avgq, edge_frac=0.15):
     """Project complex IQ data onto its signal-bearing axis for peak finding.
 
     Two-tone spec frequently lands almost the entire qubit response in one
@@ -80,19 +81,25 @@ def project_iq_signal(avgi, avgq):
     ----------
     avgi, avgq : array_like
         Real and imaginary readout quadratures (1-D, same length).
+    edge_frac : float
+        Fraction of the sweep taken from each end as the off-resonant baseline
+        anchor (see the baseline/orientation note below). 0.15 = outer 15% per
+        side; pass 0 to fall back to the whole-trace median.
 
     Returns
     -------
     np.ndarray
         Real-valued, background-subtracted, principal-axis-projected trace,
-        oriented so the dominant excursion is positive.
+        oriented so the qubit feature rises as a positive peak from a ~0
+        baseline.
     """
     avgi = np.asarray(avgi, dtype=float)
     avgq = np.asarray(avgq, dtype=float)
     sig = avgi + 1j * avgq
 
-    # Off-resonant background: most points are off-resonance, so the per-quadrature
-    # median is a robust estimate of the constant complex offset.
+    # Centre the cloud before estimating the axis. Any error in this offset lies
+    # *along* the signal axis, so it biases the baseline but not the axis angle;
+    # the baseline is re-estimated properly below.
     bg = np.median(sig.real) + 1j * np.median(sig.imag)
     dev = sig - bg
 
@@ -105,9 +112,30 @@ def project_iq_signal(avgi, avgq):
     ang = 0.5 * np.angle(np.sum(dev ** 2))
     proj = (dev * np.exp(-1j * ang)).real
 
-    # Orient so the dominant excursion is a positive peak (peak-finding/Lorentzian
-    # fitting expect maxima rising from the baseline).
-    if abs(proj.min()) > abs(proj.max()):
+    # Baseline and orientation.
+    #
+    # The old code used the whole-trace median as the baseline and flipped the
+    # sign whenever abs(min) > abs(max). Both break as soon as the feature is
+    # WIDE relative to the span: the median then sits *inside* the feature, the
+    # trace splits into a roughly half-positive / half-negative excursion, and
+    # the min-vs-max comparison becomes a coin flip decided by a single noisy
+    # point. That inverted the broad ~3753 MHz response of the 2026-09-02 12:03
+    # CSTQ03/Q2 spec into a dip and put both "peaks" on edge noise at 3764 MHz,
+    # even though I and Q both showed the bump plainly.
+    #
+    # A spec span is centred on the expected line, so the outer edges are the
+    # points most likely to be off-resonance whatever the linewidth. Anchor the
+    # baseline there, then orient by TOTAL excursion mass (many points on the
+    # feature side) rather than by the single most extreme sample.
+    n = proj.size
+    k = int(round(edge_frac * n))
+    if k >= 3 and 2 * k < n:
+        baseline = float(np.median(np.concatenate([proj[:k], proj[-k:]])))
+    else:
+        baseline = float(np.median(proj))
+    proj = proj - baseline
+
+    if -proj[proj < 0].sum() > proj[proj > 0].sum():
         proj = -proj
     return proj
 
