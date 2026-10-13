@@ -1,25 +1,6 @@
-"""Client-side helpers for controlling remote SignalCore SC5510A signal generators.
+"""Pyro5 client for remote SignalCore SC5510A generators (run on the client PC).
 
-Brought over from the sc5510a-py repo (https://github.com/NPdL-SQTeam/sc5510a-py).
-Run on the *client PC*. The *server PC* (physically connected to the SC5510A
-devices) must already be running the Pyro name server (start_nameserver.py) and
-the instrument server (start_instrument_server.py).
-
-Set the server PC's IP address with the SC5510A_SERVER_HOST environment variable,
-or pass host=... to the functions below.
-
-Library usage:
-
-    import sc5510a_client as sc
-
-    print(sc.list_instruments())          # discover available devices
-    inst = sc.connect("10002D35")          # proxy to a specific device
-    inst.frequency = 6e9                   # Hz
-    inst.power = 10                        # dBm
-    inst.output = True                     # RF on
-    print(inst.frequency, inst.power, inst.output, inst.clocked)
-
-Requires the Pyro5 package (pip install Pyro5) in the active environment.
+Server setup, host and usage: docs/hardware.md#signalcore-sc5510a.
 """
 
 import os
@@ -27,7 +8,6 @@ import os
 import Pyro5.api
 from Pyro5 import errors
 
-# IP address of the server PC running the Pyro name server.
 SERVER_HOST = os.environ.get("SC5510A_SERVER_HOST", "192.168.0.102")
 NAME_SERVER_PORT = 9090
 NAME_PREFIX = "SC5510A#"
@@ -54,8 +34,7 @@ def list_instruments(host=SERVER_HOST, port=NAME_SERVER_PORT):
 def connect(name=None, host=SERVER_HOST, port=NAME_SERVER_PORT):
     """Return a Pyro proxy to a remote SC5510A.
 
-    name : full registered name ("SC5510A#10002D35"), the bare device id
-           ("10002D35"), or None to connect to the only/first device.
+    name: registered name ("SC5510A#10002D35"), bare device id ("10002D35"), or None for the first.
     """
     nameserver = locate_nameserver(host, port)
     registered = nameserver.list(prefix=NAME_PREFIX)

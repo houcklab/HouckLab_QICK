@@ -1,8 +1,19 @@
 import os
 from ctypes import c_int, cdll
-from distutils.util import strtobool
 
+# Python >= 3.8 does not search PATH for DLLs: docs/hardware.md#attenuator-vaunix-lda
 os.add_dll_directory(os.getcwd())
+
+
+def _strtobool(val):
+    """Same as the removed ``distutils.util.strtobool``: 1 or 0, ValueError otherwise."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return 1
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return 0
+    else:
+        raise ValueError(f"invalid truth value {val!r}")
 
 
 def setatten(attenu, serial, printv):
@@ -14,58 +25,40 @@ def setatten(attenu, serial, printv):
     DeviceIDArray = c_int * 20
     Devices = DeviceIDArray()
 
-    # GetNumDevices will determine how many LDA devices are availible
     numDevices = vnx.fnLDA_GetNumDevices()
     if printv == True:
         print(str(numDevices), " device(s) found")
 
-    # GetDevInfo generates a list, stored in the devices array, of
-    # every availible LDA device attached to the system
-    # GetDevInfo will return the number of device handles in the array
     dev_info = vnx.fnLDA_GetDevInfo(Devices)
-    # print('GetDevInfo returned', str(dev_info))
 
     for i in range(0, 5):
-        # GetSerialNumber will return the devices serial number
         ser_num_i = vnx.fnLDA_GetSerialNumber(Devices[i])
         if printv == True:
             print("Device " + str(i) + " Serial number:", str(ser_num_i))
         if ser_num_i == serial:
             if printv == True:
                 print("Device was found to be device " + str(i))
-            # InitDevice wil prepare the device for operation
             init_dev = vnx.fnLDA_InitDevice(Devices[i])
-            # print('InitDevice returned', str(init_dev))
 
-            #### Device 0 ####
-            # GetNumChannels will return the number of channels on the device
             num_channels = vnx.fnLDA_GetNumChannels(Devices[i])
             if num_channels < 1:
                 num_channels = 1
 
-            # print("Num channels = %d" %num_channels)
-            # Input desired attenuation level for channel 1
-            # print('Set attenuation level for channel 1 of device')
-            # atten = float(input(': '))
             atten = float(attenu)
             attenuation = atten / 0.05
             atten = round(attenuation)
 
-            # Select channel 1
             channel_1 = vnx.fnLDA_SetChannel(Devices[i], 1)
             if channel_1 != 0:
                 if printv == True:
                     print("SetChannel returned error", channel_1)
-            # Set attenuation level for channe 1
             result_1 = vnx.fnLDA_SetAttenuationHR(Devices[i], int(atten))
             if result_1 != 0:
                 if printv == True:
                     print("SetAttenuationHR returned error", result_1)
 
-            # Get channel 1 attenuation
             result_1 = vnx.fnLDA_GetAttenuationHR(Devices[i])
 
-            # Display attenuation level for channel 1
             if result_1 < 0:
                 if printv == True:
                     print("GetAttenuationHR returned error", result)
@@ -74,7 +67,6 @@ def setatten(attenu, serial, printv):
                 if printv == True:
                     print("Set attenuation:", atten_db)
 
-            # Always close the device when done with it
             result = vnx.fnLDA_CloseDevice(Devices[i])
 
             if result != 0:
@@ -86,8 +78,8 @@ def setatten(attenu, serial, printv):
 
 
 if __name__ == "__main__":
-    atten = 30  # sys.argv[1]
-    serial = 27786  # sys.argv[2]
-    printv = True  # sys.argv[3]
-    boolprint = bool(strtobool(str(printv)))
+    atten = 30
+    serial = 27786
+    printv = True
+    boolprint = bool(_strtobool(str(printv)))
     setatten(float(atten), int(serial), boolprint)

@@ -1,29 +1,22 @@
-"""
-file to create basic initialization of things used for RFSOC This will include:
-- defining names for the attenuators
-- defining yoko name
-- defining the basic config dict that will state the channels used for all subsequent code
-"""
+"""Board-level default cfg (channel wiring, Nyquist zones, trigger timing) and the fast-flux map."""
 
-###### define default configuration
+import copy
+
 BASE_CONFIG = {
-    "res_ch": 0,  # --Fixed
-    "qubit_ch": 1,  # --Fixed
+    "res_ch": 0,
+    "qubit_ch": 1,
     "mixer_freq": 0.0,  # MHz
-    "ro_chs": [0],  # --Fixed
-    "reps": 1000,  # --Fixed
-    "nqz": 2,  # 1,  #### refers to cavity
+    "ro_chs": [0],
+    "reps": 1000,
+    "nqz": 2,
     "qubit_nqz": 1,
-    "relax_delay": 3000,  # --Fixed
-    "res_phase": 0,  # --Fixed
-    "pulse_style": "const",  # --Fixed
+    "relax_delay": 3000,
+    "res_phase": 0,
+    "pulse_style": "const",
     "length": 30,  # [us] resonator pulse duration (converted by each program)
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 1,  # [us]
-    # Try varying adc_trig_offset from 100 to 220 clock ticks
-    "cavity_LO": 0,  # 6.5e9
-    # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
-    # 'cavity_winding_offset': -32.10723885 + np.pi #-15.77597 * 0
+    "cavity_LO": 0,  # Hz
     "cavity_winding_freq": 0,
     "cavity_winding_offset": 0,
     "trig_buffer_start": 0.02,
@@ -45,3 +38,8 @@ FF_QUBITS = {
     str(4): {"channel": FF_channel4, "delay_time": 0},
 }
 FF_Qubits = FF_QUBITS
+
+
+def base_config():
+    """Return a fresh deep copy of BASE_CONFIG."""
+    return copy.deepcopy(BASE_CONFIG)

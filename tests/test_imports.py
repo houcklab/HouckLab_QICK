@@ -25,7 +25,13 @@ ALLOWED_FAILURES = {
     "qicklab.twpa.set_pump": "pywindfreak",  # optional extra [twpa], not installed
     "qicklab.twpa.pump_sweep": "pywindfreak",
     "qicklab.twpa.gain_compare": "pywindfreak",
-    "qicklab.hardware.attenuator": "distutils",  # gone on Python 3.12+; phase 3b fixes it
+}
+
+# module -> exception types it may fail with. The attenuator registers its DLL directory at import
+# with os.add_dll_directory, which exists only on Windows (the lab PC): AttributeError elsewhere,
+# OSError (or a subclass) if the DLL directory or DLL is missing.
+ALLOWED_FAILURE_TYPES = {
+    "qicklab.hardware.attenuator": ("AttributeError", "OSError"),
 }
 
 
@@ -66,6 +72,7 @@ def _import_all():
     def record(name, exc):
         report[name] = {
             "type": type(exc).__name__,
+            "mro": [c.__name__ for c in type(exc).__mro__],
             "missing": getattr(exc, "name", None) if isinstance(exc, ImportError) else None,
             "traceback": "".join(traceback.format_exception(exc)),
         }
@@ -103,6 +110,8 @@ def test_every_qicklab_module_imports_without_hardware():
             continue
         allowed = ALLOWED_FAILURES.get(name)
         if failure["type"] == "ModuleNotFoundError" and failure["missing"] == allowed:
+            continue
+        if set(failure["mro"]) & set(ALLOWED_FAILURE_TYPES.get(name, ())):
             continue
         unexpected[name] = failure["traceback"]
     assert not unexpected, "\n\n".join(f"{n}:\n{tb}" for n, tb in unexpected.items())

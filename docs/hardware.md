@@ -8,6 +8,7 @@ cooldown).
 | Instrument | Address | Driver (`qicklab.hardware.*`) | Used by |
 |---|---|---|---|
 | RFSoC running QICK | Pyro4 nameserver `192.168.0.103:8888`, server name `myqick` | `rfsoc.make_proxy` | every step |
+| Legacy RFSoC boards | Pyro4 nameservers `192.168.1.10`, `192.168.1.11`, `192.168.1.12`, `192.168.1.119` (port 8888, `myqick`) | `rfsoc.make_proxy(host=...)` | no current step |
 | Yokogawa GS200, charge bias | `GPIB1::9::INSTR`, voltage mode | `yoko` | `connect()`, charge sweeps, sweet-spot search |
 | Yokogawa GS200, TWPA bias | `GPIB1::12::INSTR`, current mode | `yoko` (`ramp_current`) | `qicklab.twpa` scripts only |
 | Windfreak SynthHD, TWPA pump | `COM5` | `synthhd` | `qicklab.twpa` scripts only |
@@ -17,18 +18,18 @@ cooldown).
 
 ## RFSoC
 
-`make_proxy(host="192.168.0.103", port=8888, name="myqick")` locates the Pyro4 nameserver,
-opens the `myqick` proxy and returns `(soc, soccfg)`; `soccfg` is a `QickConfig` built from
-`soc.get_cfg()`. It sets the Pyro4 serializer to pickle (protocol 4) globally. Nothing connects at
-import time; `connect(session)` or `run()` does.
+`make_proxy(host="192.168.0.103", port=8888, name="myqick")` locates the Pyro4 nameserver, prints
+its full listing (on every connect), opens the `myqick` proxy and returns `(soc, soccfg)`; `soccfg`
+is a `QickConfig` built from `soc.get_cfg()`. It sets the Pyro4 serializer to pickle (protocol 4)
+globally. Nothing connects at import time; `connect(session)` or `run()` does.
 
 - Firmware: tProc v1. Client `qick` pinned at 0.2.334 (`pyproject.toml`); the regression golden
   records the version and fails on a mismatch. The board itself runs qick 0.2.367 (per the
   shot-buffer helper's notes).
 - Clocks and buffer sizes: [timing and units](concepts/timing_and_units.md#clocks).
 - Older boards: the legacy proxy module also had hard-coded helpers for `192.168.1.10`, `.11`,
-  `.12` and `.119`; none was used. Older documentation that names `192.168.1.7` is stale (the
-  `.103` nameserver answered in the October 2026 audit).
+  `.12` and `.119`; none was used, and they are gone (pass `host=` instead). Older documentation
+  that names `192.168.1.7` is stale (the `.103` nameserver answered in the October 2026 audit).
 - If `locateNS` fails you are not on the lab network or the board's nameserver is down.
 
 ### Channel map
@@ -43,7 +44,7 @@ From `qicklab.hardware.board.BASE_CONFIG` (override per device in `Setup.board_o
 | `nqz` | 2 | readout DAC Nyquist zone |
 | `qubit_nqz` | 1 | qubit DAC Nyquist zone |
 | `mixer_freq` | 0.0 MHz | readout DAC mixer (NCO) |
-| `cavity_LO` | 0 Hz | external readout LO; 0 = none |
+| `cavity_LO` | 0 Hz | external readout LO; 0 = none (an earlier value, 6.5e9, was left commented out in the legacy file) |
 | `cavity_winding_freq`, `cavity_winding_offset` | 0, 0 | cable winding correction, off ([IQ conventions](concepts/iq_conventions.md#1-cable-winding-not-used-at-present)) |
 | `trig_buffer_start`, `trig_buffer_end`, `trig_delay` | 0.02, 0.02, 0.082 us | pin-0 trigger timing, below |
 
@@ -99,7 +100,7 @@ Yokogawa GS200 at `GPIB1::9::INSTR` in voltage mode, connected to the charge lin
   the source keeps holding the last level.
 - Always ramp. `ramp_to(yoko, target, step=0.001, delay=0.01)` reads the current level and steps
   1 mV every 10 ms, then lands exactly on the target. The legacy GS200 driver noted that the ramp
-  interval must not go below 0.001 s, or the fridge heats up.
+  interval must not go below 0.001 s, or the fridge heats up (the MATLAB default it copied is 0.01 s).
 - 10 V guard: `ramp_to` rejects targets above 10 V only; a negative typo (e.g. -50 V) passes. Sweep
   helpers check |V| <= 10 themselves. Check the sign of anything you type.
 - Never park the bias. An aborted sweep must not leave the bias at an arbitrary point: every later
@@ -167,7 +168,9 @@ Pyro5 client for remote SC5510A generators: `connect(name=None, host, port)` ret
 `SC5510A_SERVER_HOST` (default `192.168.0.102`), nameserver port 9090, object prefix `SC5510A#`
 (example id `10002D35`). The server PC must run `start_nameserver.py` and
 `start_instrument_server.py` from `https://github.com/NPdL-SQTeam/sc5510a-py`. The default host
-is read at import; changing the variable afterwards has no effect.
+is read at import; changing the variable afterwards has no effect. Needs Pyro5 (the `signalcore`
+extra in `pyproject.toml`). Typical use: `list_instruments()`, then `inst = connect("10002D35")`,
+`inst.frequency = 6e9`, `inst.power = 10`, `inst.output = True`.
 
 ## Data paths
 

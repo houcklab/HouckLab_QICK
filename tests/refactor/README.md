@@ -186,7 +186,9 @@ comparison.
    green, and its proof check re-verifies any new 3a merge.
 5. 3b and later edit bodies on purpose. Use `--phase 3b` for the structural checks only
    (deleted symbols gone, merge targets present). For behaviour, rely on the golden and
-   the adversarial review.
+   the adversarial review. The pytest gate (`CURRENT_PHASE` in `test_equivalence.py`)
+   runs `--phase 3b` and, while it is `"3b"`, allows deletions that a later area commit
+   still owes (`should be deleted`); `"3b-done"` makes them failures.
 
 Limits:
 - Static resolution, used for the runner, `tests/*` and modules that fail to import,
