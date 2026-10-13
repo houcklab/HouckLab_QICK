@@ -15,8 +15,14 @@ Windfreak SynthHD (pump) and a Keysight PNA-X (signal-path |S21|).
 | `qicklab.twpa.pump_sweep` | 2-D pump (frequency × power) grid at fixed bias; band-mean \|S21\| per point. |
 | `qicklab.twpa.gain_compare` | \|S21\| pump OFF vs ON across the signal band, interleaved; gain = ON − OFF (dB). |
 
-Shared PNA-X and SynthHD helpers live in `qicklab.hardware.pnax`,
-`qicklab.hardware.synthhd` and `qicklab.hardware.yoko`. Instrument addresses and the
+`set_bias` and `set_pump` are measurement-free: map |S21| vs bias with `flux_sweep` (or a
+separate transmission run, e.g. `CavitySpecFF`), and find the pump point with `pump_sweep`;
+then park there with `set_bias` / `set_pump` before running qubit measurements.
+
+Shared helpers: `qicklab.hardware.pnax` (`measure_s21_band`, `band_mean_dB`),
+`qicklab.hardware.synthhd` (`SynthHD`, `set_pump_channels`), `qicklab.hardware.yoko`
+(`pick_current_range`, `ramp_current`, default step period `STEP_PERIOD_S`) and `qicklab.twpa.common`
+(`timestamped_paths`). Instrument addresses and the
 pump operating point come from the device's `Setup.twpa` (`TwpaSetup(yoko_addr,
 synth_port, pnax_addr, pump=(ghz, dbm, ch), bias_ua)`). See [hardware](../hardware.md).
 
@@ -37,7 +43,8 @@ pump OFF ──▶ set_bias (0 → target, ≤ 300 nA/s) ──▶ set_pump (fre
 
 ## How to run
 
-Each script prints its plan and requires typing `yes` before it touches hardware.
+Each script is configured by the UPPERCASE constants at the top of its module, prints its plan
+and requires typing `yes` before it touches hardware.
 
 ```
 python -m qicklab.twpa.set_bias
@@ -46,6 +53,29 @@ python -m qicklab.twpa.flux_sweep
 python -m qicklab.twpa.pump_sweep
 python -m qicklab.twpa.gain_compare
 ```
+
+- **set_bias.** Verify the pump RF output is OFF, set `TWPA_YOKO_ADDRESS` and
+  `TARGET_CURRENT_uA`, run. `YOKO_CURR_RANGE_A = None` auto-picks the range; a number forces it.
+- **set_pump.** Verify the DC bias is parked (`set_bias`); the script does not touch the YOKO.
+  Set `PUMP_SYNTH_PORT` and `PUMP_SETTINGS`: each listed channel gets its **own**
+  (freq_GHz, power_dBm); give both channels the same pair to drive them identically, different
+  pairs to drive them independently. To turn the pump off, set `DISABLE_PUMP = True` or pass
+  `--off`.
+- **flux_sweep.** `PNAX_MEAS_MODE` picks the figure of merit: `"BAND"` sweeps
+  [`PNAX_F_START_HZ`, `PNAX_F_STOP_HZ`] and uses the mean |S21| (dB) over the band; `"CW"` parks
+  on `PNAX_CW_FREQ_HZ` and uses |S21| (dB) at that one tone (faster, no band averaging). The ramp
+  rate is enforced ≤ 300 nA/s by `ramp_current`; on exit (success, exception or Ctrl-C) the bias
+  is ramped back to 0. Do not use it for daily operation: set the operating point with
+  `set_bias` afterwards.
+- **pump_sweep.** Same `PNAX_MEAS_MODE` choice. The channels in `PUMP_CHANNELS` are driven
+  **identically** (same frequency and power at every point); for offset or independent control,
+  add fixed offsets where the channels are programmed inside the loop. Bias must already be
+  parked; the script does not touch the YOKO.
+- **gain_compare.** Set `PUMP_ON_FREQ_GHz` / `PUMP_ON_POWER_dBm` to the `pump_sweep` optimum for
+  the signal band. "Pump OFF" disables RF on every listed channel; "pump ON" programs the ON
+  point and enables RF. Bias must already be parked.
+- SCPI was tested on a Keysight PNA-X N52xx; other VNAs may need command tweaks
+  (`configure_pnax`, `qicklab.hardware.pnax.measure_s21_band`).
 
 ## Parameters
 
@@ -58,7 +88,7 @@ python -m qicklab.twpa.gain_compare
 | End of first flux period | ~25 µA | One-off flux calibration only. |
 | Normal-operation guidance | do not sweep well above ~11 µA | Higher currents may reduce performance or trap flux. |
 | Bias hard limit in `set_bias` | 25 µA | Targets above it raise. |
-| Bias step period | 0.05 s | GPIB update interval while ramping. |
+| Bias step period | 0.05 s | GPIB update interval while ramping (`STEP_PERIOD_S` in `set_bias`, passed as `dt` by `set_bias` and `flux_sweep`; `qicklab.hardware.yoko.STEP_PERIOD_S` is the library default of `ramp_current`); smaller = smoother, more bus traffic. |
 | YOKO current ranges | 1, 10, 100, 200 mA | Setpoints above the active range are **silently clipped**. The range is auto-picked from the target. |
 | Pump power ceiling | 0 dBm (`set_pump`, `gain_compare`); 20 dBm (`pump_sweep`) | Hard refusal above. |
 
@@ -120,7 +150,9 @@ python -m qicklab.twpa.gain_compare
 
 - **Wiring.** The YOKO sources current directly into the bias port. An earlier
   voltage-mode + series-resistor scheme was dropped because the resistor value was
-  unreliable.
+  unreliable. A setup that drives the TWPA through a known series resistor in voltage mode
+  would need a V↔I conversion reintroduced; the scripts assume the YOKO sources current
+  directly.
 - **Bias history.**
   - Optimum from flux sweep `20260521_144734`: maximum |S21| on a broad 3.5–5.5 µA
     plateau.
@@ -138,25 +170,30 @@ python -m qicklab.twpa.gain_compare
 - The PNA-X sweep time is ≈ n_points/IF_BW per sweep × n_avg. A fixed 30 s VISA
   timeout was exceeded at low IF BW with many averages; this is why the pump-sweep
   timeout is estimated.
+- `pump_sweep` wall-clock model (printed before the run): per sweep = n_freq / IF_BW
+  (per-point dwell ~ 1/IF_BW); per measure = per sweep × N_avg; per point = per measure +
+  power settle; total = n_total × per point + N_FREQ_POINTS × freq settle. It excludes
+  VISA/transfer/save overhead.
 - At the committed grid, `pump_sweep` is 401 × 21 = 8421 points at ~4.25 s each ≈ 10 h.
 
 ## Known issues
 
-- `set_pump` documents that channels not listed "are left untouched". In fact,
+- The legacy `set_pump` comments said that channels not listed "are left untouched". In fact,
   connecting disables RF on both channels, so setting ch1 switches ch0 off.
 - `DISABLE_PUMP = True` is committed. Running `set_pump` without editing it only turns
   the pump off.
 - `set_bias`: the safety cap (25 µA) equals the hard limit, so the
   `ALLOW_CALIBRATION` branch is unreachable, and the "do not exceed ~11 µA" guidance is
   **not enforced**.
-- `flux_sweep` docstring errors:
-  - it refers to a "12 µA safety cap" that does not exist;
-  - it says "0 → ~25 µA, 0.5 µA spacing", but the configured grid is −25 → +25 µA at
-    1.0 µA.
-- `pump_sweep` comments describe a 12.0–13.5 GHz, −25 → 0 dBm grid. The configured grid
-  is 10.70–10.73 GHz and −10 → 0 dBm.
-- Several docstrings name a Holzworth HS9004A as the pump. The pump is a Windfreak
-  SynthHD.
+- Stale legacy text (removed from the code in the 2026-10 cleanup, kept here for the record):
+  - the `flux_sweep` docstring referred to a "12 µA safety cap" that does not exist;
+  - it said "0 → ~25 µA, 0.5 µA spacing", but the configured grid is −25 → +25 µA at
+    1.0 µA;
+  - `pump_sweep` comments described a 12.0–13.5 GHz, −25 → 0 dBm grid ("25 MHz spacing across
+    12.0–13.5 GHz (centered on ~12.7 GHz)", "0.5 dB spacing across -25 → 0 dBm"). The configured
+    grid is 10.70–10.73 GHz and −10 → 0 dBm.
+- The `set_bias` and `flux_sweep` confirmation prompts still name a Holzworth HS9004A as the
+  pump generator. The pump is a Windfreak SynthHD.
 - `set_bias` issues `:SOUR:FUNC CURR` without checking the YOKO's current mode or
   output state.
 - `flux_sweep`, `pump_sweep` and `gain_compare` open the PNA-X (and the YOKO) outside

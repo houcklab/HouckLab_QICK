@@ -129,6 +129,9 @@ resistor value was unreliable.
   above about 11 uA in normal operation.
 - GS200 current ranges are 1, 10, 100, 200 mA. A setpoint above the active range is silently
   clipped; `pick_current_range` chooses the range from the target.
+- `ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S)` steps linearly from the
+  present `:SOUR:LEV?` every `dt` s (default `yoko.STEP_PERIOD_S` = 0.05 s; the twpa scripts pass
+  `set_bias.STEP_PERIOD_S`, also 0.05 s); it assumes current-source mode.
 - The script refuses targets above 25 uA.
 
 ### Pump: Windfreak SynthHD on `COM5`
@@ -204,8 +207,8 @@ Every experiment writes three files with one timestamp:
   a validation error left the yoko open and on.
 - `pick_current_range` / the TWPA bias script: the 25 uA safety cap equals the hard limit, so the
   `ALLOW_CALIBRATION` branch is unreachable, and the "about 11 uA" guidance is not enforced.
-- The TWPA bias script docstring and the flux sweep still name a Holzworth HS9004A as the pump;
-  the pump is the Windfreak SynthHD.
+- The TWPA bias script and the flux sweep confirmation prompts still name a Holzworth HS9004A as
+  the pump; the pump is the Windfreak SynthHD.
 - The set-pump script is committed with `DISABLE_PUMP = True`: run unchanged, it only turns the
   pump off.
 - TWPA sweeps open the PNA-X (and yoko) before the `try` block; a failure to connect the

@@ -1,100 +1,55 @@
-"""
-twpa_pump_sweep_pnax.py — TWPA pump (freq, power) sweep with PNA-X banded S21.
+"""TWPA pump (freq x power) sweep at parked bias; PNA-X band-mean (or CW) |S21| per point.
 
-Purpose
-  With the DC bias already parked at its operating point (set via twpa_set_bias.py),
-  sweep the TWPA pump RF over a 2-D grid of (frequency, power). At each pump point
-  the PNA-X sweeps a signal BAND ([PNAX_F_START_HZ, PNAX_F_STOP_HZ]) and the figure
-  of merit is the mean |S21| (dB) across that band — i.e. the pump (freq, power)
-  that maximizes mean band transmission, optimized over the bandwidth you care
-  about rather than at a single CW tone.
-
-  NOTE: this reports pure transmission |S21|, not gain relative to an unpumped
-  reference. The "best pump point" is the one maximizing mean band |S21|. For an
-  absolute gain number, run an unpumped reference band sweep and subtract offline.
-
-Pump source
-  One Windfreak SynthHD (dual-channel) signal generator, connected LOCALLY over
-  USB/serial (a COM port). The channels listed in PUMP_CHANNELS are driven
-  IDENTICALLY: at every sweep point each listed channel carries the same frequency
-  and power. (If you later want offset/independent control, add fixed offsets near
-  where the channels are programmed inside the loop.)
-
-  Set PUMP_SYNTH_PORT below to the SynthHD's COM port. The driver
-  (pywindfreak.SynthHD) locks the unit to its external 10 MHz reference on connect.
-
-Safety
-  * DC bias should already be at the operating point before running this. The
-    script does NOT touch the YOKO. Verify in twpa_set_bias.py / on the panel.
-  * PUMP_POWER_MAX_dBm enforces a hard ceiling on the swept power axis.
-  * On exit (success / exception / Ctrl-C) the pump channels are RF-disabled.
-  * PNA-X output stays low — the TWPA may be under-pumped at the start of the
-    sweep, so the signal must not saturate the line.
+Transmission, not gain (subtract an unpumped reference offline). See docs/experiments/twpa.md.
 """
 
-import datetime as _dt
-import os
 import sys
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
-from pywindfreak import SynthHD
 
-# ---------------------------------------------------------------------------
-# User-set parameters
-# ---------------------------------------------------------------------------
-# --- Pump source (Windfreak SynthHD, channels driven identically) -----------
+from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
+from qicklab.hardware.synthhd import SynthHD, set_pump_channels
+from qicklab.twpa.common import timestamped_paths
+
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
 
-# Frequency sweep (applied to BOTH channels identically)
 F_START_GHz = 10.7
 F_STOP_GHz = 10.73
-N_FREQ_POINTS = 401  # 25 MHz spacing across 12.0–13.5 GHz (centered on ~12.7 GHz)
+N_FREQ_POINTS = 401
 
-# Power sweep (applied to BOTH channels identically)
 P_START_dBm = -10
 P_STOP_dBm = 0
-N_POWER_POINTS = 21  # 0.5 dB spacing across -25 → 0 dBm
+N_POWER_POINTS = 21
 PUMP_POWER_MAX_dBm = 20.0  # hard ceiling — script refuses P > this
 
-# Sweep timing
 SETTLE_AFTER_FREQ_S = 0.20  # PLL lock + thermal settle
 SETTLE_AFTER_POWER_S = 0.05  # power-only update settle
 
-# --- PNA-X measurement of the signal path -----------------------------------
-# PNAX_MEAS_MODE selects the figure of merit optimized at each pump point:
-#   "BAND" — mean |S21| over [PNAX_F_START_HZ, PNAX_F_STOP_HZ].
-#   "CW"   — |S21| at a single tone PNAX_CW_FREQ_HZ. Faster, no band averaging.
 PNAX_ADDRESS = "GPIB0::16::INSTR"
+# Figure of merit: "BAND" = mean |S21| over [PNAX_F_START_HZ, PNAX_F_STOP_HZ];
+# "CW" = |S21| at PNAX_CW_FREQ_HZ (single tone, faster).
 PNAX_MEAS_MODE = "BAND"
 PNAX_CW_FREQ_HZ = 7.0e9  # CW tone (used only when PNAX_MEAS_MODE == "CW")
-PNAX_F_START_HZ = 6e9  # TODO: low edge of the signal band to optimize over
-PNAX_F_STOP_HZ = 8e9  # TODO: high edge of the signal band to optimize over
+PNAX_F_START_HZ = 6e9
+PNAX_F_STOP_HZ = 8e9
 PNAX_N_FREQ_POINTS = 21  # points across the band (BAND mode only)
 PNAX_IF_BW_HZ = 500.0
-PNAX_POWER_dBm = -25.0  # keep low — the TWPA may be under-pumped at start, prev -20 dBm
+PNAX_POWER_dBm = -25.0  # keep low — the TWPA may be under-pumped at start
 PNAX_N_AVG = 100  # sweep-averaging count (1 = off)
-PNAX_TIMEOUT_MS = 30000
+PNAX_TIMEOUT_MS = 30000  # floor of the estimated VISA timeout
 
-# --- Output ----------------------------------------------------------------
 SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
 RUN_TAG = "pump_sweep"
 
 
-# ---------------------------------------------------------------------------
-# PNA-X helpers (Keysight PNA-X SCPI) — mirror twpa_flux_sweep_pnax.py
-# ---------------------------------------------------------------------------
 def estimate_group_timeout_ms(n_points, if_bw_hz, n_avg, floor_ms):
-    """Size the VISA timeout to the worst-case group-sweep duration.
+    """VISA timeout for a group of n_avg sweeps of ~n_points/IF_BW s each: 3x + 5 s, >= floor_ms.
 
-    One sweep takes roughly n_points / IF_BW seconds (the per-point dwell is
-    ~1/IF_BW); a group of n_avg averaged sweeps is n_avg times that. At low IF
-    bandwidth with many averages this far exceeds a fixed 30 s timeout, so we
-    derive the timeout (3x margin + 5 s overhead) and use `floor_ms` as a floor.
-    """
+    Why: docs/hardware.md#pna-x-at-gpib01616instr."""
     n_sweeps = max(int(n_avg), 1)
     per_sweep_s = n_points / max(if_bw_hz, 1.0)
     est_ms = (per_sweep_s * n_sweeps) * 3.0 * 1000.0 + 5000.0
@@ -147,40 +102,6 @@ def configure_pnax(
     pnax.query("*OPC?")
 
 
-def measure_s21_band(pnax, n_avg):
-    """Trigger a band sweep (n_avg averages) and return the full complex S21 trace."""
-    if n_avg and int(n_avg) > 1:
-        pnax.write("SENS:AVER:CLE")
-        pnax.write(f"SENS:SWE:GRO:COUN {int(n_avg)}")
-        pnax.write("SENS:SWE:MODE GRO")  # run n_avg sweeps, then hold
-    else:
-        pnax.write("SENS:SWE:MODE SING")
-    pnax.query("*OPC?")
-    raw = pnax.query("CALC:DATA? SDATA")
-    vals = np.fromstring(raw, sep=",")
-    if vals.size < 2 or vals.size % 2 != 0:
-        raise RuntimeError(f"Unexpected SDATA payload from PNA-X: {vals.size} values")
-    return vals[0::2] + 1j * vals[1::2]
-
-
-def band_mean_dB(trace):
-    """Mean |S21| in dB across a complex band trace (NaN-safe)."""
-    mag = np.abs(trace)
-    with np.errstate(divide="ignore"):
-        return float(np.nanmean(20.0 * np.log10(mag)))
-
-
-# ---------------------------------------------------------------------------
-# SynthHD pump helpers
-# ---------------------------------------------------------------------------
-def set_pump_channels(channels, freq_hz, power_dbm, rf_enable):
-    """Program every pump channel identically (freq, power, RF on/off)."""
-    for ch in channels:
-        ch.frequency = float(freq_hz)
-        ch.power = float(power_dbm)
-        ch.rf_enable = bool(rf_enable)
-
-
 def disable_pump_channels(channels):
     for ch in channels:
         try:
@@ -189,11 +110,7 @@ def disable_pump_channels(channels):
             print(f"[twpa_pump_sweep] WARNING: failed to disable a channel: {e}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
-    # --- Validate -----------------------------------------------------------
     if max(P_START_dBm, P_STOP_dBm) > PUMP_POWER_MAX_dBm:
         raise ValueError(
             f"Power sweep reaches {max(P_START_dBm, P_STOP_dBm):+.2f} dBm, above "
@@ -227,7 +144,6 @@ def main():
     mean_band_dB = np.full((N_FREQ_POINTS, N_POWER_POINTS), np.nan)
     completed = np.zeros((N_FREQ_POINTS, N_POWER_POINTS), dtype=bool)
 
-    # --- Pre-flight ---------------------------------------------------------
     print("=" * 72)
     print("TWPA PUMP (FREQ, POWER) SWEEP + PNA-X banded S21")
     print(f"  SynthHD port    : {PUMP_SYNTH_PORT}    channels = {list(PUMP_CHANNELS)}")
@@ -255,11 +171,7 @@ def main():
             f"P = {PNAX_POWER_dBm:+.1f} dBm   N_avg = {PNAX_N_AVG}"
         )
     print(f"  figure of merit : {fom_desc}")
-    # Accurate wall-clock estimate, dominated by the PNA-X band sweep:
-    #   per sweep    = n_freq / IF_BW         (per-point dwell ~ 1/IF_BW)
-    #   per measure  = per_sweep * N_avg       (group of N_avg averaged sweeps)
-    #   per point    = per_measure + power settle
-    #   total        = n_total * per_point + N_FREQ_POINTS * freq settle
+    # Wall-clock estimate, dominated by the PNA-X sweeps (per-point dwell ~ 1/IF_BW).
     per_sweep_s = n_freq / max(PNAX_IF_BW_HZ, 1.0)
     per_meas_s = per_sweep_s * max(int(PNAX_N_AVG), 1)
     est_s = n_total * (per_meas_s + SETTLE_AFTER_POWER_S) + N_FREQ_POINTS * SETTLE_AFTER_FREQ_S
@@ -272,38 +184,27 @@ def main():
     print("CONFIRM:")
     print("  [ ] DC bias is already at its operating point (twpa_set_bias.py).")
     print("  [ ] The SynthHD is wired to the pump line(s), nothing else is driving them.")
-    print(
-        "  [ ] PNA-X RF output safe at {:+.1f} dBm into the line at this bias.".format(
-            PNAX_POWER_dBm
-        )
-    )
+    print(f"  [ ] PNA-X RF output safe at {PNAX_POWER_dBm:+.1f} dBm into the line at this bias.")
     print("=" * 72)
     ans = input("Type 'yes' to proceed: ").strip().lower()
     if ans not in ("y", "yes"):
         print("[twpa_pump_sweep] Aborted by user.")
         sys.exit(0)
 
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = os.path.join(SAVE_DIR, f"{stamp}_{RUN_TAG}")
-    npz_path = base + ".npz"
-    png_path = base + ".png"
+    npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
 
     rm = pyvisa.ResourceManager()
     pnax = rm.open_resource(PNAX_ADDRESS)
 
-    # Connect to the SynthHD pump. __init__ disables RF on both channels and
-    # locks the unit to its external 10 MHz reference on connect.
+    # Connecting disables RF on both channels and locks to the external 10 MHz reference.
     synth = SynthHD(PUMP_SYNTH_PORT)
     pump_channels = [synth[i] for i in PUMP_CHANNELS]
 
     t0 = time.time()
     try:
-        # --- Pump source setup ---------------------------------------------
         # Start every channel disabled at the sweep's lowest power / first freq
         set_pump_channels(pump_channels, freqs_Hz[0], powers_dBm[0], rf_enable=False)
 
-        # --- PNA-X setup ---------------------------------------------------
         configure_pnax(
             pnax,
             PNAX_MEAS_MODE,
@@ -322,14 +223,13 @@ def main():
             f"(~{n_freq / max(PNAX_IF_BW_HZ, 1.0) * PNAX_N_AVG:.0f} s/group)."
         )
 
-        # --- 2-D sweep: outer = freq (slow PLL retune), inner = power -----
+        # outer = freq (slow PLL retune), inner = power
         for i, f_Hz in enumerate(freqs_Hz):
             # Re-tune frequency at the inner-loop start power, then enable RF.
             set_pump_channels(pump_channels, f_Hz, powers_dBm[0], rf_enable=True)
             time.sleep(SETTLE_AFTER_FREQ_S)
 
             for j, p_dBm in enumerate(powers_dBm):
-                # Update power on all pump channels; frequency unchanged.
                 for ch in pump_channels:
                     ch.power = float(p_dBm)
                 time.sleep(SETTLE_AFTER_POWER_S)
@@ -386,13 +286,11 @@ def main():
             pass
         pnax.close()
 
-    # ---------------- Plot ----------------
     # pcolormesh with shading='nearest' centers each cell on its (f, P)
     # coordinate — no off-by-half-cell misalignment vs sweep points.
     PP, FF = np.meshgrid(powers_dBm, freqs_GHz)
 
     if cw_mode:
-        # No band to show — just the optimization map over the pump grid.
         fig, ax1 = plt.subplots(1, 1, figsize=(7, 6))
         ax2 = None
         map_title = f"|S21| (dB) @ {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW"
@@ -402,7 +300,6 @@ def main():
         map_title = f"mean |S21| (dB) over {band_GHz[0]:.3f}–{band_GHz[1]:.3f} GHz"
         cbar_label = "mean |S21|  (dB)"
 
-    # Main map: figure of merit over the (pump power, pump freq) grid.
     pm1 = ax1.pcolormesh(PP, FF, mean_band_dB, shading="nearest", cmap="viridis")
     ax1.set_xlabel("Pump power  (dBm, pump channels)")
     ax1.set_ylabel("Pump frequency  (GHz, pump channels)")
@@ -447,7 +344,6 @@ def main():
     print(f"[twpa_pump_sweep] Saved: {npz_path}")
     print(f"[twpa_pump_sweep] Saved: {png_path}")
 
-    # ---------------- Summary ----------------
     finite = np.isfinite(mean_band_dB) & completed
     if finite.sum() >= 3:
         masked = np.where(finite, mean_band_dB, np.nan)

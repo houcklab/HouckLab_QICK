@@ -1,42 +1,8 @@
-"""
-twpa_flux_sweep_pnax.py — TWPA flux-period sweep with PNA-X banded S21 readback.
+"""TWPA flux-period sweep (pump OFF): ramp the bias over +-25 uA at <= 300 nA/s, read PNA-X |S21|.
 
-Purpose
-  Verify the TWPA / DC bias path is alive by sweeping the bias current across
-  the first flux period (0 → ~25 uA) at ≤ 300 nA/s and reading |S21| from the
-  PNA-X at each step. The PNA-X read mode is selectable via PNAX_MEAS_MODE:
-    * "BAND" — sweep a frequency BAND ([PNAX_F_START_HZ, PNAX_F_STOP_HZ]) and use
-               the mean |S21| (dB) across that band as the figure of merit.
-    * "CW"   — park on a single CW tone (PNAX_CW_FREQ_HZ); the figure of merit is
-               |S21| (dB) at that one frequency. Faster, no band averaging.
-  The script reports the bias that maximizes the figure of merit. Expected
-  qualitative signature (datasheet):
-    * Transmission enhancement near ~11 uA (operating point, impedance matched)
-    * Strong suppression near ~25 uA (end of first flux period)
-  Flat mean-band S21 vs current ⇒ the DC line is open / not delivering bias.
-
-  NOTE: the pump is OFF for this sweep, so this measures bare transmission, not
-  TWPA gain. The "best bias" reported is the bias maximizing mean band |S21|.
-
-Safety
-  * Pump generator (Holzworth HS9004A) MUST be OFF.
-  * Ramp rate is enforced ≤ 300 nA/s by slow_ramp_to_current from twpa_set_bias.
-  * On exit (success OR exception OR Ctrl-C) the bias is ramped back to 0.
-  * This script overrides the 12 uA safety cap because the calibration sweep
-    intentionally reaches the suppression at 25 uA. Do NOT use this for daily
-    operation — use twpa_set_bias.py to set the operating point afterwards.
-
-Wiring assumption
-  YOKO in CURRENT-SOURCE mode → TWPA bias port (direct, no series resistor).
-  Bias current is set in hardware by the YOKO (see twpa_set_bias).
-  PNA-X reads a linear band sweep, IF bandwidth PNAX_IF_BW_HZ.
-
-Tested SCPI: Keysight PNA-X N52xx series. Other VNAs may need command tweaks
-(see configure_pnax / measure_s21_band).
+Reports the bias maximizing band-mean (or CW) |S21|; calibration only. See docs/experiments/twpa.md.
 """
 
-import datetime as _dt
-import os
 import sys
 import time
 
@@ -44,47 +10,34 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
 
-from qicklab.twpa.set_bias import (
-    TWPA_YOKO_ADDRESS,
-    MAX_RATE_nA_per_s,
-    pick_current_range,
-    slow_ramp_to_current,
-)
+from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
+from qicklab.hardware.yoko import pick_current_range, ramp_current
+from qicklab.twpa.common import timestamped_paths
+from qicklab.twpa.set_bias import STEP_PERIOD_S, TWPA_YOKO_ADDRESS, MAX_RATE_nA_per_s
 
-# ---------------------------------------------------------------------------
-# User-set parameters
-# ---------------------------------------------------------------------------
-PNAX_ADDRESS = "GPIB0::16::INSTR"  # TODO: PNA-X VISA address
+PNAX_ADDRESS = "GPIB0::16::INSTR"
 
-# Bias sweep
 I_START_uA = -25.0
 I_STOP_uA = 25.0  # full first flux period — calibration only
-N_BIAS_POINTS = 51  # 51 points → 0.5 uA spacing across 0–25 uA
+N_BIAS_POINTS = 51
 SETTLE_AFTER_RAMP_S = 0.5  # post-ramp dwell before each PNA-X read
 
-# PNA-X measurement mode:
-#   "BAND" — mean |S21| over [PNAX_F_START_HZ, PNAX_F_STOP_HZ] is the figure of merit.
-#   "CW"   — single tone at PNAX_CW_FREQ_HZ; |S21| at that tone is the figure of merit.
+# Figure of merit: "BAND" = mean |S21| over [PNAX_F_START_HZ, PNAX_F_STOP_HZ];
+# "CW" = |S21| at PNAX_CW_FREQ_HZ (single tone, faster).
 PNAX_MEAS_MODE = "BAND"
 PNAX_CW_FREQ_HZ = 7.0e9  # CW tone (used only when PNAX_MEAS_MODE == "CW")
-
-# PNA-X band measurement — mean |S21| over [F_START, F_STOP] is the figure of merit
-PNAX_F_START_HZ = 5e9  # TODO: low edge of the signal band of interest
-PNAX_F_STOP_HZ = 8e9  # TODO: high edge of the signal band of interest
+PNAX_F_START_HZ = 5e9
+PNAX_F_STOP_HZ = 8e9
 PNAX_N_FREQ_POINTS = 201  # points across the band (BAND mode only)
 PNAX_IF_BW_HZ = 100.0
 PNAX_POWER_dBm = -25.0  # keep low: TWPA is unbiased much of the sweep
 PNAX_N_AVG = 4  # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS = 30000
 
-# Output
 SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
 RUN_TAG = "first_period_sweep"
 
 
-# ---------------------------------------------------------------------------
-# PNA-X helpers (Keysight PNA-X SCPI)
-# ---------------------------------------------------------------------------
 def configure_pnax(
     pnax,
     meas_mode,
@@ -130,34 +83,7 @@ def configure_pnax(
     pnax.query("*OPC?")
 
 
-def measure_s21_band(pnax, n_avg):
-    """Trigger a band sweep (n_avg averages) and return the full complex S21 trace."""
-    if n_avg and int(n_avg) > 1:
-        pnax.write("SENS:AVER:CLE")
-        pnax.write(f"SENS:SWE:GRO:COUN {int(n_avg)}")
-        pnax.write("SENS:SWE:MODE GRO")  # run n_avg sweeps, then hold
-    else:
-        pnax.write("SENS:SWE:MODE SING")
-    pnax.query("*OPC?")
-    raw = pnax.query("CALC:DATA? SDATA")
-    vals = np.fromstring(raw, sep=",")
-    if vals.size < 2 or vals.size % 2 != 0:
-        raise RuntimeError(f"Unexpected SDATA payload from PNA-X: {vals.size} values")
-    return vals[0::2] + 1j * vals[1::2]
-
-
-def band_mean_dB(trace):
-    """Mean |S21| in dB across a complex band trace (NaN-safe)."""
-    mag = np.abs(trace)
-    with np.errstate(divide="ignore"):
-        return float(np.nanmean(20.0 * np.log10(mag)))
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
-    # Validate range
     if I_STOP_uA > 25.0 or I_START_uA < -25.0:
         raise ValueError("Bias sweep must stay within ±25 uA (first flux period).")
     if MAX_RATE_nA_per_s > 300.0:
@@ -186,7 +112,6 @@ def main():
     else:
         fom_desc = "mean |S21| (dB) across the band"
 
-    # Pre-flight summary
     print("=" * 72)
     print("TWPA FLUX SWEEP + PNA-X banded S21  (YOKO current-source mode)")
     print(f"  YOKO            : {TWPA_YOKO_ADDRESS}")
@@ -214,7 +139,7 @@ def main():
     print()
     print("CONFIRM:")
     print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")
-    print("  [ ] PNA-X RF output safe at {:+.1f} dBm into the line.".format(PNAX_POWER_dBm))
+    print(f"  [ ] PNA-X RF output safe at {PNAX_POWER_dBm:+.1f} dBm into the line.")
     print("  [ ] YOKO and PNA-X addresses match the physical wiring; YOKO is")
     print("      wired to source current directly into the TWPA bias line.")
     print("=" * 72)
@@ -223,11 +148,7 @@ def main():
         print("[twpa_flux_sweep] Aborted by user.")
         sys.exit(0)
 
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = os.path.join(SAVE_DIR, f"{stamp}_{RUN_TAG}")
-    npz_path = base + ".npz"
-    png_path = base + ".png"
+    npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
 
     rm = pyvisa.ResourceManager()
     yoko = rm.open_resource(TWPA_YOKO_ADDRESS)
@@ -238,12 +159,10 @@ def main():
     t0 = time.time()
 
     try:
-        # YOKO setup
         yoko.write(":SOUR:FUNC CURR")
         yoko.write(f":SOUR:RANG {range_A:g}")
         yoko.write(":OUTP ON")
 
-        # PNA-X setup
         configure_pnax(
             pnax,
             PNAX_MEAS_MODE,
@@ -259,7 +178,7 @@ def main():
 
         max_rate_A = MAX_RATE_nA_per_s * 1e-9
         for k, I_uA in enumerate(bias_uA):
-            slow_ramp_to_current(yoko, I_uA * 1e-6, max_rate_A)
+            ramp_current(yoko, I_uA * 1e-6, max_rate_A, dt=STEP_PERIOD_S)
             time.sleep(SETTLE_AFTER_RAMP_S)
             trace = measure_s21_band(pnax, PNAX_N_AVG)
             s21_band[k] = trace
@@ -292,7 +211,7 @@ def main():
         print("\n[twpa_flux_sweep] Ctrl-C — ramping bias back to 0 uA before exit.")
     finally:
         try:
-            slow_ramp_to_current(yoko, 0.0, MAX_RATE_nA_per_s * 1e-9)
+            ramp_current(yoko, 0.0, MAX_RATE_nA_per_s * 1e-9, dt=STEP_PERIOD_S)
         except Exception as e:
             print(f"[twpa_flux_sweep] WARNING: failed to ramp bias to 0: {e}")
         try:
@@ -302,7 +221,6 @@ def main():
         yoko.close()
         pnax.close()
 
-    # ---------------- Plot ----------------
     s21_band_dB = 20.0 * np.log10(np.abs(s21_band))
     freq_GHz = pnax_freq_hz / 1e9
 
@@ -315,7 +233,6 @@ def main():
         fom_ylabel = f"mean |S21| over\n{band_GHz[0]:.3f}–{band_GHz[1]:.3f} GHz  (dB)"
         fom_title = "TWPA flux sweep — mean band transmission vs bias"
 
-    # Top (or only): the optimization curve — figure of merit vs bias.
     ax1.plot(bias_uA, mean_band_dB, "-o", ms=3)
     ax1.set_ylabel(fom_ylabel)
     ax1.set_xlabel("Bias current  (uA)")
@@ -344,7 +261,6 @@ def main():
     print(f"[twpa_flux_sweep] Saved: {npz_path}")
     print(f"[twpa_flux_sweep] Saved: {png_path}")
 
-    # ---------------- Alive-check + best-bias summary ----------------
     finite = np.isfinite(mean_band_dB)
     if finite.sum() >= 3:
         spread = float(np.nanmax(mean_band_dB[finite]) - np.nanmin(mean_band_dB[finite]))

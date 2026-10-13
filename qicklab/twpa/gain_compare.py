@@ -1,86 +1,42 @@
-"""
-twpa_gain_compare_pnax.py — TWPA gain: pump ON vs OFF, |S21| across the signal band.
+"""TWPA gain: PNA-X |S21| across the signal band, pump OFF vs ON, interleaved over N_REPEATS.
 
-Purpose
-  With the DC bias already parked at its operating point (set via twpa_set_bias.py)
-  and the pump (freq, power) already chosen (see twpa_pump_sweep_pnax.py), this is
-  the final gain check: measure |S21| across a signal frequency band with the pump
-  OFF (baseline chain response) and then ON, and report
-
-      gain(f) = |S21|_on(f) − |S21|_off(f)     [dB]
-
-  This is the standard TWPA gain curve — how much gain the amplifier adds, and
-  over what band. A good operating point shows broadband positive gain (often
-  ~15–20 dB) with modest ripple across the signal band.
-
-  OFF and ON traces are interleaved every repeat (OFF, ON, OFF, ON, …) so slow
-  thermal / cable drift between the two states largely cancels in the difference,
-  then averaged over N_REPEATS.
-
-Pump source
-  One Windfreak SynthHD (dual-channel) signal generator over USB/serial (a COM
-  port), driven IDENTICALLY — same frequency and power on every listed channel
-  (mirrors twpa_pump_sweep_pnax.py). "Pump OFF" disables RF on all of them; "pump
-  ON" programs PUMP_ON_FREQ_GHz / PUMP_ON_POWER_dBm and enables RF.
-
-Safety
-  * DC bias should already be at its operating point. This script does NOT touch
-    the YOKO. Verify in twpa_set_bias.py / on the panel.
-  * PUMP_POWER_MAX_dBm enforces a hard ceiling on the ON power.
-  * On exit (success / exception / Ctrl-C) the pump channels are RF-disabled.
-
-Tested SCPI: Keysight PNA-X N52xx series (mirrors the other twpa_*_pnax scripts).
+gain(f) = |S21|_on - |S21|_off (dB); pump RF off on exit. See docs/experiments/twpa.md.
 """
 
-import datetime as _dt
-import os
 import sys
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
-from pywindfreak import SynthHD
 
-# ---------------------------------------------------------------------------
-# User-set parameters
-# ---------------------------------------------------------------------------
-# --- Pump source (Windfreak SynthHD, channels driven identically) -----------
+from qicklab.hardware.synthhd import SynthHD, set_pump_channels
+from qicklab.twpa.common import timestamped_paths
+
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
 
-# --- Pump ON operating point (THE knobs to set for the "on" state) ----------
-# Use the optimum found in twpa_pump_sweep_pnax.py for this signal band.
-# PUMP_ON_FREQ_GHz    = 10.9187                    # TODO: pump frequency for the ON state
-# PUMP_ON_POWER_dBm   = -18.0                    # TODO: pump power for the ON state (per channel, identical)
-
-PUMP_ON_FREQ_GHz = 10.7165  # TODO: pump frequency for the ON state
-PUMP_ON_POWER_dBm = -5.5  # TODO: pump power for the ON state (per channel, identical)
+# Pump ON operating point (the optimum from qicklab.twpa.pump_sweep for this band).
+PUMP_ON_FREQ_GHz = 10.7165
+PUMP_ON_POWER_dBm = -5.5  # per channel, identical
 PUMP_POWER_MAX_dBm = 0.0  # hard ceiling — script refuses ON power above this
 
-# --- Signal band swept on the PNA-X (where we want to see TWPA gain) --------
-F_SIGNAL_START_GHz = 2.0  # TODO: signal-band start (near the cavity / readout band)
-F_SIGNAL_STOP_GHz = 10.0  # TODO: signal-band stop
+F_SIGNAL_START_GHz = 2.0
+F_SIGNAL_STOP_GHz = 10.0
 N_SIGNAL_POINTS = 401  # PNA-X linear-sweep points across the band
 
-# --- Repeats / timing -------------------------------------------------------
 N_REPEATS = 10  # OFF/ON trace pairs to average (drift suppression)
 SETTLE_AFTER_PUMP_S = 0.30  # PLL lock + thermal settle after toggling pump state
 
-# --- PNA-X measurement ------------------------------------------------------
 PNAX_ADDRESS = "GPIB0::16::INSTR"
 PNAX_IF_BW_HZ = 1000.0
 PNAX_POWER_dBm = -25.0  # keep low — signal must not saturate the TWPA
 PNAX_TIMEOUT_MS = 60000
 
-# --- Output -----------------------------------------------------------------
 SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
 RUN_TAG = "gain_on_vs_off"
 
 
-# ---------------------------------------------------------------------------
-# PNA-X helpers (Keysight PNA-X SCPI) — linear sweep across the signal band
-# ---------------------------------------------------------------------------
 def configure_pnax(pnax, f_start_hz, f_stop_hz, n_points, if_bw_hz, power_dbm, timeout_ms):
     pnax.timeout = timeout_ms
     pnax.write("*CLS")
@@ -131,17 +87,6 @@ def measure_s21_trace(pnax, n_points):
     return vals[0::2] + 1j * vals[1::2]
 
 
-# ---------------------------------------------------------------------------
-# SynthHD pump helpers (mirror twpa_pump_sweep_pnax.py)
-# ---------------------------------------------------------------------------
-def set_pump_channels(channels, freq_hz, power_dbm, rf_enable):
-    """Program every pump channel identically (freq, power, RF on/off)."""
-    for ch in channels:
-        ch.frequency = float(freq_hz)
-        ch.power = float(power_dbm)
-        ch.rf_enable = bool(rf_enable)
-
-
 def disable_pump_channels(channels):
     for ch in channels:
         try:
@@ -150,11 +95,7 @@ def disable_pump_channels(channels):
             print(f"[twpa_gain_compare] WARNING: failed to disable a channel: {e}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
-    # --- Validate -----------------------------------------------------------
     if PUMP_ON_POWER_dBm > PUMP_POWER_MAX_dBm:
         raise ValueError(
             f"PUMP_ON_POWER_dBm = {PUMP_ON_POWER_dBm:+.2f} dBm exceeds "
@@ -171,11 +112,9 @@ def main():
     f_stop_hz = F_SIGNAL_STOP_GHz * 1e9
     pump_on_hz = PUMP_ON_FREQ_GHz * 1e9
 
-    # off[r], on[r] complex traces per repeat.
     s21_off = np.full((N_REPEATS, N_SIGNAL_POINTS), np.nan + 1j * np.nan, dtype=complex)
     s21_on = np.full((N_REPEATS, N_SIGNAL_POINTS), np.nan + 1j * np.nan, dtype=complex)
 
-    # --- Pre-flight ---------------------------------------------------------
     print("=" * 72)
     print("TWPA GAIN: PUMP ON vs OFF  (|S21| across signal band)")
     print(f"  SynthHD port    : {PUMP_SYNTH_PORT}    channels = {list(PUMP_CHANNELS)}")
@@ -197,35 +136,28 @@ def main():
     print("CONFIRM:")
     print("  [ ] DC bias is already at its operating point (twpa_set_bias.py).")
     print("  [ ] The SynthHD is wired to the pump line(s), nothing else is driving them.")
-    print("  [ ] PNA-X RF output safe at {:+.1f} dBm into the line.".format(PNAX_POWER_dBm))
+    print(f"  [ ] PNA-X RF output safe at {PNAX_POWER_dBm:+.1f} dBm into the line.")
     print("=" * 72)
     ans = input("Type 'yes' to proceed: ").strip().lower()
     if ans not in ("y", "yes"):
         print("[twpa_gain_compare] Aborted by user.")
         sys.exit(0)
 
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = os.path.join(SAVE_DIR, f"{stamp}_{RUN_TAG}")
-    npz_path = base + ".npz"
-    png_path = base + ".png"
+    npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
 
     rm = pyvisa.ResourceManager()
     pnax = rm.open_resource(PNAX_ADDRESS)
 
-    # Connect to the SynthHD pump. __init__ disables RF on both channels and
-    # locks the unit to its external 10 MHz reference on connect.
+    # Connecting disables RF on both channels and locks to the external 10 MHz reference.
     synth = SynthHD(PUMP_SYNTH_PORT)
     pump_channels = [synth[i] for i in PUMP_CHANNELS]
 
     freqs_Hz = None
     t0 = time.time()
     try:
-        # --- Pump source setup ---------------------------------------------
         # Park the pump at the ON point but RF disabled to start.
         set_pump_channels(pump_channels, pump_on_hz, PUMP_ON_POWER_dBm, rf_enable=False)
 
-        # --- PNA-X setup ---------------------------------------------------
         configure_pnax(
             pnax,
             f_start_hz,
@@ -237,7 +169,6 @@ def main():
         )
         freqs_Hz = read_freq_axis(pnax, f_start_hz, f_stop_hz, N_SIGNAL_POINTS)
 
-        # --- Interleaved OFF/ON repeats ------------------------------------
         for r in range(N_REPEATS):
             # OFF: disable pump RF (freq/power left parked at the ON point).
             disable_pump_channels(pump_channels)
@@ -294,7 +225,6 @@ def main():
             pass
         pnax.close()
 
-    # ---------------- Reduce ----------------
     if freqs_Hz is None:
         freqs_Hz = np.linspace(f_start_hz, f_stop_hz, N_SIGNAL_POINTS)
     freqs_GHz = freqs_Hz / 1e9
@@ -306,7 +236,6 @@ def main():
     on_dB = np.nanmean(on_dB_all, axis=0)
     gain_dB = on_dB - off_dB
 
-    # ---------------- Plot ----------------
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 7))
 
     ax1.plot(freqs_GHz, off_dB, "-", lw=1.2, color="C0", label="pump OFF")
@@ -331,7 +260,6 @@ def main():
     print(f"[twpa_gain_compare] Saved: {npz_path}")
     print(f"[twpa_gain_compare] Saved: {png_path}")
 
-    # ---------------- Summary ----------------
     finite = np.isfinite(gain_dB)
     if finite.sum() >= 3:
         k_max = np.nanargmax(gain_dB)
