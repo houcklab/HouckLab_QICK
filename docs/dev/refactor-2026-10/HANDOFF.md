@@ -93,6 +93,24 @@ commit the regenerated golden with the message "test(regression): regenerate gol
 and run the suite twice more to confirm it is stable on that machine. Any diff in `cfg`, `hw` or `methods`
 on an untouched tree means the environment is wrong (check `qick==0.2.334`, numpy/scipy versions).
 
+## Environment mismatch policy (added 2026-10-13, session 2 start on macOS)
+If the exact pins in `requirements-test.txt` cannot be installed (no wheel for the Mac's Python/arch), do NOT
+fight it: install the nearest available versions, but keep `qick==0.2.334` if at all possible (it is pure
+Python; install from PyPI or `pip install qick==0.2.334 --no-deps` then the deps separately). Record the
+actual versions in `docs/dev/refactor-2026-10/requirements-macos.txt`. Then run the suite on the UNTOUCHED
+legacy tree: diffs only in `data_digest`/`sets` → regenerate the golden on the legacy tree (platform note
+above) and commit it; diffs in `cfg`/`hw`/`methods` with a different qick version → the harness `__meta__`
+check will fail by design; if qick 0.2.334 truly cannot be installed, regenerate the golden on the legacy
+tree with the new qick version, commit it with the version in the message, and note that program hashes are
+now relative to that version. Either way the golden must be stable (two identical captures) BEFORE phase 3a-i.
+
+## End state: merge back into `bfc_code` (user decision 2026-10-13)
+When the whole plan is done and the verification ladder is green, unify the code base: `bfc_code` has not
+moved since 0f0a51f, so `git checkout bfc_code && git merge --ff-only qicklab_refactor` keeps history linear
+with every atomic commit individually revertable (`git revert <sha>`), then `git push origin bfc_code`. If
+`bfc_code` HAS moved in the meantime, rebase `qicklab_refactor` onto it first (resolve conflicts, rerun the
+full ladder), then fast-forward. Show the user the commit list and the final test summary before merging.
+
 ## Resuming with Claude Code
 Open the repo on the new machine, start Claude Code, and say: "Continue the qicklab refactor — read
 docs/dev/refactor-2026-10/HANDOFF.md and proceed with phase 3a-i per brief_3a.md, using dynamic workflows
