@@ -22,10 +22,8 @@ their current values. Besides one run per flag there are:
 This is the post-refactor driver: identical to ``driver_legacy`` except for
 the package constants (``RUNS_PACKAGE = "qicklab.runs"``, the experiment base
 class from ``qicklab.core.experiment``, the proxy factory in
-``qicklab.hardware.rfsoc`` under both its new name and its legacy alias) and a
-transitional virtual-clock patch for the modules still under
-``WorkingProjects.`` until phase 3a-ii. The fixture and the run labels are
-unchanged, so the golden keys exactly as before.
+``qicklab.hardware.rfsoc`` under both its new name and its legacy alias). The
+fixture and the run labels are unchanged, so the golden keys exactly as before.
 
 Usage:  python -m tests.regression.driver_qicklab          (rewrites the golden)
         python -m tests.regression.driver_qicklab RunT1    (dry run, A and B)
@@ -53,8 +51,6 @@ from tests.regression import capture  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 RUNS_PACKAGE = "qicklab.runs"  # stands in for what the frozen runner star-imports
 EXPERIMENT_MODULE = "qicklab.core.experiment"
-# 3a-i transitional: project modules not yet moved (removed in 3a-ii).
-LEGACY_PACKAGE = "WorkingProjects."
 FIXTURE = Path(__file__).with_name("fixtures") / "cstq03_legacy_runner.py.txt"
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")
 EXECUTE_MARKER = "3. EXECUTE"
@@ -118,7 +114,7 @@ def install():
 
     importlib.import_module(RUNS_PACKAGE)  # load every experiment module first
     experiment = importlib.import_module(EXPERIMENT_MODULE)
-    mocks = capture.install_mocks(
+    return capture.install_mocks(
         experiment.ExperimentClass,
         # install_mocks patches by attribute NAME + object identity, so the
         # legacy alias (makeProxy = make_proxy) needs its own target.
@@ -128,19 +124,6 @@ def install():
         ],
         pyvisa_targets=[pyvisa],
     )
-    # Transitional (3a-i only; 3a-ii removes it): install_mocks installs the
-    # virtual clock only in modules under the experiment base class's top
-    # package ("qicklab."), but some project modules still live under
-    # "WorkingProjects." until the 3a-ii splits. Same loop, same objects.
-    for name, mod in list(sys.modules.items()):
-        if not name.startswith(LEGACY_PACKAGE) or mod is None:
-            continue
-        for attr, value in list(vars(mod).items()):
-            if value is capture._dt:
-                mocks.set(mod, attr, capture.FAKE_DATETIME_MODULE)
-            elif value is capture._dt.datetime:
-                mocks.set(mod, attr, capture.FakeDateTime)
-    return mocks
 
 
 def star_namespace(module):

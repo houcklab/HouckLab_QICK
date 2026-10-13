@@ -30,8 +30,8 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 2
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from qicklab.experiments.modified_ramsey import ModifiedRamseyProgram  # noqa: E402
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs.charge_parity import (  # noqa: E402
+from qicklab.experiments.modified_ramsey import (  # noqa: E402
+    ModifiedRamseyProgram,
     modified_ramsey_timing,
 )
 

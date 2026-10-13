@@ -86,3 +86,14 @@ class YOKOGS200:
         else: return 'current'
 
     #==========================================================================#
+
+
+def ramp_to(yoko, target, step=0.001, delay=0.01):
+    if target > 10:
+        raise ValueError("Voltage too high")
+    current = float(yoko.query(":SOUR:LEV?"))
+    values = np.arange(current, target, step if target > current else -step)
+    for v in values:
+        yoko.write(f":SOUR:LEV {v}")
+        time.sleep(delay)
+    yoko.write(f":SOUR:LEV {target}")  # land exactly on target

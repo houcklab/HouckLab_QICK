@@ -42,26 +42,29 @@ IMPORTANT
 * Existing experiment classes (T1FF, T2R, T2EMUX, …) are not modified.
 """
 
+import json
 import os
 import time
-import json
-import numpy as np
-import matplotlib.pyplot as plt
 from datetime import datetime
+
+import matplotlib.pyplot as plt
+import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.rabi import AmplitudeRabiFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 from qicklab.experiments.t1 import T1FF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2R import T2R
 from qicklab.experiments.t2_echo import T2EMUX
+from qicklab.experiments.t2_ramsey import T2R
+
 
 # ---------------------------------------------------------------------------
 # Hardware clock quantisation constant (microseconds per QICK cycle × factor).
 # Must match the constant in CSTQ02_BFC.py's T2E step calculation.
 # ---------------------------------------------------------------------------
 _T2E_CLOCK_STEP_US = 0.00232515
+
 
 # ===========================================================================
 # User-facing parameter dictionary  (override any key via the auto_params arg)
@@ -1453,84 +1456,7 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     return fname
 
 
-# ===========================================================================
-# ─── Public entry points ────────────────────────────────────────────────────
-# ===========================================================================
-
-def find_sweet_spot(soc, soccfg, config, save_folder,
-                    qubit_freq_center, qubit_readout,
-                    yoko, sweet_params=None):
-    """
-    Standalone sweet-spot voltage search.
-
-    Exposes Stage 1 of run_auto_coherence as a reusable function so that
-    other experiment scripts (e.g. ModifiedRamsey_Control) can use the
-    two-strategy search without running the full calibration pipeline.
-
-    Strategy A (fast, when cd_period_mv is known):
-        Step half a charge-dispersion period from the current voltage and
-        check whether the two peaks have merged.  Typically converges in
-        1–2 spec acquisitions.
-
-    Strategy B (fallback):
-        Walk incrementally tracking the minimum peak separation and return
-        to the best voltage found.
-
-    Parameters
-    ----------
-    soc, soccfg
-        QICK hardware proxies.
-    config : dict
-        Full hardware config dict as built in CSTQ02_BFC.py.  NOT modified.
-    save_folder : str
-        Directory in which spec data are saved.  **Must end with "/"** so
-        that ExperimentClass can concatenate the stage sub-folder name
-        correctly (e.g. save_folder + "auto-Spec").
-    qubit_freq_center : float
-        Centre frequency for the two-tone spec sweep [MHz].
-    qubit_readout : int
-        Readout channel index passed through to QubitSpecSliceFF.
-    yoko : pyvisa resource or None
-        Yokogawa source for the charge line.  Pass None if unused.
-    sweet_params : dict or None
-        Overrides for any AUTO_COHERENCE_PARAMS keys.  Relevant ones:
-
-        spec_span, spec_num_pts, spec_reps, spec_rounds,
-        spec_relax_delay, spec_sigma, spec_gain, spec_qubit_length,
-        ss_search_df_trigger  – peak sep that triggers the half-period step,
-        ss_accept_sep         – sep below which the spot is accepted,
-        ss_dV, ss_voltage_min, ss_voltage_max, ss_max_tries,
-        cd_period_mv          – enables Strategy A when set.
-
-    Returns
-    -------
-    qubit_freq : float
-        Estimated qubit frequency at the sweet spot [MHz].
-    sweet_spot_voltage : float or None
-        Yoko voltage at the sweet spot [V], or None if yoko is None.
-    peak_info : dict
-        Peak information from the final two-tone spec
-        (keys: peak_inds, peak_freqs, peak_vals, peak_sep).
-    log : list of str
-        Human-readable log of all search steps.
-    """
-    params = {**AUTO_COHERENCE_PARAMS, **(sweet_params or {})}
-    log = []
-    qubit_freq, voltage, peak_info = _stage_sweet_spot_search(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=dict(config),
-        auto_folder=save_folder,
-        qubit_freq_center=qubit_freq_center,
-        qubit_readout=qubit_readout,
-        params=params,
-        yoko=yoko,
-        log=log,
-    )
-    return qubit_freq, voltage, peak_info, log
-
-
-def run_auto_coherence(soc, soccfg, config, outerFolder,
+def _run_auto_coherence(soc, soccfg, config, outerFolder,
                        qubit_readout, qubit_params,
                        yoko=None, auto_params=None):
     """
@@ -1794,3 +1720,17 @@ def run_auto_coherence(soc, soccfg, config, outerFolder,
                "auto_folder":   auto_folder,
                "summary_file":  summary_file}
     return results
+
+
+def run_auto_coherence(ctx, AutoCoherence_override_params):
+    auto_results = _run_auto_coherence(
+        soc=ctx.soc,
+        soccfg=ctx.soccfg,
+        config=ctx.working_config(),                    # full config dict built above
+        outerFolder=ctx.outerFolder,
+        qubit_readout=ctx.Qubit_Readout,
+        qubit_params=ctx.Qubit_Parameters,
+        yoko=ctx.yoko,                        # set to None if no charge line
+        auto_params=AutoCoherence_override_params,
+    )
+    print("[AutoCoherence] Results:", auto_results)

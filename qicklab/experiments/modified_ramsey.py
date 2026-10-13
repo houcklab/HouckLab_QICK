@@ -1035,3 +1035,181 @@ class ModifiedRamsey(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+
+def modified_ramsey_timing(soccfg, cfg):
+    """Return the scheduled per-repetition timing used by ModifiedRamseyProgram.
+
+    This mirrors the program's clock-domain conversions and timestamp barriers.
+    It excludes one-time initialize(), tProc instruction latency, data transfer,
+    and Python-side calibration/plotting/saving overhead.
+    """
+    res_ch = cfg["res_ch"]
+    qubit_ch = cfg["qubit_ch"]
+    ro_chs = cfg["ro_chs"]
+
+    if not ro_chs:
+        raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
+    if cfg["df"] <= 0:
+        raise ValueError("cfg['df'] must be positive")
+    if cfg["sigma"] <= 0:
+        raise ValueError("cfg['sigma'] must be positive")
+    if cfg["readout_length"] <= 0:
+        raise ValueError("cfg['readout_length'] must be positive")
+    delay_keys = ["adc_trig_offset", "mr_relax_delay"]
+    if cfg.get("use_active_reset", False):
+        delay_keys.extend(["reset_readout_relax_delay", "post_reset_wait"])
+    for delay_key in delay_keys:
+        if cfg.get(delay_key, 0.0) < 0:
+            raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+
+    f_time = float(soccfg["tprocs"][0]["f_time"])
+    res_f_fabric = float(soccfg["gens"][res_ch]["f_fabric"])
+    qubit_f_fabric = float(soccfg["gens"][qubit_ch]["f_fabric"])
+
+    # QICK tracks generator/readout timestamps as (native clock cycles converted
+    # to tProc cycles), then sync_all() truncates the largest timestamp to an
+    # integer tProc cycle. Reproduce that sequence exactly here.
+    requested_tone_native_cycles = soccfg.us2cycles(
+        cfg["length"], gen_ch=res_ch
+    )
+    adc_offset_tproc_cycles = soccfg.us2cycles(cfg["adc_trig_offset"])
+    window_native_cycles_by_ch = {
+        int(ch): soccfg.us2cycles(cfg["readout_length"], ro_ch=ch)
+        for ch in ro_chs
+    }
+    adc_end_tproc_by_ch = {
+        int(ch): (
+            adc_offset_tproc_cycles
+            + window_native_cycles_by_ch[int(ch)]
+            * f_time / float(soccfg["readouts"][ch]["f_output"])
+        )
+        for ch in ro_chs
+    }
+    adc_window_end_tproc = max(adc_end_tproc_by_ch.values())
+    required_tone_native_cycles = int(np.ceil(
+        adc_window_end_tproc * res_f_fabric / f_time - 1e-12
+    ))
+    tone_native_cycles = max(
+        requested_tone_native_cycles, required_tone_native_cycles
+    )
+    tone_extension_native_cycles = (
+        tone_native_cycles - requested_tone_native_cycles
+    )
+    tone_end_tproc = tone_native_cycles * f_time / res_f_fabric
+    readout_slot_tproc_cycles = int(max(tone_end_tproc, adc_window_end_tproc))
+
+    qubit_native_cycles = soccfg.us2cycles(
+        cfg["sigma"] * 4, gen_ch=qubit_ch
+    )
+    qubit_end_tproc = qubit_native_cycles * f_time / qubit_f_fabric
+    qubit_pulse_tproc_cycles = int(qubit_end_tproc)
+    use_pi_pulse = bool(cfg.get("use_pi_pulse", False))
+    ramsey_pulse_count = 3 if use_pi_pulse else 2
+    # Mirror ModifiedRamseyProgram: tau is the pulse-CENTRE-to-CENTRE precession
+    # time, while QICK schedules the wait between pulse EDGES, so the programmed
+    # gap is tau/n_gaps - 4*sigma. See mModifiedRamsey.initialize().
+    tau_us = float(cfg.get("ramsey_tau_us", 1.0 / (2.0 * cfg["df"])))
+    qubit_pulse_us = float(qubit_native_cycles / qubit_f_fabric)
+    wait_count = 2 if use_pi_pulse else 1
+    wait_request_us = tau_us / wait_count - qubit_pulse_us
+    if wait_request_us <= 0:
+        raise ValueError(
+            f"cfg['df']={cfg['df']} MHz needs tau={tau_us:.4f} us, but the "
+            f"qubit pulses span {wait_count * qubit_pulse_us:.4f} us "
+            f"(4*sigma = {qubit_pulse_us:.4f} us each). Shorten cfg['sigma'] "
+            "or work at a smaller peak separation."
+        )
+    wait_cycles_each = soccfg.us2cycles(wait_request_us)
+    wait_tproc_cycles = wait_count * wait_cycles_each
+    effective_tau_us = float(
+        wait_count * (wait_cycles_each / f_time + qubit_pulse_us)
+    )
+    final_padding_tproc_cycles = soccfg.us2cycles(0.05)
+    mr_relax_tproc_cycles = soccfg.us2cycles(cfg.get("mr_relax_delay", 0.0))
+
+    reset_cycles = (
+        int(cfg.get("reset_cycles", 1))
+        if cfg.get("use_active_reset", False) else 0
+    )
+    if reset_cycles < 0:
+        raise ValueError("cfg['reset_cycles'] must be non-negative")
+    reset_delay_tproc_cycles = (
+        soccfg.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
+        if reset_cycles else 0
+    )
+    post_reset_wait_tproc_cycles = (
+        soccfg.us2cycles(cfg.get("post_reset_wait", 0.0))
+        if reset_cycles else 0
+    )
+
+    ramsey_sequence_tproc_cycles = (
+        ramsey_pulse_count * qubit_pulse_tproc_cycles
+        + wait_tproc_cycles
+        + final_padding_tproc_cycles
+        + readout_slot_tproc_cycles
+        + mr_relax_tproc_cycles
+    )
+    reset_block_tproc_cycles = (
+        # The corrective pi is conditional at runtime, but QICK's compile-time
+        # timestamp tracking sees the pulse before the shared sync_all(). The
+        # generated synci therefore reserves its full duration on both branches.
+        reset_cycles * (
+            readout_slot_tproc_cycles
+            + reset_delay_tproc_cycles
+            + qubit_pulse_tproc_cycles
+        )
+        + post_reset_wait_tproc_cycles
+    )
+    scheduled_rep_period_tproc_cycles = (
+        ramsey_sequence_tproc_cycles + reset_block_tproc_cycles
+    )
+
+    to_us = lambda cycles: float(cycles / f_time)
+    tone_us = float(tone_end_tproc / f_time)
+    adc_offset_us = to_us(adc_offset_tproc_cycles)
+    window_us_by_ch = {
+        int(ch): float(
+            window_native_cycles_by_ch[int(ch)]
+            / float(soccfg["readouts"][ch]["f_output"])
+        )
+        for ch in ro_chs
+    }
+
+    return {
+        "scheduled_rep_period_us": to_us(scheduled_rep_period_tproc_cycles),
+        "scheduled_rep_period_tproc_cycles": int(scheduled_rep_period_tproc_cycles),
+        "ramsey_sequence_us": to_us(ramsey_sequence_tproc_cycles),
+        "reset_block_us": to_us(reset_block_tproc_cycles),
+        "readout_slot_us": to_us(readout_slot_tproc_cycles),
+        "readout_slot_tproc_cycles": int(readout_slot_tproc_cycles),
+        "resonator_tone_us": tone_us,
+        "requested_resonator_tone_us": float(
+            requested_tone_native_cycles / res_f_fabric
+        ),
+        "tone_quantization_extension_cycles": int(tone_extension_native_cycles),
+        "adc_offset_us": adc_offset_us,
+        "max_readout_window_us": float(max(window_us_by_ch.values())),
+        "tone_coverage_margin_us": float(
+            (tone_end_tproc - adc_window_end_tproc) / f_time
+        ),
+        "qubit_pulse_us": to_us(qubit_pulse_tproc_cycles),
+        "ramsey_qubit_pulse_count": int(ramsey_pulse_count),
+        "ramsey_wait_us": to_us(wait_tproc_cycles),
+        # Requested vs realized pulse-centre-to-centre precession time.
+        "requested_tau_us": float(tau_us),
+        "effective_tau_us": effective_tau_us,
+        "ramsey_gap_per_wait_us": float(wait_cycles_each / f_time),
+        "final_padding_us": to_us(final_padding_tproc_cycles),
+        "mr_relax_delay_us": to_us(mr_relax_tproc_cycles),
+        "reset_cycles": int(reset_cycles),
+        "reset_readout_relax_delay_us": to_us(reset_delay_tproc_cycles),
+        "post_reset_wait_us": to_us(post_reset_wait_tproc_cycles),
+        "f_time_mhz": f_time,
+        "res_f_fabric_mhz": res_f_fabric,
+        "qubit_f_fabric_mhz": qubit_f_fabric,
+        "ro_f_output_mhz": {
+            int(ch): float(soccfg["readouts"][ch]["f_output"])
+            for ch in ro_chs
+        },
+    }

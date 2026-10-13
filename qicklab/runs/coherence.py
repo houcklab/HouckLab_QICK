@@ -1,13 +1,10 @@
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
+"""T1 / T2 Ramsey / T2 echo measurement routines and their combinations."""
+
+import time
+
 from qicklab.experiments.t1 import T1FF
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2R import T2R
 from qicklab.experiments.t2_echo import T2EMUX
-from qicklab.experiments.t1_single_shot import T1_SS
-from qicklab.experiments.single_shot import SingleShotProgramFFMUX
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAutoCoherence import run_auto_coherence as _run_auto_coherence, AUTO_COHERENCE_PARAMS, find_sweet_spot
-import numpy as np
-import matplotlib.pyplot as plt
-from .context import Context
+from qicklab.experiments.t2_ramsey import T2R
 
 
 def run_t1(ctx, T1T2_params):
@@ -248,50 +245,3 @@ def run_t2e(ctx, T2E_params):
 
             time.sleep(10)
             ctx.soc.reset_gens()
-
-
-def run_t1_ss(ctx, T1SS_params, SS_params):
-    for i in range(T1SS_params["repetitions"]):
-        cfg = ctx.working_config()
-        if T1SS_params["calibrate_SS"]:
-            cfg['number_of_pulses'] = SS_params['number_of_pulses']
-            Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=ctx.outerFolder, cfg=cfg,
-                                                                soc=ctx.soc, soccfg=ctx.soccfg)
-            data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
-            SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=False)
-            SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
-            SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
-            angle = data_SingleShotProgram['data']['angle'][0]
-            threshold = data_SingleShotProgram['data']['threshold'][0]
-        else:
-            angle = T1SS_params["angle"]
-            threshold = T1SS_params["threshold"]
-        print(angle, threshold)
-
-        expt_cfg = {"start": 0, "step": T1SS_params["T1_step"], "expts": T1SS_params["T1_expts"],
-                    'reps': T1SS_params['reps'],
-                    "pi_gain": ctx.qubit_gain, "relax_delay": T1SS_params["relax_delay"]
-                    }
-        cfg = cfg | expt_cfg  ### preserve number_of_pulses set above (mirrors original config | expt_cfg)
-        iT1 = T1_SS(path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
-        dT1 = T1_SS.acquire(iT1, angle = angle, threshold = threshold)
-        T1_SS.display(iT1, dT1, plotDisp=False, figNum=2)
-        T1_SS.save_data(iT1, dT1)
-        T1_SS.save_config(iT1)
-
-        time.sleep(10)
-        ctx.soc.reset_gens()
-
-
-def run_auto_coherence(ctx, AutoCoherence_override_params):
-    auto_results = _run_auto_coherence(
-        soc=ctx.soc,
-        soccfg=ctx.soccfg,
-        config=ctx.working_config(),                    # full config dict built above
-        outerFolder=ctx.outerFolder,
-        qubit_readout=ctx.Qubit_Readout,
-        qubit_params=ctx.Qubit_Parameters,
-        yoko=ctx.yoko,                        # set to None if no charge line
-        auto_params=AutoCoherence_override_params,
-    )
-    print("[AutoCoherence] Results:", auto_results)

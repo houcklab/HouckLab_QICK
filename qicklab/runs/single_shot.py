@@ -1,160 +1,143 @@
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
-from qicklab.experiments.single_shot import SingleShotProgramFFMUX
-from qicklab.experiments.readout_optimize import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
-from qicklab.experiments.active_reset_verify import ActiveResetVerify
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mUndrivenSingleShot import UndrivenSingleShot
+"""Single-shot readout routines: blob calibration, undriven shots, readout/pulse optimisation, T1 single-shot."""
+
+import time
+
 import numpy as np
-import matplotlib.pyplot as plt
-from .context import Context
-from .calibration import get_apriori_separator_from_singleshot, calibrate_active_reset_readout, wire_reset_into_mr_cfg, _extract_iq_from_singleshot_data
+
+from qicklab.experiments.readout_optimize import QubitPulseOpt_wSingleShotFF, ReadOpt_wSingleShotFF
+from qicklab.experiments.single_shot import SingleShotProgramFFMUX
+from qicklab.experiments.t1_single_shot import T1_SS
+from qicklab.experiments.undriven_single_shot import UndrivenSingleShot
 
 
-def run_active_reset_verify(ctx, ActiveResetVerify_params):
-    arv_dir = os.path.join(ctx.outerFolder, "ActiveResetVerify")
-    os.makedirs(arv_dir, exist_ok=True)
+def _extract_iq_from_singleshot_data(data_ss, state="g"):
+    """
+    Extracts SingleShotProgramFFMUX IQ arrays.
 
-    # 1) Calibrate readout phase + I-threshold (rotates config["res_phase"] so
-    #    |g>/|e> separate along I, and measures the threshold off the rotated blobs).
-    arv_calib = calibrate_active_reset_readout(
-        ctx
-    )
+    state="g" uses ground-prep IQ.
+    state="e" uses excited-prep IQ.
+    state="thermal" uses thermal IQ if available.
+    """
+    d = data_ss["data"]
 
-    # 2) Base config shared by all conditions. g_center/e_center are in the
-    #    rotated frame (consistent with config["res_phase"] set just above).
-    arv_base_cfg = {
-        "f_ge": ctx.qubit_frequency_center,
-        "pi_gain": ctx.qubit_gain,
-        "sigma": ctx.qubit_sigma,
-        "flattop_length": ctx.qubit_flattop,
-        "reps": ActiveResetVerify_params["reps"],
-        "rounds": 1,
-        "relax_delay": ActiveResetVerify_params["relax_delay"],
-        "n_verify_reads": ActiveResetVerify_params["n_verify_reads"],
-        "verify_relax_delay": ActiveResetVerify_params["verify_relax_delay"],
-        "reset_cycles": ActiveResetVerify_params["reset_cycles"],
-        "reset_readout_relax_delay": ActiveResetVerify_params[
-            "reset_readout_relax_delay"
+    key_pairs = {
+        "g": [
+            ("i_g0", "q_g0"),
+            ("i_g", "q_g"),
+            ("Ig", "Qg"),
         ],
-        "post_reset_wait": ActiveResetVerify_params["post_reset_wait"],
-        "readout_threshold": arv_calib["readout_threshold"],
-        "reset_ground_below_threshold": arv_calib["reset_ground_below_threshold"],
-        "g_center": list(arv_calib["g_center"]),
-        "e_center": list(arv_calib["e_center"]),
-        "Qubit_number": ctx.Qubit_Readout,
+        "e": [
+            ("i_e0", "q_e0"),
+            ("i_e", "q_e"),
+            ("Ie", "Qe"),
+        ],
+        "thermal": [
+            ("i_thermal0", "q_thermal0"),
+            ("i_thermal", "q_thermal"),
+        ],
     }
 
-    # 3) Four conditions: prep |g>/|e>  ×  reset off/on, plus force-pi
-    #    diagnostics: the corrective pi fires UNCONDITIONALLY after the
-    #    conditioning readout, measuring the bare post-readout pi fidelity
-    #    decoupled from the threshold decision (prep|e>_forcePI should match
-    #    prep|g>_resetOFF if the pi is good; prep|g>_forcePI should match
-    #    prep|e>_resetOFF).
-    arv_conditions = [
-        ("prep|g>_resetOFF", False, False, False),
-        ("prep|e>_resetOFF", True, False, False),
-        ("prep|g>_resetON", False, True, False),
-        ("prep|e>_resetON", True, True, False),
-        ("prep|e>_forcePI", True, True, True),
-        ("prep|g>_forcePI", False, True, True),
-    ]
-    arv_results = {}
-    for arv_label, arv_prep, arv_reset, arv_force in arv_conditions:
-        print(f"\n[ActiveResetVerify] Condition: {arv_label}")
-        cfg_arv = (
-            ctx.working_config()
-            | arv_base_cfg
-            | {
-                "prep_excited": arv_prep,
-                "use_active_reset": arv_reset,
-                "reset_force_pi": arv_force,
-            }
-        )
-        inst_arv = ActiveResetVerify(
-            path="ActiveResetVerify",
-            cfg=cfg_arv,
-            soc=ctx.soc,
-            soccfg=ctx.soccfg,
-            outerFolder=ctx.outerFolder,
-        )
-        data_arv = ActiveResetVerify.acquire(inst_arv)
-        ActiveResetVerify.display(inst_arv, data_arv, plotDisp=False, figNum=20)
-        ActiveResetVerify.save_data(inst_arv, data_arv)
-        ActiveResetVerify.save_config(inst_arv)
-        arv_results[arv_label] = np.asarray(data_arv["data"]["p_ground"])
-        print(
-            f"[ActiveResetVerify] {arv_label}: P(|g>) per read = "
-            f"{np.array2string(arv_results[arv_label], precision=3)}"
-        )
+    for i_key, q_key in key_pairs.get(state, []):
+        if i_key in d and q_key in d:
+            return np.ravel(np.array(d[i_key])), np.ravel(np.array(d[q_key]))
 
-    # 4) Overlay P(|g>) vs read index for all conditions.
-    read_idx_arv = np.arange(ActiveResetVerify_params["n_verify_reads"])
-    timestamp_arv = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    plt.figure(figsize=(8, 5))
-    for arv_label, *_ in arv_conditions:
-        plt.plot(
-            read_idx_arv, arv_results[arv_label], "o-", linewidth=1.5, label=arv_label
-        )
-    plt.xlabel("Verification readout index")
-    plt.ylabel("P(|g>)")
-    plt.ylim(-0.05, 1.05)
-    plt.title(
-        "Active-reset verification\n"
-        f"f_ge={ctx.qubit_frequency_center:.4f} MHz, "
-        f"reset_cycles={ActiveResetVerify_params['reset_cycles']}"
-    )
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    arv_overlay = os.path.join(
-        arv_dir, f"ActiveResetVerify_overlay_{timestamp_arv}.png"
-    )
-    plt.savefig(arv_overlay, dpi=300, bbox_inches="tight")
-    if ActiveResetVerify_params.get("plotDisp", False):
-        plt.show(block=False)
-        plt.pause(0.1)
-    else:
-        plt.close()
+    print("[SingleShot MR Calib] Available data keys:", d.keys())
+    raise KeyError(f"Could not find raw I/Q arrays for state={state}.")
 
-    np.savez(
-        os.path.join(arv_dir, f"ActiveResetVerify_{timestamp_arv}.npz"),
-        read_index=read_idx_arv,
-        readout_threshold=arv_calib["readout_threshold"],
-        res_phase=arv_calib["res_phase"],
-        g_center=arv_calib["g_center"],
-        e_center=arv_calib["e_center"],
-        **{f"p_ground_{lbl}": arv_results[lbl] for lbl, *_ in arv_conditions},
+
+def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
+    """
+    Runs one SingleShot calibration using a pi pulse.
+    Uses the returned ground/excited blobs to define a fixed separator.
+    Also saves the SingleShot data/config/png through the normal SingleShot methods.
+    """
+
+    cfg_ss = ctx.working_config()
+    cfg_ss["number_of_pulses"] = 1
+    cfg_ss["shots"] = ss_shots
+    cfg_ss["reps"] = ss_shots
+    cfg_ss["qubit_gain"] = ctx.qubit_gain
+    cfg_ss["f_ge"] = ctx.qubit_frequency_center
+    cfg_ss["sigma"] = ctx.qubit_sigma
+    cfg_ss["flattop_length"] = ctx.qubit_flattop
+    cfg_ss["Qubit_number"] = ctx.Qubit_Readout
+    cfg_ss["Read_Indeces"] = ctx.Qubit_Readout
+
+    inst_ss = SingleShotProgramFFMUX(
+        path="SingleShot_MRCalib",
+        outerFolder=ctx.outerFolder,
+        cfg=cfg_ss,
+        soc=ctx.soc,
+        soccfg=ctx.soccfg
     )
 
-    # 5) Verdict.
-    pg_g_off = float(np.mean(arv_results["prep|g>_resetOFF"]))
-    pg_e_off = float(np.mean(arv_results["prep|e>_resetOFF"]))
-    pg_g_on = float(np.mean(arv_results["prep|g>_resetON"]))
-    pg_e_on = float(np.mean(arv_results["prep|e>_resetON"]))
-    print("\n[ActiveResetVerify] ===== VERDICT =====")
-    print(f"  prep|g> reset OFF : P(|g>)={pg_g_off:.3f}  (thermal baseline)")
-    print(f"  prep|e> reset OFF : P(|g>)={pg_e_off:.3f}  (control, should be low)")
-    print(f"  prep|g> reset ON  : P(|g>)={pg_g_on:.3f}")
-    print(f"  prep|e> reset ON  : P(|g>)={pg_e_on:.3f}  (key proof)")
-    pg_e_force = float(np.mean(arv_results["prep|e>_forcePI"][:1]))
-    pg_g_force = float(np.mean(arv_results["prep|g>_forcePI"][:1]))
-    print(
-        f"  prep|e> force-pi  : P(|g>) read0 = {pg_e_force:.3f}  "
-        f"(bare post-readout pi fidelity; expect ~ prep|g> baseline)"
-    )
-    print(
-        f"  prep|g> force-pi  : P(|g>) read0 = {pg_g_force:.3f}  "
-        f"(expect ~ prep|e> reset-OFF baseline)"
-    )
-    recovery_arv = pg_e_on - pg_e_off
-    print(f"  reset recovery from |e> : dP(|g>) = {recovery_arv:+.3f}")
-    if pg_e_on >= 0.9 * pg_g_on and recovery_arv >= 0.3:
-        print("  => Active reset is WORKING (recovers |g> from |e>).")
-    else:
-        print(
-            "  => Active reset NOT clearly working; inspect readout_threshold / "
-            "res_phase / pi_gain calibration."
-        )
-    print(f"[ActiveResetVerify] complete. Overlay: {arv_overlay}")
+    data_ss = SingleShotProgramFFMUX.acquire(inst_ss)
+
+    # Save SingleShot data, config, and display png.
+    SingleShotProgramFFMUX.display(inst_ss, data_ss, plotDisp=False)
+    SingleShotProgramFFMUX.save_data(inst_ss, data_ss)
+    SingleShotProgramFFMUX.save_config(inst_ss)
+
+    d = data_ss["data"]
+
+    Ig = np.ravel(np.array(d["i_g0"]))
+    Qg = np.ravel(np.array(d["q_g0"]))
+    Ie = np.ravel(np.array(d["i_e0"]))
+    Qe = np.ravel(np.array(d["q_e0"]))
+
+    g_center = np.array([np.mean(Ig), np.mean(Qg)])
+    e_center = np.array([np.mean(Ie), np.mean(Qe)])
+
+    normal = e_center - g_center
+    midpoint = 0.5 * (g_center + e_center)
+
+    print("[ModifiedRamsey] A priori separator from saved SingleShot:")
+    print(f"  g_center = {g_center}")
+    print(f"  e_center = {e_center}")
+    print(f"  midpoint = {midpoint}")
+    print(f"  normal   = {normal}")
+    print(f"  separation = {np.linalg.norm(normal):.6f}")
+
+    return {
+        "g_center": g_center,
+        "e_center": e_center,
+        "normal": normal,
+        "midpoint": midpoint,
+        "data_ss": data_ss,
+    }
+
+
+def run_t1_ss(ctx, T1SS_params, SS_params):
+    for i in range(T1SS_params["repetitions"]):
+        cfg = ctx.working_config()
+        if T1SS_params["calibrate_SS"]:
+            cfg['number_of_pulses'] = SS_params['number_of_pulses']
+            Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=ctx.outerFolder, cfg=cfg,
+                                                                soc=ctx.soc, soccfg=ctx.soccfg)
+            data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
+            SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=False)
+            SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
+            SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
+            angle = data_SingleShotProgram['data']['angle'][0]
+            threshold = data_SingleShotProgram['data']['threshold'][0]
+        else:
+            angle = T1SS_params["angle"]
+            threshold = T1SS_params["threshold"]
+        print(angle, threshold)
+
+        expt_cfg = {"start": 0, "step": T1SS_params["T1_step"], "expts": T1SS_params["T1_expts"],
+                    'reps': T1SS_params['reps'],
+                    "pi_gain": ctx.qubit_gain, "relax_delay": T1SS_params["relax_delay"]
+                    }
+        cfg = cfg | expt_cfg  ### preserve number_of_pulses set above (mirrors original config | expt_cfg)
+        iT1 = T1_SS(path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
+        dT1 = T1_SS.acquire(iT1, angle = angle, threshold = threshold)
+        T1_SS.display(iT1, dT1, plotDisp=False, figNum=2)
+        T1_SS.save_data(iT1, dT1)
+        T1_SS.save_config(iT1)
+
+        time.sleep(10)
+        ctx.soc.reset_gens()
 
 
 def run_single_shot(ctx, SS_params):

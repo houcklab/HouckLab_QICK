@@ -1,7 +1,7 @@
 """
 Hardware-free deterministic tests for the Modified-Ramsey charge-parity
-switching analysis (analyze_ModifiedRamseyParity.py) and the pure planning
-helpers in qicklab.experiments.modified_ramsey.
+switching analysis (qicklab.analysis: hmm, rates, readout, modified_ramsey)
+and the pure planning helpers in qicklab.experiments.modified_ramsey.
 
 Everything here is seeded and offline: no RFSoC, no Pyro4, no instruments.
 Timing checks that need real clock domains stay in
@@ -15,22 +15,26 @@ import os
 
 import numpy as np
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ModifiedRamseyParity import (
-    assess_parity_record,
-    autocorrelation_rate_estimate,
-    calibrate_readout_from_labeled_shots,
-    compare_parity_controls,
+from qicklab.analysis.hmm import (
     fit_two_state_hmm,
     hmm_forward_backward,
     hmm_viterbi,
+)
+from qicklab.analysis.modified_ramsey import (
+    analyze_modified_ramsey_record,
+    assess_parity_record,
+    compare_parity_controls,
+    reset_success_vs_cycle,
+)
+from qicklab.analysis.rates import (
+    autocorrelation_rate_estimate,
     psd_rate_estimate,
     rate_vs_bin_size,
     remove_slow_drift,
-    reset_success_vs_cycle,
     simulate_telegraph_trace,
     transition_matrix_2state,
-    analyze_modified_ramsey_record,
 )
+from qicklab.analysis.readout import calibrate_readout_from_labeled_shots
 
 
 def close(a, b, rel):
@@ -802,9 +806,7 @@ def test_plot_and_sidecar_paths():
         em = {"mu0": cal["proj_g_mean"], "mu1": cal["proj_e_mean"],
               "sigma0": cal["proj_g_sigma"], "sigma1": cal["proj_e_sigma"]}
         fit = fit_two_state_hmm(sim["v"], dt, em, symmetric=True)
-        from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ModifiedRamseyParity import (
-            _plot_hmm,
-        )
+        from qicklab.analysis.modified_ramsey import _plot_hmm
         path = os.path.join(td, "gauss_hmm.png")
         _plot_hmm(sim["t_s"], sim["v"], fit, path)
         assert (

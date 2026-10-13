@@ -5,11 +5,9 @@ import numpy as np
 from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
+from qicklab.analysis.fitting import fit_hanger_transmission
+from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
-    acquire_with_retry,
-    fit_hanger_transmission,
-)
 
 
 class CavitySpecFFProg(AveragerProgram):

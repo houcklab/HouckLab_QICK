@@ -3,10 +3,8 @@ import numpy as np
 from qick import RAveragerProgram
 from scipy.optimize import curve_fit
 
+from qicklab.analysis.iq import project_iq_signal
 from qicklab.core.experiment import ExperimentClass
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
-    project_iq_signal,
-)
 
 
 class QubitSpecSliceFFProg(RAveragerProgram):

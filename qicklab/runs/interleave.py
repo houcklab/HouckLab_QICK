@@ -31,17 +31,9 @@ on the same day stay distinguishable.
 
 from datetime import datetime
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs.coherence import (
-    run_t1,
-    run_t2,
-    run_t2e,
-)
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs.context import (
-    rebuild_singleshot_config,
-)
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Runners.runs.singleshot import (
-    run_undriven_single_shot,
-)
+from qicklab.core.config import rebuild_singleshot_config
+from qicklab.runs.coherence import run_t1, run_t2, run_t2e
+from qicklab.runs.single_shot import run_undriven_single_shot
 
 
 def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params,

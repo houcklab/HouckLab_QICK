@@ -11,18 +11,15 @@ from contextlib import contextmanager
 import h5py
 import numpy as np
 
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import (
-    classify_parity_trace,
+from qicklab.analysis.dwell import dwell_time_statistics
+from qicklab.analysis.spectroscopy import find_two_tone_peaks
+from qicklab.analysis.zero_span import classify_parity_trace, sliding_window_switch_rate
+from qicklab.analysis.zero_span_checks import (
     contrast_from_sweeps,
-    dwell_time_statistics,
     projected_histogram_snr,
-    sliding_window_switch_rate,
     verify_modulation,
 )
-from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
-    find_two_tone_peaks,
-    modulated_strobe_acquire,
-)
+from qicklab.core.acquisition import modulated_strobe_acquire
 
 
 @contextmanager

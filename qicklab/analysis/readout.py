@@ -409,3 +409,175 @@ def hist_process_per_class(data=None, plot=True, ran=None, figNum = 1, title = '
         axs[2].set_title(f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}")
 
     return fid, threshold, theta
+
+
+# =========================================================================
+# 1. Readout calibration from labeled g/e shots
+# =========================================================================
+def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
+    """
+    Calibrate the IQ projection and discrimination stats from LABELED shots.
+
+    Parameters
+    ----------
+    I_g, Q_g : array_like
+        Single-shot I/Q with the qubit prepared in |g> (no pi pulse).
+    I_e, Q_e : array_like
+        Single-shot I/Q with the qubit prepared in |e> (pi pulse).
+    use_lda : bool
+        If True (default) the projection axis is the Fisher/LDA direction
+        Sigma_pooled^-1 (mu_e - mu_g), which is optimal for Gaussian clouds
+        with shared covariance. If False, the plain mean-difference axis
+        (mu_e - mu_g) is used (identical when the noise is isotropic).
+
+    Returns
+    -------
+    dict with keys:
+      g_center, e_center     : (2,) cloud means in (I, Q)
+      cov_g, cov_e           : (2, 2) cloud covariances
+      axis                   : (2,) UNIT projection vector (points g -> e)
+      midpoint               : (2,) projection origin (midpoint of centers)
+      proj_g_mean, proj_e_mean, proj_g_sigma, proj_e_sigma : floats,
+                               moments of the projected clouds (raw units)
+      separation             : |proj_e_mean - proj_g_mean|
+      snr_analog             : separation / sqrt(0.5*(sg^2 + se^2))
+      threshold              : equal-priors optimal projected threshold
+                               (maximizes empirical assignment accuracy)
+      confusion_matrix       : (2, 2) rows = prepared (g, e), cols = assigned
+                               (g, e); P(assign col | prepared row)
+      contrast               : P(g|g) + P(e|e) - 1 == max|CDF_g - CDF_e|
+                               (this is what legacy code prints as "Fidelity")
+      assignment_fidelity    : (1 + contrast) / 2, equal priors
+      max_cdf_gap            : identical to contrast, kept under the explicit
+                               name so the legacy number is traceable
+      e_above_threshold      : bool, True if the |e> cloud projects ABOVE the
+                               threshold (orientation of the mapping)
+      n_g, n_e               : shot counts used
+      warnings               : list of str
+    """
+    I_g = np.ravel(np.asarray(I_g, dtype=float))
+    Q_g = np.ravel(np.asarray(Q_g, dtype=float))
+    I_e = np.ravel(np.asarray(I_e, dtype=float))
+    Q_e = np.ravel(np.asarray(Q_e, dtype=float))
+    if I_g.size != Q_g.size or I_e.size != Q_e.size:
+        raise ValueError("I/Q length mismatch in labeled shots")
+    if I_g.size < 10 or I_e.size < 10:
+        raise ValueError(
+            f"need >= 10 shots per state to calibrate, got n_g={I_g.size}, "
+            f"n_e={I_e.size}"
+        )
+    warnings = []
+
+    g_pts = np.column_stack([I_g, Q_g])
+    e_pts = np.column_stack([I_e, Q_e])
+    g_center = g_pts.mean(axis=0)
+    e_center = e_pts.mean(axis=0)
+    cov_g = np.cov(g_pts, rowvar=False)
+    cov_e = np.cov(e_pts, rowvar=False)
+
+    diff = e_center - g_center
+    if not np.any(np.abs(diff) > 0):
+        raise ValueError("g and e cloud centers coincide; cannot define an axis")
+
+    if use_lda:
+        pooled = 0.5 * (cov_g + cov_e)
+        # Regularize so a rank-deficient pooled covariance (e.g. synthetic
+        # noise-free data) cannot blow up the solve.
+        eps = 1e-12 * max(np.trace(pooled), 1e-300)
+        axis = np.linalg.solve(pooled + eps * np.eye(2), diff)
+    else:
+        axis = diff.copy()
+    axis = axis / np.linalg.norm(axis)
+    # Canonical orientation: axis points from g toward e.
+    if float(axis @ diff) < 0:
+        axis = -axis
+    midpoint = 0.5 * (g_center + e_center)
+
+    vg = (g_pts - midpoint) @ axis
+    ve = (e_pts - midpoint) @ axis
+    proj_g_mean = float(vg.mean())
+    proj_e_mean = float(ve.mean())
+    proj_g_sigma = float(vg.std(ddof=1))
+    proj_e_sigma = float(ve.std(ddof=1))
+    separation = float(abs(proj_e_mean - proj_g_mean))
+    pooled_sigma = math.sqrt(0.5 * (proj_g_sigma ** 2 + proj_e_sigma ** 2))
+    snr_analog = separation / pooled_sigma if pooled_sigma > 0 else np.inf
+
+    # Equal-priors optimal threshold: maximize |CDF_g(t) - CDF_e(t)| over the
+    # pooled empirical sample. This IS the threshold the legacy hist analysis
+    # optimizes; the number it prints is the max gap itself (the contrast).
+    both = np.sort(np.concatenate([vg, ve]))
+    cdf_g = np.searchsorted(np.sort(vg), both, side="right") / vg.size
+    cdf_e = np.searchsorted(np.sort(ve), both, side="right") / ve.size
+    gap = np.abs(cdf_g - cdf_e)
+    k = int(np.argmax(gap))
+    contrast = float(gap[k])
+    threshold = float(both[k])
+
+    e_above = proj_e_mean > proj_g_mean  # True by axis construction
+    # Confusion matrix at the optimized threshold, equal priors.
+    if e_above:
+        p_gg = float(np.mean(vg <= threshold))
+        p_ee = float(np.mean(ve > threshold))
+    else:  # pragma: no cover - axis is canonically oriented g -> e
+        p_gg = float(np.mean(vg > threshold))
+        p_ee = float(np.mean(ve <= threshold))
+    confusion = np.array([[p_gg, 1.0 - p_gg],
+                          [1.0 - p_ee, p_ee]])
+    assignment_fidelity = 0.5 * (1.0 + contrast)
+
+    if snr_analog < 1.0:
+        warnings.append(
+            f"analog SNR {snr_analog:.2f} < 1: clouds barely separated; "
+            "single-shot parity mapping will be dominated by readout noise"
+        )
+    if contrast < 0.3:
+        warnings.append(
+            f"readout contrast {contrast:.3f} < 0.3: parity trace will be "
+            "heavily mixed; treat rate estimates with caution"
+        )
+    n_min = min(I_g.size, I_e.size)
+    if n_min < 500:
+        warnings.append(
+            f"only {n_min} labeled shots in the smaller class; threshold and "
+            "confusion-matrix estimates are coarse"
+        )
+
+    return {
+        "g_center": g_center,
+        "e_center": e_center,
+        "cov_g": cov_g,
+        "cov_e": cov_e,
+        "axis": axis,
+        "midpoint": midpoint,
+        "proj_g_mean": proj_g_mean,
+        "proj_e_mean": proj_e_mean,
+        "proj_g_sigma": proj_g_sigma,
+        "proj_e_sigma": proj_e_sigma,
+        "separation": separation,
+        "snr_analog": float(snr_analog),
+        "threshold": threshold,
+        "confusion_matrix": confusion,
+        "contrast": contrast,
+        "max_cdf_gap": contrast,
+        "assignment_fidelity": float(assignment_fidelity),
+        "e_above_threshold": bool(e_above),
+        "n_g": int(I_g.size),
+        "n_e": int(I_e.size),
+        "use_lda": bool(use_lda),
+        "warnings": warnings,
+    }
+
+
+def project_iq_trace(I, Q, calibration):
+    """
+    Project an (I, Q) record onto the calibrated axis. Returns the analog
+    trace v (same length, raw units, midpoint-referenced). No thresholding.
+    """
+    I = np.ravel(np.asarray(I, dtype=float))
+    Q = np.ravel(np.asarray(Q, dtype=float))
+    if I.size != Q.size:
+        raise ValueError("I and Q must have the same length")
+    axis = np.asarray(calibration["axis"], dtype=float)
+    midpoint = np.asarray(calibration["midpoint"], dtype=float)
+    return (np.column_stack([I, Q]) - midpoint) @ axis
