@@ -1,0 +1,3 @@
+# Mechanical formatting commits; use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# style: 3a-iii - ruff format + isort
+bd2d85ec5d07519a3adbc0bf8cc3379b560cc3be

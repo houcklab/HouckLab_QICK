@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after phase 3a-i).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, after phase 3a-iii).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -50,27 +50,31 @@ Orchestrate with dynamic workflows dispatching Opus 5.5 agents; the orchestrator
    later test modules), `CURRENT_PHASE` in `tests/refactor/test_equivalence.py`, checker self-test runs on
    a copy of the legacy worktree, transitional ruff per-file ignores in `pyproject.toml` (3b removes them).
 
-After 3a-i, `WorkingProjects/` holds only the twelve files the map splits in 3a-ii (utils, analyze_*,
-mAutoCoherence, mT2R, mUndrivenSingleShot, Runners/runs/{basic,calibration,coherence,charge_parity,context,
-singleshot}); qicklab modules import the not-yet-split symbols from there. The lab code runs on the original
+10. `b87f4dd0` refactor: 3a-ii — the twelve remaining files split into 32 destination modules per the map,
+    `WorkingProjects/` deleted, consumers retargeted, driver clock loop removed, `CURRENT_PHASE = "3a-ii"`;
+    equivalence strict + phase-less PASS (505 AST / 505 bindings), pytest 170 passed, golden byte-identical.
+11. `bd2d85ec` style: 3a-iii — `ruff format` + isort only (listed in `.git-blame-ignore-revs`); equivalence
+    PASS, pytest 170 passed, golden byte-identical.
+
+The repo now IS the qicklab package: `qicklab/`, `devices/` (empty init), `runners/CSTQ03_BFC.py` (legacy
+runner, star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code runs on the original
 Windows PC in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and
 the TWPA modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
 
-## NEXT STEP: phase 3a-ii
-Split the twelve remaining files per the 3a-ii rows of `tests/refactor/symbol_map.py` (whole functions
-verbatim into the destination modules, 3b rows carried along verbatim, `__main__` blocks → `tests/`),
-retarget every consumer in `qicklab/`, `runners/`, `tests/` to the new modules, drop the transitional bits
-(`driver_qicklab` clock loop for `WorkingProjects.`, `test_program_timing` US import), set
-`CURRENT_PHASE = "3a-ii"`, `git rm -r WorkingProjects`, then verify:
-```
-python -m compileall -q qicklab devices runners tests
-ruff check --select F qicklab runners tests devices
-python -m tests.refactor.equivalence --phase 3a-ii    # must report 0 failures
-python -m pytest tests                                # golden A and B must match WITHOUT regeneration (~9 min here)
-```
-Note: `brief_3a.md` lists the `Amplitude_IQ → min_q_range_phase` merge under 3a-ii, but the symbol map
-(the contract) puts it in 3b; follow the map.
-Then 3a-iii (format), 3a-iii (format), 3b (per-area cleanup with adversarial review), 5a/5b (Device/Session/
+## NEXT STEP: phase 3b (one commit per area, adversarial old-vs-new review each)
+Areas in order (shared helpers first): 1 hardware, 2 core, 3 analysis helpers (+ switch callers), 4 experiments
+basic, 5 experiments advanced (single_shot / readout_optimize deletions, MR dedupe into core/readout,
+core/active_reset, core/schedule only where the audit proved identical math), 6 runs (dedupe KMeans/plot/save
+into analysis.iq / analysis.plotting / core.io), 7 twpa (common.py, hardware/pnax.py, hardware/synthhd.py;
+all five TWPA scripts stay). Sources: design.md migration-map "phase-3b cleanup notes" + comment policy,
+the 3b rows of the symbol map (deleted with audit citation / merged with proof), the audits' "Lab notes to
+migrate" tables (the docs tree already holds most notes: verify on the named page, add if missing, delete
+the comment). Decision 2026-10-13: dead cfg keys (`pulse_style`, `ts`) are NOT dropped in 3b — that is a
+later dedicated commit with an allowlist + golden regeneration — so every 3b commit keeps the golden
+byte-identical. Ladder per area: compileall, ruff --select F (shrink the transitional per-file ignores in
+`pyproject.toml` as the legacy bodies go), equivalence `--phase 3b` (structural: deleted symbols gone,
+merge targets present), full pytest with the golden unchanged.
+Then 3a-iii is done; 3a-iii (format), 3b (per-area cleanup with adversarial review), 5a/5b (Device/Session/
 recipes/PLAN, delete legacy runner), 6 (parameter registry → generated parameters.md; reconcile docs), rewrite
 CLAUDE.md/AGENTS.md/README, then the approved bug-fix commits. Full list and order: design.md "Commit plan".
 
