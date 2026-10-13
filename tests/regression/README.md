@@ -293,6 +293,34 @@ byte-identical to it; `python -m pytest tests` passes against it in a third
 process; a capture with `REGRESSION_RECORD_CFG=0` equals it apart from
 `cfg_access`.
 
+## Platform of the golden (regenerated 2026-10-13 on macOS)
+
+The golden now in the tree was captured on an Apple Silicon Mac (arm64, Python
+3.13.2, qick 0.2.334, numpy 2.4.1 with Apple Accelerate, scipy 1.17.0,
+scikit-learn 1.8.0) on the untouched legacy tree. Against the original Windows
+golden (same package versions, x86 OpenBLAS/MKL) it differed in 804 leaves over
+15 labels per board, identical on A and B. Every primary difference is the
+output of an iterative fit on synthetic noise, where ulp-level differences in
+numpy's per-architecture SIMD math and scipy's compiled MINPACK move the
+optimizer: `lorentz_*` (two-tone Lorentzian fits), `hanger_fit_*` (transmission
+hanger fit), `env_fit`/`osc_fit` (T2R display fits), `ts_acf_*` and the
+`projection*` columns (undriven time-series fits and threshold), `overlap_mat`
+(KMeans in `MixedShots`). The hanger fit is ill-conditioned on this data (its
+`Qint` moved from 2.2e8 to 2.7e5), so its `f0` moved too.
+
+The only `cfg`/`hw` differences were the deterministic consequence of that
+`f0`: `run_transmission_sweep` stores it as `ctx.config["pulse_freq"]`, so in
+the two carry-over labels `RunTransmissionSweep+Run2ToneSpec` and
+`RunTransmissionSweep+RunAmplitudeRabi` the second experiment's `cfg.pulse_freq`
+(7098.80 -> 7095.55 MHz and 7099.804294 -> 7099.804219 MHz), its compiled
+program (`hw.digest`, `hw.first_program`) and its `save_config` digest changed.
+No other cfg key, program hash, method sequence, `yoko_writes` or `cfg_access`
+entry differed. Bit-exact agreement with the Windows capture is not reachable
+by an environment change (the arithmetic is not in BLAS), so the golden was
+regenerated here, two further captures in separate processes were confirmed
+byte-identical, and all later phases are measured against this capture. A
+golden captured on a different architecture will show the same 15 labels.
+
 ## After the refactor
 
 Write `driver_qicklab.py` exposing `capture_all(labels=None)` with the same
