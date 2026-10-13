@@ -179,8 +179,21 @@ def run_undriven_single_shot(ctx, US_params=None):
     Runs under the same single-shot-regime config as `run_single_shot` (so the
     readout tone, window and ADC offset are identical), but the experiment never
     declares or pulses the qubit channel. `US_params` may override the shot count,
-    the relax delay, and the blob-separation threshold; everything else comes from
-    the config `rebuild_singleshot_config` already installed.
+    the relax delay, the blob-separation threshold, and the number of consecutive
+    shots averaged into each time-series point (`average_shots`); everything else
+    comes from the config `rebuild_singleshot_config` already installed.
+
+    Shots come off the tProc in acquisition order at a fixed cadence, so the
+    record is also a time series: the experiment projects it onto the
+    blob-separating axis and reports how it hops between the blobs. Raising
+    `average_shots` trades time resolution for the sqrt(n) noise reduction that
+    makes a marginal blob split resolvable; the rate-vs-averaging panel in the
+    output plot shows where the useful plateau is.
+
+    `US_params['Repeat']` (default 1) runs the whole acquisition that many times
+    back to back. Each pass is an independent experiment with its own timestamped
+    h5/png/json, so nothing is overwritten and the passes can be compared or
+    concatenated offline. Returns the list of per-pass data dicts.
     """
     US_params = US_params or {}
     overrides = {}
@@ -190,15 +203,39 @@ def run_undriven_single_shot(ctx, US_params=None):
         overrides['relax_delay'] = US_params['relax_delay']
     if 'min_separation_sigma' in US_params:
         overrides['blob_min_separation_sigma'] = US_params['min_separation_sigma']
-    cfg = ctx.working_config(overrides)
+    if 'average_shots' in US_params:
+        overrides['shot_average'] = US_params['average_shots']
+    if 'bin_sizes' in US_params:
+        overrides['ts_bin_sizes'] = US_params['bin_sizes']
+    # Sweep the charge bias with the yoko. The range must come through US_params:
+    # rebuild_singleshot_config() drops charge_params from ctx.config.
+    overrides['charge_sweep'] = US_params.get('charge_sweep', False)
+    for key in ('voltage_start', 'voltage_end', 'voltage_step',
+                'charge_settle_s'):
+        if key in US_params:
+            overrides[key] = US_params[key]
 
-    inst = UndrivenSingleShot(path="UndrivenSingleShot", outerFolder=ctx.outerFolder,
-                              cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg)
-    data = UndrivenSingleShot.acquire(inst)
-    UndrivenSingleShot.display(inst, data, plotDisp=US_params.get('plotDisp', True))
-    UndrivenSingleShot.save_data(inst, data)
-    UndrivenSingleShot.save_config(inst)
-    return data
+    n_repeat = max(1, int(US_params.get('Repeat', 1)))
+    plot_disp = US_params.get('plotDisp', True)
+    runs = []
+    for k in range(n_repeat):
+        if n_repeat > 1:
+            print(f"\n[UndrivenSingleShot] pass {k + 1}/{n_repeat}")
+        # Fresh cfg per pass: the program mutates reps/rounds/length in place.
+        cfg = ctx.working_config(overrides)
+        inst = UndrivenSingleShot(path="UndrivenSingleShot", outerFolder=ctx.outerFolder,
+                                  cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg,
+                                  yoko=ctx.yoko)
+        data = UndrivenSingleShot.acquire(inst)
+        # display(plotDisp=True) blocks until the window is closed, which would
+        # stall every pass. The PNG is written either way, so only put the last
+        # pass on screen.
+        UndrivenSingleShot.display(inst, data,
+                                   plotDisp=plot_disp and k == n_repeat - 1)
+        UndrivenSingleShot.save_data(inst, data)
+        UndrivenSingleShot.save_config(inst)
+        runs.append(data)
+    return runs
 
 
 def run_readout_optimize(ctx, SS_R_params):

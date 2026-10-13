@@ -449,10 +449,38 @@ SS_params = {"Shots": 1000, "Readout_Time": 10, "ADC_Offset": 0.3, "Qubit_Pulse"
 # above (Readout_Time / ADC_Offset from SS_params); no qubit pulse is ever played,
 # so no readout fidelity is reported. Reports the cloud center/width and, when a
 # second blob is resolvable, its population.
-RunUndrivenSingleShot = False   # not "UndrivenSingleShot": that name is the imported experiment class
-US_params = {"Shots": 5000,            # more shots than SS: a small secondary blob needs statistics
-             "relax_delay": 2500,      # us, omit to inherit SS_params['relax_delay']
+#
+# The shots also form a TIME SERIES at the scheduled rep cadence
+# (~relax_delay + readout), so the projection onto the blob axis is plotted
+# against time and its hopping between the blobs is characterized the same way
+# ModifiedRamsey characterizes charge parity (threshold dwell times + rates, plus
+# a threshold-free autocorrelation rate). Sampling faster needs a shorter
+# relax_delay: parity dwells are a few ms, so relax_delay = 3000 us is barely
+# Nyquist -- expect rates to read as a lower bound until it comes down.
+RunUndrivenSingleShot = True   # not "UndrivenSingleShot": that name is the imported experiment class
+US_params = {"Shots": 1000000,            # more shots than SS: a small secondary blob needs statistics
+             "relax_delay": 300,      # us, omit to inherit SS_params['relax_delay']
              "min_separation_sigma": 2.0,  # blobs must be this far apart (combined sigma) to be called two
+             # Average this many CONSECUTIVE shots into one time-series point:
+             # readout noise falls as 1/sqrt(n) so marginal blobs resolve, but
+             # switching faster than n * rep_period averages away. 1 = off.
+             # Read the rate-vs-averaging panel and set this on the plateau.
+             "average_shots": 1,
+             "bin_sizes": (1, 2, 4, 8, 16, 32, 64),  # rate-vs-averaging sweep
+             # Sweep the charge bias with the yoko: one acquisition per bias
+             # point, all in one h5, plus a summary plot vs voltage. Returns to
+             # the starting voltage afterwards. The range lives here (not in
+             # charge_params) because rebuild_singleshot_config drops those.
+             # voltage_end is exclusive, as in np.arange.
+             "charge_sweep": False,
+             "voltage_start": 0.0,
+             "voltage_end": 0.05,
+             "voltage_step": 0.005,
+             "charge_settle_s": 1.0,   # extra wait after each ramp, if filtered
+             # Run the whole acquisition this many times back to back. Each pass
+             # gets its own timestamped h5/png/json; only the last is shown on
+             # screen (plotDisp blocks until closed).
+             "Repeat": 10000,
              "plotDisp": True}
 
 RunT1SS = False
