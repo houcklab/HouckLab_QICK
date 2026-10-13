@@ -1,0 +1,131 @@
+# amplitude_rabi
+
+Classes `AmplitudeRabiFF` (hardware gain sweep) and `AmplitudeRabiFF_N` (software gain
+sweep), see `qicklab.experiments.rabi`; cosine fit in `qicklab.analysis.fitting`. Regime **A**.
+
+## What it measures
+
+Qubit response versus drive amplitude at fixed pulse shape. The oscillation period in
+gain gives the pi-pulse gain (`pi = P/2`). Run it after [two_tone_spec](two_tone_spec.md)
+has given f_ge, and before chi_shift / T1 / T2.
+
+The step picks the class from the device qubit:
+
+| Device `flattop_length` | Class | Sweep |
+|---|---|---|
+| None | `AmplitudeRabiFF` | register sweep inside one `RAveragerProgram` |
+| set | `AmplitudeRabiFF_N` | one `AveragerProgram` per gain (Python loop) |
+
+## Pulse sequence
+
+```
+            sync   t=1 us
+qubit_ch  ___|_____[ Gauss 4 sigma @ f_ge, gain = swept ]_______        (flat-top: ramp + flattop_length + ramp)
+PMOD 0    ___|___[~~~~~~~~~ trig_buffer_start + 4 sigma (+ flattop) + trig_buffer_end ~~~~~~~~~]___
+                 ^ t = 1 + trig_delay - trig_buffer_start us
+                                                       |<- 0.05 us ->|
+res_ch    _____________________________________________________________[==== length ====]____
+ADC 0,1   _____________________________________________________________|<-off->|## readout_length ##|__ 10 us __ relax_delay
+```
+
+| Item | Value |
+|---|---|
+| Qubit pulse | `qubit_ch`, freq `f_ge`; Gaussian sigma `sigma`, length 4 sigma, phase 90 deg (`arb`); with `flattop_length`: `flat_top` style, phase 0 |
+| PMOD trigger | pin 0, starts `trig_delay - trig_buffer_start` after the pulse start time, width `trig_buffer_start + trig_buffer_end + 4 sigma (+ flattop_length)` |
+| Readout | 0.05 us after the pulse; tone `pulse_freq`, `pulse_gain`, phase `res_phase`; ADC 0 and 1 (hard-coded) |
+| Gain grid, `AmplitudeRabiFF` | `start = 0`, `step = int(max_gain / number_of_steps)`, `expts = number_of_steps` |
+| Gain grid, `AmplitudeRabiFF_N` | `np.linspace(0, max_gain, number_of_steps)`, each played as `int(g)` |
+
+## How to run
+
+```python
+PLAN = [R.two_tone_spec(), R.amplitude_rabi()]          # regime A
+PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
+```
+
+## Parameters
+
+| Name (legacy key) | Legacy default | Units | Meaning |
+|---|---|---|---|
+| `qubit_freq` (-> `f_ge`) | device qubit frequency of `qubit_pulse` | MHz | Drive frequency |
+| `max_gain` | 10000 | DAC | Top of the gain sweep |
+| `number_of_steps` | 101 | - | Number of gain points |
+| `reps` | 10 | shots | Hardware averages |
+| `rounds` | 10 | - | Software repeats (`AmplitudeRabiFF_N`: folded into reps, see Outputs) |
+| `relax_delay` | 3000 | us | Wait between shots (`AmplitudeRabiFF_N`: hard-coded 8000) |
+| `fit` | False | bool | Run the cosine fit in the display |
+| `sigma`, `flattop_length` | device | us | Pulse shape of `qubit_pulse` |
+
+## Outputs
+
+`path = "AmplitudeRabi"`. Files under `<outerFolder>AmplitudeRabi/AmplitudeRabi_<date>/`.
+
+`AmplitudeRabiFF`:
+
+| File | Content |
+|---|---|
+| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto the principal axis; `iq_rotation_rad`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_q_popt`, `fit_q_pi_gain` |
+| `..._data.png` | I and Q vs gain, fits and pi markers |
+| `..._data.json` | config |
+
+`AmplitudeRabiFF_N`:
+
+| File | Content |
+|---|---|
+| `..._data_Q{qubit_pulse}.h5` | `x_pts` (float linspace), `avgi`, `avgq` (1, 1, N), winding-corrected, **not** rotated. Fit results are **not** saved |
+| `..._data.png` | rotated I and Q, fits, pi markers (only if inside the swept range) |
+| `..._data.json` | config, with `reps = reps x rounds`, `rounds = 1`, `qubit_gain` = last gain |
+
+The pi gain is not written back automatically; copy it into the device file
+(`Qubit(gain=...)`).
+
+## Analysis
+
+- `AmplitudeRabiFF`: in acquire, the IQ trace (after cavity winding) is rotated by its
+  principal-axis angle `0.5 * arctan2(2<iq>, <ii> - <qq>)` so the oscillation lands in I.
+  With `fit=True`, `y0 + A cos(2 pi x / P + phi)` is fitted to I and to Q separately;
+  `pi_gain = P/2`. Each fit is guarded (a failure prints and leaves the key out).
+- `AmplitudeRabiFF_N`: in display, the trace is rotated by the phase in [0, pi]
+  (500-point grid) that minimises the range of Q, then fitted the same way. Unguarded.
+
+Fit start values: `y0 = mean`, `A = (max - min)/2`, `P = max(gain span, 1)`, `phi = 0`.
+Bounds: `P >= 1e-9`, `|phi| <= 4 pi`. The P/2 rule needs the response to be periodic in
+gain (linear drive); it does not depend on `phi`.
+
+Failure modes: no visible oscillation (fit returns a runaway period); more than a few
+periods in the span (the single start value locks onto the wrong period); f_ge off
+resonance (reduced, faster oscillation).
+
+## Findings & notes
+
+- Flat-top caveat: the flat segment of a `flat_top` pulse does NOT follow the swept gain
+  register (only the ramp's `gain` register is updated; the flat part uses `gain2`). A
+  register-swept Rabi is therefore invalid with flat-top pulses, which is why the step
+  switches to the software sweep `AmplitudeRabiFF_N` when `flattop_length` is set.
+- The principal-axis rotation in `AmplitudeRabiFF` is layered on top of the cavity-winding
+  phase and stored as `iq_rotation_rad`; it does not replace the fit. `cavity_winding_*`
+  is a frequency-dependent cable-delay correction, not a quadrature alignment.
+- The period start value `P = max(span, 1)` assumes at least about half an oscillation is
+  visible in the sweep.
+- A failed cosine fit (no visible oscillation) returns a runaway period; drawing its pi
+  marker would autoscale the x axis to ~1e9, so `AmplitudeRabiFF_N` hides markers that fall
+  outside the swept range and prints a warning.
+- If you do not see an oscillation, raise `max_gain`, and compare with the transmission
+  data (CSTQ03 runner note).
+
+## Known issues
+
+- `step = int(max_gain / number_of_steps)` truncates: with 10000 / 101 the step is 99 and
+  the sweep ends at 9900, not 10000. `AmplitudeRabiFF_N` uses `linspace` and does reach
+  `max_gain`.
+- The flat-top branch ignores the recipe `relax_delay` and uses 8000 us.
+- The principal-axis angle in `AmplitudeRabiFF` is estimated over both ADCs concatenated,
+  so ADC 1 content biases the rotation applied to ADC 0.
+- `AmplitudeRabiFF_N` plots the axis as float `linspace` values but plays `int(g)`
+  (difference < 1 DAC unit), and draws the fit only at the data points.
+- `AmplitudeRabiFF_N` fit failures raise out of the display (after acquisition, before
+  saving).
+- Filename suffix `_Q{n}` uses `qubit_pulse`, whereas T1 and single shot use
+  `qubit_readout`.
+- In the legacy runner the drive frequency was frozen when the runner was imported;
+  through the session layer it comes from the device at run time.

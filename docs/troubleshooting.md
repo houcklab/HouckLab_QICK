@@ -1,0 +1,107 @@
+# Troubleshooting
+
+Symptom -> cause -> what to do. Search this page for the exact error text. Entries marked
+**(legacy bug)** are known defects that the refactor preserves on purpose; they are fixed only in
+separate, reviewed commits.
+
+## Connecting and instruments
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `locateNS` fails / `NamingError` on connect | not on the lab network, or the board's Pyro4 nameserver is down | check that `192.168.0.103:8888` answers; old docs naming `192.168.1.7` are stale ([hardware](hardware.md#rfsoc)) |
+| `RuntimeError` / version mismatch in the regression tests | client qick is not 0.2.334 | reinstall from `pyproject.toml` |
+| `KeyError: 'gens'` from `"gens" in soccfg` | `QickConfig` has `__getitem__` but no `__contains__` | use `try: soccfg["gens"] except KeyError` |
+| Bias is not where the session says | an earlier step (sweet-spot search, `charge_sweep`, two-tone charge dispersion, Modified Ramsey control) moved the yoko and did not return it | read `:SOUR:LEV?`; re-ramp; see [hardware](hardware.md#charge-bias-yoko) |
+| Huge or negative bias accepted | `ramp_to` only rejects targets above +10 V | check the sign; sweeps check \|V\| <= 10 themselves |
+| Yoko output still on after a crash | closing VISA does not switch the output off; the legacy connect also turned it on before validating the readout window | intended (bias holds); ramp to 0 by hand if you want it off |
+| Attenuator does nothing / `OSError` loading `VNX_atten64.dll` | DLL directory not registered (Python >= 3.8 ignores `PATH`), DLL not present, wrong serial | pass `dll_dir=`; the DLL is not in the repo; default serial 27786 |
+| `NameError: result` from the legacy attenuator driver in verbose mode | typo in a print when the readback is negative **(legacy bug)** | use `qicklab.hardware.attenuator` |
+| SC5510A connects to the wrong host | `SC5510A_SERVER_HOST` is read at import | set the variable before importing |
+
+## Acquisition errors
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ValueError: could not broadcast input array from shape (26,2) into shape (20,2)` (numbers vary; second = reps) or "got too much data" | stale tProc shot counter when programs run back to back ([averaging](concepts/averaging.md#the-stale-shot-counter-race)) | re-run; use fewer `rounds` and more `reps`. `transmission_fit` / `transmission_sweep` retry automatically (3 tries, `soc.stop_tproc()`, fresh program) |
+| `Overflowed the averages buffer` | tProc outruns the readout | lengthen `relax_delay`; do not retry unchanged |
+| `ValueError: cannot reshape array of size 1 into shape (1,1000)` | qick >= ~0.2.29x averages `di_buf`; code expects the raw per-shot stream | keep client qick 0.2.334, or read `prog.acc_buf` via `raw_shot_buffers` |
+| `AxisSignalGen: buffer length must be 65536 samples or less` | envelope memory full (long sigma; separate pi and pi/2 envelopes) | share one envelope; shorter sigma ([timing](concepts/timing_and_units.md#pulse-envelopes)) |
+| qick warning "possibility that the sum buffer will overflow" | declared readout window above 2^16 samples | shorten the window |
+| `RuntimeError: requested frequency ... is outside of [-range/2, range/2]` | frequency outside the DDS band of the generator | check the value and the generator's `f_dds` |
+| Only the last round's shots in a single-shot record; fewer shots than expected | `rounds > 1` in a single-shot style program (raw buffer keeps the last round) | `rounds = 1`; raise `reps` / `shots` |
+| `TypeError` about `debug=` from an old single-shot class | dead legacy classes called qick `acquire(debug=...)` | deleted in the refactor; use `SingleShotProgramFFMUX` |
+
+## Config errors (KeyError, ValueError at build)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `KeyError: 'pi2_SS'` in `qubit_optimize` | step called under regime A | it is a regime-B step; let `run()` switch ([config regimes](concepts/config_regimes.md)) |
+| `KeyError: 'df'` with `charge_dispersion_ramsey` | the step reads `df` from a parameter dict that never had it **(legacy bug)** | pass `df` explicitly |
+| `KeyError: 'voltage_start'` (or the sweep uses the wrong range) in `undriven_single_shot` after a switch | regime B drops `voltage_start/end/step` | pass the range in the step's own parameters |
+| `ValueError: cfg['length'] must cover cfg['adc_trig_offset'] + cfg['readout_length']` | `length` set by hand shorter than offset + window | do not set `length`; the builders derive it ([readout window](concepts/readout_window.md)) |
+| `ValueError` on `readout_length_us` / `adc_trig_offset_us` at connect | window <= 0 or offset < 0 in the device file | fix the device `ReadoutWindow` |
+| `ModifiedRamsey` raises in `initialize` (wait <= 0, df too large, bandwidth ratio, `flattop_length` set, `rounds != 1`, `cmp_offset >= 2^30`) | the requested timing or reset is infeasible; the message says which | see the [Modified Ramsey page](experiments/modified_ramsey.md); typically raise the tau harmonic k or lower sigma |
+| `symmetric_ramsey=True` raises about `f_upper_mhz` | the upper parity branch is not set for the qubit | measure the doublet and set `parity.f_upper_mhz` in the device file; there is no silent fallback to the centre frequency any more |
+| `ZeroSpanParity` raises `RuntimeError` at construction | a zero-span hard constraint failed (sample period, 16-bit cycle cap, `avg_maxlen`, `buf_maxlen`, DDS band, missing key) | the message names the rule; see the [zero-span page](experiments/zero_span_parity.md) |
+| `ZeroSpanParity` refuses `soft_avgs > 1` | averaging captures destroys trajectories | keep 1, or set `allow_soft_avgs=True` deliberately |
+| `RuntimeError` from `set_qubit_gain` in zero span | validation stages need strobe mode | use `mode="strobe"` for the validation harness |
+| Modified Ramsey control with `use_active_reset` raises about `readout_threshold` | the control step never calibrates the reset threshold **(legacy bug)** | run it without active reset |
+| Modified Ramsey with `use_apriori_separator=False` aborts after the first record | the check runs after acquiring and saving cycle 0 **(legacy bug)** | keep `use_apriori_separator=True` |
+| T2E prints "Step size is 0!" and stops (after T1 already ran in the combined steps) | `T2_max_us` too short for `T2_expts x (num_pi_pulses+1)` tProc cycles | raise `T2_max_us` or lower `T2_expts` ([timing](concepts/timing_and_units.md#t2e-step-quantisation)) |
+| `TypeError` with `rotation_angle=None` in `t1` | `T1FF` multiplies by `exp(1j*None)` **(legacy bug)** | omit the key or give a number |
+| `KeyError: 'min_max'` in `t2_echo` | `rotation_angle` given without `min_max` **(legacy bug)** | give both or neither |
+| `TypeError` in `t1_ss` with no threshold | threshold `None` and `calibrate_SS=False` | calibrate first or pass `threshold` and `angle` |
+| `AttributeError` / `NameError` at the end of `charge_sweep` | empty voltage list or first voltage above 10 V ends the loop before anything is created **(legacy bug)** | check the voltage range |
+| `TypeError` from `save_data()` with no argument | every `save_data(data=None)` override indexes `None` **(legacy bug)** | pass the data dict |
+| `ValueError` when saving a key twice, or saving complex/string data | the base h5 writer always creates float64 datasets and cannot overwrite | save once; convert complex to real/imag |
+
+## Plots and files
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| No plot window appears; `plotDisp=True` does not block | importing the analysis package switches matplotlib to Agg | PNGs are still saved; interactive plots return with `Session(interactive_plots=...)` (planned) |
+| `UnicodeEncodeError` writing `EVIDENCE.md` (zero-span validation) | file opened with the Windows default code page (cp1252) **(legacy bug)** | none yet; run with `PYTHONUTF8=1` |
+| Saved `.json` shows `pulse_freq` at the edge of the sweep | `CavitySpecFF` sweeps `pulse_freq` in place; with `fit=False` or a failed fit it stays at the last point | expected; use the fit result or the step's printed value |
+| Paths with mixed `/`, `//`, `\` | `outerFolder + path` concatenation | expected; do not normalise ([hardware](hardware.md#data-paths)) |
+| T1 / T2 / T2E / chi values missing from the h5 | these fits are drawn in the PNG title but not saved | refit from `x_pts`, `avgi`, `avgq` |
+| Rabi pi marker missing, x axis autoscaled to ~1e9 | the cosine fit failed (no visible oscillation) and returned a runaway period | raise `max_gain`; compare with transmission data |
+
+## Results look wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Spectroscopy peak on a noise spike, or a broad line shown as a dip | analysing `\|I + iQ\|` instead of the projection | use the principal-axis projection ([IQ conventions](concepts/iq_conventions.md#2-spectroscopy-principal-axis-projection-not-i--iq)) |
+| Single-shot "Fidelity = 45%" looks low | the number is the contrast C, not the assignment fidelity | F_assign = (1 + C)/2 = 72.5% for C = 0.45 |
+| Fitted resonator frequency not used by `single_shot` | carry-overs are discarded when switching to regime B | put the value in the device file ([config regimes](concepts/config_regimes.md#what-changes-at-the-switch-a---b)) |
+| `single_shot` after `active_reset_verify` has a rotated blob again | `res_phase` reset to 0 by the switch to regime B | expected |
+| `t1_ss` populations off | `T1_SS` plays `qubit_gain` (pi gain only in regime B) and normalises its window differently from the single-shot calibration | run it in regime B; treat populations with care ([readout window](concepts/readout_window.md#known-issues)) |
+| Rabi sweep ends below `max_gain` | `step = int(max_gain/number_of_steps)` truncates (10000/101 -> 99, end 9900) **(legacy bug)** | choose `number_of_steps` dividing `max_gain` |
+| Kappa from the hanger fit is 1e6 too small | `kappa_mhz = (f0/Qext)/1e6` with f0 already in MHz, and Qext instead of Qtot **(legacy bug)** | compute `f0/Qtot` yourself |
+| Rabi rotation looks off with two ADCs | `AmplitudeRabiFF` estimates its rotation over both ADC channels **(legacy bug)** | use the I/Q traces of ADC 0 directly |
+| Readout window seems longer than the tone | regime-A programs declare the window in tProc cycles (1.4x on the lab board) **(legacy bug)** | see [readout window](concepts/readout_window.md#known-issues) |
+| Active reset fires the pi on ground-state shots, more for long windows | comparison wraps: tProc compares unsigned; offset too small | `ModifiedRamsey` uses `int(ro_norm) << 15`; `active_reset_verify` still uses `1 << 24` ([IQ conventions](concepts/iq_conventions.md#6-active-reset-thresholds)) |
+| Symmetric Modified Ramsey shows almost no contrast (90 deg closing phase "failing") | `f_ge` set to the doublet centre, so the drive sits on the lower branch | set the **upper** branch frequency (`parity.f_upper_mhz`) |
+| Spurious kHz parity rate in Modified Ramsey; the `drive_off` control shows even more correlation | incomplete inter-shot reset: with no relax delay most of the previous shot's excitation carries over (CSTQ03 Q2, 2026-08-04) | `mr_relax_delay` >= 5 x T1 (250 us for T1 = 50 us) |
+| HMM withholds the rate ("emission SNR" gate) | per-sample readout separation x \|p1 - p0\| below `hmm_min_emission_snr` = 0.7 | improve readout SNR or measure the mapping probabilities. **Do not lower the gate**: at 0.3 on CSTQ03 Q2 (2026-08-04) the HMM gave 4921 +- 68 Hz vs ACF 9606 Hz vs PSD 15056 Hz and locked onto a 50-200 us correlation, not parity. An older code comment advised lowering it; that advice is wrong |
+| `KeyError: 'mu0'` in the Modified Ramsey HMM plot | old bug with g/e-mixture emissions | fixed (a test guards it); update |
+| Undriven single-shot rate looks too low | shortest dwell under ~5 samples: the rate is a lower bound | shorten `relax_delay`; parity dwells are a few ms, so 3000 us is barely Nyquist |
+| Undriven rate falls with averaging and never plateaus | noise crossings, no resolvable telegraph | raise readout SNR; set `average_shots` only on a plateau |
+| Two "blobs" from KMeans on a single cloud | KMeans always returns two centroids | trust only splits passing the distance/RMS gate of 2.0 |
+| Thermal population is 0 with a NaN threshold | the thermal classifier failed (e.g. sklearn missing) and fell back silently | install scikit-learn; check the log |
+| Moving-average trace longer than the time axis (Modified Ramsey plot error) | averaging window longer than the record **(legacy bug)** | shorter `average_n_shots` |
+| Zero-span validation controls show no contrast at all after stage 3 | the modulation check leaves the qubit gain at 0, so later controls run with the drive off **(legacy bug)** | run stages separately, resetting `qubit_gain` |
+| Zero-span controls C/D ineffective (`branch_sign_flip` never true) | probe / branch frequency changed without rebuilding the program **(legacy bug)** | treat C/D as not run |
+| Zero-span environment sweep writes negative `pulse_gain` | "power_dB" values written as DAC gain **(legacy bug)** | do not use until fixed |
+| Zero-span analysis crashes with `window_us` < 2 us | default `step_us = window_us // 2` is 0 | pass `step_us` |
+| A long interleaved loop stopped early | a failing T1/T2 step aborts the whole loop | restart; check the last files |
+
+## TWPA scripts
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Setting pump channel 1 turned channel 0 off | SynthHD disables RF on both channels on connect | set all channels in one call |
+| `twpa set_pump` only turns the pump off | committed with `DISABLE_PUMP = True` | set it to False |
+| VISA timeout in the flux sweep | fixed timeout too short for low IF bandwidth / many averages | raise the timeout or IF bandwidth |
+| Flat band-mean \|S21\| vs bias, spread < 0.5 dB | DC bias path open or not flux-responsive | check wiring |
+| Band-mean gain < 1 dB with pump on | pump off-optimum, under-powered or not reaching the TWPA | re-run the pump sweep |
+| Target above 25 uA refused | hard safety limit | intended |
