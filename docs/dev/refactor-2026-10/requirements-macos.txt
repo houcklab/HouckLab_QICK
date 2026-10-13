@@ -1,0 +1,23 @@
+# Versions actually installed on the macOS machine (session 2, 2026-10-13).
+# Apple Silicon (arm64), Python 3.13.2 from Homebrew (/opt/homebrew/bin/python3.13).
+# The exact pins of requirements-test.txt installed without substitution; the only
+# environment fix needed was the interpreter: `python3` on this Mac is miniforge's 3.9.23,
+# which has no wheels for numpy 2.4 / scipy 1.17 / pytest 9. Create the venv with
+#   /opt/homebrew/bin/python3.13 -m venv .venv && source .venv/bin/activate
+#   pip install -r docs/dev/refactor-2026-10/requirements-macos.txt
+# numpy 2.4.1 wheel on this platform links Apple Accelerate (not MKL/OpenBLAS).
+qick==0.2.334
+numpy==2.4.1
+scipy==1.17.0
+matplotlib==3.10.8
+h5py==3.15.1
+pandas==2.3.3
+scikit-learn==1.8.0
+threadpoolctl==3.6.0
+seaborn==0.13.2
+tqdm==4.67.1
+Pyro4==4.82
+Pyro5==5.16
+PyVISA==1.16.1
+pytest==9.1.1
+ruff==0.17.0
