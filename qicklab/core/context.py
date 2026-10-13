@@ -1,15 +1,6 @@
-"""Shared runtime context for the CSTQ03 measurement runner.
+"""Session state (`Context`) and the regime-A builder `build_context`.
 
-`Context` bundles the state that the old CSTQ03_BFC.py script kept as module-level
-globals (soc/soccfg/yoko, the persistent instrument `config`, the output folder, and
-the derived per-qubit scalars). Every extracted measurement routine takes `(ctx, params)`.
-
-Config model:
-  * `ctx.config` is the PERSISTENT instrument config. Only measured carry-overs
-    `pulse_freq` (found cavity frequency) and `res_phase` (calibrated readout phase)
-    are written back to it by routines.
-  * Transient per-experiment knobs (reps, rounds, spans, sigma, per-scan gains, ...)
-    go on a fresh local copy from `ctx.working_config(params)` and never leak.
+Config model and carry-overs: docs/concepts/config_regimes.md, docs/architecture.md#carry-overs.
 """
 
 from dataclasses import dataclass
@@ -23,22 +14,19 @@ from qicklab.hardware.yoko import ramp_to
 
 @dataclass
 class Context:
-    # hardware handles
+    """Hardware handles, the persistent `config` and derived scalars of the selected qubits."""
+
     soc: object
     soccfg: object
     yoko: object
-    # persistent instrument config (mutated only for the pulse_freq / res_phase carry-overs)
     config: dict
     outerFolder: str
-    # active qubit selection
     Qubit_Readout: int
     Qubit_Pulse: int
     Qubit_Parameters: dict
-    # session-wide flags/values
     start_voltage: float
     yoko_fixed: bool
     cavity_min: bool
-    # derived scalars for the selected qubit(s)
     cavity_gain: float
     resonator_frequency_center: float
     qubit_gain: float
@@ -48,9 +36,7 @@ class Context:
     qubit_flattop: object
 
     def working_config(self, *updates):
-        """Return a fresh shallow copy of the persistent config, updated with the
-        given dict(s). Use this for transient per-experiment knobs so they never
-        leak into later measurements."""
+        """Return a shallow copy of `config` updated with `updates`, for transient knobs."""
         cfg = dict(self.config)
         for u in updates:
             if u:
@@ -75,35 +61,20 @@ def build_context(
     readout_length_us=15,
     adc_trig_offset_us=None,
 ):
-    """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
-    per-qubit scalars — the setup boilerplate that used to sit at the top of the
-    CSTQ03_BFC.py script — returning a populated Context.
+    """Connect RFSoC + yoko, build the regime-A config and return a populated Context.
 
-    The keyword param dicts (Transmission_params, Spec_relevant_params, tl, ts,
-    charge_params) are the client's tuning dicts; they feed the initial config
-    assembly exactly as the original script did.
-
-    `readout_length_us` / `adc_trig_offset_us` set the readout window for every
-    experiment that runs under this config, i.e. everything BEFORE the client's
-    `rebuild_singleshot_config()` call: transmission, two-tone, chi shift, Rabi,
-    T1/T2/T2E, charge dispersion, ModifiedRamsey, ActiveResetVerify. The
-    single-shot regime takes its window from SS_params["Readout_Time"] /
-    SS_params["ADC_Offset"] instead. `adc_trig_offset_us=None` keeps
-    BaseConfig["adc_trig_offset"]; the default readout_length_us=15 preserves the
-    value this function hardcoded before it was exposed to the runner.
+    Regime A and its window: docs/concepts/config_regimes.md, docs/concepts/readout_window.md.
     """
     soc, soccfg = makeProxy()
 
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
 
-    # yoko current source
     rm = pyvisa.ResourceManager()
     yoko = rm.open_resource(yoko_addr)
     yoko.write(":SOUR:FUNC VOLT")
     yoko.write(":OUTP ON")
     ramp_to(yoko, start_voltage)
 
-    # derived scalars for the selected readout/pulse qubit
     cavity_gain = Qubit_Parameters[str(Qubit_Readout)]["Readout"]["Gain"]
     resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]["Readout"]["Frequency"]
     qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]["Gain"]
@@ -132,37 +103,25 @@ def build_context(
         f"resonator tone {adc_trig_offset_us + readout_length_us} us"
     )
     trans_config = {
-        "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
-        "pulse_style": "const",  # --Fixed
-        # "length" is the resonator tone duration; "readout_length" is the ADC
-        # integration window. Since the ADC starts after adc_trig_offset, the tone
-        # must last through offset + window rather than merely equal the window.
+        "reps": 1000,
+        "pulse_style": "const",
+        # tone starts at t=0, ADC at adc_trig_offset: covers both (docs/concepts/readout_window.md)
         "length": adc_trig_offset_us + readout_length_us,
         "readout_length": readout_length_us,
-        # written explicitly (not left to BaseConfig) so a runner-side
-        # adc_trig_offset_us override actually reaches the programs
         "adc_trig_offset": adc_trig_offset_us,
         "pulse_gain": cavity_gain,  # [DAC units]
         "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-        "TransSpan": Transmission_params[
-            "span"
-        ],  ### 0.75 MHz, span will be center+/- this parameter
-        "TransNumPoints": Transmission_params[
-            "num_points"
-        ],  ### number of points in the transmission frequecny
+        "TransSpan": Transmission_params["span"],  # MHz, span is center +/- this
+        "TransNumPoints": Transmission_params["num_points"],
         "cav_relax_delay": 30,
     }
     qubit_config = {
         "qubit_pulse_style": "const",
         "qubit_gain": Spec_relevant_params["qubit_gain"],
         "qubit_freq": qubit_frequency_center,
-        "qubit_length": Spec_relevant_params["qubit_length"],  # 20, 100 # 10 was the best for Q4
-        "SpecSpan": Spec_relevant_params[
-            "SpecSpan"
-        ],  ### MHz, span will be center+/- this parameter
-        "SpecNumPoints": Spec_relevant_params[
-            "SpecNumPoints"
-        ],  ### number of points in the transmission frequecny
+        "qubit_length": Spec_relevant_params["qubit_length"],
+        "SpecSpan": Spec_relevant_params["SpecSpan"],  # MHz, span is center +/- this
+        "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],
         "current_voltage": start_voltage,
     }
     expt_cfg = {
@@ -172,9 +131,7 @@ def build_context(
     }
 
     UpdateConfig = trans_config | qubit_config | expt_cfg | tl | ts | charge_params
-    config = (
-        BaseConfig | UpdateConfig
-    )  ### note that UpdateConfig will overwrite elements in BaseConfig
+    config = BaseConfig | UpdateConfig
     print(config)
     config["FF_Qubits"] = FF_Qubits
     config["cavity_min"] = cavity_min  # look for dip, not peak

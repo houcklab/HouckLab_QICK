@@ -1,29 +1,6 @@
-"""Per-shot accumulated I/Q extraction that survives the QICK buffer change.
+"""Acquisition helpers: raw shot buffers, retry on the stale shot counter, chunk stitching.
 
-Up to qick ~0.2.28x, ``AveragerProgram._process_accumulated`` handed back the
-raw per-repetition accumulated stream, so ``prog.di_buf[ch]`` / ``prog.dq_buf[ch]``
-were flat arrays of length ``reps * reads_per_shot`` (times ``expts`` for
-RAveragerProgram) in raw accumulator units. Every single-shot experiment here
-reshapes/strides those arrays.
-
-From qick ~0.2.29x on (the BFG board runs 0.2.367), that method first calls
-``_average_buf``, which averages over the reps axis and divides by the readout
-length. ``di_buf`` therefore holds ONE length-normalized point per read per
-channel, and the old reshape fails with e.g.
-
-    ValueError: cannot reshape array of size 1 into shape (1,1000)
-
-The raw stream still exists, as ``prog.acc_buf``: one array per readout channel
-shaped ``(*loop_dims, reads_per_shot, 2)`` with the I/Q pair last, in raw
-accumulator units (no length normalization, no IQ-offset removal) — i.e. exactly
-what the old ``di_buf``/``dq_buf`` held, just not flattened.
-
-``raw_shot_buffers`` flattens it back to the historical layout so call sites keep
-their existing reshape/stride/normalization arithmetic unchanged.
-
-Note on rounds: ``acc_buf`` is overwritten every round, so with ``rounds`` > 1 it
-holds the last round only. That matches the old behaviour (``di_buf`` was also
-re-derived per round), but single-shot programs should still force ``rounds`` = 1.
+Background: docs/concepts/averaging.md.
 """
 
 import time
@@ -32,25 +9,13 @@ import numpy as np
 
 
 def raw_shot_buffers(prog):
-    """Return ``(di_buf, dq_buf)`` in the pre-0.2.29x flat per-shot layout.
+    """Return ``(di_buf, dq_buf)`` of an acquired program in the pre-0.2.29x flat raw layout.
 
-    Parameters
-    ----------
-    prog : qick AveragerProgram / RAveragerProgram
-        A program on which ``acquire()`` has already been called.
-
-    Returns
-    -------
-    (list of numpy.ndarray, list of numpy.ndarray)
-        One flat float array per declared readout channel (declaration order,
-        not absolute channel number), length ``prod(loop_dims) * reads_per_shot``,
-        in raw accumulator units.
+    See docs/concepts/averaging.md#single-shot-programs-and-raw-buffers.
     """
     acc_buf = getattr(prog, "acc_buf", None)
     if not acc_buf:
-        # qick <= ~0.2.28x (or a synthetic prog in a self-test): di_buf is
-        # already the raw stream. Hand the containers back untouched so any
-        # indexing convention the caller relies on still works.
+        # qick <= ~0.2.28x: di_buf already is the raw stream; return it untouched
         return prog.di_buf, prog.dq_buf
 
     di_buf = [np.asarray(d)[..., 0].ravel() for d in acc_buf]
@@ -58,33 +23,15 @@ def raw_shot_buffers(prog):
     return di_buf, dq_buf
 
 
-# Signatures of a stale tProc shot counter, as opposed to a real config problem.
-# "Overflowed the averages buffer" is deliberately NOT here: that one means the
-# tProc is outrunning the readout and needs a longer relax_delay, so retrying it
-# would just spin.
+# Stale tProc shot counter only; "Overflowed the averages buffer" is deliberately not retried
+# (docs/concepts/averaging.md#overflowed-the-averages-buffer-is-different)
 _TRANSIENT_READOUT_MARKERS = ("could not broadcast input array", "got too much data")
 
 
 def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
-    """Run a QICK program, retrying a transient streaming-readout failure.
+    """Run ``make_prog().acquire(soc)``, retrying on the stale-shot-counter error.
 
-    When programs run back to back, the tProc shot counter occasionally reports
-    more shots than the program actually ran: the streamer zeroes the counter and
-    starts the next program while the previous one is still retiring its last
-    reps, so those leftover counts land on top of the fresh run. qick_asm.acquire()
-    then tries to write more accumulated points than it allocated and dies with
-
-        ValueError: could not broadcast input array from shape (26,2) into shape (20,2)
-
-    (the second number is reps, the first is reps + leftovers). It is intermittent
-    and gets likelier the more programs a routine starts, so a long sweep can lose
-    hours of acquisition to it. The condition does not persist: resetting the tProc
-    and re-arming the readout clears the counter, so retrying the point recovers.
-
-    `make_prog` is a zero-argument callable returning a FRESH program object — the
-    failed one has a half-written accumulation buffer and must not be reused.
-    Raises the underlying error unchanged if it is not one of the transient ones,
-    or if every attempt fails.
+    `make_prog` must return a FRESH program; docs/concepts/averaging.md#the-stale-shot-counter-race.
     """
     last_err = None
     for attempt in range(n_tries):
@@ -101,8 +48,7 @@ def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
                 f"{attempt + 1}/{n_tries}: {err}"
             )
             try:
-                # tProc v1: full reset + program reload, which is what actually
-                # clears the residual counts. Tens of ms, and only on a failure.
+                # tProc v1 full reset + reload clears the residual counts (tens of ms)
                 soc.stop_tproc()
             except Exception as cleanup_err:
                 print(f"[acquire_with_retry]   stop_tproc() failed: {cleanup_err}")
@@ -113,9 +59,7 @@ def acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs):
     ) from last_err
 
 
-# Keys that describe the acquisition mode/units, propagated from the first chunk
-# to the stitched output so save_data persists them verbatim. Module-level so both
-# chunked_acquire and modulated_strobe_acquire share the same set.
+# Mode/unit keys copied from the first chunk into the stitched record (and so into save_data)
 _META_KEYS = (
     "mode",
     "sample_period_us",
@@ -132,37 +76,9 @@ _META_KEYS = (
 
 
 def chunked_acquire(experiment, n_chunks, progress=False):
-    """
-    Run experiment.acquire() n_chunks times back-to-back and stitch results.
+    """Run ``experiment.acquire()`` n_chunks times and stitch I, Q and a monotonic t_us.
 
-    Each acquire() must return a dict with keys "I", "Q", "t_us" (1-D arrays of
-    equal length per chunk) and optionally "wall_clock_start" (str).
-
-    The stitched time axis is monotonic: each subsequent chunk's t_us is shifted
-    by (previous_chunk_t_us[-1] + sample_period). Inter-chunk Python+tProc gaps
-    are NOT modeled in the stitched t_us; gap_indices marks where boundaries
-    occur so the analysis module can avoid counting switches across them.
-
-    Parameters
-    ----------
-    experiment : object with .acquire(progress=False) -> dict {I, Q, t_us, ...}
-    n_chunks   : int >= 1
-    progress   : bool
-
-    Returns
-    -------
-    dict:
-      I, Q, t_us               : concatenated arrays
-      gap_indices              : list of ints, first index of each chunk after the
-                                  first (length n_chunks - 1)
-      chunk_wall_clock_starts  : list of str (or None) per chunk
-      n_chunks                 : echoed int
-
-    Side effect: sets ``experiment.data = {"data": stitched}`` before returning
-    so a subsequent ``experiment.save_data()`` persists the full stitched record.
-    Without this the inner ``acquire()`` calls leave only the final chunk in
-    ``experiment.data``, and a bare ``save_data()`` would silently write just
-    that last chunk. Callers may still pass the returned dict explicitly.
+    Also sets ``experiment.data``; contract: docs/concepts/averaging.md#chunked-acquisition-helpers.
     """
     if n_chunks < 1:
         raise ValueError(f"n_chunks must be >= 1, got {n_chunks}")
@@ -195,15 +111,10 @@ def chunked_acquire(experiment, n_chunks, progress=False):
                 if k in out:
                     first_meta[k] = out[k]
         if ci > 0:
-            # Stitch time: previous chunk's last + estimated sample period.
             if t_parts and t_parts[-1].size >= 2:
                 sp = float(t_parts[-1][1] - t_parts[-1][0])
             else:
-                # Degenerate single-sample chunk: the intra-chunk diff is
-                # unavailable, so fall back to a real sample period (from chunk
-                # metadata or the experiment cfg) instead of 0.0 — otherwise the
-                # next chunk's first timestamp would duplicate this one and
-                # break the strictly-increasing t_us guarantee (spec §6.2).
+                # single-sample chunk: a 0.0 period would duplicate a timestamp (spec §6.2)
                 sp = float(
                     first_meta.get("sample_period_us", 0.0)
                     or getattr(experiment, "cfg", {}).get("sample_period_us", 0.0)
@@ -227,8 +138,7 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         "wall_clock_start": wall_clocks[0] if wall_clocks else None,
     }
     stitched.update(first_meta)
-    # Wire the stitched record into experiment.data so save_data() persists the
-    # full trace, not the last chunk the inner acquire() left behind.
+    # the inner acquire() left only the last chunk in experiment.data
     try:
         experiment.data = {"data": stitched}
     except AttributeError:
@@ -237,15 +147,9 @@ def chunked_acquire(experiment, n_chunks, progress=False):
 
 
 def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress=False):
-    """Run strobe acquisition in blocks, setting qubit_gain per block, and stitch.
+    """Acquire one strobe block per entry of `gain_schedule` (set_qubit_gain first) and stitch.
 
-    gain_schedule : list of gain values, one per block (e.g. [G_on, 0, G_on, 0, ...]).
-    reps_per_block : reps (= time samples) per block; must satisfy avg_maxlen (rule 4).
-
-    Returns the chunked_acquire contract plus:
-      modulation_reference : per-sample 1.0 where the block gain > 0 else 0.0
-      block_labels         : the gains actually applied, per block
-      reps_per_block, sample_period_us, modulation_freq_hz
+    Contract: docs/concepts/averaging.md#chunked-acquisition-helpers.
     """
     I_parts, Q_parts, t_parts = [], [], []
     ref_parts, gaps, wall_starts = [], [], []

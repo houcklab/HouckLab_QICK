@@ -93,6 +93,45 @@ Single-shot style programs read one accumulated I/Q value per shot from the raw 
   leaves only its last chunk in `experiment.data`; the chunking helper assembles and stores the
   full record.
 
+## Chunked acquisition helpers
+
+`qicklab.core.acquisition` holds the helpers used above.
+
+- `acquire_with_retry(make_prog, soc, n_tries=3, label="", **acquire_kwargs)` builds a fresh
+  program with `make_prog()` on every attempt and returns `prog.acquire(soc, **acquire_kwargs)`
+  (the failed program has a half-written accumulation buffer and must not be reused). It retries
+  only a `ValueError` or `RuntimeError` whose text contains `could not broadcast input array` or
+  `got too much data`. Any other exception type passes through uncaught even when its text holds
+  a marker, and a `ValueError`/`RuntimeError` without a marker is re-raised unchanged. After each
+  transient failure (the last one included) it prints the error, calls `soc.stop_tproc()` (a
+  failure there is printed and ignored) and sleeps 0.1 s. After `n_tries` transient failures it
+  raises `RuntimeError` chained from the last one. Without it a long sweep can lose hours of
+  acquisition to the race.
+- `chunked_acquire(experiment, n_chunks)` calls `experiment.acquire(progress=False)` `n_chunks`
+  times. Each call must return 1-D `I`, `Q`, `t_us` of equal length and optionally
+  `wall_clock_start`. The stitched `t_us` is monotonic: each later chunk is shifted by the
+  previous chunk's last `t_us` plus the sample period (its intra-chunk spacing; for a
+  single-sample chunk the first chunk's `sample_period_us`, else `experiment.cfg`, so no
+  timestamp repeats, spec §6.2). Python + tProc gaps between chunks are **not** modelled in
+  `t_us`; `gap_indices` (first index of every chunk after the first, `n_chunks - 1` entries)
+  marks them so the analysis never counts a switch across one. It also returns
+  `chunk_wall_clock_starts`, `n_chunks`, `wall_clock_start`, and the mode/unit keys (`mode`,
+  `sample_period_us`, `read_length_us`, `adc_trig_offset_us`, `ro_norm_cycles`,
+  `decimated_fs_MHz`, `decimated_fs_source`, `capture_length_us`, `samples_per_capture`,
+  `soft_avgs`, `n_captures`) copied from the first chunk. It sets
+  `experiment.data = {"data": stitched}`, so a bare `save_data()` writes the whole record.
+- `modulated_strobe_acquire(experiment, gain_schedule, reps_per_block)` runs one block per gain
+  (e.g. `[G_on, 0, G_on, 0, ...]`), calling `experiment.set_qubit_gain(gain)` before each
+  `acquire()`. `reps_per_block` (= time samples per block) must satisfy `avg_maxlen` (rule 4).
+  It returns the `chunked_acquire` keys plus `modulation_reference` (per sample, 1.0 where the
+  block gain > 0, else 0.0), `block_labels` (the gains applied), `reps_per_block`,
+  `sample_period_us` and `modulation_freq_hz` = `1 / (2 x reps_per_block x sample_period_us x
+  1e-6)`. It does not set `experiment.data` and leaves the experiment at the last gain of the
+  schedule.
+- `raw_shot_buffers(prog)` returns one flat raw array per declared readout channel, length
+  `prod(loop_dims) x reads_per_shot`. With `rounds > 1` `acc_buf` holds the last round only,
+  which matches the old `di_buf` (also re-derived per round).
+
 ## Estimating run time
 
 Rough wall-clock per point: `reps x rounds x` rep period, where the rep period is the scheduled
