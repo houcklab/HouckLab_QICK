@@ -12,10 +12,8 @@ from .context import Context
 
 def run_t1(ctx, T1T2_params):
     for i in range(T1T2_params['repetitions']):
-        if T1T2_params['repetitions'] > 1:
-            plot_disp = False
-        else:
-            plot_disp = True
+        # explicit plotDisp wins (interleaved loops must not block on a window)
+        plot_disp = T1T2_params.get('plotDisp', T1T2_params['repetitions'] <= 1)
         expt_cfg = {"start": 0, "step": T1T2_params["T1_step"], "expts": T1T2_params["T1_expts"],
                     "reps": T1T2_params["T1_reps"],"Qubit_number": ctx.Qubit_Readout,
                     "rounds": T1T2_params["T1_rounds"], "pi_gain": ctx.qubit_gain, "relax_delay": T1T2_params["relax_delay"],
@@ -204,11 +202,9 @@ def run_t2(ctx, T1T2_params):
 
 def run_t2e(ctx, T2E_params):
     for i in range(T2E_params['repetitions']):
-        # match T1 behavior: only show plots if single repetition
-        if T2E_params['repetitions'] > 1:
-            plot_disp = False
-        else:
-            plot_disp = True
+        # match T1 behavior: only show plots if single repetition, unless the
+        # caller asks explicitly (interleaved loops must not block on a window)
+        plot_disp = T2E_params.get('plotDisp', T2E_params['repetitions'] <= 1)
 
         num_pulses = T2E_params["num_pi_pulses"]
 

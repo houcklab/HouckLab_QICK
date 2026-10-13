@@ -501,6 +501,25 @@ US_params = {"Shots": 1000000,            # more shots than SS: a small secondar
              "Repeat": 10000,
              "plotDisp": True}
 
+# ── Interleaved UndrivenSingleShot + coherence loop ─────────────────────────
+# One cycle = UndrivenSingleShot -> T1 -> T2R -> T2E (in that order), each step
+# toggled on/off below; the cycle repeats "cycles" times. Reuses US_params /
+# T1T2_params / T2E_params above verbatim except for their own repetition
+# counters (Repeat / repetitions), which are forced to 1 per cycle, and plotDisp,
+# which is forced off so nothing blocks the loop on a plot window. Every step
+# still writes its own timestamped h5/png/json.
+# Note UndrivenSingleShot runs under the SS_params readout window while
+# T1/T2R/T2E run under the Readout_Time / ADC_Offset window at the top of this
+# file — the loop swaps configs for you.
+RunInterleavedCoherence = False
+Interleave_params = {
+    "cycles": 10000,
+    "UndrivenSingleShot": True,
+    "T1":  True,
+    "T2R": True,
+    "T2E": False,
+}
+
 RunT1SS = False
 T1SS_params = {"T1_step": 80, "T1_expts": 100,
                "reps": 2000,
@@ -717,6 +736,11 @@ if RunTrans_QubitSpec:               run_trans_qubit_spec(ctx, Spec_relevant_par
 if RunChargeSweep:                   run_charge_sweep(ctx, Spec_relevant_params)
 if RunChargeTransmissionSweep:       run_charge_transmission_sweep(ctx, ChargeTransmission_params)
 if RunActiveResetVerify:             run_active_reset_verify(ctx, ActiveResetVerify_params)
+
+# ── Interleaved UndrivenSingleShot + coherence (spans both config regimes) ──
+if RunInterleavedCoherence:
+    run_interleaved_coherence(ctx, Interleave_params, US_params, T1T2_params,
+                              T2E_params, SS_params)
 
 # ── switch to the single-shot config regime (original top-level rebuild @ old line 2990) ──
 rebuild_singleshot_config(ctx, SS_params)
