@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23 landed; F15 landing).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -96,6 +96,11 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
 30. `c46424ce` fix(runs): F28 — yoko_fixed charge sweeps record the held bias + repeat axis (golden: new label
     RunChargeSweep[yoko_fixed], 0 leaves elsewhere)
 31. `8164e138` fix(t2_echo): F23 — even/zero num_pi_pulses rejected (golden: 0 leaves)
+
+32. `0d9f4437` fix(runs): F15 — MR validation controls acquired regardless of the analysis flag (golden: 394
+    leaves, the new control experiments in RunModifiedRamsey[*])
+33. `94f6a24e` fix(acquisition): F18 — strobe blocks compile reps_per_block (golden: 4 hw leaves, ZSP[validate])
+34. `736c8fac` fix(zero_span): F17 — event-based baseline rate, iterated burst exclusion (golden: 0 leaves)
 
 ## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
 Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
