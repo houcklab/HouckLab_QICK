@@ -61,7 +61,7 @@ Evidence:
 | `AmplitudeRabiFF` | principal axis, `0.5*arctan2(2<iq>, <ii>-<qq>)` | rotates by -angle so the g->e (maximum-variance) axis lies on I; stored as `iq_rotation_rad`; layered on top of cable winding |
 | `AmplitudeRabiFF_N` | min-Q-range grid search, 500 phases on [0, pi] | multiplies by `exp(i*phase)` with the phase that minimises the peak-to-peak of Q, collapsing the contrast onto I |
 | `T1FF`, `T2EMUX` | min-Q-range grid search, 200 phases | same as above; optional fixed `rotation_angle` / `min_max` normalisation from cfg |
-| `T2R` | rotate the mean onto +I | aligns the centroid, not the oscillation axis |
+| `T2R` | principal axis, `0.5*angle(sum(dev**2))` on the mean-subtracted trace | projects onto the g-e oscillation axis (fringe in I around 0, sign so the t = 0 point is positive); stored as `osc_fit['iq_axis_rad']`; shares `principal_axis_angle` with section 2 |
 | single shot (`hist_process`) | line through the g and e medians | see section 4 |
 
 Principal axis and min-Q-range aim at the same thing with different estimators and can differ
@@ -158,14 +158,18 @@ With `number_of_pulses` = 0 `single_shot` acquires only undriven shots and estim
 4. a shot is excited if its projection exceeds median + k x width, k = `thermal_tail_sigma_threshold`
    (2.0-3.0 by aggressiveness, default 2.5).
 
-The population is conservative: it counts only points that protrude. If the classifier fails
-(including sklearn missing) it silently returns all labels 0 and a NaN threshold.
+The fraction of shots it labels excited is saved as `thermal_tail_fraction` and is **not** a
+population estimate, and it is not conservative: at k = 2.5 and N = 2000 it reads about 1 % at
+zero population (the axis is chosen from the farthest 5 % of points, so the floor exceeds
+Q(2.5) = 0.62 %), and below d of about 4 sigma most excited shots fall under the threshold, so it
+reads low (true 0/1/3/10 % gives about 1.0/1.2/1.5/2.7 % at d = 2 sigma, 1.1/1.6/2.9/6.9 % at
+d = 3 sigma, 1.1/1.8/3.8/10.9 % at d = 5 sigma). If the classifier fails (including sklearn
+missing) it silently returns all labels 0 and a NaN threshold.
 
 ## Known issues
 
 - `AmplitudeRabiFF` estimates its rotation over both ADC channels concatenated (its data have
   shape (2, 1, N)), so ADC 1 biases the rotation applied to ADC 0.
-- `T2R` aligns the centroid, not the oscillation axis; the fringe can end up in Q and fit poorly.
 - `hist_process` returns the **left** edge of the bin where the contrast peaks; the optimum lies
   up to one bin higher. When `ran` is given the histogram range is centred on the g cloud only and
   the e cloud can fall outside it.

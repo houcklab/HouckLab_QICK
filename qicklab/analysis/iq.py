@@ -29,6 +29,13 @@ def rotate_iq(avgi, avgq):
     return sig_rot
 
 
+def principal_axis_angle(dev):
+    """Angle (rad) of the principal (maximum-variance) axis of centred complex IQ samples ``dev``
+    (the first right-singular vector of [Re, Im]); defined modulo pi, 0 for all-zero input.
+    arg(sum(dev**2)) = 2*theta; halving it resolves the 180-degree fold."""
+    return 0.5 * np.angle(np.sum(dev**2))
+
+
 def project_iq_signal(avgi, avgq, edge_frac=0.15):
     """Background-subtracted principal-axis projection of a spec trace: the qubit feature becomes a
     positive peak on a ~0 baseline taken from the outer ``edge_frac`` of each side (0 = whole-trace
@@ -41,10 +48,9 @@ def project_iq_signal(avgi, avgq, edge_frac=0.15):
     bg = np.median(sig.real) + 1j * np.median(sig.imag)
     dev = sig - bg
 
-    # arg(sum(dev**2)) = 2*theta; halving it resolves the 180-degree fold.
     if np.allclose(dev, 0):
         return np.zeros_like(avgi)
-    ang = 0.5 * np.angle(np.sum(dev**2))
+    ang = principal_axis_angle(dev)
     proj = (dev * np.exp(-1j * ang)).real
 
     # Edge baseline and orientation by total excursion mass (not the single extreme point):

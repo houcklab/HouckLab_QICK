@@ -1,10 +1,17 @@
 """Ramsey (T2*) experiment: tProc program and ExperimentClass wrapper."""
 
+import traceback
+
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import RAveragerProgram
 
-from qicklab.analysis.ramsey import fit_magnitude_envelope, fit_ramsey_auto
+from qicklab.analysis.ramsey import (
+    find_prominent_fft_peaks,
+    fit_magnitude_envelope,
+    fit_ramsey_auto,
+    project_ramsey_iq,
+)
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -126,6 +133,8 @@ class T2R(ExperimentClass):
         return data
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
+        """Fit and plot. A failed fit does not raise: ``osc_fit`` / ``env_fit`` get
+        ``{'ok': False, 'error': ...}`` and the projected data and FFT are still plotted."""
         if data is None:
             data = self.data
 
@@ -133,76 +142,82 @@ class T2R(ExperimentClass):
         avgi = np.asarray(data["data"]["avgi"][0][0], dtype=float)
         avgq = np.asarray(data["data"]["avgq"][0][0], dtype=float)
 
-        osc_fit = fit_ramsey_auto(x_pts, avgi, avgq)
-        env_fit = fit_magnitude_envelope(x_pts, avgi, avgq)
+        try:
+            osc_fit = fit_ramsey_auto(x_pts, avgi, avgq)
+            osc_fit["ok"] = True
+        except Exception as e:
+            traceback.print_exc()
+            sig_rot, iq_axis_rad = project_ramsey_iq(avgi, avgq)
+            freqs, spec, peaks = find_prominent_fft_peaks(
+                x_pts, np.real(sig_rot), prominence_frac=0.25
+            )
+            osc_fit = {
+                "ok": False,
+                "error": repr(e),
+                "mode": None,
+                "sig_rot": sig_rot,
+                "iq_axis_rad": iq_axis_rad,
+                "fft_freqs": freqs,
+                "fft_spec": spec,
+                "fft_peaks": peaks,
+            }
+
+        try:
+            env_fit = fit_magnitude_envelope(x_pts, avgi, avgq)
+            env_fit["ok"] = True
+        except Exception as e:
+            traceback.print_exc()
+            env_fit = {"ok": False, "error": repr(e)}
 
         sig_rot = osc_fit["sig_rot"]
         y_rot = np.real(sig_rot)
 
-        # Report the FFT frequency when one peak clearly dominates.
-        fft_peak_dominance = kwargs.get("fft_peak_dominance", 2.5)
-
+        # The FFT is a seed and a sanity check; the reported frequency is always the fitted one.
         fft_freqs = np.asarray(osc_fit["fft_freqs"], dtype=float)
         fft_spec = np.asarray(osc_fit["fft_spec"], dtype=float)
         fft_peaks = np.asarray(osc_fit["fft_peaks"], dtype=float)
 
-        use_fft_freq = False
         dominant_fft_freq = None
-
         if len(fft_peaks) > 0:
             peak_amps = np.array([fft_spec[np.argmin(np.abs(fft_freqs - fp))] for fp in fft_peaks])
-
-            order = np.argsort(peak_amps)[::-1]
-            best_amp = peak_amps[order[0]]
-            best_freq = float(fft_peaks[order[0]])
-
-            if len(order) == 1:
-                use_fft_freq = True
-                dominant_fft_freq = best_freq
-            else:
-                second_amp = peak_amps[order[1]]
-                if second_amp <= 0 or best_amp > fft_peak_dominance * second_amp:
-                    use_fft_freq = True
-                    dominant_fft_freq = best_freq
-
-        osc_fit["use_fft_freq"] = use_fft_freq
+            dominant_fft_freq = float(fft_peaks[np.argmax(peak_amps)])
         osc_fit["dominant_fft_freq"] = dominant_fft_freq
 
-        perr = np.sqrt(np.diag(osc_fit["pcov"]))
-        osc_fit["perr"] = perr
+        # One FFT bin, 1 / (N dt).
+        fft_bin = fft_freqs[1] - fft_freqs[0] if len(fft_freqs) > 1 else np.inf
 
-        if osc_fit["mode"] == "1f":
-            A, T2, f, phi, C = osc_fit["popt"]
-            dA, dT2, df, dphi, dC = perr
+        if osc_fit["ok"]:
+            perr = np.sqrt(np.diag(osc_fit["pcov"]))
+            osc_fit["perr"] = perr
 
-            if use_fft_freq:
-                f_report = dominant_fft_freq
-                label = (
-                    f"1f fit: T2*={T2:.2f}±{dT2:.2f} us, "
-                    f"f_fit={f:.4f} MHz, f_FFT={f_report:.4f} MHz USED"
-                )
-            else:
+            if osc_fit["mode"] == "1f":
+                A, T2, f, phi, C = osc_fit["popt"]
+                dA, dT2, df, dphi, dC = perr
+                f_fits = [f]
                 f_report = f
                 label = f"1f fit: T2*={T2:.2f}±{dT2:.2f} us, f={f:.4f}±{df:.4f} MHz"
-
-        else:
-            A1, A2, T2, f1, f2, phi1, phi2, C = osc_fit["popt"]
-            dA1, dA2, dT2, df1, df2, dphi1, dphi2, dC = perr
-
-            if use_fft_freq:
-                f_report = dominant_fft_freq
-                label = (
-                    f"2f fit: T2*={T2:.2f}±{dT2:.2f} us, "
-                    f"f1_fit={f1:.4f} MHz, f2_fit={f2:.4f} MHz, "
-                    f"f_FFT={f_report:.4f} MHz USED"
-                )
             else:
+                A1, A2, T2, f1, f2, phi1, phi2, C = osc_fit["popt"]
+                dA1, dA2, dT2, df1, df2, dphi1, dphi2, dC = perr
+                f_fits = [f1, f2]
                 f_report = f1
                 label = (
                     f"2f fit: T2*={T2:.2f}±{dT2:.2f} us, "
                     f"f1={f1:.4f}±{df1:.4f} MHz, "
                     f"f2={f2:.4f}±{df2:.4f} MHz"
                 )
+
+            mismatch = dominant_fft_freq is not None and bool(
+                min(abs(ff - dominant_fft_freq) for ff in f_fits) > fft_bin
+            )
+            osc_fit["fft_fit_mismatch"] = mismatch
+            if mismatch:
+                label += (
+                    f"\nWARNING: fit and FFT peak ({dominant_fft_freq:.4f} MHz) differ by > 1 bin"
+                )
+        else:
+            f_report = None
+            label = f"fit failed: {osc_fit['error']}"
 
         osc_fit["f_report"] = f_report
         self.osc_fit = osc_fit
@@ -214,12 +229,13 @@ class T2R(ExperimentClass):
             figNum += 1
 
         fig = plt.figure(figNum)
-        plt.plot(x_pts, y_rot, "o-", label="rotated I")
-        plt.plot(x_pts, osc_fit["fit_y"], "-", linewidth=2, label=label)
+        plt.plot(x_pts, y_rot, "o-", label="projected I")
+        if osc_fit["ok"]:
+            plt.plot(x_pts, osc_fit["fit_y"], "-", linewidth=2, label=label)
         plt.xlabel("Wait time (us)")
         plt.ylabel("a.u.")
         plt.legend()
-        plt.title(self.titlename + " rotated quadrature")
+        plt.title(self.titlename + " projected quadrature" + ("" if osc_fit["ok"] else " (no fit)"))
         plt.tight_layout()
         plt.savefig(self.iname[:-4] + "RotatedI_Fit.png")
 
@@ -236,8 +252,8 @@ class T2R(ExperimentClass):
         for fp in fft_peaks[:5]:
             plt.axvline(fp, linestyle="--", alpha=0.6)
 
-        if use_fft_freq:
-            plt.axvline(dominant_fft_freq, linewidth=2, label=f"USED {dominant_fft_freq:.4f} MHz")
+        if f_report is not None:
+            plt.axvline(f_report, linewidth=2, label=f"fit {f_report:.4f} MHz")
 
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("FFT amplitude")

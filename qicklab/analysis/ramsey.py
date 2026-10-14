@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 
-from qicklab.analysis.iq import rotate_iq
+from qicklab.analysis.iq import principal_axis_angle
 
 
 def ramsey_1f(t, A, T2, f, phi, C):
@@ -49,38 +49,74 @@ def find_prominent_fft_peaks(t, y, prominence_frac=0.2):
     return freqs, spec, peak_freqs
 
 
+def project_ramsey_iq(avgi, avgq, n_sign=1):
+    """Project a Ramsey IQ trace onto its g-e oscillation (principal) axis.
+
+    Returns ``(sig_rot, ang)``: ``sig_rot = (sig - mean(sig)) * exp(-1j * ang)``, so the fringe is
+    in ``Re(sig_rot)`` around 0, with its sign chosen so the mean of the first ``n_sign`` points
+    (t = 0, about |e>) is positive; ``ang`` (rad, in (-pi, pi]) is the axis that was projected on.
+    Keep ``n_sign = 1``: the mean of the first 3 points is ~ cos x (2 cos x + 1), x = 2 pi f dt,
+    which is negative for f dt in (1/4, 1/3) (2.5-3.3 MHz at dt = 0.1 us); the fit seeds phi = 0
+    with A >= 0, so a wrong sign there often makes it collapse.
+    """
+    sig = np.asarray(avgi, dtype=float) + 1j * np.asarray(avgq, dtype=float)
+    dev = sig - np.mean(sig)
+    ang = principal_axis_angle(dev)
+    sig_rot = dev * np.exp(-1j * ang)
+    if np.mean(np.real(sig_rot[:n_sign])) < 0:
+        sig_rot = -sig_rot
+        ang = float(np.angle(np.exp(1j * (ang + np.pi))))
+    return sig_rot, float(ang)
+
+
+def ramsey_fit_limits(x):
+    """(f_max, T2_min) from the sampling: Nyquist 0.5/dt (MHz) and dt/2 (us).
+    Falls back to the old fixed (2.0, 1.0) when dt cannot be determined (< 2 points)."""
+    x = np.asarray(x, dtype=float)
+    dt = abs(float(np.mean(np.diff(x)))) if x.size > 1 else 0.0
+    if not np.isfinite(dt) or dt <= 0:
+        return 2.0, 1.0
+    return 0.5 / dt, 0.5 * dt
+
+
 def fit_ramsey_auto(x, avgi, avgq):
-    """1-frequency Ramsey fit, or 2-frequency when the FFT shows two peaks and RSS2 < 0.85 RSS1.
+    """1-frequency Ramsey fit, or 2-frequency when the FFT shows two peaks and RSS2 < 0.85 RSS1,
+    on the principal-axis projection of the IQ trace. Raises if curve_fit fails.
     Constants and bounds: docs/experiments/t2_ramsey.md."""
     x = np.asarray(x, dtype=float)
 
-    sig_rot = rotate_iq(avgi, avgq)
+    sig_rot, iq_axis_rad = project_ramsey_iq(avgi, avgq)
     y = np.real(sig_rot)
 
     freqs, spec, peak_freqs = find_prominent_fft_peaks(x, y, prominence_frac=0.25)
 
+    f_max, T2_min = ramsey_fit_limits(x)
+    T2_max = 1e5
+
     C0 = np.mean(y)
     A0 = 0.5 * (np.max(y) - np.min(y))
-    T20 = max((x[-1] - x[0]) * 0.7, 1.0)
+    T20 = float(np.clip(max((x[-1] - x[0]) * 0.7, 1.0), T2_min, T2_max))
 
     result = {
         "mode": None,
         "sig_rot": sig_rot,
+        "iq_axis_rad": iq_axis_rad,
         "fft_freqs": freqs,
         "fft_spec": spec,
         "fft_peaks": peak_freqs,
     }
 
-    if len(peak_freqs) < 2:
-        f0 = peak_freqs[0] if len(peak_freqs) else 0.05
-
-        p0 = [A0, T20, f0, 0.0, C0]
-        bounds = (
-            [0.0, 1.0, 0.0, -2 * np.pi, np.min(y) - abs(A0)],
-            [10 * abs(A0) + 1e-12, 1e5, 2.0, 2 * np.pi, np.max(y) + abs(A0)],
+    def bounds_1f():
+        return (
+            [0.0, T2_min, 0.0, -2 * np.pi, np.min(y) - abs(A0)],
+            [10 * abs(A0) + 1e-12, T2_max, f_max, 2 * np.pi, np.max(y) + abs(A0)],
         )
 
-        popt, pcov = curve_fit(ramsey_1f, x, y, p0=p0, bounds=bounds, maxfev=50000)
+    if len(peak_freqs) < 2:
+        f0 = float(np.clip(peak_freqs[0] if len(peak_freqs) else 0.05, 0.0, f_max))
+
+        p0 = [A0, T20, f0, 0.0, C0]
+        popt, pcov = curve_fit(ramsey_1f, x, y, p0=p0, bounds=bounds_1f(), maxfev=50000)
 
         result.update(
             {
@@ -92,17 +128,17 @@ def fit_ramsey_auto(x, avgi, avgq):
         )
         return result
 
-    f1, f2 = sorted(peak_freqs[:2])
+    f1, f2 = np.clip(sorted(peak_freqs[:2]), 0.0, f_max)
 
     p0 = [A0 * 0.6, A0 * 0.4, T20, f1, f2, 0.0, 0.0, C0]
     bounds = (
-        [0.0, 0.0, 1.0, 0.0, 0.0, -2 * np.pi, -2 * np.pi, np.min(y) - abs(A0)],
+        [0.0, 0.0, T2_min, 0.0, 0.0, -2 * np.pi, -2 * np.pi, np.min(y) - abs(A0)],
         [
             10 * abs(A0) + 1e-12,
             10 * abs(A0) + 1e-12,
-            1e5,
-            2.0,
-            2.0,
+            T2_max,
+            f_max,
+            f_max,
             2 * np.pi,
             2 * np.pi,
             np.max(y) + abs(A0),
@@ -115,11 +151,7 @@ def fit_ramsey_auto(x, avgi, avgq):
         rss2 = np.sum((y - fit2) ** 2)
 
         p01 = [A0, T20, f1, 0.0, C0]
-        bounds1 = (
-            [0.0, 1.0, 0.0, -2 * np.pi, np.min(y) - abs(A0)],
-            [10 * abs(A0) + 1e-12, 1e5, 2.0, 2 * np.pi, np.max(y) + abs(A0)],
-        )
-        popt1, pcov1 = curve_fit(ramsey_1f, x, y, p0=p01, bounds=bounds1, maxfev=50000)
+        popt1, pcov1 = curve_fit(ramsey_1f, x, y, p0=p01, bounds=bounds_1f(), maxfev=50000)
         fit1 = ramsey_1f(x, *popt1)
         rss1 = np.sum((y - fit1) ** 2)
 
@@ -149,11 +181,7 @@ def fit_ramsey_auto(x, avgi, avgq):
 
     except Exception:
         p01 = [A0, T20, f1, 0.0, C0]
-        bounds1 = (
-            [0.0, 1.0, 0.0, -2 * np.pi, np.min(y) - abs(A0)],
-            [10 * abs(A0) + 1e-12, 1e5, 2.0, 2 * np.pi, np.max(y) + abs(A0)],
-        )
-        popt1, pcov1 = curve_fit(ramsey_1f, x, y, p0=p01, bounds=bounds1, maxfev=50000)
+        popt1, pcov1 = curve_fit(ramsey_1f, x, y, p0=p01, bounds=bounds_1f(), maxfev=50000)
         result.update(
             {
                 "mode": "1f",

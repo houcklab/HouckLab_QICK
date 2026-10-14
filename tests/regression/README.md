@@ -40,8 +40,8 @@ golden is kept.
    added or changed are recorded as `"sets"`: fit results (`fit_i`, `fit_q`,
    `osc_fit`, `env_fit`), `peakFreq_*`, `qubitFreq`, `fid`/`threshold`/`angle`
    and so on. A `display` that raises on synthetic data is recorded as
-   `"raised": <type>` and the run continues (currently 5 `T2R.display`
-   `ValueError`s per variant). `acquire`/`save_*` exceptions still propagate.
+   `"raised": <type>` and the run continues (currently none; the 5 `T2R.display`
+   `ValueError`s per variant were fixed 2026-10-13). `acquire`/`save_*` exceptions still propagate.
    All figures are closed after each `display`: with `show` stubbed, a display
    that relies on the user closing its window would otherwise leak every
    figure (the Undriven display alone grew the process past 5 GB).
