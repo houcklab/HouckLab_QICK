@@ -64,7 +64,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto the principal axis; `iq_rotation_rad`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_i_flag` (quality bitmask, see Analysis), and the same three for Q |
+| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto ADC 0's principal axis (both ADCs by the same angle); `iq_rotation_rad`; `iq_axis_contrast_ratio`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_i_flag` (quality bitmask, see Analysis), and the same three for Q |
 | `..._data.png` | I and Q vs gain, fits and pi markers |
 | `..._data.json` | config |
 
@@ -81,13 +81,28 @@ The pi gain is not written back automatically; copy it into the device file
 
 ## Analysis
 
-- `AmplitudeRabiFF`: in acquire, the IQ trace (after cavity winding) is rotated by its
-  principal-axis angle `0.5 * arctan2(2<iq>, <ii> - <qq>)` so the oscillation lands in I.
+- `AmplitudeRabiFF`: in acquire, the IQ data (after cavity winding) are rotated by the
+  principal-axis angle of the analysed read, ADC 0 (`avgi[0][0]`, the trace the display fits):
+  `0.5 * angle(sum(dev**2))` of the mean-subtracted trace (`qicklab.analysis.iq.principal_axis_angle`),
+  so the oscillation lands in I. The axis is defined modulo pi; the sign is fixed so that I
+  increases toward the pi pulse (the mean of the first k = max(1, min(3, N // 20)) points of
+  the sweep, gain ~ 0 = |g>, lies below the trace mean). This start-of-sweep reference also
+  holds when the sweep spans a full period and ends back at |g>. It assumes the sweep starts
+  near gain 0 (both runners use start = 0) and that those k points span less than half a Rabi
+  period: up to about (N - 1) / 4 periods in the sweep (25 on the 101-point grid). Beyond that
+  the sign is unreliable (the pi gain is not affected: P/2 does not depend on the sign). Both ADCs are rotated by this one angle (stored as
+  `iq_rotation_rad`, in (-pi, pi]). The eigenvalue ratio of the 2x2 IQ covariance (major over
+  minor variance, >= 1) is stored as `iq_axis_contrast_ratio` and printed: near 1 there is no
+  oscillation and the angle is noise-driven (pure noise gives about 1.3 to 1.9 on 101 points,
+  1.7 to 4.3 on 21, median to 99th percentile); below 5 a `[warn]` line is printed.
   With `fit=True`, `y0 + A cos(2 pi x / P + phi)` is fitted to I and to Q separately;
   `pi_gain = P/2`. Each fit is guarded (a failure prints and leaves the key out).
-- `AmplitudeRabiFF_N`: in display, the trace is rotated by the phase in [0, pi]
-  (500-point grid) that minimises the range of Q, then fitted the same way. Each fit is
-  guarded (a failure prints and that quadrature is drawn without a fit).
+- `AmplitudeRabiFF_N`: in display (`rotate=True`), the trace is rotated by the same signed
+  principal-axis angle and the ratio is printed (kept as `rotation_phase` = -angle, the
+  multiplier phase, and `iq_axis_contrast_ratio` on the instance; neither is saved), then
+  fitted the same way. Each fit is guarded (a failure prints and that quadrature is drawn
+  without a fit). Before 2026-10 it used the phase in [0, pi] (500-point grid) that minimised
+  the peak-to-peak of Q, an estimator set by the two most extreme (noisiest) points.
 
 The fit (`qicklab.analysis.fitting.fit_rabi_cosine`, also re-exported as
 `qicklab.runs.fit_rabi_cosine`) runs four starts and keeps the one with the lowest residual:
@@ -133,7 +148,11 @@ extremum (the 3 pi or 5 pi point) instead of `P/2`.
   register-swept Rabi is therefore invalid with flat-top pulses, which is why the step
   switches to the software sweep `AmplitudeRabiFF_N` when `flattop_length` is set.
 - The principal-axis rotation in `AmplitudeRabiFF` is layered on top of the cavity-winding
-  phase and stored as `iq_rotation_rad`; it does not replace the fit. `cavity_winding_*`
+  phase and stored as `iq_rotation_rad`; it does not replace the fit. Before 2026-10 the axis
+  was estimated over both ADCs concatenated and its sign was arbitrary: the ADC 0 - ADC 1
+  background offset then set the axis (ADC 0 at 30+40j with a 5 a.u. excursion along 120 deg
+  gave 55.4 deg, 2.15 of the 5 a.u. contrast in I and 4.52 in Q), so `avgi`, `avgq` and
+  `iq_rotation_rad` saved before then are not principal-axis aligned. `cavity_winding_*`
   is a frequency-dependent cable-delay correction, not a quadrature alignment.
 - Below about 0.75 periods in the sweep the fitted period is poorly constrained even when
   the fit converges; the fit flags it (bit 4) rather than refusing.
@@ -149,8 +168,6 @@ extremum (the 3 pi or 5 pi point) instead of `P/2`.
   the sweep ends at 9900, not 10000. `AmplitudeRabiFF_N` uses `linspace` and does reach
   `max_gain`.
 - The flat-top branch ignores the recipe `relax_delay` and uses 8000 us.
-- The principal-axis angle in `AmplitudeRabiFF` is estimated over both ADCs concatenated,
-  so ADC 1 content biases the rotation applied to ADC 0.
 - `AmplitudeRabiFF_N` plots the axis as float `linspace` values but plays `int(g)`
   (difference < 1 DAC unit), and draws the fit only at the data points.
 - `AmplitudeRabiFF_N` display errors other than the (guarded) fit raise out of the

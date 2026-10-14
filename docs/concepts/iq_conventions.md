@@ -58,16 +58,17 @@ Evidence:
 
 | Experiment | Method | What it does |
 |---|---|---|
-| `AmplitudeRabiFF` | principal axis, `0.5*arctan2(2<iq>, <ii>-<qq>)` | rotates by -angle so the g->e (maximum-variance) axis lies on I; stored as `iq_rotation_rad`; layered on top of cable winding |
-| `AmplitudeRabiFF_N` | min-Q-range grid search, 500 phases on [0, pi] | multiplies by `exp(i*phase)` with the phase that minimises the peak-to-peak of Q, collapsing the contrast onto I |
+| `AmplitudeRabiFF` | principal axis, `0.5*angle(sum(dev**2))` of ADC 0's mean-subtracted trace | rotates both ADCs by -angle so the g->e (maximum-variance) axis lies on I, signed so I increases toward the pi pulse (mean of the first 3 points, gain ~ 0, below the trace mean; valid up to about (N-1)/4 periods); stored as `iq_rotation_rad`, with the major/minor variance ratio as `iq_axis_contrast_ratio` (near 1 = no contrast, angle arbitrary); layered on top of cable winding; shares `principal_axis_angle` with section 2 |
+| `AmplitudeRabiFF_N` | same signed principal axis, in display | same rotation; `rotation_phase` = -angle (multiplier phase), not saved |
 | `T1FF`, `T2EMUX` | min-Q-range grid search, 200 phases | same as above; optional fixed `rotation_angle` / `min_max` normalisation from cfg |
 | `T2R` | principal axis, `0.5*angle(sum(dev**2))` on the mean-subtracted trace | projects onto the g-e oscillation axis (fringe in I around 0, sign so the t = 0 point is positive); stored as `osc_fit['iq_axis_rad']`; shares `principal_axis_angle` with section 2 |
 | single shot (`hist_process`) | line through the g and e medians | see section 4 |
 
 Principal axis and min-Q-range aim at the same thing with different estimators and can differ
-slightly; the refactor keeps each caller's method and grid size so results do not change. The
-min-Q-range search is `qicklab.analysis.iq.min_q_range_phase(i, q, n)`; each caller passes its own
-`n` (500 for `AmplitudeRabiFF_N`, 200 for `T1FF` and `T2EMUX`).
+slightly: min-Q-range is set by the two most extreme points of Q, so on a noisy trace it follows
+the noise. The min-Q-range search is `qicklab.analysis.iq.min_q_range_phase(i, q, n)`; each caller
+passes its own `n` (200 for `T1FF` and `T2EMUX`; `AmplitudeRabiFF_N` used it with 500 before
+2026-10).
 
 ## 4. Single-shot readout: angle, threshold, "fidelity"
 
@@ -219,8 +220,10 @@ missing) it silently returns all labels 0 and a NaN threshold.
 
 ## Known issues
 
-- `AmplitudeRabiFF` estimates its rotation over both ADC channels concatenated (its data have
-  shape (2, 1, N)), so ADC 1 biases the rotation applied to ADC 0.
+- Before 2026-10 `AmplitudeRabiFF` estimated its rotation over both ADC channels concatenated
+  (its data have shape (2, 1, N)), so the ADC 0 - ADC 1 background offset, not the Rabi axis, set
+  the angle and most of the contrast could end up in Q; its sign was arbitrary. It now uses ADC 0
+  only, with a fixed sign (section 3).
 - `hist_process` returns the **left** edge of the bin where the contrast peaks; the optimum lies
   up to one bin higher. When `ran` is given the histogram range is centred on the g cloud only and
   the e cloud can fall outside it.

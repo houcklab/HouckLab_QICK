@@ -6,7 +6,7 @@ from qick import AveragerProgram, RAveragerProgram
 from tqdm.notebook import tqdm
 
 from qicklab.analysis.fitting import cos_func, fit_rabi_cosine
-from qicklab.analysis.iq import min_q_range_phase
+from qicklab.analysis.iq import principal_axis_angle
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -16,15 +16,56 @@ def _print_fit_flags(label, fit):
         print(f"  [warn] {label} Rabi fit: {flag} -- check the pi gain by eye.")
 
 
+# Below this principal/minor variance ratio the IQ axis is mostly noise (pure noise gives
+# about 1.3-1.9 on 101 points and 1.7-4.3 on 21 points, median to 99th percentile).
+_MIN_AXIS_CONTRAST_RATIO = 5.0
+
+
 def iq_rotation_angle(signal_trace):
-    """Angle (rad) of the principal (maximum-variance) axis of an IQ trace; rotating by
-    -angle puts the Rabi oscillation in I. Not a cable-winding correction:
+    """Angle (rad, in (-pi, pi]) to rotate one amplitude-Rabi IQ trace by (multiply by
+    exp(-1j*angle)) so the oscillation lies in I and I increases from the start of the sweep
+    (gain ~ 0, |g>) toward the pi pulse. The axis is the principal (maximum-variance) axis of the
+    mean-subtracted trace (analysis.iq.principal_axis_angle), defined modulo pi; the sign is fixed
+    by putting the mean of the first k = max(1, min(3, N // 20)) points of the sweep below the
+    trace mean. The window is a fixed few points, not a fraction of the sweep, so the rule holds
+    while those points span less than half a Rabi period (up to about (N - 1) / 4 periods for
+    k = 3; with a window growing with N it failed beyond ~5 periods). Pass one read's trace in
+    sweep order, starting near gain 0. Not a cable-winding correction:
     docs/concepts/iq_conventions.md section 3."""
-    i = np.real(signal_trace).astype(float)
-    q = np.imag(signal_trace).astype(float)
-    i = i - np.mean(i)
-    q = q - np.mean(q)
-    return 0.5 * np.arctan2(2.0 * np.mean(i * q), np.mean(i * i) - np.mean(q * q))
+    trace = np.asarray(signal_trace, dtype=complex).ravel()
+    dev = trace - np.mean(trace)
+    angle = principal_axis_angle(dev)
+    proj = (dev * np.exp(-1j * angle)).real
+    k = max(1, min(3, proj.size // 20))
+    if np.mean(proj[:k]) > 0:
+        angle += np.pi
+    return float(np.angle(np.exp(1j * angle)))
+
+
+def iq_axis_contrast_ratio(signal_trace):
+    """Variance along the principal IQ axis over the variance across it (eigenvalue ratio of the
+    2x2 IQ covariance of the mean-subtracted trace), >= 1. Near 1 the trace has no preferred axis
+    (no oscillation, pure noise) and the rotation angle is arbitrary; inf for a noiseless line,
+    NaN for a constant trace."""
+    trace = np.asarray(signal_trace, dtype=complex).ravel()
+    dev = trace - np.mean(trace)
+    total = float(np.sum(np.abs(dev) ** 2))  # lambda_major + lambda_minor
+    split = float(np.abs(np.sum(dev**2)))  # lambda_major - lambda_minor
+    if total == 0.0:
+        return float("nan")
+    minor = total - split
+    return float((total + split) / minor) if minor > 1e-12 * total else float("inf")
+
+
+def _print_axis(label, angle, ratio):
+    print(
+        f"[{label}] IQ rotation angle = {np.rad2deg(angle):.2f} deg, axis contrast ratio = {ratio:.3g}"
+    )
+    if not ratio >= _MIN_AXIS_CONTRAST_RATIO:
+        print(
+            f"  [warn] {label}: axis contrast ratio {ratio:.3g} < {_MIN_AXIS_CONTRAST_RATIO:g}: "
+            "little or no Rabi contrast, the IQ rotation is noise-driven."
+        )
 
 
 class AmplitudeRabiFFProg(RAveragerProgram):
@@ -182,17 +223,26 @@ class AmplitudeRabiFF(ExperimentClass):
         )
         signal = (avgi + 1j * avgq) * np.exp(1j * phase)
 
-        # Principal-axis rotation on top of the winding phase (axis estimated over both ADCs).
-        rot_angle = iq_rotation_angle(np.ravel(signal))
+        # Principal-axis rotation on top of the winding phase. The axis and sign come from the
+        # analysed read (ADC 0, the trace display() fits); the same rotation is applied to both
+        # ADCs so the saved (2, 1, N) shape is unchanged.
+        rot_angle = iq_rotation_angle(signal[0][0])
+        contrast_ratio = iq_axis_contrast_ratio(signal[0][0])
         signal = signal * np.exp(-1j * rot_angle)
-        print(f"[AmplitudeRabiFF] IQ rotation angle = {np.rad2deg(rot_angle):.2f} deg")
+        _print_axis("AmplitudeRabiFF", rot_angle, contrast_ratio)
 
         avgi = signal.real
         avgq = signal.imag
 
         data = {
             "config": self.cfg,
-            "data": {"x_pts": x_pts, "avgi": avgi, "avgq": avgq, "iq_rotation_rad": rot_angle},
+            "data": {
+                "x_pts": x_pts,
+                "avgi": avgi,
+                "avgq": avgq,
+                "iq_rotation_rad": rot_angle,
+                "iq_axis_contrast_ratio": contrast_ratio,
+            },
         }
         self.data = data
 
@@ -440,11 +490,13 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
         # Puts the Rabi contrast in I (docs/concepts/iq_conventions.md section 3).
         if rotate:
-            rot_phase = min_q_range_phase(avgi, avgq, 500)
-            rotated = (avgi + 1j * avgq) * np.exp(1j * rot_phase)
+            sig = avgi + 1j * avgq
+            rot_angle = iq_rotation_angle(sig)
+            self.iq_axis_contrast_ratio = iq_axis_contrast_ratio(sig)
+            rotated = sig * np.exp(-1j * rot_angle)
             avgi, avgq = rotated.real, rotated.imag
-            self.rotation_phase = rot_phase
-            print(f"IQ rotation phase = {rot_phase:.4f} rad")
+            self.rotation_phase = -rot_angle  # multiplier phase: rotated = raw * exp(1j * phase)
+            _print_axis("AmplitudeRabiFF_N", rot_angle, self.iq_axis_contrast_ratio)
 
         x_min, x_max = float(np.min(x_pts)), float(np.max(x_pts))
 
