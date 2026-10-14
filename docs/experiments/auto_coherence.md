@@ -245,6 +245,17 @@ layout applies. The summary holds the calibrated values (`qubit_frequency`, `pi_
 `sweet_spot_voltage`), every parameter used, and the full stage log. The step returns the
 same values plus `auto_folder` and `summary_file`.
 
+The summary is written after the calibration block, after each of T1, T2 and T2E, and once
+more on every exit, including a failure or Ctrl-C, so a crash never loses the calibration.
+`stage_reached` (json key; `Stage reached:` line in the txt) names the last completed stage
+(`start`, `sweet_spot_search`, `calibrate_qubit_freq`, `amplitude_rabi`,
+`optimize_readout`, `singleshot_optimize`, `T1`, `T2`, `T2E`, `complete`) and `error` holds
+the `repr` of the exception that aborted the run (else `null`). Before Stage 3 finishes,
+`calibration` holds only what is known so far (`pi_gain` is then the Rabi estimate). The
+readout window chosen by Stage 2.5 is in the parameters section (`ss_readout_time`,
+`ss_adc_offset`). A display (fit/plot) failure inside a stage does not stop the run: the
+record is saved and a `display failed (record saved)` line is added to the log.
+
 T1/T2/T2E fit values are **not** in the summary (the classes do not save fits); refit from
 the `auto-T1`/`auto-T2`/`auto-T2E` records. Calibrated values are not written into the
 device file; copy them by hand (`Qubit(freq=..., gain=..., pi2_gain=..., sigma=...)`).

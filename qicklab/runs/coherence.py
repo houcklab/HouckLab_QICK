@@ -2,6 +2,7 @@
 
 import time
 
+from qicklab.core.experiment import finish
 from qicklab.experiments.t1 import T1FF
 from qicklab.experiments.t2_echo import T2EMUX
 from qicklab.experiments.t2_ramsey import T2R
@@ -32,9 +33,7 @@ def run_t1(ctx, T1T2_params):
         cfg = ctx.working_config(expt_cfg)
         iT1 = T1FF(path="T1", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
         dT1 = T1FF.acquire(iT1)
-        T1FF.display(iT1, dT1, plotDisp=plot_disp, figNum=2)
-        T1FF.save_data(iT1, dT1)
-        T1FF.save_config(iT1)
+        finish(T1FF, iT1, dT1, plotDisp=plot_disp, figNum=2)
 
         time.sleep(10)
         ctx.soc.reset_gens()
@@ -63,9 +62,7 @@ def run_t1_t2e(ctx, T1T2_params, T2E_params):
             path="T1", cfg=config_T1, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         dT1 = T1FF.acquire(iT1)
-        T1FF.display(iT1, dT1, plotDisp=plot_disp, figNum=2)
-        T1FF.save_data(iT1, dT1)
-        T1FF.save_config(iT1)
+        finish(T1FF, iT1, dT1, plotDisp=plot_disp, figNum=2)
 
         num_pulses = T2E_params["num_pi_pulses"]
         int_steps = T2E_params["T2_max_us"] // (
@@ -101,9 +98,7 @@ def run_t1_t2e(ctx, T1T2_params, T2E_params):
             path="T2E", cfg=config_T2E, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         dT2E = T2EMUX.acquire(iT2E)
-        T2EMUX.display(iT2E, dT2E, plotDisp=plot_disp, figNum=3)
-        T2EMUX.save_data(iT2E, dT2E)
-        T2EMUX.save_config(iT2E)
+        finish(T2EMUX, iT2E, dT2E, plotDisp=plot_disp, figNum=3)
 
         time.sleep(10)
         ctx.soc.reset_gens()
@@ -116,9 +111,7 @@ def run_t1_t2r_t2e(ctx, T1T2_params, T2E_params):
             path=path, cfg=cfg_run, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         data = ExptClass.acquire(inst)
-        ExptClass.display(inst, data, plotDisp=plot_disp, figNum=figNum)
-        ExptClass.save_data(inst, data)
-        ExptClass.save_config(inst)
+        finish(ExptClass, inst, data, plotDisp=plot_disp, figNum=figNum)
         return inst, data
 
     for _ in range(T1T2_params["repetitions"]):
@@ -207,9 +200,7 @@ def run_t2(ctx, T1T2_params):
         cfg = ctx.working_config(T2R_cfg)
         iT2R = T2R(path="T2R", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
         dT2R = T2R.acquire(iT2R)
-        T2R.display(iT2R, dT2R, plotDisp=False, figNum=2)
-        T2R.save_data(iT2R, dT2R)
-        T2R.save_config(iT2R)
+        finish(T2R, iT2R, dT2R, plotDisp=False, figNum=2)
         time.sleep(10)
         ctx.soc.reset_gens()
 
@@ -261,9 +252,7 @@ def run_t2e(ctx, T2E_params):
             )
 
             dT2E = T2EMUX.acquire(iT2E)
-            T2EMUX.display(iT2E, dT2E, plotDisp=plot_disp, figNum=2)
-            T2EMUX.save_data(iT2E, dT2E)
-            T2EMUX.save_config(iT2E)
+            finish(T2EMUX, iT2E, dT2E, plotDisp=plot_disp, figNum=2)
 
             time.sleep(10)
             ctx.soc.reset_gens()

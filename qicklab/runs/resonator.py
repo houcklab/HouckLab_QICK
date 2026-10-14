@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from qicklab.analysis.fitting import fit_hanger_transmission
+from qicklab.core.experiment import finish
 from qicklab.experiments.chi_shift import ChiShift
 from qicklab.experiments.cw_tones import ConstantTwoTone, SingleTone
 from qicklab.experiments.transmission import CavitySpecFF
@@ -41,9 +42,7 @@ def run_transmission_fit(ctx, params):
         path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     data_trans = CavitySpecFF.acquire(Instance_trans)
-    CavitySpecFF.display(Instance_trans, data_trans, plotDisp=True, figNum=1)
-    CavitySpecFF.save_data(Instance_trans, data_trans)
-    CavitySpecFF.save_config(Instance_trans)
+    finish(CavitySpecFF, Instance_trans, data_trans, reraise=True, plotDisp=True, figNum=1)
 
     sig = data_trans["data"]["results"][0][0][0] + 1j * data_trans["data"]["results"][0][0][1]
     x_pts = np.asarray(data_trans["data"]["fpts"])
@@ -129,9 +128,7 @@ def run_transmission_sweep(ctx, params):
         path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     data_trans = CavitySpecFF.acquire(Instance_trans)
-    CavitySpecFF.display(Instance_trans, data_trans, plotDisp=True, figNum=1)
-    CavitySpecFF.save_data(Instance_trans, data_trans)
-    CavitySpecFF.save_config(Instance_trans)
+    finish(CavitySpecFF, Instance_trans, data_trans, reraise=True, plotDisp=True, figNum=1)
 
     if ctx.cavity_min:  # carry-over: docs/architecture.md#carry-overs
         ctx.config["pulse_freq"] = Instance_trans.peakFreq_min
@@ -152,6 +149,4 @@ def run_chi_shift(ctx, params):
         path="ChiShift", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     dChi = ChiShift.acquire(iChi)
-    ChiShift.display(iChi, dChi, plotDisp=True, figNum=1)
-    ChiShift.save_data(iChi, dChi)
-    ChiShift.save_config(iChi)
+    finish(ChiShift, iChi, dChi, reraise=True, plotDisp=True, figNum=1)

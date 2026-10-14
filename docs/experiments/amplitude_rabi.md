@@ -64,7 +64,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto the principal axis; `iq_rotation_rad`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_q_popt`, `fit_q_pi_gain` |
+| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto the principal axis; `iq_rotation_rad`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_i_flag` (quality bitmask, see Analysis), and the same three for Q |
 | `..._data.png` | I and Q vs gain, fits and pi markers |
 | `..._data.json` | config |
 
@@ -86,15 +86,37 @@ The pi gain is not written back automatically; copy it into the device file
   With `fit=True`, `y0 + A cos(2 pi x / P + phi)` is fitted to I and to Q separately;
   `pi_gain = P/2`. Each fit is guarded (a failure prints and leaves the key out).
 - `AmplitudeRabiFF_N`: in display, the trace is rotated by the phase in [0, pi]
-  (500-point grid) that minimises the range of Q, then fitted the same way. Unguarded.
+  (500-point grid) that minimises the range of Q, then fitted the same way. Each fit is
+  guarded (a failure prints and that quadrature is drawn without a fit).
 
-Fit start values: `y0 = mean`, `A = (max - min)/2`, `P = max(gain span, 1)`, `phi = 0`.
-Bounds: `P >= 1e-9`, `|phi| <= 4 pi`. The P/2 rule needs the response to be periodic in
-gain (linear drive); it does not depend on `phi`.
+The fit (`qicklab.analysis.fitting.fit_rabi_cosine`, also re-exported as
+`qicklab.runs.fit_rabi_cosine`) runs four starts and keeps the one with the lowest residual:
+two period seeds, the peak of the zero-padded (16x) FFT of `y - mean` (DC bin zeroed) and
+the gain span `max(span, 1)`, each with `A = +-(max - min)/2`, `y0 = mean`, `phi = 0`.
+The FFT seed locks onto the right period when the sweep holds one or more periods; the span
+seed covers the sub-period case, where the FFT peak is poorly defined. Bounds: `P >= 1e-9`,
+`|phi| <= 4 pi`. It returns `pi_gain = P/2` and `dpi_gain = dP/2` (the covariance error);
+the P/2 rule needs the response to be periodic in gain (linear drive) and does not depend on
+`phi`. On synthetic traces on the default grid (0..9900, 3 % noise) the pi gain is within
+3 % from 0.75 to several periods in the sweep (`tests/test_fitting_rabi.py`).
 
-Failure modes: no visible oscillation (fit returns a runaway period); more than a few
-periods in the span (the single start value locks onto the wrong period); f_ge off
-resonance (reduced, faster oscillation).
+Quality flags (printed as `[warn]` lines, returned as `flags` and the bitmask `flag_code`,
+stored by `AmplitudeRabiFF` as `fit_i_flag` / `fit_q_flag`; they never raise):
+
+| Bit | Condition | Meaning |
+|---|---|---|
+| 1 | `phi` more than 0.3 rad from 0 or pi | the fitted trace does not start at an extremum at zero gain |
+| 2 | `P/2` outside `[min gain, max gain]` | the pi pulse was not reached in the sweep |
+| 4 | fewer than 0.75 periods in the sweep | under-sampled: the period, and so the pi gain, is poorly constrained |
+
+Failure modes: no visible oscillation (the fit returns a runaway period, flags 2 and 4);
+too small `max_gain` (fewer than 0.75 periods, flag 4, raise `max_gain`); fewer than about 4
+gain points per period (below 2, the Nyquist limit, the period aliases); f_ge off
+resonance (reduced, faster oscillation; the fit still returns its P/2). Before this fit
+(2026-10), the single start `P = span` locked onto a wrong period from about 1.5 periods in
+the sweep, sometimes with a plausible in-range pi gain, and `qicklab.runs.fit_rabi_cosine`
+was a grid search that reported the global extremum (the 3 pi or 5 pi point) instead of
+`P/2`.
 
 ## Findings & notes
 
@@ -105,8 +127,8 @@ resonance (reduced, faster oscillation).
 - The principal-axis rotation in `AmplitudeRabiFF` is layered on top of the cavity-winding
   phase and stored as `iq_rotation_rad`; it does not replace the fit. `cavity_winding_*`
   is a frequency-dependent cable-delay correction, not a quadrature alignment.
-- The period start value `P = max(span, 1)` assumes at least about half an oscillation is
-  visible in the sweep.
+- Below about 0.75 periods in the sweep the fitted period is poorly constrained even when
+  the fit converges; the fit flags it (bit 4) rather than refusing.
 - A failed cosine fit (no visible oscillation) returns a runaway period; drawing its pi
   marker would autoscale the x axis to ~1e9, so `AmplitudeRabiFF_N` hides markers that fall
   outside the swept range and prints a warning.
@@ -123,8 +145,10 @@ resonance (reduced, faster oscillation).
   so ADC 1 content biases the rotation applied to ADC 0.
 - `AmplitudeRabiFF_N` plots the axis as float `linspace` values but plays `int(g)`
   (difference < 1 DAC unit), and draws the fit only at the data points.
-- `AmplitudeRabiFF_N` fit failures raise out of the display (after acquisition, before
-  saving).
+- `AmplitudeRabiFF_N` display errors other than the (guarded) fit raise out of the
+  display; the h5 and json are saved first and the error is then re-raised
+  (`finish(..., reraise=True)`, see
+  [architecture](../architecture.md#display-never-loses-the-record)).
 - Filename suffix `_Q{n}` uses `qubit_pulse`, whereas T1 and single shot use
   `qubit_readout`.
 - In the legacy runner the drive frequency was frozen when the runner was imported;

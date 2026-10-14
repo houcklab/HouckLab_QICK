@@ -13,6 +13,7 @@ import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
 from qicklab.analysis.spectroscopy import find_two_tone_peaks
+from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.rabi import AmplitudeRabiFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
@@ -370,10 +371,8 @@ def _run_single_shot_at_gain(
     threshold = float(inst.threshold[0])
     angle = float(inst.angle[0])
 
-    SingleShotProgramFFMUX.display(inst, data, plotDisp=False)
+    finish(SingleShotProgramFFMUX, inst, data, plotDisp=False)
     plt.close("all")  # hist_process always opens a figure; close it after saving
-    SingleShotProgramFFMUX.save_data(inst, data)
-    SingleShotProgramFFMUX.save_config(inst)
 
     return fid, threshold, angle, data, inst
 
@@ -697,9 +696,7 @@ def _stage_amplitude_rabi(
             outerFolder=auto_folder,
         )
         data = AmplitudeRabiFF.acquire(inst)
-        AmplitudeRabiFF.display(inst, data, plotDisp=False, figNum=10)
-        AmplitudeRabiFF.save_data(inst, data)
-        AmplitudeRabiFF.save_config(inst)
+        finish(AmplitudeRabiFF, inst, data, plotDisp=False, figNum=10)
 
         x_pts = np.array(data["data"]["x_pts"], dtype=float)
         avgi = np.array(data["data"]["avgi"][0][0], dtype=float)
@@ -1240,12 +1237,12 @@ def _stage_run_t1(
             outerFolder=auto_folder,
         )
         dT1 = T1FF.acquire(iT1)
-        T1FF.display(iT1, dT1, plotDisp=False, figNum=20)
+        display_error = finish(T1FF, iT1, dT1, plotDisp=False, figNum=20)
         plt.close("all")
-        T1FF.save_data(iT1, dT1)
-        T1FF.save_config(iT1)
 
         log.append(f"  T1 run {i + 1}/{repetitions} saved.")
+        if display_error is not None:
+            log.append(f"    display failed (record saved): {display_error!r}")
         time.sleep(5)
         soc.reset_gens()
 
@@ -1304,12 +1301,12 @@ def _stage_run_t2(
             outerFolder=auto_folder,
         )
         dT2R = T2R.acquire(iT2R)
-        T2R.display(iT2R, dT2R, plotDisp=False, figNum=21)
+        display_error = finish(T2R, iT2R, dT2R, plotDisp=False, figNum=21)
         plt.close("all")
-        T2R.save_data(iT2R, dT2R)
-        T2R.save_config(iT2R)
 
         log.append(f"  T2 run {i + 1}/{repetitions} saved.")
+        if display_error is not None:
+            log.append(f"    display failed (record saved): {display_error!r}")
         time.sleep(5)
         soc.reset_gens()
 
@@ -1375,23 +1372,32 @@ def _stage_run_t2e(
             outerFolder=auto_folder,
         )
         dT2E = T2EMUX.acquire(iT2E)
-        T2EMUX.display(iT2E, dT2E, plotDisp=False, figNum=22)
+        display_error = finish(T2EMUX, iT2E, dT2E, plotDisp=False, figNum=22)
         plt.close("all")
-        T2EMUX.save_data(iT2E, dT2E)
-        T2EMUX.save_config(iT2E)
 
         log.append(f"  T2E run {i + 1}/{repetitions} saved.")
+        if display_error is not None:
+            log.append(f"    display failed (record saved): {display_error!r}")
         time.sleep(5)
         soc.reset_gens()
 
 
-def _save_summary(auto_folder, timestamp, calibration, params, log):
-    """Write a timestamped plain-text summary of all calibrated parameters."""
+def _save_summary(
+    auto_folder, timestamp, calibration, params, log, stage_reached=None, error=None, announce=True
+):
+    """Write (or overwrite) the timestamped .txt + .json summary of the calibrated parameters.
+
+    Called after the calibration block, after each coherence stage and once more on exit
+    (also on failure), so `stage_reached` (last completed stage) and `error` (repr of the
+    exception that aborted the run, else None) say how far the run got.
+    """
     fname = os.path.join(auto_folder, f"auto_coherence_summary_{timestamp}.txt")
 
     lines = [
         "AutoCoherence calibration summary",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Stage reached: {stage_reached}",
+        f"Error: {error}",
         "",
         "─── Calibrated parameters ───────────────────────────────────────",
         f"  qubit_frequency  : {calibration.get('qubit_frequency', 'N/A')} MHz",
@@ -1417,6 +1423,8 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     # Also save as JSON for easy programmatic access
     summary_json = {
         "timestamp": timestamp,
+        "stage_reached": stage_reached,
+        "error": error,
         "calibration": {
             k: (v if not isinstance(v, np.floating) else float(v)) for k, v in calibration.items()
         },
@@ -1428,7 +1436,8 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     with open(os.path.join(auto_folder, f"auto_coherence_summary_{timestamp}.json"), "w") as fh:
         json.dump(summary_json, fh, indent=2)
 
-    print(f"[AutoCoherence] Summary saved to: {fname}")
+    if announce:
+        print(f"[AutoCoherence] Summary saved to: {fname}")
     return fname
 
 
@@ -1480,183 +1489,225 @@ def _run_auto_coherence(
         flattop_length=flattop_length,
     )
 
-    # Stage 1: Sweet-spot search
-    if params.get("skip_sweet_spot_search", False):
-        qubit_freq = qubit_freq_init
-        sweet_spot_voltage = float(yoko.query(":SOUR:LEV?")) if yoko is not None else None
-        peak_info = None
-        log.append("")
-        log.append("=" * 60)
-        log.append("STAGE 1 – Sweet-spot search SKIPPED (skip_sweet_spot_search=True)")
-        log.append("=" * 60)
-        log.append(f"  Using qubit_frequency from qubit_params: {qubit_freq:.6f} MHz")
-        log.append(f"  Holding yoko voltage at: {sweet_spot_voltage}")
-    else:
-        qubit_freq, sweet_spot_voltage, peak_info = _stage_sweet_spot_search(
-            soc=soc,
-            soccfg=soccfg,
-            cfg=base_cfg,
-            auto_folder=auto_folder,
-            qubit_freq_center=qubit_freq_init,
-            qubit_readout=qubit_readout,
-            params=params,
-            yoko=yoko,
-            log=log,
-        )
+    # filled stage by stage and written on every exit, so a failure never loses the
+    # calibration: docs/experiments/auto_coherence.md#outputs
+    calibration = {"flattop_length": flattop_length}
+    stage_reached = "start"
+    error = None
+    summary_file = None
+    try:
+        # Stage 1: Sweet-spot search
+        if params.get("skip_sweet_spot_search", False):
+            qubit_freq = qubit_freq_init
+            sweet_spot_voltage = float(yoko.query(":SOUR:LEV?")) if yoko is not None else None
+            peak_info = None
+            log.append("")
+            log.append("=" * 60)
+            log.append("STAGE 1 – Sweet-spot search SKIPPED (skip_sweet_spot_search=True)")
+            log.append("=" * 60)
+            log.append(f"  Using qubit_frequency from qubit_params: {qubit_freq:.6f} MHz")
+            log.append(f"  Holding yoko voltage at: {sweet_spot_voltage}")
+        else:
+            qubit_freq, sweet_spot_voltage, peak_info = _stage_sweet_spot_search(
+                soc=soc,
+                soccfg=soccfg,
+                cfg=base_cfg,
+                auto_folder=auto_folder,
+                qubit_freq_center=qubit_freq_init,
+                qubit_readout=qubit_readout,
+                params=params,
+                yoko=yoko,
+                log=log,
+            )
+        calibration["qubit_frequency"] = qubit_freq
+        calibration["sweet_spot_voltage"] = sweet_spot_voltage
+        stage_reached = "sweet_spot_search"
 
-    # Stage 1.5: Two-tone qubit-frequency calibration
-    if params.get("calibrate_qubit_freq", True):
-        qubit_freq, _ = _stage_calibrate_qubit_freq(
-            soc=soc,
-            soccfg=soccfg,
-            cfg=base_cfg,
-            auto_folder=auto_folder,
-            qubit_freq_center=qubit_freq,
-            qubit_readout=qubit_readout,
-            params=params,
-            log=log,
-        )
-    else:
-        log.append("")
-        log.append("STAGE 1.5 – Qubit-frequency calibration skipped (calibrate_qubit_freq=False)")
+        # Stage 1.5: Two-tone qubit-frequency calibration
+        if params.get("calibrate_qubit_freq", True):
+            qubit_freq, _ = _stage_calibrate_qubit_freq(
+                soc=soc,
+                soccfg=soccfg,
+                cfg=base_cfg,
+                auto_folder=auto_folder,
+                qubit_freq_center=qubit_freq,
+                qubit_readout=qubit_readout,
+                params=params,
+                log=log,
+            )
+        else:
+            log.append("")
+            log.append(
+                "STAGE 1.5 – Qubit-frequency calibration skipped (calibrate_qubit_freq=False)"
+            )
+        calibration["qubit_frequency"] = qubit_freq
+        stage_reached = "calibrate_qubit_freq"
 
-    # Stage 2: AmplitudeRabi
-    pi_gain, rabi_sigma = _stage_amplitude_rabi(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=base_cfg,
-        auto_folder=auto_folder,
-        qubit_freq=qubit_freq,
-        qubit_readout=qubit_readout,
-        sigma_initial=sigma_init,
-        flattop_length=flattop_length,
-        params=params,
-        log=log,
-    )
-
-    # Stage 2.5: Readout parameter optimisation
-    if params.get("auto_readout_opt", True):
-        opt_rl, opt_ao = _stage_optimize_readout(
+        # Stage 2: AmplitudeRabi
+        pi_gain, rabi_sigma = _stage_amplitude_rabi(
             soc=soc,
             soccfg=soccfg,
             cfg=base_cfg,
             auto_folder=auto_folder,
             qubit_freq=qubit_freq,
-            pi_gain=pi_gain,
-            sigma=rabi_sigma,
-            flattop_length=flattop_length,
             qubit_readout=qubit_readout,
+            sigma_initial=sigma_init,
+            flattop_length=flattop_length,
             params=params,
             log=log,
         )
-        # Propagate to Stage 3 (reads from params) and T1/T2/T2E (read from cfg)
-        params = {**params, "ss_readout_time": opt_rl, "ss_adc_offset": opt_ao}
-        base_cfg = base_cfg | {
-            "readout_length": opt_rl,
-            "adc_trig_offset": opt_ao,
-            "length": _readout_tone_length(base_cfg, opt_rl, opt_ao),
+        calibration["pi_gain"] = pi_gain  # Rabi estimate until Stage 3 replaces it
+        calibration["rabi_sigma"] = rabi_sigma
+        stage_reached = "amplitude_rabi"
+
+        # Stage 2.5: Readout parameter optimisation
+        if params.get("auto_readout_opt", True):
+            opt_rl, opt_ao = _stage_optimize_readout(
+                soc=soc,
+                soccfg=soccfg,
+                cfg=base_cfg,
+                auto_folder=auto_folder,
+                qubit_freq=qubit_freq,
+                pi_gain=pi_gain,
+                sigma=rabi_sigma,
+                flattop_length=flattop_length,
+                qubit_readout=qubit_readout,
+                params=params,
+                log=log,
+            )
+            # Propagate to Stage 3 (reads from params) and T1/T2/T2E (read from cfg)
+            params = {**params, "ss_readout_time": opt_rl, "ss_adc_offset": opt_ao}
+            base_cfg = base_cfg | {
+                "readout_length": opt_rl,
+                "adc_trig_offset": opt_ao,
+                "length": _readout_tone_length(base_cfg, opt_rl, opt_ao),
+            }
+        else:
+            log.append("")
+            log.append("STAGE 2.5 – Readout optimisation skipped (auto_readout_opt=False)")
+        stage_reached = "optimize_readout"
+
+        # Stage 3: SingleShot / extended pi & pi2 pulse optimisation
+        if params.get("extended_pi_pi2_opt", False):
+            pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_extended_pulse_opt(
+                soc=soc,
+                soccfg=soccfg,
+                cfg=base_cfg,
+                auto_folder=auto_folder,
+                qubit_freq=qubit_freq,
+                sigma=rabi_sigma,
+                flattop_length=flattop_length,
+                pi_gain_estimate=pi_gain,
+                qubit_readout=qubit_readout,
+                params=params,
+                log=log,
+            )
+        else:
+            pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = (
+                _stage_singleshot_optimize(
+                    soc=soc,
+                    soccfg=soccfg,
+                    cfg=base_cfg,
+                    auto_folder=auto_folder,
+                    qubit_freq=qubit_freq,
+                    sigma=rabi_sigma,
+                    flattop_length=flattop_length,
+                    pi_gain_estimate=pi_gain,
+                    qubit_readout=qubit_readout,
+                    params=params,
+                    log=log,
+                )
+            )
+
+        stage_reached = "singleshot_optimize"
+        calibration = {
+            "qubit_frequency": qubit_freq,
+            "pi_gain": pi_gain_opt,
+            "pi2_gain": pi2_gain_opt,
+            "rabi_sigma": rabi_sigma,
+            "flattop_length": flattop_length,
+            "fidelity": fidelity,
+            "ss_threshold": ss_threshold,
+            "ss_angle": ss_angle,
+            "sweet_spot_voltage": sweet_spot_voltage,
         }
-    else:
+
         log.append("")
-        log.append("STAGE 2.5 – Readout optimisation skipped (auto_readout_opt=False)")
+        log.append("─── Calibration complete ─────────────────────────────────────────")
+        for k, v in calibration.items():
+            log.append(f"  {k:<25}: {v}")
+        _save_summary(
+            auto_folder, timestamp, calibration, params, log, stage_reached, announce=False
+        )
 
-    # Stage 3: SingleShot / extended pi & pi2 pulse optimisation
-    if params.get("extended_pi_pi2_opt", False):
-        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_extended_pulse_opt(
+        # Stage 4: T1
+        _stage_run_t1(
             soc=soc,
             soccfg=soccfg,
             cfg=base_cfg,
             auto_folder=auto_folder,
             qubit_freq=qubit_freq,
+            pi_gain=pi_gain_opt,
             sigma=rabi_sigma,
             flattop_length=flattop_length,
-            pi_gain_estimate=pi_gain,
             qubit_readout=qubit_readout,
             params=params,
             log=log,
         )
+        stage_reached = "T1"
+        _save_summary(
+            auto_folder, timestamp, calibration, params, log, stage_reached, announce=False
+        )
+
+        # Stage 5: T2 Ramsey
+        _stage_run_t2(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq=qubit_freq,
+            pi_gain=pi_gain_opt,
+            pi2_gain=pi2_gain_opt,
+            sigma=rabi_sigma,
+            flattop_length=flattop_length,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
+        )
+        stage_reached = "T2"
+        _save_summary(
+            auto_folder, timestamp, calibration, params, log, stage_reached, announce=False
+        )
+
+        # Stage 6: T2Echo
+        _stage_run_t2e(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq=qubit_freq,
+            pi_gain=pi_gain_opt,
+            pi2_gain=pi2_gain_opt,
+            sigma=rabi_sigma,
+            flattop_length=flattop_length,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
+        )
+        stage_reached = "T2E"
+    except BaseException as exc:
+        error = repr(exc)
+        log.append("")
+        log.append(f"Run aborted after stage {stage_reached!r}: {error}")
+        raise
     else:
-        pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_singleshot_optimize(
-            soc=soc,
-            soccfg=soccfg,
-            cfg=base_cfg,
-            auto_folder=auto_folder,
-            qubit_freq=qubit_freq,
-            sigma=rabi_sigma,
-            flattop_length=flattop_length,
-            pi_gain_estimate=pi_gain,
-            qubit_readout=qubit_readout,
-            params=params,
-            log=log,
+        stage_reached = "complete"
+        log.append("")
+        log.append(f"Run completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    finally:
+        summary_file = _save_summary(
+            auto_folder, timestamp, calibration, params, log, stage_reached, error
         )
-
-    calibration = {
-        "qubit_frequency": qubit_freq,
-        "pi_gain": pi_gain_opt,
-        "pi2_gain": pi2_gain_opt,
-        "rabi_sigma": rabi_sigma,
-        "flattop_length": flattop_length,
-        "fidelity": fidelity,
-        "ss_threshold": ss_threshold,
-        "ss_angle": ss_angle,
-        "sweet_spot_voltage": sweet_spot_voltage,
-    }
-
-    log.append("")
-    log.append("─── Calibration complete ─────────────────────────────────────────")
-    for k, v in calibration.items():
-        log.append(f"  {k:<25}: {v}")
-
-    # Stage 4: T1
-    _stage_run_t1(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=base_cfg,
-        auto_folder=auto_folder,
-        qubit_freq=qubit_freq,
-        pi_gain=pi_gain_opt,
-        sigma=rabi_sigma,
-        flattop_length=flattop_length,
-        qubit_readout=qubit_readout,
-        params=params,
-        log=log,
-    )
-
-    # Stage 5: T2 Ramsey
-    _stage_run_t2(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=base_cfg,
-        auto_folder=auto_folder,
-        qubit_freq=qubit_freq,
-        pi_gain=pi_gain_opt,
-        pi2_gain=pi2_gain_opt,
-        sigma=rabi_sigma,
-        flattop_length=flattop_length,
-        qubit_readout=qubit_readout,
-        params=params,
-        log=log,
-    )
-
-    # Stage 6: T2Echo
-    _stage_run_t2e(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=base_cfg,
-        auto_folder=auto_folder,
-        qubit_freq=qubit_freq,
-        pi_gain=pi_gain_opt,
-        pi2_gain=pi2_gain_opt,
-        sigma=rabi_sigma,
-        flattop_length=flattop_length,
-        qubit_readout=qubit_readout,
-        params=params,
-        log=log,
-    )
-
-    log.append("")
-    log.append(f"Run completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    summary_file = _save_summary(auto_folder, timestamp, calibration, params, log)
 
     print("[AutoCoherence] All done.")
     print(f"  qubit_frequency  = {qubit_freq:.6f} MHz")

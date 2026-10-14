@@ -1,5 +1,6 @@
 """Amplitude Rabi run."""
 
+from qicklab.core.experiment import finish
 from qicklab.experiments.rabi import AmplitudeRabiFF, AmplitudeRabiFF_N
 
 
@@ -44,9 +45,9 @@ def run_amplitude_rabi(ctx, params):
             outerFolder=ctx.outerFolder,
         )
         dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
-        AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2, fit=fit)
-        AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
-        AmplitudeRabiFF_N.save_config(iAmpRabi)
+        finish(
+            AmplitudeRabiFF_N, iAmpRabi, dAmpRabi, reraise=True, plotDisp=True, figNum=2, fit=fit
+        )
     else:
         iAmpRabi = AmplitudeRabiFF(
             path="AmplitudeRabi",
@@ -56,6 +57,4 @@ def run_amplitude_rabi(ctx, params):
             outerFolder=ctx.outerFolder,
         )
         dAmpRabi = AmplitudeRabiFF.acquire(iAmpRabi)
-        AmplitudeRabiFF.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2, fit=fit)
-        AmplitudeRabiFF.save_data(iAmpRabi, dAmpRabi)
-        AmplitudeRabiFF.save_config(iAmpRabi)
+        finish(AmplitudeRabiFF, iAmpRabi, dAmpRabi, reraise=True, plotDisp=True, figNum=2, fit=fit)

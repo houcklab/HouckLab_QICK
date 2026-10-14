@@ -1,6 +1,7 @@
 """Qubit spectroscopy runs: two-tone spec, gain x length sweep and transmission + qubit spec."""
 
 from qicklab.core.config import sanity_dump
+from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 
 
@@ -27,17 +28,17 @@ def run_two_tone_spec(ctx, params):
         path="QubitSpecFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-    QubitSpecSliceFF.display(
+    finish(
+        QubitSpecSliceFF,
         Instance_specSlice,
         data_specSlice,
+        reraise=True,
         plotDisp=display,
         figNum=2,
         min_sep=min_sep,
         fit_window_mhz=0.5,
         prominent_ratio=0.1,
     )
-    QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
-    QubitSpecSliceFF.save_config(Instance_specSlice)
 
 
 def run_spec_gain_length_sweep(ctx, params):
@@ -77,7 +78,8 @@ def run_spec_gain_length_sweep(ctx, params):
                 outerFolder=ctx.outerFolder,
             )
             _data = QubitSpecSliceFF.acquire(_inst)
-            QubitSpecSliceFF.display(
+            finish(
+                QubitSpecSliceFF,
                 _inst,
                 _data,
                 plotDisp=_disp,
@@ -86,8 +88,6 @@ def run_spec_gain_length_sweep(ctx, params):
                 fit_window_mhz=_fw,
                 prominent_ratio=_pr,
             )
-            QubitSpecSliceFF.save_data(_inst, _data)
-            QubitSpecSliceFF.save_config(_inst)
 
 
 def run_trans_qubit_spec(ctx, params, T1T2_params):
@@ -104,7 +104,8 @@ def run_trans_qubit_spec(ctx, params, T1T2_params):
             path="QubitSpecFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-        QubitSpecSliceFF.display(
+        finish(
+            QubitSpecSliceFF,
             Instance_specSlice,
             data_specSlice,
             plotDisp=False,
@@ -113,5 +114,3 @@ def run_trans_qubit_spec(ctx, params, T1T2_params):
             fit_window_mhz=params["fit_window_mhz"],
             prominent_ratio=params["prominent_ratio"],
         )
-        QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
-        QubitSpecSliceFF.save_config(Instance_specSlice)

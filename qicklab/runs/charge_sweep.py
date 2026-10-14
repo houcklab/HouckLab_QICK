@@ -8,6 +8,7 @@ from scipy.signal import find_peaks
 
 from qicklab.analysis.iq import project_iq_signal
 from qicklab.core.config import sanity_dump
+from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.transmission import CavitySpecFF
 from qicklab.hardware.yoko import ramp_to
@@ -56,7 +57,8 @@ def run_charge_sweep(ctx, Spec_relevant_params):
             path="QubitSpecFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-        QubitSpecSliceFF.display(
+        finish(
+            QubitSpecSliceFF,
             Instance_specSlice,
             data_specSlice,
             plotDisp=False,
@@ -65,8 +67,6 @@ def run_charge_sweep(ctx, Spec_relevant_params):
             fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
             prominent_ratio=Spec_relevant_params["prominent_ratio"],
         )
-        QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
-        QubitSpecSliceFF.save_config(Instance_specSlice)
         x_pts = np.array(data_specSlice["data"]["x_pts"])
         avgi = np.array(data_specSlice["data"]["avgi"][0][0])
         avgq = np.array(data_specSlice["data"]["avgq"][0][0])
@@ -218,9 +218,7 @@ def run_charge_transmission_sweep(ctx, params=None):
                 outerFolder=ctx.outerFolder,
             )
             data_trans = CavitySpecFF.acquire(Instance_trans)
-            CavitySpecFF.display(Instance_trans, data_trans, plotDisp=False, figNum=20, fit=do_fit)
-            CavitySpecFF.save_data(Instance_trans, data_trans)
-            CavitySpecFF.save_config(Instance_trans)
+            finish(CavitySpecFF, Instance_trans, data_trans, plotDisp=False, figNum=20, fit=do_fit)
 
             fpts = np.asarray(data_trans["data"]["fpts"], dtype=float)
             avgi = np.asarray(data_trans["data"]["results"][0][0][0], dtype=float)

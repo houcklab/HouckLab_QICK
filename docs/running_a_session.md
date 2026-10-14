@@ -198,6 +198,11 @@ blocks, figures are only written to the step's png. A planned fix commit moves t
 `Session(interactive_plots=False)`, which keeps the same non-blocking default. With `True`, a
 step whose display is on will open a window and wait for you to close it; do not combine that
 with long unattended loops (`undriven_single_shot` with many repeats, `interleaved_coherence`).
+Whatever the display does (a fit raises, or you Ctrl-C a blocking window), the step's h5 and
+json are still written. A display error inside a repetition loop is printed and the loop goes
+on; a single run re-raises it after saving. A Ctrl-C is never swallowed: after the save it
+stops the step, and the loop with it
+([architecture](architecture.md#display-never-loses-the-record)).
 
 ## What gets logged
 

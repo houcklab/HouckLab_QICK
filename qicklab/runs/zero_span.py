@@ -7,6 +7,7 @@ import numpy as np
 from qicklab.analysis.spectroscopy import pick_parity_drive_freq
 from qicklab.analysis.zero_span import analyze_parity_run
 from qicklab.core.acquisition import chunked_acquire
+from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.zero_span_parity import ZeroSpanParity
 from qicklab.runs.single_shot import get_apriori_separator_from_singleshot
@@ -49,19 +50,21 @@ def run_zero_span_parity(ctx, p):
             outerFolder=zsp_outerFolder,
         )
         data_paritySpec = Instance_paritySpec.acquire()
-        Instance_paritySpec.display(
+        finish(
+            QubitSpecSliceFF,
+            Instance_paritySpec,
             data_paritySpec,
+            reraise=True,
             plotDisp=False,
             figNum=2,
             min_sep=p["ZSP_ParitySpec_params"]["min_sep_MHz"],
             fit_window_mhz=p["ZSP_ParitySpec_params"]["fit_window_mhz"],
             prominent_ratio=p["ZSP_ParitySpec_params"]["prominent_ratio"],
         )
-        Instance_paritySpec.save_data(data_paritySpec)
-        Instance_paritySpec.save_config()
 
         chosen = pick_parity_drive_freq(
-            data_paritySpec, which=p["ZSP_ParityFreqs_Cached"]["which_to_park"]
+            data_paritySpec,
+            which=p["ZSP_ParityFreqs_Cached"]["which_to_park"],
         )
         p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"] = chosen["lower"]
         p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"] = chosen["higher"]

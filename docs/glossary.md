@@ -71,7 +71,8 @@ CSTQ03 parameters. Refactor commits must reproduce it. See [architecture](archit
 
 ### ExperimentClass
 Base class of every experiment wrapper (`qicklab.core.experiment`): file naming,
-`acquire` / `display` / `save_data` / `save_config`.
+`acquire` / `display` / `save_data` / `save_config`; run functions call the last three
+through `finish` ([architecture](architecture.md#display-never-loses-the-record)).
 
 ### outerFolder, path
 `outerFolder` = `Device.folder(qubit_readout)`; `path` = sub-folder and file stem of an

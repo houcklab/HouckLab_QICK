@@ -11,6 +11,7 @@ from qicklab.analysis.iq import classify_and_average_iq, kmeans_split
 from qicklab.analysis.modified_ramsey import analyze_modified_ramsey_record, compare_parity_controls
 from qicklab.analysis.plotting import iq_separator_geometry, plot_separator, set_iq_limits
 from qicklab.analysis.readout import calibrate_readout_from_labeled_shots
+from qicklab.core.experiment import finish
 from qicklab.core.io import save_cycle_summary, save_record, timestamp
 from qicklab.experiments.modified_ramsey import (
     ModifiedRamsey,
@@ -140,9 +141,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
             outerFolder=ctx.outerFolder,
         )
         data_mr = ModifiedRamsey.acquire(Instance_mr)
-        ModifiedRamsey.display(Instance_mr, data_mr, plotDisp=False, figNum=10)
-        ModifiedRamsey.save_data(Instance_mr, data_mr)
-        ModifiedRamsey.save_config(Instance_mr)
+        finish(ModifiedRamsey, Instance_mr, data_mr, plotDisp=False, figNum=10)
 
         raw_i_mr = np.ravel(np.array(data_mr["data"]["shots_i"]))
         raw_q_mr = np.ravel(np.array(data_mr["data"]["shots_q"]))
@@ -539,9 +538,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 outerFolder=ctx.outerFolder,
             )
             data_mrc = ModifiedRamsey.acquire(Instance_mrc)
-            ModifiedRamsey.display(Instance_mrc, data_mrc, plotDisp=False, figNum=11)
-            ModifiedRamsey.save_data(Instance_mrc, data_mrc)
-            ModifiedRamsey.save_config(Instance_mrc)
+            finish(ModifiedRamsey, Instance_mrc, data_mrc, plotDisp=False, figNum=11)
 
             raw_i_mrc = np.ravel(np.array(data_mrc["data"]["shots_i"]))
             raw_q_mrc = np.ravel(np.array(data_mrc["data"]["shots_q"]))

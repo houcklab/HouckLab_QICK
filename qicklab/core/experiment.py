@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import traceback
 
 import h5py
 import numpy as np
@@ -157,3 +158,30 @@ class ExperimentClass:
         with self.datafile() as f:
             for k, d in data.items():
                 f.add(k, np.array(d))
+
+
+def finish(cls, inst, data, *, reraise=False, **display_kw):
+    """Display, then always save: ``cls.display(inst, data, **display_kw)``, ``save_data``, ``save_config``.
+
+    A display that raises (a fit on noise-only data) or is interrupted (Ctrl-C on a blocking
+    plot window) no longer loses the record: the traceback is printed, ``repr(exc)`` is stored
+    on ``inst.display_error`` and the h5 + json are still written. Display stays first because
+    some displays write fit fields into ``data``; save_config stays last because some save_data
+    overrides rename ``inst.fname``. ``reraise=True`` re-raises the display error after saving
+    (single runs); the default lets repetition loops continue. ``cls`` is explicit so a call
+    site naming a parent class keeps calling that class's methods. Returns the display
+    exception, or None. See docs/architecture.md#display-never-loses-the-record.
+    """
+    error = None
+    try:
+        cls.display(inst, data, **display_kw)
+    except Exception as exc:
+        traceback.print_exc()
+        inst.display_error = repr(exc)
+        error = exc
+    finally:
+        cls.save_data(inst, data)
+        cls.save_config(inst)
+    if reraise and error is not None:
+        raise error
+    return error

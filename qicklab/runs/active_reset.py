@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+from qicklab.core.experiment import finish
 from qicklab.core.io import timestamp
 from qicklab.experiments.active_reset_verify import ActiveResetVerify
 from qicklab.runs.single_shot import get_apriori_separator_from_singleshot
@@ -143,9 +144,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
             outerFolder=ctx.outerFolder,
         )
         data_arv = ActiveResetVerify.acquire(inst_arv)
-        ActiveResetVerify.display(inst_arv, data_arv, plotDisp=False, figNum=20)
-        ActiveResetVerify.save_data(inst_arv, data_arv)
-        ActiveResetVerify.save_config(inst_arv)
+        finish(ActiveResetVerify, inst_arv, data_arv, plotDisp=False, figNum=20)
         arv_results[arv_label] = np.asarray(data_arv["data"]["p_ground"])
         print(
             f"[ActiveResetVerify] {arv_label}: P(|g>) per read = "

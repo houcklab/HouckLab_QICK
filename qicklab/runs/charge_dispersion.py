@@ -11,6 +11,7 @@ from qicklab.analysis.spectroscopy import (
     choose_two_tone_freqs_from_lorentz_or_peaks,
     save_two_tone_plot,
 )
+from qicklab.core.experiment import finish
 from qicklab.core.io import save_cycle_summary, save_record, timestamp
 from qicklab.experiments.charge_dispersion import ChargeDispersion, ChargeDispersionQuasiCW
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
@@ -80,7 +81,8 @@ def run_two_tone_charge_dispersion_quasicw(
                 outerFolder=ctx.outerFolder,
             )
             data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-            QubitSpecSliceFF.display(
+            finish(
+                QubitSpecSliceFF,
                 Instance_specSlice,
                 data_specSlice,
                 plotDisp=False,
@@ -89,8 +91,6 @@ def run_two_tone_charge_dispersion_quasicw(
                 fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
                 prominent_ratio=Spec_relevant_params["prominent_ratio"],
             )
-            QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
-            QubitSpecSliceFF.save_config(Instance_specSlice)
 
             x_pts = np.array(data_specSlice["data"]["x_pts"])
             avgi = np.array(data_specSlice["data"]["avgi"][0][0])
@@ -475,6 +475,4 @@ def run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params):
             outerFolder=ctx.outerFolder,
         )
         dCD = ChargeDispersion.acquire(iCD)
-        ChargeDispersion.display(iCD, dCD, plotDisp=True, figNum=5)
-        ChargeDispersion.save_data(iCD, dCD)
-        ChargeDispersion.save_config(iCD)
+        finish(ChargeDispersion, iCD, dCD, plotDisp=True, figNum=5)

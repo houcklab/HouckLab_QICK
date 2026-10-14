@@ -121,4 +121,6 @@ exponential anyway.
 - `x_pts = start + i * step` matches the programmed total wait only for `start = 0` and a
   quantised step (both guaranteed by the recipe).
 - If the cfg contains `rotation_angle` but not `min_max`, acquire raises `KeyError`.
-- The fit is not guarded; a failure raises before saving.
+- The fit is not guarded, but a failure is caught by `finish` after display: `display_error`
+  is set, the h5 and json are still saved and the next repetition runs
+  ([architecture](../architecture.md#display-never-loses-the-record)).

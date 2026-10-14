@@ -97,6 +97,23 @@ file stem. `os.makedirs` runs in `__init__`, so constructing an experiment creat
 - Scripts are intentionally not embedded in the h5. An automatic save-script feature existed
   and was removed: "caused more trouble than convenience" (Ge Yang, legacy CoreLib comment).
 
+### Display never loses the record
+
+Run functions do not call `display`, `save_data` and `save_config` one after another; they
+call `finish(Cls, inst, data, reraise=..., **display_kw)` from `qicklab.core.experiment`
+right after `acquire`. It runs `Cls.display(inst, data, **display_kw)` and then, in a
+`finally`, `Cls.save_data(inst, data)` and `Cls.save_config(inst)`. The order is unchanged
+(some displays write fit fields into `data`, and T1/T2E `save_data` renames `fname`, so
+`save_config` must come last), but a display that raises (a fit on noise-only data) or is
+interrupted (Ctrl-C on a blocking plot window) no longer throws away the h5 and json: the
+traceback is printed and `repr(exc)` is stored on `inst.display_error`. Inside repetition
+loops (`t1`, `t2r`, `t2e` and their combinations, sweeps, charge/MR cycles, AutoCoherence
+stages) the error is not re-raised, so the loop continues. Single runs (`transmission_*`,
+`two_tone_spec`, `amplitude_rabi`, `chi_shift`, `single_shot`, the optimisers, the
+zero-span recalibration spec) pass `reraise=True`: the error still stops the step, after the
+files are on disk. A Ctrl-C is never swallowed. `finish` takes the class explicitly, so a
+call site that names a parent class keeps calling that class's methods.
+
 ## How configuration flows
 
 ```
@@ -215,7 +232,8 @@ has a "Known issues" section.
    hand. Gaussian envelopes are `4*sigma` long.
 2. Run function: add `fn(ctx, *groups, **params)` in the matching `qicklab/runs/<area>.py`.
    Build the experiment cfg from `ctx.working_config(...)`; do not mutate the caller's dicts.
-   Use the four-call pattern (`acquire`, `display`, `save_data`, `save_config`).
+   Call `acquire`, then `finish(Cls, inst, data, ...)` for display + save
+   ([display never loses the record](#display-never-loses-the-record)).
 3. Recipe: add a keyword-only function to `qicklab/runs/recipes.py` with explicit parameters,
    snake_case names, defaults and a one-line doc each. It returns the legacy-keyed dict the run
    function consumes and a `Step(name, fn, regime, needs, params)`. Device-dependent values

@@ -93,7 +93,7 @@ separate, reviewed commits.
 | Zero-span controls C/D ineffective (`branch_sign_flip` never true) | probe / branch frequency changed without rebuilding the program **(legacy bug)** | treat C/D as not run |
 | Zero-span environment sweep writes negative `pulse_gain` | "power_dB" values written as DAC gain **(legacy bug)** | do not use until fixed |
 | Zero-span analysis crashes with `window_us` < 2 us | default `step_us = window_us // 2` is 0 | pass `step_us` |
-| A long interleaved loop stopped early | a failing T1/T2 step aborts the whole loop | restart; check the last files |
+| A long interleaved loop stopped early | an acquire/hardware error or Ctrl-C in any step aborts the whole loop (a display/fit error does not: it is printed and the loop goes on) | restart; check the last files |
 
 ## TWPA scripts
 

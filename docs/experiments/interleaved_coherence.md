@@ -109,8 +109,10 @@ arrays).
 
 ## Known issues
 
-- An exception in any sub-step aborts the whole loop (no per-step retry). The session
-  config is restored on the way out.
+- A display or fit error inside a sub-step (T1, T2R, T2E, undriven single shot) does not
+  abort: that record is saved, the traceback printed and the loop goes on
+  ([architecture](../architecture.md#display-never-loses-the-record)). Any other exception (acquire, hardware) or a Ctrl-C still
+  aborts the whole loop (no per-step retry). The session config is restored on the way out.
 - T1, T2R and T2E each sleep 10 s after their record, so a cycle has at least 30 s of idle
   time (10 s per enabled coherence sub-step).
 - The legacy undriven defaults are `Shots = 1,000,000` at `relax_delay = 300` us, i.e.

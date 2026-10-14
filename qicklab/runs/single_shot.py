@@ -4,6 +4,7 @@ import time
 
 import numpy as np
 
+from qicklab.core.experiment import finish
 from qicklab.experiments.readout_optimize import QubitPulseOpt_wSingleShotFF, ReadOpt_wSingleShotFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 from qicklab.experiments.t1_single_shot import T1_SS
@@ -72,9 +73,7 @@ def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
     )
 
     data_ss = SingleShotProgramFFMUX.acquire(inst_ss)
-    SingleShotProgramFFMUX.display(inst_ss, data_ss, plotDisp=False)
-    SingleShotProgramFFMUX.save_data(inst_ss, data_ss)
-    SingleShotProgramFFMUX.save_config(inst_ss)
+    finish(SingleShotProgramFFMUX, inst_ss, data_ss, reraise=True, plotDisp=False)
 
     d = data_ss["data"]
 
@@ -118,11 +117,12 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
                 soccfg=ctx.soccfg,
             )
             data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
-            SingleShotProgramFFMUX.display(
-                Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=False
+            finish(
+                SingleShotProgramFFMUX,
+                Instance_SingleShotProgram,
+                data_SingleShotProgram,
+                plotDisp=False,
             )
-            SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
-            SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
             angle = data_SingleShotProgram["data"]["angle"][0]
             threshold = data_SingleShotProgram["data"]["threshold"][0]
         else:
@@ -143,9 +143,7 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
             path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
         dT1 = T1_SS.acquire(iT1, angle=angle, threshold=threshold)
-        T1_SS.display(iT1, dT1, plotDisp=False, figNum=2)
-        T1_SS.save_data(iT1, dT1)
-        T1_SS.save_config(iT1)
+        finish(T1_SS, iT1, dT1, plotDisp=False, figNum=2)
 
         time.sleep(10)
         ctx.soc.reset_gens()
@@ -160,12 +158,13 @@ def run_single_shot(ctx, SS_params):
         path="SingleShot", outerFolder=ctx.outerFolder, cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg
     )
     data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
-    SingleShotProgramFFMUX.display(
-        Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True
+    finish(
+        SingleShotProgramFFMUX,
+        Instance_SingleShotProgram,
+        data_SingleShotProgram,
+        reraise=True,
+        plotDisp=True,
     )
-
-    SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
-    SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
     print("Angle: ", data_SingleShotProgram["data"]["angle"][0])
     print("threshold: ", data_SingleShotProgram["data"]["threshold"][0])
 
@@ -210,9 +209,7 @@ def run_undriven_single_shot(ctx, US_params=None):
         )
         data = UndrivenSingleShot.acquire(inst)
         # only the last pass on screen: plotDisp blocks until the window is closed
-        UndrivenSingleShot.display(inst, data, plotDisp=plot_disp and k == n_repeat - 1)
-        UndrivenSingleShot.save_data(inst, data)
-        UndrivenSingleShot.save_config(inst)
+        finish(UndrivenSingleShot, inst, data, plotDisp=plot_disp and k == n_repeat - 1)
         runs.append(data)
     return runs
 
@@ -242,12 +239,13 @@ def run_readout_optimize(ctx, SS_R_params):
         soccfg=ctx.soccfg,
     )
     data_SingleShotProgramOptimize = ReadOpt_wSingleShotFF.acquire(Instance_SingleShotOptimize)
-    ReadOpt_wSingleShotFF.display(
-        Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True
+    finish(
+        ReadOpt_wSingleShotFF,
+        Instance_SingleShotOptimize,
+        data_SingleShotProgramOptimize,
+        reraise=True,
+        plotDisp=True,
     )
-
-    ReadOpt_wSingleShotFF.save_data(Instance_SingleShotOptimize, data_SingleShotProgramOptimize)
-    ReadOpt_wSingleShotFF.save_config(Instance_SingleShotOptimize)
 
 
 def run_qubit_optimize(ctx, SS_Q_params, SS_params):
@@ -287,12 +285,11 @@ def run_qubit_optimize(ctx, SS_Q_params, SS_params):
     data_SingleShotProgramOptimize = QubitPulseOpt_wSingleShotFF.acquire(
         Instance_SingleShotOptimize, Qubit_Sweep_Index=Qubit_Pulse_Index
     )
-    QubitPulseOpt_wSingleShotFF.display(
-        Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True
+    finish(
+        QubitPulseOpt_wSingleShotFF,
+        Instance_SingleShotOptimize,
+        data_SingleShotProgramOptimize,
+        reraise=True,
+        plotDisp=True,
     )
     print(exp_parameters)
-
-    QubitPulseOpt_wSingleShotFF.save_data(
-        Instance_SingleShotOptimize, data_SingleShotProgramOptimize
-    )
-    QubitPulseOpt_wSingleShotFF.save_config(Instance_SingleShotOptimize)
