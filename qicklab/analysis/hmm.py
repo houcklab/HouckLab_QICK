@@ -282,6 +282,57 @@ def _single_gaussian_loglik(v):
     )
 
 
+def _iid_mixture_loglik(le):
+    """
+    Log likelihood of the i.i.d. limit of the HMM: every sample independently
+    drawn from state 0 or state 1 with the SAME emissions, no temporal
+    correlation. The state-1 weight is always maximised over (0, 1) by a
+    bounded 1-D search, also for a symmetric HMM: a weight fixed at 1/2 is
+    misspecified whenever P(e) != 1/2 (T1 decay during tau, a mapping offset),
+    and the symmetric HMM would then beat it without any switching.
+    Returns (loglik, weight_state1).
+    """
+    le0, le1 = le[:, 0], le[:, 1]
+
+    def nll(w):
+        return -float(np.sum(np.logaddexp(math.log1p(-w) + le0, math.log(w) + le1)))
+
+    opt = optimize.minimize_scalar(
+        nll, bounds=(1e-12, 1.0 - 1e-12), method="bounded", options={"xatol": 1e-10}
+    )
+    w = float(opt.x)
+    return -float(opt.fun), w
+
+
+def _iid_gaussian_mixture_refit(v, spec, w0, bounds):
+    """
+    i.i.d. null for fit_emissions=True: a two-Gaussian mixture with its OWN
+    maximum-likelihood weight, means and sigmas, started from the HMM's refit
+    emissions and the fixed-emission weight w0. A null evaluated at the HMM's
+    emissions would be understated. Never returns less than the starting point.
+    Returns (loglik, weight_state1).
+    """
+    w0 = float(np.clip(w0, 1e-9, 1.0 - 1e-9))
+    x0 = [
+        math.log(w0 / (1.0 - w0)),
+        spec["mu0"],
+        spec["mu1"],
+        math.log(spec["sigma0"]),
+        math.log(spec["sigma1"]),
+    ]
+
+    def nll(x):
+        lw1 = -float(np.logaddexp(0.0, -x[0]))
+        lw0 = -float(np.logaddexp(0.0, x[0]))
+        le = _log_emissions(v, x[1], x[2], math.exp(x[3]), math.exp(x[4]))
+        return -float(np.sum(np.logaddexp(lw0 + le[:, 0], lw1 + le[:, 1])))
+
+    nll0 = nll(x0)
+    opt = optimize.minimize(nll, x0, method="L-BFGS-B", bounds=[(-30.0, 30.0)] + bounds)
+    x = opt.x if (np.all(np.isfinite(opt.x)) and float(opt.fun) <= nll0) else np.asarray(x0)
+    return -float(nll(x)), float(1.0 / (1.0 + math.exp(-x[0])))
+
+
 def fit_two_state_hmm(
     v,
     dt_s,
@@ -295,6 +346,7 @@ def fit_two_state_hmm(
     min_emission_snr=0.7,
     min_transitions=10,
     min_loglik_gain=10.0,
+    max_mixing=1.0,
     compute_viterbi=True,
 ):
     """
@@ -322,8 +374,16 @@ def fit_two_state_hmm(
     n_boot : int
         Parametric-bootstrap resamples for rate CIs (0 = Hessian errors only).
     seed : int, bootstrap RNG seed (deterministic).
-    min_emission_snr, min_transitions, min_loglik_gain :
+    min_emission_snr, min_transitions, min_loglik_gain, max_mixing :
         identifiability gates (see "identifiable"/"unidentifiable_reasons").
+        min_loglik_gain is applied both to the gain over one Gaussian
+        (delta_loglik: are there two readout levels?) and to the gain over
+        the i.i.d. mixture null with the same emissions and no temporal
+        correlation (delta_loglik_iid: is there switching?). The null's
+        mixture weight is always free, also for symmetric=True; with
+        fit_emissions=True its emissions are refit too. max_mixing
+        bounds (gamma01 + gamma10) * median(dt): above it the chain decorrelates
+        between samples and switching is unresolved at this cadence.
 
     Returns
     -------
@@ -339,6 +399,17 @@ def fit_two_state_hmm(
       gamma_boot_ci           : dict of 16/50/84 percentiles per rate
                                 (only when n_boot > 0)
       loglik, loglik_single_gaussian, delta_loglik
+                              : delta_loglik (vs one Gaussian) tests readout
+                                bimodality only; it cannot see switching
+      loglik_iid, delta_loglik_iid
+                              : i.i.d. mixture null (same emissions, or its
+                                own refit ones if fit_emissions; free weight
+                                even if symmetric) and the HMM gain over it;
+                                this is the switching evidence. Can be < 0
+                                when a symmetric HMM is misspecified
+      iid_weight_state1       : mixture weight of the i.i.d. null
+      mixing_per_step         : (gamma01 + gamma10) * median(dt), the decay
+                                exponent of the state correlation per sample
       posteriors              : (N, 2) smoothed posteriors (from the fit point)
       posterior_ambiguity     : mean(1 - max posterior); ~0 = confident,
                                 ~0.5 = coin toss
@@ -430,6 +501,10 @@ def fit_two_state_hmm(
         "loglik": float("nan"),
         "loglik_single_gaussian": _single_gaussian_loglik(v),
         "delta_loglik": float("nan"),
+        "loglik_iid": float("nan"),
+        "delta_loglik_iid": float("nan"),
+        "iid_weight_state1": float("nan"),
+        "mixing_per_step": float("nan"),
         "posteriors": None,
         "posterior_ambiguity": float("nan"),
         "viterbi_path": None,
@@ -473,6 +548,7 @@ def fit_two_state_hmm(
         span = abs(mu1 - mu0) + 4 * pooled
         bounds += [(min(mu0, mu1) - span, max(mu0, mu1) + span)] * 2
         bounds += [(math.log(pooled * 1e-3), math.log(pooled * 1e3))] * 2
+        em_bounds = bounds[n_rates:]
         opt = optimize.minimize(nll, x0, method="L-BFGS-B", bounds=bounds)
         log_rates = opt.x[:n_rates]
         mu0, mu1 = float(opt.x[n_rates]), float(opt.x[n_rates + 1])
@@ -566,12 +642,34 @@ def fit_two_state_hmm(
         xi = np.exp(log_xi - np.logaddexp.reduce(log_xi.ravel()))
         exp_trans += float(xi[0, 1] + xi[1, 0])
 
+    # delta_ll (vs one Gaussian) only measures readout bimodality: i.i.d.
+    # g/e shots with no parity information beat it by thousands. The switching
+    # evidence is the gain over the i.i.d. limit with the same emissions
+    # (delta_ll_iid), plus a rate resolved at the sampling cadence.
     delta_ll = loglik - result["loglik_single_gaussian"]
     if delta_ll < min_loglik_gain:
         reasons.append(
             f"2-state HMM improves on a single Gaussian by only "
             f"{delta_ll:.1f} log-likelihood (< {min_loglik_gain:g}): no "
             "statistical evidence for two states"
+        )
+    loglik_iid, w_iid = _iid_mixture_loglik(le)
+    if fit_emissions:
+        loglik_iid, w_iid = _iid_gaussian_mixture_refit(v, emission_spec, w_iid, em_bounds)
+    delta_ll_iid = loglik - loglik_iid
+    if delta_ll_iid < min_loglik_gain:
+        reasons.append(
+            f"2-state HMM improves on uncorrelated (i.i.d.) shots by only "
+            f"{delta_ll_iid:.1f} log-likelihood "
+            f"(< {min_loglik_gain:g}): no statistical evidence for temporal "
+            "switching"
+        )
+    mixing = (g01 + g10) * float(np.median(dt_steps))
+    if mixing > max_mixing:
+        reasons.append(
+            f"(gamma01 + gamma10) * dt = {mixing:.2f} > {max_mixing:g}: "
+            "switching unresolved at this cadence / indistinguishable from "
+            "uncorrelated shots"
         )
     if exp_trans < min_transitions:
         reasons.append(
@@ -740,6 +838,10 @@ def fit_two_state_hmm(
             "identifiable": bool(identifiable),
             "loglik": float(loglik),
             "delta_loglik": float(delta_ll),
+            "loglik_iid": float(loglik_iid),
+            "delta_loglik_iid": float(delta_ll_iid),
+            "iid_weight_state1": float(w_iid),
+            "mixing_per_step": float(mixing),
             "posteriors": post,
             "posterior_ambiguity": ambiguity,
             "viterbi_path": viterbi,

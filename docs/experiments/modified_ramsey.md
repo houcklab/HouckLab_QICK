@@ -212,8 +212,8 @@ keys (`df`, `f_ge`, mapping probabilities) resolve from the device in qicklab.
 | `mapping_p_e_state0` / `mapping_p_e_state1` | 0.1 / 0.9 | prob. | Assumed P(e) for each parity state. |
 | `mapping_probabilities_calibrated` | False | bool | False adds an explicit warning. |
 | `hmm_min_emission_snr` | None (→ 0.7) | ratio | Per-sample emission gate. **Do not lower** (see findings). |
-| `hmm_kwargs` | None | dict | Other `fit_two_state_hmm` kwargs (e.g. `min_transitions`). |
-| `validation_controls` | ["flip_final_pi2", "echo_null"] | list | Controls to interleave. |
+| `hmm_kwargs` | None | dict | Other `fit_two_state_hmm` kwargs (e.g. `min_transitions`, `max_mixing`). |
+| `validation_controls` | ["flip_final_pi2", "echo_null"] | list | Controls to interleave. Acquired whether or not `parity_analysis_enabled`. |
 | `validation_controls_every_n_cycles` | 10 | cycles | Control cadence. |
 | `control_tau_offset_frac` | 0.25 | fraction | `tau_offset` control. |
 | `control_detuning_mhz` | None (→ +df) | MHz | `drive_detuned` control. |
@@ -292,7 +292,22 @@ diagnostics only.
    - **Identifiability gates.** All must pass, otherwise rates are NaN with reasons:
      - per-sample emission SNR ≥ `min_emission_snr` (0.7);
      - expected transitions ≥ 10;
-     - log-likelihood gain over a single Gaussian ≥ 10;
+     - log-likelihood gain over a single Gaussian ≥ 10 (`delta_loglik`). This only
+       shows the readout is bimodal: uncorrelated g/e shots pass it by thousands;
+     - log-likelihood gain over the **i.i.d. mixture** with the same emissions ≥ 10
+       (`delta_loglik_iid`, `loglik_iid`). The null draws every shot independently
+       from state 0 or 1 with the best-fit weight `iid_weight_state1`, so it has
+       the same readout but no temporal correlation. The weight is free even for
+       a symmetric fit: P(e) ≠ 1/2 (T1 decay during τ, a mapping offset) would
+       otherwise let the symmetric HMM beat a 1/2 null without any switching.
+       With `fit_emissions=True` the null refits its own means and sigmas too.
+       This is the evidence for switching: uncorrelated shots, an ideal
+       `echo_null`, or a dephased record (T2 ≪ τ, unresolved df) give ≈ 0–1 or
+       less (the gain is negative when a symmetric HMM is misspecified), a
+       resolved telegraph gives tens to thousands;
+     - switching resolved at the cadence: `(γ01 + γ10)·median(dt)` ≤ `max_mixing`
+       (1.0; reported as `mixing_per_step`). Above it the state decorrelates
+       between samples and the rate is indistinguishable from uncorrelated shots;
      - fitted rate not pinned at the fit bounds (1e-2 to 1e6 Hz).
    - Posterior ambiguity > 0.25 warns: do not trust individual Viterbi samples. That
      does not mean the rate is wrong.

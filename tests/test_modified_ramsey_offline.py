@@ -17,6 +17,9 @@ import os
 import numpy as np
 
 from qicklab.analysis.hmm import (
+    _iid_gaussian_mixture_refit,
+    _iid_mixture_loglik,
+    _log_emissions_from_spec,
     fit_two_state_hmm,
     hmm_forward_backward,
     hmm_viterbi,
@@ -231,6 +234,171 @@ def test_hmm_zero_contrast():
     assert math.isnan(fit["gamma01_hz"]), "rates withheld (nan)"
     assert any("emission separation" in r for r in fit["unidentifiable_reasons"]), (
         "reason names emission separation: " + str(fit["unidentifiable_reasons"])
+    )
+
+
+_GE_EM_ASSUMED = {
+    "model": "ge_mixture",
+    "mu_g": 0.0,
+    "mu_e": 2.0,
+    "sigma_g": 1.0,
+    "sigma_e": 1.0,
+    "p_e_state0": 0.1,
+    "p_e_state1": 0.9,
+}
+
+
+def _iid_reason(fit):
+    return any("uncorrelated (i.i.d.)" in r for r in fit["unidentifiable_reasons"])
+
+
+def test_hmm_iid_shots_unidentifiable():
+    # Uncorrelated 50/50 g/e shots (no parity information) at a 262 us rep,
+    # readout SNR 2. Before the i.i.d. gate this was "identifiable" at
+    # 7-80 kHz: the single-Gaussian null only tests readout bimodality.
+    dt = 262e-6
+    rng = np.random.default_rng(60)
+    v = rng.normal(np.where(rng.random(20000) < 0.5, 2.0, 0.0), 1.0)
+    fit = fit_two_state_hmm(v, dt, _GE_EM_ASSUMED, symmetric=True)
+    assert fit["delta_loglik"] > 100, (
+        "readout is bimodal (single-Gaussian gate passes): " + f"{fit['delta_loglik']:.1f}"
+    )
+    assert not fit["identifiable"] and math.isnan(fit["gamma01_hz"]), (
+        "i.i.d. symmetric shots -> unidentifiable: " + str(fit["unidentifiable_reasons"])
+    )
+    assert _iid_reason(fit) and fit["delta_loglik_iid"] < 10, (
+        "reason names the i.i.d. null: " + f"dLL_iid {fit['delta_loglik_iid']:.2f}"
+    )
+
+    # Biased i.i.d. shots, P(e) = 0.3, asymmetric fit: the null must free the
+    # mixture weight (w = (0.3 - 0.1)/0.8 = 0.25), or a 50/50 null is beaten
+    # by hundreds of log-likelihood units and the record passes.
+    v_b = rng.normal(np.where(rng.random(20000) < 0.3, 2.0, 0.0), 1.0)
+    fit_b = fit_two_state_hmm(v_b, dt, _GE_EM_ASSUMED, symmetric=False)
+    assert abs(fit_b["iid_weight_state1"] - 0.25) < 0.03, (
+        "i.i.d. null weight maximised: " + f"w {fit_b['iid_weight_state1']:.3f}"
+    )
+    assert not fit_b["identifiable"] and _iid_reason(fit_b), (
+        "biased i.i.d. shots -> unidentifiable: " + str(fit_b["unidentifiable_reasons"])
+    )
+
+    # Biased i.i.d. shots with the DEFAULT symmetric=True fit (runner default
+    # hmm_symmetric=True), P(e) = 0.25, readout SNR 4. A null with its weight
+    # fixed at 1/2 is misspecified here: the symmetric HMM beat it by ~2000
+    # and the record was "identifiable" at ~700 Hz. The free-weight null
+    # (w = (0.25 - 0.1)/0.8 = 0.1875) wins outright (gain < 0).
+    em4 = dict(_GE_EM_ASSUMED, mu_e=4.0)
+    v_s = rng.normal(np.where(rng.random(20000) < 0.25, 4.0, 0.0), 1.0)
+    fit_s = fit_two_state_hmm(v_s, dt, em4, symmetric=True)
+    assert abs(fit_s["iid_weight_state1"] - 0.1875) < 0.03, (
+        "null weight free also for symmetric=True: " + f"w {fit_s['iid_weight_state1']:.3f}"
+    )
+    assert not fit_s["identifiable"] and _iid_reason(fit_s) and fit_s["delta_loglik_iid"] < 10, (
+        "biased i.i.d. shots, symmetric fit -> unidentifiable: "
+        + f"dLL_iid {fit_s['delta_loglik_iid']:.1f}, {fit_s['unidentifiable_reasons']}"
+    )
+
+
+def _em_two_gaussian_loglik(v, n_iter=500):
+    # Independent reference: EM for an i.i.d. two-Gaussian mixture.
+    w, m0, m1 = 0.5, np.percentile(v, 25), np.percentile(v, 75)
+    s0 = s1 = np.std(v) / 2
+    for _ in range(n_iter):
+        l0 = np.log1p(-w) - 0.5 * ((v - m0) / s0) ** 2 - np.log(s0 * np.sqrt(2 * np.pi))
+        l1 = np.log(w) - 0.5 * ((v - m1) / s1) ** 2 - np.log(s1 * np.sqrt(2 * np.pi))
+        r1 = np.exp(l1 - np.logaddexp(l0, l1))
+        w = r1.mean()
+        m0, m1 = np.average(v, weights=1 - r1), np.average(v, weights=r1)
+        s0 = np.sqrt(np.average((v - m0) ** 2, weights=1 - r1))
+        s1 = np.sqrt(np.average((v - m1) ** 2, weights=r1))
+    return float(np.sum(np.logaddexp(l0, l1)))
+
+
+def test_hmm_iid_null_refits_emissions():
+    # fit_emissions=True: the i.i.d. null must be maximised over its OWN
+    # weight, means and sigmas (a proper likelihood ratio), not evaluated at
+    # the HMM's refit emissions, which would understate it.
+    dt = 262e-6
+    rng = np.random.default_rng(65)
+    v = rng.normal(np.where(rng.random(5000) < 0.4, 2.3, -0.2), 1.1)
+    em = {"model": "gaussian", "mu0": 0.0, "mu1": 2.0, "sigma0": 1.0, "sigma1": 1.0}
+    fit = fit_two_state_hmm(v, dt, em, symmetric=False, fit_emissions=True)
+    ll_ref = _em_two_gaussian_loglik(v)
+    assert fit["loglik_iid"] >= ll_ref - 0.05, (
+        "null at the i.i.d. mixture MLE: " + f"{fit['loglik_iid']:.3f} vs EM {ll_ref:.3f}"
+    )
+    assert not fit["identifiable"] and _iid_reason(fit), (
+        "i.i.d. shots, free emissions -> unidentifiable: " + str(fit["unidentifiable_reasons"])
+    )
+    # The null's own emissions are refit even from a poor start (the HMM's
+    # emissions): evaluated there it would be understated by tens of units.
+    poor = {"mu0": 0.3, "mu1": 1.6, "sigma0": 0.8, "sigma1": 1.4}
+    le_poor = _log_emissions_from_spec(v, dict(poor, model="gaussian"))
+    ll_fixed, w_fixed = _iid_mixture_loglik(le_poor)
+    bounds = [(-10.0, 10.0)] * 2 + [(math.log(1e-3), math.log(1e3))] * 2
+    ll_refit, _ = _iid_gaussian_mixture_refit(v, poor, w_fixed, bounds)
+    assert ll_fixed < ll_ref - 10 and abs(ll_refit - ll_ref) < 0.05, (
+        f"fixed {ll_fixed:.2f}, refit {ll_refit:.2f}, EM {ll_ref:.2f}"
+    )
+
+
+def test_hmm_dephased_record_unidentifiable():
+    # A real 200 Hz telegraph whose g/e mapping carries (almost) no parity
+    # information (T2 << tau, or df unresolved: p_e_state0 ~ p_e_state1),
+    # analysed with the ASSUMED 0.1/0.9 mapping.
+    dt = 262e-6
+    n = 20000
+    hidden = simulate_telegraph_trace(
+        n, dt, 200.0, 200.0, mu0=0.0, mu1=1.0, sigma0=1e-9, sigma1=1e-9, seed=61
+    )["states"]
+    rng = np.random.default_rng(62)
+    prepared_e = rng.random(n) < np.where(hidden == 0, 0.49, 0.51)
+    v = rng.normal(np.where(prepared_e, 2.0, 0.0), 1.0)
+    fit = fit_two_state_hmm(v, dt, _GE_EM_ASSUMED, symmetric=True)
+    assert not fit["identifiable"] and _iid_reason(fit), (
+        "dephased record -> unidentifiable via the i.i.d. gate: "
+        + str(fit["unidentifiable_reasons"])
+    )
+
+    # The same cadence with an informative mapping stays identifiable, and
+    # the i.i.d. gain is decisive.
+    prepared_e = rng.random(n) < np.where(hidden == 0, 0.1, 0.9)
+    v_ok = rng.normal(np.where(prepared_e, 2.0, 0.0), 1.0)
+    fit_ok = fit_two_state_hmm(v_ok, dt, _GE_EM_ASSUMED, symmetric=True)
+    assert fit_ok["identifiable"] and close(fit_ok["gamma01_hz"], 200.0, 0.25), (
+        "informative 200 Hz telegraph at 262 us still identifiable: "
+        + f"{fit_ok['gamma01_hz']:.1f} Hz, {fit_ok['unidentifiable_reasons']}"
+    )
+    assert fit_ok["delta_loglik_iid"] > 100 and fit_ok["mixing_per_step"] < 0.3, (
+        "decisive i.i.d. gain, resolved rate: "
+        + f"dLL_iid {fit_ok['delta_loglik_iid']:.1f}, mix {fit_ok['mixing_per_step']:.2f}"
+    )
+
+
+def test_hmm_unresolved_rate_gate():
+    # A genuine telegraph switching faster than the cadence resolves:
+    # (g01 + g10) * dt = 2 * 3 kHz * 262 us ~ 1.6, correlation exp(-1.6) per
+    # sample. The i.i.d. gate passes (dLL_iid ~ 40), so only the resolved-rate
+    # gate withholds the rate; opening it (max_mixing=100) releases it.
+    dt = 262e-6
+    n = 20000
+    hidden = simulate_telegraph_trace(
+        n, dt, 3000.0, 3000.0, mu0=0.0, mu1=1.0, sigma0=1e-9, sigma1=1e-9, seed=63
+    )["states"]
+    rng = np.random.default_rng(64)
+    prepared_e = rng.random(n) < np.where(hidden == 0, 0.1, 0.9)
+    v = rng.normal(np.where(prepared_e, 2.0, 0.0), 1.0)
+    fit = fit_two_state_hmm(v, dt, _GE_EM_ASSUMED, symmetric=True)
+    reasons = fit["unidentifiable_reasons"]
+    assert (
+        not fit["identifiable"] and len(reasons) == 1 and "unresolved at this cadence" in reasons[0]
+    ), "only the resolved-rate gate fires: " + str(reasons)
+    assert fit["mixing_per_step"] > 1.0 and fit["delta_loglik_iid"] > 10, (
+        f"mix {fit['mixing_per_step']:.2f}, dLL_iid {fit['delta_loglik_iid']:.1f}"
+    )
+    fit_open = fit_two_state_hmm(v, dt, _GE_EM_ASSUMED, symmetric=True, max_mixing=100.0)
+    assert fit_open["identifiable"] and close(fit_open["gamma01_hz"], 3000.0, 0.3), (
+        "max_mixing opens the gate: " + str(fit_open["unidentifiable_reasons"])
     )
 
 
