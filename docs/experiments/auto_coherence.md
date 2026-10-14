@@ -164,7 +164,7 @@ T1 / T2 / T2E (Stages 4-6)
 | `T2E_expts` | 201 | - | Points |
 | `T2E_reps`, `T2E_rounds` | 25, 25 | - | Averaging |
 | `T2E_relax_delay` | 3500 | us | |
-| `T2E_num_pi_pulses` | 1 | - | Must be odd (not enforced) |
+| `T2E_num_pi_pulses` | 1 | - | Must be odd and >= 1 (`ValueError` when the Stage 6 T2E program is built; see [t2_echo](t2_echo.md#refocusing-condition)) |
 | `T2E_repetitions` | 1 | - | |
 
 ## Stages in detail
@@ -309,7 +309,14 @@ single-shot histogram analysis (see Findings).
   not checked (fallback: global maximum).
 - In extended mode the returned gain is the one with the highest contrast over all N steps,
   not the one from the largest N.
-- `T2E_num_pi_pulses` "must be odd" is not enforced.
+- `T2E_num_pi_pulses` must be odd and >= 1, but this is checked only when Stage 6 builds
+  its first `T2EProgram` (`ValueError`; see [t2_echo](t2_echo.md#refocusing-condition)).
+  With an even value the run therefore aborts late: the whole calibration and the T1 and
+  T2R stages have already run and saved, the summary is written with
+  `stage_reached = "T2"` and `error = ValueError(...)`, and an empty dated `auto-T2E` folder
+  is left behind. The one exception is `-1`, which fails slightly earlier, at the start of
+  Stage 6, with a `ZeroDivisionError` from the step computation (`num_pi_pulses + 1 = 0`);
+  every other value < 1 reaches the `ValueError`.
 - The yoko is left at the Stage 1 voltage.
 - The summary timestamp format (`%Y%m%d_%H%M%S`) differs from the experiment files
   (`%Y_%m_%d_%H_%M_%S`).

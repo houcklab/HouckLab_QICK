@@ -10,6 +10,16 @@ from qicklab.core.experiment import ExperimentClass
 class T2EProgram(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
+        # n + 1 equal waits: each pi inverts the phase, so a static detuning cancels only
+        # for odd n (docs/experiments/t2_echo.md#refocusing-condition)
+        n = cfg["num_pi_pulses"]
+        if n < 1 or n % 2 == 0:
+            raise ValueError(
+                f"num_pi_pulses = {n}: must be odd and >= 1. The echo uses n + 1 equal waits "
+                "and each pi pulse inverts the accumulated phase, so a static detuning is "
+                "refocused only for odd n (an even n leaves one wait of Ramsey phase; n = 0 "
+                "is a Ramsey). See docs/experiments/t2_echo.md."
+            )
 
         self.q_rp = self.ch_page(cfg["qubit_ch"])
         self.r_wait = 3

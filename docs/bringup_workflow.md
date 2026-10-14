@@ -188,7 +188,7 @@ Pages: [t1](experiments/t1.md), [t2_ramsey](experiments/t2_ramsey.md),
 |---|---|---|---|
 | `t1` | `coherence` | `T1_step` 5 us x 100 points, reps 20 x rounds 20, relax 3000 us | span should cover several T1 |
 | `t2_ramsey` | `coherence` | `T2_step` 0.1 us x 100 points, `freq_shift` 0 | detune with `freq_shift` to see fringes |
-| `t2_echo` | `echo` | `T2_max_us` 20, 121 points, 25 x 25, relax 500 us, `num_pi_pulses` 1 | `num_pi_pulses` must be odd (not checked) |
+| `t2_echo` | `echo` | `T2_max_us` 20, 121 points, 25 x 25, relax 500 us, `num_pi_pulses` 1 | `num_pi_pulses` must be odd and >= 1 (`ValueError` otherwise; see [t2_echo](experiments/t2_echo.md#refocusing-condition)) |
 
 `repetitions` in the `coherence` and `echo` groups repeat the whole measurement (1000 and 3000 in
 the CSTQ03 session, meant for long unattended runs). Use 1-3 for a benchmark.

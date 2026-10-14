@@ -32,6 +32,16 @@ ADC       ______________________________________________________________________
 | PMOD trigger | pin 0 before every pulse, width `trig_buffer_start + trig_buffer_end + 4 sigma (+ flattop_length)` |
 | Readout | 0.05 us after the last pi/2; `relax_delay` after the readout |
 
+### Refocusing condition
+
+Each pi pulse about Y maps the in-plane phase phi to pi - phi, so with n + 1 equal waits
+a static detuning delta leaves a phase `delta * w * sum_{k=0..n} (-1)^k`: zero for odd n,
+`delta * w` (one wait of Ramsey phase) for even n. `T2EProgram.initialize` therefore
+raises `ValueError` when `num_pi_pulses` is even or < 1 (n = 0 would be a Ramsey). For
+n = 1 equal spacing is the Hahn echo (two waits of T/2). For odd n >= 3 the equal spacing
+`w, w, ..., w` refocuses a static detuning but is not CPMG spacing (`w/2, w, ..., w, w/2`);
+switching to CPMG spacing is a separate planned change.
+
 ### Step quantisation
 
 The step quantises the total-time increment so that each of the n + 1 waits is a whole
@@ -66,7 +76,7 @@ Group `echo` (legacy `T2E_params`).
 | `T2_expts` | 121 | - | Number of points |
 | `T2_reps` | 25 | shots | Hardware averages |
 | `T2_rounds` | 25 | - | Software repeats |
-| `num_pi_pulses` | 1 | - | Refocusing pulses; must be odd (not enforced) |
+| `num_pi_pulses` | 1 | - | Refocusing pulses; must be odd and >= 1 (`ValueError` otherwise) |
 | `freq_shift` | 0.0 | MHz | Added to f_ge |
 | `relax_delay` | 500 | us | Wait after each readout |
 | `rotation_angle` | None | rad | Fixed IQ rotation; None = automatic |
@@ -100,8 +110,9 @@ exponential anyway.
 ## Findings & notes
 
 - `num_pi_pulses` must be odd (CSTQ03 runner rule, repeated in the auto_coherence
-  defaults). The code does not enforce it and nowhere records why; treat even values as
-  untested.
+  defaults). Enforced since 2026-10-14: the program raises `ValueError` at compile time,
+  before anything is sent to the board; the reason is the
+  [refocusing condition](#refocusing-condition).
 - The 0.00232515 us constant is one tProc clock cycle (430.08 MHz). The step must be an
   integer multiple of (n + 1) cycles so all pulses stay on the cycle grid; the same
   constant is used by [auto_coherence](auto_coherence.md). On a board with a different tProc
@@ -111,7 +122,11 @@ exponential anyway.
 
 ## Known issues
 
-- An even `num_pi_pulses` runs without warning.
+- An even `num_pi_pulses` used to run without warning (a partial Ramsey reported as T2E);
+  it now raises `ValueError`. In [coherence_combos](coherence_combos.md) the check runs
+  when the T2E program is built, so the T1 of that pair has already been saved.
+- For odd n >= 3 the waits are equal (`w, ..., w`), not CPMG-spaced (`w/2, w, ..., w/2`);
+  CPMG spacing is a separate planned change.
 - When `int_steps` is 0 the standalone step stops on the first repetition without
   measuring; in [coherence_combos](coherence_combos.md) the T1 of that pair has already
   been saved.

@@ -163,7 +163,8 @@ by `step/(n+1)`. To keep every segment an integer number of tProc cycles the run
 Example (CSTQ03 runner values): `T2_max_us` = 20, `T2_expts` = 121, n = 1 -> k = 35, step =
 0.16276 us, last point (120 x step) about 19.53 us. If k = 0 the step prints "Step size is 0!" and stops:
 raise `T2_max_us` or lower `T2_expts`. `auto_coherence` uses the same quantum; the two must agree.
-`num_pi_pulses` must be odd; nothing checks it.
+`num_pi_pulses` must be odd and >= 1: `T2EProgram.initialize` raises `ValueError` otherwise (see
+[t2_echo](../experiments/t2_echo.md#refocusing-condition)).
 
 ## Registers
 

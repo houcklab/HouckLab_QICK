@@ -377,3 +377,29 @@ def test_reset_read_latency_margin_boundary(legacy, variant):
     assert [x["name"] for x in insts[i - 2 : i]] == ["waiti", "synci"]
     stall_end, pi_time = insts[i - 2]["args"][1], insts[i - 1]["args"][0]
     assert pi_time - stall_end >= soccfg.us2cycles(RESET_PI_SETUP_MARGIN_US)
+
+
+T2E_PARAMS = {"start": 0, "step": 2 * 0.00232515 * 35, "expts": 121}
+
+
+@pytest.mark.parametrize("n", [0, 2, 4, -1])
+def test_t2e_rejects_even_or_zero_pi_pulses(n):
+    """n + 1 equal waits refocus a static detuning only for odd n (docs/experiments/t2_echo.md)."""
+    from qicklab.experiments.t2_echo import T2EProgram
+    from qicklab.hardware.board import BaseConfig
+
+    cfg = _cfg(BaseConfig, **T2E_PARAMS, num_pi_pulses=n)
+    with pytest.raises(ValueError, match="num_pi_pulses = -?\\d+: must be odd"):
+        T2EProgram(capture.FakeSocCfg("A"), cfg)
+
+
+@pytest.mark.parametrize("n", [1, 3])
+def test_t2e_accepts_odd_pi_pulses(board, n):
+    """Odd n compiles, with one register-timed wait per gap (n + 1 waits)."""
+    from qicklab.experiments.t2_echo import T2EProgram
+    from qicklab.hardware.board import BaseConfig
+
+    _, soccfg = board
+    cfg = _cfg(BaseConfig, **T2E_PARAMS, num_pi_pulses=n)
+    prog = T2EProgram(soccfg, cfg)
+    assert len(_insts(prog, "sync")) == n + 1
