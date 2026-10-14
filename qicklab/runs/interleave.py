@@ -1,37 +1,11 @@
-"""Interleaved UndrivenSingleShot + coherence loop.
+"""Interleaved UndrivenSingleShot -> T1 -> T2R -> T2E loop, swapping config regimes per step.
 
-One cycle runs, in order: UndrivenSingleShot -> T1 -> T2R -> T2E, each toggled
-independently in IL_params. The cycle repeats IL_params["cycles"] times, so a
-long unattended run alternates parity/blob records with the coherence numbers
-measured under the same conditions.
-
-Config regimes: UndrivenSingleShot needs the single-shot config
-(rebuild_singleshot_config, SS_params readout window) while T1/T2R/T2E need the
-pre-rebuild config built by build_context. Both are built once here and swapped
-per step, so call this BEFORE the runner's own rebuild_singleshot_config() —
-ctx.config is restored on the way out and that call then behaves identically.
-
-Every step writes its own timestamped h5/png/json exactly as the standalone
-runs do; nothing is displayed on screen mid-loop (a blocking plot window would
-stall the loop).
-
-Each record is tagged with its position in the loop via four config keys —
-interleave_run_id, interleave_cycle, interleave_cycles_total, interleave_step —
-which save_config() writes into BOTH the .json and the h5 "config" attribute, so
-the four steps of one cycle can be grouped offline:
-
-    import json, h5py
-    with h5py.File(fname) as f:
-        c = json.loads(f.attrs["config"])
-    c["interleave_cycle"], c["interleave_run_id"]
-
-run_id is the wall-clock start of the loop, so records from separate invocations
-on the same day stay distinguishable.
+Call in regime A (ctx.config is restored on exit); every record is tagged with interleave_* keys:
+docs/experiments/interleaved_coherence.md
 """
 
-from datetime import datetime
-
 from qicklab.core.config import rebuild_singleshot_config
+from qicklab.core.io import timestamp
 from qicklab.runs.coherence import run_t1, run_t2, run_t2e
 from qicklab.runs.single_shot import run_undriven_single_shot
 
@@ -60,7 +34,7 @@ def run_interleaved_coherence(ctx, IL_params, US_params, T1T2_params, T2E_params
     if not enabled:
         print("[Interleave] no experiments enabled; nothing to do.")
         return
-    run_id = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    run_id = timestamp()
     print(f"[Interleave] run {run_id}: {n_cycles} cycle(s) of: {' -> '.join(enabled)}")
 
     try:

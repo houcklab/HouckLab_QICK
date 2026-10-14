@@ -1,45 +1,6 @@
-"""
-mAutoCoherence.py
-=================
-Automated T1 / T2 / T2Echo calibration and measurement.
+"""AutoCoherence: sweet spot -> f_ge -> Rabi pi gain -> readout window -> single-shot gain -> T1/T2/T2E.
 
-Workflow
---------
-1. Two-tone spec (Gaussian drive, 10 reps / 10 rounds) sweeps the qubit
-   frequency near a user-provided centre.  A voltage search (via yoko) locates
-   the sweet spot where charge dispersion collapses to one peak.
-2. AmplitudeRabi (max_gain=12000, using the selected qubit pulse shape) finds
-   the pi-pulse gain.  If the trace shows too many oscillations the Gaussian
-   sigma is automatically reduced and the sweep is re-run.
-3. SingleShot (300 shots during scan, 500 shots for final check) optimises the
-   pi-pulse gain to reach ≥70 % readout fidelity.  pi2_gain is set to pi_gain//2.
-4. T1, T2 (Ramsey), and T2Echo are run with the calibrated parameters.
-5. All calibration results are written to a timestamped .txt file inside an
-   AutoCoherence_<timestamp> sub-folder.  Measurement data go into
-   auto-T1 / auto-T2 / auto-T2E sub-folders inside the same root.
-
-Usage
------
-    from WorkingProjects.QM_Team.qubit_measurements.Client_modules\\
-         .Experiments.mAutoCoherence import run_auto_coherence, AUTO_COHERENCE_PARAMS
-
-    results = run_auto_coherence(
-        soc=soc,
-        soccfg=soccfg,
-        config=config,               # full config dict (as in CSTQ02_BFC.py)
-        outerFolder=outerFolder,     # root save folder
-        qubit_readout=Qubit_Readout, # int key into Qubit_Parameters
-        qubit_params=Qubit_Parameters,
-        yoko=yoko,                   # pyvisa resource; pass None if no charge line
-        auto_params={},              # optional overrides for AUTO_COHERENCE_PARAMS
-    )
-
-IMPORTANT
----------
-* This module does NOT modify any caller-side global variables.
-* The `config` argument is never mutated; all experiment configs are built
-  from local copies via the `|` merge operator.
-* Existing experiment classes (T1FF, T2R, T2EMUX, …) are not modified.
+Pipeline, parameters and outputs: docs/experiments/auto_coherence.md
 """
 
 import json
@@ -51,25 +12,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
+from qicklab.analysis.spectroscopy import find_two_tone_peaks
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.rabi import AmplitudeRabiFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 from qicklab.experiments.t1 import T1FF
 from qicklab.experiments.t2_echo import T2EMUX
 from qicklab.experiments.t2_ramsey import T2R
+from qicklab.hardware.yoko import ramp_to
 
-# ---------------------------------------------------------------------------
-# Hardware clock quantisation constant (microseconds per QICK cycle × factor).
-# Must match the constant in CSTQ02_BFC.py's T2E step calculation.
-# ---------------------------------------------------------------------------
-_T2E_CLOCK_STEP_US = 0.00232515
+_T2E_CLOCK_STEP_US = 0.00232515  # one tProc cycle (1/430.08 MHz): docs/experiments/t2_echo.md
 
 
-# ===========================================================================
-# User-facing parameter dictionary  (override any key via the auto_params arg)
-# ===========================================================================
+# defaults; override any key via auto_params (meanings: docs/experiments/auto_coherence.md)
 AUTO_COHERENCE_PARAMS = {
-    # ── two-tone spec (sweet-spot search) ───────────────────────────────────
+    # two-tone spec (sweet-spot search)
     "spec_span": 1.0,  # MHz, ± span around qubit centre frequency
     "spec_num_pts": 101,  # number of frequency points per spec run
     "spec_reps": 10,
@@ -78,7 +35,7 @@ AUTO_COHERENCE_PARAMS = {
     "spec_sigma": 2.0,  # us  Gaussian drive sigma (sharp peaks → larger σ)
     "spec_gain": 700,  # qubit drive gain for spec (DAC units)
     "spec_qubit_length": 2.0,  # us  flat-top length (unused when Gauss=True)
-    # ── sweet-spot voltage search ────────────────────────────────────────────
+    # sweet-spot voltage search
     # Set skip_sweet_spot_search=True to bypass Stage 1 entirely: the qubit
     # frequency is taken straight from qubit_params and the yoko is left at its
     # current voltage (no two-tone sweep / voltage walk).  Useful when the sweet
@@ -96,7 +53,7 @@ AUTO_COHERENCE_PARAMS = {
     "ss_voltage_max": 0.010,
     "ss_max_tries": 200,
     "cd_period_mv": None,  # mV  – if known; enables half-period step
-    # ── Qubit-frequency calibration (Stage 1.5) ─────────────────────────────
+    # Qubit-frequency calibration (Stage 1.5)
     # Runs one two-tone spec at the current voltage and re-centres f_ge on the
     # measured peak(s) before AmplitudeRabi.  Unlike the sweet-spot search it
     # does NOT move the yoko.  Reuses the spec_* parameters above.
@@ -111,7 +68,7 @@ AUTO_COHERENCE_PARAMS = {
     "freqcal_gain_growth": 1.8,  # spec_gain multiplier per retry
     "freqcal_max_gain": 30000,  # DAC units; stays under the 32767 ceiling
     "freqcal_max_gain_retries": 5,
-    # ── AmplitudeRabi ────────────────────────────────────────────────────────
+    # AmplitudeRabi
     "rabi_max_gain": 12000,
     "rabi_num_steps": 201,
     "rabi_reps": 15,
@@ -119,9 +76,9 @@ AUTO_COHERENCE_PARAMS = {
     "rabi_relax_delay": 3500,  # us
     "rabi_sigma": None,  # us – None → use qubit_params sigma
     "rabi_sigma_min": 0.01,  # us – hard lower bound for auto-reduction
-    "rabi_max_osc_peaks": 3,  # if # peaks > this, sigma is halved
+    "rabi_max_osc_peaks": 3,  # if # peaks > this, sigma x0.70 and retry
     "rabi_max_sigma_retries": 10,  # max sigma reduction attempts
-    # ── SingleShot pi-pulse optimisation ────────────────────────────────────
+    # SingleShot pi-pulse optimisation
     "ss_shots": 1000,  # shots per gain point (fast scan)
     "ss_full_shots": 2000,  # shots for final fidelity measurement
     "ss_relax_delay": 3500,  # us
@@ -132,7 +89,7 @@ AUTO_COHERENCE_PARAMS = {
     "ss_max_scan_expansions": 2,  # expand/recenter if best point is on scan edge
     "ss_gain_span_growth": 1.8,  # multiplier for each edge-hit expansion
     "ss_gain_span_frac": 0.20,  # ± fraction of estimated pi_gain to scan
-    # ── Readout parameter optimisation (Stage 2.5) ──────────────────────────
+    # Readout parameter optimisation (Stage 2.5)
     # Sweeps readout_length × adc_trig_offset at the Rabi pi_gain to find the
     # integration window that maximises single-shot fidelity.
     # Set auto_readout_opt=False to skip (faster runs, fixed readout params).
@@ -143,7 +100,7 @@ AUTO_COHERENCE_PARAMS = {
     "adc_offset_start": 0.2,  # us – shortest ADC trigger offset
     "adc_offset_stop": 3.0,  # us – longest ADC trigger offset
     "adc_offset_pts": 5,  # number of ADC-offset values
-    # ── Extended pi / pi2 pulse optimisation (error amplification) ──────────
+    # Extended pi / pi2 pulse optimisation (error amplification)
     # When extended_pi_pi2_opt=True, Stage 3 replaces the simple scan with a
     # sequential error-amplification scheme.  For each N in the nsteps list,
     # SingleShot is run with number_of_pulses=N at each candidate gain; the
@@ -160,14 +117,14 @@ AUTO_COHERENCE_PARAMS = {
     "ext_pi_gain_span_init": 0.20,  # ± fraction of pi_gain_estimate (N=1 step)
     "ext_pi2_gain_span_init": 0.20,  # ± fraction of pi2_gain_estimate (N=2 step)
     "ext_gain_span_shrink": 0.40,  # span multiplier applied after each step
-    # ── T1 ──────────────────────────────────────────────────────────────────
+    # T1
     "T1_step": 40,  # us – wait-time step
     "T1_expts": 60,  # number of time points
     "T1_reps": 20,
     "T1_rounds": 20,
     "T1_relax_delay": 3500,  # us
     "T1_repetitions": 1,  # number of consecutive T1 runs
-    # ── T2 Ramsey ───────────────────────────────────────────────────────────
+    # T2 Ramsey
     "T2_step": 0.1,  # us – Ramsey delay step
     "T2_expts": 201,
     "T2_reps": 20,
@@ -175,7 +132,7 @@ AUTO_COHERENCE_PARAMS = {
     "T2_relax_delay": 3500,  # us
     "T2_repetitions": 1,
     "T2_freq_shift": 0.0,  # MHz – artificial detuning from f_ge
-    # ── T2Echo ──────────────────────────────────────────────────────────────
+    # T2Echo
     "T2E_max_us": 200,  # us – maximum echo time
     "T2E_expts": 201,
     "T2E_reps": 25,
@@ -184,96 +141,6 @@ AUTO_COHERENCE_PARAMS = {
     "T2E_num_pi_pulses": 1,  # must be odd
     "T2E_repetitions": 1,
 }
-
-
-# ===========================================================================
-# ─── Private helpers ────────────────────────────────────────────────────────
-# ===========================================================================
-
-
-def _ramp_to(yoko, target, step=0.001, delay=0.01):
-    """Ramp yoko voltage to *target* in small steps (mirrors CSTQ02_BFC.py)."""
-    if target > 10:
-        raise ValueError(f"Voltage target {target} V exceeds 10 V safety limit")
-    current = float(yoko.query(":SOUR:LEV?"))
-    values = np.arange(current, target, step if target > current else -step)
-    for v in values:
-        yoko.write(f":SOUR:LEV {v}")
-        time.sleep(delay)
-    yoko.write(f":SOUR:LEV {target}")
-
-
-def _find_two_tone_peaks(
-    x_pts, avgamp0, min_sep_mhz=0.10, prominence_fraction=0.25, smooth_window=5
-):
-    """
-    Locate up to two prominent peaks in a two-tone spectrum.
-    Returns dict with keys: peak_inds, peak_freqs, peak_vals, peak_sep.
-    (Mirrors find_two_tone_peaks in CSTQ02_BFC.py.)
-    """
-    x_pts = np.asarray(x_pts, dtype=float)
-    avgamp0 = np.asarray(avgamp0, dtype=float)
-    n = len(avgamp0)
-
-    if n <= 2:
-        best = int(np.argmax(avgamp0))
-        return {
-            "peak_inds": [best],
-            "peak_freqs": x_pts[[best]],
-            "peak_vals": avgamp0[[best]],
-            "peak_sep": None,
-        }
-
-    # Smooth
-    sw = max(3, int(smooth_window) | 1)
-    sw = min(sw, n if n % 2 == 1 else n - 1)
-    sig = savgol_filter(avgamp0, window_length=sw, polyorder=2) if sw >= 3 else avgamp0.copy()
-
-    amp_range = sig.max() - sig.min()
-    if amp_range < 1e-12:
-        best = int(np.argmax(sig))
-        return {
-            "peak_inds": [best],
-            "peak_freqs": x_pts[[best]],
-            "peak_vals": avgamp0[[best]],
-            "peak_sep": None,
-        }
-
-    prom_thresh = prominence_fraction * amp_range
-    dx = abs(float(x_pts[1] - x_pts[0])) if n > 1 else 1.0
-    min_dist = max(1, int(round(min_sep_mhz / dx)))
-
-    peak_inds, _ = find_peaks(sig, prominence=prom_thresh, distance=min_dist)
-
-    if len(peak_inds) == 0:
-        best = int(np.argmax(sig))
-        return {
-            "peak_inds": [best],
-            "peak_freqs": x_pts[[best]],
-            "peak_vals": avgamp0[[best]],
-            "peak_sep": None,
-        }
-
-    if len(peak_inds) > 2:
-        order = np.argsort(sig[peak_inds])[::-1]
-        peak_inds = np.sort(peak_inds[order[:2]])
-
-    if len(peak_inds) == 2:
-        i0, i1 = int(peak_inds[0]), int(peak_inds[1])
-        return {
-            "peak_inds": [i0, i1],
-            "peak_freqs": np.array([x_pts[i0], x_pts[i1]]),
-            "peak_vals": np.array([avgamp0[i0], avgamp0[i1]]),
-            "peak_sep": abs(float(x_pts[i1]) - float(x_pts[i0])),
-        }
-    else:
-        i0 = int(peak_inds[0])
-        return {
-            "peak_inds": [i0],
-            "peak_freqs": np.array([x_pts[i0]]),
-            "peak_vals": np.array([avgamp0[i0]]),
-            "peak_sep": None,
-        }
 
 
 def _choose_next_voltage(current_v, dv, vmin, vmax, direction):
@@ -299,7 +166,7 @@ def _acquire_spec(soc, soccfg, cfg, outerFolder, qubit_freq_center, params):
     avgi     : 1D array of I quadrature signal
     avgq     : 1D array of Q quadrature signal
     avgamp0  : |I + iQ|^2
-    peak_info: dict from _find_two_tone_peaks
+    peak_info: dict from find_two_tone_peaks
     """
     spec_cfg = {
         "reps": params["spec_reps"],
@@ -333,7 +200,7 @@ def _acquire_spec(soc, soccfg, cfg, outerFolder, qubit_freq_center, params):
     avgq = np.array(data["data"]["avgq"][0][0], dtype=float)
     avgamp0 = np.abs(avgi + 1j * avgq) ** 2
 
-    peak_info = _find_two_tone_peaks(x_pts, avgamp0)
+    peak_info = find_two_tone_peaks(x_pts, avgamp0)
     return x_pts, avgi, avgq, avgamp0, peak_info
 
 
@@ -511,11 +378,6 @@ def _run_single_shot_at_gain(
     return fid, threshold, angle, data, inst
 
 
-# ===========================================================================
-# ─── Main automation stages ─────────────────────────────────────────────────
-# ===========================================================================
-
-
 def _stage_sweet_spot_search(
     soc, soccfg, cfg, auto_folder, qubit_freq_center, qubit_readout, params, yoko, log
 ):
@@ -532,7 +394,6 @@ def _stage_sweet_spot_search(
     log.append("STAGE 1 – Two-tone spec / sweet-spot search")
     log.append("=" * 60)
 
-    # ── First spec at current state ─────────────────────────────────────────
     x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
         soc, soccfg, cfg, auto_folder, qubit_freq_center, params
     )
@@ -547,13 +408,12 @@ def _stage_sweet_spot_search(
     log.append(f"  Initial peaks   : {peak_info['peak_freqs']}")
     log.append(f"  Initial sep     : {sep_str}")
 
-    # ── Helper to extract qubit frequency from peak_info ────────────────────
     def _qubit_freq_from_peaks(pi):
         if len(pi["peak_freqs"]) == 2:
             return float(np.mean(pi["peak_freqs"]))  # midpoint of f+ and f-
         return float(pi["peak_freqs"][0])
 
-    # ── If already at sweet spot (one peak or tiny sep) ─────────────────────
+    # If already at sweet spot (one peak or tiny sep)
     accept_sep = params["ss_accept_sep"]
     if peak_sep is None or peak_sep < accept_sep:
         qfreq = _qubit_freq_from_peaks(peak_info)
@@ -566,7 +426,7 @@ def _stage_sweet_spot_search(
         log.append(f"  No yoko provided.  Using peak midpoint: {qfreq:.6f} MHz")
         return qfreq, current_voltage, peak_info
 
-    # ── Voltage search ──────────────────────────────────────────────────────
+    # Voltage search
     dV = params["ss_dV"]
     vmin = params["ss_voltage_min"]
     vmax = params["ss_voltage_max"]
@@ -576,7 +436,7 @@ def _stage_sweet_spot_search(
 
     direction = +1  # initial search direction
 
-    # ── Strategy A: half-period step if cd_period_mv is known ───────────────
+    # Strategy A: half-period step if cd_period_mv is known
     if cd_period is not None and peak_sep >= df_trigger:
         half_period_V = (cd_period * 1e-3) / 2.0
         candidate_v = current_voltage + half_period_V
@@ -586,7 +446,7 @@ def _stage_sweet_spot_search(
             f"  Known cd_period={cd_period} mV → stepping half period "
             f"({half_period_V * 1e3:.2f} mV) to V={candidate_v:.6f} V"
         )
-        _ramp_to(yoko, candidate_v)
+        ramp_to(yoko, candidate_v)
         current_voltage = candidate_v
 
         x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
@@ -603,7 +463,7 @@ def _stage_sweet_spot_search(
             log.append(f"  Sweet spot found at V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz")
             return qfreq, current_voltage, peak_info
 
-    # ── Strategy B: incremental walk toward minimum separation ───────────────
+    # Strategy B: incremental walk toward minimum separation
     # Track the minimum separation and its corresponding voltage.
     best_sep_found = peak_sep if peak_sep is not None else np.inf
     best_voltage = current_voltage
@@ -617,7 +477,7 @@ def _stage_sweet_spot_search(
             log.append("  Voltage stalled at bounds; stopping search.")
             break
 
-        _ramp_to(yoko, next_v)
+        ramp_to(yoko, next_v)
         current_voltage = next_v
 
         x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
@@ -648,7 +508,7 @@ def _stage_sweet_spot_search(
     # Move to the best voltage found
     if abs(current_voltage - best_voltage) > 1e-9:
         log.append(f"  Returning to best voltage {best_voltage:.6f} V")
-        _ramp_to(yoko, best_voltage)
+        ramp_to(yoko, best_voltage)
         current_voltage = best_voltage
         peak_info = best_peak_info
 
@@ -811,8 +671,6 @@ def _stage_amplitude_rabi(
     step_size = max(1, int(round(max_gain / max(1, num_steps - 1))))
 
     pi_gain = None
-    rabi_data = None
-    rabi_inst = None
 
     for retry in range(max_retries + 1):
         log.append(f"  Rabi attempt {retry + 1}: sigma={rabi_sigma:.4f} us")
@@ -854,10 +712,7 @@ def _stage_amplitude_rabi(
         )
 
         if n_peaks <= max_osc or retry == max_retries:
-            # Accept this result
             pi_gain = pi_gain_candidate
-            rabi_data = data
-            rabi_inst = inst
             break
         else:
             log.append(
@@ -1007,8 +862,6 @@ def _stage_singleshot_optimize(
 
     best_fid = -1.0
     best_gain = pi_gain_estimate
-    best_thr = 0.0
-    best_angle = 0.0
 
     for g in gains:
         fid, thr, ang, _, _ = _run_single_shot_at_gain(
@@ -1030,8 +883,6 @@ def _stage_singleshot_optimize(
         if fid > best_fid:
             best_fid = fid
             best_gain = int(g)
-            best_thr = thr
-            best_angle = ang
 
     log.append(f"  Best gain from scan: {best_gain}  fidelity = {best_fid:.4f}")
 
@@ -1073,8 +924,6 @@ def _stage_singleshot_optimize(
             if fid > best_fid:
                 best_fid = fid
                 best_gain = int(g)
-                best_thr = thr
-                best_angle = ang
 
         log.append(f"  Best gain after rescan {expansion}: {best_gain}  fidelity = {best_fid:.4f}")
 
@@ -1256,7 +1105,7 @@ def _stage_extended_pulse_opt(
     pi2_span_init = params["ext_pi2_gain_span_init"]
     span_shrink = params["ext_gain_span_shrink"]
 
-    # ── Optimise pi pulse ────────────────────────────────────────────────────
+    # Optimise pi pulse
     log.append(
         f"  Pi optimisation: N sequence={pi_nsteps_list}, "
         f"initial estimate={pi_gain_estimate}, span=±{pi_span_init * 100:.0f}%"
@@ -1285,7 +1134,7 @@ def _stage_extended_pulse_opt(
     )
     log.append(f"  Pi optimisation done: pi_gain={pi_gain_opt}, fidelity={pi_fid:.4f}")
 
-    # ── Optimise pi/2 pulse ──────────────────────────────────────────────────
+    # Optimise pi/2 pulse
     pi2_gain_estimate = pi_gain_opt // 2
     log.append(
         f"  Pi/2 optimisation: N sequence={pi2_nsteps_list}, "
@@ -1315,7 +1164,7 @@ def _stage_extended_pulse_opt(
     )
     log.append(f"  Pi/2 optimisation done: pi2_gain={pi2_gain_opt}, fidelity={pi2_fid:.4f}")
 
-    # ── Final 1-pulse fidelity verification ─────────────────────────────────
+    # Final 1-pulse fidelity verification
     log.append(f"  Final SingleShot verification (N=1): gain={pi_gain_opt}, shots={full_shots} …")
     fid_final, thr_final, ang_final, _, _ = _run_single_shot_at_gain(
         soc,
@@ -1424,8 +1273,7 @@ def _stage_run_t2(
     repetitions = params["T2_repetitions"]
     freq_shift = params["T2_freq_shift"]
 
-    # phase_step = 0 (no artificial detuning via phase advance)
-    # The soccfg.deg2reg call mirrors CSTQ02_BFC.py
+    # phase_step is 0: no artificial detuning via phase advance
     try:
         phase_step = int(soccfg.deg2reg(0.0, gen_ch=cfg.get("qubit_ch", 1)))
     except Exception:
@@ -1491,7 +1339,6 @@ def _stage_run_t2e(
     T2E_max_us = params["T2E_max_us"]
     T2E_expts = params["T2E_expts"]
 
-    # Mirror CSTQ02_BFC.py step calculation (hardware quantisation)
     int_steps = int(T2E_max_us // (_T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_expts))
     if int_steps == 0:
         log.append("  WARNING: T2E step is 0. Increase T2E_max_us or reduce T2E_expts.")
@@ -1543,7 +1390,7 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
     fname = os.path.join(auto_folder, f"auto_coherence_summary_{timestamp}.txt")
 
     lines = [
-        f"AutoCoherence calibration summary",
+        "AutoCoherence calibration summary",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
         "─── Calibrated parameters ───────────────────────────────────────",
@@ -1588,71 +1435,22 @@ def _save_summary(auto_folder, timestamp, calibration, params, log):
 def _run_auto_coherence(
     soc, soccfg, config, outerFolder, qubit_readout, qubit_params, yoko=None, auto_params=None
 ):
-    """
-    Fully-automated T1 / T2 / T2Echo calibration and measurement.
+    """Run the full AutoCoherence pipeline for qubit `qubit_readout`; config/qubit_params are not mutated.
 
-    Parameters
-    ----------
-    soc, soccfg
-        QICK hardware proxies (from makeProxy()).
-    config : dict
-        Full config dict as constructed in CSTQ02_BFC.py (hardware channels,
-        readout frequency, cavity gain, FF_Qubits, etc.).  NOT modified.
-    outerFolder : str
-        Root save directory.  All output goes into an AutoCoherence_<timestamp>
-        sub-folder created here.
-    qubit_readout : int
-        Key into qubit_params (e.g. 4 for Qubit 4).
-    qubit_params : dict
-        Qubit_Parameters dictionary.  NOT modified.
-    yoko : pyvisa resource or None
-        Yokogawa charge-line controller.  Pass None if no charge line is used.
-    auto_params : dict or None
-        Optional overrides for AUTO_COHERENCE_PARAMS.  Only keys present in
-        the override dict are changed; all others keep their defaults.
-
-    Returns
-    -------
-    results : dict
-        {
-          'qubit_frequency'  : float,   # MHz
-          'pi_gain'          : int,
-          'pi2_gain'         : int,
-          'rabi_sigma'       : float,   # us
-          'flattop_length'   : value,
-          'fidelity'         : float,
-          'ss_threshold'     : float,
-          'ss_angle'         : float,
-          'sweet_spot_voltage': float or None,
-          'auto_folder'      : str,
-          'summary_file'     : str,
-        }
+    auto_params overrides AUTO_COHERENCE_PARAMS. Returns the calibration dict + auto_folder, summary_file.
     """
-    # ── Merge default params with any user overrides ─────────────────────────
     params = {**AUTO_COHERENCE_PARAMS, **(auto_params or {})}
 
-    # ── Timestamp for this run ───────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # ── Create the folder hierarchy ──────────────────────────────────────────
-    # Structure:
-    #   outerFolder/
-    #     AutoCoherence/          ← persistent root for all auto runs
-    #       run_<timestamp>/      ← one folder per invocation
-    #         auto-Spec/          ← per-stage sub-folders (created by ExperimentClass)
-    #         auto-AmplitudeRabi/
-    #         auto-SingleShot/
-    #         auto-T1/  auto-T2/  auto-T2E/
-    #
-    # ExperimentClass concatenates outerFolder + path (no separator), so
-    # auto_folder MUST end with "/" for stage sub-folders to land correctly.
+    # ExperimentClass concatenates outerFolder + path, so auto_folder ends with "/";
+    # layout in docs/experiments/auto_coherence.md#outputs
     ac_root = os.path.join(outerFolder, "AutoCoherence")
     os.makedirs(ac_root, exist_ok=True)
     auto_folder = os.path.join(ac_root, f"run_{timestamp}") + "/"
     os.makedirs(auto_folder, exist_ok=True)
     print(f"[AutoCoherence] Starting run.  Output folder: {auto_folder}")
 
-    # ── Read initial qubit parameters (read-only) ────────────────────────────
     q_key = str(qubit_readout)
     readout_freq = qubit_params[q_key]["Readout"]["Frequency"]
     readout_gain = qubit_params[q_key]["Readout"]["Gain"]
@@ -1671,9 +1469,6 @@ def _run_auto_coherence(
     log.append(f"Initial readout_freq: {readout_freq} MHz")
     log.append(f"Initial readout_gain: {readout_gain}")
 
-    # ── Ensure readout parameters are in the working config ─────────────────
-    # (config is already constructed by the caller, but we confirm the keys
-    #  are present.  We never write back to the caller's config dict.)
     base_cfg = _sync_cfg_to_selected_qubit(
         cfg=config,
         qubit_readout=qubit_readout,
@@ -1685,7 +1480,7 @@ def _run_auto_coherence(
         flattop_length=flattop_length,
     )
 
-    # ── Stage 1: Sweet-spot search ───────────────────────────────────────────
+    # Stage 1: Sweet-spot search
     if params.get("skip_sweet_spot_search", False):
         qubit_freq = qubit_freq_init
         sweet_spot_voltage = float(yoko.query(":SOUR:LEV?")) if yoko is not None else None
@@ -1709,7 +1504,7 @@ def _run_auto_coherence(
             log=log,
         )
 
-    # ── Stage 1.5: Two-tone qubit-frequency calibration ─────────────────────
+    # Stage 1.5: Two-tone qubit-frequency calibration
     if params.get("calibrate_qubit_freq", True):
         qubit_freq, _ = _stage_calibrate_qubit_freq(
             soc=soc,
@@ -1725,7 +1520,7 @@ def _run_auto_coherence(
         log.append("")
         log.append("STAGE 1.5 – Qubit-frequency calibration skipped (calibrate_qubit_freq=False)")
 
-    # ── Stage 2: AmplitudeRabi ───────────────────────────────────────────────
+    # Stage 2: AmplitudeRabi
     pi_gain, rabi_sigma = _stage_amplitude_rabi(
         soc=soc,
         soccfg=soccfg,
@@ -1739,7 +1534,7 @@ def _run_auto_coherence(
         log=log,
     )
 
-    # ── Stage 2.5: Readout parameter optimisation ───────────────────────────
+    # Stage 2.5: Readout parameter optimisation
     if params.get("auto_readout_opt", True):
         opt_rl, opt_ao = _stage_optimize_readout(
             soc=soc,
@@ -1765,7 +1560,7 @@ def _run_auto_coherence(
         log.append("")
         log.append("STAGE 2.5 – Readout optimisation skipped (auto_readout_opt=False)")
 
-    # ── Stage 3: SingleShot / extended pi & pi2 pulse optimisation ─────────
+    # Stage 3: SingleShot / extended pi & pi2 pulse optimisation
     if params.get("extended_pi_pi2_opt", False):
         pi_gain_opt, pi2_gain_opt, fidelity, ss_threshold, ss_angle = _stage_extended_pulse_opt(
             soc=soc,
@@ -1795,7 +1590,6 @@ def _run_auto_coherence(
             log=log,
         )
 
-    # ── Collect calibrated parameters ────────────────────────────────────────
     calibration = {
         "qubit_frequency": qubit_freq,
         "pi_gain": pi_gain_opt,
@@ -1813,7 +1607,7 @@ def _run_auto_coherence(
     for k, v in calibration.items():
         log.append(f"  {k:<25}: {v}")
 
-    # ── Stage 4: T1 ─────────────────────────────────────────────────────────
+    # Stage 4: T1
     _stage_run_t1(
         soc=soc,
         soccfg=soccfg,
@@ -1828,7 +1622,7 @@ def _run_auto_coherence(
         log=log,
     )
 
-    # ── Stage 5: T2 Ramsey ──────────────────────────────────────────────────
+    # Stage 5: T2 Ramsey
     _stage_run_t2(
         soc=soc,
         soccfg=soccfg,
@@ -1844,7 +1638,7 @@ def _run_auto_coherence(
         log=log,
     )
 
-    # ── Stage 6: T2Echo ─────────────────────────────────────────────────────
+    # Stage 6: T2Echo
     _stage_run_t2e(
         soc=soc,
         soccfg=soccfg,
@@ -1860,12 +1654,11 @@ def _run_auto_coherence(
         log=log,
     )
 
-    # ── Save summary file ────────────────────────────────────────────────────
     log.append("")
     log.append(f"Run completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     summary_file = _save_summary(auto_folder, timestamp, calibration, params, log)
 
-    print(f"[AutoCoherence] All done.")
+    print("[AutoCoherence] All done.")
     print(f"  qubit_frequency  = {qubit_freq:.6f} MHz")
     print(f"  pi_gain          = {pi_gain_opt}")
     print(f"  pi2_gain         = {pi2_gain_opt}")
@@ -1881,11 +1674,11 @@ def run_auto_coherence(ctx, AutoCoherence_override_params):
     auto_results = _run_auto_coherence(
         soc=ctx.soc,
         soccfg=ctx.soccfg,
-        config=ctx.working_config(),  # full config dict built above
+        config=ctx.working_config(),
         outerFolder=ctx.outerFolder,
         qubit_readout=ctx.Qubit_Readout,
         qubit_params=ctx.Qubit_Parameters,
-        yoko=ctx.yoko,  # set to None if no charge line
+        yoko=ctx.yoko,
         auto_params=AutoCoherence_override_params,
     )
     print("[AutoCoherence] Results:", auto_results)

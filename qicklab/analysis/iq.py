@@ -138,3 +138,51 @@ def min_q_range_phase(I, Q, n):
     )
     phase_index = np.argmin(Q_range)
     return phase_values[phase_index]
+
+
+def kmeans_split(iq, min_blob_snr=None):
+    """Split (N, 2) IQ points into two KMeans blobs along the centroid axis; state 1 = minority.
+
+    Below `min_blob_snr` every shot is 0 (docs/architecture.md#analysis-conventions).
+    Returns (states, c0, c1, normal, midpoint, scores, blob_snr); blob_snr None without the gate.
+    """
+    from sklearn.cluster import KMeans  # third-party; kept local so `iq` stays import-light
+
+    kmeans = KMeans(n_clusters=2, random_state=0, n_init=20)
+    labels = kmeans.fit_predict(iq)
+    centers = kmeans.cluster_centers_
+
+    c0 = centers[0]
+    c1 = centers[1]
+    normal = c1 - c0
+    midpoint = 0.5 * (c0 + c1)
+    scores = (iq - midpoint) @ normal
+    states = (scores > 0).astype(int)
+
+    blob_snr = None
+    if min_blob_snr is not None:
+        sep = float(np.linalg.norm(normal))
+        within = float(
+            np.sqrt(
+                np.mean(
+                    [
+                        np.mean(np.sum((iq[labels == k] - centers[k]) ** 2, axis=1))
+                        for k in (0, 1)
+                        if np.any(labels == k)
+                    ]
+                )
+            )
+        )
+        blob_snr = sep / within if within > 0 else np.inf
+        if not blob_snr >= min_blob_snr:
+            return np.zeros(len(iq), dtype=int), c0, c1, normal, midpoint, scores, blob_snr
+
+    n0 = np.sum(states == 0)
+    n1 = np.sum(states == 1)
+    if n1 > n0:
+        states = 1 - states
+        c0, c1 = c1, c0
+        normal = c1 - c0
+        midpoint = 0.5 * (c0 + c1)
+        scores = (iq - midpoint) @ normal
+    return states, c0, c1, normal, midpoint, scores, blob_snr

@@ -1,22 +1,26 @@
 """Charge-dispersion runs (quasi-CW two-tone, quasi-CW and Ramsey)."""
 
-import json
 import os
-from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.cluster import KMeans
 
-from qicklab.analysis.iq import project_iq_signal
+from qicklab.analysis.iq import kmeans_split, project_iq_signal
+from qicklab.analysis.plotting import iq_separator_geometry, plot_separator, set_iq_limits
 from qicklab.analysis.spectroscopy import (
     choose_two_tone_freqs_from_lorentz_or_peaks,
     save_two_tone_plot,
 )
+from qicklab.core.io import save_cycle_summary, save_record, timestamp
 from qicklab.experiments.charge_dispersion import ChargeDispersion, ChargeDispersionQuasiCW
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.hardware.yoko import ramp_to
 from qicklab.runs.charge_sweep import choose_next_voltage
+
+
+def _qcw_rep_period_us(cfg):
+    """Approximate quasi-CW rep period, not program-derived (docs/experiments/charge_dispersion.md)."""
+    return 1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
 
 
 def run_two_tone_charge_dispersion_quasicw(
@@ -33,7 +37,6 @@ def run_two_tone_charge_dispersion_quasicw(
     max_tries = TwoToneChargeDispersion_params["max_voltage_tries"]
     num_cycles = TwoToneChargeDispersion_params["num_cycles"]
 
-    # start each overall experiment from the yoko's current value
     current_voltage = float(ctx.yoko.query(":SOUR:LEV?"))
     direction = +1
 
@@ -46,14 +49,12 @@ def run_two_tone_charge_dispersion_quasicw(
         chosen_probe_freq = None
         chosen_peak_sep = None
 
-        # ---------- search loop for this cycle ----------
         for attempt_idx in range(max_tries):
             print(
                 f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}/{num_cycles}, "
                 f"attempt {attempt_idx + 1}/{max_tries}, V={current_voltage:.6f} V"
             )
 
-            # --- run two-tone spec at current voltage ---
             cfg["current_voltage"] = current_voltage
             cfg["reps"] = TwoToneChargeDispersion_params["reps"]
             cfg["rounds"] = TwoToneChargeDispersion_params["rounds"]
@@ -94,9 +95,6 @@ def run_two_tone_charge_dispersion_quasicw(
             x_pts = np.array(data_specSlice["data"]["x_pts"])
             avgi = np.array(data_specSlice["data"]["avgi"][0][0])
             avgq = np.array(data_specSlice["data"]["avgq"][0][0])
-            # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
-            # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
-            # background quadrature and buries the qubit feature.
             avgamp0 = project_iq_signal(avgi, avgq)
 
             freq_choice = choose_two_tone_freqs_from_lorentz_or_peaks(
@@ -183,7 +181,6 @@ def run_two_tone_charge_dispersion_quasicw(
                 success = True
                 break
 
-            # --- not separated enough: move voltage ---
             next_voltage, direction = choose_next_voltage(
                 current_v=current_voltage,
                 dv=dV,
@@ -199,7 +196,6 @@ def run_two_tone_charge_dispersion_quasicw(
             ramp_to(ctx.yoko, next_voltage)
             current_voltage = next_voltage
 
-        # ---------- if search failed, record and continue to next cycle ----------
         if not success:
             print(
                 f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: failed to find sufficient peak separation."
@@ -215,7 +211,6 @@ def run_two_tone_charge_dispersion_quasicw(
             )
             continue
 
-        # ---------- run quasi-CW for this cycle ----------
         ChargeDispersion_params["probe_freq"] = chosen_probe_freq
 
         cfg["current_voltage"] = current_voltage
@@ -247,60 +242,26 @@ def run_two_tone_charge_dispersion_quasicw(
         raw_i = np.ravel(np.array(data_qcw["data"]["raw_i"]))
         raw_q = np.ravel(np.array(data_qcw["data"]["raw_q"]))
         iq = np.column_stack([raw_i, raw_q])
+        binary_states, c0, c1, normal, midpoint, scores, _ = kmeans_split(iq)
 
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init=20)
-        labels = kmeans.fit_predict(iq)
-        centers = kmeans.cluster_centers_
+        elapsed_s = np.arange(len(raw_i)) * _qcw_rep_period_us(cfg) * 1e-6
 
-        c0 = centers[0]
-        c1 = centers[1]
-        normal = c1 - c0
-        midpoint = 0.5 * (c0 + c1)
-        scores = (iq - midpoint) @ normal
-        binary_states = (scores > 0).astype(int)
+        base = os.path.join(save_dir, f"Cycle_{cycle_idx:03d}_QuasiCW_{timestamp()}")
 
-        n0 = np.sum(binary_states == 0)
-        n1 = np.sum(binary_states == 1)
-        if n1 > n0:
-            binary_states = 1 - binary_states
-            c0, c1 = c1, c0
-            normal = c1 - c0
-            midpoint = 0.5 * (c0 + c1)
-            scores = (iq - midpoint) @ normal
-
-        rep_period_us = 1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
-        elapsed_s = np.arange(len(raw_i)) * rep_period_us * 1e-6
-
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        base = os.path.join(save_dir, f"Cycle_{cycle_idx:03d}_QuasiCW_{timestamp}")
-
-        I_min, I_max = raw_i.min(), raw_i.max()
-        Q_min, Q_max = raw_q.min(), raw_q.max()
-        I_pad = 0.05 * (I_max - I_min if I_max > I_min else 1.0)
-        Q_pad = 0.05 * (Q_max - Q_min if Q_max > Q_min else 1.0)
-        I_line = np.linspace(I_min - I_pad, I_max + I_pad, 400)
-
-        vertical_line = np.abs(normal[1]) < 1e-12
-        if not vertical_line:
-            Q_line = midpoint[1] - (normal[0] / normal[1]) * (I_line - midpoint[0])
+        xlim, ylim, I_line, Q_line = iq_separator_geometry(raw_i, raw_q, midpoint, normal)
 
         plt.figure(figsize=(6, 6))
         plt.plot(raw_i, raw_q, ".", alpha=0.35, label="IQ data")
         plt.plot(c0[0], c0[1], "o", markersize=10, label="Blob center 0")
         plt.plot(c1[0], c1[1], "o", markersize=10, label="Blob center 1")
-        if vertical_line:
-            plt.axvline(midpoint[0], linestyle="--", linewidth=2, label="Separator")
-        else:
-            plt.plot(I_line, Q_line, "--", linewidth=2, label="Separator")
+        plot_separator(midpoint, I_line, Q_line)
         plt.xlabel("I")
         plt.ylabel("Q")
         plt.title(
             f"Cycle {cycle_idx + 1}: QuasiCW IQ, V={current_voltage:.6f} V, "
             f"probe={chosen_probe_freq:.6f} MHz"
         )
-        plt.xlim(I_min - I_pad, I_max + I_pad)
-        plt.ylim(Q_min - Q_pad, Q_max + Q_pad)
-        plt.gca().set_aspect("equal", adjustable="box")
+        set_iq_limits(xlim, ylim)
         plt.legend()
         plt.tight_layout()
         plt.savefig(base + "_iq_separator.png", dpi=300, bbox_inches="tight")
@@ -313,16 +274,11 @@ def run_two_tone_charge_dispersion_quasicw(
         plt.plot(
             raw_i[binary_states == 1], raw_q[binary_states == 1], ".", alpha=0.5, label="State 1"
         )
-        if vertical_line:
-            plt.axvline(midpoint[0], linestyle="--", linewidth=2, label="Separator")
-        else:
-            plt.plot(I_line, Q_line, "--", linewidth=2, label="Separator")
+        plot_separator(midpoint, I_line, Q_line)
         plt.xlabel("I")
         plt.ylabel("Q")
         plt.title(f"Cycle {cycle_idx + 1}: QuasiCW IQ labeled")
-        plt.xlim(I_min - I_pad, I_max + I_pad)
-        plt.ylim(Q_min - Q_pad, Q_max + Q_pad)
-        plt.gca().set_aspect("equal", adjustable="box")
+        set_iq_limits(xlim, ylim)
         plt.legend()
         plt.tight_layout()
         plt.savefig(base + "_iq_labeled.png", dpi=300, bbox_inches="tight")
@@ -350,8 +306,9 @@ def run_two_tone_charge_dispersion_quasicw(
         plt.savefig(base + "_binary.png", dpi=300, bbox_inches="tight")
         plt.close()
 
-        np.savez(
-            base + ".npz",
+        save_record(
+            base,
+            cfg,
             elapsed_s=np.array(elapsed_s),
             raw_i=np.array(raw_i),
             raw_q=np.array(raw_q),
@@ -367,9 +324,6 @@ def run_two_tone_charge_dispersion_quasicw(
             config=np.array(cfg, dtype=object),
         )
 
-        with open(base + "_config.json", "w") as f:
-            json.dump(cfg, f, indent=2, default=float)
-
         cycle_summary.append(
             {
                 "cycle_idx": cycle_idx,
@@ -380,15 +334,7 @@ def run_two_tone_charge_dispersion_quasicw(
             }
         )
 
-        # after finishing this cycle, restart the search from the current voltage
-        # direction is preserved so the voltage walk continues naturally
-
-    # ---------- save summary for all cycles ----------
-    summary_path = os.path.join(
-        save_dir, f"CycleSummary_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.json"
-    )
-    with open(summary_path, "w") as f:
-        json.dump(cycle_summary, f, indent=2, default=float)
+    save_cycle_summary(save_dir, cycle_summary)
 
 
 def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_params):
@@ -421,112 +367,40 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
 
     x_pts = np.array(data_specSlice["data"]["x_pts"])
 
-    # repetition-resolved IQ data
     raw_i = np.ravel(np.array(data_specSlice["data"]["raw_i"]))
     raw_q = np.ravel(np.array(data_specSlice["data"]["raw_q"]))
-
-    # stack IQ points
     iq = np.column_stack([raw_i, raw_q])
+    binary_amps, c0, c1, normal, midpoint, scores, _ = kmeans_split(iq)
 
-    # ---------------------------
-    # Straight-line blob separation using 2-cluster fit
-    # ---------------------------
-    kmeans = KMeans(n_clusters=2, random_state=0, n_init=20)
-    labels = kmeans.fit_predict(iq)
-    centers = kmeans.cluster_centers_
-
-    c0 = centers[0]
-    c1 = centers[1]
-
-    # normal vector to separating line = line connecting the centers
-    normal = c1 - c0
-    midpoint = 0.5 * (c0 + c1)
-
-    # signed distance from perpendicular bisector
-    scores = (iq - midpoint) @ normal
-
-    # binary labels from side of line
-    binary_amps = (scores > 0).astype(int)
-
-    # optional relabel so state 1 is the less populated blob
-    n0 = np.sum(binary_amps == 0)
-    n1 = np.sum(binary_amps == 1)
-    if n1 > n0:
-        binary_amps = 1 - binary_amps
-        labels = 1 - labels
-        c0, c1 = c1, c0
-        normal = c1 - c0
-        midpoint = 0.5 * (c0 + c1)
-        scores = (iq - midpoint) @ normal
-
-    # amplitude for reference only
     amps = np.abs(raw_i + 1j * raw_q) ** 2
-
-    # approximate time axis per repetition
-    rep_period_us = 1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
-    elapsed_s = np.arange(len(raw_i)) * rep_period_us * 1e-6
+    elapsed_s = np.arange(len(raw_i)) * _qcw_rep_period_us(cfg) * 1e-6
 
     save_dir = os.path.join(ctx.outerFolder, "ChargeDispersion")
     os.makedirs(save_dir, exist_ok=True)
+    base = os.path.join(save_dir, f"ChargeDispersionQuasiCW_{timestamp()}")
 
-    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    base = os.path.join(save_dir, f"ChargeDispersionQuasiCW_{timestamp}")
+    xlim, ylim, I_line, Q_line = iq_separator_geometry(raw_i, raw_q, midpoint, normal)
 
-    # line for plotting: normal dot (x - midpoint) = 0
-    # => n_x*(I - I_mid) + n_y*(Q - Q_mid) = 0
-    # => Q = Q_mid - (n_x/n_y)*(I - I_mid), unless n_y ~ 0
-    I_min, I_max = raw_i.min(), raw_i.max()
-    I_pad = 0.05 * (I_max - I_min if I_max > I_min else 1.0)
-    I_line = np.linspace(I_min - I_pad, I_max + I_pad, 400)
-
-    vertical_line = np.abs(normal[1]) < 1e-12
-    if not vertical_line:
-        Q_line = midpoint[1] - (normal[0] / normal[1]) * (I_line - midpoint[0])
-
-    # ---------------------------
-    # Plot 1: raw IQ blobs with separating line
-    # ---------------------------
+    # shown, never saved
     plt.figure(figsize=(6, 6))
     plt.plot(raw_i, raw_q, ".", alpha=0.35, label="IQ data")
     plt.plot(c0[0], c0[1], "o", markersize=10, label="Blob center 0")
     plt.plot(c1[0], c1[1], "o", markersize=10, label="Blob center 1")
-
-    if vertical_line:
-        plt.axvline(midpoint[0], linestyle="--", linewidth=2, label="Separator")
-    else:
-        plt.plot(I_line, Q_line, "--", linewidth=2, label="Separator")
-
+    plot_separator(midpoint, I_line, Q_line)
     plt.xlabel("I")
     plt.ylabel("Q")
     plt.title("ChargeDispersionQuasiCW IQ blobs with straight-line separator")
-
-    i_min, i_max = raw_i.min(), raw_i.max()
-    q_min, q_max = raw_q.min(), raw_q.max()
-    i_pad = 0.05 * (i_max - i_min if i_max > i_min else 1.0)
-    q_pad = 0.05 * (q_max - q_min if q_max > q_min else 1.0)
-
-    plt.xlim(i_min - i_pad, i_max + i_pad)
-    plt.ylim(q_min - q_pad, q_max + q_pad)
-    plt.gca().set_aspect("equal", adjustable="box")
-
+    set_iq_limits(xlim, ylim)
     plt.legend()
     plt.tight_layout()
     plt.show()
 
-    # ---------------------------
-    # Plot 2: IQ blobs colored by assigned state
-    # ---------------------------
     plt.figure(figsize=(6, 6))
     plt.plot(raw_i[binary_amps == 0], raw_q[binary_amps == 0], ".", alpha=0.5, label="State 0")
     plt.plot(raw_i[binary_amps == 1], raw_q[binary_amps == 1], ".", alpha=0.5, label="State 1")
     plt.plot(c0[0], c0[1], "o", markersize=10)
     plt.plot(c1[0], c1[1], "o", markersize=10)
-
-    if vertical_line:
-        plt.axvline(midpoint[0], linestyle="--", linewidth=2, label="Separator")
-    else:
-        plt.plot(I_line, Q_line, "--", linewidth=2, label="Separator")
-
+    plot_separator(midpoint, I_line, Q_line)
     plt.xlabel("I")
     plt.ylabel("Q")
     plt.title("IQ blobs colored by straight-line separation")
@@ -536,9 +410,6 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     plt.show()
     plt.close()
 
-    # ---------------------------
-    # Plot 3: projection score histogram
-    # ---------------------------
     plt.figure(figsize=(7, 5))
     plt.hist(scores, bins=100, alpha=0.7)
     plt.axvline(0.0, linestyle="--", linewidth=2, label="Decision boundary")
@@ -551,15 +422,7 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     plt.show()
     plt.close()
 
-    # ---------------------------
-    # Plot 4: binary parity trace over time
-    # ---------------------------
     plt.figure(figsize=(10, 4))
-    # NameError guard: this routine's per-shot labels are `binary_amps` (set at
-    # the KMeans block above); `binary_states` and `cycle_idx` are names from the
-    # cycle-looping routines and are NOT defined here. Reading them raised a
-    # NameError that aborted the function BEFORE the np.savez below, so every
-    # QuasiCW run lost its data after having already taken it.
     plt.plot(elapsed_s, binary_amps, "-", linewidth=1.5)
     plt.xlabel("Time since start (s)")
     plt.ylabel("Assigned state")
@@ -570,8 +433,9 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     plt.savefig(base + "_binary.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-    np.savez(
-        base + ".npz",
+    save_record(
+        base,
+        cfg,
         elapsed_s=np.array(elapsed_s),
         raw_i=np.array(raw_i),
         raw_q=np.array(raw_q),
@@ -585,14 +449,11 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
         config=np.array(cfg, dtype=object),
     )
 
-    with open(base + "_config.json", "w") as f:
-        json.dump(cfg, f, indent=2, default=float)
-
 
 def run_charge_dispersion_ramsey(ctx, T1T2_params, ChargeDispersion_params):
     cfg = ctx.working_config()
     repetitions = T1T2_params["repetitions"]
-    for i in range(repetitions):
+    for _ in range(repetitions):
         cd_cfg = {
             "df": ChargeDispersion_params["df"],
             "reps": 1,

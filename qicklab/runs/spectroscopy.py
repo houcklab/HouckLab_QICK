@@ -4,7 +4,6 @@ from qicklab.core.config import sanity_dump
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 
 
-# qubit spec experiment
 def run_two_tone_spec(ctx, params):
     cfg = ctx.working_config()
     cfg["reps"] = params["reps"]
@@ -12,8 +11,6 @@ def run_two_tone_spec(ctx, params):
     cfg["Gauss"] = params["Gauss"]
     if params["Gauss"]:
         cfg["sigma"] = params["sigma"]
-        cfg["qubit_gain"] = params["gain"]
-
     cfg["qubit_gain"] = params["gain"]
 
     cfg["qubit_length"] = params["qubit_length"]
@@ -38,15 +35,13 @@ def run_two_tone_spec(ctx, params):
         min_sep=min_sep,
         fit_window_mhz=0.5,
         prominent_ratio=0.1,
-    )  # can change to True
+    )
     QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
     QubitSpecSliceFF.save_config(Instance_specSlice)
 
 
-# Nested gain × qubit_length sweep.
-# For each length in sweep_lengths, runs a full qubit spec at every gain in sweep_gains.
-# qubit_gain and qubit_length appear in every saved plot title for easy identification.
 def run_spec_gain_length_sweep(ctx, params):
+    """Full two-tone spec at every (qubit_length, qubit_gain) of sweep_lengths x sweep_gains."""
     cfg = ctx.working_config()
     sweep_lengths = params["sweep_lengths"]
     sweep_gains = params["sweep_gains"]
@@ -98,8 +93,8 @@ def run_spec_gain_length_sweep(ctx, params):
 def run_trans_qubit_spec(ctx, params, T1T2_params):
     cfg = ctx.working_config()
     sanity_dump(cfg)
-    for i in range(T1T2_params["repetitions"]):
-        cfg["reps"] = params["reps"]  # want more reps and rounds for qubit data
+    for _ in range(T1T2_params["repetitions"]):
+        cfg["reps"] = params["reps"]
         cfg["rounds"] = params["rounds"]
         cfg["Gauss"] = params["Gauss"]
         if params["Gauss"]:

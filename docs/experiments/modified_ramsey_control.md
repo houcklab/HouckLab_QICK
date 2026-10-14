@@ -92,6 +92,10 @@ Legacy `ModifiedRamsey_Control_params` keys. Defaults are the CSTQ03 runner valu
 | `window_ms` | 0.1 | ms | Moving-average window. Set by default if absent. |
 | `use_pi_pulse`, `flip_final_pi2`, `symmetric_ramsey`, `use_active_reset`, `reset_*`, `post_reset_wait` | False, False, False, False, … | — | Forwarded to the program (see Known issues). |
 
+The step always writes `pi_gain = qubit_gain` into the Ramsey cfg (with `pi2_gain`). The
+program needs `pi_gain` whenever `use_pi_pulse` (the echo pi) or `use_active_reset` (the
+corrective reset flip) is on.
+
 ## Outputs
 
 - **Spectra** from the search: `QubitSpecSliceFF` records with path `auto-Spec`,

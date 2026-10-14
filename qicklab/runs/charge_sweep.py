@@ -40,7 +40,6 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         cfg["qubit_gain"] = Spec_relevant_params["gain"]
 
     voltage_pts = np.arange(cfg["voltage_start"], cfg["voltage_end"], cfg["voltage_step"])
-    # will initialize after first acquisition, once x_pts length is known
     avgamp_map = None
     fig = None
     ax = None
@@ -71,31 +70,21 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         x_pts = np.array(data_specSlice["data"]["x_pts"])
         avgi = np.array(data_specSlice["data"]["avgi"][0][0])
         avgq = np.array(data_specSlice["data"]["avgq"][0][0])
-        # Rotate onto the signal-bearing IQ axis (background-subtracted) instead of
-        # the raw magnitude |I+iQ|^2: the magnitude is dominated by the large, noisy
-        # background quadrature, which both buries per-slice peaks and washes out the
-        # charge-sweep heatmap. The projection gives each slice a ~0 baseline with the
-        # qubit feature as a positive bump.
         avgamp0 = project_iq_signal(avgi, avgq)
-        # find up to two peaks with a minimum spacing in x-units
-        min_spacing = 0.05  # same units as x_pts
+        # up to two tallest peaks >= 0.05 MHz apart, sorted by frequency (printed only)
+        min_spacing = 0.05
         dx = np.mean(np.diff(x_pts))
         min_distance_pts = max(1, int(np.ceil(min_spacing / dx)))
 
         peak_inds, _ = find_peaks(avgamp0, distance=min_distance_pts)
-
-        # keep the two tallest peaks
         if len(peak_inds) > 0:
             peak_inds = peak_inds[np.argsort(avgamp0[peak_inds])[::-1][:2]]
-            peak_inds = peak_inds[np.argsort(x_pts[peak_inds])]  # optional: sort by frequency
+            peak_inds = peak_inds[np.argsort(x_pts[peak_inds])]
             peak_freqs = x_pts[peak_inds]
-            peak_vals = avgamp0[peak_inds]
         else:
             peak_freqs = np.array([])
-            peak_vals = np.array([])
 
         print("peak freqs:", peak_freqs)
-        # initialize plotting objects once we know x axis length
         if avgamp_map is None:
             avgamp_map = np.full((len(voltage_pts), len(x_pts)), np.nan)
             plt.ion()
@@ -123,11 +112,8 @@ def run_charge_sweep(ctx, Spec_relevant_params):
             ax.set_title("Charge sweep for Qubit Spec")
 
             plt.show(block=False)
-        # store this voltage slice
         avgamp_map[i, :] = avgamp0
-        # update heatmap
         im.set_data(avgamp_map)
-        # optional: rescale color as data comes in
         im.set_clim(np.nanmin(avgamp_map), np.nanmax(avgamp_map))
         ax.set_title(f"\nVoltage = {voltage:.4f}")
         fig.canvas.draw_idle()
@@ -148,11 +134,9 @@ def run_charge_sweep(ctx, Spec_relevant_params):
 
 
 def charge_sweep_voltages(cfg, params):
-    """Charge-bias points shared by the charge sweeps.
+    """Charge-bias grid np.arange(voltage_start, voltage_end, voltage_step), half-open.
 
-    Reads voltage_start/end/step from `params` when given, else from the config
-    (where build_context puts the runner's charge_params). Half-open like
-    np.arange: voltage_end itself is not measured.
+    Each value comes from `params`, else from cfg (charge_params); validated non-empty, |V| <= 10.
     """
     resolved = {}
     for key in ("voltage_start", "voltage_end", "voltage_step"):
@@ -174,29 +158,16 @@ def charge_sweep_voltages(cfg, params):
             f"voltage_end={resolved['voltage_end']} "
             f"voltage_step={resolved['voltage_step']} (check the step sign)"
         )
-    if np.any(np.abs(v) > 10):
-        # ramp_to only rejects target > 10, so a negative typo slips past it
+    if np.any(np.abs(v) > 10):  # ramp_to only rejects > +10 V: docs/architecture.md#yoko-safety
         raise ValueError(f"charge sweep exceeds +-10 V: {v.min()} to {v.max()}")
     return v
 
 
 def run_charge_transmission_sweep(ctx, params=None):
-    """Cavity transmission sweep repeated at every charge bias.
+    """CavitySpecFF transmission sweep at every charge bias -> dB heatmap + tracked extremum.
 
-    Steps the yoko through voltage_start/end/step (params, else the runner's
-    charge_params) and runs a full CavitySpecFF frequency sweep at each bias,
-    building a transmission-vs-(frequency, voltage) heatmap. Every slice is
-    saved by CavitySpecFF as usual; the map, the per-voltage I/Q and the tracked
-    resonator frequency are saved alongside the last slice.
-
-    params (all optional): reps, rounds, span, num_points, fit (per-slice hanger
-    fit -> adds a fit-minimum trace), settle_s (wait after each ramp),
-    voltage_start / voltage_end / voltage_step (override charge_params).
-
-    ctx.config is left untouched: unlike run_transmission_sweep this does NOT
-    write the found cavity frequency back, since "the" cavity frequency is not
-    defined across a charge sweep. The yoko returns to its starting bias, also
-    on an error or Ctrl-C.
+    params (all optional): reps, rounds, span, num_points, fit, settle_s, voltage_start/end/step.
+    Leaves ctx.config untouched and restores the start bias: docs/experiments/charge_transmission_sweep.md
     """
     params = params or {}
     cfg = ctx.working_config()
@@ -215,9 +186,7 @@ def run_charge_transmission_sweep(ctx, params=None):
     settle_s = float(params.get("settle_s", 0.0))
     voltage_pts = charge_sweep_voltages(cfg, params)
 
-    # CavitySpecFF.acquire() sweeps cfg["pulse_freq"] in place and display(fit=True)
-    # rewrites it with the fitted minimum, so every slice has to start again from
-    # the same centre rather than from whatever the previous slice left behind.
+    # acquire/display rewrite cfg["pulse_freq"]: reset per slice (docs/architecture.md#carry-overs)
     center_freq = float(cfg["pulse_freq"])
     lo_mhz = cfg.get("cavity_LO", 0.0) / 1e6
 
@@ -231,9 +200,7 @@ def run_charge_transmission_sweep(ctx, params=None):
     x_pts = None
 
     v_return = float(ctx.yoko.query(":SOUR:LEV?"))
-    # An abort must not leave the bias parked at an arbitrary point: every later
-    # measurement in the session would silently run at that charge offset.
-    try:
+    try:  # restore the start bias even on abort: docs/architecture.md#yoko-safety
         for i, voltage in enumerate(voltage_pts):
             print(f"[ChargeTransmissionSweep] bias {i + 1}/{len(voltage_pts)}: {voltage:.6f} V")
             if not ctx.yoko_fixed:
@@ -269,8 +236,7 @@ def run_charge_transmission_sweep(ctx, params=None):
                 f"{raw_extremum[i]:.6f} MHz ({y_db[extremum_idx]:.3f} dB)"
             )
 
-            # ── live heatmap, built once the frequency axis length is known ──
-            if db_map is None:
+            if db_map is None:  # live heatmap, once the frequency axis length is known
                 x_pts = (fpts + lo_mhz) / 1e3  # GHz absolute, as in CavitySpecFF
                 db_map = np.full((len(voltage_pts), len(x_pts)), np.nan)
                 avgi_map = np.full_like(db_map, np.nan)
@@ -314,9 +280,6 @@ def run_charge_transmission_sweep(ctx, params=None):
     finally:
         if not ctx.yoko_fixed:
             ramp_to(ctx.yoko, v_return)
-
-    if db_map is None:  # every slice failed before the first one landed
-        return
 
     # tracked resonator frequency over the sweep, on the same GHz axis
     ax.plot(

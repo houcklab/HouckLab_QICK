@@ -10,7 +10,7 @@ from qicklab.experiments.transmission import CavitySpecFF
 
 
 def run_constant_two_tone(ctx, params=None):
-    for i in range(1000000):
+    for _ in range(1000000):
         Instance_trans = ConstantTwoTone(
             path="ConstantTwoTone",
             cfg=ctx.working_config(),
@@ -18,7 +18,7 @@ def run_constant_two_tone(ctx, params=None):
             soccfg=ctx.soccfg,
             outerFolder=ctx.outerFolder,
         )
-        data_trans = Instance_trans.acquire()
+        Instance_trans.acquire()
 
 
 def run_constant_tone(ctx, params=None):
@@ -29,14 +29,11 @@ def run_constant_tone(ctx, params=None):
         soccfg=ctx.soccfg,
         outerFolder=ctx.outerFolder,
     )
-    data_trans = SingleTone.acquire(Instance_trans)
+    SingleTone.acquire(Instance_trans)
 
 
 def run_transmission_fit(ctx, params):
-
     cfg = ctx.working_config()
-
-    # -------------------- acquire transmission --------------------
     cfg["reps"] = params["reps"]
     cfg["rounds"] = params["rounds"]
 
@@ -74,8 +71,7 @@ def run_transmission_fit(ctx, params):
     df0_fit, dQtot_fit, dQext_fit, dasym_fit, doffset_fit = perr
     Qint_fit = fit_result["Qint"]
 
-    # update config with fitted center frequency
-    ctx.config["pulse_freq"] = f0_fit
+    ctx.config["pulse_freq"] = f0_fit  # carry-over: docs/architecture.md#carry-overs
 
     freq_deviation = f0_fit - ctx.resonator_frequency_center
     kappa_mhz = (f0_fit / Qext_fit) / 1e6
@@ -94,13 +90,11 @@ def run_transmission_fit(ctx, params):
     )
     print(f"Cavity frequency found at: {ctx.config['pulse_freq']:.6f}")
 
-    # -------------------- plot fit over data --------------------
     x_fit = np.linspace(np.min(x_pts), np.max(x_pts), 2000)
     y_fit = fit_result["model"](x_fit, *popt)
 
     fit_min_idx = np.argmin(y_fit)
     fit_min_freq = x_fit[fit_min_idx]
-    fit_min_val = y_fit[fit_min_idx]
 
     fig_num_fit = 100
     while plt.fignum_exists(fig_num_fit):
@@ -127,11 +121,10 @@ def run_transmission_fit(ctx, params):
     plt.show()
 
 
-# perform the cavity transmission experiment
 def run_transmission_sweep(ctx, params):
     cfg = ctx.working_config()
-    cfg["reps"] = 20  # fast axis number of points
-    cfg["rounds"] = 20  # slow axis number of points
+    cfg["reps"] = 20
+    cfg["rounds"] = 20
     Instance_trans = CavitySpecFF(
         path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
@@ -140,8 +133,7 @@ def run_transmission_sweep(ctx, params):
     CavitySpecFF.save_data(Instance_trans, data_trans)
     CavitySpecFF.save_config(Instance_trans)
 
-    # update the transmission frequency to be the peak
-    if ctx.cavity_min:
+    if ctx.cavity_min:  # carry-over: docs/architecture.md#carry-overs
         ctx.config["pulse_freq"] = Instance_trans.peakFreq_min
     else:
         ctx.config["pulse_freq"] = Instance_trans.peakFreq_max

@@ -1,7 +1,6 @@
-"""CSTQ03 measurement routines, extracted from the monolithic CSTQ03_BFC.py runner.
+"""Measurement routines: each `run_*(ctx, params...)` is one `if RunX:` block of the legacy runner.
 
-Each `run_*` takes `(ctx, params...)` and reproduces one of the original `if RunX:`
-blocks.
+`__all__` also re-exports the helpers runners/CSTQ03_BFC.py gets from its star import (until phase 5).
 """
 
 from datetime import datetime

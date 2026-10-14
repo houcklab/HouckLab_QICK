@@ -1,29 +1,20 @@
 """Active-reset readout calibration and hardware verification."""
 
 import os
-from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from qicklab.core.io import timestamp
 from qicklab.experiments.active_reset_verify import ActiveResetVerify
 from qicklab.runs.single_shot import get_apriori_separator_from_singleshot
 
 
 def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
-    """
-    Calibrate the readout phase + single-shot I-threshold for hardware active reset.
+    """Rotate ctx.config["res_phase"] (in place) so g/e separate along I and measure the I-threshold.
 
-    The active-reset feedback (ModifiedRamsey / ActiveResetVerify) thresholds on the
-    RAW in-phase (I) value only, so |g> and |e> must separate ALONG I. This:
-      1) runs a SingleShot g/e calibration at the current res_phase,
-      2) rotates config["res_phase"] so the g->e axis lands on +I,
-      3) RE-MEASURES and reads the I-threshold directly off the rotated blobs
-         (so the deg2reg sign convention is never trusted -- the result is measured).
-
-    Mutates config["res_phase"] in place. Returns dict:
-      res_phase, readout_threshold, reset_ground_below_threshold,
-      g_center, e_center  (rotated-frame, normalized collect_shots() units).
+    Returns res_phase, readout_threshold, reset_ground_below_threshold, g_center, e_center
+    (rotated frame); procedure in docs/experiments/active_reset.md.
     """
     res_ch = ctx.config["res_ch"]
 
@@ -34,8 +25,7 @@ def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
 
     print(f"[ActiveReset calib] g->e axis at {phi_deg:.2f} deg; rotating res_phase to put it on I.")
 
-    # Try rotating by -phi (align g->e with +I); if the sign convention flips it,
-    # fall back to +phi. Keep whichever leaves the smallest |Q separation|.
+    # try -phi, then +phi; keep the smaller |Q| separation (deg2reg sign never trusted)
     best = None
     for sign in (-1.0, +1.0):
         ctx.config["res_phase"] = int(
@@ -85,14 +75,9 @@ def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
 
 
 def wire_reset_into_mr_cfg(mr_cfg, apriori_sep):
-    """
-    Derive the active-reset I-threshold (and the |g>-below-threshold sign) from
-    the apriori SingleShot separator and write them into mr_cfg, in place.
+    """Write readout_threshold and reset_ground_below_threshold from the separator into mr_cfg.
 
-    Assumes calibrate_active_reset_readout() has already rotated res_phase so
-    g/e separate along I (the separator must be measured in that rotated
-    frame). Idempotent, so it is safe to re-call on ss recalibrations to track
-    the (drifting) threshold.
+    Expects the separator measured in the rotated frame; idempotent, so re-call on recalibration.
     """
     g = np.asarray(apriori_sep["g_center"])
     e = np.asarray(apriori_sep["e_center"])
@@ -104,12 +89,8 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
     arv_dir = os.path.join(ctx.outerFolder, "ActiveResetVerify")
     os.makedirs(arv_dir, exist_ok=True)
 
-    # 1) Calibrate readout phase + I-threshold (rotates config["res_phase"] so
-    #    |g>/|e> separate along I, and measures the threshold off the rotated blobs).
     arv_calib = calibrate_active_reset_readout(ctx)
 
-    # 2) Base config shared by all conditions. g_center/e_center are in the
-    #    rotated frame (consistent with config["res_phase"] set just above).
     arv_base_cfg = {
         "f_ge": ctx.qubit_frequency_center,
         "pi_gain": ctx.qubit_gain,
@@ -130,12 +111,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
         "Qubit_number": ctx.Qubit_Readout,
     }
 
-    # 3) Four conditions: prep |g>/|e>  ×  reset off/on, plus force-pi
-    #    diagnostics: the corrective pi fires UNCONDITIONALLY after the
-    #    conditioning readout, measuring the bare post-readout pi fidelity
-    #    decoupled from the threshold decision (prep|e>_forcePI should match
-    #    prep|g>_resetOFF if the pi is good; prep|g>_forcePI should match
-    #    prep|e>_resetOFF).
+    # (label, prep_excited, use_active_reset, reset_force_pi): docs/experiments/active_reset_verify.md
     arv_conditions = [
         ("prep|g>_resetOFF", False, False, False),
         ("prep|e>_resetOFF", True, False, False),
@@ -173,9 +149,8 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
             f"{np.array2string(arv_results[arv_label], precision=3)}"
         )
 
-    # 4) Overlay P(|g>) vs read index for all conditions.
     read_idx_arv = np.arange(ActiveResetVerify_params["n_verify_reads"])
-    timestamp_arv = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    timestamp_arv = timestamp()
     plt.figure(figsize=(8, 5))
     for arv_label, *_ in arv_conditions:
         plt.plot(read_idx_arv, arv_results[arv_label], "o-", linewidth=1.5, label=arv_label)
@@ -208,7 +183,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
         **{f"p_ground_{lbl}": arv_results[lbl] for lbl, *_ in arv_conditions},
     )
 
-    # 5) Verdict.
+    # verdict criteria: docs/experiments/active_reset_verify.md
     pg_g_off = float(np.mean(arv_results["prep|g>_resetOFF"]))
     pg_e_off = float(np.mean(arv_results["prep|e>_resetOFF"]))
     pg_g_on = float(np.mean(arv_results["prep|g>_resetON"]))

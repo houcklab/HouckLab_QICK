@@ -77,7 +77,7 @@ values.
 | `Shots` → `shots` | 1,000,000 | count | Shots per pass. More than single_shot, because a small secondary blob needs statistics. Required (KeyError if absent). |
 | `relax_delay` | 300 | µs | Wait after each readout. Sets the sampling period. Omit it to inherit the single-shot `relax_delay`. |
 | `min_separation_sigma` → `blob_min_separation_sigma` | 2.0 | combined σ | Two blobs are only called two if they are this far apart *and* BIC prefers two Gaussians. |
-| `average_shots` → `shot_average` | 1 | count | Consecutive shots averaged into one time-series point. 1 = off. |
+| `average_shots` → `shot_average` | 1 | count | Consecutive shots averaged into one time-series point. 1 = off. Raising it trades time resolution for the sqrt(n) noise reduction that makes a marginal blob split resolvable; the rate-vs-averaging panel of the output plot shows where the useful plateau is. |
 | `bin_sizes` → `ts_bin_sizes` | (1, 2, 4, 8, 16, 32, 64) | shots | Averaging levels for the rate-vs-averaging sweep. |
 | `charge_sweep` | False | bool | Sweep the yoko charge bias. |
 | `voltage_start` / `voltage_end` / `voltage_step` | 0.0 / 0.05 / 0.005 | V | Sweep range, half-open. |

@@ -1,3 +1,5 @@
+"""Zero-span parity run: optional doublet/separator recalibration, acquisition, analysis, validation."""
+
 import os
 
 import numpy as np
@@ -22,10 +24,8 @@ def run_zero_span_parity(ctx, p):
     zsp_outerFolder = ctx.outerFolder + "ZeroSpanParity/"
     os.makedirs(zsp_outerFolder, exist_ok=True)
 
-    # ---- Step 1: optional parity-doublet frequency pre-calibration ----------
     if p["ZSP_RecalibrateParityFreqs"]:
-        cfg = ctx.working_config()
-        spec_cfg = cfg.copy()
+        spec_cfg = ctx.working_config()
         spec_cfg["reps"] = p["ZSP_ParitySpec_params"]["reps"]
         spec_cfg["rounds"] = p["ZSP_ParitySpec_params"]["rounds"]
         spec_cfg["relax_delay"] = p["ZSP_ParitySpec_params"]["relax_delay"]
@@ -86,7 +86,6 @@ def run_zero_span_parity(ctx, p):
                 "or set ZSP_RecalibrateParityFreqs=True."
             )
 
-    # ---- Step 2: optional g/e separator pre-calibration ---------------------
     if p["ZSP_RecalibrateSeparator"]:
         sep = get_apriori_separator_from_singleshot(ctx)
         p["ZSP_Separator_Cached"]["g_center"] = sep["g_center"]
@@ -94,10 +93,7 @@ def run_zero_span_parity(ctx, p):
         p["ZSP_Separator_Cached"]["normal"] = sep["normal"]
         p["ZSP_Separator_Cached"]["midpoint"] = sep["midpoint"]
     elif p["ZSP_AnalysisParams"]["classifier_method"] == "apriori":
-        # Spec §5.3 rule 7: with RecalibrateSeparator=False and apriori
-        # classification, all four cached fields must be np.ndarray of shape
-        # (2,). Validate fail-fast (a copy-pasted list is coerced; wrong shapes
-        # are rejected).
+        # rule 7 (docs/experiments/zero_span_parity.md): cached fields must be shape (2,)
         for _k in ("g_center", "e_center", "normal", "midpoint"):
             _v = p["ZSP_Separator_Cached"][_k]
             if _v is None:
@@ -116,7 +112,6 @@ def run_zero_span_parity(ctx, p):
                 )
             p["ZSP_Separator_Cached"][_k] = _arr  # normalize to ndarray
 
-    # ---- Step 3: build the ZeroSpanParity cfg -------------------------------
     zsp_mode_params = (
         p["ZSP_StrobeParams"] if p["ZSP_RunMode"] == "strobe" else p["ZSP_DecimatedParams"]
     )
@@ -132,31 +127,23 @@ def run_zero_span_parity(ctx, p):
     )
     cfg = ctx.working_config()
     zsp_cfg = {
-        # Channel routing sourced from BaseConfig (Calib/initialize4Q.py)
         "res_ch": cfg["res_ch"],
         "qubit_ch": cfg["qubit_ch"],
         "ro_chs": cfg["ro_chs"],
         "nqz": cfg["nqz"],
         "qubit_nqz": cfg["qubit_nqz"],
         "mixer_freq": cfg["mixer_freq"],
-        # Frequencies (active qubit's tuned readout + picked parity peak)
         "read_pulse_freq": ctx.resonator_frequency_center,
         "parity_drive_freq": parity_drive_freq_MHz,
-        # Drive
         "qubit_gain": zsp_qubit_gain,
         "pulse_gain": zsp_pulse_gain,
         "res_phase": p["ZSP_DriveParams"]["res_phase"],
-        # Mode + trigger source
         "mode": p["ZSP_RunMode"],
         "start_src": p["ZSP_StartSrc"],
-        # Mode-specific params (read_length, adc_trig_offset, + mode extras)
         **zsp_mode_params,
     }
 
-    # The validation harness (Validate_* stages below) is strobe-only: every
-    # run_* helper calls experiment.set_qubit_gain(), which raises in decimated
-    # mode. Fail fast here — before the (potentially long) acquisition — rather
-    # than crashing partway through the validation tail.
+    # the validation harness is strobe-only (set_qubit_gain raises in decimated mode): fail fast
     _validate_flags = (
         "Validate_StaticContrast",
         "Validate_ContrastVsQubitFreq",
@@ -171,7 +158,6 @@ def run_zero_span_parity(ctx, p):
             f"disable the Validate_* flags."
         )
 
-    # ---- Step 4: run acquisition --------------------------------------------
     zsp_exp = ZeroSpanParity(
         soc=ctx.soc,
         soccfg=ctx.soccfg,
@@ -180,22 +166,16 @@ def run_zero_span_parity(ctx, p):
         cfg=zsp_cfg,
     )
     if p["ZSP_RunMode"] == "strobe" and p["ZSP_StrobeParams"]["n_chunks"] > 1:
-        # chunked_acquire sets zsp_exp.data = {"data": stitched} itself, so the
-        # bare save_data() below persists the full stitched record.
-        zsp_data = chunked_acquire(
-            zsp_exp, n_chunks=p["ZSP_StrobeParams"]["n_chunks"], progress=True
-        )
+        # sets zsp_exp.data to the stitched record, which save_data() below persists
+        chunked_acquire(zsp_exp, n_chunks=p["ZSP_StrobeParams"]["n_chunks"], progress=True)
     else:
-        zsp_data = zsp_exp.acquire(progress=True)
+        zsp_exp.acquire(progress=True)
     zsp_exp.save_data()
     zsp_exp.save_config()
 
-    # Single run directory (the dated subfolder already holding the raw .h5) for
-    # BOTH the analysis outputs and every validation-stage sidecar, so
-    # build_evidence_report collates them from one place.
+    # one run dir (beside the raw .h5) for analysis outputs and every validation sidecar
     _run_dir = os.path.dirname(zsp_exp.fname)
 
-    # ---- Step 5: offline analysis -------------------------------------------
     zsp_separator = (
         p["ZSP_Separator_Cached"]
         if p["ZSP_AnalysisParams"]["classifier_method"] == "apriori"
@@ -215,21 +195,15 @@ def run_zero_span_parity(ctx, p):
     )
     print(f"[ZeroSpanParity] complete. Raw data: {zsp_exp.fname}")
 
-    # --- Validation harness execution ---
     _val_out_dir = _run_dir
 
     if p["Validate_StaticContrast"]:
-        # Stage 1 measures |Z_on - Z_off| vs read_pulse_freq; it does NOT use a
-        # g/e separator (that guard belonged to the classify-based stages, which
-        # already have their separator validated in Step 2).
         _f0 = zsp_cfg["read_pulse_freq"]
         _span = p["StaticContrast_params"]["freq_span_mhz"]
         _flist = np.linspace(
             _f0 - _span / 2, _f0 + _span / 2, p["StaticContrast_params"]["n_points"]
         )
-        # run_static_contrast's set_qubit_gain rebuilds the strobe program from
-        # cfg["reps"], so update both keys — otherwise reps_per_point only lands
-        # in the sidecar metadata and the acquisition keeps the original count.
+        # set_qubit_gain rebuilds the strobe program from cfg["reps"]: set both keys
         zsp_exp.cfg["reps_per_chunk"] = p["StaticContrast_params"]["reps_per_point"]
         zsp_exp.cfg["reps"] = p["StaticContrast_params"]["reps_per_point"]
         _sc = run_static_contrast(
@@ -282,7 +256,7 @@ def run_zero_span_parity(ctx, p):
 
         def _set_power(_exp, _val):
             _exp.cfg["pulse_gain"] = (
-                _val  # NOTE: replace with attenuator/YOKO call for real power sweep
+                _val  # placeholder power knob: docs/experiments/zero_span_parity.md
             )
             _exp.prog = type(_exp.prog)(_exp.soccfg, _exp.cfg)
 

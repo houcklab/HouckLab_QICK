@@ -72,8 +72,6 @@ def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
     )
 
     data_ss = SingleShotProgramFFMUX.acquire(inst_ss)
-
-    # Save SingleShot data, config, and display png.
     SingleShotProgramFFMUX.display(inst_ss, data_ss, plotDisp=False)
     SingleShotProgramFFMUX.save_data(inst_ss, data_ss)
     SingleShotProgramFFMUX.save_config(inst_ss)
@@ -108,7 +106,7 @@ def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
 
 
 def run_t1_ss(ctx, T1SS_params, SS_params):
-    for i in range(T1SS_params["repetitions"]):
+    for _ in range(T1SS_params["repetitions"]):
         cfg = ctx.working_config()
         if T1SS_params["calibrate_SS"]:
             cfg["number_of_pulses"] = SS_params["number_of_pulses"]
@@ -140,9 +138,7 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
             "pi_gain": ctx.qubit_gain,
             "relax_delay": T1SS_params["relax_delay"],
         }
-        cfg = (
-            cfg | expt_cfg
-        )  ### preserve number_of_pulses set above (mirrors original config | expt_cfg)
+        cfg = cfg | expt_cfg
         iT1 = T1_SS(
             path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
@@ -164,7 +160,6 @@ def run_single_shot(ctx, SS_params):
         path="SingleShot", outerFolder=ctx.outerFolder, cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg
     )
     data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
-    # print(data_SingleShotProgram)
     SingleShotProgramFFMUX.display(
         Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True
     )
@@ -176,26 +171,9 @@ def run_single_shot(ctx, SS_params):
 
 
 def run_undriven_single_shot(ctx, US_params=None):
-    """Single-shot readout with the qubit drive off — just look at the blobs.
+    """Single-shot readout with the qubit drive off, `Repeat` passes; returns per-pass data.
 
-    Runs under the same single-shot-regime config as `run_single_shot` (so the
-    readout tone, window and ADC offset are identical), but the experiment never
-    declares or pulses the qubit channel. `US_params` may override the shot count,
-    the relax delay, the blob-separation threshold, and the number of consecutive
-    shots averaged into each time-series point (`average_shots`); everything else
-    comes from the config `rebuild_singleshot_config` already installed.
-
-    Shots come off the tProc in acquisition order at a fixed cadence, so the
-    record is also a time series: the experiment projects it onto the
-    blob-separating axis and reports how it hops between the blobs. Raising
-    `average_shots` trades time resolution for the sqrt(n) noise reduction that
-    makes a marginal blob split resolvable; the rate-vs-averaging panel in the
-    output plot shows where the useful plateau is.
-
-    `US_params['Repeat']` (default 1) runs the whole acquisition that many times
-    back to back. Each pass is an independent experiment with its own timestamped
-    h5/png/json, so nothing is overwritten and the passes can be compared or
-    concatenated offline. Returns the list of per-pass data dicts.
+    Uses the single-shot-regime config; `US_params` keys: docs/experiments/undriven_single_shot.md
     """
     US_params = US_params or {}
     overrides = {}
@@ -209,8 +187,7 @@ def run_undriven_single_shot(ctx, US_params=None):
         overrides["shot_average"] = US_params["average_shots"]
     if "bin_sizes" in US_params:
         overrides["ts_bin_sizes"] = US_params["bin_sizes"]
-    # Sweep the charge bias with the yoko. The range must come through US_params:
-    # rebuild_singleshot_config() drops charge_params from ctx.config.
+    # the charge range must come via US_params: the regime-B config has no charge_params
     overrides["charge_sweep"] = US_params.get("charge_sweep", False)
     for key in ("voltage_start", "voltage_end", "voltage_step", "charge_settle_s"):
         if key in US_params:
@@ -222,8 +199,7 @@ def run_undriven_single_shot(ctx, US_params=None):
     for k in range(n_repeat):
         if n_repeat > 1:
             print(f"\n[UndrivenSingleShot] pass {k + 1}/{n_repeat}")
-        # Fresh cfg per pass: the program mutates reps/rounds/length in place.
-        cfg = ctx.working_config(overrides)
+        cfg = ctx.working_config(overrides)  # fresh per pass: the program mutates it
         inst = UndrivenSingleShot(
             path="UndrivenSingleShot",
             outerFolder=ctx.outerFolder,
@@ -233,9 +209,7 @@ def run_undriven_single_shot(ctx, US_params=None):
             yoko=ctx.yoko,
         )
         data = UndrivenSingleShot.acquire(inst)
-        # display(plotDisp=True) blocks until the window is closed, which would
-        # stall every pass. The PNG is written either way, so only put the last
-        # pass on screen.
+        # only the last pass on screen: plotDisp blocks until the window is closed
         UndrivenSingleShot.display(inst, data, plotDisp=plot_disp and k == n_repeat - 1)
         UndrivenSingleShot.save_data(inst, data)
         UndrivenSingleShot.save_config(inst)
@@ -252,7 +226,6 @@ def run_readout_optimize(ctx, SS_R_params):
     cfg = ctx.working_config()
     cfg["number_of_pulses"] = 1
     exp_parameters = {
-        ###### cavity
         "cav_gain_Start": cav_gain_start,
         "cav_gain_Stop": cav_gain_stop,
         "cav_gain_Points": cav_gain_pts,
@@ -260,8 +233,7 @@ def run_readout_optimize(ctx, SS_R_params):
         "trans_freq_stop": cfg["pulse_freq"] + span / 2,
         "TransNumPoints": cav_trans_pts,
     }
-    cfg = cfg | exp_parameters  # merge into the copy already holding number_of_pulses=1
-    # Now lets optimize powers and readout frequencies
+    cfg = cfg | exp_parameters
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFF(
         path="SingleShot_OptReadout",
         outerFolder=ctx.outerFolder,
@@ -270,7 +242,6 @@ def run_readout_optimize(ctx, SS_R_params):
         soccfg=ctx.soccfg,
     )
     data_SingleShotProgramOptimize = ReadOpt_wSingleShotFF.acquire(Instance_SingleShotOptimize)
-    # print(data_SingleShotProgram)
     ReadOpt_wSingleShotFF.display(
         Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True
     )
@@ -296,13 +267,8 @@ def run_qubit_optimize(ctx, SS_Q_params, SS_params):
         cfg["qubit_gain"] = ctx.pi2_gain
     Qubit_Pulse_Index = 0
     exp_parameters = {
-        ###### cavity
-        "qubit_gain_Start": max(
-            [0, int(cfg["qubit_gain"] - int(q_gain_span))]
-        ),  # - q_gain_span / 2,
-        "qubit_gain_Stop": min(
-            [32767, int(cfg["qubit_gain"] + int(q_gain_span))]
-        ),  # *qubit_gains[Qubit_Pulse_Index] + q_gain_span / 2,
+        "qubit_gain_Start": max([0, int(cfg["qubit_gain"] - int(q_gain_span))]),
+        "qubit_gain_Stop": min([32767, int(cfg["qubit_gain"] + int(q_gain_span))]),
         "qubit_gain_Points": q_gain_pts,
         "qubit_freq_start": qubit_frequency_centers[Qubit_Pulse_Index] - q_freq_span,
         "qubit_freq_stop": qubit_frequency_centers[Qubit_Pulse_Index] + q_freq_span,
@@ -310,12 +276,7 @@ def run_qubit_optimize(ctx, SS_Q_params, SS_params):
         "number_of_pulses": SS_Q_params["number_of_pulses"],
     }
     print(exp_parameters)
-    cfg = (
-        cfg | exp_parameters
-    )  # preserve number_of_pulses + pi2 qubit_gain set above (mirrors original config | exp_parameters)
-    g0 = qubit_gains[Qubit_Pulse_Index]
-    f0 = qubit_frequency_centers[Qubit_Pulse_Index]
-    # # Now lets optimize powers and readout frequencies
+    cfg = cfg | exp_parameters
     Instance_SingleShotOptimize = QubitPulseOpt_wSingleShotFF(
         path="SingleShot_OptQubit",
         outerFolder=ctx.outerFolder,
@@ -326,7 +287,6 @@ def run_qubit_optimize(ctx, SS_Q_params, SS_params):
     data_SingleShotProgramOptimize = QubitPulseOpt_wSingleShotFF.acquire(
         Instance_SingleShotOptimize, Qubit_Sweep_Index=Qubit_Pulse_Index
     )
-    # print(data_SingleShotProgram)
     QubitPulseOpt_wSingleShotFF.display(
         Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True
     )

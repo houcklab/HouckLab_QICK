@@ -23,7 +23,7 @@ def run_amplitude_rabi(ctx, params):
     fit = params["fit"]
 
     cfg = cfg | ARabi_config
-    if ctx.qubit_flattop != None:
+    if ctx.qubit_flattop is not None:
         ARabi_config = {
             "gain_start": 0,
             "gain_end": params["max_gain"],
@@ -35,7 +35,7 @@ def run_amplitude_rabi(ctx, params):
             "relax_delay": 8000,
             "flattop_length": ctx.qubit_flattop,
         }
-        cfg = cfg | ARabi_config  ### note that UpdateConfig will overwrite elements in BaseConfig
+        cfg = cfg | ARabi_config
         iAmpRabi = AmplitudeRabiFF_N(
             path="AmplitudeRabi",
             cfg=cfg,

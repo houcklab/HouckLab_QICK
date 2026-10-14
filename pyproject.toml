@@ -43,12 +43,7 @@ ignore = ["E501", "E741", "B905", "B008"]
 "qicklab/experiments/transmission.py" = ["F841"]
 "qicklab/experiments/zero_span_parity.py" = ["F841"]
 "qicklab/hardware/attenuator.py" = ["F821", "F841"]     # legacy NameError `result` (known bug, own fix commit)
-"qicklab/runs/auto_coherence.py" = ["F541", "F841"]
-"qicklab/runs/charge_dispersion.py" = ["F841"]
-"qicklab/runs/charge_sweep.py" = ["F841"]
-"qicklab/runs/resonator.py" = ["F841"]
 "qicklab/runs/single_shot.py" = ["F841"]
-"qicklab/runs/zero_span.py" = ["F841"]
 "qicklab/twpa/flux_sweep.py" = ["F541"]
 "qicklab/twpa/set_pump.py" = ["F541"]
 
