@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2 cut off by the usage limit while applying research-review findings; see STATE AT THE USAGE-LIMIT CUT-OFF).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -87,20 +87,20 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
 25. `5ba679cb` fix(ramsey): F01 (+F12, T2R guard, F67) — principal-axis projection, sampling bounds, guarded
     display (golden: 660 leaves, all T2R display `sets` in 4 labels; the 5 per-board raised displays now fit)
 
-## STATE AT THE USAGE-LIMIT CUT-OFF (2026-10-14, session 2)
-The branch is clean at `8ab9d443`+`5ba679cb` (all commits verified). The WORKING TREE holds UNCOMMITTED,
-in-progress edits from parallel fix agents (each on disjoint files); none of it is verified by the full suite:
-- F06 (analysis/hmm.py i.i.d. null + resolved-rate gates; tests/test_modified_ramsey_offline.py; docs
-  modified_ramsey.md): implemented, reviewer APPROVED after one fix round — ready to land: snapshot those
-  three files into a worktree, `REGRESSION_UPDATE=1 pytest tests` (expect golden unchanged: the HMM is not
-  reached by the frozen runner), classify, commit.
-- In flight / unreviewed state unknown at cut-off: F10 (analysis/readout.py classify_thermal_tail +
-  experiments/single_shot.py thermal branch), F04 (analysis/spectroscopy.py + experiments/qubit_spec.py +
+26. `aefb2214` fix(hmm): F06 — i.i.d.-null likelihood-ratio gate and resolved-rate gate (golden: 0 leaves)
+
+## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
+Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
+(each on disjoint files); none of it is verified by the full suite until landed:
+- In flight (agents running or awaiting landing): F10 (analysis/readout.py classify_thermal_tail +
+  experiments/single_shot.py thermal branch; re-review running), F04 (analysis/spectroscopy.py + experiments/qubit_spec.py +
   one line in runs/zero_span.py), F13 (analysis/fitting.py Rabi fit + experiments/rabi.py + runs/__init__.py
   alias), F11 (runs/single_shot.py run_t1_ss), F15 (runs/modified_ramsey.py controls always acquired),
   F17 (analysis/zero_span.py baseline rate), F03 (runs/resonator.py carry-over from the display fit),
   F21+F53 (hardware/yoko.py safety helpers, twpa/set_bias.py, twpa/flux_sweep.py, core/context.py,
-  capture.py FakeYoko), F23 (experiments/t2_echo.py even-n ValueError).
+  capture.py FakeYoko), F23 (experiments/t2_echo.py even-n ValueError), F22 (runs/active_reset.py res_phase
+  wrap), F28 (runs/charge_sweep.py yoko_fixed metadata + RunChargeSweep[yoko_fixed] label), F18
+  (core/acquisition.py modulated_strobe_acquire reps_per_block + runs/zero_span_validation.py).
   Their agent reports are in the workflow journals under `~/.claude/projects/.../subagents/workflows/`.
   To resume: for each, inspect `git diff HEAD -- <its files>`, re-run an adversarial review (the
   `qicklab-rereview` workflow script) if its journal shows no final approve, then land one at a time with
