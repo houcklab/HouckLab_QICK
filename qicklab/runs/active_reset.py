@@ -22,7 +22,10 @@ def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
     sep = get_apriori_separator_from_singleshot(ctx)
     n0 = np.asarray(sep["e_center"]) - np.asarray(sep["g_center"])
     phi_deg = float(np.degrees(np.arctan2(n0[1], n0[0])))
-    base_phase = int(ctx.config.get("res_phase", 0))
+    # the phase register is b_phase bits wide: wrap so repeated calibrations (the rotated
+    # phase persists in ctx.config) never overflow the tProc's 31-bit immediates
+    phase_mod = 2 ** ctx.soccfg["gens"][res_ch]["b_phase"]
+    base_phase = int(ctx.config.get("res_phase", 0)) % phase_mod
 
     print(f"[ActiveReset calib] g->e axis at {phi_deg:.2f} deg; rotating res_phase to put it on I.")
 
@@ -30,7 +33,7 @@ def calibrate_active_reset_readout(ctx, max_align_iter=2, align_tol_frac=0.1):
     best = None
     for sign in (-1.0, +1.0):
         ctx.config["res_phase"] = int(
-            base_phase + ctx.soccfg.deg2reg(sign * phi_deg, gen_ch=res_ch)
+            (base_phase + ctx.soccfg.deg2reg(sign * phi_deg, gen_ch=res_ch)) % phase_mod
         )
         sep_r = get_apriori_separator_from_singleshot(ctx)
         gr = np.asarray(sep_r["g_center"])

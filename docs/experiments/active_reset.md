@@ -164,6 +164,12 @@ With `use_active_reset=True` the modified_ramsey run does three things:
      `base + deg2reg(+φ)` is tried. The run keeps whichever leaves the smaller |Q|
      separation; the sign convention of `deg2reg` is never trusted.
    - The loop stops early when Q separation ≤ 0.1 × I separation. Otherwise it warns.
+   - `res_phase` is wrapped modulo 2^`b_phase` (the readout generator's phase-register
+     width, 2^32 here), both the incoming base value and each trial. The rotated phase
+     persists in the session config, so repeated calibrations build on each other;
+     without the wrap the third one overflowed the tProc's 31-bit immediates and the
+     SingleShot compile failed. A hand-entered negative or out-of-range value is wrapped
+     the same way.
    - Each trial re-measures, so the full calibration takes 2–3 SingleShot
      acquisitions, all saved under `SingleShot_MRCalib`.
 2. It sets `readout_threshold = (g_I + e_I)/2` and
@@ -274,8 +280,9 @@ The reset itself writes nothing. Its traces are:
 - In the symmetric Ramsey scheme and in the `drive_detuned` control, the corrective
   pi plays at the drive frequency. That is df/2 or more away from each parity branch,
   so the reset flip is off-resonant.
-- `calibrate_active_reset_readout` adds `deg2reg(±φ)` to `res_phase` without wrapping
-  modulo the full phase range. The register value can go negative or exceed the range.
+- `calibrate_active_reset_readout` used to add `deg2reg(±φ)` to `res_phase` without
+  wrapping, so the third calibration in one regime-A session (e.g. ARV → MR → MR) failed
+  to compile. It now wraps modulo 2^`b_phase` (2026-10).
 - The calibration ignores modified_ramsey's `ss_calib_shots` and always uses 1000
   shots. Its `max_align_iter` argument is unused.
 - The rotated `res_phase` persists in the session config for later regime-A steps. It
