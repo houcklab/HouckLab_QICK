@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17 landed).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17, F10, F03 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -101,6 +101,10 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
     leaves, the new control experiments in RunModifiedRamsey[*])
 33. `94f6a24e` fix(acquisition): F18 — strobe blocks compile reps_per_block (golden: 4 hw leaves, ZSP[validate])
 34. `736c8fac` fix(zero_span): F17 — event-based baseline rate, iterated burst exclusion (golden: 0 leaves)
+
+35. `2859f222` fix(readout): F10 — thermal-mode population by a two-cloud EM fit (golden: 0 leaves)
+36. `8fdde7ca` fix(runs): F03 — transmission_fit carries the display fit's minimum (golden: 24 leaves, the
+    two transmission carry-over labels' downstream pulse_freq/program/config digests)
 
 ## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
 Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
