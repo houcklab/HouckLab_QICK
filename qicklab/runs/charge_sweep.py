@@ -1,6 +1,7 @@
 """Gate-charge sweep runs (two-tone spec and transmission vs yoko voltage)."""
 
 import time
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,6 +30,33 @@ def choose_next_voltage(current_v, dv, vmin, vmax, direction):
     return proposed, direction
 
 
+def _record_hold(cfg, i, voltage, v_hold):
+    """yoko_fixed: the bias is held, so slice i is repeat i at v_hold, not a point of the grid.
+
+    Records the held level, the grid value as nominal_voltage, repeat_index and a wall-clock
+    acq_time (local ISO time, the ExperimentClass file-name clock). Returns the datetime.
+    See docs/experiments/charge_sweep.md#holding-the-bias-yoko_fixed.
+    """
+    now = datetime.now()
+    cfg["current_voltage"] = v_hold
+    cfg["nominal_voltage"] = float(voltage)
+    cfg["repeat_index"] = i
+    cfg["acq_time"] = now.isoformat(timespec="milliseconds")
+    return now
+
+
+def _hold_npz(voltage_pts, v_hold, acq_times):
+    """npz fields for a yoko_fixed run: the repeat axis instead of a voltage axis."""
+    n = len(acq_times)
+    return {
+        "nominal_voltage_pts": voltage_pts,
+        "repeat_index": np.arange(n),
+        "acq_time": np.array([t.isoformat(timespec="milliseconds") for t in acq_times]),
+        "elapsed_s": np.array([(t - acq_times[0]).total_seconds() for t in acq_times]),
+        "held_voltage": v_hold,
+    }
+
+
 def run_charge_sweep(ctx, Spec_relevant_params):
     cfg = ctx.working_config()
     sanity_dump(cfg)
@@ -41,6 +69,10 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         cfg["qubit_gain"] = Spec_relevant_params["gain"]
 
     voltage_pts = np.arange(cfg["voltage_start"], cfg["voltage_end"], cfg["voltage_step"])
+    # yoko_fixed: rows are repeats in time at the held bias, read back once
+    v_hold = float(ctx.yoko.query(":SOUR:LEV?")) if ctx.yoko_fixed else None
+    acq_times = []
+    row_pts = np.arange(len(voltage_pts)) if ctx.yoko_fixed else voltage_pts
     avgamp_map = None
     fig = None
     ax = None
@@ -50,9 +82,11 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         if voltage > 10:
             print("voltage too high")
             break
-        if not ctx.yoko_fixed:
+        if ctx.yoko_fixed:
+            acq_times.append(_record_hold(cfg, i, voltage, v_hold))
+        else:
             ramp_to(ctx.yoko, voltage)
-        cfg["current_voltage"] = float(voltage)
+            cfg["current_voltage"] = float(voltage)
         Instance_specSlice = QubitSpecSliceFF(
             path="QubitSpecFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
@@ -90,7 +124,7 @@ def run_charge_sweep(ctx, Spec_relevant_params):
             plt.ion()
             fig, ax = plt.subplots(figsize=(8, 6))
             x_step = x_pts[1] - x_pts[0] if len(x_pts) > 1 else 1
-            y_step = voltage_pts[1] - voltage_pts[0] if len(voltage_pts) > 1 else 1
+            y_step = row_pts[1] - row_pts[0] if len(row_pts) > 1 else 1
 
             im = ax.imshow(
                 avgamp_map,
@@ -100,33 +134,42 @@ def run_charge_sweep(ctx, Spec_relevant_params):
                 extent=[
                     x_pts[0] - x_step / 2,
                     x_pts[-1] + x_step / 2,
-                    voltage_pts[0] - y_step / 2,
-                    voltage_pts[-1] + y_step / 2,
+                    row_pts[0] - y_step / 2,
+                    row_pts[-1] + y_step / 2,
                 ],
             )
             cbar = fig.colorbar(im, ax=ax)
             cbar.set_label("rotated IQ projection")
 
             ax.set_xlabel("Frequency")
-            ax.set_ylabel("Voltage")
+            ax.set_ylabel("repeat index" if ctx.yoko_fixed else "Voltage")
             ax.set_title("Charge sweep for Qubit Spec")
 
             plt.show(block=False)
         avgamp_map[i, :] = avgamp0
         im.set_data(avgamp_map)
         im.set_clim(np.nanmin(avgamp_map), np.nanmax(avgamp_map))
-        ax.set_title(f"\nVoltage = {voltage:.4f}")
+        if ctx.yoko_fixed:
+            ax.set_title(f"\nrepeat {i + 1}/{len(voltage_pts)} at V = {v_hold:.4f}")
+        else:
+            ax.set_title(f"\nVoltage = {voltage:.4f}")
         fig.canvas.draw_idle()
         plt.pause(0.1)
 
     fig.savefig(
         Instance_specSlice.iname[:-4] + "_ChargeSweepHeatmap.png", dpi=300, bbox_inches="tight"
     )
+    axis = (
+        _hold_npz(voltage_pts, v_hold, acq_times)
+        if ctx.yoko_fixed
+        else {"voltage_pts": voltage_pts}
+    )
     np.savez(
         Instance_specSlice.fname[:-3] + "_ChargeSweepHeatmap.npz",
         avgamp_map=avgamp_map,
         x_pts=x_pts,
-        voltage_pts=voltage_pts,
+        yoko_fixed=bool(ctx.yoko_fixed),
+        **axis,
     )
 
     plt.ioff()
@@ -199,15 +242,23 @@ def run_charge_transmission_sweep(ctx, params=None):
     Instance_trans = None
     x_pts = None
 
-    v_return = float(ctx.yoko.query(":SOUR:LEV?"))
+    v_return = float(ctx.yoko.query(":SOUR:LEV?"))  # also the held bias under yoko_fixed
+    acq_times = []
+    row_pts = np.arange(len(voltage_pts)) if ctx.yoko_fixed else voltage_pts
     try:  # restore the start bias even on abort: docs/architecture.md#yoko-safety
         for i, voltage in enumerate(voltage_pts):
-            print(f"[ChargeTransmissionSweep] bias {i + 1}/{len(voltage_pts)}: {voltage:.6f} V")
-            if not ctx.yoko_fixed:
+            if ctx.yoko_fixed:
+                print(
+                    f"[ChargeTransmissionSweep] repeat {i + 1}/{len(voltage_pts)} "
+                    f"at held {v_return:.6f} V"
+                )
+                acq_times.append(_record_hold(cfg, i, voltage, v_return))
+            else:
+                print(f"[ChargeTransmissionSweep] bias {i + 1}/{len(voltage_pts)}: {voltage:.6f} V")
                 ramp_to(ctx.yoko, float(voltage))
                 if settle_s:
                     time.sleep(settle_s)
-            cfg["current_voltage"] = float(voltage)
+                cfg["current_voltage"] = float(voltage)
             cfg["pulse_freq"] = center_freq
 
             Instance_trans = CavitySpecFF(
@@ -242,7 +293,7 @@ def run_charge_transmission_sweep(ctx, params=None):
                 plt.ion()
                 fig, ax = plt.subplots(figsize=(8, 6))
                 x_step = x_pts[1] - x_pts[0] if len(x_pts) > 1 else 1
-                y_step = voltage_pts[1] - voltage_pts[0] if len(voltage_pts) > 1 else 1
+                y_step = row_pts[1] - row_pts[0] if len(row_pts) > 1 else 1
                 im = ax.imshow(
                     db_map,
                     aspect="auto",
@@ -251,14 +302,14 @@ def run_charge_transmission_sweep(ctx, params=None):
                     extent=[
                         x_pts[0] - x_step / 2,
                         x_pts[-1] + x_step / 2,
-                        voltage_pts[0] - y_step / 2,
-                        voltage_pts[-1] + y_step / 2,
+                        row_pts[0] - y_step / 2,
+                        row_pts[-1] + y_step / 2,
                     ],
                 )
                 cbar = fig.colorbar(im, ax=ax)
                 cbar.set_label("Transmission (dB)")
                 ax.set_xlabel("Cavity Frequency (GHz)")
-                ax.set_ylabel("Voltage (V)")
+                ax.set_ylabel("repeat index" if ctx.yoko_fixed else "Voltage (V)")
                 ax.set_title("Charge sweep for cavity transmission")
                 plt.show(block=False)
             elif len(fpts) != db_map.shape[1]:
@@ -272,7 +323,11 @@ def run_charge_transmission_sweep(ctx, params=None):
             avgq_map[i, :] = avgq
             im.set_data(db_map)
             im.set_clim(np.nanmin(db_map), np.nanmax(db_map))
-            ax.set_title(f"Charge sweep for cavity transmission\nVoltage = {voltage:.6f}")
+            if ctx.yoko_fixed:
+                row_label = f"repeat {i + 1}/{len(voltage_pts)} at V = {v_return:.6f}"
+            else:
+                row_label = f"Voltage = {voltage:.6f}"
+            ax.set_title(f"Charge sweep for cavity transmission\n{row_label}")
             fig.canvas.draw_idle()
             plt.pause(0.1)
     finally:
@@ -282,7 +337,7 @@ def run_charge_transmission_sweep(ctx, params=None):
     # tracked resonator frequency over the sweep, on the same GHz axis
     ax.plot(
         (raw_extremum + lo_mhz) / 1e3,
-        voltage_pts,
+        row_pts,
         ".-",
         color="white",
         linewidth=1,
@@ -292,7 +347,7 @@ def run_charge_transmission_sweep(ctx, params=None):
     if np.any(np.isfinite(fit_extremum)):
         ax.plot(
             (fit_extremum + lo_mhz) / 1e3,
-            voltage_pts,
+            row_pts,
             ".-",
             color="red",
             linewidth=1,
@@ -305,6 +360,11 @@ def run_charge_transmission_sweep(ctx, params=None):
     fig.savefig(
         Instance_trans.iname[:-4] + "_ChargeTransmissionHeatmap.png", dpi=300, bbox_inches="tight"
     )
+    axis = (
+        _hold_npz(voltage_pts, v_return, acq_times)
+        if ctx.yoko_fixed
+        else {"voltage_pts": voltage_pts}
+    )
     np.savez(
         Instance_trans.fname[:-3] + "_ChargeTransmissionHeatmap.npz",
         db_map=db_map,
@@ -312,18 +372,26 @@ def run_charge_transmission_sweep(ctx, params=None):
         avgq_map=avgq_map,
         fpts_mhz=(np.asarray(x_pts) * 1e3 - lo_mhz),
         x_pts_ghz=np.asarray(x_pts),
-        voltage_pts=voltage_pts,
         raw_extremum_mhz=raw_extremum,
         fit_extremum_mhz=fit_extremum,
         cavity_min=ctx.cavity_min,
+        yoko_fixed=bool(ctx.yoko_fixed),
+        **axis,
     )
 
     span_khz = 1e3 * (np.nanmax(raw_extremum) - np.nanmin(raw_extremum))
-    print(
-        f"[ChargeTransmissionSweep] resonator frequency moved "
-        f"{span_khz:.3f} kHz over {voltage_pts[0]:.6f} to "
-        f"{voltage_pts[-1]:.6f} V"
-    )
+    if ctx.yoko_fixed:
+        print(
+            f"[ChargeTransmissionSweep] resonator frequency drifted {span_khz:.3f} kHz "
+            f"over {len(acq_times)} repeats ({axis['elapsed_s'][-1]:.1f} s) "
+            f"at held {v_return:.6f} V"
+        )
+    else:
+        print(
+            f"[ChargeTransmissionSweep] resonator frequency moved "
+            f"{span_khz:.3f} kHz over {voltage_pts[0]:.6f} to "
+            f"{voltage_pts[-1]:.6f} V"
+        )
 
     plt.ioff()
     plt.close(fig)

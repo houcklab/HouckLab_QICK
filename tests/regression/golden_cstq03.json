@@ -31020,7 +31020,7 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:224:run_one",
+          "tests/regression/driver_qicklab.py:226:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
           "qicklab/runs/charge_dispersion.py:458:run_charge_dispersion_ramsey"
         ],
@@ -33789,6 +33789,2834 @@
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "CLOSE"
+      ]
+    },
+    "RunChargeSweep[yoko_fixed]": {
+      "cfg_access": {
+        "QubitSpecSliceFF": {
+          "read": [
+            "Gauss",
+            "adc_trig_offset",
+            "cavity_winding_freq",
+            "cavity_winding_offset",
+            "expts",
+            "length",
+            "mixer_freq",
+            "nqz",
+            "pulse_freq",
+            "pulse_gain",
+            "qubit_ch",
+            "qubit_gain",
+            "qubit_length",
+            "qubit_nqz",
+            "readout_length",
+            "relax_delay",
+            "reps",
+            "res_ch",
+            "res_phase",
+            "ro_chs",
+            "rounds",
+            "start",
+            "step"
+          ],
+          "written": []
+        }
+      },
+      "experiments": [
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.0,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 0,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "8e1b15b45f2ba58b5f264408e7e2f4af",
+            "first_program": "23f1580fbe8bf571",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 0,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2641.6965174129355
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.20281274221051,
+                    1.9780754921717563,
+                    2.0144504727949153
+                  ],
+                  "sha1": "db885bc2b7d8ac2b",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.28378003410324,
+                    1.0897287242288018,
+                    0.8647581770268176
+                  ],
+                  "sha1": "8dda1b7cf5b05000",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    0.8258461496429751,
+                    0.8233557973276239
+                  ],
+                  "sha1": "bcd91ebc397b32b5",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.6965174129355,
+                    2652.9402985074626
+                  ],
+                  "sha1": "77be90b342b8f800",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "03992b743b987769",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.005,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 1,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "8e1b15b45f2ba58b5f264408e7e2f4af",
+            "first_program": "23f1580fbe8bf571",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 1,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2653.3383084577113
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.2248558363044486,
+                    2.9831041698961402,
+                    1.6396341652456983
+                  ],
+                  "sha1": "712a4bd16e031659",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.2266803596341653,
+                    1.4012455433266162,
+                    0.6889420244923269
+                  ],
+                  "sha1": "6c97689dc69d1412",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    68770.22997046572,
+                    4666.297240122069
+                  ],
+                  "sha1": "259969a97cb7a72d",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2653.3874671238445,
+                    2654.6646870680243
+                  ],
+                  "sha1": "ebbd50b40fc9e729",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.00045361813037617885,
+                    0.0010812271821765778
+                  ],
+                  "sha1": "1141bb5c8be55a70",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.00022680906518808943,
+                    0.0005406135910882889
+                  ],
+                  "sha1": "6bbbd166fbe2f2cf",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.2824286564300709,
+                    -0.1984873074347849
+                  ],
+                  "sha1": "ae469f072bc61f66",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.7094086165058255,
+                    0.640427218052336
+                  ],
+                  "sha1": "7153c5eced09f373",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.2097449209552997,
+                    1.069845850930635
+                  ],
+                  "sha1": "9fac2d22d49914df",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2653.3383084577113,
+                    2654.63184079602
+                  ],
+                  "sha1": "737279284ead1c0e",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "9977e177f49f0a69",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.01,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 2,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "8e1b15b45f2ba58b5f264408e7e2f4af",
+            "first_program": "23f1580fbe8bf571",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 2,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2641.6965174129355
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.01
+                  ],
+                  "sha1": "1213d8b7558e63e9",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.426947760037204,
+                    2.4273787009765924,
+                    2.330949465199194
+                  ],
+                  "sha1": "806bd4438d6ad05e",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.3425275151139355,
+                    1.1624422570144162,
+                    1.1003890869632613
+                  ],
+                  "sha1": "4cec60744c10c69e",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    32644.28415049951
+                  ],
+                  "sha1": "363e662d91bbe254",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2652.6815585745258
+                  ],
+                  "sha1": "66dce88317ac9072",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0004909422737264292
+                  ],
+                  "sha1": "8477808590e6246b",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0002454711368632146
+                  ],
+                  "sha1": "6543ce859a265afa",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.12612604168596608
+                  ],
+                  "sha1": "54a7fad584b50b8c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.6095932032487555
+                  ],
+                  "sha1": "0519226c82ada1ef",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.1849639136726244,
+                    1.1320092796794676
+                  ],
+                  "sha1": "5a1e0893536b2503",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.6965174129355,
+                    2652.6417910447763
+                  ],
+                  "sha1": "4eae373ffa20eaf3",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "bff4cd086e0d4dd9",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.015,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 3,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "8e1b15b45f2ba58b5f264408e7e2f4af",
+            "first_program": "23f1580fbe8bf571",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 3,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2658.7114427860697
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.015
+                  ],
+                  "sha1": "06ca9b0f9fc78b8a",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    3
+                  ],
+                  "sha1": "738adcbeb0cb8a8f",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.1269035808401795,
+                    2.354955820802976,
+                    1.2976864052084949
+                  ],
+                  "sha1": "2290438d24ae4955",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.9138854441171912,
+                    0.830913811812122,
+                    0.7138404898465354
+                  ],
+                  "sha1": "62292af4433efe6b",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    1.4981898104587368
+                  ],
+                  "sha1": "c773c6f54991114c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2649.7809562906514
+                  ],
+                  "sha1": "2e623a13bb961173",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09105617580464237
+                  ],
+                  "sha1": "390526eee5c1ff5a",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.045528087902321185
+                  ],
+                  "sha1": "ad3ce850f2daceb9",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.09973125875006413
+                  ],
+                  "sha1": "587a4c842d939b89",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.6854499221876955
+                  ],
+                  "sha1": "54d9f8afa3b4536b",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.066110707470337,
+                    1.2516252934544456
+                  ],
+                  "sha1": "e0a613489813ddf2",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2649.7562189054725,
+                    2658.7114427860697
+                  ],
+                  "sha1": "7548ea7ebf786752",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "c702b3000ef69996",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        }
+      ],
+      "hw_outside_experiments": null,
+      "outcome": {
+        "status": "completed"
+      },
+      "skipped": {
+        "QubitSpecSliceFF/QubitSpecFF": 6
+      },
+      "yoko_writes": [
+        "OPEN GPIB1::9::INSTR",
+        "W :SOUR:FUNC VOLT",
+        "W :OUTP ON",
+        "Q :SOUR:LEV?",
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -156728,7 +159556,7 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:224:run_one",
+          "tests/regression/driver_qicklab.py:226:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
           "qicklab/runs/charge_dispersion.py:458:run_charge_dispersion_ramsey"
         ],
@@ -159497,6 +162325,2834 @@
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "CLOSE"
+      ]
+    },
+    "RunChargeSweep[yoko_fixed]": {
+      "cfg_access": {
+        "QubitSpecSliceFF": {
+          "read": [
+            "Gauss",
+            "adc_trig_offset",
+            "cavity_winding_freq",
+            "cavity_winding_offset",
+            "expts",
+            "length",
+            "mixer_freq",
+            "nqz",
+            "pulse_freq",
+            "pulse_gain",
+            "qubit_ch",
+            "qubit_gain",
+            "qubit_length",
+            "qubit_nqz",
+            "readout_length",
+            "relax_delay",
+            "reps",
+            "res_ch",
+            "res_phase",
+            "ro_chs",
+            "rounds",
+            "start",
+            "step"
+          ],
+          "written": []
+        }
+      },
+      "experiments": [
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.0,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 0,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "ce6b4e19d5876ea8c12f277a878564db",
+            "first_program": "237c5793fb74ee8c",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 0,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2641.6965174129355
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.20281274221051,
+                    1.9780754921717563,
+                    2.0144504727949153
+                  ],
+                  "sha1": "db885bc2b7d8ac2b",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.28378003410324,
+                    1.0897287242288018,
+                    0.8647581770268176
+                  ],
+                  "sha1": "8dda1b7cf5b05000",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    0.8258461496429751,
+                    0.8233557973276239
+                  ],
+                  "sha1": "bcd91ebc397b32b5",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.6965174129355,
+                    2652.9402985074626
+                  ],
+                  "sha1": "77be90b342b8f800",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "03992b743b987769",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.005,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 1,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "ce6b4e19d5876ea8c12f277a878564db",
+            "first_program": "237c5793fb74ee8c",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 1,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2653.3383084577113
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.2248558363044486,
+                    2.9831041698961402,
+                    1.6396341652456983
+                  ],
+                  "sha1": "712a4bd16e031659",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.2266803596341653,
+                    1.4012455433266162,
+                    0.6889420244923269
+                  ],
+                  "sha1": "6c97689dc69d1412",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    68770.22997046572,
+                    4666.297240122069
+                  ],
+                  "sha1": "259969a97cb7a72d",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2653.3874671238445,
+                    2654.6646870680243
+                  ],
+                  "sha1": "ebbd50b40fc9e729",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.00045361813037617885,
+                    0.0010812271821765778
+                  ],
+                  "sha1": "1141bb5c8be55a70",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.00022680906518808943,
+                    0.0005406135910882889
+                  ],
+                  "sha1": "6bbbd166fbe2f2cf",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.2824286564300709,
+                    -0.1984873074347849
+                  ],
+                  "sha1": "ae469f072bc61f66",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.7094086165058255,
+                    0.640427218052336
+                  ],
+                  "sha1": "7153c5eced09f373",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.2097449209552997,
+                    1.069845850930635
+                  ],
+                  "sha1": "9fac2d22d49914df",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2653.3383084577113,
+                    2654.63184079602
+                  ],
+                  "sha1": "737279284ead1c0e",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "9977e177f49f0a69",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.01,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 2,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "ce6b4e19d5876ea8c12f277a878564db",
+            "first_program": "237c5793fb74ee8c",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 2,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2641.6965174129355
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.01
+                  ],
+                  "sha1": "1213d8b7558e63e9",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.426947760037204,
+                    2.4273787009765924,
+                    2.330949465199194
+                  ],
+                  "sha1": "806bd4438d6ad05e",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    1.3425275151139355,
+                    1.1624422570144162,
+                    1.1003890869632613
+                  ],
+                  "sha1": "4cec60744c10c69e",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    32644.28415049951
+                  ],
+                  "sha1": "363e662d91bbe254",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2652.6815585745258
+                  ],
+                  "sha1": "66dce88317ac9072",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0004909422737264292
+                  ],
+                  "sha1": "8477808590e6246b",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0002454711368632146
+                  ],
+                  "sha1": "6543ce859a265afa",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.12612604168596608
+                  ],
+                  "sha1": "54a7fad584b50b8c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.6095932032487555
+                  ],
+                  "sha1": "0519226c82ada1ef",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.1849639136726244,
+                    1.1320092796794676
+                  ],
+                  "sha1": "5a1e0893536b2503",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.6965174129355,
+                    2652.6417910447763
+                  ],
+                  "sha1": "4eae373ffa20eaf3",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "bff4cd086e0d4dd9",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        },
+        {
+          "cfg": {
+            "FF_Qubits": {
+              "1": {
+                "channel": 2,
+                "delay_time": 0.021500000000000002
+              },
+              "2": {
+                "channel": 4,
+                "delay_time": 0
+              },
+              "3": {
+                "channel": 5,
+                "delay_time": 0
+              },
+              "4": {
+                "channel": 6,
+                "delay_time": 0
+              }
+            },
+            "Gauss": false,
+            "SpecNumPoints": 201,
+            "SpecSpan": 10,
+            "TransNumPoints": 201,
+            "TransSpan": 5,
+            "acq_time": "<ISO>",
+            "adc_trig_offset": 0.3,
+            "cav_relax_delay": 30,
+            "cavity_LO": 0,
+            "cavity_min": true,
+            "cavity_winding_freq": 0,
+            "cavity_winding_offset": 0,
+            "current_voltage": 0.0,
+            "end_ts_gain": 6000,
+            "expts": 201,
+            "length": 15.3,
+            "mixer_freq": 0.0,
+            "nominal_voltage": 0.015,
+            "nqz": 2,
+            "pulse_freq": 7095.4,
+            "pulse_gain": 1500,
+            "pulse_style": "const",
+            "qubit_ch": 1,
+            "qubit_freq": 2651,
+            "qubit_gain": 1000,
+            "qubit_length": 50,
+            "qubit_nqz": 1,
+            "qubit_pulse_style": "const",
+            "readout_length": 15.0,
+            "relax_delay": 3000,
+            "repeat_index": 3,
+            "reps": 20,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "rounds": 10,
+            "start": 2641,
+            "start_ts_gain": 500,
+            "step": 0.09950248756218906,
+            "tone_length": 151,
+            "trig_buffer_end": 0.02,
+            "trig_buffer_start": 0.02,
+            "trig_delay": 0.082,
+            "ts_step": 100,
+            "voltage_end": 0.05,
+            "voltage_start": 0.0,
+            "voltage_step": 0.005
+          },
+          "cls": "QubitSpecSliceFF",
+          "fname": "<DATA>/Q5//QubitSpecFF/QubitSpecFF_<DATE>/QubitSpecFF_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 20,
+              "configure_readout": 2,
+              "load_bin_program": 1,
+              "reload_mem": 10,
+              "set_nyquist": 2,
+              "start_readout": 10,
+              "start_src": 2,
+              "stop_tproc": 1
+            },
+            "digest": "ce6b4e19d5876ea8c12f277a878564db",
+            "first_program": "237c5793fb74ee8c",
+            "n_programs": 1,
+            "n_unique_programs": 1
+          },
+          "index": 3,
+          "methods": [
+            {
+              "kwargs": {},
+              "name": "acquire",
+              "sets": {
+                "qubitFreq": 2658.7114427860697
+              }
+            },
+            {
+              "kwargs": {
+                "figNum": 2,
+                "fit_window_mhz": 0.5,
+                "min_sep": 0.2,
+                "plotDisp": false,
+                "prominent_ratio": 0.1
+              },
+              "name": "display"
+            },
+            {
+              "data_digest": {
+                "config/FF_Qubits/1/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/FF_Qubits/1/delay_time": {
+                  "dtype": "float64",
+                  "head": [
+                    0.021500000000000002
+                  ],
+                  "sha1": "3b8f37987d98c794",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    4
+                  ],
+                  "sha1": "f6da268a07a5474c",
+                  "shape": []
+                },
+                "config/FF_Qubits/2/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/FF_Qubits/3/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/channel": {
+                  "dtype": "int64",
+                  "head": [
+                    6
+                  ],
+                  "sha1": "797851c0e92297c1",
+                  "shape": []
+                },
+                "config/FF_Qubits/4/delay_time": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/Gauss": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/SpecNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/SpecSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/TransNumPoints": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/TransSpan": {
+                  "dtype": "int64",
+                  "head": [
+                    5
+                  ],
+                  "sha1": "dd0ba748223e511a",
+                  "shape": []
+                },
+                "config/acq_time": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
+                "config/adc_trig_offset": {
+                  "dtype": "float64",
+                  "head": [
+                    0.3
+                  ],
+                  "sha1": "92abd87958279a6b",
+                  "shape": []
+                },
+                "config/cav_relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    30
+                  ],
+                  "sha1": "ec81f8fc670a9123",
+                  "shape": []
+                },
+                "config/cavity_LO": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_min": {
+                  "dtype": "bool",
+                  "head": [
+                    true
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/cavity_winding_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/cavity_winding_offset": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/current_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/end_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    6000
+                  ],
+                  "sha1": "ee98d4bcdf11af3a",
+                  "shape": []
+                },
+                "config/expts": {
+                  "dtype": "int64",
+                  "head": [
+                    201
+                  ],
+                  "sha1": "c61bdb41c3b57450",
+                  "shape": []
+                },
+                "config/length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.3
+                  ],
+                  "sha1": "c36707d00092896e",
+                  "shape": []
+                },
+                "config/mixer_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/nominal_voltage": {
+                  "dtype": "float64",
+                  "head": [
+                    0.015
+                  ],
+                  "sha1": "06ca9b0f9fc78b8a",
+                  "shape": []
+                },
+                "config/nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    2
+                  ],
+                  "sha1": "f5a287313a7f83fa",
+                  "shape": []
+                },
+                "config/pulse_freq": {
+                  "dtype": "float64",
+                  "head": [
+                    7095.4
+                  ],
+                  "sha1": "f3036f081cc86e2c",
+                  "shape": []
+                },
+                "config/pulse_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1500
+                  ],
+                  "sha1": "40796c6312d18480",
+                  "shape": []
+                },
+                "config/pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/qubit_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_freq": {
+                  "dtype": "int64",
+                  "head": [
+                    2651
+                  ],
+                  "sha1": "a77378056ada2088",
+                  "shape": []
+                },
+                "config/qubit_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    1000
+                  ],
+                  "sha1": "4d8a7e70404ca9a7",
+                  "shape": []
+                },
+                "config/qubit_length": {
+                  "dtype": "int64",
+                  "head": [
+                    50
+                  ],
+                  "sha1": "20c9677f3d37a6c3",
+                  "shape": []
+                },
+                "config/qubit_nqz": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "config/qubit_pulse_style": {
+                  "dtype": "str",
+                  "head": [
+                    "const"
+                  ],
+                  "sha1": "b42f3f6f796fa3cf",
+                  "shape": []
+                },
+                "config/readout_length": {
+                  "dtype": "float64",
+                  "head": [
+                    15.0
+                  ],
+                  "sha1": "fd34edc8f66c32df",
+                  "shape": []
+                },
+                "config/relax_delay": {
+                  "dtype": "int64",
+                  "head": [
+                    3000
+                  ],
+                  "sha1": "62f8b974d3e0a8a8",
+                  "shape": []
+                },
+                "config/repeat_index": {
+                  "dtype": "int64",
+                  "head": [
+                    3
+                  ],
+                  "sha1": "738adcbeb0cb8a8f",
+                  "shape": []
+                },
+                "config/reps": {
+                  "dtype": "int64",
+                  "head": [
+                    20
+                  ],
+                  "sha1": "74d8af3317462173",
+                  "shape": []
+                },
+                "config/res_ch": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/res_phase": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "config/ro_chs": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "4d9b902ac63c350e",
+                  "shape": [
+                    1
+                  ]
+                },
+                "config/rounds": {
+                  "dtype": "int64",
+                  "head": [
+                    10
+                  ],
+                  "sha1": "e5f4cf844947fa57",
+                  "shape": []
+                },
+                "config/start": {
+                  "dtype": "int64",
+                  "head": [
+                    2641
+                  ],
+                  "sha1": "4922c78cf8d4c65b",
+                  "shape": []
+                },
+                "config/start_ts_gain": {
+                  "dtype": "int64",
+                  "head": [
+                    500
+                  ],
+                  "sha1": "c3f03d491962e245",
+                  "shape": []
+                },
+                "config/step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09950248756218906
+                  ],
+                  "sha1": "20967d7dc838f20d",
+                  "shape": []
+                },
+                "config/tone_length": {
+                  "dtype": "int64",
+                  "head": [
+                    151
+                  ],
+                  "sha1": "a3d094ae96ee0638",
+                  "shape": []
+                },
+                "config/trig_buffer_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_buffer_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02
+                  ],
+                  "sha1": "d1b216c93bf62945",
+                  "shape": []
+                },
+                "config/trig_delay": {
+                  "dtype": "float64",
+                  "head": [
+                    0.082
+                  ],
+                  "sha1": "424f4158431716e3",
+                  "shape": []
+                },
+                "config/ts_step": {
+                  "dtype": "int64",
+                  "head": [
+                    100
+                  ],
+                  "sha1": "94981a5f4260da19",
+                  "shape": []
+                },
+                "config/voltage_end": {
+                  "dtype": "float64",
+                  "head": [
+                    0.05
+                  ],
+                  "sha1": "d1c48f61714faa4c",
+                  "shape": []
+                },
+                "config/voltage_start": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0
+                  ],
+                  "sha1": "7e6c258c8f3e82ea",
+                  "shape": []
+                },
+                "config/voltage_step": {
+                  "dtype": "float64",
+                  "head": [
+                    0.005
+                  ],
+                  "sha1": "4599d54c00023676",
+                  "shape": []
+                },
+                "data/avgi": {
+                  "dtype": "float64",
+                  "head": [
+                    2.1269035808401795,
+                    2.354955820802976,
+                    1.2976864052084949
+                  ],
+                  "sha1": "2290438d24ae4955",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/avgq": {
+                  "dtype": "float64",
+                  "head": [
+                    0.9138854441171912,
+                    0.830913811812122,
+                    0.7138404898465354
+                  ],
+                  "sha1": "62292af4433efe6b",
+                  "shape": [
+                    2,
+                    1,
+                    201
+                  ]
+                },
+                "data/lorentz_amplitudes": {
+                  "dtype": "float64",
+                  "head": [
+                    1.4981898104587368
+                  ],
+                  "sha1": "c773c6f54991114c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_centers": {
+                  "dtype": "float64",
+                  "head": [
+                    2649.7809562906514
+                  ],
+                  "sha1": "2e623a13bb961173",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [
+                    0.09105617580464237
+                  ],
+                  "sha1": "390526eee5c1ff5a",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_gamma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.045528087902321185
+                  ],
+                  "sha1": "ad3ce850f2daceb9",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_num_fits": {
+                  "dtype": "int64",
+                  "head": [
+                    1
+                  ],
+                  "sha1": "50884d3b2a9fbe85",
+                  "shape": []
+                },
+                "data/lorentz_offsets": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.09973125875006413
+                  ],
+                  "sha1": "587a4c842d939b89",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_r2": {
+                  "dtype": "float64",
+                  "head": [
+                    0.6854499221876955
+                  ],
+                  "sha1": "54d9f8afa3b4536b",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/two_tone_peak_amps": {
+                  "dtype": "float64",
+                  "head": [
+                    1.066110707470337,
+                    1.2516252934544456
+                  ],
+                  "sha1": "e0a613489813ddf2",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/two_tone_peak_freqs": {
+                  "dtype": "float64",
+                  "head": [
+                    2649.7562189054725,
+                    2658.7114427860697
+                  ],
+                  "sha1": "7548ea7ebf786752",
+                  "shape": [
+                    2
+                  ]
+                },
+                "data/x_pts": {
+                  "dtype": "float64",
+                  "head": [
+                    2641.0,
+                    2641.0995024875624,
+                    2641.1990049751244
+                  ],
+                  "sha1": "21924826a5471353",
+                  "shape": [
+                    201
+                  ]
+                }
+              },
+              "kwargs": {},
+              "name": "save_data"
+            },
+            {
+              "cfg_delta": {},
+              "cfg_digest": "c702b3000ef69996",
+              "kwargs": {},
+              "name": "save_config"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//",
+          "path": "QubitSpecFF",
+          "run": "RunChargeSweep[yoko_fixed]"
+        }
+      ],
+      "hw_outside_experiments": null,
+      "outcome": {
+        "status": "completed"
+      },
+      "skipped": {
+        "QubitSpecSliceFF/QubitSpecFF": 6
+      },
+      "yoko_writes": [
+        "OPEN GPIB1::9::INSTR",
+        "W :SOUR:FUNC VOLT",
+        "W :OUTP ON",
+        "Q :SOUR:LEV?",
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },

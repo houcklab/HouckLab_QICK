@@ -217,8 +217,8 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
 
 ## Run labels (golden at commit time)
 
-39 labels per board variant: 31 runner flags, 5 override variants
-(`Flag[name]`) plus the v1 `[validate]` variant, and 4 multi-flag labels
+40 labels per board variant: 30 runner flags, 6 override variants
+(`Flag[name]`, including the v1 `[validate]` variant), and 4 multi-flag labels
 (`FlagA+FlagB`, flags run in runner order). Labels stay the legacy flag names.
 
 | Variant label | Override applied after sections 1-2 | Why |
@@ -228,6 +228,7 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
 | `RunModifiedRamsey_Control[verified]` | `ModifiedRamsey_Control_params["sweet_spot_max_df_mhz"] = 1e9` | search accepts at once, so the MRC Ramsey stage runs |
 | `RunAutoCoherence[fast]` | `AutoCoherence_override_params` += `auto_readout_opt=False, ss_gain_pts=3, T1_expts=5, T2_expts=5, T2E_expts=5` | reaches T1, T2R and T2E stages |
 | `RunT2E[rotation]` | `T2E_params` += `rotation_angle=0.3, min_max=[0.0, 1.0]` | rotation branch of T2E |
+| `RunChargeSweep[yoko_fixed]` | session flag `yoko_fixed = True` | held-bias repeat: one `:SOUR:LEV?` read-back, held `current_voltage` + `nominal_voltage`/`repeat_index`/`acq_time` per slice |
 | `RunTransmissionSweep+RunAmplitudeRabi` | none | `pulse_freq` carried from the transmission fit into Rabi |
 | `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW` | `TwoToneChargeDispersion_params["num_cycles"] = 1` | `probe_freq` leak; one cycle so the second dispatch is reached at all |
 | `RunActiveResetVerify+SingleShot` | none | `res_phase` set by ARV calibration, discarded by the rebuild |
@@ -265,6 +266,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunT2E[rotation]` | stopped_at_budget | 4 | 9 | T2EMUX x4 | 4 |
 | `RunTrans_QubitSpec` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
 | `RunChargeSweep` | completed | 4 | 6 | QubitSpecSliceFF x4 | 4 |
+| `RunChargeSweep[yoko_fixed]` | completed | 4 | 6 | QubitSpecSliceFF x4 | 4 |
 | `RunChargeTransmissionSweep` | completed | 4 | 6 | CavitySpecFF x4 | 804 |
 | `RunActiveResetVerify` | completed | 7 | 2 | SingleShotProgramFFMUX x3, ActiveResetVerify x4 | 10 |
 | `RunInterleavedCoherence` | stopped_at_budget | 12 | 9 | UndrivenSingleShot x4, T1FF x4, T2R x4 | 12 |

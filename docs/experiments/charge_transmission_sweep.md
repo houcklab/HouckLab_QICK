@@ -43,15 +43,27 @@ PLAN = [R.charge_transmission_sweep(voltage_start=0.0, voltage_end=0.05,
 - The step's own `voltage_start/end/step` override the session charge group.
   Parameters left at None inherit it.
 - The grid is half-open, like `np.arange`.
-- The step rejects a zero step, an empty grid and any |V| > 10 V. The ±10 V check
-  matters because `ramp_to` only rejects targets above +10 V, so a negative typo
-  would otherwise slip past.
+- The step rejects a zero step, an empty grid and any |V| > 10 V before moving the
+  bias (`ramp_to` itself rejects |target| > 10 V only when it reaches that point).
 
 **Bias restore.** The starting voltage is read before the sweep and the yoko is
 ramped back to it in a `finally` block, also on error or Ctrl-C. An aborted sweep
 must not leave the bias parked at an arbitrary point, because every later measurement
 would silently run at that charge offset. With `yoko_fixed` nothing is moved or
 restored.
+
+**Holding the bias (`yoko_fixed`).** With the session flag set, the step repeats the
+transmission sweep in time at the level the yoko already holds:
+
+- The voltage grid only sets the number of repeats N.
+- The level read before the loop (the same read that serves the restore) is recorded
+  as the bias of every slice.
+- The heatmap y axis and the tracked-extremum traces are plotted against the repeat
+  index. Each row title reads `repeat i/N at V = <held level>`.
+- The closing print reports how far the resonator **drifted** over N repeats and the
+  elapsed time, instead of "moved over V0 to V1".
+
+See [charge_sweep](charge_sweep.md#holding-the-bias-yoko_fixed).
 
 **reps vs rounds.**
 
@@ -82,12 +94,19 @@ Legacy `ChargeTransmission_params` keys (CSTQ03 runner values). None means "inhe
 
 - **Per slice:** `CavitySpecFF` h5/png/json under `ChargeTransmissionFF/`, with
   `current_voltage` in the cfg.
+  - Sweeping: `current_voltage` is the grid value.
+  - With `yoko_fixed`: `current_voltage` is the held level. The cfg also has
+    `repeat_index`, `acq_time` (local wall-clock ISO time) and `nominal_voltage`.
 - **Map:** `<last slice name>_ChargeTransmissionHeatmap.png` (with the tracked
   extremum overlaid) and `…_ChargeTransmissionHeatmap.npz`, beside the last slice. The
   npz holds `db_map`, `avgi_map`, `avgq_map`, `fpts_mhz`, `x_pts_ghz` (absolute,
-  including `cavity_LO`), `voltage_pts`, `raw_extremum_mhz`, `fit_extremum_mhz` and
-  `cavity_min`.
-- A printed summary of how far the resonator moved (kHz) over the voltage range.
+  including `cavity_LO`), `raw_extremum_mhz`, `fit_extremum_mhz`, `cavity_min` and a
+  `yoko_fixed` flag, plus the row axis:
+  - Sweeping: `voltage_pts`.
+  - With `yoko_fixed`: `repeat_index`, `acq_time`, `elapsed_s`, `held_voltage` and
+    `nominal_voltage_pts` (no `voltage_pts`).
+- A printed summary of how far the resonator moved (kHz) over the voltage range, or,
+  with `yoko_fixed`, how far it drifted over the repeats.
 - The cavity frequency is **not** written back to the session config: "the" cavity
   frequency is undefined across a charge sweep. Contrast this with
   `transmission_sweep`, which does write it back.

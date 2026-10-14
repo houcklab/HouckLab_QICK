@@ -47,7 +47,24 @@ PLAN = [R.charge_sweep()]
   `voltage_end` is not measured.
 - A step's own parameters override the session group.
 - With `yoko_fixed = True` the yoko is not moved. The sweep then just repeats the
-  spectrum over time at a fixed bias ("lazy way of sweeping two-tone over time").
+  spectrum over time at a fixed bias ("lazy way of sweeping two-tone over time"). See
+  below.
+
+### Holding the bias (yoko_fixed)
+
+With the session flag `yoko_fixed = True` the step never writes to the yoko. The
+voltage grid only sets the **number of repeats**, N = `len(np.arange(voltage_start,
+voltage_end, voltage_step))`. The bias is whatever the yoko already holds, usually
+the session bias, but not always: some steps move it and do not restore it (for
+example `charge_dispersion`).
+
+- The held level is read back once, before the first slice (`:SOUR:LEV?`), and
+  recorded as the bias of every slice.
+- Each slice is repeat *i* (0-based) at that level. It is not a point of the grid.
+- The heatmap y axis is the repeat index, not voltage. The title of each row reads
+  `repeat i/N at V = <held level>`.
+
+Without `yoko_fixed`, every slice records the grid value the yoko was ramped to.
 
 ## Parameters
 
@@ -62,15 +79,26 @@ PLAN = [R.charge_sweep()]
 | `qubit_gain` / `qubit_length` | 1000 / 50 | DAC / µs | Const pulse (frozen into the config when the session is built). |
 | `SpecSpan` / `SpecNumPoints` | 10 / 201 | MHz / count | Frequency grid (frozen into the config when the session is built). |
 | `min_sep_MHz` / `fit_window_mhz` / `prominent_ratio` | 0.2 / 0.5 / 0.1 | MHz / MHz / – | Per-slice peak display options. |
-| `yoko_fixed` | False | bool | Session flag: hold the bias. |
+| `yoko_fixed` | False | bool | Session flag: hold the bias and repeat in time (see above). |
 
 ## Outputs
 
 - **Per slice:** `QubitSpecSliceFF` h5/png/json under `QubitSpecFF/`, with
   `current_voltage` in the cfg.
+  - Sweeping: `current_voltage` is the grid value the yoko was ramped to.
+  - With `yoko_fixed`: `current_voltage` is the held level read back before the
+    loop. The cfg also has `repeat_index` (0-based), `acq_time` (local wall-clock ISO
+    time, the same clock as the file names) and `nominal_voltage` (the unused grid
+    value).
 - **Heatmap:** `<last slice name>_ChargeSweepHeatmap.png` and
   `<last slice name>_ChargeSweepHeatmap.npz`, beside the last slice. The npz holds
-  `avgamp_map` (voltage × frequency), `x_pts` and `voltage_pts`.
+  `avgamp_map` (row × frequency), `x_pts` and a `yoko_fixed` flag, plus the row
+  axis:
+  - Sweeping: `voltage_pts`.
+  - With `yoko_fixed`: `repeat_index`, `acq_time` (ISO strings), `elapsed_s`
+    (seconds since the first slice), `held_voltage` and `nominal_voltage_pts`.
+    There is no `voltage_pts`, so code that loads it fails instead of plotting a
+    sweep that never happened.
 - Peak frequencies per slice (the two tallest peaks, ≥ 0.05 MHz apart) are **printed
   only**, not saved.
 
@@ -101,7 +129,7 @@ PLAN = [R.charge_sweep()]
 - **The yoko is not restored** after the sweep. Every later step runs at the last
   bias.
 - The voltage check only stops the sweep at the first V > 10 V. A negative typo is
-  not caught here, and `ramp_to` only rejects targets > +10 V.
+  not caught here; `ramp_to` raises on |target| > 10 V when the sweep reaches it.
 - If the first point already breaks the loop, or the grid is empty, the heatmap save
   fails with AttributeError/NameError after the loop.
 - The step does not use the shared grid validation that

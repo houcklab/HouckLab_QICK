@@ -96,6 +96,8 @@ OVERRIDES = {
         ),
     ),
     "RunT2E[rotation]": (("RunT2E",), _set("T2E_params", rotation_angle=0.3, min_max=[0.0, 1.0])),
+    # session flag yoko_fixed = True: the charge sweep holds the bias and repeats in time (F28)
+    "RunChargeSweep[yoko_fixed]": (("RunChargeSweep",), _enable("yoko_fixed")),
 }
 # label -> override. Flags run in runner order; the label is "+"-joined flags.
 MULTI = {
