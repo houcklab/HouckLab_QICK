@@ -32,9 +32,14 @@ ADC         [ window ]                              [ window ]               [ w
 - Intermediate verification reads wait `verify_relax_delay`. The **last** one waits
   `relax_delay`, so the qubit re-thermalises before the next rep's prep.
 - Readout window: identical block to [single_shot](single_shot.md#pulse-sequence).
+- The reset block is the shared one from [active_reset](active_reset.md)
+  (`ActiveResetMixin`, the exact code modified_ramsey runs): `cmp_offset =
+  int(ro_norm) << 15`, `read` on the readout's tProc input channel, labels
+  `RESET_DONE_<i>`.
 - `reset_force_pi = True` skips the threshold decision and fires the corrective pi
   **unconditionally**. This measures the bare post-readout pi fidelity, decoupled
-  from the threshold.
+  from the threshold. It only removes the `condj`; the reset readout, `read` and
+  offset are unchanged.
 
 ## How to run
 
@@ -126,10 +131,12 @@ not between them, the reset is miswired.
 - TATQ01/BFE Q2, 2026-06-05/06: all 31 saved sweeps showed ground-state damage that
   tracked the below-zero fraction of the g blob. A g_I ≈ 0 sweep lost exactly half
   its ground shots. Conclusion: the tProc compares unsigned (see
-  [active_reset](active_reset.md#why-cmp_offset--intro_norm--15)). The comment in
-  this program that claims "2^24 ≫ any |raw I| (~1e4–1e5)" is **superseded**: |raw I|
-  can reach `ro_norm·2^15`, and 2^24 is about 9x too small for a 15 µs window
-  (2026-07-28).
+  [active_reset](active_reset.md#why-cmp_offset--intro_norm--15)). This program
+  used a fixed offset of 2^24 on the claim "2^24 ≫ any |raw I| (~1e4–1e5)", which is
+  **superseded**: |raw I| can reach `ro_norm·2^15`, and 2^24 is about 9x too small for
+  a 15 µs window (2026-07-28). Since 2026-10-13 it runs the shared reset block with
+  `int(ro_norm) << 15`, so ARV data taken before then with negative-I shots below
+  −2^24 does not test the reset modified_ramsey runs.
 - TATQ01-SiO2 Q3 (lab record, 2000 reps/condition): reset ON gave P(g) = 0.539
   (prep g) / 0.497 (prep e), against force-pi 0.847. Pi and readout were fine; the
   reset `read` was sampling the previous rep's readout (see
@@ -141,13 +148,12 @@ not between them, the reset is miswired.
 
 ## Known issues
 
-- **This step does not test the mechanism modified_ramsey uses.** It keeps its own
-  copy of the reset:
-  - fixed `cmp_offset = 2^24` instead of `int(ro_norm) << 15`, and no `< 2^30` guard;
-  - `read` gets the readout index instead of `readouts[ro_ch]["tproc_ch"]`.
-
-  With a 15 µs window, shots with raw I < −2^24 wrap and the pi fires on the wrong
-  branch.
+- Fixed 2026-10-13: until then this step kept its own copy of the reset, with a fixed
+  `cmp_offset = 2^24` (no `< 2^30` guard) and the readout index passed to `read`
+  instead of `readouts[ro_ch]["tproc_ch"]`. With a 15 µs window, shots with raw
+  I < −2^24 wrapped and the pi fired on the wrong branch; on a board whose readout is
+  not wired to the same-numbered tProc input it read the wrong input. It now uses the
+  shared `ActiveResetMixin`, so it tests exactly what modified_ramsey runs.
 - No `flattop_length` guard. The run passes the device `flattop_length`, but the
   program plays a 4σ gaussian with that gain, which mis-rotates a flat-top-calibrated
   pi.

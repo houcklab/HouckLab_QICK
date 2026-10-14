@@ -2,12 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
 
+from qicklab.core.active_reset import ActiveResetMixin
 from qicklab.core.experiment import ExperimentClass
 
 
-class ActiveResetVerifyProgram(AveragerProgram):
-    """[prep pi] -> [active reset] -> n_verify_reads readouts. Keeps its own reset copy,
-    which differs from ModifiedRamsey's (docs/experiments/active_reset_verify.md#known-issues)."""
+class ActiveResetVerifyProgram(ActiveResetMixin, AveragerProgram):
+    """[prep pi] -> [active reset] -> n_verify_reads readouts. The reset block is
+    ModifiedRamsey's (core.active_reset.ActiveResetMixin), so this tests that exact code."""
 
     def initialize(self):
         cfg = self.cfg
@@ -30,30 +31,12 @@ class ActiveResetVerifyProgram(AveragerProgram):
 
         self.q_rp = self.ch_page(cfg["qubit_ch"])
 
-        # Free user registers on the qubit page (mirrors ModifiedRamsey).
-        self.r_read = 4  # holds the accumulated I read back from the ADC
-        self.r_thresh = 5  # holds the single-shot discrimination threshold
-
         self.prep_excited = cfg.get("prep_excited", False)
-        self.use_active_reset = cfg.get("use_active_reset", False)
-        self.reset_cycles = int(cfg.get("reset_cycles", 1)) if self.use_active_reset else 0
-        if self.reset_cycles < 0:
-            raise ValueError("cfg['reset_cycles'] must be non-negative")
-        self.reset_skip_op = "<" if cfg.get("reset_ground_below_threshold", True) else ">"
+        self.configure_active_reset()
         # Diagnostic: fire the corrective pi UNCONDITIONALLY (skip the condj).
         # Measures the bare pi fidelity in the post-readout environment,
         # decoupled from the threshold decision.
         self.reset_force_pi = cfg.get("reset_force_pi", False)
-        # Sign-safe comparison offset. ARV data on TATQ01/BFE (2026-06-05/06)
-        # showed the corrective pi firing on every shot whose accumulated I is
-        # NEGATIVE (ground-state damage tracked the below-zero fraction of the
-        # g blob; the g_I~0 sweep lost exactly half its ground shots), i.e. the
-        # deployed tProc compares r_read/r_thresh as if unsigned. Adding the
-        # same large positive constant to BOTH operands makes them strictly
-        # positive, so signed and unsigned comparison agree and the decision is
-        # correct under either firmware behaviour. 2^24 >> any |raw I|
-        # (~1e4-1e5) and offset+|raw| << 2^30 (immediate sign-bit limit).
-        self.cmp_offset = 1 << 24
         self.n_verify_reads = int(cfg.get("n_verify_reads", 5))
         if self.n_verify_reads < 1:
             raise ValueError("cfg['n_verify_reads'] must be >= 1.")
@@ -122,24 +105,13 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 raise KeyError(
                     "prep_excited/use_active_reset require cfg['pi_gain'] for the pi pulse."
                 )
+        # r_thresh = raw threshold + cmp_offset (ro_norm << 15); each read gets the same offset.
+        self.load_reset_threshold()
         if self.use_active_reset:
-            if "readout_threshold" not in cfg:
-                raise KeyError(
-                    "use_active_reset=True requires cfg['readout_threshold'] "
-                    "(single-shot I threshold, normalized units)."
-                )
-            # Rescale the normalized threshold back to the raw accumulator units the
-            # tProc compares (collect_shots divides accumulated I by the window len).
-            ro_norm = self.readout_window_cycles[cfg["ro_chs"][0]]
-            raw_threshold = int(round(cfg["readout_threshold"] * ro_norm))
-            if abs(raw_threshold) >= self.cmp_offset:
-                raise ValueError(
-                    f"raw_threshold {raw_threshold} exceeds the sign-safe "
-                    f"comparison offset {self.cmp_offset}; increase cmp_offset."
-                )
-            # r_thresh holds threshold + offset; r_read gets the same offset
-            # added (mathi) right after each read, before the condj.
-            self.regwi(self.q_rp, self.r_thresh, raw_threshold + self.cmp_offset)
+            # Same rescaling as load_reset_threshold (collect_shots divides by the window).
+            raw_threshold = int(
+                round(cfg["readout_threshold"] * self.readout_window_cycles[cfg["ro_chs"][0]])
+            )
             # DIAGNOSTIC: shows the exact decision the reset will make. The corrective
             # pi is SKIPPED when (r_read reset_skip_op r_thresh) is true. For a correct
             # reset this must skip when the qubit is in |g>. Cross-check against the
@@ -156,53 +128,6 @@ class ActiveResetVerifyProgram(AveragerProgram):
             )
 
         self.sync_all(self.us2cycles(0.2))
-
-    def active_reset_to_g(self):
-        """
-        Real measurement-feedback reset to |g>. Copied verbatim (logic) from
-        ModifiedRamseyProgram.active_reset_to_g() so this experiment validates the
-        identical sequence.
-        """
-        cfg = self.cfg
-        ro_ch = cfg["ro_chs"][0]
-
-        for i in range(self.reset_cycles):
-            done_label = "VRESET_DONE_%d" % i
-
-            self.measure(
-                pulse_ch=cfg["res_ch"],
-                adcs=self.ro_chs,
-                adc_trig_offset=self.adc_trig_offset_cycles,
-                wait=True,
-                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)),
-            )
-
-            self.read(ro_ch, self.q_rp, "lower", self.r_read)
-
-            # Offset the (possibly negative) accumulated I into strictly
-            # positive territory so the comparison below is sign-safe (see
-            # cmp_offset comment in initialize()). r_thresh already carries
-            # the same offset.
-            self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)
-
-            if not self.reset_force_pi:
-                self.condj(self.q_rp, self.r_read, self.reset_skip_op, self.r_thresh, done_label)
-
-            self.set_pulse_registers(
-                ch=cfg["qubit_ch"],
-                style="arb",
-                freq=self.f_ge_reg,
-                phase=0,
-                gain=cfg["pi_gain"],
-                waveform="qubit",
-            )
-            self.pulse(ch=cfg["qubit_ch"])
-
-            self.label(done_label)
-            self.sync_all()
-
-        if self.reset_cycles:
-            self.sync_all(self.us2cycles(cfg.get("post_reset_wait", 0.0)))
 
     def body(self):
         cfg = self.cfg

@@ -167,9 +167,11 @@ and its refusal of a register-based `sync`; `readout_window_cycles`,
 `readout_tone_cycles`, `readout_tone_extension_cycles`, `adc_trig_offset_cycles`
 of SingleShot/ModifiedRamsey/ActiveResetVerify/UndrivenSingleShot (and that B
 gives a different `readout_tone_cycles` than A); compiled program length of
-T1 and ModifiedRamsey; the tProc input of the active-reset `read` (MR resolves
-`tproc_ch`, ARV passes the readout index -- the known ARV bug, pinned as-is)
-and both `cmp_offset`s (MR `ro_norm << 15`, ARV `1 << 24`).
+T1 and ModifiedRamsey; the tProc input of the active-reset `read` (both MR and
+ARV resolve `tproc_ch` through the shared `ActiveResetMixin`; ARV used to pass
+the readout index, fixed 2026-10-13) and both `cmp_offset`s (`ro_norm << 15`);
+ARV's sign-safe threshold immediate, its `reset_force_pi` (no `condj`), and the
+`safe_regwi` split of a threshold immediate above 2^30.
 
 ## What it cannot prove
 

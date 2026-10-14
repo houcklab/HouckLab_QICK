@@ -80,9 +80,10 @@ BINPROG_LEN = {
     "A": {"T1": 37, "MR_no_reset": 41, "MR_reset": 62},
     "B": {"T1": 39, "MR_no_reset": 41, "MR_reset": 61},
 }
-# tProc input channel of the active-reset `read` instruction. MR resolves the
-# readout's tproc_ch; ARV passes the readout index (known legacy bug, pinned).
-READ_INPUT = {"A": {"MR": 0, "ARV": 0}, "B": {"MR": 2, "ARV": 0}}
+# tProc input channel of the active-reset `read` instruction. Both resolve the
+# readout's tproc_ch through the shared ActiveResetMixin (ARV used to pass the
+# readout index, so board B read input 0).
+READ_INPUT = {"A": {"MR": 0, "ARV": 0}, "B": {"MR": 2, "ARV": 2}}
 
 
 @pytest.fixture(params=capture.VARIANTS)
@@ -182,4 +183,80 @@ def test_active_reset_read_channel_and_offset(legacy, board):
     assert set(_reads(mr)) == {READ_INPUT[variant]["MR"]}
     assert set(_reads(arv)) == {READ_INPUT[variant]["ARV"]}
     assert mr.cmp_offset == mr.readout_window_cycles[0] << 15
-    assert arv.cmp_offset == 1 << 24
+    assert arv.cmp_offset == arv.readout_window_cycles[0] << 15 == 4608 << 15
+
+
+def _insts(prog, name, reg=None):
+    return [
+        inst["args"]
+        for inst in prog.prog_list
+        if inst["name"] == name and (reg is None or inst["args"][1] == reg)
+    ]
+
+
+def test_active_reset_verify_offset_is_sign_safe(legacy, board):
+    """ARV's comparison offset must exceed the largest |raw I| (ro_norm * 2^15); the old
+    fixed 2^24 did not for a 15 us window, so negative-I shots wrapped."""
+    _, soccfg = board
+    arv = legacy["ARV"](
+        soccfg, _cfg(legacy["BaseConfig"], use_active_reset=True, readout_threshold=-4000.0)
+    )
+    ro_norm = arv.readout_window_cycles[0]
+    raw_threshold = round(-4000.0 * ro_norm)
+    assert arv.cmp_offset >= ro_norm * 2**15
+    assert _insts(arv, "regwi", arv.r_thresh) == [(arv.q_rp, 5, raw_threshold + arv.cmp_offset)]
+    assert raw_threshold + arv.cmp_offset > 0
+    assert _insts(arv, "mathi", arv.r_read) == [(arv.q_rp, 4, 4, "+", arv.cmp_offset)]
+
+
+@pytest.mark.parametrize("force_pi", [False, True])
+def test_active_reset_verify_uses_shared_reset(legacy, board, force_pi):
+    """ARV runs the mixin's reset block; reset_force_pi only drops the condj."""
+    _, soccfg = board
+    arv = legacy["ARV"](
+        soccfg,
+        _cfg(
+            legacy["BaseConfig"],
+            use_active_reset=True,
+            readout_threshold=0.0,
+            reset_cycles=2,
+            reset_force_pi=force_pi,
+        ),
+    )
+    labels = [inst["label"] for inst in arv.prog_list if "label" in inst]
+    assert {"RESET_DONE_0", "RESET_DONE_1"} <= set(labels)
+    assert not any(lab.startswith("VRESET") for lab in labels)
+    expected = [] if force_pi else [(1, 4, "<", 5, "RESET_DONE_%d" % i) for i in range(2)]
+    assert _insts(arv, "condj") == expected
+    assert len(_reads(arv)) == 2
+    assert len(_insts(_mr(legacy, soccfg, True), "condj")) == 1
+
+
+def test_reset_threshold_above_2_30_uses_safe_regwi(legacy):
+    """A ~104 us window with a large positive threshold puts raw_threshold + cmp_offset
+    above 2^30, which a plain regwi immediate cannot load: it must go through
+    safe_regwi (regwi imm>>2, bitwi <<2, + imm%4) and reconstruct exactly."""
+    arv = legacy["ARV"](
+        capture.FakeSocCfg("A"),
+        _cfg(
+            legacy["BaseConfig"],
+            length=104.3,
+            readout_length=104.0,
+            use_active_reset=True,
+            readout_threshold=1000.0,
+        ),
+    )
+    target = round(1000.0 * arv.readout_window_cycles[0]) + arv.cmp_offset
+    assert arv.cmp_offset < 2**30 <= target
+    writes = [
+        inst
+        for inst in arv.prog_list
+        if inst["name"] in ("regwi", "bitwi", "mathi") and inst["args"][1] == arv.r_thresh
+    ]
+    assert writes[0]["name"] == "regwi" and abs(writes[0]["args"][2]) < 2**30
+    assert writes[1]["name"] == "bitwi" and writes[1]["args"][3:] == ("<<", 2)
+    value = writes[0]["args"][2] << 2
+    if len(writes) > 2:
+        assert writes[2]["name"] == "mathi" and writes[2]["args"][3] == "+"
+        value += writes[2]["args"][4]
+    assert value == target

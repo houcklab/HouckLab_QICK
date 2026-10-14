@@ -9,6 +9,10 @@ class ActiveResetMixin:
     """For an AveragerProgram with self.q_rp, a 4-sigma "qubit" gaussian played at
     self.f_ge_reg, and the attributes set by core.readout.cover_readout_window."""
 
+    # True fires the corrective pi unconditionally (no condj). Only ActiveResetVerify's
+    # force-pi diagnostic sets it; ModifiedRamsey never does.
+    reset_force_pi = False
+
     def configure_active_reset(self):
         """Reset registers, flags and the sign-safe offset placeholder (no tProc writes)."""
         cfg = self.cfg
@@ -63,7 +67,9 @@ class ActiveResetMixin:
                     f"comparison offset {self.cmp_offset}; the readout is "
                     "saturating the accumulator."
                 )
-            self.regwi(self.q_rp, self.r_thresh, raw_threshold + self.cmp_offset)
+            # safe_regwi: above 2^14 window cycles the sum can reach 2^30, which a plain
+            # regwi immediate does not load correctly (identical to regwi below 2^30).
+            self.safe_regwi(self.q_rp, self.r_thresh, raw_threshold + self.cmp_offset)
 
     def active_reset_to_g(self):
         """reset_cycles rounds of measure -> read I -> conditional pi, then post_reset_wait."""
@@ -91,7 +97,8 @@ class ActiveResetMixin:
 
             self.read(tproc_in_ch, self.q_rp, "lower", self.r_read)
             self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)
-            self.condj(self.q_rp, self.r_read, self.reset_skip_op, self.r_thresh, done_label)
+            if not self.reset_force_pi:
+                self.condj(self.q_rp, self.r_read, self.reset_skip_op, self.r_thresh, done_label)
 
             self.set_pulse_registers(
                 ch=cfg["qubit_ch"],

@@ -171,9 +171,10 @@ The population is conservative: it counts only points that protrude. If the clas
   the e cloud can fall outside it.
 - `hist_process` in the readout-optimise variant prints misassignment fractions labelled
   "ne contrast" / "ng contrast", twice.
-- `ActiveResetVerify` still uses the fixed `1 << 24` offset and the readout index instead of the
-  tProc input channel. For windows longer than about 1.7 us (512 readout cycles) its verdict does not test the
-  mechanism `ModifiedRamsey` actually uses.
+- Before 2026-10-13 `ActiveResetVerify` used the fixed `1 << 24` offset and the readout index
+  instead of the tProc input channel, so for windows longer than about 1.7 us (512 readout
+  cycles) its verdicts from then do not test the mechanism `ModifiedRamsey` uses. It now shares
+  `ActiveResetMixin` with `ModifiedRamsey`.
 - The calibration's first single-shot run is used only for the axis angle; each calibration makes
   2-3 single-shot acquisitions, all saved under `SingleShot_MRCalib`, with 1000 shots regardless of
   the step's own calibration-shot setting.

@@ -10203,8 +10203,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "73a291958ac271e62a2717568c9af45f",
-            "first_program": "d63dfdf9007a4498",
+            "digest": "2294c3a6e814e2ce0ac1542d8d71b89d",
+            "first_program": "09d2a157d4515bab",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -11011,8 +11011,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "60945a169a06bb6fd51065915c83cf16",
-            "first_program": "6ab86f2ef8666bbf",
+            "digest": "9034860861c03420b3c5d37b235cd435",
+            "first_program": "34df71052cd49ff6",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -15905,8 +15905,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "f20c417e96187fdc72c90844372760ca",
-            "first_program": "0b19412a79d125bf",
+            "digest": "8ff6fffb58b31cf3d1497166a7c7c93f",
+            "first_program": "21c809bd9f25bb12",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -16713,8 +16713,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "66bff3ce00eb4b43984f2dca082d5a1a",
-            "first_program": "728cba61a128351c",
+            "digest": "ce4582cfd970f0e36a07ae4960f0eb65",
+            "first_program": "a65de6c4772cedc3",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -31009,9 +31009,9 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_legacy.py:213:run_one",
+          "tests/regression/driver_qicklab.py:224:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
-          "WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/runs/charge_parity.py:1627:run_charge_dispersion_ramsey"
+          "qicklab/runs/charge_dispersion.py:458:run_charge_dispersion_ramsey"
         ],
         "type": "KeyError"
       },
@@ -134982,8 +134982,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "a1e61c9b27968b39f2adad04e8f3e700",
-            "first_program": "b7c8f8672edc72c7",
+            "digest": "5d8eb962f1c89b602089086772606da4",
+            "first_program": "0e825cb61cabbe0c",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -135790,8 +135790,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "af95e598ce0ab513e84e630ed0cfab5c",
-            "first_program": "086c20ae0a628c17",
+            "digest": "7ba0586103941e6af97353a4ee82c48c",
+            "first_program": "958805b27607b3c6",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -140684,8 +140684,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "d8e8e608762e9845aa4519a1923ae0dd",
-            "first_program": "50f1b0edd7f90573",
+            "digest": "fb13d6a699c7ac0f52569cf80812c47b",
+            "first_program": "ef569edd6e7efa85",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -141492,8 +141492,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "edc25dcffcda739cc949fa6559862e6f",
-            "first_program": "231615dff9e394f1",
+            "digest": "ffcb34d4039555fbaaa2b7710be48051",
+            "first_program": "567d7461fcf3f194",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -155788,9 +155788,9 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_legacy.py:213:run_one",
+          "tests/regression/driver_qicklab.py:224:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
-          "WorkingProjects/QM_Team/qubit_measurements/Client_modules/Runners/runs/charge_parity.py:1627:run_charge_dispersion_ramsey"
+          "qicklab/runs/charge_dispersion.py:458:run_charge_dispersion_ramsey"
         ],
         "type": "KeyError"
       },

@@ -5,8 +5,7 @@ Active reset is not a step on its own. It is a block that
 [active_reset_verify](active_reset_verify.md) (`ActiveResetVerify`) can put at the
 start of every shot. This page explains how it works, how it is calibrated, and
 why it has failed before. Code: see `qicklab.core.active_reset` (`ActiveResetMixin`,
-used by ModifiedRamsey; ActiveResetVerify still has its own copy, see
-[active_reset_verify](active_reset_verify.md#known-issues)) and
+shared by ModifiedRamsey and ActiveResetVerify) and
 `qicklab.runs.active_reset` (calibration helpers).
 
 ## What it does
@@ -88,10 +87,15 @@ after N cycles: sync_all(post_reset_wait)
 - **Limits.** Both operands must fit a 32-bit signed register, and the immediate must
   stay below 2^30 (the `safe_regwi` plain-`regwi` window). The program raises if
   `cmp_offset ≥ 2^30` (shorten the window) or if `|raw_threshold| ≥ cmp_offset`
-  (the readout saturates the accumulator).
+  (the readout saturates the accumulator). The threshold immediate
+  `raw_threshold + cmp_offset` can reach 2^30 for windows above 2^14 readout cycles
+  (about 53 µs at 307.2 MHz) even when both checks pass; it is loaded with
+  `safe_regwi`, which splits it into `regwi` + `bitwi <<2` (+ `mathi`) there and is a
+  plain `regwi` below 2^30.
 - History: the 2^24 offset was added 2026-06-11 (BFE) and ported to this code
   2026-06-12. It was replaced by `int(ro_norm) << 15` in `ModifiedRamsey` on
-  2026-07-28. `ActiveResetVerify` still carries 2^24 (see Known issues).
+  2026-07-28, and in `ActiveResetVerify` on 2026-10-13, when it switched to the
+  shared `ActiveResetMixin`.
 
 ### Reset readout k is taken before flip k
 
@@ -216,11 +220,11 @@ The reset itself writes nothing. Its traces are:
     code this package was built from.
   - What you will see: corrective-pi success near 0.5, independent of
     `reset_readout_relax_delay`.
-- `active_reset_verify` uses its own copy of the reset with the old fixed
-  `cmp_offset = 2^24`. It also passes the readout index to `read` instead of the tProc
-  input channel, and has no `cmp_offset < 2^30` guard. With a 15 µs window, shots
-  with raw I < −2^24 wrap, so ARV does **not** exercise the mechanism
-  `modified_ramsey` uses.
+- Before 2026-10-13 `active_reset_verify` used its own copy of the reset with the
+  old fixed `cmp_offset = 2^24` and the readout index as the `read` input, so ARV
+  data from before then does **not** exercise the mechanism `modified_ramsey` uses.
+  It now runs this block (`ActiveResetMixin`, with `reset_force_pi` dropping the
+  `condj` for its force-pi diagnostic).
 - In the symmetric Ramsey scheme and in the `drive_detuned` control, the corrective
   pi plays at the drive frequency. That is df/2 or more away from each parity branch,
   so the reset flip is off-resonant.

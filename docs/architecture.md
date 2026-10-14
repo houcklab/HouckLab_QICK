@@ -364,7 +364,10 @@ once the window exceeds 2^24 / 2^15 = 512 readout cycles (about 1.7 us at `f_out
 the legacy code comment says "~0.5 us", which does not follow from its own bound), firing the
 wrong branch with no error. A threshold check alone cannot
 catch it, because the threshold sits between the blobs. ModifiedRamsey uses the corrected
-offset; ActiveResetVerify still carries its own copy with `1 << 24` until its separate fix.
+offset, shared through `qicklab.core.active_reset.ActiveResetMixin`; ActiveResetVerify
+carried its own copy with `1 << 24` (and the readout index as the `read` input) until
+2026-10-13 and now uses the mixin too. The threshold immediate `raw_threshold + cmp_offset`
+is loaded with `safe_regwi`, since it can reach 2^30 for windows above 2^14 readout cycles.
 `collect_shots` thresholds are in normalised units (accumulated I / window cycles); the tProc
 compares raw I, so the threshold is multiplied by the window length before loading.
 
