@@ -4,6 +4,16 @@ pi only when the qubit is found in |e> (the ModifiedRamsey implementation).
 See docs/experiments/active_reset.md.
 """
 
+# Floor on the stall between the end of the reset readout window and the tProc `read`.
+# The accumulated word needs tens to ~150 ns to cross the avg buffer and clock converter
+# into the tProc input latch; a `read` before it lands returns the PREVIOUS readout.
+# ~3x the worst-case latency. cfg['reset_read_latency_us'] can raise it, never lower it.
+MIN_RESET_READ_SETTLE_US = 0.5
+# Minimum gap between the end of that stall and the scheduled corrective pi. After the
+# stall the tProc still runs `read`, mathi, condj and ~10 register writes before the pi's
+# `set`; they must all execute before its time stamp (~7 tProc cycles per instruction).
+RESET_PI_SETUP_MARGIN_US = 0.2
+
 
 class ActiveResetMixin:
     """For an AveragerProgram with self.q_rp, a 4-sigma "qubit" gaussian played at
@@ -28,6 +38,26 @@ class ActiveResetMixin:
             for delay_key in ("reset_readout_relax_delay", "post_reset_wait"):
                 if cfg.get(delay_key, 0.0) < 0:
                     raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+            # Clamped up to the floor so no cfg can reintroduce the stale-read bug.
+            self.reset_read_latency_us = max(
+                float(cfg.get("reset_read_latency_us", MIN_RESET_READ_SETTLE_US)),
+                MIN_RESET_READ_SETTLE_US,
+            )
+            # Compared in tProc cycles (what the program emits), with room for the read and
+            # the pi setup: stall end + margin must not pass the pi's scheduled time.
+            relax_us = cfg.get("reset_readout_relax_delay", 1.0)
+            stall_cycles = self.us2cycles(self.reset_read_latency_us)
+            relax_cycles = self.us2cycles(relax_us)
+            margin_cycles = self.us2cycles(RESET_PI_SETUP_MARGIN_US)
+            if relax_cycles - stall_cycles < margin_cycles:
+                raise ValueError(
+                    f"cfg['reset_readout_relax_delay'] ({relax_us} us = {relax_cycles} "
+                    f"cycles) must exceed the reset read latency stall "
+                    f"({self.reset_read_latency_us} us = {stall_cycles} cycles, floor "
+                    f"{MIN_RESET_READ_SETTLE_US} us) by at least "
+                    f"{RESET_PI_SETUP_MARGIN_US} us ({margin_cycles} cycles): the `read` "
+                    "and the corrective pi's setup must finish before the pi's scheduled time."
+                )
         # condj skips the corrective pi when the qubit already reads as |g>.
         self.reset_skip_op = "<" if cfg.get("reset_ground_below_threshold", True) else ">"
         # Sized in load_reset_threshold(); 0 while active reset is off.
@@ -91,9 +121,15 @@ class ActiveResetMixin:
                 pulse_ch=cfg["res_ch"],
                 adcs=self.ro_chs,
                 adc_trig_offset=self.adc_trig_offset_cycles,
-                wait=True,
-                syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)),
+                wait=False,
             )
+            # Stall to window end + read latency BEFORE moving the reference time: the
+            # accumulated I must be at the tProc input when `read` runs, else it returns
+            # the previous readout (docs/experiments/active_reset.md#read-latency).
+            # waiti does not advance the reference, so the corrective pi still fires at
+            # window end + reset_readout_relax_delay and the rep period is unchanged.
+            self.wait_all(self.us2cycles(self.reset_read_latency_us))
+            self.sync_all(self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0)))
 
             self.read(tproc_in_ch, self.q_rp, "lower", self.r_read)
             self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)

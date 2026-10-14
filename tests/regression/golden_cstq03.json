@@ -6058,6 +6058,7 @@
             "reset_cycles",
             "reset_force_pi",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -10203,8 +10204,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "2294c3a6e814e2ce0ac1542d8d71b89d",
-            "first_program": "09d2a157d4515bab",
+            "digest": "0419cc2dadf633a80896b70be8e856d1",
+            "first_program": "29eb48104b8c114a",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -11011,8 +11012,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "9034860861c03420b3c5d37b235cd435",
-            "first_program": "34df71052cd49ff6",
+            "digest": "49d24b56e0c4693ea85267cd45386138",
+            "first_program": "3b4ec2a97d54f754",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -11760,6 +11761,7 @@
             "reset_cycles",
             "reset_force_pi",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -15905,8 +15907,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "8ff6fffb58b31cf3d1497166a7c7c93f",
-            "first_program": "21c809bd9f25bb12",
+            "digest": "a6d8f6c4a733c4a347c9099ee62e9d8b",
+            "first_program": "d72164d7a31062c2",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -16713,8 +16715,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "ce4582cfd970f0e36a07ae4960f0eb65",
-            "first_program": "a65de6c4772cedc3",
+            "digest": "d5c64335c48dc8e43fc14f3a2b01a838",
+            "first_program": "14c71009b5f426ca",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -49166,6 +49168,7 @@
             "res_phase",
             "reset_cycles",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -52517,8 +52520,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "d2148cfc38b84f184201ac6e5da75ff2",
-            "first_program": "333367805163f7eb",
+            "digest": "79d01df122673e1fd979a3b7f8719045",
+            "first_program": "d042b36f5fef0735",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -53829,8 +53832,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "d2148cfc38b84f184201ac6e5da75ff2",
-            "first_program": "333367805163f7eb",
+            "digest": "79d01df122673e1fd979a3b7f8719045",
+            "first_program": "d042b36f5fef0735",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -55141,8 +55144,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "d2148cfc38b84f184201ac6e5da75ff2",
-            "first_program": "333367805163f7eb",
+            "digest": "79d01df122673e1fd979a3b7f8719045",
+            "first_program": "d042b36f5fef0735",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -56453,8 +56456,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "d2148cfc38b84f184201ac6e5da75ff2",
-            "first_program": "333367805163f7eb",
+            "digest": "79d01df122673e1fd979a3b7f8719045",
+            "first_program": "d042b36f5fef0735",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -130837,6 +130840,7 @@
             "reset_cycles",
             "reset_force_pi",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -134982,8 +134986,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "5d8eb962f1c89b602089086772606da4",
-            "first_program": "0e825cb61cabbe0c",
+            "digest": "1059c174581a7b03de22047015ca5cdf",
+            "first_program": "a8bb8ec77ae59235",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -135790,8 +135794,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "7ba0586103941e6af97353a4ee82c48c",
-            "first_program": "958805b27607b3c6",
+            "digest": "affc950f2afdc27c881120b589d8b02a",
+            "first_program": "0cc1a418c2cc1d87",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -136539,6 +136543,7 @@
             "reset_cycles",
             "reset_force_pi",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -140684,8 +140689,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "fb13d6a699c7ac0f52569cf80812c47b",
-            "first_program": "ef569edd6e7efa85",
+            "digest": "fddbb62547c19b176d3c7593f958d015",
+            "first_program": "aaa69bd9478ed9aa",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -141492,8 +141497,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "ffcb34d4039555fbaaa2b7710be48051",
-            "first_program": "567d7461fcf3f194",
+            "digest": "fc6ff13c6d8fc3f2cff28c0a2fc35a7b",
+            "first_program": "ea117a8b6539253c",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -173945,6 +173950,7 @@
             "res_phase",
             "reset_cycles",
             "reset_ground_below_threshold",
+            "reset_read_latency_us",
             "reset_readout_relax_delay",
             "ro_chs",
             "rounds",
@@ -177296,8 +177302,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "eb94d7188058d913c81175ff97738c92",
-            "first_program": "543952ec4887503d",
+            "digest": "f7b1d90b39566b599d96ef76a0861198",
+            "first_program": "76d097d83824f968",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -178608,8 +178614,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "eb94d7188058d913c81175ff97738c92",
-            "first_program": "543952ec4887503d",
+            "digest": "f7b1d90b39566b599d96ef76a0861198",
+            "first_program": "76d097d83824f968",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -179920,8 +179926,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "eb94d7188058d913c81175ff97738c92",
-            "first_program": "543952ec4887503d",
+            "digest": "f7b1d90b39566b599d96ef76a0861198",
+            "first_program": "76d097d83824f968",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -181232,8 +181238,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "eb94d7188058d913c81175ff97738c92",
-            "first_program": "543952ec4887503d",
+            "digest": "f7b1d90b39566b599d96ef76a0861198",
+            "first_program": "76d097d83824f968",
             "n_programs": 1,
             "n_unique_programs": 1
           },

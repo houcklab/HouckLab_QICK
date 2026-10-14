@@ -24,7 +24,8 @@ One reset cycle. With `reset_cycles = N` the block repeats N times.
 res_ch   ──[ readout tone (length) ]──────────────────────────────────────
 ADC      ───────[ window: readout_length ]─────────────────────────────────
               ^ adc_trig_offset
-tProc         measure ─┬─ syncdelay = reset_readout_relax_delay ─┐
+tProc         measure ─┬─ waiti(window end + reset_read_latency_us)   (stall: I reaches the tProc input)
+                       ├─ sync_all(reset_readout_relax_delay) ────┐
                        │                                          read I -> r_read
                        │                                          r_read += cmp_offset
                        │                                          condj(r_read <op> r_thresh) ─┐
@@ -44,6 +45,33 @@ after N cycles: sync_all(post_reset_wait)
   pulse's full duration on both branches, so a shot costs the same time whether or
   not the pi played.
 - No trigger pin is fired by the reset block.
+
+### Read latency
+
+The tProc `read` samples a last-value latch on the tProc input. The accumulated I
+of the current readout reaches that latch tens to ~150 ns after the ADC window
+closes (avg buffer → clock converter → tProc input). A `read` issued earlier
+returns the **previous** readout (see Known issues). The block therefore emits
+`measure(wait=False)`, then `wait_all(us2cycles(reset_read_latency_us))`, which is
+`waiti(0, int(window end) + latency)`, and only then `sync_all(reset_readout_relax_delay)`
+and the `read`.
+
+- `waiti` stalls the tProc core but does not move the time reference, so the
+  corrective pi is still scheduled at window end + `reset_readout_relax_delay` and
+  the rep period is unchanged.
+- `reset_read_latency_us` has a hard floor `MIN_RESET_READ_SETTLE_US = 0.5` µs (about
+  3x the worst-case latency). A smaller cfg value is clamped up to the floor, never
+  down, so no config can reintroduce the stale read.
+- The stall, the `read` and the ~12 instructions that set up the corrective pi must all
+  finish before the pi's scheduled time. The program raises `ValueError` unless
+  `us2cycles(reset_readout_relax_delay) − us2cycles(reset_read_latency_us) ≥
+  us2cycles(RESET_PI_SETUP_MARGIN_US)`, with `RESET_PI_SETUP_MARGIN_US = 0.2` µs. The
+  check is in tProc cycles, so two delays that round to the same cycle count are
+  rejected. With the default latency, `reset_readout_relax_delay` must be ≥ 0.7 µs.
+  Shipped configs use 1.0 or 5.0 µs.
+- Set it in `ModifiedRamsey_params`, `ModifiedRamsey_Control_params` or
+  `ActiveResetVerify_params` (the runners forward it only when it is present), or in the
+  base/device cfg.
 
 ## How it decides
 
@@ -165,6 +193,7 @@ runner values; the code fallback is given in the meaning column when it differs.
 | `readout_threshold` | None (auto) | normalised I | Manual threshold. None derives it from the rotated SingleShot blobs. |
 | `reset_ground_below_threshold` | True | bool | \|g> lies below the threshold in I. Overwritten by the calibration. |
 | `reset_readout_relax_delay` | 5.0 | µs | Wait after each reset readout before the conditional pi. Should be ≥ ~6/κ. Code fallback 1.0. |
+| `reset_read_latency_us` | 0.5 (code fallback) | µs | Stall from the end of the reset readout window to the `read`. Clamped up to 0.5 µs; `reset_readout_relax_delay` must exceed it by ≥ 0.2 µs. Forwarded only when set. See [Read latency](#read-latency). |
 | `post_reset_wait` | 0.0 | µs | Settle time after the whole reset block. |
 | `pi_gain` | device pi gain | DAC | Gain of the corrective pi (same envelope as the Ramsey pulses). |
 | `res_phase` | rotated by calibration | tProc phase register units | Readout phase. Rotated in place so g/e separate along I. |
@@ -206,20 +235,37 @@ The reset itself writes nothing. Its traces are:
 
 ## Known issues
 
-- **Read latency, not fixed on this branch.** The `read` after `measure()` can pick up
-  the *previous* rep's readout.
-  - Cause: `measure(wait=True)` stalls the core, but `syncdelay` only advances the
-    tProc time reference. The read executes before the accumulated word of the
-    current readout has crossed into the tProc domain (tens to ~150 ns).
+- **Read latency: fixed 2026-10-13, pending hardware validation.** Before the fix the
+  `read` after `measure()` could pick up the *previous* rep's readout.
+  - Cause: `measure(wait=True)` stalls the core only to the nominal end of the ADC
+    window, and `syncdelay` only advances the tProc time reference. The read executed
+    before the accumulated word of the current readout had crossed into the tProc
+    domain (tens to ~150 ns).
   - Evidence (TATQ01-SiO2 Q3, 2000 reps/condition): reset ON gave P(|g>) = 0.539
     (prep g) and 0.497 (prep e), against 0.847 for force-pi. The correlation between
     read0 of rep n and read4 of rep n−1 was −0.723 (prep e) and +0.750 (prep g),
     against |corr| ≤ 0.04 in the controls.
-  - Fix: an explicit `wait_all(...)` stall between the reset readout and the `read`
-    (commit 4be2b7a, Alex Place, 2026-07-28, branch `bfg_code`). It is not in the
-    code this package was built from.
-  - What you will see: corrective-pi success near 0.5, independent of
-    `reset_readout_relax_delay`.
+  - Fix (2026-10-13): the `waiti` before the reset `read` now runs to window end +
+    `reset_read_latency_us` (floor 0.5 µs) before the `sync_all`; see
+    [Read latency](#read-latency). Upstream fixed the same bug in commit 4be2b7a (Alex
+    Place, 2026-07-28, branch `bfg_code`) with a stall placed after the sync, which
+    delays the corrective pi by the instruction overhead; this placement does not.
+    The fake soc does not model latency, so only hardware can confirm the fix.
+  - What you saw before the fix: corrective-pi success near 0.5, independent of
+    `reset_readout_relax_delay`. Data taken before 2026-10-13 with the reset on is
+    affected.
+  - **Required hardware validation** (not yet done):
+    1. Warm board, loopback (DAC → ADC, no qubit). Play two back-to-back readouts
+       with well-separated I (e.g. gain 0, then full gain) and `read` after the second
+       one, sweeping the stall from 0 to ~1 µs (patch `MIN_RESET_READ_SETTLE_US` in a
+       local test copy only). Below the true latency the `read` returns the first
+       readout's level; above it, the second's. Confirm the edge sits well below the
+       0.5 µs floor.
+    2. Cold device, [active_reset_verify](active_reset_verify.md) with the deployed
+       cfg: the correlation between the first verification read of rep n and the last
+       read of rep n−1 must be |r| < 0.05 in every condition, and reset-ON P(|g>) must
+       approach the ~0.74 (prep e) / ~0.78 (prep g) ceiling (Findings & notes) instead
+       of ~0.5.
 - Before 2026-10-13 `active_reset_verify` used its own copy of the reset with the
   old fixed `cmp_offset = 2^24` and the readout index as the `read` input, so ARV
   data from before then does **not** exercise the mechanism `modified_ramsey` uses.

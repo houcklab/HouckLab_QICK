@@ -202,6 +202,7 @@ keys (`df`, `f_ge`, mapping probabilities) resolve from the device in qicklab.
 | `reset_cycles` | 1 | count | Reset rounds per shot. |
 | `reset_ground_below_threshold` | True | bool | Overwritten by the derived threshold. |
 | `reset_readout_relax_delay` | 5.0 | µs | ≥ ~6/κ. Code fallback 1.0. |
+| `reset_read_latency_us` | 0.5 (code fallback) | µs | Stall before the reset `read`; floor 0.5, `reset_readout_relax_delay` must exceed it by ≥ 0.2. Forwarded only when set. See [active_reset](active_reset.md#read-latency). |
 | `post_reset_wait` | 0.0 | µs | Settle time after reset. |
 | `parity_analysis_enabled` | False | bool | Run the HMM/ACF/PSD analysis per cycle. Code fallback True. |
 | `expected_parity_dwell_ms` | 2.5 | ms | HMM initial rate (1/dwell). Also sets the drift-window safety check. |

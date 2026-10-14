@@ -89,6 +89,7 @@ Legacy `ActiveResetVerify_params` keys. Defaults are the CSTQ03 runner values.
 | `reps` | 2000 | count | Shots per condition. |
 | `reset_cycles` | 1 | count | Measure→feedback rounds when the reset is on. |
 | `reset_readout_relax_delay` | 5.0 | µs | Wait after each reset readout. Keep equal to modified_ramsey's value (≥ ~6/κ). |
+| `reset_read_latency_us` | 0.5 (code fallback) | µs | Stall before the reset `read`; floor 0.5, `reset_readout_relax_delay` must exceed it by ≥ 0.2. Forwarded only when set. See [active_reset](active_reset.md#read-latency). |
 | `post_reset_wait` | 0.0 | µs | Settle time after the reset block. |
 | `relax_delay` | 3500 | µs | Wait after the last verification read. ≥ 3·T1 (3–5·T1 convention, as for T1/T2E). |
 | `plotDisp` | True | bool | Show the overlay (non-blocking). |
@@ -160,8 +161,10 @@ not between them, the reset is miswired.
 - No `rounds != 1` guard. Only the last round would be kept.
 - Prep and corrective pi play at `f_ge`. Modified Ramsey plays them at the drive
   frequency, which differs in the symmetric scheme.
-- The read-latency problem described on [active_reset](active_reset.md#known-issues)
-  applies here too (no stall before `read`).
+- The read-latency fix of 2026-10-13 ([active_reset](active_reset.md#read-latency)) is
+  in the shared block, so it applies here too; ARV data with the reset on from before
+  then sampled the previous rep's readout. Pending hardware validation (this step's
+  rep-to-rep correlation check, see [active_reset](active_reset.md#known-issues)).
 - The calibration rotates `res_phase` in the session config; later regime-A steps
   inherit it.
 - Calling `save_data()` without an argument raises.

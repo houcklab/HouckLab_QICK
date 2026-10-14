@@ -110,6 +110,9 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
         "e_center": list(arv_calib["e_center"]),
         "Qubit_number": ctx.Qubit_Readout,
     }
+    # forwarded only when set, so the program's 0.5 us default/floor applies otherwise
+    if "reset_read_latency_us" in ActiveResetVerify_params:
+        arv_base_cfg["reset_read_latency_us"] = ActiveResetVerify_params["reset_read_latency_us"]
 
     # (label, prep_excited, use_active_reset, reset_force_pi): docs/experiments/active_reset_verify.md
     arv_conditions = [

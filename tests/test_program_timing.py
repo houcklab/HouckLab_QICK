@@ -84,6 +84,12 @@ BINPROG_LEN = {
 # readout's tproc_ch through the shared ActiveResetMixin (ARV used to pass the
 # readout index, so board B read input 0).
 READ_INPUT = {"A": {"MR": 0, "ARV": 0}, "B": {"MR": 2, "ARV": 2}}
+# int(end of the reset readout window) [tProc cycles]: the waiti immediate the
+# pre-fix measure(wait=True) emitted before the reset `read`. 129 + 15 us * 430.08 MHz.
+RESET_RO_END = {"A": 6580, "B": 6580}
+# The reset-read waiti immediate: RESET_RO_END + us2cycles(0.5 us read-latency floor).
+# Was 6580 (no stall past the window) before the read-latency fix.
+RESET_READ_WAITI = {"A": 6795, "B": 6795}
 
 
 @pytest.fixture(params=capture.VARIANTS)
@@ -260,3 +266,114 @@ def test_reset_threshold_above_2_30_uses_safe_regwi(legacy):
         assert writes[2]["name"] == "mathi" and writes[2]["args"][3] == "+"
         value += writes[2]["args"][4]
     assert value == target
+
+
+def _reset_read_stalls(prog):
+    """(waiti immediates, instruction names) between each reset ADC trigger and its `read`."""
+    insts = prog.prog_list
+    out = []
+    for i, inst in enumerate(insts):
+        if inst["name"] != "read":
+            continue
+        trig = max(j for j in range(i) if insts[j]["name"] == "seti")  # ADC trigger
+        names = [x["name"] for x in insts[trig + 1 : i]]
+        waits = [x["args"][1] for x in insts[trig + 1 : i] if x["name"] == "waiti"]
+        out.append((waits, names))
+    return out
+
+
+def _arv(legacy, soccfg, **overrides):
+    cfg = dict(use_active_reset=True, readout_threshold=0.0, reset_readout_relax_delay=5.0)
+    cfg.update(overrides)
+    return legacy["ARV"](soccfg, _cfg(legacy["BaseConfig"], **cfg))
+
+
+def test_active_reset_read_waits_for_latency(legacy, board):
+    """The reset `read` must not run until the current readout's accumulated I has
+    reached the tProc input: a waiti to >= window end + 0.5 us sits before the synci
+    (so the stall does not move the reference time or the corrective pi)."""
+    from qicklab.core.active_reset import MIN_RESET_READ_SETTLE_US
+
+    variant, soccfg = board
+    floor = soccfg.us2cycles(MIN_RESET_READ_SETTLE_US)
+    assert MIN_RESET_READ_SETTLE_US == 0.5
+    progs = [_mr(legacy, soccfg, True, 2), _arv(legacy, soccfg, reset_cycles=2)]
+    for prog in progs:
+        stalls = _reset_read_stalls(prog)
+        assert len(stalls) == 2
+        for waits, names in stalls:
+            assert waits == [RESET_READ_WAITI[variant]]
+            assert waits[0] >= RESET_RO_END[variant] + floor
+            # waiti, then the synci that schedules the pi, then straight to `read`.
+            assert names[-2:] == ["waiti", "synci"]
+
+
+@pytest.mark.parametrize("latency", [0.0, 0.2])
+def test_reset_read_latency_is_floored(legacy, board, latency):
+    """A cfg latency below the floor is clamped up, never down."""
+    variant, soccfg = board
+    for prog in (
+        legacy["MR"](
+            soccfg,
+            _cfg(
+                legacy["BaseConfig"],
+                **MR_PARAMS,
+                use_active_reset=True,
+                reset_read_latency_us=latency,
+            ),
+        ),
+        _arv(legacy, soccfg, reset_read_latency_us=latency),
+    ):
+        assert prog.reset_read_latency_us == 0.5
+        assert [w for w, _ in _reset_read_stalls(prog)] == [[RESET_READ_WAITI[variant]]]
+
+
+def test_reset_read_latency_above_floor(legacy, board):
+    variant, soccfg = board
+    prog = _arv(legacy, soccfg, reset_read_latency_us=1.0)
+    assert _reset_read_stalls(prog)[0][0] == [RESET_RO_END[variant] + soccfg.us2cycles(1.0)]
+    # Longer stall, same schedule: waiti never advances the reference time.
+    mr = legacy["MR"](
+        soccfg,
+        _cfg(legacy["BaseConfig"], **MR_PARAMS, use_active_reset=True, reset_read_latency_us=1.0),
+    )
+    assert mr.scheduled_rep_period_cycles() == MR_PERIOD[variant][(True, 1)]
+
+
+# (0.5, 0.501): same tProc cycle count (215) for both, so the stall would end 1 cycle
+# before the pi with `read` + ~12 setup instructions still to run. (None, 0.65): 64-cycle
+# gap, under the 86-cycle (0.2 us) setup margin.
+@pytest.mark.parametrize(
+    ("latency", "relax"),
+    [(0.5, 0.5), (None, 0.3), (5.0, 5.0), (None, 0.501), (None, 0.65), (1.0, 1.1)],
+)
+def test_reset_read_latency_must_end_before_pi(legacy, latency, relax):
+    """The guard is in tProc cycles and leaves RESET_PI_SETUP_MARGIN_US for the read and
+    the corrective pi's register setup."""
+    soccfg = capture.FakeSocCfg("A")
+    extra = {} if latency is None else {"reset_read_latency_us": latency}
+    with pytest.raises(ValueError, match="reset_readout_relax_delay"):
+        _arv(legacy, soccfg, reset_readout_relax_delay=relax, **extra)
+    params = dict(MR_PARAMS, reset_readout_relax_delay=relax, **extra)
+    with pytest.raises(ValueError, match="reset_readout_relax_delay"):
+        legacy["MR"](soccfg, _cfg(legacy["BaseConfig"], **params, use_active_reset=True))
+
+
+@pytest.mark.parametrize("variant", capture.VARIANTS)
+def test_reset_read_latency_margin_boundary(legacy, variant):
+    """relax - latency == the setup margin in cycles is accepted, and the corrective pi is
+    then scheduled at least that margin after the stall ends."""
+    from qicklab.core.active_reset import MIN_RESET_READ_SETTLE_US, RESET_PI_SETUP_MARGIN_US
+
+    soccfg = capture.FakeSocCfg(variant)
+    assert RESET_PI_SETUP_MARGIN_US == 0.2
+    relax = MIN_RESET_READ_SETTLE_US + RESET_PI_SETUP_MARGIN_US  # 0.7 us
+    assert soccfg.us2cycles(relax) - soccfg.us2cycles(MIN_RESET_READ_SETTLE_US) == (
+        soccfg.us2cycles(RESET_PI_SETUP_MARGIN_US)
+    )
+    prog = _arv(legacy, soccfg, reset_readout_relax_delay=relax)
+    insts = prog.prog_list
+    i = next(k for k, x in enumerate(insts) if x["name"] == "read")
+    assert [x["name"] for x in insts[i - 2 : i]] == ["waiti", "synci"]
+    stall_end, pi_time = insts[i - 2]["args"][1], insts[i - 1]["args"][0]
+    assert pi_time - stall_end >= soccfg.us2cycles(RESET_PI_SETUP_MARGIN_US)

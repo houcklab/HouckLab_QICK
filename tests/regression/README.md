@@ -170,8 +170,12 @@ gives a different `readout_tone_cycles` than A); compiled program length of
 T1 and ModifiedRamsey; the tProc input of the active-reset `read` (both MR and
 ARV resolve `tproc_ch` through the shared `ActiveResetMixin`; ARV used to pass
 the readout index, fixed 2026-10-13) and both `cmp_offset`s (`ro_norm << 15`);
-ARV's sign-safe threshold immediate, its `reset_force_pi` (no `condj`), and the
-`safe_regwi` split of a threshold immediate above 2^30.
+ARV's sign-safe threshold immediate, its `reset_force_pi` (no `condj`), the
+`safe_regwi` split of a threshold immediate above 2^30, and the read-latency stall
+before each reset `read` (MR and ARV: `waiti` to window end + 0.5 us before the
+`synci`, floor clamped, `ValueError` unless `reset_readout_relax_delay` exceeds it by
+>= 0.2 us in tProc cycles;
+fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
 
 ## What it cannot prove
 

@@ -120,6 +120,9 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
             "current_voltage": current_voltage_mr,
             "Qubit_number": ctx.Qubit_Readout,
         }
+        # forwarded only when set, so the program's 0.5 us default/floor applies otherwise
+        if "reset_read_latency_us" in ModifiedRamsey_params:
+            mr_cfg["reset_read_latency_us"] = ModifiedRamsey_params["reset_read_latency_us"]
         # a manual readout_threshold wins over the one derived from the current separator
         if ModifiedRamsey_params.get("readout_threshold") is not None:
             mr_cfg["readout_threshold"] = ModifiedRamsey_params["readout_threshold"]
@@ -519,6 +522,11 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 "current_voltage": current_voltage_mrc,
                 "Qubit_number": ctx.Qubit_Readout,
             }
+            # forwarded only when set, so the program's 0.5 us default/floor applies otherwise
+            if "reset_read_latency_us" in ModifiedRamsey_Control_params:
+                mr_cfg_mrc["reset_read_latency_us"] = ModifiedRamsey_Control_params[
+                    "reset_read_latency_us"
+                ]
             config_mrc = cfg | mr_cfg_mrc
             timing_mrc = modified_ramsey_timing(ctx.soccfg, config_mrc)
             config_mrc["modified_ramsey_timing"] = timing_mrc
