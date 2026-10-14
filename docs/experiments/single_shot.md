@@ -6,8 +6,9 @@ This step acquires two IQ clouds of single shots: one with no qubit pulse (|g>
 reference) and one after N qubit pulses (|e> reference for N = 1). From the two
 clouds it computes a rotation angle, a threshold along the rotated I axis, and a
 number labelled "fidelity", which is actually the readout **contrast** (see Analysis).
-With `number_of_pulses = 0` it switches to **thermal mode**: one undriven cloud,
-with the excited-state tail estimated from the shape of that cloud.
+With `number_of_pulses = 0` it switches to **thermal mode**: one undriven cloud plus
+a labelled pi-pulse reference, with the excited (thermal) population fitted as a
+maximum-likelihood mixture weight.
 
 The same program (`SingleShotProgram`) supplies the g/e calibration for the
 active-reset threshold, the a-priori separator of [modified_ramsey](modified_ramsey.md)
@@ -87,6 +88,8 @@ defaults are the CSTQ03 runner values.
 | `Read_Indeces` (sic) | session readout qubit | int/list | Labels for the saved keys (`i_g<r>` …). |
 | `thermal_tail_md2_threshold` | 6.0 | Mahalanobis d² | Thermal mode: a point is a tail candidate above this. 95 % χ² for 2-D is ≈ 5.99; use 6–9 depending on overlap. |
 | `thermal_tail_sigma_threshold` | 2.5 | σ | Thermal mode: excited if the projection > median + k·σ. Use 2.0–3.0 depending on aggressiveness. |
+| `thermal_pi_calibration` | True | bool | Thermal mode: acquire a second cloud after one pi pulse (`qubit_gain` at `f_ge`) right after the undriven one, as the labelled \|e> reference for the population fit. Doubles the acquisition time. The pi pulse drives only the qubit on `qubit_ch`, so with several reads only that qubit's read is a population; the other reads normally save NaN, but can return a meaningless number (see Failure modes). |
+| `thermal_e_center` | unset | (I, Q), normalised units | Thermal mode, only when `thermal_pi_calibration` is False: fixed e centre (one pair, or one pair per read). Without it the population is NaN. |
 | `sigma`, `qubit_gain`, `f_ge`, `flattop_length` | device | µs, DAC, MHz, µs | Pulse definition. |
 
 ## Outputs
@@ -97,14 +100,26 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
   (shape `(shots,)`, normalised units). If r differs from its enumeration index i,
   the same data is also saved under `i_g<i>` …. Also `threshold` (list per read),
   `angle` (list per read, rad) and `thermal_mode = 0`.
-- **h5, thermal mode:** `i_thermal<r>`, `q_thermal<r>`, `thermal_labels<r>`,
-  `thermal_population_tail<r>`, `thermal_center_g<r>`, `thermal_center_e<r>`,
-  `thermal_md2<r>`, `thermal_projection<r>`, `thermal_projection_threshold<r>`, the
-  split clouds as `i_g/q_g/i_e/q_e<r>`, plus `threshold`, `angle`,
-  `thermal_mode = 1`, `thermal_fit_type = 1`.
+- **h5, thermal mode:** `i_thermal<r>`, `q_thermal<r>`, the population fit
+  `thermal_population<r>` (ML mixture weight, fraction), `thermal_population_err<r>`
+  (its standard error), `thermal_pi_population<r>` (excited fraction of the pi run),
+  `thermal_fit_e_width_ratio<r>` (e/g cloud width ratio of the fit, should be ≈ 1),
+  `thermal_fit_g_center<r>`, `thermal_fit_e_center<r>`, `thermal_fit_cov<r>` (all of
+  these NaN when the population is undetermined, see Analysis), the pi
+  reference `i_pi<r>`, `q_pi<r>` (when `thermal_pi_calibration`), and the tail
+  classifier's `thermal_labels<r>`, `thermal_tail_fraction<r>` (named
+  `thermal_population_tail<r>` before 2026-10-13; not a population),
+  `thermal_center_g<r>`, `thermal_center_e<r>`, `thermal_md2<r>`,
+  `thermal_projection<r>`, `thermal_projection_threshold<r>`, the tail-split clouds as
+  `i_g/q_g/i_e/q_e<r>`, plus `threshold`, `angle`, `thermal_mode = 1`,
+  `thermal_fit_type = 1`. If r differs from its enumeration index i, the clouds
+  (`i_thermal`, `q_thermal`, `thermal_labels`, `i_g/q_g/i_e/q_e`) and the keys the png
+  uses (`thermal_population`, `thermal_population_err`, `thermal_tail_fraction`,
+  `thermal_center_g`, `thermal_center_e`) are also saved under `<i>`; the png shows the
+  first read.
 - **png:** three panels (unrotated, rotated, I histogram), titled
-  `Fidelity = xx.xx %`. In thermal mode: a labelled scatter with
-  `P_excited-like`.
+  `Fidelity = xx.xx %`. In thermal mode: a tail-labelled scatter titled with the
+  fitted population ± SE and the tail fraction.
 - **json:** the cfg.
 - **The "fidelity" is NOT saved** in the h5. It exists only in the png title and in
   the attribute `fid` after `display()`. Threshold and angle are saved.
@@ -126,7 +141,24 @@ the single-shot code applies the (1+C)/2 conversion. The Modified Ramsey analysi
 (`calibrate_readout_from_labeled_shots`) reports both under unambiguous names. The
 display clips "fid" at 1.0.
 
-Thermal mode (`classify_thermal_tail`):
+Thermal mode, population (`fit_thermal_population`; details in
+[IQ conventions section 7](../concepts/iq_conventions.md)): both clouds (undriven and
+pi) are modelled as (1 − q)·N(g, Σ) + q·N(e, Σ) with a shared covariance; EM fits g, e,
+Σ and the two weights jointly, and the undriven weight is the thermal population, with a
+standard error that includes the centre uncertainty. EM starts both from p = 0.05,
+w = 0.9 and from a KMeans split of the pooled shots and keeps the better fit. Unbiased
+within its SE on synthetic data with equal g/e widths at d = 2–5 σ, including p ≈ 0.45.
+The population, its SE, the pi-run fraction w, the width ratio and the fitted centres and
+covariance are all saved as NaN (with a printed WARNING giving the unguarded p and w) when
+the fitted g–e separation is below 1 σ, or when w exceeds p by less than 4 standard
+errors, i.e. when the data cannot say which cloud is |e>. Two model biases remain: an e
+cloud wider than the g cloud biases p **low** (narrower: high), most at small separation
+(σ_e = 1.2 σ_g: true 3 % reads 1.9/2.6/3.1 % at d = 2/3/5 σ); `thermal_fit_e_width_ratio`
+shows it and a WARNING is printed when it is off 1 by more than 5 % and 4 SE. T1 decay
+during the window biases p **low**, by about 0.5–0.9 × the fraction of excited shots that
+decay within the window (relative).
+
+Thermal mode, scatter labels (`classify_thermal_tail`):
 
 1. Fit the main blob robustly (`MinCovDet`, support fraction 0.75, random state 0).
 2. Mark Mahalanobis d² > `thermal_tail_md2_threshold` as tail candidates.
@@ -135,15 +167,35 @@ Thermal mode (`classify_thermal_tail`):
 4. Compute σ along that axis as 1.4826·MAD of the non-tail points.
 5. Call a point excited if its projection > median + `thermal_tail_sigma_threshold`·σ.
 
-The population is conservative: only protruding points count. "fid" is NaN in
-thermal mode.
+The labelled-excited fraction (`thermal_tail_fraction`) is **not** a population and
+not conservative: at k = 2.5, N = 2000 it reads about 1 % at zero population, and below
+a g–e separation of about 4 σ it reads low by up to 4× (true 10 % reads 2.7 % at d = 2 σ).
+"fid" is NaN in thermal mode.
 
 Failure modes:
 
 - Overlapping clouds give a meaningless angle (medians close together).
 - A drifting readout moves the threshold between calibrations.
-- In thermal mode any exception, including a missing sklearn, silently returns all
-  labels 0 and threshold NaN; only a print reports it.
+- In thermal mode any exception in the tail classifier, including a missing sklearn,
+  silently returns all labels 0 and threshold NaN; only a print reports it. A failed
+  population fit likewise saves NaN with a print.
+- With several reads (`Read_Indeces` a list, MUX), the pi reference drives only the qubit
+  on `qubit_ch`, and only that qubit's read is a population, even if another read returns a
+  number (a WARNING says so). For every other read the "pi" cloud is a second undriven
+  cloud, so its `thermal_population<r>` is normally NaN with a "not driven" WARNING (its
+  tail fraction is still saved). The guard sees any change between the two runs, not the pi
+  pulse itself: if that read's cloud moved (readout drift, cross-Kerr/ZZ to the pi'd qubit)
+  the fit can take the moved cloud as |e> and save a finite, meaningless population with no
+  per-read warning (synthetic d = 3 σ, p = 3 %, 2000 + 2000 shots: finite in 0/20 seeds
+  unshifted, 1–4/20 at a 0.3–0.5 σ shift, 14–16/20 at 1 σ). To measure another qubit, run
+  thermal mode again with that qubit's `qubit_ch`, `f_ge` and `qubit_gain`.
+- A population near 50 % is undetermined: a pi pulse swaps nearly equal populations, so
+  w ≈ p and the result is NaN.
+- An e cloud wider than the g cloud (long window, measurement-induced transitions) biases
+  the population low; the "as wide as the g cloud" WARNING and
+  `thermal_fit_e_width_ratio` > 1 flag it. Shorten the window or treat p as a lower bound.
+- The thermal-mode pi reference is acquired after the undriven cloud, not shot-interleaved,
+  so readout drift between the two runs (see Findings) shifts the fitted e centre.
 
 ## Findings & notes
 

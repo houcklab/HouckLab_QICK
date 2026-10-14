@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
 
-from qicklab.analysis.readout import classify_thermal_tail, hist_process
+from qicklab.analysis.readout import classify_thermal_tail, fit_thermal_population, hist_process
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -209,12 +209,22 @@ class SingleShotProgramFFMUX(ExperimentClass):
 
         read_indices = self.cfg.get("Read_Indeces", None)
 
-        # Thermal mode: no-pulse shots only, split into the same i_g/q_g/i_e/q_e keys.
+        # Thermal mode: undriven shots, split by the tail classifier into the same i_g/q_g/i_e/q_e
+        # keys (scatter labels only); the population is the ML mixture weight against a labelled
+        # |e> reference (docs/concepts/iq_conventions.md section 7).
         if self.cfg.get("number_of_pulses", 1) == 0:
             self.cfg["Pulse"] = False
 
             prog = SingleShotProgram(self.soccfg, self.cfg)
             shots_i, shots_q = prog.acquire(self.soc, load_pulses=True)
+
+            # Labelled |e> reference: one pi pulse, acquired right after the undriven shots.
+            shots_i_pi = shots_q_pi = None
+            if self.cfg.get("thermal_pi_calibration", True):
+                prog = SingleShotProgram(
+                    self.soccfg, dict(self.cfg, Pulse=True, number_of_pulses=1)
+                )
+                shots_i_pi, shots_q_pi = prog.acquire(self.soc, load_pulses=True)
 
             if read_indices is None:
                 read_indices = list(range(len(shots_i)))
@@ -226,13 +236,23 @@ class SingleShotProgramFFMUX(ExperimentClass):
             read_indices = read_indices[: len(shots_i)]
             if not read_indices:
                 read_indices = list(range(len(shots_i)))
+            if shots_i_pi is not None and len(read_indices) > 1:
+                # The pi pulse drives only the qubit on qubit_ch. Another read's "pi" cloud is a
+                # second undriven cloud: normally NaN, but if that cloud moved between the two
+                # runs (readout drift, cross-Kerr/ZZ to the pi'd qubit) the fit can return a
+                # finite, meaningless population with no further warning.
+                print(
+                    f"[Thermal population] WARNING {len(read_indices)} reads: the pi reference "
+                    f"drives only the qubit on qubit_ch ({self.cfg.get('qubit_ch')}); only that "
+                    "qubit's read is a population, even if another read returns a number"
+                )
 
             for i, read_index in enumerate(read_indices):
                 i_th = np.asarray(shots_i[i][0])
                 q_th = np.asarray(shots_q[i][0])
                 tail = classify_thermal_tail(i_th, q_th, self.cfg, read_index)
                 i_g, q_g, i_e, q_e = tail["i_g"], tail["q_g"], tail["i_e"], tail["q_e"]
-                binary_states, thermal_population = tail["labels"], tail["population"]
+                binary_states, tail_fraction = tail["labels"], tail["tail_fraction"]
                 center_g, center_e = tail["center_g"], tail["center_e"]
                 md2, proj, threshold_proj = (
                     tail["md2"],
@@ -249,12 +269,68 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 self.data["data"]["i_thermal" + str(read_index)] = i_th
                 self.data["data"]["q_thermal" + str(read_index)] = q_th
                 self.data["data"]["thermal_labels" + str(read_index)] = binary_states
-                self.data["data"]["thermal_population_tail" + str(read_index)] = thermal_population
+                self.data["data"]["thermal_tail_fraction" + str(read_index)] = tail_fraction
                 self.data["data"]["thermal_center_g" + str(read_index)] = center_g
                 self.data["data"]["thermal_center_e" + str(read_index)] = center_e
                 self.data["data"]["thermal_md2" + str(read_index)] = md2
                 self.data["data"]["thermal_projection" + str(read_index)] = proj
                 self.data["data"]["thermal_projection_threshold" + str(read_index)] = threshold_proj
+
+                i_pi = q_pi = e_center_cfg = None
+                if shots_i_pi is not None:
+                    i_pi = np.asarray(shots_i_pi[i][0])
+                    q_pi = np.asarray(shots_q_pi[i][0])
+                    self.data["data"]["i_pi" + str(read_index)] = i_pi
+                    self.data["data"]["q_pi" + str(read_index)] = q_pi
+                elif self.cfg.get("thermal_e_center") is not None:
+                    e_center_cfg = np.asarray(self.cfg["thermal_e_center"], dtype=float)
+                    if e_center_cfg.ndim == 2:  # one (I, Q) pair per read
+                        e_center_cfg = e_center_cfg[i]
+                try:
+                    pop = fit_thermal_population(
+                        i_th, q_th, i_pi=i_pi, q_pi=q_pi, e_center=e_center_cfg
+                    )
+                except Exception as err:
+                    print(f"[Thermal population] Read {read_index}: fit failed: {err}")
+                    pop = {
+                        "population": np.nan,
+                        "population_err": np.nan,
+                        "pi_population": np.nan,
+                        "e_width_ratio": np.nan,
+                        "g_center": np.full(2, np.nan),
+                        "e_center": np.full(2, np.nan),
+                        "cov": np.full((2, 2), np.nan),
+                        "warnings": [],
+                    }
+                for warning in pop["warnings"]:
+                    print(f"[Thermal population] Read {read_index}: WARNING {warning}")
+                if np.isfinite(pop["population"]):
+                    pi_txt = (
+                        f", pi-run excited {100 * pop['pi_population']:.1f} %"
+                        if np.isfinite(pop["pi_population"])
+                        else ""
+                    )
+                    p_txt = (
+                        f"p = {100 * pop['population']:.3f} +- {100 * pop['population_err']:.3f} %"
+                    )
+                else:
+                    pi_txt = ""
+                    p_txt = "p = NaN (not estimated, see WARNING)"
+                print(
+                    f"[Thermal population] Read {read_index}: {p_txt} "
+                    f"(tail fraction {100 * tail_fraction:.3f} %{pi_txt})"
+                )
+                self.data["data"]["thermal_population" + str(read_index)] = pop["population"]
+                self.data["data"]["thermal_population_err" + str(read_index)] = pop[
+                    "population_err"
+                ]
+                self.data["data"]["thermal_pi_population" + str(read_index)] = pop["pi_population"]
+                self.data["data"]["thermal_fit_e_width_ratio" + str(read_index)] = pop[
+                    "e_width_ratio"
+                ]
+                self.data["data"]["thermal_fit_g_center" + str(read_index)] = pop["g_center"]
+                self.data["data"]["thermal_fit_e_center" + str(read_index)] = pop["e_center"]
+                self.data["data"]["thermal_fit_cov" + str(read_index)] = pop["cov"]
 
                 if str(read_index) != str(i):
                     self.data["data"]["i_g" + str(i)] = i_g
@@ -264,6 +340,15 @@ class SingleShotProgramFFMUX(ExperimentClass):
                     self.data["data"]["i_thermal" + str(i)] = i_th
                     self.data["data"]["q_thermal" + str(i)] = q_th
                     self.data["data"]["thermal_labels" + str(i)] = binary_states
+                    # display() reads suffix 0: mirror everything its title and markers use.
+                    for key in (
+                        "thermal_population",
+                        "thermal_population_err",
+                        "thermal_tail_fraction",
+                        "thermal_center_g",
+                        "thermal_center_e",
+                    ):
+                        self.data["data"][key + str(i)] = self.data["data"][key + str(read_index)]
 
                 self.fid.append(fid)
                 self.threshold.append(threshold)
@@ -345,8 +430,10 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 q_th = np.asarray(data["data"]["q_thermal" + str(read_index)])
                 labels = np.asarray(data["data"]["thermal_labels" + str(read_index)])
 
-                p_e = data["data"].get(
-                    "thermal_population_soft" + str(read_index),
+                p_e = data["data"].get("thermal_population" + str(read_index), np.nan)
+                p_err = data["data"].get("thermal_population_err" + str(read_index), np.nan)
+                f_tail = data["data"].get(
+                    "thermal_tail_fraction" + str(read_index),
                     data["data"].get("thermal_population_tail" + str(read_index), np.nan),
                 )
 
@@ -374,7 +461,10 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 plt.xlabel("I")
                 plt.ylabel("Q")
                 plt.title(
-                    title + "\n" + f"Thermal population mode: P_excited-like = {100 * p_e:.2f}%"
+                    title
+                    + "\n"
+                    + f"Thermal population = {100 * p_e:.2f} +- {100 * p_err:.2f}% "
+                    + f"(tail fraction {100 * f_tail:.2f}%)"
                 )
                 plt.legend()
                 plt.tight_layout()

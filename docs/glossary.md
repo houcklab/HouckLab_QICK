@@ -188,8 +188,10 @@ Output of `single_shot`: rotation angle that puts g->e on I, and the I threshold
 clouds (in normalised units).
 
 ### Thermal tail
-Excited-state shots in an undriven cloud, found by the robust (MinCovDet) classifier when
-`number_of_pulses` = 0.
+Shots of an undriven cloud that protrude past median + k sigma along the robust (MinCovDet)
+protrusion axis when `number_of_pulses` = 0. Used for scatter labels only: the tail fraction
+(`thermal_tail_fraction`) is not the excited population (about 1 % floor, low below d ~ 4
+sigma); the population is `thermal_population`, the ML fit against a pi-pulse reference.
 
 ### Active reset
 Measurement-based reset: read, and fire a corrective pi pulse in hardware only if the shot is
@@ -234,8 +236,9 @@ MR variant that drives at `f_ge - df/2`, midway between the branches, halving ea
 detuning; closing phase 90 deg instead of 180.
 
 ### Echo null, flip_final_pi2, drive_off, drive_detuned, tau_offset
-MR validation controls: echo must suppress the telegraph, a flipped final pi/2 must invert the
-mapping, the others are informational.
+MR validation controls: echo must suppress the telegraph, a flipped final pi/2 must keep the rate
+and invert the mapping (decisive only for an imbalanced occupancy), drive_off must show < 0.1 of
+the parity correlation; tau_offset and drive_detuned are informational.
 
 ### Telegraph, dwell
 A two-level random signal; a dwell is one stay in a state. Rates are `1/mean dwell`.

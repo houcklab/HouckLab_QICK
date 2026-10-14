@@ -144,10 +144,61 @@ used. Consequences:
   long windows, 2026-07-28). A threshold sanity check cannot catch this, because the threshold
   itself sits between the blobs.
 
-## 7. Thermal-tail classifier (single shot without a pi pulse)
+## 7. Thermal population (single shot without a pi pulse)
 
-With `number_of_pulses` = 0 `single_shot` acquires only undriven shots and estimates the excited
-(thermal) population (`qicklab.analysis.readout.classify_thermal_tail`):
+With `number_of_pulses` = 0 `single_shot` acquires undriven shots and, right after them in the
+same call, a labelled reference of shots after one pi pulse (`thermal_pi_calibration`, default
+True). The excited (thermal) population is the maximum-likelihood mixture weight
+(`qicklab.analysis.readout.fit_thermal_population`):
+
+1. model: both sets are (1 - q) N(g, Sigma) + q N(e, Sigma) with one shared covariance; q = p for
+   the undriven shots, q = w for the pi shots;
+2. EM fits g, e, Sigma, p and w jointly, started both from p = 0.05, w = 0.9 and from a KMeans
+   2-cluster split of the pooled shots (e = the cluster enriched in the pi shots); the start with
+   the higher likelihood wins, and |e> is by definition the state the pi pulse populates
+   (w > p). The undriven shots pin g, the
+   pi shots pin e, and each set's own weight absorbs its contamination (thermal population in the
+   g set, pi infidelity and T1 decay in the e set), so neither set is used as a histogram
+   template;
+3. with the components fixed, p is solved exactly on [0, 1] (the log likelihood is concave in p);
+   its standard error comes from the outer-product-of-scores information over all fitted
+   parameters, so it includes the uncertainty of the centres;
+4. without the pi run, `thermal_e_center` (an (I, Q) pair, or one pair per read) is held fixed and
+   g, Sigma and p are fitted from the undriven shots. A stale `thermal_e_center` does not follow
+   readout drift. With neither, p is NaN and a warning is printed;
+5. p, its SE, w (`thermal_pi_population`), the width ratio and the fitted centres and covariance
+   are all saved as NaN (g and e may even be mirrored), with a warning that prints the unguarded p
+   and w, when the fitted g-e separation is below 1 sigma, or when the pi contrast w - p is below
+   4 times its standard error: the pi pulse did not measurably move this read's populations, so
+   which cloud is |e> is undetermined. This normally happens for every read of a multiplexed run
+   except that of the qubit the pi pulse drives (`qubit_ch`), for an off-resonant pi pulse, and
+   near p = 0.5, where the pi pulse swaps nearly equal populations (w = F(1 - p) + (1 - F)p ~ p).
+   The guard sees any change between the two sets, not the pi pulse: if a non-driven read's
+   cloud moved between the runs (readout drift, cross-Kerr/ZZ to the driven qubit), the fit can
+   take the moved cloud as |e> and return a finite, meaningless p without a per-read warning
+   (synthetic d = 3 sigma, p = 3 %: finite in 0/20 seeds unshifted, 1-4/20 at a 0.3-0.5 sigma
+   shift, 14-16/20 at 1 sigma). Only the read of the qubit on `qubit_ch` is a population, even if
+   another read returns a number; with several reads a warning says so.
+
+On synthetic data with equal g and e widths (sigma = 1, 2000 + 2000 shots, pi fidelity 0.9, g-e
+distance d = 2-5 sigma, p = 0-10 %, and p = 0.45 with a 95 % pi pulse) p is unbiased within its
+SE. Two departures from the model bias it:
+
+- **Unequal widths.** The shared covariance assumes the e cloud is as wide as the g cloud. A
+  wider e cloud (measurement-induced transitions, long windows) biases p **low**, a narrower one
+  **high**, most at small d: sigma_e = 1.2 sigma_g turns p = 3 % into 1.9/2.6/3.1 % at
+  d = 2/3/5 sigma, 1.5 sigma_g into 1.2/1.8/2.7 %, and 0.8 sigma_g turns p = 0 into
+  3.2/0.6/0.0 %. The diagnostic `thermal_fit_e_width_ratio` = (det Sigma_e / det Sigma_g)^(1/4)
+  of the responsibility-weighted component covariances at the fit is 0.99 +- 0.013 for equal
+  widths and reads closer to 1 than the truth (1.2 reads 1.10-1.17, 0.8 reads 0.80-0.86); a
+  warning is printed when it is off 1 by more than 5 % and by more than 4 standard errors.
+- **T1 decay** during the readout window smears excited shots toward g and biases p **low**: if
+  a fraction P_dec of excited shots decays within the window, p is low by about 0.5-0.9 x P_dec
+  in relative terms (P_dec = 0.2: -11 to -17 %, up to -27 % at d = 2 sigma). The pi-run weight w
+  (`thermal_pi_population`) is low by a similar amount. The smear barely moves the width ratio
+  (1.00-1.05 for P_dec <= 0.3), so the width warning does not flag it.
+
+The scatter labels still come from the tail classifier (`classify_thermal_tail`):
 
 1. robust centre and covariance of the main blob with MinCovDet (support fraction 0.75,
    `random_state` 0);
