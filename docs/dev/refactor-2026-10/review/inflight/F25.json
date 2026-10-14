@@ -1,0 +1,74 @@
+{
+ "id": "F25",
+ "run": "wf_7a3b74f0-8be",
+ "completed_agents": [
+  "impl:F25",
+  "review:F25"
+ ],
+ "interrupted_agent": [
+  "fix:F25"
+ ],
+ "status": "needs fix round",
+ "last_report": {
+  "files_changed": [
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/experiments/transmission.py",
+   "/Users/joshua/code/research/HouckLab_QICK/tests/test_transmission_kappa.py",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/transmission_fit.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/transmission_sweep.md"
+  ],
+  "behaviour_change": "CavitySpecFF.display now saves and prints the resonator linewidth as kappa/2pi in MHz. It writes two keys: hanger_fit_kappa_tot_mhz = |f0_fit|/Qtot_fit, the total linewidth (FWHM of the hanger Lorentzian), and hanger_fit_kappa_ext_mhz = |f0_fit|/Qext_fit, the coupling rate. The old hanger_fit_kappa_mhz = (f0/Qext)/1e6 is gone. It was 1e6 too small, because f0 is already in MHz, and it was the external rate rather than the total linewidth. Nothing in the repo read it. Both kappas come from the fit axis (fpts, MHz). With a nonzero cavity_LO the fitted Qs are relative to the IF f0, but |f0|/Q is still the correct width in MHz. A code comment says this. abs() covers a negative IF f0. The printout now reads \"kappa_tot/2pi = ... MHz (|f0|/Qtot)\" and \"kappa_ext/2pi = ... MHz (|f0|/Qext)\". No other key, cfg value, hardware write or carry-over changes: the pulse_freq carry-over does not depend on kappa. run_transmission_fit in qicklab/runs/resonator.py has had no kappa print since F03 (it no longer fits a second time), so resonator.py needed no change.",
+  "tests_added": [
+   "tests/test_transmission_kappa.py::test_saved_kappas_are_linewidths_in_mhz[absolute_axis] -- synthetic hanger at f0=7095 MHz, cavity_LO=0, Qtot=f0/0.420, Qext=f0/0.353, 0.2% noise, run through the real CavitySpecFF.display (instance built with object.__new__, Agg backend, PNGs in tmp_path); asserts the old key is absent and kappa_tot/kappa_ext are within 5% of 0.420/0.353 MHz",
+   "tests/test_transmission_kappa.py::test_saved_kappas_are_linewidths_in_mhz[if_axis_with_lo] -- same check on an IF axis (f0=95 MHz) with cavity_LO=7 GHz, which pins the fit-axis computation. Both cases fail on the old code (KeyError on the new keys)."
+  ],
+  "golden_diff_summary": "Ran diff_labels on RunTransmissionSweep, RunTransmissionSweeps, RunTransmissionSweep+Run2ToneSpec, RunTransmissionSweep+RunAmplitudeRabi and RunChargeTransmissionSweep, variants A,B. Each of the four RunTransmissionSweep* labels has exactly 3 data_digest leaves from this change on both boards, all in experiments[0].methods[2] (the CavitySpecFF save_data): data/hanger_fit_kappa_mhz is missing (the key was dropped), and data/hanger_fit_kappa_tot_mhz and data/hanger_fit_kappa_ext_mhz are new. Cross-check: the new kappa_ext equals the old value times 1e6 in every label. For example, RunTransmissionSweep went from 1.9035e-09 to ext 1.9034e-03 and tot 2.86e-02; RunTransmissionSweeps from 9.928e-09 to ext 9.928e-03 and tot 4.72e-02. So the only change is the scale fix plus the added total linewidth. There are no cfg, hw, methods, sets or cfg_access diffs. RunChargeTransmissionSweep shows no kappa diff because run_charge_transmission_sweep calls display with fit=params.get('fit', False), so the hanger fit is off by default and that label never reaches the change. All five labels also show yoko_writes diffs (5 per transmission label, 116 on RunChargeTransmissionSweep): the extra queries are Q :OUTP?, Q :SOUR:FUNC? and Q :SOUR:RANG?, with a different ramp sequence. They come from the uncommitted qicklab/hardware/yoko.py change another agent is making (tests/test_yoko_safety.py is untracked), not from this finding; my change touches no Yoko code.",
+  "docs_updated": [
+   "docs/experiments/transmission_fit.md: Outputs h5 row now lists hanger_fit_kappa_tot_mhz (kappa/2pi = |f0|/Qtot, MHz) and hanger_fit_kappa_ext_mhz (|f0|/Qext, MHz) instead of hanger_fit_kappa_mhz; removed the 'kappa 1e6 too small' Known-issues bullet",
+   "docs/experiments/transmission_sweep.md: removed the 'Same kappa scaling problem' Known-issues bullet",
+   "docs/glossary.md: no kappa entry exists, so nothing to change"
+  ],
+  "not_done": [
+   "Three docs pages outside my assigned files still describe the old kappa bug and are now stale. Fix them in this commit: docs/bringup_workflow.md:78 ('Do not use the kappa it prints (wrong by 1e6 and the external linewidth only).'); docs/running_a_session.md:304-306 (the 'transmission_fit prints a kappa that is a factor 1e6 too small...' bullet); docs/troubleshooting.md:81 (the 'Kappa from the hanger fit is 1e6 too small' row; this file is already modified in the working tree by another agent). After the fix, transmission_fit prints kappa_tot/2pi, which can be used for reset_readout_relax_delay (about 6/kappa_tot).",
+   "docs/concepts/timing_and_units.md:42 lists `kappa_mhz` as an example MHz key. That refers to the device-file parameter (docs/adding_a_device.md:100), not the removed h5 key, so it was left unchanged.",
+   "qicklab/runs/resonator.py was not changed: after F03, run_transmission_fit has no kappa print, so the print fix the finding asked for there does not apply.",
+   "The optional hanger_fit_kappa_int_mhz was not added; it equals kappa_tot - kappa_ext."
+  ],
+  "notes": "Verification: compileall passed; ruff check --select F passed; ruff format left both touched .py files unchanged ('already formatted'); tests/test_imports.py, tests/test_program_timing.py, tests/test_transmission_kappa.py and tests/test_run_transmission.py all pass. Not a tProc change, so there are no new program-timing pins. Physics check: in hanger_model_db, s21 = 1 - (Qtot/Qext)/(1 + 2j*Qtot*(f-f0)/f0). The dip's half-maximum points sit at 2*Qtot*|f-f0|/|f0| = 1, so FWHM = |f0|/Qtot in the units of f; the fit axis is MHz. The finding quotes 0.420/0.353 MHz for the synthetic case, but those are not the golden values: the golden's synthetic data give kappa_tot 0.029 to 0.148 MHz depending on the label. I used 0.420/0.353 only as the known inputs of the unit test."
+ },
+ "last_review": {
+  "findings": [
+   {
+    "file": "docs/devices/CSTQ03.md",
+    "severity": "must-fix",
+    "claim": "After this commit, four user-facing docs pages still say the transmission_fit kappa printout is 1e6 too small and is only the external rate. One of them, docs/devices/CSTQ03.md, is missing from the implementer's not_done list. The rule is that docs stay in sync in the same change, so the commit is incomplete without these edits.",
+    "evidence": "grep -rn kappa docs (excluding docs/dev). docs/devices/CSTQ03.md:244-245 says \"Do not take kappa from the `transmission_fit` printout (it is 1e6 too small and is the external linewidth)\" and was NOT in the implementer's list. The other three were flagged by the implementer: docs/troubleshooting.md:81 (the 'Kappa from the hanger fit is 1e6 too small' row), docs/bringup_workflow.md:78 ('Do not use the kappa it prints (wrong by 1e6 ...)'), and docs/running_a_session.md:304-306 (the Known-issues bullet). The orchestrator owns these files and should fold the edits into this commit. If any of them is reworded to point at the printout for reset_readout_relax_delay, it must say the printed value is kappa/2pi. 6/kappa uses the angular kappa: the 5 us in the docs is 6/(2pi*0.19 MHz). So the formula is reset_readout_relax_delay >= 6/(2pi*kappa_tot/2pi[MHz]) us, not 6/kappa_tot_mhz. The implementer's suggested wording 'about 6/kappa_tot' invites a 2pi error (31.6 us instead of 5 us for 0.19 MHz)."
+   },
+   {
+    "file": "qicklab/experiments/transmission.py",
+    "severity": "note",
+    "claim": "The fix is physically and dimensionally correct. kappa_tot/2pi = |f0_fit|/Qtot_fit and kappa_ext/2pi = |f0_fit|/Qext_fit, both in MHz on the fit axis, and both stay correct on an IF axis with a nonzero cavity_LO.",
+    "evidence": "hanger_model_db: 1 - S21 = a/(1 + 2j*Qtot*(f-f0)/f0). So |1-S21|^2 is proportional to 1/(1+4x^2) with x = Qtot(f-f0)/f0, and the half-maximum points give FWHM = |f0|/Qtot in the units of f (fpts, MHz). On an IF axis the fitted Q is f0_IF/kappa, so |f0_IF|/Q_IF is still kappa. abs() guards a negative IF f0. The Q bounds in fit_hanger_transmission are positive ([1e2, 1e9]), so the sign is fine. The diff touches only the kappa computation, the two save keys and the two print lines (git diff HEAD of transmission.py is 3 hunks). qicklab/runs/resonator.py is unchanged and has no kappa print after F03 (confirmed by reading run_transmission_fit and run_transmission_sweep). The only other CavitySpecFF caller is charge_sweep.py, which passes fit=params.get('fit', False) and reads no kappa key. Nothing in qicklab/runners/devices/tests reads the old key."
+   },
+   {
+    "file": "tests/test_transmission_kappa.py",
+    "severity": "note",
+    "claim": "The test pins the fix adequately: it runs the real display() and checks the scale, the tot-vs-ext choice and the IF-axis case. It does not exercise a negative IF f0, so the abs() is unpinned.",
+    "evidence": "The kappa_tot (0.420) and kappa_ext (0.353) inputs differ by about 19%, against a 5% tolerance, so swapping Qtot and Qext would fail the test. A /1e6 regression fails it too. Old code fails on a KeyError. A third parametrization with f0_axis = -95 MHz (as when the LO sits above the resonator) would pin abs(). The test passes locally, along with test_imports and test_program_timing. ruff check F is clean and ruff format reports both files already formatted."
+   },
+   {
+    "file": "tests/regression/README.md",
+    "severity": "note",
+    "claim": "I independently confirmed the implementer's golden diff for variant A.",
+    "evidence": "diff_labels on RunTransmissionSweep, RunTransmissionSweeps, RunTransmissionSweep+Run2ToneSpec, RunTransmissionSweep+RunAmplitudeRabi and RunChargeTransmissionSweep. Each of the four RunTransmissionSweep* labels shows 3 data_digest leaves, all at experiments[0].methods[2]: hanger_fit_kappa_mhz missing, and hanger_fit_kappa_tot_mhz and hanger_fit_kappa_ext_mhz new. The new ext value equals the old value times 1e6 in each label (1.9035e-09 -> 1.9034e-03; 3.2615e-08 -> 3.2615e-02; 2.4471e-08 -> 2.4471e-02; 9.928e-09 -> 9.928e-03). There are no cfg, hw, methods, sets or cfg_access leaves. RunChargeTransmissionSweep has no kappa leaf, because its fit defaults to off. All remaining leaves are yoko_writes (5 per transmission label, 116 on RunChargeTransmissionSweep), and they come from the uncommitted qicklab/hardware/yoko.py change: its diff adds the :OUTP?, :SOUR:FUNC? and :SOUR:RANG? queries. They must be excluded when this commit's golden is regenerated, or the yoko commit must land first."
+   },
+   {
+    "file": "docs/experiments/transmission_fit.md",
+    "severity": "note",
+    "claim": "The doc edits in the implementer's own files are correct and minimal. They replace the key in the Outputs table and drop the two Known-issues bullets in transmission_fit.md and transmission_sweep.md. docs/glossary.md has no kappa entry. docs/concepts/timing_and_units.md:42 and docs/adding_a_device.md:100 refer to the device-file Readout.kappa_mhz, not the h5 key, so leaving them unchanged is right.",
+    "evidence": "git diff HEAD of both docs. grep shows no remaining hanger_fit_kappa_mhz outside docs/dev history files."
+   }
+  ],
+  "verdict": "reject",
+  "summary": "The code change is correct and minimal. kappa_tot/2pi = |f0|/Qtot and kappa_ext/2pi = |f0|/Qext are in MHz on the fit axis and stay valid with a nonzero cavity_LO. resonator.py rightly needs no change after F03, and no consumer reads the old key. The test pins the scale, the tot-vs-ext choice and the IF-axis case, and it fails on the old code. My own diff_labels run on variant A matches the implementer's report exactly: 3 data_digest leaves per RunTransmissionSweep* label, nothing on RunChargeTransmissionSweep (its fit is off by default), and the only other leaves are yoko_writes from the concurrent yoko.py change. I reject only because the commit is incomplete on docs. Four user-facing pages would still say the printed kappa is 1e6 too small: troubleshooting.md:81, bringup_workflow.md:78, running_a_session.md:304-306, and devices/CSTQ03.md:244-245. The implementer missed the last one. The orchestrator should fold those edits into this commit. Any wording that points users at the printed kappa_tot/2pi for reset_readout_relax_delay must keep the 2pi: 6/(2pi*kappa_tot/2pi), not 6/kappa_tot_mhz."
+ }
+}

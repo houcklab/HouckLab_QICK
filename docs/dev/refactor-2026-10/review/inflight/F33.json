@@ -1,0 +1,11 @@
+{
+ "id": "F33",
+ "run": "wf_d3d27d41-90d",
+ "completed_agents": [],
+ "interrupted_agent": [
+  "impl:F33"
+ ],
+ "status": "implementer interrupted, no report",
+ "last_report": null,
+ "last_review": null
+}

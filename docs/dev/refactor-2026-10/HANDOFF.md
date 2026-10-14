@@ -1,6 +1,7 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17, F10, F03, F26 landed).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (END of session 2 on macOS: 18 research-review findings landed; eight more are
+parked, unlanded, on branch `qicklab_refactor_wip`; see TRANSFER STATE below).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -109,48 +110,101 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
 37. `4ecf0ba1` fix(rabi): F26 — rotation from the analysed read, fixed sign, contrast diagnostic (golden: 88
     data_digest leaves in the four Rabi labels)
 
-## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
-Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
-(each on disjoint files); none of it is verified by the full suite until landed:
-- In flight (agents running or awaiting landing): F10 (analysis/readout.py classify_thermal_tail +
-  experiments/single_shot.py thermal branch; re-review running), F04 (analysis/spectroscopy.py + experiments/qubit_spec.py +
-  one line in runs/zero_span.py), F13 (analysis/fitting.py Rabi fit + experiments/rabi.py + runs/__init__.py
-  alias), F11 (runs/single_shot.py run_t1_ss), F15 (runs/modified_ramsey.py controls always acquired),
-  F17 (analysis/zero_span.py baseline rate), F03 (runs/resonator.py carry-over from the display fit),
-  F21+F53 (hardware/yoko.py safety helpers, twpa/set_bias.py, twpa/flux_sweep.py, core/context.py,
-  capture.py FakeYoko), F23 (experiments/t2_echo.py even-n ValueError), F22 (runs/active_reset.py res_phase
-  wrap), F28 (runs/charge_sweep.py yoko_fixed metadata + RunChargeSweep[yoko_fixed] label), F18
-  (core/acquisition.py modulated_strobe_acquire reps_per_block + runs/zero_span_validation.py).
-  Their agent reports are in the workflow journals under `~/.claude/projects/.../subagents/workflows/`.
-  To resume: for each, inspect `git diff HEAD -- <its files>`, re-run an adversarial review (the
-  `qicklab-rereview` workflow script) if its journal shows no final approve, then land one at a time with
-  path/hunk-filtered snapshots (see the pipeline notes above; `hunk_filter.py --invert` separates shared
-  files such as runs/zero_span.py). If the tree is too tangled, `git stash` everything and re-apply the
-  findings one by one from `review/findings.json`.
-- After these: the remaining findings (F02 parts 2/4, F05, F07, F14+F20+F24+F27 readout window,
-  F16, F18, F19, F22, F25, F26, F28, then tier B), the dead-cfg-key commit, then phases 5a, 5b, 6, the
-  CLAUDE.md/AGENTS.md/README rewrite, and the merge back into `bfc_code` (+ the Windows golden check).
+## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
+The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
+is where the code runs in the end; see "End state"). Everything needed is in git, nothing on the Mac.
 
-Fix pipeline: `~/.cache/qicklab-refactor/apply_findings` workflow script (implementer → adversarial reviewer →
-fix, 3 review rounds), `diff_labels.py` (capture labels, classify leaf diffs vs the golden), `land_fix.sh` /
-hunk-filtered snapshots into `~/.cache/qicklab-refactor/wt_<id>` + `REGRESSION_UPDATE=1` full suite +
-`classify_golden.py`, then commit from the worktree and `git reset --soft` the branch. In flight at last
-update: F01 (Ramsey projection/bounds), F06 (HMM i.i.d. null gate), F10 (thermal population estimator),
-F04 (parity-doublet selection), F13 (Rabi fit). Remaining items: `review/findings.json` (by id).
+**Branches (both pushed to `origin`):**
+- `qicklab_refactor` — 44 verified commits since `eecd7f98` (every one passed the full ladder; golden
+  byte-identical except the per-commit allowlists written in each commit message). Head = this HANDOFF commit.
+- `qicklab_refactor_wip` = `qicklab_refactor` + two UNVERIFIED commits holding the working tree of the
+  eight in-flight findings when the session was cut:
+  1. "wip: reviewed, unlanded fixes F04 F21+F53 F16 F02+F34 F19 F25" — agent-complete edits (plus their new
+     tests and docs). Quick ladder on this tree passed (compileall, `ruff --select F`, `ruff format --check`,
+     and all tests except the golden suite); the GOLDEN SUITE WAS NOT RUN on it and the golden is unchanged, so
+     `pytest tests/test_golden.py` is expected to fail there until each item is landed with its golden regen.
+  2. "wip: interrupted implementers F33 F48 (partial, unreviewed)" — the implementer agents were stopped
+     mid-work. Treat as a starting point only: either finish+review them or `git revert` that commit and
+     relaunch the two items from `review/findings_with_refuter_notes.json`.
+  Never merge `qicklab_refactor_wip` as-is. Land items one at a time onto `qicklab_refactor` (procedure
+  below), then delete the wip branch.
 
-The repo now IS the qicklab package: `qicklab/`, `devices/` (empty init), `runners/CSTQ03_BFC.py` (legacy
-runner, star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code runs on the original
-Windows PC in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and
-the TWPA modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
+**Per-item status** (agent reports and the last reviewer verdict for each are in
+`review/inflight/<ID>.json`: `status`, `last_report`, `last_review.findings`):
+| ID | Files (from `git diff qicklab_refactor qicklab_refactor_wip`) | State at cut | Expected golden impact |
+|---|---|---|---|
+| F04 doublet selection | analysis/spectroscopy.py, experiments/qubit_spec.py, runs/zero_span.py (one `min_sep_mhz=` line), tests/test_doublet_selection.py, docs two_tone_spec.md | refix done, re-review round 2 interrupted; 2 open should-fix (tests for the two_highest_peaks min_sep rule and for the zero_span `min_sep_mhz` plumbing) | only RunSpecGainLengthSweep (`experiments[1]` lorentz_* 0→1 length); ZSP labels unchanged |
+| F21+F53 yoko safety | hardware/yoko.py, twpa/set_bias.py, twpa/flux_sweep.py, core/context.py, tests/regression/capture.py (FakeYoko), tests/test_yoko_safety.py, docs hardware.md/twpa.md/architecture.md/troubleshooting.md/charge_sweep.md/undriven_single_shot.md/charge_transmission_sweep.md, tests/regression/README.md, comment line in experiments/undriven_single_shot.py | three review rounds, all approve; 2 should-fix left (report hygiene; "all 40 labels change in yoko_writes" which IS the intended impact) | `yoko_writes` on every label (new state queries, LEV 0 before OUTP ON, LEV? readback per ramp_to); nothing in cfg/hw/data. `TWPA_YOKO_ADDRESS` moved into hardware.yoko: add a `final_module` row in tests/refactor/symbol_map.py or a re-export, or test_equivalence fails |
+| F16 parity-control verdicts | analysis/modified_ramsey.py (compare_parity_controls), tests/test_modified_ramsey_offline.py, docs modified_ramsey.md (+ new docs/experiments/modified_ramsey_control.md if present) | fix round 1 done, unreviewed; 3 should-fix from review 1 (echo_null resolved-rate gate precedence, Hessian-only errors in the flip-rate agreement test, drive_off threshold vs CSTQ03 numbers) | none expected (offline analysis) — verify with diff_labels on RunModifiedRamsey[*] |
+| F02+F34 T1/T2E fit guard | analysis/fitting.py (fit_exp_decay), experiments/t1.py, t2_echo.py, tests/test_exp_decay_fit.py, docs t1.md/t2_echo.md/auto_coherence.md/coherence_combos.md/interleaved_coherence.md/running_a_session.md | implementer done, review 1 interrupted → run the rereview workflow | T1/T2E labels: fit outputs (`sets`/data_digest) and possibly new saved keys; see last_report |
+| F19 ZSP validation stage 8 + B2-B4 | runs/zero_span_validation.py, analysis/zero_span_checks.py, tests/test_zero_span_validation.py, docs zero_span_parity.md (validation sections only) | implementer done, review 1 interrupted → rereview | ZSP[validate] label only, per last_report |
+| F25 kappa units | experiments/transmission.py, runs/resonator.py print, tests/test_transmission_kappa.py, docs transmission_fit.md/transmission_sweep.md | review 1 rejected (1 must-fix: four docs pages incl. docs/devices/CSTQ03.md still say the kappa printout is 1e6 too small); fix round interrupted → finish the docs fix, then rereview | none in data; print text only (methods/cfg unaffected) — verify |
+| F33 g-reference bracketing | experiments/readout_optimize.py (+ docs qubit_optimize.md) | implementer interrupted (partial) | SingleShot_QubitOptimize only: n_programs 882→483, hw digest, fid_mat/overlap_mat |
+| F48 partial save on abort | experiments/undriven_single_shot.py, t1_single_shot.py, tests/test_partial_save.py, docs averaging.md/t1_single_shot.md/undriven_single_shot.md | implementer interrupted (partial; the test file exists) | none on the success path |
 
-## NEXT STEP: research-effectiveness review → individual bug/improvement commits, then phase 5a
-Phase 3b is complete (areas 1-7). Running/next: the read-only research review workflow (seven domain
-reviewers + a refuter per tier-A/B finding; script `qicklab-research-review-*.js`), then one commit per
-accepted finding (bug fixes incl. design.md "Known bugs", low-risk effectiveness improvements; each with
-the golden regenerated and the diff classified per label in the commit message; tier C = methodology
-changes needing the fridge go to docs as proposals), the dead-cfg-key commit (`pulse_style`, `ts` keys,
-ConstantTwoTone debug prints) with its allowlist, then 5a (Device/Session/recipes/PLAN + devices/CSTQ03.py +
-runners/CSTQ03_session.py), 5b, 6, docs rewrite, merge back.
+Shared files touched by more than one item: experiments/undriven_single_shot.py (F21 one comment line +
+F48), docs/experiments/undriven_single_shot.md (F21 + F48), docs/architecture.md, docs/troubleshooting.md
+(F21 + others). Use `tools/hunk_filter.py [--invert] <regex> <files>` to split them at landing time.
+
+**Landing procedure on the next machine (per item, one commit each):**
+1. Environment: Python 3.13 (`py -3.13 -m venv .venv`, `.venv\Scripts\activate`), `pip install -r
+   docs/dev/refactor-2026-10/requirements-test.txt` (exact pins; on macOS the same pins installed cleanly with
+   Python 3.13.2 — see requirements-macos.txt). Then on a CLEAN `qicklab_refactor` checkout run
+   `python -m pytest tests` (~11 min on the Mac). The golden (`tests/regression/golden_cstq03.json`) was
+   regenerated on macOS (commit 9b8540ba): a Windows BLAS can flip float roundings, so if the first run fails
+   ONLY in `data_digest`/`sets` leaves, regenerate ONCE at the branch head (`REGRESSION_UPDATE=1 python -m
+   pytest tests`, confirm two further captures byte-identical, classify with `tools/classify_golden.py`,
+   commit as "test(regression): regenerate golden on Windows (<CPU/BLAS>, numpy x.y)" listing the leaf
+   classes). Any diff in `cfg`/`hw`/`methods`/`yoko_writes` on the clean head = wrong environment (check
+   `qick==0.2.334`, numpy/scipy pins): fix the environment, never the golden. Do not land anything until the
+   suite is green and stable.
+2. Bring one item's files over: `git checkout qicklab_refactor_wip -- <its files>` (or `git diff
+   qicklab_refactor qicklab_refactor_wip -- <files> | git apply`; hunk-filter the shared files). New files:
+   same command. Check `git diff --stat` shows only that item.
+3. If its `review/inflight/<ID>.json` status is not "approved, no open findings": run the rereview workflow
+   (`tools/workflow_rereview.js`, args `{id, item (the finding JSON from review/findings_with_refuter_notes.json),
+   files, context}`) or the apply-findings fix loop, then address what it returns. Claude Code's Workflow tool
+   accepts `scriptPath` for files inside the repo; the scripts' RULES text still names the Mac repo path and
+   `source .venv/bin/activate` — edit those two strings for Windows before use.
+4. Fast ladder: `python -m compileall -q qicklab devices runners tests`; `ruff check --select F qicklab
+   runners tests devices`; `ruff format --check qicklab devices runners tests`; the item's tests;
+   `python docs/dev/refactor-2026-10/tools/diff_labels.py <labels> --variants A` (every differing leaf must be
+   explained by the item).
+5. Full suite with golden regen: `REGRESSION_UPDATE=1 python -m pytest tests -p no:cacheprovider`
+   (`tools/land_fix.sh <tag> [paths]` does 2+4+5 in a scratch worktree under Git Bash; set `QICKLAB_SCRATCH`;
+   on plain PowerShell run the steps by hand). CHECK THE EXIT CODE before committing. Classify:
+   `python tools/classify_golden.py <(git show HEAD:tests/regression/golden_cstq03.json)
+   tests/regression/golden_cstq03.json` and write every leaf class per label into the commit message.
+6. Prune `[tool.ruff.lint.per-file-ignores]` with `tools/prune_ignores.py` if the item removed a trigger.
+   Commit (`fix(<area>): <ID> ...`, with the Claude-Session trailer of the session doing the work), then append
+   the commit to the log below and refresh "NEXT STEP".
+
+**After the eight parked items:** remaining tier A: F05 (unify peak finding), F07 (ZSP apriori classifier;
+needs F04 landed), F14+F20+F24+F27 (regime-A readout window → `cover_readout_window` in all programs); then
+tier B (F29–F84, group tiny ones thematically; F46 provenance touches many files — do it when nothing else is
+in flight); the dead-cfg-key commit (`pulse_style`, `ts`, ConstantTwoTone debug prints; allowlist + golden
+regen); then phases 5a (Device/Session/recipes/PLAN + devices/CSTQ03.py + runners/CSTQ03_session.py; inputs:
+design.md phase-5 section and findings F57/F58/F46/F49/F50/F51/F56), 5b (delete runners/CSTQ03_BFC.py and
+driver_legacy), 6 (parameter registry + generated docs/parameters.md, reconcile docs with the real API), the
+CLAUDE.md/AGENTS.md/README rewrite, then "End state" below. Tier C (needs the fridge) stays documented only
+(`review/tier_c_and_gaps.json`).
+
+**Tools now live in the repo** (`docs/dev/refactor-2026-10/tools/`): `diff_labels.py`, `classify_golden.py`,
+`hunk_filter.py`, `prune_ignores.py`, `land_fix.sh`, and the three workflow scripts
+(`workflow_apply_findings.js`: implementer → adversarial reviewer → fix, args `{"items":[finding,...]}` with an
+optional `extra_instructions` string per finding; `workflow_rereview.js`; `workflow_3b_area.js`, historical).
+`review/findings_with_refuter_notes.json` is `findings.json` plus each item's refuter notes/reasoning — use it
+as the Workflow args source. The regression README lists the 40 labels.
+
+The repo IS the qicklab package: `qicklab/`, `devices/` (empty init), `runners/CSTQ03_BFC.py` (legacy runner,
+star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code runs on the original Windows PC
+in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and the TWPA
+modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
+
+## NEXT STEP: land the eight parked items from `qicklab_refactor_wip`, then the remaining findings, then 5a
+See TRANSFER STATE. Order: environment + green suite on the clean head first; then F21+F53 (touches the most
+labels, land it first so later diff_labels runs are clean), F04, F02+F34, F19, F25, F16, F48, F33; then F05,
+F07, F14+F20+F24+F27, tier B, dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 
 ## Phase 3b plan as executed (one commit per area, adversarial old-vs-new review each)
 Areas in order (shared helpers first): 1 hardware, 2 core, 3 analysis helpers (+ switch callers), 4 experiments
@@ -191,7 +245,7 @@ git checkout qicklab_refactor
 python3 -m venv .venv
 source .venv/bin/activate                 # macOS/Linux        (Windows: .venv\Scripts\activate)
 pip install -r docs/dev/refactor-2026-10/requirements-test.txt   # pinned, cross-platform, ~15 packages
-python -m pytest tests                    # ~15 min; expect: all pass, 1 skipped (qicklab/ not yet present)
+python -m pytest tests                    # ~11-15 min; expect: all pass (platform note below)
 ```
 Python 3.13.5 was used; 3.11+ is required. `requirements-lock.txt` is the full Windows `pip freeze`, kept for
 reference only — do not install it on macOS. The `.venv` is not in git. The committed `.env` holds a Windows
@@ -199,7 +253,8 @@ PYTHONPATH; pytest does not need it (`pyproject.toml` sets `pythonpath = ["."]`)
 from the repo root works everywhere. PyCharm users: mark the repo root as sources root.
 The lab's RFSoC/yoko are never needed for the tests.
 
-**Platform note on the golden.** The golden was captured on Windows. The tProc program hashes, cfg dicts and
+**Platform note on the golden.** The golden was captured on Windows originally and regenerated on macOS in
+9b8540ba (the original Windows capture is `git show ed66820e:tests/regression/golden_cstq03.json`). The tProc program hashes, cfg dicts and
 yoko sequences are platform-independent, but the `data_digest` / `sets` fields hash floats rounded to 9
 significant digits, so a different BLAS (Apple Accelerate vs MKL/OpenBLAS) can in rare cases flip a rounding
 boundary. If the very first `pytest tests` on the new machine fails ONLY in `data_digest`/`sets` entries
@@ -225,10 +280,14 @@ When the whole plan is done and the verification ladder is green, unify the code
 moved since 0f0a51f, so `git checkout bfc_code && git merge --ff-only qicklab_refactor` keeps history linear
 with every atomic commit individually revertable (`git revert <sha>`), then `git push origin bfc_code`. If
 `bfc_code` HAS moved in the meantime, rebase `qicklab_refactor` onto it first (resolve conflicts, rerun the
-full ladder), then fast-forward. Show the user the commit list and the final test summary before merging.
+full ladder), then fast-forward. Show the user the commit list and the final test summary before merging. On the final (lab) Windows PC, before
+regenerating anything, run the suite once against the ORIGINAL Windows golden (`git show ed66820e:...`) and
+classify the diff: everything outside the per-commit allowlists must be explainable, or it is a platform/env
+problem to fix first.
 
 ## Resuming with Claude Code
 Open the repo on the new machine, start Claude Code, and say: "Continue the qicklab refactor — read
-docs/dev/refactor-2026-10/HANDOFF.md and proceed with phase 3a-i per brief_3a.md, using dynamic workflows
-with Opus agents." The CLAUDE.md banner also points here. Memory from the previous machine is not required;
+docs/dev/refactor-2026-10/HANDOFF.md (TRANSFER STATE first), then design.md; get the suite green on the
+clean qicklab_refactor head, then land the parked items from qicklab_refactor_wip one commit at a time per the
+landing procedure, using dynamic workflows with Opus agents. Do not re-ask decisions recorded there." The CLAUDE.md banner also points here. Memory from the previous machine is not required;
 everything needed is in this directory.

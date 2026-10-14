@@ -1,0 +1,54 @@
+{
+ "id": "F02",
+ "run": "wf_8bcf20c2-ad8",
+ "completed_agents": [
+  "impl:F02"
+ ],
+ "interrupted_agent": [
+  "review:F02"
+ ],
+ "status": "fix applied, unreviewed",
+ "last_report": {
+  "files_changed": [
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/analysis/fitting.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/experiments/t1.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/experiments/t2_echo.py",
+   "/Users/joshua/code/research/HouckLab_QICK/tests/test_exp_decay_fit.py",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/t1.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/t2_echo.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/coherence_combos.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/interleaved_coherence.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/auto_coherence.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/running_a_session.md"
+  ],
+  "behaviour_change": "The T1 and T2E exponential fit (`a exp(-t/T) + c`, function `fit_exp_decay`) is now bounded and always returns a result instead of raising. T is limited to [dx/2, 20 x span], where dx is the median step and span is the sweep length. |a| is limited to 10 x the peak-to-peak of the trace, c is free, maxfev=10000, and the start values are the old ones clipped into the bounds. On well-behaved decays the fitted T matches the old unbounded fit to about 1e-5 relative; this is checked in the tests. On noisy data the old fit could run away to T ~ 1e6 us; now T stops at 20 x span. The function returns a dict {ok, T, T_err, a, c, popt, perr, yfit, T_bounds, error}. `ok` is False, with a readable reason in `error`, in any of these cases:\n- the optimiser fails;\n- the input is degenerate (fewer than 4 points, non-finite, constant y, no x spread, or a length mismatch);\n- T ends on a bound;\n- the covariance is not finite;\n- T_err >= T;\n- |a| < 3 a_err, meaning no significant decay.\n\nOn pure noise about 0.3% of fits still come out ok (about 6% without the |a| check). T1FF.display and T2EMUX.display wrap the fit in try/except. On an exception they print the traceback and set `self.fit = {'ok': False, 'error': repr(e)}`. They never raise for a fit reason, and they still write both PNGs. If the fit is ok, the plot title shows T +- err as before. If not, the title says \"T1/T2E fit not reliable\" and any fitted curve is drawn dashed grey. The fit is saved in the h5: display writes float fields into data['data'], and finish() saves them because it runs display first. The T1 keys are t1_fit_ok (1/0), t1_fit_us, t1_fit_err_us, t1_fit_a, t1_fit_c, t1_fit_popt [a, T, c], t1_fit_perr and t1_fit_rotation_rad (the IQ rotation actually used). T2E uses the same keys with the t2e_ prefix. A field with no value is NaN. The full dict is kept on the instance as `.fit`. The tProc programs, cfg and acquisition are unchanged.",
+  "tests_added": [
+   "tests/test_exp_decay_fit.py::test_recovers_T_within_3_percent (T=20/80/150 us, both signs of a)",
+   "tests/test_exp_decay_fit.py::test_same_value_as_old_unbounded_fit_on_well_behaved_data (T within 1e-5 rel, T_err within 1e-3 rel of the pre-change unbounded fit)",
+   "tests/test_exp_decay_fit.py::test_noise_only_does_not_raise_and_is_not_ok (20 seeds)",
+   "tests/test_exp_decay_fit.py::test_runaway_is_bounded (seeds where the old fit gave T > 1e5 us; new T <= 20*span, ok False)",
+   "tests/test_exp_decay_fit.py::test_decay_much_longer_than_sweep_is_not_ok",
+   "tests/test_exp_decay_fit.py::test_decay_faster_than_sampling_hits_lower_bound",
+   "tests/test_exp_decay_fit.py::test_degenerate_inputs_do_not_raise (constant, 3 points, NaN, no x spread, length mismatch)",
+   "tests/test_exp_decay_fit.py::test_display_saves_fit_fields[T1FF|T2EMUX] (finish(): every t1_/t2e_fit_* key in the h5, values match inst.fit, both PNGs written, raw arrays still saved)",
+   "tests/test_exp_decay_fit.py::test_display_on_noise_saves_not_ok[T1FF|T2EMUX]",
+   "tests/test_exp_decay_fit.py::test_display_survives_a_fit_exception[T1FF|T2EMUX] (fit_exp_decay monkeypatched to raise -> self.fit == {'ok': False, 'error': ...}, NaN fields saved)"
+  ],
+  "golden_diff_summary": "Ran diff_labels with --variants A on RunT1, RunT1T2E, RunT1T2RT2E, RunT2E, RunT2E[rotation], RunInterleavedCoherence and RunAutoCoherence[fast]. Also ran --variants B on RunT1 and RunT2E. Every captured T1FF and T2EMUX instantiation changes the same way:\n- One 'methods.call' leaf: the display entry gains a new 'sets' {fit: {...}}. The classifier files a whole new 'sets' key under methods.call.\n- Eight 'data_digest' leaves: new datasets <prefix>_fit_{a,c,err_us,ok,perr,popt,rotation_rad,us} on save_data.\n\nCounts per label:\n- RunT1: 4 T1FF, giving 4 + 32 leaves.\n- RunT2E and RunT2E[rotation]: 4 T2EMUX each, 4 + 32. Under [rotation], t2e_fit_rotation_rad = 0.3, the cfg value.\n- RunT1T2E and RunT1T2RT2E: 4 T1FF + 4 T2EMUX, 8 + 64. T2R is unchanged.\n- RunInterleavedCoherence: 4 T1FF, 4 + 32. No T2EMUX is captured inside the budget, so T2E is not exercised in this label.\n- RunAutoCoherence[fast]: 3 T1FF + 3 T2EMUX, 6 + 48.\n- B: RunT1 and RunT2E show the same 4 + 32 pattern.\n\nAll 36 captured fits on the synthetic two-blob noise are ok False, as intended for noise. There are no cfg, hw/program-hash, cfg_digest/cfg_delta or cfg_access diffs, and no outcome changes.\n\nEvery label also shows 4-6 'yoko_writes' leaves (an extra OUTP?/FUNC?/RANG? query sequence). These are not from this change: RunT2 (T2R only, which this change does not touch) shows the identical yoko_writes diff and nothing else. They come from the concurrent uncommitted qicklab/hardware/yoko.py change by another agent. The orchestrator must attribute them to that commit, not this one.",
+  "docs_updated": [
+   "docs/experiments/t1.md (Outputs: fit datasets table, iT1.fit; Analysis: bounds, reliability criteria, plot behaviour; failure behaviour; removed the 'fit is not guarded' known issue)",
+   "docs/experiments/t2_echo.md (Outputs: t2e_fit_* keys; Analysis: bounded fit and ok; removed the 'fit is not guarded' known issue)",
+   "docs/experiments/coherence_combos.md (Outputs: T1/T2E fits now saved, T2R not)",
+   "docs/experiments/interleaved_coherence.md (Analysis: T1/T2E fits saved, no refit needed)",
+   "docs/experiments/auto_coherence.md (summary note: auto-T1/auto-T2E h5 now hold the fits; not in the owned list but was made stale by this change, one-sentence edit)",
+   "docs/running_a_session.md (fit-results bullet: t1/t2_echo now saved; not in the owned list but was made stale by this change, one-bullet edit)"
+  ],
+  "not_done": [
+   "AutoCoherence / interleave / coherence runs were NOT switched to read the saved result. None of them refits T1 or T2E today: AutoCoherence only logs 'run i saved' and puts no T1/T2E values in its summary, and interleave only dispatches the run functions. So there is nothing to switch. Adding T1/T2E to the AutoCoherence log or summary would be a new feature and was left out.",
+   "T2R fit saving (osc_fit/env_fit to h5) is outside this finding's file ownership and was not done.",
+   "The full 39-label regression suite was not run, only the 7 named labels (A), RunT2 (A, as a control) and RunT1/RunT2E (B). No other module imports fit_exp_decay; grep shows only t1.py and t2_echo.py. So no other label can reach this change."
+  ],
+  "notes": "Design choices the orchestrator should know:\n(1) fit_exp_decay now returns a dict instead of the old tuple (T1_fit, T1_est, T1_err). The only consumers were T1FF.display and T2EMUX.display, so no compatibility shim was kept. T is no longer passed through abs(): the bounds keep it positive.\n(2) I added a criterion the spec did not ask for: |a| >= 3 a_err. With only the spec's checks (bound hit, finite covariance, T_err < T), 6% of pure-noise traces gave ok True, so the \"noise gives ok False\" requirement would not hold reliably. With the check the rate is 0.3%. On a genuine but marginal decay (SNR about 1 per point) it rejects some fits that would otherwise pass. The constant is EXP_DECAY_MIN_A_SIGMAS in fitting.py.\n(3) Added a small helper exp_decay_fit_fields(fit, prefix) in fitting.py, next to fit_exp_decay, that flattens the result into the h5 keys. Both displays share it.\n(4) t1_fit_ok is stored as a Python bool. Its digest dtype is 'bool' and the h5 holds 1.0/0.0 because H5File.add forces float64.\n(5) Nothing in tProc programs changed, so tests/test_program_timing.py is unchanged with no pin changes. Checks: compileall is clean, ruff F passes, ruff format was applied to the 4 touched .py files, and tests/test_exp_decay_fit.py, test_finish.py, test_imports.py, test_program_timing.py and test_ramsey_fit.py all pass.\n(6) No git index or tree operations were performed. The golden, the fixtures, driver_legacy.py and symbol_map.py were not touched."
+ },
+ "last_review": null
+}

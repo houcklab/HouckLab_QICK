@@ -1,0 +1,11 @@
+{
+ "id": "F48",
+ "run": "wf_9f282074-daa",
+ "completed_agents": [],
+ "interrupted_agent": [
+  "impl:F48"
+ ],
+ "status": "implementer interrupted, no report",
+ "last_report": null,
+ "last_review": null
+}

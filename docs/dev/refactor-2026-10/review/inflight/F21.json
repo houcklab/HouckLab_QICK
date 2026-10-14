@@ -1,0 +1,119 @@
+{
+ "id": "F21",
+ "run": "wf_13e9178e-53a",
+ "completed_agents": [
+  "impl:F21",
+  "review:F21",
+  "fix:F21",
+  "review:F21",
+  "fix:F21",
+  "review:F21"
+ ],
+ "interrupted_agent": [],
+ "status": "needs fix round",
+ "last_report": {
+  "files_changed": [
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/hardware/yoko.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/twpa/set_bias.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/twpa/flux_sweep.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/core/context.py",
+   "/Users/joshua/code/research/HouckLab_QICK/tests/regression/capture.py",
+   "/Users/joshua/code/research/HouckLab_QICK/tests/regression/README.md",
+   "/Users/joshua/code/research/HouckLab_QICK/tests/test_yoko_safety.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/experiments/undriven_single_shot.py",
+   "/Users/joshua/code/research/HouckLab_QICK/qicklab/runs/charge_sweep.py",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/hardware.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/twpa.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/architecture.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/troubleshooting.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/charge_sweep.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/undriven_single_shot.md",
+   "/Users/joshua/code/research/HouckLab_QICK/docs/experiments/charge_transmission_sweep.md"
+  ],
+  "behaviour_change": "Neither GS200 can now have its output switched on, or its function changed, in a way that applies an unramped voltage or current step.\n\nCharge line (build_context/connect calls the new open_charge_yoko):\n- Before opening anything, it refuses the TWPA source. Addresses are compared by GPIB (board, primary address), so GPIB1::12, GPIB1::12::INSTR, gpib1::12::0::INSTR and other spellings of the shared constant hardware.yoko.TWPA_YOKO_ADDRESS (GPIB1::12::INSTR) are all refused. A VISA alias is not resolved.\n- It then queries :OUTP?, :SOUR:FUNC? and :SOUR:LEV? and prints the results.\n- CURR with the output ON: it raises without writing anything and closes the session.\n- Output OFF: it writes :SOUR:FUNC VOLT, reads :SOUR:RANG?, writes :SOUR:LEV 0, and only then writes :OUTP ON. A stale stored setpoint is never applied, and ramp_to ramps from 0.\n- Output already ON in VOLT: the level is left alone, and ramp_to ramps from the real level.\n- In both cases it raises before the output goes on if the active range is above 10 V or if |start_voltage| > 1.2x the range. The range above 10 V is the 30 V range: it resolves only 1 mV, coarser than the readback tolerance, and the charge line never needs it.\n- It never changes the range.\n\nramp_to:\n- Rejects |target| > 10 V on both signs with ValueError \"|target| = X V exceeds the 10 V charge-line limit\". Before, -50 V passed.\n- After landing, it reads back :SOUR:LEV? and raises RuntimeError if the level is more than 1e-4 V away. The message names both possible causes: clipped by the range, or rounded by a coarse range.\n- Its signature and its ramp write sequence are unchanged.\n\nTWPA (set_bias.main and flux_sweep.main call the new enable_current_output_safely(yoko, range_A)):\n- It queries and prints :OUTP?, :SOUR:FUNC? and :SOUR:LEV?.\n- Output OFF: it writes FUNC CURR, RANG, LEV 0, then OUTP ON. The ramp starts at 0 A instead of jumping to a stale setpoint at about 1e4 uA/s.\n- ON in VOLT: it raises.\n- ON in CURR: it keeps the setpoint and changes the range only at 0 A. At a nonzero level it keeps a larger active range and raises on a smaller one. It returns the active range, and flux_sweep records that range.\n- flux_sweep's finally block ramps to 0 only if the enable step succeeded.\n\nPrograms, cfg and payloads are unchanged.",
+  "tests_added": [
+   "tests/test_yoko_safety.py: 26 tests with a scripted fake GS200.",
+   "TWPA, output OFF: writes exactly FUNC CURR, RANG 0.001, LEV 0, OUTP ON.",
+   "TWPA, ON+VOLT: refused with no writes.",
+   "TWPA, ON+CURR: keeps the setpoint. The range is changed only at 0 A, and a smaller range at a nonzero level raises.",
+   "ramp_current after enable starts at 0 and stays within the rate cap.",
+   "Charge, OFF: FUNC VOLT, then RANG?, then LEV 0, then OUTP ON.",
+   "Charge, ON+VOLT: leaves the level alone.",
+   "Charge, ON+CURR: refused with no writes, and the session is closed.",
+   "The TWPA address is refused before opening, in 5 spellings, with the fake source parked OFF in CURR. Other GPIB addresses are accepted (GPIB1::9, GPIB0::12, GPIB1::120).",
+   "The 30 V range is refused before LEV 0 and OUTP ON, with the output off and with it on. The 10 V range is accepted.",
+   "A start voltage above 1.2x the range is refused.",
+   "ramp_to rejects 10.5, -10.5 and -50 V with no traffic. New this round: the test also matches the exact message text 'exceeds the 10 V charge-line limit' that docs/troubleshooting.md quotes, so the two cannot drift apart again.",
+   "ramp_to ends with the landing write plus a LEV? readback, and a readback mismatch raises.",
+   "set_bias.main end to end writes LEV 0 before OUTP ON.",
+   "flux_sweep.main on an ON+VOLT source raises and never ramps in its finally block."
+  ],
+  "golden_diff_summary": "Command: `diff_labels.py RunT1 RunChargeSweep RunUndrivenSingleShot --variants A`, rerun after this round. The result is the same as last round: 79 differing leaves in total, all in yoko_writes (RunT1 4, RunChargeSweep 71, RunUndrivenSingleShot 4). No other field class differs (cfg, hw, methods, sets, data_digest, cfg_access).\n\nThis round's changes add no capture traffic: one is an error-message format and the other is a docs edit.\n\nExact RunT1 sequence (5 -> 11 entries):\n- New: ['OPEN GPIB1::9::INSTR', 'Q :OUTP?', 'Q :SOUR:FUNC?', 'Q :SOUR:LEV?', 'W :SOUR:FUNC VOLT', 'Q :SOUR:RANG?', 'W :SOUR:LEV 0', 'W :OUTP ON', 'Q :SOUR:LEV?', 'W :SOUR:LEV 0.0', 'Q :SOUR:LEV?']\n- Golden: ['OPEN GPIB1::9::INSTR', 'W :SOUR:FUNC VOLT', 'W :OUTP ON', 'Q :SOUR:LEV?', 'W :SOUR:LEV 0.0']\n- Added: 3 state queries, RANG? after FUNC VOLT, LEV 0 before OUTP ON (so OUTP ON now comes later), and one LEV? readback after each ramp_to landing.\n\nRunUndrivenSingleShot has the same shape (5 -> 11). RunChargeSweep goes 74 -> 90: +5 from bring-up and +11 readbacks, one per ramp_to call. Most of its 71 differing leaves are positional shifts caused by those insertions.",
+  "docs_updated": [
+   "docs/hardware.md: charge-yoko bring-up order with the SCPI strings; the (board, primary) address comparison and its alias limitation; the 30 V range refusal; the \u00b110 V guard on both signs; the 1e-4 V readback; the TWPA bring-up order.",
+   "docs/troubleshooting.md: three yoko rows. This round: the quoted ValueError text 'exceeds the 10 V charge-line limit' now matches the code exactly. I fixed the code side, changing the format to {CHARGE_V_LIMIT:g} so it prints '10 V' instead of '10.0 V', and a test now pins the text.",
+   "docs/architecture.md: the Yoko-safety bullet only.",
+   "docs/experiments/twpa.md: bring-up step, the shared address constant, the helper list, and the stale known issue removed. This round: the helper paragraph no longer contradicts itself. It now says TWPA_YOKO_ADDRESS lives in hardware.yoko, that PNAX_ADDRESS and PUMP_SYNTH_PORT and the pump point are per-script module constants for now, and that Setup.twpa/TwpaSetup is planned but not yet in code (phase 5). It also records a follow-up: when TwpaSetup lands, open_charge_yoko must also check the device's twpa.yoko_addr, because today it checks only TWPA_YOKO_ADDRESS.",
+   "docs/experiments/charge_sweep.md, undriven_single_shot.md, charge_transmission_sweep.md: the outdated 'ramp_to only rejects > +10 V' text replaced.",
+   "tests/regression/README.md: the FakeYoko row only."
+  ],
+  "not_done": [
+   "docs/adding_a_device.md (lines 41 and 126) still describes TwpaSetup as if it existed. That file is outside F21's owned set, and the claim predates F21. It belongs with the phase-5 TwpaSetup work, which must also make open_charge_yoko check twpa.yoko_addr; twpa.md now records this.",
+   "VISA aliases (for example NI MAX names) are not resolved. The address guard parses only GPIB resource strings.",
+   "The readback tolerance stays at 1e-4 V, not the finding's 1e-6 V, because the 10 V range resolves only 100 uV. The 30 V range is refused at bring-up instead. A range switched to 30 V by hand mid-session is caught only by the readback raise. The orchestrator should confirm this choice.",
+   "The full-plan range check (phase 5) is not done.",
+   "Not verified on hardware: the GS200 reply formats for :OUTP?, :SOUR:FUNC? and :SOUR:RANG?.",
+   "build_context still leaves the yoko open and on after a later error. This is an existing known issue outside F21.",
+   "diff_labels was not rerun over all 39 labels; only RunT1, RunChargeSweep and RunUndrivenSingleShot were run."
+  ],
+  "notes": "Reviewer findings this round:\n(1) Fixed, docs/troubleshooting.md quoted an error string the code never printed. I changed the code side rather than the doc: ramp_to's message now formats {CHARGE_V_LIMIT:g}, matching the other new messages, so it prints \"|target| = 50 V exceeds the 10 V charge-line limit\", exactly the text the doc quotes. test_ramp_to_rejects_beyond_10V_both_signs now matches that text.\n(2) Fixed, docs/experiments/twpa.md contradicted itself about the TWPA address. The sentence now says the addresses are per-script constants, that TwpaSetup is planned for phase 5 and not yet in code, and records that open_charge_yoko must then also check twpa.yoko_addr. adding_a_device.md is not touched; see not_done.\n\nVerification this round, all passing:\n- python -m compileall -q qicklab devices runners tests\n- ruff check --select F qicklab runners tests devices\n- ruff format on yoko.py and test_yoko_safety.py (no changes)\n- pytest tests/test_yoko_safety.py tests/test_imports.py tests/test_program_timing.py tests/refactor (all pass)\n- diff_labels gives the same 79 yoko_writes-only leaves as last round\n\nNo tProc program changed, so there are no timing pins.\n\nSTAGING HAZARD, unchanged from last round: stage F21 hunk by hunk in these shared files, which also carry other findings' uncommitted hunks.\n- docs/troubleshooting.md: F21 owns only the three yoko rows.\n- docs/architecture.md: F21 owns only the Yoko-safety bullet.\n- qicklab/runs/charge_sweep.py: F21 owns only the comment at about line 204. The rest is F28.\n- tests/regression/README.md: F21 owns only the FakeYoko row.\n- docs/experiments/charge_sweep.md: F21 owns only the ramp_to known-issue line.\n- docs/experiments/charge_transmission_sweep.md: F21 owns only the \u00b110 V bullet.\n\nWholly F21: yoko.py, set_bias.py, flux_sweep.py, the yoko lines of context.py, the FakeYoko class in capture.py, test_yoko_safety.py, hardware.md, twpa.md, and the single hunks in undriven_single_shot.py and undriven_single_shot.md.\n\nWhichever of F21 and F28 lands second must regenerate the RunChargeSweep[yoko_fixed] golden, including the other finding's yoko traffic."
+ },
+ "last_review": {
+  "findings": [
+   {
+    "file": "docs/experiments/charge_sweep.md, docs/experiments/charge_transmission_sweep.md",
+    "severity": "should-fix",
+    "claim": "The report lists these two pages as changed and gives staging instructions for them, but neither has any diff against HEAD. Their F21 hunks were already committed inside the F28 commit c46424ce. As a result HEAD documents behaviour its code does not have: ramp_to 'raises on |target| > 10 V' and 'rejects |target| > 10 V'.",
+    "evidence": "`git diff HEAD -- docs/experiments/charge_sweep.md docs/experiments/charge_transmission_sweep.md` is empty. `git show c46424ce` contains '-  not caught here, and `ramp_to` only rejects targets > +10 V.' / '+  not caught here; `ramp_to` raises on |target| > 10 V when the sweep reaches it.', and the matching \u00b110 V bullet rewrite in charge_transmission_sweep.md. The F21 commit should say that these doc lines landed early in c46424ce and that F21 makes them true. There is nothing to stage for these files."
+   },
+   {
+    "file": "tests/regression/golden_cstq03.json (impact scope)",
+    "severity": "should-fix",
+    "claim": "The implementer ran diff_labels on only 3 labels. In fact every one of the 40 labels changes in yoko_writes, including RunChargeSweep[yoko_fixed] (7 -> 13). The golden regeneration and the commit message must cover all labels on both boards, not just the three named.",
+    "evidence": "I ran diff_labels on all 40 labels with --variants A. Every label differs in yoko_writes, for example RunChargeTransmissionSweep 122->139, RunModifiedRamsey_Control 43->61, Run2ToneChargeDispersionQuasiCW 24->36 and RunChargeSweep[yoko_fixed] 7->13. A script (/tmp/f21rev/check_yoko.py) did the following for each label: it replaced the old bring-up ['W :SOUR:FUNC VOLT','W :OUTP ON'] after OPEN with the new 7-entry block ['Q :OUTP?','Q :SOUR:FUNC?','Q :SOUR:LEV?','W :SOUR:FUNC VOLT','Q :SOUR:RANG?','W :SOUR:LEV 0','W :OUTP ON'], and it removed each 'Q :SOUR:LEV?' that immediately follows a 'W :SOUR:LEV x'. After that the new sequence equals the golden for all 40 labels on A, and for 6 spot-checked labels on B (RunT1, RunChargeSweep, RunChargeSweep[yoko_fixed], RunChargeTransmissionSweep, RunModifiedRamsey_Control, RunAutoCoherence). So the yoko delta is exactly the intended one. Some labels also differ in methods.call, data_digest and hw: RunT1/T2E/T1T2E/T1T2RT2E/AutoCoherence[fast]/InterleavedCoherence (t1_fit_*), RunSpecGainLengthSweep (lorentz_*), RunTransmissionSweep* and RunZeroSpanParity[validate]. Those come from other agents' uncommitted edits to t1.py, t2_echo.py, analysis/* and zero_span_validation.py, not from F21. The orchestrator must keep them out of the F21 golden regeneration."
+   },
+   {
+    "file": "tests/test_yoko_safety.py",
+    "severity": "note",
+    "claim": "No test pins the other side of the 1e-4 V tolerance: a readback that the GS200 rounded to its 10 V-range resolution (100 uV), for example a 0.00015 V target read back as 0.0001 or 0.0002 V, must still pass. All readback tests are either an exact land or a gross clip.",
+    "evidence": "test_ramp_to_reads_back_and_lands uses an exact-echo fake. test_ramp_to_readback_mismatch_raises clips at 1.2 V. If someone later tightens LEVEL_READBACK_TOL_V to 1e-6, which is what the finding proposed, no test would fail, but real hardware would raise on many sub-mV sweep points on the 10 V range."
+   },
+   {
+    "file": "qicklab/hardware/yoko.py",
+    "severity": "note",
+    "claim": "Two behaviours go beyond the finding and are conservative choices the orchestrator should confirm. (1) open_charge_yoko refuses the 30 V range outright. (2) On the TWPA side, with the output ON in CURR at a nonzero level, an active range smaller than range_A raises even when the target would fit in the active range, for example when YOKO_CURR_RANGE_A is forced larger than needed.",
+    "evidence": "In open_charge_yoko: `if v_range > CHARGE_V_LIMIT: raise ValueError(...)`. This is justified: the 1 mV resolution on that range would trip the 1e-4 V readback on 0.5 mV sweet-spot steps. In enable_current_output_safely the final `raise RuntimeError(...)` applies whenever active < range_A and stored != 0. Both cases fail safe (no write) and both are documented in hardware.md and troubleshooting.md."
+   },
+   {
+    "file": "qicklab/hardware/yoko.py",
+    "severity": "note",
+    "claim": "The report says the message prints '|target| = 50 V exceeds ...'. It actually prints '|target| = 50.0 V exceeds the 10 V charge-line limit', because only CHARGE_V_LIMIT is formatted with :g. The substring quoted in docs/troubleshooting.md ('exceeds the 10 V charge-line limit') does match, and the test pins it.",
+    "evidence": "The format is f\"|target| = {abs(target)} V exceeds the {CHARGE_V_LIMIT:g} V charge-line limit\", and abs(-50.0) == 50.0. This is cosmetic only."
+   },
+   {
+    "file": "tests/refactor/test_equivalence.py",
+    "severity": "note",
+    "claim": "tests/refactor currently fails, but on a symbol owned by another agent's uncommitted work, not on F21.",
+    "evidence": "FAIL [structure] Experiments.validate_ZeroSpanParity:_signed_level -> qicklab.runs.zero_span_validation:_signed_level, 'symbol missing'. zero_span_validation.py is modified by another finding. The ramp_to and yoko symbol_map entries pass. The implementer reported tests/refactor as passing, which was presumably before that concurrent edit."
+   },
+   {
+    "file": "qicklab/hardware/yoko.py, qicklab/twpa/*.py, qicklab/core/context.py, tests/regression/capture.py",
+    "severity": "note",
+    "claim": "I found no defect in the engineering of the fix.",
+    "evidence": "Charge path: the address is refused before open. ON+CURR raises with no writes and closes the session. OFF writes FUNC VOLT -> RANG? -> LEV 0 -> OUTP ON, so LEV applies to the active VOLT function. ON+VOLT leaves the level alone. The 1.2x headroom check uses abs(). The range is never written. ramp_to: |target| guard on both signs before any traffic; the write sequence is unchanged apart from the trailing LEV? readback. TWPA path: OFF writes FUNC CURR -> RANG -> LEV 0 -> OUTP ON. ON+VOLT raises before any write. ON+CURR changes range only at 0 A. flux_sweep's finally skips the ramp unless enable succeeded, and set_bias closes in finally. context.py changes only the yoko lines. capture.py changes only the FakeYoko class. undriven_single_shot.py and charge_sweep.py change only comments. Docs (hardware.md, twpa.md, architecture.md, troubleshooting.md, undriven_single_shot.md) match the code, and the error strings quoted in troubleshooting.md match the code. compileall, ruff F, ruff format --check, and tests/test_yoko_safety.py, test_run_charge_sweep.py, test_imports.py and test_program_timing.py all pass. No tProc program changed."
+   }
+  ],
+  "verdict": "approve",
+  "summary": "The F21 fix is correct, and it is complete across all yoko call sites: every charge-line open goes through build_context -> open_charge_yoko, and both TWPA scripts use enable_current_output_safely. I re-derived the golden impact over all 40 labels, all 40 on board A and 6 spot-checked on B. Once the old bring-up is replaced with the new 7-entry block and the per-ramp_to LEV? readbacks are removed, every new yoko_writes sequence equals the golden, so the yoko traffic changes exactly as intended and in nothing else. The other field-class diffs that show up (T1/T2E fits, spectroscopy, zero-span validation) come from other agents' concurrent edits and must be kept out of the F21 golden. There are no must-fix items. Two should-fix items concern the orchestrator's commit and golden handling, not the code. (1) The F21 hunks in charge_sweep.md and charge_transmission_sweep.md were already committed in F28's c46424ce, so there is nothing to stage there, and HEAD's docs currently describe F21 behaviour. (2) The golden impact covers all 40 labels on both boards, including RunChargeSweep[yoko_fixed] (7->13), not only the 3 labels the implementer ran. The notes cover: a missing within-tolerance readback test, the conservative 30 V and TWPA range refusals, a cosmetic error-message claim, and an unrelated tests/refactor failure from zero_span_validation. The review scripts are in /tmp/f21rev/."
+ }
+}
