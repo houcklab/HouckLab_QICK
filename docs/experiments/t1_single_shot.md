@@ -41,9 +41,21 @@ PLAN = [R.t1_single_shot(calibrate_ss=False, angle=0.12, threshold=1.3)]
 ```
 
 With `calibrate_SS = True`, each repetition first runs a [single_shot](single_shot.md)
-(saved under `SingleShot/`, honouring the single_shot group's `number_of_pulses`) and
-uses its read-0 `angle` and `threshold`. After every repetition the run sleeps 10 s
-and calls `soc.reset_gens()`.
+(saved under `SingleShot/`) and uses its read-0 `angle` and `threshold`. The
+calibration is always g vs one pi pulse at the pi gain (`ctx.qubit_gain`), in its own
+cfg. The single_shot group's `pi2_SS` and `number_of_pulses` are ignored, and
+`number_of_pulses` is not written into the T1 cfg. After every repetition the run
+sleeps 10 s and calls `soc.reset_gens()`.
+
+Guards (the T1 points are not acquired when one trips):
+
+- The run raises `ValueError` if the calibration comes back in thermal mode, or if its
+  `angle` or `threshold` is not finite. A NaN threshold would make every shot count
+  as |g>, so the whole T1 curve would read 0.
+- With `calibrate_SS = False`, the same finiteness check applies to the
+  `T1SS_params` `angle` and `threshold` (`None` raises here, not in the counting step).
+- A calibration contrast (the `hist_process` value labelled fidelity) below 0.3 only
+  prints a warning.
 
 ## Parameters
 
@@ -100,5 +112,4 @@ None recorded for this step in the legacy code.
 - The program plays `qubit_gain`, not `pi_gain`. Before the regime-B config rebuild,
   `qubit_gain` is the spectroscopy gain.
 - `flattop_length` is ignored. Devices with a flat-top pi pulse get a mis-rotation.
-- `threshold = None` raises in the counting step.
 - One program per wait point, plus a 10 s sleep per repetition: long runs are slow.

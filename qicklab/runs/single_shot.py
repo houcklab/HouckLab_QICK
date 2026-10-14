@@ -104,15 +104,47 @@ def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
     }
 
 
+# Below this g/e contrast the T1_SS threshold barely separates the blobs (warn only).
+T1SS_MIN_CALIBRATION_CONTRAST = 0.3
+
+
+def _check_t1ss_discriminator(angle, threshold, source):
+    """Raise ValueError unless `angle` and `threshold` are finite real numbers.
+
+    A NaN threshold makes every shot count as |g> (val > nan is False), so the whole T1 curve
+    would read 0 with no error; None raises a TypeError deep in the counting step.
+    """
+    for name, value in (("angle", angle), ("threshold", threshold)):
+        try:
+            ok = np.isfinite(float(value))
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            raise ValueError(
+                f"run_t1_ss: {source} {name} is {value!r}, not a finite number; "
+                "T1_SS would count every shot against it. See docs/experiments/t1_single_shot.md"
+            )
+
+
 def run_t1_ss(ctx, T1SS_params, SS_params):
+    """T1 from thresholded single shots, `repetitions` times.
+
+    Keys: docs/experiments/t1_single_shot.md.
+
+    With calibrate_SS the angle/threshold come from a g / one-pi-pulse single_shot at the pi
+    gain; the single_shot group's number_of_pulses and pi2_SS are not used (`SS_params` is kept
+    for the call signature).
+    """
     for _ in range(T1SS_params["repetitions"]):
         cfg = ctx.working_config()
         if T1SS_params["calibrate_SS"]:
-            cfg["number_of_pulses"] = SS_params["number_of_pulses"]
+            # Separate cfg: always one pi pulse at the pi gain (as in
+            # get_apriori_separator_from_singleshot); nothing leaks into the T1 cfg.
+            cfg_cal = ctx.working_config({"number_of_pulses": 1, "qubit_gain": ctx.qubit_gain})
             Instance_SingleShotProgram = SingleShotProgramFFMUX(
                 path="SingleShot",
                 outerFolder=ctx.outerFolder,
-                cfg=cfg,
+                cfg=cfg_cal,
                 soc=ctx.soc,
                 soccfg=ctx.soccfg,
             )
@@ -123,11 +155,25 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
                 data_SingleShotProgram,
                 plotDisp=False,
             )
+            if data_SingleShotProgram["data"].get("thermal_mode"):
+                raise ValueError(
+                    "run_t1_ss: the calibration single_shot ran in thermal mode; "
+                    "its threshold is not a g/e discriminator"
+                )
             angle = data_SingleShotProgram["data"]["angle"][0]
             threshold = data_SingleShotProgram["data"]["threshold"][0]
+            _check_t1ss_discriminator(angle, threshold, "calibrated")
+            # hist_process contrast (labelled fid); display() may overwrite the list with read 0's.
+            contrast = np.ravel(np.asarray(Instance_SingleShotProgram.fid, dtype=float))[0]
+            if contrast < T1SS_MIN_CALIBRATION_CONTRAST:
+                print(
+                    f"[T1_SS] WARNING calibration contrast {contrast:.3f} < "
+                    f"{T1SS_MIN_CALIBRATION_CONTRAST}: the threshold barely separates g and e"
+                )
         else:
             angle = T1SS_params["angle"]
             threshold = T1SS_params["threshold"]
+            _check_t1ss_discriminator(angle, threshold, "T1SS_params")
         print(angle, threshold)
 
         expt_cfg = {

@@ -81188,7 +81188,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -81203,7 +81202,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -81225,7 +81223,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -81343,14 +81340,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -81445,14 +81434,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -81729,9 +81710,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -82417,7 +82399,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -82432,7 +82413,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -82454,7 +82434,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -82572,14 +82551,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -82674,14 +82645,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -82958,9 +82921,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -83646,7 +83610,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -83661,7 +83624,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -83683,7 +83645,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -83801,14 +83762,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -83903,14 +83856,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -84187,9 +84132,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -84875,7 +84821,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -84890,7 +84835,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -84912,7 +84856,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -85030,14 +84973,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -85132,14 +85067,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -85416,9 +85343,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -206968,7 +206896,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -206983,7 +206910,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -207005,7 +206931,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -207123,14 +207048,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -207225,14 +207142,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -207509,9 +207418,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -208197,7 +208107,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -208212,7 +208121,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -208234,7 +208142,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -208352,14 +208259,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -208454,14 +208353,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -208738,9 +208629,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -209426,7 +209318,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -209441,7 +209332,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -209463,7 +209353,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -209581,14 +209470,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -209683,14 +209564,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -209967,9 +209840,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }
@@ -210655,7 +210529,6 @@
                 "delay_time": 0
               }
             },
-            "Pulse": true,
             "Read_Indeces": 5,
             "adc_trig_offset": 0.3,
             "cavity_LO": 0,
@@ -210670,7 +210543,6 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "number_of_pulses": 1,
             "pi2_SS": false,
             "pi_gain": 4200,
             "pulse_freq": 7095.4,
@@ -210692,7 +210564,6 @@
             "ro_chs": [
               0
             ],
-            "rounds": 1,
             "shots": 1000,
             "sigma": 0.08,
             "start": 0,
@@ -210810,14 +210681,6 @@
                   "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
-                "config/Pulse": {
-                  "dtype": "bool",
-                  "head": [
-                    true
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
-                  "shape": []
-                },
                 "config/Read_Indeces": {
                   "dtype": "int64",
                   "head": [
@@ -210912,14 +210775,6 @@
                     2
                   ],
                   "sha1": "f5a287313a7f83fa",
-                  "shape": []
-                },
-                "config/number_of_pulses": {
-                  "dtype": "int64",
-                  "head": [
-                    1
-                  ],
-                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "config/pi2_SS": {
@@ -211196,9 +211051,10 @@
             {
               "cfg_delta": {
                 "Excited_PulseT1": 2,
+                "rounds": 1,
                 "variable_wait": 7920
               },
-              "cfg_digest": "458b59cc92eae176",
+              "cfg_digest": "eea2eec7f70bbef8",
               "kwargs": {},
               "name": "save_config"
             }

@@ -50,7 +50,7 @@ separate, reviewed commits.
 | T2E prints "Step size is 0!" and stops (after T1 already ran in the combined steps) | `T2_max_us` too short for `T2_expts x (num_pi_pulses+1)` tProc cycles | raise `T2_max_us` or lower `T2_expts` ([timing](concepts/timing_and_units.md#t2e-step-quantisation)) |
 | `TypeError` with `rotation_angle=None` in `t1` | `T1FF` multiplies by `exp(1j*None)` **(legacy bug)** | omit the key or give a number |
 | `KeyError: 'min_max'` in `t2_echo` | `rotation_angle` given without `min_max` **(legacy bug)** | give both or neither |
-| `TypeError` in `t1_ss` with no threshold | threshold `None` and `calibrate_SS=False` | calibrate first or pass `threshold` and `angle` |
+| `ValueError` "not a finite number" or "thermal mode" in `t1_ss` | `calibrate_SS=False` with `threshold`/`angle` None or NaN, or the calibration single_shot failed (NaN threshold) or ran in thermal mode | calibrate first or pass `threshold` and `angle`; check the `SingleShot/` record ([t1_single_shot](experiments/t1_single_shot.md#how-to-run)) |
 | `AttributeError` / `NameError` at the end of `charge_sweep` | empty voltage list or first voltage above 10 V ends the loop before anything is created **(legacy bug)** | check the voltage range |
 | `TypeError` from `save_data()` with no argument | every `save_data(data=None)` override indexes `None` **(legacy bug)** | pass the data dict |
 | `ValueError` when saving a key twice, or saving complex/string data | the base h5 writer always creates float64 datasets and cannot overwrite | save once; convert complex to real/imag |
