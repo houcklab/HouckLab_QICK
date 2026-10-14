@@ -122,12 +122,18 @@ Single-shot style programs read one accumulated I/Q value per shot from the raw 
   `experiment.data = {"data": stitched}`, so a bare `save_data()` writes the whole record.
 - `modulated_strobe_acquire(experiment, gain_schedule, reps_per_block)` runs one block per gain
   (e.g. `[G_on, 0, G_on, 0, ...]`), calling `experiment.set_qubit_gain(gain)` before each
-  `acquire()`. `reps_per_block` (= time samples per block) must satisfy `avg_maxlen` (rule 4).
-  It returns the `chunked_acquire` keys plus `modulation_reference` (per sample, 1.0 where the
-  block gain > 0, else 0.0), `block_labels` (the gains applied), `reps_per_block`,
-  `sample_period_us` and `modulation_freq_hz` = `1 / (2 x reps_per_block x sample_period_us x
-  1e-6)`. It does not set `experiment.data` and leaves the experiment at the last gain of the
-  schedule.
+  `acquire()`. `reps_per_block` (= time samples per block) must be >= 1 (else `ValueError`)
+  and satisfy `avg_maxlen` (rule 4, checked before any block when the experiment has a
+  `soccfg` and `ro_chs`; else `RuntimeError`). `set_qubit_gain` compiles `cfg["reps"]`, which
+  it re-syncs from `cfg["reps_per_chunk"]`, so for the blocks the helper sets both keys to
+  `reps_per_block`. Afterwards (also when a block raises) it restores both keys and rebuilds
+  the program once with them at the last gain applied. It returns the `chunked_acquire` keys
+  plus `modulation_reference` (per sample, 1.0 where the block gain > 0, else 0.0),
+  `block_labels` (the gains applied), `reps_per_block`, `sample_period_us` and
+  `modulation_freq_hz` = `1 / (2 x reps_per_block x sample_period_us x 1e-6)`. That frequency
+  is in stitched sample time: like `chunked_acquire`, the stitched `t_us` leaves out the dead
+  time between block programs, so the wall-clock modulation is slower. It does not set
+  `experiment.data` and leaves the experiment at the last gain of the schedule.
 - `raw_shot_buffers(prog)` returns one flat raw array per declared readout channel, length
   `prod(loop_dims) x reads_per_shot`. With `rounds > 1` `acc_buf` holds the last round only,
   which matches the old `di_buf` (also re-derived per round).

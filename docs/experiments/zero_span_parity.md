@@ -282,6 +282,28 @@ automatic pass/fail**.
   across thresholds indicates a robust telegraph.
 - `reps_per_block` must satisfy avg_maxlen (16384).
 
+### Stage-3 modulation timing
+
+- **Block length.** `run_modulation_check` sets `reps_per_block` = round(1 / (2 ·
+  `modulation_freq_hz` · `sample_period_us`)), at least 1. `modulated_strobe_acquire`
+  compiles every block program with that many reps (it sets `reps_per_chunk` and `reps`
+  for the blocks), then restores the previous `reps_per_chunk`/`reps` and rebuilds
+  the program at the last gain of the schedule (0). Before this fix the blocks were
+  compiled with `reps_per_chunk` (2000 after stage 1, 10000 without it). Each
+  half-period then held 2–10× the requested samples, and the true square wave ran at
+  12.5 or 2.5 Hz where 25 Hz was reported.
+- **Frequencies saved.** The sidecar scalars hold both values:
+  - `nominal_modulation_freq_hz`: the requested frequency after rounding to whole reps
+    (also `modulation_freq_hz` in the sidecar metadata);
+  - `injected_freq_hz`: the value measured from the on/off reference.
+    `verify_modulation` counts transitions + 1 half-periods over the n samples
+    (n · dt), so it equals the nominal value when every block holds `reps_per_block`
+    samples. A mismatch means the blocks had a different length.
+- **Dead time.** Both values are in stitched sample time. The stitched `t_us` leaves
+  out the dead time between block programs (Python rebuild, load and start of every
+  block). In wall-clock time the square wave is therefore slower and
+  uneven. `chunk_wall_clock_starts` holds the block start times.
+
 ## Findings & notes
 
 - Loopback on the RFSoC, 2026-05-16, all four checks passed. Bugs found then:

@@ -11,6 +11,7 @@ import os
 
 import numpy as np
 
+from qicklab.analysis.zero_span_checks import verify_modulation
 from qicklab.runs.zero_span_validation import (
     ANALYSIS_VERSION,
     CrossRunComparison,
@@ -137,6 +138,66 @@ def test_run_modulation_check(tmp_path):
         meta = json.load(fh)
     assert meta["stage"] == "3_modulation_check"
     assert meta["mode"] == "strobe"
+
+
+class _RepsFakeExp(_StrobeFakeExp):
+    """Like ZeroSpanParity: set_qubit_gain re-syncs cfg["reps"] from cfg["reps_per_chunk"]
+    and the program returns cfg["reps"] samples per acquire()."""
+
+    def set_qubit_gain(self, gain):
+        self.cfg["qubit_gain"] = gain
+        self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
+        self._n = self.cfg["reps"]
+
+
+def _modulation_sidecar(d):
+    sidecars = [
+        f for f in os.listdir(d) if f.startswith("3_modulation_check") and f.endswith(".json")
+    ]
+    assert len(sidecars) == 1, sidecars
+    with open(os.path.join(d, sidecars[0])) as fh:
+        return json.load(fh)
+
+
+def test_run_modulation_check_blocks_use_reps_per_block(tmp_path):
+    # 50 Hz at 20 us/sample -> 500 samples per half-period, although the main record's
+    # chunk (reps_per_chunk) is 2000; the chunk size is restored afterwards
+    d = str(tmp_path)
+    sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([5.0, 0.0])}
+    exp = _RepsFakeExp(2000, 20.0, d)
+    res = run_modulation_check(exp, separator=sep, modulation_freq_hz=50.0, n_periods=4, out_dir=d)
+    assert res["acq"]["I"].size == 8 * 500
+    assert res["acq"]["gap_indices"] == [500 * k for k in range(1, 8)]
+    assert exp.cfg["reps_per_chunk"] == 2000 and exp.cfg["reps"] == 2000
+    # measured (transitions + 1 half-periods over n samples) equals nominal exactly
+    assert res["nominal_modulation_freq_hz"] == 50.0
+    assert np.isclose(res["injected_freq_hz"], 50.0), res["injected_freq_hz"]
+    meta = _modulation_sidecar(d)
+    assert meta["reps_per_block"] == 500 and meta["modulation_freq_hz"] == 50.0
+    assert meta["scalars"]["nominal_modulation_freq_hz"] == 50.0
+    assert np.isclose(meta["scalars"]["injected_freq_hz"], 50.0)
+
+
+def test_run_modulation_check_keeps_measured_freq_separate(tmp_path):
+    # A program that ignores the requested block length (1000 samples per block instead of
+    # 500) must show up as a measured 25 Hz next to the nominal 50 Hz, not be overwritten.
+    d = str(tmp_path)
+    sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([5.0, 0.0])}
+    exp = _StrobeFakeExp(1000, 20.0, d)
+    res = run_modulation_check(exp, separator=sep, modulation_freq_hz=50.0, n_periods=4, out_dir=d)
+    assert res["nominal_modulation_freq_hz"] == 50.0
+    assert np.isclose(res["injected_freq_hz"], 25.0), res["injected_freq_hz"]
+    meta = _modulation_sidecar(d)
+    assert meta["scalars"]["nominal_modulation_freq_hz"] == 50.0
+    assert np.isclose(meta["scalars"]["injected_freq_hz"], 25.0)
+
+
+def test_verify_modulation_injected_freq_counts_whole_half_periods():
+    # 3 whole periods of 4-sample half-periods at 1 us: f = 1 / (8 us) = 125 kHz exactly
+    ref = np.tile([1.0] * 4 + [0.0] * 4, 3)
+    t = np.arange(ref.size, dtype=float)
+    vm = verify_modulation(5.0 * ref, t, ref)
+    assert np.isclose(vm["injected_freq_hz"], 125e3), vm["injected_freq_hz"]
 
 
 def test_run_static_contrast(tmp_path):

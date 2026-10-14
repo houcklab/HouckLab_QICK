@@ -8,6 +8,7 @@ ZeroSpanParity.save_data round-trip), and modulated_strobe_acquire.
 """
 
 import os
+import re
 import tempfile
 
 import h5py
@@ -58,26 +59,30 @@ class _MetaFakeExp:
 
 
 class _ModFakeExp:
-    def __init__(self, n_per_block, sample_period_us):
+    """Mimics ZeroSpanParity's strobe contract: set_qubit_gain compiles cfg["reps"] (re-synced
+    from cfg["reps_per_chunk"]) into the program, and acquire() returns that many samples."""
+
+    def __init__(self, reps_per_chunk, sample_period_us):
         self.cfg = {
             "qubit_gain": 0,
-            "reps_per_chunk": n_per_block,
-            "reps": n_per_block,
+            "reps_per_chunk": reps_per_chunk,
+            "reps": reps_per_chunk,
             "sample_period_us": sample_period_us,
         }
-        self._n = n_per_block
         self._sp = sample_period_us
+        self.compiled = []  # (gain, reps) of every program build
 
     def set_qubit_gain(self, gain):
         self.cfg["qubit_gain"] = gain
-        self.cfg["reps_per_chunk"] = self._n
-        self.cfg["reps"] = self._n
+        if "reps_per_chunk" in self.cfg:
+            self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
+        self.compiled.append((gain, int(self.cfg["reps"])))
 
     def acquire(self, progress=False):
-        g = self.cfg["qubit_gain"]
-        I = np.full(self._n, 5.0 if g > 0 else 0.0)
-        Q = np.zeros(self._n)
-        t = np.arange(self._n) * self._sp
+        g, n = self.compiled[-1]
+        I = np.full(n, 5.0 if g > 0 else 0.0)
+        Q = np.zeros(n)
+        t = np.arange(n) * self._sp
         return {
             "I": I,
             "Q": Q,
@@ -255,10 +260,13 @@ def test_save_data_persists_chunked_acquire_metadata():
 
 
 def test_modulated_strobe_acquire():
+    # reps_per_chunk (the main record's chunk) deliberately differs from reps_per_block
     n_per, sp = 500, 20.0
-    exp = _ModFakeExp(n_per, sp)
+    exp = _ModFakeExp(10000, sp)
     schedule = [100, 0] * 4  # 4 periods, on=100/off=0
     acq = modulated_strobe_acquire(exp, schedule, n_per)
+    # every block program is compiled with reps_per_block, not reps_per_chunk
+    assert exp.compiled[: len(schedule)] == [(g, n_per) for g in schedule], exp.compiled
     assert acq["I"].shape == (n_per * len(schedule),), acq["I"].shape
     assert acq["modulation_reference"].shape == acq["I"].shape
     # reference must be 1 exactly where the on-blocks are (I==5.0)
@@ -270,3 +278,72 @@ def test_modulated_strobe_acquire():
     assert acq["block_labels"] == schedule, acq["block_labels"]
     # 500 reps/half-period at 20 us -> half=10 ms -> period 20 ms -> 50 Hz
     assert abs(acq["modulation_freq_hz"] - 50.0) < 1.0, acq["modulation_freq_hz"]
+    # the main-record chunk size is restored, and the program rebuilt with it once, still at the
+    # last gain of the schedule
+    assert exp.cfg["reps_per_chunk"] == 10000 and exp.cfg["reps"] == 10000, exp.cfg
+    assert exp.compiled[len(schedule) :] == [(schedule[-1], 10000)], exp.compiled
+    assert exp.cfg["qubit_gain"] == schedule[-1]
+
+
+def test_modulated_strobe_acquire_restores_reps_on_error():
+    exp = _ModFakeExp(10000, 20.0)
+
+    def _boom(progress=False):
+        raise RuntimeError("acquire failed")
+
+    exp.acquire = _boom
+    with pytest.raises(RuntimeError, match="acquire failed"):
+        modulated_strobe_acquire(exp, [100, 0], 500)
+    assert exp.cfg["reps_per_chunk"] == 10000 and exp.cfg["reps"] == 10000
+    assert exp.compiled == [(100, 500), (100, 10000)], exp.compiled
+
+
+def test_modulated_strobe_acquire_rejects_bad_reps_per_block():
+    exp = _ModFakeExp(10000, 20.0)
+    with pytest.raises(ValueError, match="reps_per_block"):
+        modulated_strobe_acquire(exp, [100, 0], 0)
+    # rule 4: one block is one strobe program, so reps_per_block <= avg_maxlen
+    exp.soccfg = {"readouts": {0: {"avg_maxlen": 16384}}}
+    exp.cfg["ro_chs"] = [0]
+    with pytest.raises(RuntimeError, match="rule 4"):
+        modulated_strobe_acquire(exp, [100, 0], 16385)
+    assert exp.compiled == [] and exp.cfg["reps_per_chunk"] == 10000
+
+
+def test_modulated_strobe_acquire_compiles_reps_per_block_into_real_program():
+    # The real ZeroSpanParity.set_qubit_gain against FakeSocCfg: the strobe program's rep
+    # loop counter (reps - 1, register $14) must be reps_per_block for every block.
+    from qicklab.hardware.board import BaseConfig
+    from tests.regression import capture
+
+    class _Exp:
+        set_qubit_gain = ZeroSpanParity.set_qubit_gain
+
+        def acquire(self, progress=False):
+            asm = self.prog.asm()
+            self.loop_counters.append(re.findall(r"regwi 0, \$14, (\d+);", asm))
+            n = int(self.cfg["reps"])
+            return {"I": np.zeros(n), "Q": np.zeros(n), "t_us": np.arange(n) * 20.0}
+
+    exp = _Exp()
+    exp.soccfg = capture.FakeSocCfg("A")
+    exp.loop_counters = []
+    exp.cfg = dict(
+        BaseConfig,
+        mode="strobe",
+        start_src="internal",
+        read_length=5.0,
+        read_pulse_freq=7000.0,
+        parity_drive_freq=3050.0,
+        qubit_gain=5000,
+        pulse_gain=1000,
+        res_phase=0,
+        sample_period_us=20.0,
+        reps_per_chunk=2000,
+    )
+    acq = modulated_strobe_acquire(exp, [5000, 0, 5000, 0], 1000)
+    assert exp.loop_counters == [["999"]] * 4, exp.loop_counters
+    assert acq["I"].size == 4000
+    assert exp.cfg["reps_per_chunk"] == 2000 and exp.cfg["reps"] == 2000
+    assert re.findall(r"regwi 0, \$14, (\d+);", exp.prog.asm()) == ["1999"]
+    assert exp.cfg["qubit_gain"] == 0

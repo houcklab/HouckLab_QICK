@@ -124,7 +124,9 @@ def run_modulation_check(
     """Stage 3: artificial square-wave modulation sanity gate.
 
     One block = one half-period (explicit factor of 2). Builds an alternating
-    [G_on, 0] schedule, acquires, projects, and verifies recovery.
+    [G_on, 0] schedule, acquires, projects, and verifies recovery. Both frequencies are
+    in stitched sample time, which omits the dead time between block programs
+    (docs/experiments/zero_span_parity.md#stage-3-modulation-timing).
     """
     sp_us = float(experiment.cfg["sample_period_us"])
     g_on = experiment.cfg["qubit_gain"]
@@ -137,7 +139,8 @@ def run_modulation_check(
     vm = verify_modulation(
         cls["scores"], acq["t_us"], acq["modulation_reference"], gap_indices=acq["gap_indices"]
     )
-    vm["injected_freq_hz"] = actual_freq
+    # injected_freq_hz stays the value measured from the reference transitions; nominal kept apart
+    vm["nominal_modulation_freq_hz"] = actual_freq
     arrays = {
         "I": acq["I"],
         "Q": acq["Q"],

@@ -146,40 +146,78 @@ def chunked_acquire(experiment, n_chunks, progress=False):
     return stitched
 
 
+def _check_reps_per_block(experiment, reps_per_block):
+    """Raise unless 1 <= reps_per_block <= avg_maxlen (zero_span_parity rule 4)."""
+    if reps_per_block < 1:
+        raise ValueError(f"reps_per_block must be >= 1, got {reps_per_block}")
+    soccfg = getattr(experiment, "soccfg", None)
+    ro_chs = experiment.cfg.get("ro_chs")
+    if soccfg is None or not ro_chs:
+        return
+    avg_maxlen = int(soccfg["readouts"][ro_chs[0]]["avg_maxlen"])
+    if reps_per_block > avg_maxlen:
+        raise RuntimeError(
+            f"[ZeroSpanParity §5.3 rule 4] reps_per_block={reps_per_block} > "
+            f"avg_maxlen={avg_maxlen} for readout ch {ro_chs[0]}. "
+            f"Shorten the blocks (raise modulation_freq_hz)."
+        )
+
+
 def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress=False):
-    """Acquire one strobe block per entry of `gain_schedule` (set_qubit_gain first) and stitch.
+    """Acquire one strobe block of `reps_per_block` samples per entry of `gain_schedule`
+    (set_qubit_gain first) and stitch.
 
     Contract: docs/concepts/averaging.md#chunked-acquisition-helpers.
     """
+    reps_per_block = int(reps_per_block)
+    _check_reps_per_block(experiment, reps_per_block)
+    cfg = experiment.cfg
+    # set_qubit_gain compiles cfg["reps"] (copied from cfg["reps_per_chunk"] when present):
+    # point both at reps_per_block for the blocks, restore them afterwards
+    saved = {k: cfg[k] for k in ("reps_per_chunk", "reps") if k in cfg}
+    cfg["reps"] = reps_per_block
+    if "reps_per_chunk" in cfg:
+        cfg["reps_per_chunk"] = reps_per_block
     I_parts, Q_parts, t_parts = [], [], []
     ref_parts, gaps, wall_starts = [], [], []
     cum_idx = 0
     cum_offset_us = 0.0
-    sample_period = float(experiment.cfg.get("sample_period_us", 0.0))
+    sample_period = float(cfg.get("sample_period_us", 0.0))
     first_meta = {}
-    for bi, gain in enumerate(gain_schedule):
-        experiment.set_qubit_gain(gain)
-        data = experiment.acquire(progress=False)
-        I_c = np.asarray(data["I"]).ravel()
-        Q_c = np.asarray(data["Q"]).ravel()
-        t_c = np.asarray(data["t_us"], dtype=float).ravel()
-        if bi == 0:
-            for k in _META_KEYS:
-                if k in data:
-                    first_meta[k] = data[k]
-            sample_period = float(data.get("sample_period_us", sample_period) or sample_period)
-        if bi > 0:
-            gaps.append(cum_idx)
-        t_parts.append(t_c + cum_offset_us)
-        if t_c.size >= 2:
-            cum_offset_us = t_parts[-1][-1] + (t_c[1] - t_c[0])
-        else:
-            cum_offset_us = t_parts[-1][-1] + sample_period
-        I_parts.append(I_c)
-        Q_parts.append(Q_c)
-        ref_parts.append(np.full(I_c.size, 1.0 if gain > 0 else 0.0))
-        wall_starts.append(data.get("wall_clock_start"))
-        cum_idx += I_c.size
+    gain_applied = False
+    try:
+        for bi, gain in enumerate(gain_schedule):
+            experiment.set_qubit_gain(gain)
+            gain_applied = True
+            data = experiment.acquire(progress=False)
+            I_c = np.asarray(data["I"]).ravel()
+            Q_c = np.asarray(data["Q"]).ravel()
+            t_c = np.asarray(data["t_us"], dtype=float).ravel()
+            if bi == 0:
+                for k in _META_KEYS:
+                    if k in data:
+                        first_meta[k] = data[k]
+                sample_period = float(data.get("sample_period_us", sample_period) or sample_period)
+            if bi > 0:
+                gaps.append(cum_idx)
+            t_parts.append(t_c + cum_offset_us)
+            if t_c.size >= 2:
+                cum_offset_us = t_parts[-1][-1] + (t_c[1] - t_c[0])
+            else:
+                cum_offset_us = t_parts[-1][-1] + sample_period
+            I_parts.append(I_c)
+            Q_parts.append(Q_c)
+            ref_parts.append(np.full(I_c.size, 1.0 if gain > 0 else 0.0))
+            wall_starts.append(data.get("wall_clock_start"))
+            cum_idx += I_c.size
+    finally:
+        cfg.update(saved)
+        for k in ("reps_per_chunk", "reps"):
+            if k not in saved:
+                cfg.pop(k, None)
+        if gain_applied:
+            # rebuild with the original reps, still at the last gain applied
+            experiment.set_qubit_gain(cfg["qubit_gain"])
     stitched = {
         "I": np.concatenate(I_parts),
         "Q": np.concatenate(Q_parts),
@@ -189,10 +227,10 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
         "block_labels": list(gain_schedule),
         "chunk_wall_clock_starts": wall_starts,
         "n_chunks": len(gain_schedule),
-        "reps_per_block": int(reps_per_block),
+        "reps_per_block": reps_per_block,
         "sample_period_us": sample_period,
         "modulation_freq_hz": (1.0 / (2.0 * reps_per_block * sample_period * 1e-6))
-        if reps_per_block > 0 and sample_period > 0
+        if sample_period > 0
         else float("nan"),
     }
     stitched.update(first_meta)

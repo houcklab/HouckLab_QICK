@@ -49,12 +49,13 @@ def verify_modulation(scores, t_us, modulation_reference, gap_indices=None):
         k = int(np.argmax(np.abs(full)))
         out["correlation"] = float(full[k])
         out["lag_samples"] = int(k - (n - 1))
-    # Injected freq from reference transitions (count half-periods)
+    # Injected freq from reference transitions: transitions + 1 whole half-periods span the
+    # n samples, i.e. n * dt (the record starts and ends on a block boundary)
     dt_us = float(np.median(np.diff(t_us))) if n > 1 else 0.0
-    duration_s = (t_us[-1] - t_us[0]) * 1e-6
+    duration_s = n * dt_us * 1e-6
     transitions = int(np.count_nonzero(np.diff((ref > 0.5).astype(int))))
     if duration_s > 0 and transitions > 0:
-        out["injected_freq_hz"] = (transitions / 2.0) / duration_s
+        out["injected_freq_hz"] = ((transitions + 1) / 2.0) / duration_s
     # Recovered freq from dominant FFT bin (diagnostic only)
     if dt_us > 0 and n > 4:
         freqs = np.fft.rfftfreq(n, d=dt_us * 1e-6)
