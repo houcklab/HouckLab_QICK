@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06 landed).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -88,6 +88,10 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
     display (golden: 660 leaves, all T2R display `sets` in 4 labels; the 5 per-board raised displays now fit)
 
 26. `aefb2214` fix(hmm): F06 — i.i.d.-null likelihood-ratio gate and resolved-rate gate (golden: 0 leaves)
+
+27. `8436b708` fix(runs): F11 — T1-SS calibration in its own cfg (golden: 56 RunT1SS leaves, dead keys gone)
+28. `c65810e8` fix(active_reset): F22 — res_phase wrapped mod 2^b_phase (golden: 0 leaves)
+29. `36344a3c` fix(fitting): F13 — one FFT-seeded Nyquist-bounded Rabi fit (golden: 0 leaves)
 
 ## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
 Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
