@@ -111,6 +111,10 @@ corrective reset flip) is on.
   - A cycle whose sweet spot is not verified is recorded with
     `stage_failed = "sweet_spot_not_verified"` and **no Ramsey is run**.
 - No rate fit is saved: the hysteresis switch count is the output.
+- Not to be confused with the interleaved `validation_controls` of
+  [modified_ramsey](modified_ramsey.md#validation-controls) (path
+  `ModifiedRamsey_Controls`, plural). Those are acquired on their cadence whether or not
+  the parity analysis is enabled; this step has no such switch.
 
 ## Analysis
 

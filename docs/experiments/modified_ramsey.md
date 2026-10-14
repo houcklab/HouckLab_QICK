@@ -171,8 +171,9 @@ What one run does:
    - recalibrates the separator every `ss_recalib_every_n_cycles` cycles;
    - acquires the record;
    - runs the continuous analysis (if `parity_analysis_enabled`);
-   - every `validation_controls_every_n_cycles` cycles, acquires and analyses each
-     control;
+   - every `validation_controls_every_n_cycles` cycles, acquires and saves each
+     control, and analyses it if `parity_analysis_enabled` (see
+     [validation controls](#validation-controls));
    - writes the legacy threshold diagnostics.
 4. The run **never moves the yoko**. The voltage is read once, for provenance only.
 
@@ -204,7 +205,7 @@ keys (`df`, `f_ge`, mapping probabilities) resolve from the device in qicklab.
 | `reset_readout_relax_delay` | 5.0 | µs | ≥ ~6/κ. Code fallback 1.0. |
 | `reset_read_latency_us` | 0.5 (code fallback) | µs | Stall before the reset `read`; floor 0.5, `reset_readout_relax_delay` must exceed it by ≥ 0.2. Forwarded only when set. See [active_reset](active_reset.md#read-latency). |
 | `post_reset_wait` | 0.0 | µs | Settle time after reset. |
-| `parity_analysis_enabled` | False | bool | Run the HMM/ACF/PSD analysis per cycle. Code fallback True. |
+| `parity_analysis_enabled` | False | bool | Run the HMM/ACF/PSD analysis per cycle (record and controls). Controls are acquired either way. Code fallback True. |
 | `expected_parity_dwell_ms` | 2.5 | ms | HMM initial rate (1/dwell). Also sets the drift-window safety check. |
 | `drift_window_ms` | 200.0 | ms | Rolling-mean drift window (≥ 20× dwell). |
 | `hmm_symmetric` | True | bool | Fit one symmetric rate. |
@@ -244,18 +245,21 @@ Per cycle:
     `reset_readout_relax_delay_us`, `post_reset_wait_us`;
   - throughput diagnostics: `streamer_elapsed_s`, `streamer_average_rep_period_us`.
 - **png** `…_IQ.png` and **json** (the cfg, including `modified_ramsey_timing` and,
-  for controls, the string `mr_control_type`).
+  for controls, the string `mr_control_type`, plus `mr_parent_record` (the parent
+  record's h5 path) and `mr_parent_cycle_idx`).
 - **Analysis files** in `<outer>/ModifiedRamsey/<YYYY_MM_DD>/` with base
   `Cycle_<nnn>_MR_<ts>`:
   - `_continuous_analysis.json` and `_continuous_analysis.h5` (`v_projected`,
     `v_corrected`, `drift`, `t_s`, `posterior_state1`, `viterbi_path`, summary
     attrs);
   - plots `_continuous_{calibration,projected_trace,hmm,acf_psd,rate_vs_bin,dwells,reset_success}.png`;
-  - per control, the same files with `_<control>`; plus `_control_comparison.json`;
+  - per control, the same files with `_<control>`; plus `_control_comparison.json`
+    (analysis on) or `_controls_index.json` (analysis off: `cycle_idx`,
+    `parent_record`, `controls` = control type → h5 path, `skipped` with reasons);
   - legacy diagnostics: `_iq_labeled_apriori.png`, `_single_shot_binary.png`,
     `_averaged_population.png`, `.npz`, `_config.json`;
   - one `CycleSummary_<ts>.json` per run.
-- Control records go to `ModifiedRamsey_Controls/` (h5 + json, no png).
+- Control records go to `ModifiedRamsey_Controls/` (h5, `_IQ.png`, json).
 - **The fitted rates are saved only in the analysis sidecars and the cycle summary.**
   They are not in the raw h5.
 
@@ -346,6 +350,23 @@ diagnostics only.
 - the parity record is identifiable and has a finite ACF amplitude;
 - at least one decisive check ran and passed;
 - no requested control was skipped as infeasible.
+
+### Validation controls
+
+On every cycle with `cycle_idx % validation_controls_every_n_cycles == 0` the run
+acquires each control in `validation_controls` right after the parity record, with the
+same cfg except the control's change. **Acquisition does not depend on
+`parity_analysis_enabled`**: that flag only decides whether the record and the
+controls are analysed online. A control that `plan_parity_mapping` rejects is skipped
+and listed with its reason; a notice is printed when every control was skipped.
+
+- Analysis on: each control is analysed with the parity record's gate and the result
+  goes to `_control_comparison.json`.
+- Analysis off (the CSTQ03 runner): a notice is printed and `_controls_index.json`
+  pairs the controls with the parent record, for offline analysis. Each control's cfg
+  also carries `mr_parent_record` and `mr_parent_cycle_idx`.
+
+A non-positive `validation_controls_every_n_cycles` raises ValueError in either case.
 
 ### Dwell-count statistics
 
@@ -520,4 +541,6 @@ diagnostic (analog SNR 0.91) found incomplete inter-shot reset:
   branches (see [active_reset](active_reset.md#known-issues)).
 - `save_data()` with no argument raises.
 - `parity_analysis_enabled = False` in the CSTQ03 runner: no rates are computed
-  online, only the raw records and legacy plots.
+  online, only the raw records, the control records and legacy plots.
+- Before 2026-10, the controls were acquired only when `parity_analysis_enabled` was
+  True, so CSTQ03 runs with the analysis off have **no control records**.

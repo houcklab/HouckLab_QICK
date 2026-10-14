@@ -162,7 +162,8 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
         if ModifiedRamsey_params.get("hmm_min_emission_snr") is not None:
             hmm_kwargs_mr["min_emission_snr"] = float(ModifiedRamsey_params["hmm_min_emission_snr"])
         continuous_mr = None
-        if ModifiedRamsey_params.get("parity_analysis_enabled", True):
+        analysis_enabled_mr = ModifiedRamsey_params.get("parity_analysis_enabled", True)
+        if analysis_enabled_mr:
             continuous_mr = analyze_modified_ramsey_record(
                 raw_i_mr,
                 raw_q_mr,
@@ -190,75 +191,91 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
                 f"gamma={continuous_mr['summary']['gamma01_hz']} Hz"
             )
 
-            control_names_mr = tuple(ModifiedRamsey_params.get("validation_controls", ()))
-            control_every_mr = int(
-                ModifiedRamsey_params.get("validation_controls_every_n_cycles", 1)
-            )
-            if control_every_mr <= 0:
-                raise ValueError("validation_controls_every_n_cycles must be positive")
-            if control_names_mr and cycle_idx_mr % control_every_mr == 0:
-                analyzed_controls_mr = []
-                skipped_controls_mr = []
-                for control_mr in build_control_variants(
-                    config_mr,
-                    include=control_names_mr,
-                    tau_offset_frac=ModifiedRamsey_params.get("control_tau_offset_frac", 0.25),
-                    detuning_mhz=ModifiedRamsey_params.get("control_detuning_mhz"),
-                ):
-                    if control_mr["cfg"] is None:
-                        skipped_controls_mr.append(
-                            {
-                                "control_type": control_mr["control_type"],
-                                "reason": control_mr["skip_reason"],
-                            }
-                        )
-                        continue
-                    control_cfg_mr = control_mr["cfg"]
-                    control_timing_mr = modified_ramsey_timing(ctx.soccfg, control_cfg_mr)
-                    control_cfg_mr["modified_ramsey_timing"] = control_timing_mr
-                    control_inst_mr = ModifiedRamsey(
-                        path="ModifiedRamsey_Controls",
-                        cfg=control_cfg_mr,
-                        soc=ctx.soc,
-                        soccfg=ctx.soccfg,
-                        outerFolder=ctx.outerFolder,
-                    )
-                    control_data_mr = ModifiedRamsey.acquire(control_inst_mr)
-                    ModifiedRamsey.save_data(control_inst_mr, control_data_mr)
-                    ModifiedRamsey.save_config(control_inst_mr)
-                    control_type_mr = control_mr["control_type"]
-                    control_analysis_mr = analyze_modified_ramsey_record(
-                        control_data_mr["data"]["shots_i"],
-                        control_data_mr["data"]["shots_q"],
-                        control_data_mr["data"]["scheduled_rep_period_us"] * 1e-6,
-                        analog_cal_mr,
-                        drift_timescale_s=(
-                            ModifiedRamsey_params.get("drift_window_ms", 200.0) * 1e-3
-                        ),
-                        expected_dwell_s=(
-                            ModifiedRamsey_params.get("expected_parity_dwell_ms", 2.5) * 1e-3
-                        ),
-                        symmetric_hmm=ModifiedRamsey_params.get("hmm_symmetric", True),
-                        n_boot=ModifiedRamsey_params.get("hmm_bootstrap_samples", 0),
-                        mapping_probabilities=mapping_probabilities_mr,
-                        mapping_probabilities_calibrated=ModifiedRamsey_params.get(
-                            "mapping_probabilities_calibrated", False
-                        ),
-                        reset_I=control_data_mr["data"].get("reset_shots_i"),
-                        reset_Q=control_data_mr["data"].get("reset_shots_q"),
-                        out_dir=save_dir_mr,
-                        base_name=(os.path.basename(base_mr) + f"_{control_type_mr}"),
-                        hmm_kwargs=hmm_kwargs_mr,  # same gate as the parity record
-                    )
-                    analyzed_controls_mr.append(
+        # controls are acquired whatever parity_analysis_enabled says; only their analysis
+        # is optional (docs/experiments/modified_ramsey.md#validation-controls)
+        control_names_mr = tuple(ModifiedRamsey_params.get("validation_controls", ()))
+        control_every_mr = int(ModifiedRamsey_params.get("validation_controls_every_n_cycles", 1))
+        if control_every_mr <= 0:
+            raise ValueError("validation_controls_every_n_cycles must be positive")
+        if control_names_mr and cycle_idx_mr % control_every_mr == 0:
+            if not analysis_enabled_mr:
+                print(
+                    "[ModifiedRamsey] parity_analysis_enabled=False: validation controls "
+                    f"{list(control_names_mr)} are acquired and saved but not analysed "
+                    f"(index: {os.path.basename(base_mr)}_controls_index.json)"
+                )
+            analyzed_controls_mr = []
+            skipped_controls_mr = []
+            acquired_controls_mr = {}
+            for control_mr in build_control_variants(
+                config_mr,
+                include=control_names_mr,
+                tau_offset_frac=ModifiedRamsey_params.get("control_tau_offset_frac", 0.25),
+                detuning_mhz=ModifiedRamsey_params.get("control_detuning_mhz"),
+            ):
+                if control_mr["cfg"] is None:
+                    skipped_controls_mr.append(
                         {
-                            "label": control_type_mr,
-                            "control_type": control_type_mr,
-                            "hmm": control_analysis_mr["hmm"],
-                            "acf": control_analysis_mr["acf"],
-                            "occupancy_state1": control_analysis_mr["summary"]["occupancy_state1"],
+                            "control_type": control_mr["control_type"],
+                            "reason": control_mr["skip_reason"],
                         }
                     )
+                    continue
+                control_cfg_mr = control_mr["cfg"]
+                # link to the parent record, for pairing offline
+                control_cfg_mr["mr_parent_record"] = Instance_mr.fname
+                control_cfg_mr["mr_parent_cycle_idx"] = cycle_idx_mr
+                control_timing_mr = modified_ramsey_timing(ctx.soccfg, control_cfg_mr)
+                control_cfg_mr["modified_ramsey_timing"] = control_timing_mr
+                control_inst_mr = ModifiedRamsey(
+                    path="ModifiedRamsey_Controls",
+                    cfg=control_cfg_mr,
+                    soc=ctx.soc,
+                    soccfg=ctx.soccfg,
+                    outerFolder=ctx.outerFolder,
+                )
+                control_data_mr = ModifiedRamsey.acquire(control_inst_mr)
+                finish(ModifiedRamsey, control_inst_mr, control_data_mr, plotDisp=False, figNum=12)
+                control_type_mr = control_mr["control_type"]
+                acquired_controls_mr[control_type_mr] = control_inst_mr.fname
+                if not analysis_enabled_mr:
+                    continue
+                control_analysis_mr = analyze_modified_ramsey_record(
+                    control_data_mr["data"]["shots_i"],
+                    control_data_mr["data"]["shots_q"],
+                    control_data_mr["data"]["scheduled_rep_period_us"] * 1e-6,
+                    analog_cal_mr,
+                    drift_timescale_s=(ModifiedRamsey_params.get("drift_window_ms", 200.0) * 1e-3),
+                    expected_dwell_s=(
+                        ModifiedRamsey_params.get("expected_parity_dwell_ms", 2.5) * 1e-3
+                    ),
+                    symmetric_hmm=ModifiedRamsey_params.get("hmm_symmetric", True),
+                    n_boot=ModifiedRamsey_params.get("hmm_bootstrap_samples", 0),
+                    mapping_probabilities=mapping_probabilities_mr,
+                    mapping_probabilities_calibrated=ModifiedRamsey_params.get(
+                        "mapping_probabilities_calibrated", False
+                    ),
+                    reset_I=control_data_mr["data"].get("reset_shots_i"),
+                    reset_Q=control_data_mr["data"].get("reset_shots_q"),
+                    out_dir=save_dir_mr,
+                    base_name=(os.path.basename(base_mr) + f"_{control_type_mr}"),
+                    hmm_kwargs=hmm_kwargs_mr,  # same gate as the parity record
+                )
+                analyzed_controls_mr.append(
+                    {
+                        "label": control_type_mr,
+                        "control_type": control_type_mr,
+                        "hmm": control_analysis_mr["hmm"],
+                        "acf": control_analysis_mr["acf"],
+                        "occupancy_state1": control_analysis_mr["summary"]["occupancy_state1"],
+                    }
+                )
+            if not acquired_controls_mr:
+                print(
+                    "[ModifiedRamsey] every validation control was skipped as infeasible: "
+                    + "; ".join(f"{s['control_type']}: {s['reason']}" for s in skipped_controls_mr)
+                )
+            if analysis_enabled_mr:
                 comparison_mr = compare_parity_controls(
                     {
                         "label": "parity",
@@ -273,6 +290,18 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
                     comparison_mr["all_expected"] = False
                 with open(base_mr + "_control_comparison.json", "w") as f:
                     json.dump(comparison_mr, f, indent=2, default=float)
+            else:
+                with open(base_mr + "_controls_index.json", "w") as f:
+                    json.dump(
+                        {
+                            "cycle_idx": cycle_idx_mr,
+                            "parent_record": Instance_mr.fname,
+                            "controls": acquired_controls_mr,
+                            "skipped": skipped_controls_mr,
+                        },
+                        f,
+                        indent=2,
+                    )
 
         # hard-threshold diagnostics only; rates come from the unthresholded analysis above
         average_n_shots_mr = ModifiedRamsey_params.get("average_n_shots", 25)

@@ -197,9 +197,13 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
   pass `mixer_freq`. The mixer branches of QICK are therefore not exercised.
 * **Only the first 4 instantiations of each (class, path) pair are captured.**
   Later loop iterations are assumed to repeat the pattern. In particular a
-  periodic variant inside a loop (ModifiedRamsey validation controls every 10
-  cycles, re-calibrations) is not captured if it shares class and path with an
-  already-saturated kind. Runs end after 8 consecutive skips.
+  periodic variant inside a loop (e.g. the every-10-cycles readout
+  re-calibration) is not captured if it shares class and path with an
+  already-saturated kind. The ModifiedRamsey validation controls have a path of
+  their own (`ModifiedRamsey_Controls`), so the cycle-0 and cycle-10
+  `flip_final_pi2` controls are captured; `echo_null` is infeasible with the
+  file's parameters, so the run lists it among its skipped controls and never
+  instantiates it. Runs end after 8 consecutive skips.
 * **Some stages are still not reached** with the file's parameters:
   `RunModifiedRamsey_Control` spends its budget in the sweet-spot search (use
   `[verified]`), `RunAutoCoherence` in the readout-gain optimisation (use
@@ -251,8 +255,8 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunSpecGainLengthSweep` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
 | `RunChiShift` | completed | 1 | 0 | ChiShift x1 | 202 |
 | `Run2ToneChargeDispersionQuasiCW` | stopped_at_budget | 8 | 13 | QubitSpecSliceFF x4, ChargeDispersionQuasiCW x4 | 8 |
-| `RunModifiedRamsey` | stopped_at_budget | 8 | 10 | SingleShotProgramFFMUX x4, ModifiedRamsey x4 | 12 |
-| `RunModifiedRamsey[no_reset]` | stopped_at_budget | 7 | 15 | SingleShotProgramFFMUX x3, ModifiedRamsey x4 | 10 |
+| `RunModifiedRamsey` | stopped_at_budget | 10 | 18 | SingleShotProgramFFMUX x4, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 14 |
+| `RunModifiedRamsey[no_reset]` | stopped_at_budget | 9 | 16 | SingleShotProgramFFMUX x3, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 12 |
 | `RunModifiedRamsey_Control` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
 | `RunModifiedRamsey_Control[verified]` | stopped_at_budget | 8 | 9 | QubitSpecSliceFF x4, ModifiedRamsey x4 | 8 |
 | `RunChargeDispersionQuasiCW` | completed | 1 | 0 | ChargeDispersionQuasiCW x1 | 1 |
