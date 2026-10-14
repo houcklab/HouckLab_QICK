@@ -134,38 +134,96 @@ def cos_func(x, y0, A, P, phi):
     return y0 + A * np.cos(2 * np.pi * x / P + phi)
 
 
+RABI_FLAG_PHASE = 1  # |phi mod pi| > 0.3 rad: the trace does not start at an extremum
+RABI_FLAG_PI_OUT_OF_RANGE = 2  # P/2 outside the swept gain range
+RABI_FLAG_UNDERSAMPLED = 4  # fewer than 0.75 periods in the sweep
+
+
+def _rabi_period_seed_fft(x, y, pad=16):
+    """Period at the peak of the zero-padded rFFT of ``y - mean`` (DC bin zeroed); None if
+    undefined. A non-uniform grid is resampled onto a uniform one of the same length."""
+    n = x.size
+    dx = (x[-1] - x[0]) / (n - 1)
+    xu = x[0] + dx * np.arange(n)
+    yu = np.interp(xu, x, y) - np.mean(y)
+    n_fft = int(2 ** np.ceil(np.log2(pad * n)))
+    spec = np.abs(np.fft.rfft(yu, n_fft))
+    spec[0] = 0.0
+    k = int(np.argmax(spec))
+    if k == 0 or spec[k] == 0:
+        return None
+    return 1.0 / np.fft.rfftfreq(n_fft, d=dx)[k]
+
+
 def fit_rabi_cosine(x, y):
-    """Single-start cosine fit used by the amplitude-Rabi experiments; ``pi_gain = P / 2``.
-    See docs/experiments/amplitude_rabi.md for the start values."""
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
+    """Cosine fit ``y0 + A cos(2 pi x / P + phi)`` for amplitude Rabi; ``pi_gain = P / 2``,
+    ``dpi_gain = dP / 2``. Two period seeds (zero-padded FFT peak, and the gain span) times
+    two signs of A, phi = 0; the lowest-residual fit wins. P is bounded below by 2 median
+    grid steps (Nyquist), so an aliased short period cannot win on residual. Raises
+    RuntimeError on flat or too-short data; the quality checks never raise: ``flags`` (list
+    of str) and ``flag_code`` (bitmask of the RABI_FLAG_* constants) report them. See
+    docs/experiments/amplitude_rabi.md."""
+    x_in = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    good = np.isfinite(x_in) & np.isfinite(y)
+    order = np.argsort(x_in[good])
+    x, y = x_in[good][order], y[good][order]
+    if x.size < 5 or x[-1] <= x[0]:
+        raise RuntimeError("Rabi fit needs at least 5 distinct gain points.")
+    x_min, x_max = float(x[0]), float(x[-1])
+    x_span = x_max - x_min
+    y0_guess = float(np.mean(y))
+    A_guess = 0.5 * float(np.max(y) - np.min(y))
+    if A_guess == 0:
+        raise RuntimeError("Flat Rabi data.")
 
-    y0_guess = np.mean(y)
-    A_guess = 0.5 * (np.max(y) - np.min(y))
+    # Nyquist floor on P: a period shorter than 2 grid steps is an alias of a longer one with
+    # the same residual (the -A start can land on it), so it is excluded from the fit.
+    P_min = 2.0 * float(np.median(np.diff(np.unique(x))))
+    seeds = [max(x_span, 1.0)]
+    p_fft = _rabi_period_seed_fft(x, y)
+    if p_fft is not None:
+        seeds.append(p_fft)
+    seeds = [max(P_guess, 1.01 * P_min) for P_guess in seeds]
 
-    x_span = np.max(x) - np.min(x)
-    P_guess = max(x_span, 1.0)
-
-    phi_guess = 0.0
-
-    p0 = [y0_guess, A_guess, P_guess, phi_guess]
-
-    bounds = ([-np.inf, -np.inf, 1e-9, -4 * np.pi], [np.inf, np.inf, np.inf, 4 * np.pi])
-
-    popt, pcov = curve_fit(cos_func, x, y, p0=p0, bounds=bounds, maxfev=50000)
+    bounds = ([-np.inf, -np.inf, P_min, -4 * np.pi], [np.inf, np.inf, np.inf, 4 * np.pi])
+    best = None
+    for P_guess in seeds:
+        for A_sign in (1.0, -1.0):
+            p0 = [y0_guess, A_sign * A_guess, P_guess, 0.0]
+            try:
+                popt, pcov = curve_fit(cos_func, x, y, p0=p0, bounds=bounds, maxfev=50000)
+            except (RuntimeError, ValueError):
+                continue
+            sse = float(np.sum((y - cos_func(x, *popt)) ** 2))
+            if best is None or sse < best[0]:
+                best = (sse, popt, pcov)
+    if best is None:
+        raise RuntimeError("All Rabi cosine fits failed.")
+    _, popt, pcov = best
     perr = np.sqrt(np.diag(pcov))
-
-    yfit = cos_func(x, *popt)
 
     y0_fit, A_fit, P_fit, phi_fit = popt
     dy0_fit, dA_fit, dP_fit, dphi_fit = perr
-
     pi_gain = P_fit / 2.0
+    n_periods = x_span / P_fit
+
+    flags, flag_code = [], 0
+    phi_mod = (phi_fit + np.pi / 2) % np.pi - np.pi / 2  # phi wrapped modulo pi
+    if abs(phi_mod) > 0.3:
+        flag_code |= RABI_FLAG_PHASE
+        flags.append(f"phase {phi_fit:.2f} rad is {phi_mod:+.2f} rad from 0 or pi")
+    if not x_min <= pi_gain <= x_max:
+        flag_code |= RABI_FLAG_PI_OUT_OF_RANGE
+        flags.append(f"pi gain {pi_gain:.4g} outside the sweep [{x_min:.4g}, {x_max:.4g}]")
+    if n_periods < 0.75:
+        flag_code |= RABI_FLAG_UNDERSAMPLED
+        flags.append(f"only {n_periods:.2f} periods in the sweep (< 0.75)")
 
     return {
         "popt": popt,
         "perr": perr,
-        "yfit": yfit,
+        "yfit": cos_func(x_in, *popt),
         "y0": y0_fit,
         "A": A_fit,
         "P": P_fit,
@@ -175,94 +233,10 @@ def fit_rabi_cosine(x, y):
         "dP": dP_fit,
         "dphi": dphi_fit,
         "pi_gain": pi_gain,
-    }
-
-
-def fit_rabi_cosine_gridsearch(x, y):
-    x = np.asarray(x, dtype=float).ravel()
-    y = np.asarray(y, dtype=float).ravel()
-
-    order = np.argsort(x)
-    x = x[order]
-    y = y[order]
-
-    x_span = np.max(x) - np.min(x)
-    dx = np.median(np.diff(x))
-    y0_guess = np.mean(y)
-    A_guess = 0.5 * (np.max(y) - np.min(y))
-
-    if A_guess == 0 or x_span <= 0:
-        raise RuntimeError("Flat or invalid Rabi data.")
-
-    # Try many initial period guesses; this is much more robust than one FFT guess.
-    period_guesses = np.linspace(max(4 * dx, x_span / 8), 4 * x_span, 40)
-
-    best = None
-    for P_guess in period_guesses:
-        for phi_guess in np.linspace(-np.pi, np.pi, 9):
-            for A_sign in [1, -1]:
-                p0 = [y0_guess, A_sign * A_guess, P_guess, phi_guess]
-
-                try:
-                    popt, pcov = curve_fit(
-                        cos_func,
-                        x,
-                        y,
-                        p0=p0,
-                        bounds=(
-                            [-np.inf, -np.inf, 2 * dx, -8 * np.pi],
-                            [np.inf, np.inf, 8 * x_span, 8 * np.pi],
-                        ),
-                        maxfev=20000,
-                    )
-
-                    yfit = cos_func(x, *popt)
-                    err = np.mean((y - yfit) ** 2)
-
-                    if best is None or err < best["err"]:
-                        best = {
-                            "popt": popt,
-                            "pcov": pcov,
-                            "err": err,
-                            "yfit": yfit,
-                        }
-                except Exception:
-                    pass
-
-    if best is None:
-        raise RuntimeError("All Rabi cosine fits failed.")
-
-    popt = best["popt"]
-    pcov = best["pcov"]
-    perr = np.sqrt(np.diag(pcov))
-
-    y0_fit, A_fit, P_fit, phi_fit = popt
-
-    x_dense = np.linspace(np.min(x), np.max(x), 5000)
-    y_dense = cos_func(x_dense, *popt)
-
-    # Pi gain = first opposite extremum relative to starting point.
-    if y_dense[0] > y0_fit:
-        pi_gain = x_dense[np.argmin(y_dense)]
-    else:
-        pi_gain = x_dense[np.argmax(y_dense)]
-
-    return {
-        "popt": popt,
-        "perr": perr,
-        "yfit": best["yfit"],
-        "x_fit_dense": x_dense,
-        "y_fit_dense": y_dense,
-        "y0": y0_fit,
-        "A": A_fit,
-        "P": P_fit,
-        "phi": phi_fit,
-        "dy0": perr[0],
-        "dA": perr[1],
-        "dP": perr[2],
-        "dphi": perr[3],
-        "pi_gain": pi_gain,
-        "fit_error": best["err"],
+        "dpi_gain": dP_fit / 2.0,
+        "n_periods": n_periods,
+        "flags": flags,
+        "flag_code": flag_code,
     }
 
 

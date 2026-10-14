@@ -72,7 +72,7 @@ Collisions resolved with distinct names (all `renamed` in 3a unless stated):
 |---|---|---|
 | `mAmplitudeRabiFF_noUpdate.AmplitudeRabiFFProg` | `experiments.rabi.AmplitudeRabiPointProg` | two `AmplitudeRabiFFProg` in `rabi.py` |
 | `mT1_SS.T1Program` | `experiments.t1_single_shot.T1SingleShotProgram` | vs `mT1FF.T1Program` |
-| `utils.fit_rabi_cosine` | `analysis.fitting.fit_rabi_cosine_gridsearch` | the local P/2 `fit_rabi_cosine` (rabi.py) is the one actually used |
+| `utils.fit_rabi_cosine` | `analysis.fitting.fit_rabi_cosine_gridsearch` | the local P/2 `fit_rabi_cosine` (rabi.py) is the one actually used; deleted after 3b (research review F13: one FFT-seeded `fit_rabi_cosine`) |
 | `mUndrivenSingleShot.rate_vs_bin_size` / `autocorrelation_rate` | `analysis.rates.rate_vs_bin_size_us` / `autocorrelation_rate_us` | vs MRP `rate_vs_bin_size` (seconds) |
 | `hist_analysis_opt.hist_process` | `analysis.readout.hist_process_per_class` | `merged` in 3b into `hist_process(normalize="per_class")` |
 | `mAutoCoherence.run_auto_coherence` | `runs.auto_coherence._run_auto_coherence` | the `runs/coherence` wrapper of the same name lands in the same module (it already imports it as `_run_auto_coherence`) |

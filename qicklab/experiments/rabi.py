@@ -10,6 +10,12 @@ from qicklab.analysis.iq import min_q_range_phase
 from qicklab.core.experiment import ExperimentClass
 
 
+def _print_fit_flags(label, fit):
+    """Print the quality flags of a fit_rabi_cosine result (docs/experiments/amplitude_rabi.md)."""
+    for flag in fit["flags"]:
+        print(f"  [warn] {label} Rabi fit: {flag} -- check the pi gain by eye.")
+
+
 def iq_rotation_angle(signal_trace):
     """Angle (rad) of the principal (maximum-variance) axis of an IQ trace; rotating by
     -angle puts the Rabi oscillation in I. Not a cable-winding correction:
@@ -212,7 +218,9 @@ class AmplitudeRabiFF(ExperimentClass):
                 fit_i = fit_rabi_cosine(x_pts, avgi)
                 data["data"]["fit_i_popt"] = np.asarray(fit_i["popt"])
                 data["data"]["fit_i_pi_gain"] = np.asarray(fit_i["pi_gain"])
+                data["data"]["fit_i_flag"] = np.asarray(fit_i["flag_code"])
                 print(f"I fit: P={fit_i['P']:.3f}, pi={fit_i['pi_gain']:.3f}")
+                _print_fit_flags("I", fit_i)
             except Exception as err:
                 print(f"I fit failed: {err}")
 
@@ -220,7 +228,9 @@ class AmplitudeRabiFF(ExperimentClass):
                 fit_q = fit_rabi_cosine(x_pts, avgq)
                 data["data"]["fit_q_popt"] = np.asarray(fit_q["popt"])
                 data["data"]["fit_q_pi_gain"] = np.asarray(fit_q["pi_gain"])
+                data["data"]["fit_q_flag"] = np.asarray(fit_q["flag_code"])
                 print(f"Q fit: P={fit_q['P']:.3f}, pi={fit_q['pi_gain']:.3f}")
+                _print_fit_flags("Q", fit_q)
             except Exception as err:
                 print(f"Q fit failed: {err}")
 
@@ -440,21 +450,25 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
         fit_i = fit_q = None
         if fit:
-            fit_i = fit_rabi_cosine(x_pts, avgi)
-            fit_q = fit_rabi_cosine(x_pts, avgq)
-
             print("Raw extrema:")
             print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
             print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
 
             print("\nCosine fit results:")
-            print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
-            print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
-            print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
-
-            print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
-            print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
-            print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
+            fits = []
+            for lbl, y in (("I", avgi), ("Q", avgq)):
+                try:
+                    f = fit_rabi_cosine(x_pts, y)
+                except Exception as err:
+                    print(f"  {lbl} fit failed: {err}")
+                    fits.append(None)
+                    continue
+                print(f"  {lbl} fit period P       = {f['P']:.3f} ± {f['dP']:.3f}")
+                print(f"  {lbl} fit phase phi      = {f['phi']:.3f} ± {f['dphi']:.3f}")
+                print(f"  {lbl}-derived pi gain    = {f['pi_gain']:.3f} ± {f['dpi_gain']:.3f}")
+                _print_fit_flags(lbl, f)
+                fits.append(f)
+            fit_i, fit_q = fits
 
         self.fit_i = fit_i
         self.fit_q = fit_q
@@ -466,23 +480,20 @@ class AmplitudeRabiFF_N(ExperimentClass):
         plt.plot(x_pts, avgi, "o", label="I data", color="orange")
         plt.plot(x_pts, avgq, "o", label="Q data", color="blue")
 
-        if fit:
-            plt.plot(
-                x_pts, fit_i["yfit"], "-", label=f"I fit, pi={fit_i['pi_gain']:.1f}", color="orange"
-            )
-            plt.plot(
-                x_pts, fit_q["yfit"], "-", label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color="blue"
-            )
+        for f, color, lbl in ((fit_i, "orange", "I"), (fit_q, "blue", "Q")):
+            if f is None:
+                continue
+            plt.plot(x_pts, f["yfit"], "-", label=f"{lbl} fit, pi={f['pi_gain']:.1f}", color=color)
 
             # A failed fit has a runaway period: hide out-of-range markers (amplitude_rabi.md).
-            for f, color, lbl in ((fit_i, "orange", "I pi gain"), (fit_q, "blue", "Q pi gain")):
-                if x_min <= f["pi_gain"] <= x_max:
-                    plt.axvline(f["pi_gain"], linestyle="--", color=color, alpha=0.7, label=lbl)
-                else:
-                    print(
-                        f"  [warn] {lbl} = {f['pi_gain']:.3g} outside swept range "
-                        f"[{x_min:.0f}, {x_max:.0f}] -- fit likely failed, marker hidden."
-                    )
+            lbl = f"{lbl} pi gain"
+            if x_min <= f["pi_gain"] <= x_max:
+                plt.axvline(f["pi_gain"], linestyle="--", color=color, alpha=0.7, label=lbl)
+            else:
+                print(
+                    f"  [warn] {lbl} = {f['pi_gain']:.3g} outside swept range "
+                    f"[{x_min:.0f}, {x_max:.0f}] -- fit likely failed, marker hidden."
+                )
 
         plt.xlim(x_min, x_max)
         plt.ylabel("a.u.")

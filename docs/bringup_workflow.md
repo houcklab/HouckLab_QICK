@@ -134,9 +134,10 @@ Step: `amplitude_rabi` (AmplitudeRabiFF; AmplitudeRabiFF_N, a software sweep, wh
 | `reps`, `rounds`, `relax_delay` | 10, 10, 3000 us | relax >= 3-5 x T1 once T1 is known |
 | `Qubit.sigma` | 0.02-0.6 us across Q1-Q6 | shorter sigma needs more gain |
 
-Good: at least half an oscillation inside the sweep (the fit's period guess is the sweep span),
-with the pi point well inside. CSTQ03 pi gains are 3800-5000 at sigma 0.02-0.6 us. A failed fit
-returns a runaway period and the pi marker disappears off the plot. AutoCoherence's Rabi stage
+Good: at least about 0.75-1 period inside the sweep (fewer is flagged, bit 4; see the
+Analysis section of [amplitude_rabi](experiments/amplitude_rabi.md#analysis)), with the pi point
+well inside. CSTQ03 pi gains are 3800-5000 at sigma 0.02-0.6 us. A failed fit
+returns a runaway period (flags 2 and 4) and the pi marker disappears off the plot. AutoCoherence's Rabi stage
 uses `rabi_max_gain` 12000, 201 steps, and shrinks sigma by 0.70 when it sees more than 3
 oscillation peaks.
 

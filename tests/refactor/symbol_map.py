@@ -546,7 +546,7 @@ SYMBOLS = [
     Entry(L + '.Experiments.utils', 'analyze_charge_dispersion', 'qicklab.analysis.spectroscopy', 'analyze_charge_dispersion', 'moved', '3a-ii', 'analysis_and_utils.json: dead (referenced nowhere); kept per design, 3b deletion needs user OK'),
     Entry(L + '.Experiments.utils', 'choose_next_voltage', 'qicklab.runs.charge_sweep', 'choose_next_voltage', 'moved', '3a-ii', ''),
     Entry(L + '.Experiments.utils', 'cos_func', 'qicklab.analysis.fitting', 'cos_func', 'moved', '3a-ii', ''),
-    Entry(L + '.Experiments.utils', 'fit_rabi_cosine', 'qicklab.analysis.fitting', 'fit_rabi_cosine_gridsearch', 'renamed', '3a-ii', "the experiments' local P/2 fit_rabi_cosine shadows this one (analysis_and_utils bugs); distinct name keeps both"),
+    Entry(L + '.Experiments.utils', 'fit_rabi_cosine', 'qicklab.analysis.fitting', 'fit_rabi_cosine_gridsearch', 'deleted', '3b', "analysis_and_utils.json: the grid-search fit reported the global extremum (3pi/5pi point) as the pi gain; superseded by the FFT-seeded analysis.fitting.fit_rabi_cosine (research review F13, 2026-10-14)"),
     Entry(L + '.Experiments.utils', 'project_iq_onto_separator', 'qicklab.analysis.iq', 'project_iq_onto_separator', 'moved', '3a-ii', ''),
     Entry(L + '.Experiments.utils', 'pick_parity_drive_freq', 'qicklab.analysis.spectroscopy', 'pick_parity_drive_freq', 'moved', '3a-ii', ''),
     Entry(L + '.Experiments.utils', '_META_KEYS', 'qicklab.core.acquisition', '_META_KEYS', 'moved', '3a-ii', ''),

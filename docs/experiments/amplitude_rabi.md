@@ -94,11 +94,18 @@ The fit (`qicklab.analysis.fitting.fit_rabi_cosine`, also re-exported as
 two period seeds, the peak of the zero-padded (16x) FFT of `y - mean` (DC bin zeroed) and
 the gain span `max(span, 1)`, each with `A = +-(max - min)/2`, `y0 = mean`, `phi = 0`.
 The FFT seed locks onto the right period when the sweep holds one or more periods; the span
-seed covers the sub-period case, where the FFT peak is poorly defined. Bounds: `P >= 1e-9`,
-`|phi| <= 4 pi`. It returns `pi_gain = P/2` and `dpi_gain = dP/2` (the covariance error);
-the P/2 rule needs the response to be periodic in gain (linear drive) and does not depend on
-`phi`. On synthetic traces on the default grid (0..9900, 3 % noise) the pi gain is within
-3 % from 0.75 to several periods in the sweep (`tests/test_fitting_rabi.py`).
+seed covers the sub-period case, where the FFT peak is poorly defined. Bounds:
+`P >= 2 x` the median gain step (the Nyquist limit), `|phi| <= 4 pi`. The lower bound is
+needed: on a sampled grid a period shorter than two steps is an alias of the true one with
+the same residual, and without the bound the `-A` start could converge onto it (seen on
+11 to 51 point grids, about 1 trace in 200 to 500: pi gain ~ 40..270, no flag). It returns
+`pi_gain = P/2` and `dpi_gain = dP/2` (the covariance error); the P/2 rule needs the
+response to be periodic in gain (linear drive) and does not depend on `phi`. On synthetic
+traces on the default grid (0..9900, 3 % noise) the pi gain is within 3 % from 0.75 to
+several periods in the sweep, and on coarse 11 to 41 point grids it is within 3 % from 1.5
+periods up to 4 points per period (`tests/test_fitting_rabi.py`). On a coarse grid near one
+period the error is noise-limited (a 21-point sweep at 0.75 to 1 period misses 3 % about one
+time in five), so read it against `dpi_gain`.
 
 Quality flags (printed as `[warn]` lines, returned as `flags` and the bitmask `flag_code`,
 stored by `AmplitudeRabiFF` as `fit_i_flag` / `fit_q_flag`; they never raise):
@@ -111,12 +118,13 @@ stored by `AmplitudeRabiFF` as `fit_i_flag` / `fit_q_flag`; they never raise):
 
 Failure modes: no visible oscillation (the fit returns a runaway period, flags 2 and 4);
 too small `max_gain` (fewer than 0.75 periods, flag 4, raise `max_gain`); fewer than about 4
-gain points per period (below 2, the Nyquist limit, the period aliases); f_ge off
-resonance (reduced, faster oscillation; the fit still returns its P/2). Before this fit
-(2026-10), the single start `P = span` locked onto a wrong period from about 1.5 periods in
-the sweep, sometimes with a plausible in-range pi gain, and `qicklab.runs.fit_rabi_cosine`
-was a grid search that reported the global extremum (the 3 pi or 5 pi point) instead of
-`P/2`.
+gain points per period (the period is poorly resolved; below 2, the Nyquist limit, the true
+oscillation is under-sampled and the fit, which is bounded at 2 steps, returns an aliased
+longer period: lower `step`); f_ge off resonance (reduced, faster oscillation; the fit
+still returns its P/2). Before this fit (2026-10), the single start `P = span` locked onto
+a wrong period from about 1.5 periods in the sweep, sometimes with a plausible in-range pi
+gain, and `qicklab.runs.fit_rabi_cosine` was a grid search that reported the global
+extremum (the 3 pi or 5 pi point) instead of `P/2`.
 
 ## Findings & notes
 
