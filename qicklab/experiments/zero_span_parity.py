@@ -1,46 +1,7 @@
-"""
-Zero-span two-tone parity-switching acquisition (QICK / RFSoC).
+"""Zero-span two-tone parity-switching acquisition: strobe (per-rep IQ) and decimated
+(raw ADC trace) paths, with fail-fast cfg validation.
 
-This module contains the device-agnostic acquisition code:
-    ZeroSpanParityProgStrobe       (Path A, v1) per-rep IQ via di_buf/dq_buf
-    ZeroSpanParityProgDecimated    (Path B, v2) raw decimated ADC waveform
-    ZeroSpanParity                 ExperimentClass dispatching on cfg["mode"]
-    _validate_cfg                  fail-fast configuration validation (spec §5.3)
-
-cfg keys consumed by ZeroSpanParity:
-
-  === required (all modes) ===
-  mode               "strobe" | "decimated"
-  start_src          "internal" | "external"
-  res_ch, qubit_ch, ro_chs, nqz, qubit_nqz, mixer_freq
-  read_pulse_freq    MHz, parking freq for readout tone
-  parity_drive_freq  MHz, parking freq for qubit tone (one parity peak)
-  qubit_gain, pulse_gain, res_phase
-  adc_trig_offset    us
-  read_length        us
-
-  === required if mode=="strobe" ===
-  sample_period_us   us, sample cadence
-  reps_per_chunk     int, samples per acquire() call (chunking via chunked_acquire)
-
-  === required if mode=="decimated" ===
-  capture_length_us  us, duration of const tone pulse (must cover the readout window)
-  soft_avgs          int, software-averaged rounds (must be 1 unless
-                     allow_soft_avgs=True; >1 destroys parity trajectories)
-  === optional in mode=="decimated" ===
-  n_captures         int, number of outer captures to stitch (default 1).
-                     gap_indices marks the boundaries.
-  allow_soft_avgs    bool, opt-in to soft_avgs > 1 (non-time-resolved).
-
-Validation errors include the spec rule number, the offending value, and the
-violated bound.
-
-NOTE: For decimated mode the time axis t_us is computed from
-soccfg['readouts'][ro_ch]['f_output']. On some firmware revisions this is
-empirically not the true decimated sample rate (see
-_loopback_check_ZeroSpanParity.py). Metadata fields read_length_us,
-capture_length_us, samples_per_capture, and decimated_fs_source are persisted
-so the time axis can be reconstructed post-hoc once the true rate is known.
+cfg contract and the validation rules: docs/experiments/zero_span_parity.md.
 """
 
 import numpy as np
@@ -58,9 +19,6 @@ _DECIMATED_REQUIRED = (
     "capture_length_us",
     "soft_avgs",
 )
-# n_captures is optional; defaults to 1. When >1, _acquire_decimated runs the
-# acquire_decimated() call back-to-back and stitches results with gap_indices,
-# mirroring chunked_acquire semantics for strobe mode.
 _SHARED_REQUIRED = (
     "mode",
     "start_src",
@@ -81,13 +39,8 @@ _SHARED_REQUIRED = (
 
 
 def _validate_cfg(cfg, soccfg):
-    """
-    Fail-fast validation of a ZeroSpanParity cfg dict (spec §5.3 rules 1-5, 8, 9).
-
-    Raises RuntimeError on the first violation found. Each error message names
-    the rule number, the offending value, and the violated bound.
-    """
-    # Presence checks first — easier to debug than indexing errors below.
+    """Raise RuntimeError on the first violated rule (1-5, 8, 9 of
+    docs/experiments/zero_span_parity.md#the-nine-validation-rules)."""
     missing = [k for k in _SHARED_REQUIRED if k not in cfg]
     if missing:
         raise RuntimeError(f"[ZeroSpanParity cfg] missing required keys: {missing}")
@@ -101,7 +54,6 @@ def _validate_cfg(cfg, soccfg):
     if missing_extra:
         raise RuntimeError(f"[ZeroSpanParity cfg] missing keys for mode={mode!r}: {missing_extra}")
 
-    # Rule 1: sample_period floor
     if mode == "strobe":
         sp = float(cfg["sample_period_us"])
         floor = float(cfg["adc_trig_offset"]) + float(cfg["read_length"]) + 1.0
@@ -112,8 +64,6 @@ def _validate_cfg(cfg, soccfg):
                 f"Increase sample_period_us or shorten read_length."
             )
 
-    # Rules 2 & 3: const-pulse 16-bit cycle cap (< 65535 cycles on both channels).
-    # us2cycles depends on the channel; soccfg exposes us2cycles via soccfg.us2cycles.
     def _check_cycle_cap(length_key, rule_no):
         for label in ("qubit_ch", "res_ch"):
             cyc = soccfg.us2cycles(cfg[length_key], gen_ch=cfg[label])
@@ -128,7 +78,6 @@ def _validate_cfg(cfg, soccfg):
     else:
         _check_cycle_cap("capture_length_us", 3)
 
-    # Rules 4 & 5: avg_maxlen / buf_maxlen
     ro_ch = cfg["ro_chs"][0]
     try:
         ro_info = soccfg["readouts"][ro_ch]
@@ -145,19 +94,7 @@ def _validate_cfg(cfg, soccfg):
                 f"is needed)."
             )
     else:
-        # The decimated buffer is sized by the declared readout length
-        # (declare_readout(length=us2cycles(read_length))), NOT by the const
-        # pulse length (capture_length_us). Check read_length against the
-        # buffer cap.
-        #
-        # CAVEAT: this estimate uses the nominal decimated rate from
-        # soccfg["readouts"][ro_ch]["f_output"]. The actual buffer length
-        # depends on how declare_readout converts `us2cycles(read_length)`
-        # (without ro_ch) into readout-clock cycles, then decimates. On
-        # firmware where tProc and readout clocks differ, the exact returned
-        # sample count may disagree with this estimate by O(1) sample.
-        # The check remains a useful pre-flight bound (sufficient, not
-        # exact); hardware loopback should confirm the exact count.
+        # Buffer sized by the declared read_length, not capture_length_us; nominal estimate.
         buf_maxlen = int(ro_info["buf_maxlen"])
         decimated_fs_MHz = float(ro_info["f_output"])
         n_samples = int(round(float(cfg["read_length"]) * decimated_fs_MHz))
@@ -168,9 +105,6 @@ def _validate_cfg(cfg, soccfg):
                 f"for readout ch {ro_ch} at {decimated_fs_MHz} MHz. "
                 f"Reduce read_length."
             )
-        # Sanity check: pulse must cover the readout window. The readout fires
-        # at adc_trig_offset and lasts read_length, so capture_length_us must
-        # be >= adc_trig_offset + read_length.
         cap_us = float(cfg["capture_length_us"])
         floor = float(cfg["adc_trig_offset"]) + float(cfg["read_length"])
         if cap_us < floor:
@@ -181,13 +115,7 @@ def _validate_cfg(cfg, soccfg):
                 f"capture_length_us or shorten read_length."
             )
 
-    # Rule 8: parity_drive_freq within the qubit DDS range. QICK's valid DDS
-    # band is [-f_dds/2, +f_dds/2] (see qick_asm.py freq2reg / the
-    # "outside of [-range/2, range/2]" check), NOT [0, f_dds]. The qubit
-    # channel is declared without a mixer (declare_gen, no mixer_freq), so no
-    # mixer_freq subtraction is needed here. Use try/except instead of
-    # `in soccfg` because QickConfig.__getitem__ exists but __contains__ does
-    # not, which makes `"gens" in soccfg` crash on KeyError.
+    # try/except: QickConfig has __getitem__ but no __contains__.
     qch = cfg["qubit_ch"]
     try:
         gen_info = soccfg["gens"][qch]
@@ -207,24 +135,10 @@ def _validate_cfg(cfg, soccfg):
                     f"outside qubit channel {qch} DDS range [-{half}, {half}] MHz."
                 )
 
-    # Rules 6 & 7 are caller-level constraints (Recalibrate flags vs cached values).
-    # The orchestrator enforces them before constructing cfg, so they are not
-    # re-checked here.
-
 
 class _ZeroSpanParityProgBase(AveragerProgram):
-    """
-    Shared two-tone setup and gate sequence for both parity acquisition paths.
-
-    Both programs declare the same two generators (readout + qubit) and single
-    readout, park a const readout tone and a const qubit "parity drive" tone,
-    and run the same body() (pulse the drive, then measure). The ONLY difference
-    is the const-pulse length: the strobe path holds each tone for one
-    sample_period; the decimated path holds them for the full capture window.
-    Subclasses supply that length via _const_length_us().
-
-    Required cfg keys: see module docstring.
-    """
+    """Const readout tone + const parity-drive tone, then measure; subclasses set the
+    const-pulse length via _const_length_us()."""
 
     def _const_length_us(self):
         """Return the const-pulse duration (us) for this acquisition path."""
@@ -284,56 +198,24 @@ class _ZeroSpanParityProgBase(AveragerProgram):
 
 
 class ZeroSpanParityProgStrobe(_ZeroSpanParityProgBase):
-    """
-    Path A: stroboscopic per-rep IQ acquisition for zero-span parity measurement.
-
-    Both tones are held on for the full duration of each rep; reps run back-to-
-    back with syncdelay=0 so the qubit drive is effectively CW from the qubit's
-    perspective (apart from a small inter-rep tProc-overhead gap).
-
-    Each rep contributes one integrated IQ point to prog.di_buf[ro_ch] /
-    prog.dq_buf[ro_ch]. The ExperimentClass wrapper reshapes those into a time-
-    resolved 1-D IQ trace with sample period = cfg["sample_period_us"].
-
-    Required cfg keys: see module docstring.
-    """
+    """Strobe path: tones held one sample_period per rep, reps back to back (near-CW
+    drive); one integrated IQ point per rep."""
 
     def _const_length_us(self):
         return self.cfg["sample_period_us"]
 
 
 class ZeroSpanParityProgDecimated(_ZeroSpanParityProgBase):
-    """
-    Path B: decimated raw-ADC waveform acquisition for zero-span parity.
-
-    Both tones held on for the full capture window; ADC streams decimated samples
-    for the entire window. ExperimentClass wrapper calls prog.acquire_decimated()
-    instead of prog.acquire() to extract the (length, 2) IQ array.
-
-    Sample period = 1 / soccfg['readouts'][ro_ch]['f_output'] (us). The returned
-    trace length per capture is set by the DECLARED readout window
-    (declare_readout(length=us2cycles(read_length))) — i.e. read_length_us *
-    f_output_MHz samples, capped by buf_maxlen — NOT by capture_length_us.
-    capture_length_us only sets the const-pulse duration, which must cover the
-    readout window (spec §5.3 rule 9).
-    """
+    """Decimated path: tones held for capture_length_us; the trace length is set by the
+    declared readout window, not by capture_length_us."""
 
     def _const_length_us(self):
         return self.cfg["capture_length_us"]
 
 
 class ZeroSpanParity(ExperimentClass):
-    """
-    Dispatcher ExperimentClass for the zero-span parity measurement.
-
-    cfg["mode"] selects between strobe (Path A) and decimated (Path B). See
-    module docstring + spec §5 for the full configuration contract.
-
-    Saves data via the standard ExperimentClass HDF5 + JSON pattern:
-      .h5  : datasets I, Q, t_us, gap_indices; attrs sample_period_us, mode, etc.
-      .json: cfg dict (via save_config)
-      .png : optional, written by display() if called
-    """
+    """Zero-span parity record; cfg["mode"] picks strobe or decimated. Own h5 schema
+    (I, Q, t_us, gap_indices + scalar attrs), see docs/experiments/zero_span_parity.md."""
 
     def __init__(
         self,
@@ -358,10 +240,7 @@ class ZeroSpanParity(ExperimentClass):
         )
         _validate_cfg(self.cfg, self.soccfg)
         mode = self.cfg["mode"]
-        # AveragerProgram.__init__ reads cfg["reps"] during make_program() —
-        # we must set it BEFORE constructing the program. For strobe mode,
-        # reps_per_chunk drives the loop; for decimated mode, reps=1 and the
-        # whole capture is one shot (averaged in software via soft_avgs).
+        # AveragerProgram reads cfg["reps"] at construction, so set it first.
         if mode == "strobe":
             self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
             self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
@@ -369,24 +248,14 @@ class ZeroSpanParity(ExperimentClass):
             self.cfg["reps"] = 1
             self.prog = ZeroSpanParityProgDecimated(self.soccfg, self.cfg)
         else:
-            # _validate_cfg already raised, but keep defensive check.
             raise ValueError(f"Unknown mode: {mode!r}")
 
     def set_qubit_gain(self, gain):
-        """Update qubit drive gain and rebuild the strobe program in place.
-
-        Used by modulated_strobe_acquire to square-wave the drive across blocks.
-        Strobe mode only.
-        """
+        """Set the drive gain and rebuild the strobe program (modulated_strobe_acquire)."""
         if self.cfg.get("mode", "strobe") != "strobe":
             raise RuntimeError("set_qubit_gain is strobe-mode only")
         self.cfg["qubit_gain"] = gain
-        # Re-sync the effective reps from reps_per_chunk before rebuilding.
-        # AveragerProgram bakes cfg["reps"] at construction, and only __init__
-        # translated reps_per_chunk->reps. A caller (e.g. validate's
-        # run_static_contrast) may bump reps_per_chunk after construction; without
-        # this re-sync that change is silently ignored and the sidecar's logged
-        # reps disagree with the reps actually run.
+        # A caller may have bumped reps_per_chunk since construction.
         if "reps_per_chunk" in self.cfg:
             self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
         self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
@@ -404,11 +273,7 @@ class ZeroSpanParity(ExperimentClass):
 
         cfg = self.cfg
         wall_clock_start = datetime.datetime.now().isoformat()
-        # cfg["reps"] was already set to reps_per_chunk in __init__ before
-        # AveragerProgram.make_program() ran. No further mutation needed here.
         prog = self.prog
-        # AveragerProgram.acquire returns (avg_di, avg_dq) along with filling
-        # prog.di_buf/prog.dq_buf with the raw per-rep stream.
         prog.acquire(
             self.soc,
             load_pulses=True,
@@ -418,25 +283,12 @@ class ZeroSpanParity(ExperimentClass):
             save_experiments=None,
         )
         ro_ch = cfg["ro_chs"][0]
-        # Normalize accumulated di_buf/dq_buf by the number of readout-window
-        # cycles so I/Q are in the same units as g/e centroids computed by
-        # mSingleShotProgramFFMUX.collect_shots (which divides by
-        # us2cycles(readout_length, ro_ch=0) — ro_ch HARD-CODED to 0). Without
-        # this the apriori separator from get_apriori_separator_from_singleshot is
-        # on a different scale than the strobe trace and classification is wrong.
-        # Divide by the SAME cycles/us the separator was calibrated with: use
-        # ro_ch=0 to mirror collect_shots exactly, NOT ro_chs[0]. On a MUX setup
-        # where ro_chs[0] != 0 the two channels can have different decimated
-        # clocks, so keying off ro_chs[0] would silently rescale the trace
-        # relative to the separator.
+        # ro_ch=0 (not ro_chs[0]) to match the single-shot separator's units
+        # (docs/architecture.md#readout-buffers).
         ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=0))
         if ro_cycles <= 0:
             ro_cycles = 1.0
-        # di_buf/dq_buf are indexed by readout DECLARATION ORDER, not absolute
-        # channel number (QICK builds one entry per declared ro_ch). Use
-        # positional index 0 for the single declared readout. ro_ch above is
-        # kept for the soccfg.us2cycles(..., ro_ch=ro_ch) call and any
-        # soccfg["readouts"][ro_ch] lookups, which ARE keyed by absolute channel.
+        # di_buf is indexed by declaration order, not absolute channel.
         I = np.asarray(prog.di_buf[0], dtype=float).ravel() / ro_cycles
         Q = np.asarray(prog.dq_buf[0], dtype=float).ravel() / ro_cycles
         sp = float(cfg["sample_period_us"])
@@ -463,24 +315,16 @@ class ZeroSpanParity(ExperimentClass):
         wall_clock_start = datetime.datetime.now().isoformat()
         prog = self.prog
         ro_ch = cfg["ro_chs"][0]
-        # TODO(hardware): the loopback smoke test on this firmware empirically
-        # observed that soccfg['readouts'][ro_ch]['f_output'] is NOT the true
-        # rate of samples returned by acquire_decimated. Until that mismatch is
-        # resolved, sample_period_us below is the *nominal* rate from soccfg
-        # and t_us cannot be trusted as an absolute physical time axis. We
-        # persist read_length_us and the raw returned-sample count so the time
-        # axis can be reconstructed once the true rate is known.
+        # Nominal rate: on some firmware f_output is not the true decimated rate, so
+        # t_us is reconstructable from the saved metadata (docs/experiments/zero_span_parity.md).
         decimated_fs_MHz = float(self.soccfg["readouts"][ro_ch]["f_output"])
-        sp = 1.0 / decimated_fs_MHz  # us per decimated sample (nominal); invariant
+        sp = 1.0 / decimated_fs_MHz
 
         n_captures = int(cfg.get("n_captures", 1))
         if n_captures < 1:
             raise RuntimeError(f"[ZeroSpanParity] n_captures={n_captures} must be >= 1")
         soft_avgs = int(cfg.get("soft_avgs", 1))
         if soft_avgs > 1:
-            # soft_avgs > 1 averages independent captures together — it
-            # destroys per-shot parity trajectories. Allowed only when the
-            # caller has explicitly opted in via an averaged-mode flag.
             if not cfg.get("allow_soft_avgs", False):
                 raise RuntimeError(
                     f"[ZeroSpanParity] soft_avgs={soft_avgs} > 1 averages "
@@ -497,22 +341,14 @@ class ZeroSpanParity(ExperimentClass):
         cum_idx = 0
         for ci in range(n_captures):
             chunk_wall_clocks.append(datetime.datetime.now().isoformat())
-            # soft_avgs is handled by AveragerProgram.__init__ from cfg["soft_avgs"];
-            # passing it again here would collide with the kwarg that
-            # AveragerProgram.acquire_decimated injects internally.
+            # No soft_avgs kwarg: AveragerProgram injects it (keyword collision).
             dec = prog.acquire_decimated(
                 self.soc,
                 load_pulses=(ci == 0),
                 start_src=cfg["start_src"],
                 progress=progress,
             )
-            # AveragerProgram.acquire_decimated returns a list with one ndarray
-            # per ro_ch, with the I/Q axis as the SECOND-TO-LAST axis (it applies
-            # np.moveaxis(buf, -1, -2)):
-            #   (2, length)       — reps=1: (I/Q, sample)   [our case; reps pinned to 1]
-            #   (reps, 2, length) — reps>1: (rep, I/Q, sample)
-            # Some other firmware/paths return I/Q on the trailing axis
-            #   (length, 2)       — handled below for robustness.
+            # (2, length) for reps=1, (reps, 2, length) for reps>1, (length, 2) on some paths.
             arr = np.asarray(dec[0])
             if arr.ndim == 2 and arr.shape[0] == 2:
                 I_c = arr[0]
@@ -521,8 +357,6 @@ class ZeroSpanParity(ExperimentClass):
                 I_c = arr[:, 0]
                 Q_c = arr[:, 1]
             elif arr.ndim == 3:
-                # (reps, 2, length): I/Q is axis -2, NOT the trailing axis, so
-                # reshape(-1, 2) would interleave samples. Split on axis -2.
                 I_c = arr[:, 0, :].ravel()
                 Q_c = arr[:, 1, :].ravel()
             else:
@@ -555,10 +389,7 @@ class ZeroSpanParity(ExperimentClass):
             "read_length_us": float(cfg["read_length"]),
             "capture_length_us": float(cfg["capture_length_us"]),
             "adc_trig_offset_us": float(cfg["adc_trig_offset"]),
-            # Actual returned sample count per capture (spec §7.3) — the real
-            # first-capture length, not total/n_captures, so an O(1) firmware
-            # disagreement or a short final capture can't turn this into a
-            # rounded average that matches no actual capture.
+            # The first capture's real length, not total / n_captures.
             "samples_per_capture": int(capture_sizes[0]) if capture_sizes else 0,
             "capture_sizes": np.asarray(capture_sizes, dtype=int),
             "soft_avgs": soft_avgs,
@@ -577,10 +408,7 @@ class ZeroSpanParity(ExperimentClass):
                 if isinstance(self.data, dict) and "data" in self.data
                 else self.data
             )
-        # Append mode ("a", not "w") so a config attr written by the base
-        # ExperimentClass.save_config into the same .h5 is not truncated,
-        # regardless of save_data/save_config call order. Delete-then-recreate
-        # each dataset so re-saving the same file is idempotent.
+        # "a" keeps the save_config attr; delete-then-create makes re-saving idempotent.
         with h5py.File(self.fname, "a") as f:
 
             def _put(name, arr):
@@ -592,19 +420,12 @@ class ZeroSpanParity(ExperimentClass):
             _put("Q", np.asarray(data["Q"]))
             _put("t_us", np.asarray(data["t_us"]))
             _put("gap_indices", np.asarray(data.get("gap_indices", []), dtype=int))
-            # Per-capture sample counts (decimated mode) — preserves the actual
-            # length of every capture for post-hoc time-axis reconstruction even
-            # if captures ever return unequal counts (spec §7.3/§7.5).
             if "capture_sizes" in data:
                 _put("capture_sizes", np.asarray(data["capture_sizes"], dtype=int))
-            # Per-chunk wall-clock starts (when chunked_acquire was used, or
-            # when n_captures > 1 in decimated mode) — needed to reconstruct
-            # actual inter-chunk gaps post-hoc.
             if "chunk_wall_clock_starts" in data:
                 wcs = [str(s) if s is not None else "" for s in data["chunk_wall_clock_starts"]]
                 _put("chunk_wall_clock_starts", np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
-            # Scalar metadata. Keep this list in sync with whatever the
-            # acquire-path dicts return; missing keys are silently skipped.
+            # Keep in sync with the acquire-path dicts; missing keys are skipped.
             scalar_keys = (
                 "wall_clock_start",
                 "sample_period_us",

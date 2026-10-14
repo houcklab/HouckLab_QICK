@@ -6,60 +6,8 @@ from qicklab.core.experiment import ExperimentClass
 
 
 class ActiveResetVerifyProgram(AveragerProgram):
-    """
-    Verification harness for the hardware active reset used by ModifiedRamsey.
-
-    Per-shot sequence (each optional stage is config-gated):
-
-        [prep pi -> |e>]  ->  [active reset -> |g>]  ->  N verification readouts
-
-    The active-reset block here is a faithful copy of
-    ModifiedRamseyProgram.active_reset_to_g() so this experiment validates the
-    EXACT mechanism the Modified Ramsey relies on (measure -> read accumulated I
-    -> conditionally apply a corrective pi only when the qubit is found in |e>).
-
-    The point of the verification is differential. Resetting from thermal
-    equilibrium (already mostly |g>) cannot distinguish a working reset from a
-    qubit that was already cold, so the driver sweeps four conditions:
-
-        prep |g>, reset off  -> thermal baseline
-        prep |e>, reset off  -> control: qubit stays excited
-        prep |g>, reset on   -> should be |g>
-        prep |e>, reset on   -> KEY PROOF: reset recovers |g> from |e>
-
-    For each condition the qubit is read out N times in a row, so P(|g>) can be
-    tracked vs readout index (a working, QND reset gives a flat, high P(|g>)).
-
-    Config keys (channel/pulse keys shared with ModifiedRamsey):
-    cfg["prep_excited"]        : if True, play a pi pulse (pi_gain) before the
-                                 reset block to deterministically prepare |e>.
-                                 Default False.
-    cfg["n_verify_reads"]      : number of back-to-back readouts after the reset
-                                 block (default 5).
-    cfg["verify_relax_delay"]  : syncdelay (us) between consecutive verification
-                                 readouts (default 5.0). The LAST verification
-                                 read uses cfg["relax_delay"] instead so the
-                                 qubit re-thermalises before the next rep (so the
-                                 prep stage starts from |g>).
-
-    Active-reset config (identical meaning to ModifiedRamsey):
-    cfg["use_active_reset"]            : enable the reset block (default False).
-    cfg["readout_threshold"]           : single-shot I discrimination threshold in
-                                         the normalized collect_shots() units.
-    cfg["reset_ground_below_threshold"]: True (default) if |g> sits below threshold
-                                         in I.
-    cfg["reset_cycles"]                : measure->feedback rounds per shot (default 1).
-    cfg["pi_gain"]                     : DAC gain for the prep pi and the corrective
-                                         reset flip (same gaussian envelope).
-    cfg["reset_readout_relax_delay"]   : syncdelay (us) after each reset readout
-                                         (default 1.0).
-    cfg["post_reset_wait"]             : settle time (us) after the reset block
-                                         (default 0.0).
-    cfg["reset_force_pi"]              : diagnostic; fire the corrective pi
-                                         UNCONDITIONALLY (skip the condj) to
-                                         measure the bare post-readout pi
-                                         fidelity (default False).
-    """
+    """[prep pi] -> [active reset] -> n_verify_reads readouts. Keeps its own reset copy,
+    which differs from ModifiedRamsey's (docs/experiments/active_reset_verify.md#known-issues)."""
 
     def initialize(self):
         cfg = self.cfg
@@ -319,14 +267,8 @@ class ActiveResetVerifyProgram(AveragerProgram):
 
 
 class ActiveResetVerify(ExperimentClass):
-    """
-    Drives ActiveResetVerifyProgram for one (prep_excited, use_active_reset)
-    condition and classifies the per-read IQ against a calibrated g/e separator
-    to produce P(|g>) vs readout index.
-
-    Requires cfg["g_center"] and cfg["e_center"] (each [I, Q], normalized units,
-    from a SingleShot calibration) for shot classification.
-    """
+    """P(|g>) vs verification-read index for one (prep_excited, use_active_reset)
+    condition, classified against the bisector of cfg["g_center"]/cfg["e_center"]."""
 
     def __init__(
         self,

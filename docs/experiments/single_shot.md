@@ -49,10 +49,10 @@ ADC       ───────────────────────�
     cover the quantised ADC window: `ceil(adc_end_tproc · f_fabric / f_time − 1e-12)`.
     `length < adc_trig_offset + readout_length` raises.
   - [modified_ramsey](modified_ramsey.md), [active_reset_verify](active_reset_verify.md)
-    and [undriven_single_shot](undriven_single_shot.md) use the identical block
-    (`qicklab.core.readout`), so they integrate the same physical window and
-    thresholds transfer between them. This matters most for the
-    [active-reset](active_reset.md) threshold.
+    and [undriven_single_shot](undriven_single_shot.md) use the same arithmetic
+    (`qicklab.core.readout` in ModifiedRamsey, own copies elsewhere), so they
+    integrate the same physical window and thresholds transfer between them. This
+    matters most for the [active-reset](active_reset.md) threshold.
 - Shots are normalised by `us2cycles(readout_length, ro_ch)` (the "normalised units"
   used everywhere else).
 

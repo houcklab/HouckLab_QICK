@@ -100,9 +100,10 @@ The program stores `readout_window_cycles`, `readout_tone_cycles` and
 
 Why it matters: the active-reset threshold is calibrated with `SingleShotProgram` and consumed by
 `ModifiedRamsey` and `ActiveResetVerify`. All three must integrate the same physical window and
-play the same tone, or the threshold lands in the wrong place. The calculation lives in one
-place, `qicklab.core.readout`, shared by `SingleShotProgram`, `ModifiedRamsey`,
-`ActiveResetVerify` and `UndrivenSingleShot`.
+play the same tone, or the threshold lands in the wrong place. The shared calculation is
+`qicklab.core.readout.cover_readout_window`, used by `ModifiedRamsey`. `SingleShotProgram`,
+`ActiveResetVerify` and `UndrivenSingleShot` still carry their own copies of the same
+arithmetic (UndrivenSingleShot does not store `readout_tone_extension_cycles`).
 
 ## History
 

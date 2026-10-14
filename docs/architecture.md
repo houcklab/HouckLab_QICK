@@ -156,7 +156,9 @@ and play the same tone, because thresholds calibrated in one are consumed by the
 Each duration is converted with its owning clock (tProc for the trigger offset, readout clock
 for the window, generator clock for the tone) and the tone is extended by the minimum number of
 generator cycles needed after cross-clock rounding:
-`ceil(adc_end_tproc * f_fabric / f_time - 1e-12)`. This lives in `qicklab.core.readout`.
+`ceil(adc_end_tproc * f_fabric / f_time - 1e-12)`. The shared function is
+`qicklab.core.readout.cover_readout_window` (used by ModifiedRamsey); SingleShotProgram,
+ActiveResetVerify and UndrivenSingleShot still carry their own copies of the same arithmetic.
 
 ### Carry-overs
 

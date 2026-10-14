@@ -1,9 +1,7 @@
 """Single-shot readout with the qubit drive off: IQ cloud + telegraph statistics.
 
-No |e> reference is prepared, so no readout fidelity is reported. Shots arrive in
-acquisition order at the scheduled tProc cadence, so the record is also a uniformly
-sampled time series; saved under the ModifiedRamsey key names so
-analyze_ModifiedRamseyParity (fit_two_state_hmm, psd_rate_estimate) can consume it.
+No |e> reference, so no fidelity. The record is a uniformly sampled time series saved
+under the ModifiedRamsey key names (docs/experiments/undriven_single_shot.md).
 """
 
 import time
@@ -29,7 +27,7 @@ class UndrivenSingleShotProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
         cfg["reps"] = cfg["shots"]
-        # rounds must stay 1: acc_buf is overwritten each round (Helpers/shot_buffers).
+        # rounds must stay 1: acc_buf keeps only the last round (docs/architecture.md#readout-buffers).
         cfg["rounds"] = 1
 
         if cfg["readout_length"] <= 0:
@@ -44,9 +42,7 @@ class UndrivenSingleShotProgram(AveragerProgram):
 
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
-        # Resonator tone starts at t=0 but ADC integration starts adc_trig_offset
-        # later, so the tone must cover offset + window, rounded up across the
-        # generator and readout clocks.
+        # Tone covers offset + window across clocks (docs/concepts/readout_window.md).
         required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
         cfg.setdefault("length", required_tone_us)
         if cfg["length"] < required_tone_us:
@@ -107,8 +103,8 @@ class UndrivenSingleShotProgram(AveragerProgram):
     def collect_shots(self):
         all_i = []
         all_q = []
-        # di_buf/dq_buf are rep-averaged in qick >=0.2.29x; acc_buf keeps the raw
-        # per-shot stream in acquisition order (see Helpers/shot_buffers).
+        # di_buf is rep-averaged in qick >= 0.2.29x; raw_shot_buffers returns the raw
+        # per-shot stream (docs/architecture.md#readout-buffers).
         di_buf, dq_buf = raw_shot_buffers(self)
         for i in range(len(di_buf)):
             ro_ch = self.cfg["ro_chs"][i]
@@ -592,10 +588,7 @@ class UndrivenSingleShot(ExperimentClass):
             ax.legend(markerscale=4, fontsize=8)
             ax.set_xlabel("I")
             ax.set_ylabel("Q")
-            # Frame on the ANALYSED points. With shot_average > 1 the raw cloud
-            # is sqrt(n) wider and would squash the averaged blobs into a few
-            # pixels; letting it spill outside the frame keeps them readable,
-            # and the histogram panel still shows both spreads on one axis.
+            # Frame on the analysed points; the sqrt(n)-wider raw cloud may spill out.
             if i_shots.size:
                 mid_i = 0.5 * (float(i_shots.max()) + float(i_shots.min()))
                 mid_q = 0.5 * (float(q_shots.max()) + float(q_shots.min()))
@@ -642,8 +635,7 @@ class UndrivenSingleShot(ExperimentClass):
                     label=f"{max(n_blobs, 1)}-Gaussian fit",
                 )
                 if n_blobs == 2:
-                    # drawn on top of the total, which would otherwise hide the
-                    # dominant component exactly
+                    # Drawn over the total, which would otherwise hide the dominant one.
                     for lbl, colour in ((0, "tab:blue"), (1, "tab:red")):
                         if lbl in components:
                             ax.plot(
@@ -825,10 +817,7 @@ class UndrivenSingleShot(ExperimentClass):
         ax.set_xlabel(f"time ({unit})")
         ax.set_ylabel("projection onto blob axis")
         ax.grid(True, alpha=0.3)
-        # Frame on the analysed trace (same reasoning as the IQ panel): the raw
-        # trace is sqrt(n_avg) noisier and would flatten the telegraph. It stays
-        # drawn, spilling past the frame, so the noise it carries is still
-        # obvious. Keep the threshold and both blob means inside the view.
+        # Frame on the analysed trace, threshold and blob means (raw trace may spill out).
         lo, hi = float(proj.min()), float(proj.max())
         for extra in (threshold, means[0], means[1]):
             if np.isfinite(extra):
@@ -885,8 +874,7 @@ class UndrivenSingleShot(ExperimentClass):
             )
             ax.legend(fontsize=8)
         ax.set_xscale("log", base=2)
-        # A noise-dominated sweep spans decades; a linear axis then hides the
-        # plateau the knob is supposed to be set from.
+        # Log axis when a noise-dominated sweep spans decades, so the plateau stays visible.
         good = rates[np.isfinite(rates) & (rates > 0)]
         if good.size and good.max() / good.min() > 20:
             ax.set_yscale("log")

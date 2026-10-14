@@ -4,7 +4,9 @@ Active reset is not a step on its own. It is a block that
 [modified_ramsey](modified_ramsey.md) (`ModifiedRamsey`) and
 [active_reset_verify](active_reset_verify.md) (`ActiveResetVerify`) can put at the
 start of every shot. This page explains how it works, how it is calibrated, and
-why it has failed before. Code: see `qicklab.core.active_reset` (shared block) and
+why it has failed before. Code: see `qicklab.core.active_reset` (`ActiveResetMixin`,
+used by ModifiedRamsey; ActiveResetVerify still has its own copy, see
+[active_reset_verify](active_reset_verify.md#known-issues)) and
 `qicklab.runs.active_reset` (calibration helpers).
 
 ## What it does
