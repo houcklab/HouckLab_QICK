@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, phase 3b complete; research review running).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, applying research-review findings: F09, F00, F08 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -78,6 +78,18 @@ area brief). User decisions 2026-10-13: functionality-preserving improvements ar
 commits with a proof of identical results (reviewer re-verifies); behaviour-changing improvements and the
 known bugs become a separate phase of individual commits after 3b (user: "make these improvements as you
 see fit"), preceded by a research-effectiveness review workflow (one Opus agent per measurement domain).
+
+21. `0cf3b82c` docs(dev): research-effectiveness review (85 verified findings; `docs/dev/refactor-2026-10/review/`)
+22. `2a21c17f` fix(active_reset_verify): F09 — ARV runs the shared reset block (golden: 16 hw leaves, ARV reset-ON)
+23. `578518d2` fix(active_reset): F00 — stall for the read latency before the reset read (golden: 32 hw + 50
+    cfg_access leaves, reset-ON MR/ARV programs; needs the documented hardware validation)
+24. `70aebbec` fix(runs): F08 — finish() helper saves the record even when display() raises (golden: 0 leaves)
+Fix pipeline: `~/.cache/qicklab-refactor/apply_findings` workflow script (implementer → adversarial reviewer →
+fix, 3 review rounds), `diff_labels.py` (capture labels, classify leaf diffs vs the golden), `land_fix.sh` /
+hunk-filtered snapshots into `~/.cache/qicklab-refactor/wt_<id>` + `REGRESSION_UPDATE=1` full suite +
+`classify_golden.py`, then commit from the worktree and `git reset --soft` the branch. In flight at last
+update: F01 (Ramsey projection/bounds), F06 (HMM i.i.d. null gate), F10 (thermal population estimator),
+F04 (parity-doublet selection), F13 (Rabi fit). Remaining items: `review/findings.json` (by id).
 
 The repo now IS the qicklab package: `qicklab/`, `devices/` (empty init), `runners/CSTQ03_BFC.py` (legacy
 runner, star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code runs on the original
