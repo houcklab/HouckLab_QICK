@@ -52,7 +52,7 @@ are in [devices/CSTQ03.md](devices/CSTQ03.md#twpa). Details of the scripts:
 
 Pages: [transmission_fit](experiments/transmission_fit.md),
 [transmission_sweep](experiments/transmission_sweep.md).
-Steps: `transmission_fit` (hanger fit, writes the fitted f0 into the session config) or
+Steps: `transmission_fit` (hanger fit, writes the fitted curve's minimum into the session config) or
 `transmission_sweep` (takes the min or max point). `constant_tone` plays a CW readout tone for
 looking at the line on a spectrum analyser.
 
@@ -65,7 +65,7 @@ looking at the line on a spectrum analyser.
 | dip or peak | `Device.cavity_min` | `True` (dip) | decides which extremum `transmission_sweep` tracks |
 
 Good: a clear dip (for `cavity_min=True`) well inside the span, and a hanger fit that converges
-(start values Qtot 4.1e4, Qext 4.3e4, asymmetry 1e3, from the MATLAB fitter; Qint =
+(start values from the trace: f0 at the raw minimum, Qtot from the span, asymmetry 0; Qint =
 \|1/(1/Qtot - 1/Qext)\|).
 
 Readout gain: raise it until the response is clear, and stop below where it was judged

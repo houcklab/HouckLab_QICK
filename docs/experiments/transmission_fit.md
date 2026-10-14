@@ -6,10 +6,10 @@ Class `CavitySpecFF` (see `qicklab.experiments.transmission`), hanger fit in
 ## What it measures
 
 Resonator transmission |S21| versus probe frequency around the current readout frequency,
-followed by a hanger-model fit. The fitted centre frequency `f0` replaces `pulse_freq` for
-every later regime-A step in the same plan. Use it to find or re-centre the readout
-resonator at the start of a session. For a sweep without the extra fit and with fixed
-averaging, see [transmission_sweep](transmission_sweep.md).
+followed by a hanger-model fit. The minimum of the fitted hanger curve replaces `pulse_freq`
+for every later regime-A step in the same plan. Use it to find or re-centre the readout
+resonator at the start of a session. For the same sweep with fixed averaging that can also
+track a peak (`cavity_min=False`), see [transmission_sweep](transmission_sweep.md).
 
 ## Pulse sequence
 
@@ -67,20 +67,18 @@ into the regime-A base config.
 | `..._data_hanger_fit.png` | dB data, fit, raw and fit minima (only if the fit succeeded) |
 | `..._data.json` | config; `pulse_freq` = fit minimum if the display fit succeeded, else the **last sweep point** |
 
-A second figure (the step's own fit, see Analysis) is shown but **not saved**.
-
-Carry-over: `pulse_freq` of the session config is set to the step's fitted `f0` (the fit
-parameter, not the minimum of the fitted curve). It persists for all following regime-A
-steps and is discarded at the next switch to regime B.
+Carry-over: `pulse_freq` of the session config is set to `hanger_fit_min_freq_mhz`, the
+minimum of the display fit's curve (readout sits at the transmission minimum; with `asym != 0`
+it differs from the `f0` parameter). It is the value saved in the h5 and marked red in
+`_hanger_fit.png`. If the display fit failed, the step prints a `WARNING` and carries the raw
+argmin of |S21| instead. The value persists for all following regime-A steps and is discarded
+at the next switch to regime B.
 
 ## Analysis
 
-Two hanger fits run, with the same model but different start points:
-
-1. Inside `CavitySpecFF.display(fit=True)` (saved to h5). Start point from the trace:
-   f0 = raw minimum, Qtot = max(|f0| / (span/10), 1e3), Qext = 1.5 Qtot, asym = 0, offset = 0.
-2. In the step itself (printed + unsaved figure; drives the carry-over). Start point
-   `[raw minimum, Qtot 4.1e4, Qext 4.3e4, asym 1e3, offset 0]`.
+One hanger fit runs, inside `CavitySpecFF.display(fit=True)` (printed, saved to h5, drives the
+carry-over). Start point from the trace: f0 = raw minimum, Qtot = max(|f0| / (span/10), 1e3),
+Qext = 1.5 Qtot, asym = 0, offset = 0.
 
 Model (MATLAB-style hanger, on |S21| in dB):
 
@@ -100,8 +98,12 @@ or a dip at the edge of the span; check the PNG before trusting the carry-over.
 
 ## Findings & notes
 
-- The start point `[center, 4.1e4, 4.3e4, 1e3, 0]` mirrors the lab's earlier MATLAB hanger
-  fit; the Q values are resonator-specific guesses, not measured CSTQ03 values.
+- Until 2026-10 the step ran a second hanger fit of its own, started at
+  `[center, 4.1e4, 4.3e4, asym 1e3, 0]` (copied from a MATLAB fit in Hz), and carried its `f0`.
+  In MHz that asym start is ~1e6 too large (the start curve is a +65 dB peak, not a dip); on
+  synthetic hangers it landed more than half a linewidth off in about a quarter of fits (up to
+  the sweep edge), where the display fit did not. It was removed (finding F03); the step now
+  carries the display fit's minimum.
 - `reps` vs `rounds`: `reps` are hardware averages inside ONE tProc program, `rounds`
   rerun the program and average in software. `reps=400, rounds=1` and `reps=20, rounds=20`
   average the same 400 shots, but the second starts 20x more programs per point, and every
@@ -117,10 +119,9 @@ or a dip at the edge of the span; check the PNG before trusting the carry-over.
 - The printed `kappa` (and `hanger_fit_kappa_mhz` in the h5) is `(f0/Qext)/1e6`: 1e6 too
   small, and it is the external (coupling) rate f0/Qext, not the total linewidth f0/Qtot.
   Compute kappa/2pi = f0/Qtot (MHz) yourself from the saved `hanger_fit_popt`.
-- The h5 hanger values (display fit) and the carried-over `pulse_freq` (step fit) come from
-  two different fits and can differ slightly.
 - If the display fit fails, the saved JSON records `pulse_freq` = last sweep point, not the
   sweep centre.
 - A point with zero amplitude gives `-inf` dB and breaks the fit.
-- The second (step) fit is not guarded: if it fails, the step raises after the data and
-  config were already saved.
+- A failed display fit is reported (`Hanger fit failed: ...`, then the step's `WARNING`) but
+  the step continues with the raw argmin; an accepted-but-wrong fit (f0 at a bound, Qtot >
+  Qext) is not yet rejected, so check the PNG.

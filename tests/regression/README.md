@@ -289,7 +289,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunTransmissionSweep+Run2ToneSpec` | completed | 2 | 0 | CavitySpecFF x1, QubitSpecSliceFF x1 | 202 |
 
 The multi-flag labels do see their carry-overs: Rabi after the transmission
-fit runs at `pulse_freq` 7099.80 MHz (7095.4 alone), and the quasi-CW after the
+fit runs at `pulse_freq` 7099.50 MHz (7095.4 alone), and the quasi-CW after the
 two-tone search starts at 2650.99 MHz (2306.57 alone).
 
 **`RunChargeDispersionRamsey` raises before any capture, and that is a real

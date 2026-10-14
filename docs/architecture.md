@@ -185,7 +185,7 @@ measured values are written back:
 
 | key | written by | lost when |
 |---|---|---|
-| `pulse_freq` | `transmission_fit` (fitted f0), `transmission_sweep` (min or max point per `cavity_min`) | next switch to regime B |
+| `pulse_freq` | `transmission_fit` and `transmission_sweep` with `cavity_min`: `hanger_fit_min_freq_mhz`, the minimum of `CavitySpecFF.display()`'s hanger-fit curve (raw argmin, with a printed warning, if that fit failed); `transmission_sweep` without `cavity_min`: raw argmax | next switch to regime B |
 | `res_phase` | active-reset readout calibration (`modified_ramsey` with reset, `active_reset_verify`) | next switch to regime B |
 
 `interleaved_coherence` swaps `ctx.config` between the two regimes per step and restores it in

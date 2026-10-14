@@ -142,7 +142,7 @@ Example:
 
 ```python
 PLAN = [
-    R.transmission_fit(reps=20),   # A (built at connect). Writes pulse_freq = fitted f0.
+    R.transmission_fit(reps=20),   # A (built at connect). Writes pulse_freq = hanger-fit minimum.
     R.amplitude_rabi(),            # A. Uses the fitted pulse_freq.
     R.single_shot(),               # switch A -> B. pulse_freq back to the device value.
     R.t1(relax_delay=5000),        # switch B -> A. Rebuilt from the device: no fitted pulse_freq.

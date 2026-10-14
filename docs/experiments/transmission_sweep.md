@@ -53,7 +53,7 @@ Carry-over to the session config:
 
 | `cavity_min` | New `pulse_freq` |
 |---|---|
-| True | `peakFreq_min`: the minimum of the fitted hanger curve if the display fit succeeded, else the raw argmin of \|S21\| |
+| True | `hanger_fit_min_freq_mhz`: the minimum of the fitted hanger curve if the display fit succeeded; else the raw argmin of \|S21\| (`peakFreq_min`), with a printed `WARNING` saying the raw value was carried |
 | False | `peakFreq_max`: the raw argmax of \|S21\| (no fit involved) |
 
 The value is printed (`Cavity frequency found at: ...`). It persists for later regime-A

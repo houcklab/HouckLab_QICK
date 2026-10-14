@@ -119866,7 +119866,7 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "pulse_freq": 7095.548656513316,
+            "pulse_freq": 7095.536284071018,
             "pulse_gain": 1500,
             "pulse_style": "const",
             "qubit_ch": 1,
@@ -119909,8 +119909,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "e12dce3e8c32ef2fe10fbcbedab66608",
-            "first_program": "d2d41ea14ee54ba4",
+            "digest": "922807cafc361945ac2f601aa136dc28",
+            "first_program": "384078385fbd2986",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -120138,9 +120138,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7095.548656513316
+                    7095.536284071018
                   ],
-                  "sha1": "a19f963f13c98186",
+                  "sha1": "300da7c599a78421",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -120489,7 +120489,7 @@
             },
             {
               "cfg_delta": {},
-              "cfg_digest": "e2dd5c715615bae6",
+              "cfg_digest": "06ba89fce7c1bd52",
               "kwargs": {},
               "name": "save_config"
             }
@@ -121249,7 +121249,7 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "pulse_freq": 7099.804219050107,
+            "pulse_freq": 7099.499774943735,
             "pulse_gain": 1500,
             "pulse_style": "const",
             "qubit_ch": 1,
@@ -121294,8 +121294,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "20e5d8f912edafac8df18551dc9ae1ae",
-            "first_program": "0400e6aecf0594bc",
+            "digest": "8852785e49777b243956e436b5122746",
+            "first_program": "3a953578f538a03e",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -121536,9 +121536,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7099.804219050107
+                    7099.499774943735
                   ],
-                  "sha1": "89227e22a1fa5837",
+                  "sha1": "cf0bcb39a0da3f29",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -121813,7 +121813,7 @@
             },
             {
               "cfg_delta": {},
-              "cfg_digest": "17bfa83fd8dbca85",
+              "cfg_digest": "156f3b130bef10de",
               "kwargs": {},
               "name": "save_config"
             }
@@ -253724,7 +253724,7 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "pulse_freq": 7095.548656513316,
+            "pulse_freq": 7095.536284071018,
             "pulse_gain": 1500,
             "pulse_style": "const",
             "qubit_ch": 1,
@@ -253767,8 +253767,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "41ac4cf69948fc9025baea3bb17bc6f2",
-            "first_program": "7d035f2a64214f35",
+            "digest": "1e8a4a51e3be97c5b2cddb65963b6114",
+            "first_program": "b7b609eec3525144",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -253996,9 +253996,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7095.548656513316
+                    7095.536284071018
                   ],
-                  "sha1": "a19f963f13c98186",
+                  "sha1": "300da7c599a78421",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -254347,7 +254347,7 @@
             },
             {
               "cfg_delta": {},
-              "cfg_digest": "e2dd5c715615bae6",
+              "cfg_digest": "06ba89fce7c1bd52",
               "kwargs": {},
               "name": "save_config"
             }
@@ -255107,7 +255107,7 @@
             "length": 15.3,
             "mixer_freq": 0.0,
             "nqz": 2,
-            "pulse_freq": 7099.804219050107,
+            "pulse_freq": 7099.499774943735,
             "pulse_gain": 1500,
             "pulse_style": "const",
             "qubit_ch": 1,
@@ -255152,8 +255152,8 @@
               "start_src": 2,
               "stop_tproc": 1
             },
-            "digest": "477b220309c9a052619adbe2f2851047",
-            "first_program": "325375da0594fafc",
+            "digest": "b17348bf8a4ea483d8fa0dbf86a07028",
+            "first_program": "31bf3c191d535354",
             "n_programs": 1,
             "n_unique_programs": 1
           },
@@ -255394,9 +255394,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7099.804219050107
+                    7099.499774943735
                   ],
-                  "sha1": "89227e22a1fa5837",
+                  "sha1": "cf0bcb39a0da3f29",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -255671,7 +255671,7 @@
             },
             {
               "cfg_delta": {},
-              "cfg_digest": "17bfa83fd8dbca85",
+              "cfg_digest": "156f3b130bef10de",
               "kwargs": {},
               "name": "save_config"
             }
