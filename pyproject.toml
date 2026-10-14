@@ -40,7 +40,6 @@ ignore = ["E501", "E741", "B905", "B008"]
 # finding that phase 3b removes with the code it sits in; the runner's star import goes in phase 5.
 [tool.ruff.lint.per-file-ignores]
 "runners/CSTQ03_BFC.py" = ["F403", "F405"]
-"qicklab/experiments/chi_shift.py" = ["F841"]
 "qicklab/experiments/transmission.py" = ["F841"]
 "qicklab/experiments/zero_span_parity.py" = ["F841"]
 "qicklab/experiments/readout_optimize.py" = ["F821"]   # SingleShotProgramFF_2StatesMUX in the dead *_Higher classes

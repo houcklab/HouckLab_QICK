@@ -12,16 +12,16 @@ class T2RProgram(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
         self.r_wait = 3
         self.r_phase2 = 4
         self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
         self.regwi(self.q_rp, self.r_wait, cfg["start"])
         self.regwi(self.q_rp, self.r_phase2, 0)
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -29,13 +29,10 @@ class T2RProgram(RAveragerProgram):
                 gen_ch=cfg["res_ch"],
             )
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
-        # add qubit and readout pulses to respective channels
-
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(
@@ -64,14 +61,13 @@ class T2RProgram(RAveragerProgram):
     def body(self):
         self.regwi(self.q_rp, self.r_phase, 0)
 
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.pulse(ch=self.cfg["qubit_ch"])
         self.mathi(self.q_rp, self.r_phase, self.r_phase2, "+", 0)
         self.sync_all()
         self.sync(self.q_rp, self.r_wait)
 
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.pulse(ch=self.cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
-        # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
@@ -81,18 +77,13 @@ class T2RProgram(RAveragerProgram):
         )
 
     def update(self):
-        self.mathi(
-            self.q_rp, self.r_wait, self.r_wait, "+", self.us2cycles(self.cfg["step"])
-        )  # update the time between two π/2 pulses
-        self.mathi(
-            self.q_rp, self.r_phase2, self.r_phase2, "+", self.cfg["phase_step"]
-        )  # advance the phase of the LO for the second π/2 pulse
+        self.mathi(self.q_rp, self.r_wait, self.r_wait, "+", self.us2cycles(self.cfg["step"]))
+        self.mathi(self.q_rp, self.r_phase2, self.r_phase2, "+", self.cfg["phase_step"])
 
 
 class T2R(ExperimentClass):
-    """
-    Basic T2R
-    """
+    """Ramsey T2*: two pi/2 pulses (plain Gaussian, pi2_gain), register-swept wait and
+    optional phase advance; FFT-seeded fit (docs/experiments/t2_ramsey.md)."""
 
     def __init__(
         self,
@@ -117,9 +108,6 @@ class T2R(ExperimentClass):
         )
 
     def acquire(self, progress=False, debug=False):
-
-        #### pull the data from the amp rabi sweep
-        # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
         prog = T2RProgram(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(
@@ -131,7 +119,7 @@ class T2R(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
-        )  # debug=False)
+        )
         data = {"config": self.cfg, "data": {"x_pts": x_pts, "avgi": avgi, "avgq": avgq}}
         self.data = data
 
@@ -151,9 +139,7 @@ class T2R(ExperimentClass):
         sig_rot = osc_fit["sig_rot"]
         y_rot = np.real(sig_rot)
 
-        # ------------------------------------------------------------
-        # Use FFT frequency if one peak is clearly dominant
-        # ------------------------------------------------------------
+        # Report the FFT frequency when one peak clearly dominates.
         fft_peak_dominance = kwargs.get("fft_peak_dominance", 2.5)
 
         fft_freqs = np.asarray(osc_fit["fft_freqs"], dtype=float)
@@ -182,9 +168,6 @@ class T2R(ExperimentClass):
         osc_fit["use_fft_freq"] = use_fft_freq
         osc_fit["dominant_fft_freq"] = dominant_fft_freq
 
-        # ------------------------------------------------------------
-        # Build fit label and reported Ramsey frequency
-        # ------------------------------------------------------------
         perr = np.sqrt(np.diag(osc_fit["pcov"]))
         osc_fit["perr"] = perr
 
@@ -227,9 +210,6 @@ class T2R(ExperimentClass):
 
         print(label)
 
-        # ------------------------------------------------------------
-        # Rotated quadrature plot
-        # ------------------------------------------------------------
         while plt.fignum_exists(num=figNum):
             figNum += 1
 
@@ -250,9 +230,6 @@ class T2R(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
-        # ------------------------------------------------------------
-        # FFT plot
-        # ------------------------------------------------------------
         fig = plt.figure(figNum + 2)
         plt.plot(fft_freqs, fft_spec, "-", label="FFT")
 

@@ -11,16 +11,9 @@ from qicklab.core.experiment import ExperimentClass
 
 
 def iq_rotation_angle(signal_trace):
-    """
-    Angle (rad) of the principal axis of an IQ trajectory.
-
-    Rotating the trace by -angle aligns the direction of maximum variance (the
-    qubit g->e displacement axis swept out during the Rabi) with the I
-    quadrature, so the oscillation lands in a single quadrature and the other
-    stays flat. This is the data-driven alternative to the cavity_winding_*
-    phase, which is a frequency-dependent cable-delay correction, not a
-    quadrature alignment.
-    """
+    """Angle (rad) of the principal (maximum-variance) axis of an IQ trace; rotating by
+    -angle puts the Rabi oscillation in I. Not a cable-winding correction:
+    docs/concepts/iq_conventions.md section 3."""
     i = np.real(signal_trace).astype(float)
     q = np.imag(signal_trace).astype(float)
     i = i - np.mean(i)
@@ -32,12 +25,12 @@ class AmplitudeRabiFFProg(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        self.q_rp = self.ch_page(self.cfg["qubit_ch"])
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in [0, 1]:  # configure the readout lengths and downconversion frequencies
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -45,11 +38,10 @@ class AmplitudeRabiFFProg(RAveragerProgram):
                 gen_ch=cfg["res_ch"],
             )
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
         print(self.pulse_sigma, self.pulse_qubit_lenth)
@@ -72,10 +64,7 @@ class AmplitudeRabiFFProg(RAveragerProgram):
                 gain=cfg["start"],
                 waveform="qubit",
                 length=flattop_length,
-            )  # Flat part of flattop does NOT update with gain
-            # self.set_pulse_registers(ch=cfg["qubit_ch"], style='const', freq=f_ge,
-            #                          phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-            #                          length=flattop_length)
+            )  # flat segment ignores the swept gain: docs/experiments/amplitude_rabi.md
             self.pulse_qubit_lenth += flattop_length
         else:
             self.add_gauss(
@@ -113,14 +102,13 @@ class AmplitudeRabiFFProg(RAveragerProgram):
 
     def body(self):
         self.sync_all()
-        # self.pulse(ch=self.cfg['ff_ch'])
         self.trigger(
             pins=[0],
             t=self.us2cycles(1 + self.cfg["trig_delay"] - self.cfg["trig_buffer_start"]),
             width=self.trig_length,
         )
 
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
+        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))
         self.sync_all(self.us2cycles(0.05))
 
         self.measure(
@@ -134,15 +122,13 @@ class AmplitudeRabiFFProg(RAveragerProgram):
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(
-            self.q_rp, self.r_gain, self.r_gain, "+", self.cfg["step"]
-        )  # update gain of the Gaussian
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, "+", self.cfg["step"])
 
 
 class AmplitudeRabiFF(ExperimentClass):
-    """
-    Basic AmplitudeRabi
-    """
+    """Amplitude Rabi with a register-swept gain (start/step/expts), principal-axis IQ
+    rotation and optional cosine fit. Use the Gaussian envelope here: the flat-top branch
+    ignores the swept gain, so flat-top Rabi is AmplitudeRabiFF_N (docs/experiments/amplitude_rabi.md)."""
 
     def __init__(
         self,
@@ -167,8 +153,6 @@ class AmplitudeRabiFF(ExperimentClass):
         )
 
     def acquire(self, progress=False, debug=False):
-        #### pull the data from the amp rabi sweep
-        # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
         prog = AmplitudeRabiFFProg(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(
@@ -180,13 +164,10 @@ class AmplitudeRabiFF(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
-        )  # , debug=False)
+        )
 
-        # Ensure numeric arrays (handles nested lists)
         avgi = np.asarray(avgi, dtype=np.float64)
         avgq = np.asarray(avgq, dtype=np.float64)
-
-        # Optional: ensure x_pts is numeric too
         x_pts = np.asarray(x_pts, dtype=np.float64)
 
         phase = (
@@ -195,10 +176,7 @@ class AmplitudeRabiFF(ExperimentClass):
         )
         signal = (avgi + 1j * avgq) * np.exp(1j * phase)
 
-        # Data-driven principal-axis IQ rotation layered on top of the
-        # cavity-winding phase: aligns the Rabi oscillation with one quadrature
-        # so the downstream cosine fit sees full contrast. (Stored for display;
-        # does NOT replace the fit.)
+        # Principal-axis rotation on top of the winding phase (axis estimated over both ADCs).
         rot_angle = iq_rotation_angle(np.ravel(signal))
         signal = signal * np.exp(-1j * rot_angle)
         print(f"[AmplitudeRabiFF] IQ rotation angle = {np.rad2deg(rot_angle):.2f} deg")
@@ -308,20 +286,19 @@ class AmplitudeRabiPointProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in [0, 1]:  # configure the readout lengths and downconversion frequencies
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
 
@@ -338,7 +315,7 @@ class AmplitudeRabiPointProg(AveragerProgram):
                 gain=cfg["qubit_gain"],
                 waveform="qubit",
                 length=flattop_length,
-            )  # Flat part of flattop does NOT update with gain
+            )
             self.pulse_qubit_lenth += flattop_length
         else:
             self.set_pulse_registers(
@@ -374,7 +351,7 @@ class AmplitudeRabiPointProg(AveragerProgram):
             width=self.trig_length,
         )
 
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
+        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))
         self.sync_all(self.us2cycles(0.05))
 
         self.measure(
@@ -389,9 +366,8 @@ class AmplitudeRabiPointProg(AveragerProgram):
 
 
 class AmplitudeRabiFF_N(ExperimentClass):
-    """
-    Basic AmplitudeRabi
-    """
+    """Amplitude Rabi as a Python loop over gains (one program per gain); needed for
+    flat-top pulses (docs/experiments/amplitude_rabi.md)."""
 
     def __init__(
         self,
@@ -464,7 +440,6 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
         fit_i = fit_q = None
         if fit:
-            # fit I and Q separately
             fit_i = fit_rabi_cosine(x_pts, avgi)
             fit_q = fit_rabi_cosine(x_pts, avgq)
 
@@ -481,7 +456,6 @@ class AmplitudeRabiFF_N(ExperimentClass):
             print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
             print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
 
-        # store fit results on the object in case you want to inspect later
         self.fit_i = fit_i
         self.fit_q = fit_q
 
@@ -500,9 +474,7 @@ class AmplitudeRabiFF_N(ExperimentClass):
                 x_pts, fit_q["yfit"], "-", label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color="blue"
             )
 
-            # Only draw the pi-gain marker if the fit landed inside the swept range.
-            # A failed cosine fit (no visible oscillation) returns a runaway period,
-            # which would otherwise autoscale the x-axis out to ~1e9.
+            # A failed fit has a runaway period: hide out-of-range markers (amplitude_rabi.md).
             for f, color, lbl in ((fit_i, "orange", "I pi gain"), (fit_q, "blue", "Q pi gain")):
                 if x_min <= f["pi_gain"] <= x_max:
                     plt.axvline(f["pi_gain"], linestyle="--", color=color, alpha=0.7, label=lbl)
@@ -528,7 +500,6 @@ class AmplitudeRabiFF_N(ExperimentClass):
             plt.close(fig)
 
     def save_data(self, data=None):
-        # print(f'Saving {self.fname}')
         new_name = self.fname[:-3] + "_Q" + str(self.cfg["Qubit_number"]) + ".h5"
         self.fname = new_name
         print(f"Saving {self.fname}")

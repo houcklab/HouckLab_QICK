@@ -1,4 +1,3 @@
-# from q4diamond.Client_modules.socProxy import makeProxy
 import time
 
 import matplotlib.pyplot as plt
@@ -11,13 +10,12 @@ from qicklab.core.experiment import ExperimentClass
 
 class ChiProgram(AveragerProgram):
     def initialize(self):
-
         cfg = self.cfg
         cfg["rounds"] = 1
         self.declare_gen(
             ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
-        )  # Readout
-        for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
+        )
+        for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -29,9 +27,7 @@ class ChiProgram(AveragerProgram):
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
 
         self.freq_01 = self.freq2reg(cfg["qubit_freq"], gen_ch=qubit_ch)
-        freq = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
         self.set_pulse_registers(
             ch=cfg["res_ch"],
@@ -42,6 +38,7 @@ class ChiProgram(AveragerProgram):
             length=self.us2cycles(cfg["length"]),
         )
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(
@@ -57,7 +54,7 @@ class ChiProgram(AveragerProgram):
                 gain=cfg["pi_gain"],
                 waveform="qubit",
                 length=flattop_length,
-            )  # Flat part of flattop does NOT update with gain
+            )
             self.pulse_qubit_lenth += flattop_length
         else:
             self.set_pulse_registers(
@@ -72,7 +69,7 @@ class ChiProgram(AveragerProgram):
     def body(self):
         self.sync_all(self.us2cycles(0.05))
         if self.cfg["pulse_01"]:
-            self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(0.1))  # play probe pulse
+            self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(0.1))
 
         self.sync_all(self.us2cycles(0.05))
         self.measure(
@@ -87,13 +84,11 @@ class ChiProgram(AveragerProgram):
         if self.cfg["pulse_01"]:
             self.sync_all(self.us2cycles(self.cfg["relax_delay"] - self.cfg["cav_relax_delay"]))
 
-    # ====================================================== #
-
 
 class ChiShift(ExperimentClass):
-    """
-    Transmission Experiment basic
-    """
+    """Dispersive shift: transmission sweep without and with a pi pulse; chi from the two
+    transmission minima. Half-open grid around pulse_freq + cavity_shift
+    (docs/experiments/chi_shift.md)."""
 
     def __init__(
         self,
@@ -128,11 +123,9 @@ class ChiShift(ExperimentClass):
         fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
         results_ground = []
         results_01 = []
-        results_12 = []
 
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
-            start_inital = time.time()
             self.cfg["pulse_freq"] = f
 
             self.cfg["pulse_01"] = False
@@ -160,15 +153,12 @@ class ChiShift(ExperimentClass):
 
         x_pts = (data["data"]["fpts"] + self.cfg["cavity_LO"] / 1e6) / 1e3  # GHz
 
-        # Ground Data
         sig = data["data"]["results_ground"][0][0][0] + 1j * data["data"]["results_ground"][0][0][1]
         avgamp_ground = np.abs(sig)
 
-        # 01 Data
         sig = data["data"]["results_01"][0][0][0] + 1j * data["data"]["results_01"][0][0][1]
         avgamp_01 = np.abs(sig)
 
-        # Find peak frequencies
         idx_ground = np.argmin(avgamp_ground)
         idx_01 = np.argmin(avgamp_01)
 
@@ -186,7 +176,6 @@ class ChiShift(ExperimentClass):
         plt.plot(x_pts, avgamp_ground, label="Ground", color="red", ls="-", marker=".")
         plt.plot(x_pts, avgamp_01, label="01", color="blue", ls="-", marker=".")
 
-        # Mark peaks
         plt.axvline(
             f_ground, color="red", ls="--", alpha=0.7, label=f"Ground peak = {f_ground:.6f} GHz"
         )

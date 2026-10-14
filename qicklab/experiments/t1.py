@@ -11,13 +11,13 @@ class T1Program(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
         self.r_wait = 3
         self.regwi(self.q_rp, self.r_wait, cfg["start"])
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -25,20 +25,16 @@ class T1Program(RAveragerProgram):
                 gen_ch=cfg["res_ch"],
             )
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(
             ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_lenth
         )
 
-        # self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-        #                          phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["pi_gain"],
-        #                          waveform="qubit")
         self.set_pulse_registers(
             ch=cfg["res_ch"],
             style="const",
@@ -58,7 +54,7 @@ class T1Program(RAveragerProgram):
                 gain=cfg["pi_gain"],
                 waveform="qubit",
                 length=flattop_length,
-            )  # Flat part of flattop does NOT update with gain
+            )
             self.pulse_qubit_lenth += flattop_length
         else:
             self.set_pulse_registers(
@@ -98,15 +94,12 @@ class T1Program(RAveragerProgram):
         )
 
     def update(self):
-        self.mathi(
-            self.q_rp, self.r_wait, self.r_wait, "+", self.us2cycles(self.cfg["step"])
-        )  # update frequency l
+        self.mathi(self.q_rp, self.r_wait, self.r_wait, "+", self.us2cycles(self.cfg["step"]))
 
 
 class T1FF(ExperimentClass):
-    """
-    Basic T1
-    """
+    """T1: pi pulse, register-swept wait (from the pulse end), readout; min-Q-range IQ
+    rotation and a single-exponential fit (docs/experiments/t1.md)."""
 
     def __init__(
         self,
@@ -131,9 +124,6 @@ class T1FF(ExperimentClass):
         )
 
     def acquire(self, progress=False, debug=False):
-
-        #### pull the data from the amp rabi sweep
-        # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
         prog = T1Program(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(
@@ -145,7 +135,7 @@ class T1FF(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
-        )  # debug=False)
+        )
 
         avgi = np.asarray(avgi, dtype=np.float64)
         avgq = np.asarray(avgq, dtype=np.float64)
@@ -196,7 +186,7 @@ class T1FF(ExperimentClass):
 
         T1_fit, T1_est, T1_err = fit_exp_decay(x_pts, avgi)
 
-        while plt.fignum_exists(num=figNum):  ###account for if figure with number already exists
+        while plt.fignum_exists(num=figNum):
             figNum += 1
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, "o", label="i", color="orange")
@@ -226,27 +216,8 @@ class T1FF(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
-        # a_guess = avgq[0] - avgq[-1]
-        # b_guess = avgq[-1]
-        # approx_t1_val = a_guess / 2.6 + b_guess
-        # index_t1_guess = np.argmin(np.abs(avgq - approx_t1_val))
-        # t1_guess = x_pts[index_t1_guess]
-        # if avgq[-1] < avgq[0]:
-        #     t1_guess *= -1
-        # guess = [a_guess, t1_guess, b_guess]
-        # pOpt, pCov = curve_fit(_expFit, x_pts, avgq, p0=guess)
-        # perr =np.sqrt(np.diag(pCov))
-        #
-        # T1_fit = _expFit(x_pts, *pOpt)
-        #
-        # T1_est = np.abs(pOpt[1])
-        # T1_err = perr[1]
-
         fig = plt.figure(figNum + 1)
-        # sig = avgi + 1j * avgq
-        # avgamp0 = np.abs(sig)
         plt.plot(x_pts, avgq, "o", label="q")
-        # plt.plot(x_pts, T1_fit, '-', label="fit", color = 'black')
 
         plt.ylabel("a.u.")
         plt.xlabel("Wait time (us)")

@@ -7,13 +7,6 @@ from qick import AveragerProgram, RAveragerProgram
 from qicklab.core.experiment import ExperimentClass
 
 
-def rotate_iq(avgi, avgq):
-    sig = np.asarray(avgi) + 1j * np.asarray(avgq)
-    theta = -np.angle(np.mean(sig))
-    sig_rot = sig * np.exp(1j * theta)
-    return sig_rot
-
-
 class ChargeDispersionProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
@@ -22,13 +15,12 @@ class ChargeDispersionProgram(AveragerProgram):
         self.r_wait = 3
         self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
 
-        # Fixed wait time for charge-dispersion experiment:
-        # assumes df is in MHz, so 1/df is in us
+        # df in MHz -> wait 1/df us (1/df vs 1/(2 df): docs/experiments/charge_dispersion.md)
         t_wait_us = 1.0 / cfg["df"]
         self.regwi(self.q_rp, self.r_wait, self.us2cycles(t_wait_us))
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
@@ -41,6 +33,7 @@ class ChargeDispersionProgram(AveragerProgram):
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=cfg["qubit_ch"])
         self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4, gen_ch=cfg["qubit_ch"])
         self.add_gauss(
@@ -70,18 +63,14 @@ class ChargeDispersionProgram(AveragerProgram):
     def body(self):
         self.regwi(self.q_rp, self.r_phase, 0)
 
-        # First pi/2
         self.pulse(ch=self.cfg["qubit_ch"])
         self.sync_all()
 
-        # Fixed wait = 1/df
         self.sync(self.q_rp, self.r_wait)
 
-        # Second pi/2
         self.pulse(ch=self.cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
 
-        # Readout
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
@@ -92,10 +81,9 @@ class ChargeDispersionProgram(AveragerProgram):
 
 
 class ChargeDispersion(ExperimentClass):
-    """
-    Fixed-wait Ramsey-style charge-dispersion experiment.
-    Wait time is set by 1/df from cfg["df"].
-    """
+    """Single-point fixed-wait Ramsey (pi/2 - 1/df - pi/2) for charge-parity readout.
+
+    docs/experiments/charge_dispersion.md."""
 
     def __init__(
         self,
@@ -193,9 +181,9 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
             nqz=cfg["nqz"],
             mixer_freq=cfg["mixer_freq"],
             ro_ch=cfg["ro_chs"][0],
-        )  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in [0, 1]:  # configure the readout lengths and downconversion frequencies
+        )
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -203,21 +191,16 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
                 gen_ch=cfg["res_ch"],
             )
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
+        self.q_rp = self.ch_page(self.cfg["qubit_ch"])
+        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
 
-        ### Start fast flux
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0)
 
-        self.f_start = self.freq2reg(
-            cfg["start"], gen_ch=cfg["qubit_ch"]
-        )  # get start/step frequencies
+        self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
-        # add qubit and readout pulses to respective channels
         if cfg["Gauss"]:
+            # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
             self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
             self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
             self.add_gauss(
@@ -256,8 +239,7 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
 
     def body(self):
         self.sync_all()
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
-        # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))
         self.sync_all(self.us2cycles(0.5))
         self.measure(
             pulse_ch=self.cfg["res_ch"],
@@ -270,20 +252,13 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(
-            self.q_rp, self.r_freq, self.r_freq, "+", self.f_step
-        )  # update frequency list index
-
-
-# ====================================================== #
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, "+", self.f_step)
 
 
 class ChargeDispersionQuasiCW(ExperimentClass):
-    """
-    Quasi-CW charge dispersion experiment.
-    Runs the pulse-measure loop in hardware using cfg["reps"] and returns
-    repetition-resolved data in one acquire call.
-    """
+    """Quasi-CW two-tone: the pulse-measure loop runs in hardware (cfg["reps"]) and one acquire
+    returns the repetition-resolved raw IQ. The program can sweep r_freq; the runner passes
+    step=0, expts=1 (fixed frequency). docs/experiments/charge_dispersion.md."""
 
     def __init__(
         self,
@@ -314,8 +289,7 @@ class ChargeDispersionQuasiCW(ExperimentClass):
 
         prog = self.prog
 
-        # This still returns averaged data, but more importantly it also fills
-        # prog.di_buf and prog.dq_buf with the raw repetition stream.
+        # The averages are incidental; acquire also fills di_buf/dq_buf with one entry per shot.
         x_pts, avgi_avg, avgq_avg = prog.acquire(
             self.soc,
             threshold=None,
@@ -327,39 +301,29 @@ class ChargeDispersionQuasiCW(ExperimentClass):
             progress=progress,
         )
 
-        # averaged outputs
         avgi_avg = np.asarray(avgi_avg)
         avgq_avg = np.asarray(avgq_avg)
 
-        signal_avg = (avgi_avg + 1j * avgq_avg) * np.exp(
+        winding = np.exp(
             1j
             * (
                 2 * np.pi * self.cfg["cavity_winding_freq"] * self.cfg["pulse_freq"]
                 + self.cfg["cavity_winding_offset"]
             )
         )
+        signal_avg = (avgi_avg + 1j * avgq_avg) * winding
 
-        # raw repetition-resolved outputs
-        # prog.di_buf/prog.dq_buf contain one entry per hardware shot
         raw_i = np.asarray(prog.di_buf[0])  # ADC 0
-        raw_q = np.asarray(prog.dq_buf[0])  # ADC 0
+        raw_q = np.asarray(prog.dq_buf[0])
 
         reps = int(self.cfg["reps"])
         expts = int(self.cfg["expts"])
 
-        # RAverager ordering is expt outer, reps inner in the tProc program.
-        # Depending on buffer order, one of these reshape conventions is right.
-        # The usual desired final shape is (repetitions, expts).
+        # qick 0.2.334 acc_buf loop_dims are [expts, reps] (expts outer) -> (reps, expts).
         raw_i = raw_i.reshape(expts, reps).T
         raw_q = raw_q.reshape(expts, reps).T
 
-        raw_signal = (raw_i + 1j * raw_q) * np.exp(
-            1j
-            * (
-                2 * np.pi * self.cfg["cavity_winding_freq"] * self.cfg["pulse_freq"]
-                + self.cfg["cavity_winding_offset"]
-            )
-        )
+        raw_signal = (raw_i + 1j * raw_q) * winding
 
         if print_time:
             elapsed = datetime.now() - start_real

@@ -15,17 +15,15 @@ class CavitySpecFFProg(AveragerProgram):
         cfg = self.cfg
         self.declare_gen(
             ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
-        )  # Readout
-        for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
+        )
+        for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
-        freq = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         self.set_pulse_registers(
             ch=cfg["res_ch"],
             style="const",
@@ -34,7 +32,7 @@ class CavitySpecFFProg(AveragerProgram):
             gain=cfg["pulse_gain"],
             length=self.us2cycles(cfg["length"]),
         )
-        self.synci(200)  # give processor some time to configure pulses
+        self.synci(200)
 
     def body(self):
         self.sync_all(200)
@@ -47,13 +45,11 @@ class CavitySpecFFProg(AveragerProgram):
         )
         self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]))
 
-    # ====================================================== #
-
 
 class CavitySpecFF(ExperimentClass):
-    """
-    Transmission Experiment basic
-    """
+    """Resonator transmission vs probe frequency (one program per point), optional hanger fit.
+
+    Sweep, fit and outputs: docs/experiments/transmission_fit.md."""
 
     def __init__(
         self,
@@ -87,9 +83,8 @@ class CavitySpecFF(ExperimentClass):
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
             self.cfg["pulse_freq"] = f
-            # One CavitySpecFF slice starts TransNumPoints * rounds tProc programs,
-            # and a charge sweep runs many slices; retry the rare stale-shot-counter
-            # failure instead of losing the sweep. See acquire_with_retry().
+            # One program per point: retry the stale-shot-counter race
+            # (docs/concepts/averaging.md#the-stale-shot-counter-race).
             results.append(
                 acquire_with_retry(
                     lambda: CavitySpecFFProg(self.soccfg, self.cfg),
@@ -104,7 +99,6 @@ class CavitySpecFF(ExperimentClass):
         data = {"config": self.cfg, "data": {"results": results, "fpts": fpts}}
         self.data = data
 
-        #### find the frequency corresponding to the peak
         sig = data["data"]["results"][0][0][0] + 1j * data["data"]["results"][0][0][1]
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
@@ -136,7 +130,6 @@ class CavitySpecFF(ExperimentClass):
 
         if fit:
             try:
-                # Better automatic starting point from the actual trace
                 span_mhz = float(np.max(fpts) - np.min(fpts))
                 y_edge = 0.5 * (
                     np.median(y_db[: max(3, len(y_db) // 10)])
@@ -207,7 +200,6 @@ class CavitySpecFF(ExperimentClass):
 
         self.data = data
 
-        # I/Q/Amp plot
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, ".-", color="Green", label="I")
         plt.plot(x_pts, avgq, ".-", color="Blue", label="Q")
@@ -232,7 +224,6 @@ class CavitySpecFF(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
-        # Hanger fit plot
         if fit_result is not None:
             popt = fit_result["popt"]
 

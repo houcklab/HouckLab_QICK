@@ -14,17 +14,15 @@ class T1SingleShotProgram(AveragerProgram):
         cfg = self.cfg
         cfg["rounds"] = 1
 
-        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
 
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
 
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
-        for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
+        for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -42,6 +40,7 @@ class T1SingleShotProgram(AveragerProgram):
 
         self.f_qubit01 = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
+        # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(
@@ -84,11 +83,7 @@ class T1SingleShotProgram(AveragerProgram):
         start_src="internal",
         progress=False,
     ):
-
-        # start = time.time()
         super().acquire(soc, load_pulses=load_pulses, progress=progress)
-        # print(time.time() - start)
-
         return self.collect_shots()
 
     def collect_shots(self):
@@ -103,9 +98,8 @@ class T1SingleShotProgram(AveragerProgram):
 
 
 class T1_SS(ExperimentClass):
-    """
-    Basic T1
-    """
+    """Single-shot T1: one program per wait, shots thresholded with a single-shot angle and
+    threshold into an excited fraction (docs/experiments/t1_single_shot.md)."""
 
     def __init__(
         self,
@@ -169,7 +163,7 @@ class T1_SS(ExperimentClass):
         x_pts = data["data"]["wait_times"]
         expectation_values = data["data"]["Exp_values"]
 
-        while plt.fignum_exists(num=figNum):  ###account for if figure with number already exists
+        while plt.fignum_exists(num=figNum):
             figNum += 1
         fig = plt.figure(figNum)
         plt.plot(x_pts, expectation_values, "o-", color="orange")

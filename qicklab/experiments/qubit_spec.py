@@ -16,9 +16,9 @@ class QubitSpecSliceFFProg(RAveragerProgram):
             nqz=cfg["nqz"],
             mixer_freq=cfg["mixer_freq"],
             ro_ch=cfg["ro_chs"][0],
-        )  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in [0, 1]:  # configure the readout lengths and downconversion frequencies
+        )
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
                 length=self.us2cycles(cfg["readout_length"]),
@@ -26,21 +26,16 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                 gen_ch=cfg["res_ch"],
             )
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
+        self.q_rp = self.ch_page(self.cfg["qubit_ch"])
+        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
 
-        ### Start fast flux
-        f_res = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0
-        )  # conver f_res to dac register value
+        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0)
 
-        self.f_start = self.freq2reg(
-            cfg["start"], gen_ch=cfg["qubit_ch"]
-        )  # get start/step frequencies
+        self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
-        # add qubit and readout pulses to respective channels
         if cfg["Gauss"]:
+            # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
             self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
             self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
             self.add_gauss(
@@ -81,8 +76,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 
     def body(self):
         self.sync_all()
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
-        # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))
         self.sync_all(self.us2cycles(0.5))
         self.measure(
             pulse_ch=self.cfg["res_ch"],
@@ -95,18 +89,13 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(
-            self.q_rp, self.r_freq, self.r_freq, "+", self.f_step
-        )  # update frequency list index
-
-
-# ====================================================== #
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, "+", self.f_step)
 
 
 class QubitSpecSliceFF(ExperimentClass):
-    """
-    Basic spec experiement that takes a single slice of data
-    """
+    """Two-tone qubit spectroscopy: register-swept qubit frequency, fixed readout tone.
+
+    Peak picking and Lorentzian fits in display(): docs/experiments/two_tone_spec.md."""
 
     def __init__(
         self,
@@ -142,12 +131,10 @@ class QubitSpecSliceFF(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
-        )  # , debug=False)
-        # Convert avgi and avgq to NumPy arrays
+        )
         avgi = np.asarray(avgi)
         avgq = np.asarray(avgq)
 
-        # Compute the complex signal
         signal = (avgi + 1j * avgq) * np.exp(
             1j
             * (
@@ -156,23 +143,14 @@ class QubitSpecSliceFF(ExperimentClass):
             )
         )
 
-        # Separate back into real and imaginary parts
         avgi = signal.real
         avgq = signal.imag
 
         data = {"config": self.cfg, "data": {"x_pts": x_pts, "avgi": avgi, "avgq": avgq}}
         self.data = data
 
-        x_pts = data["data"]["x_pts"]
-        avgi = data["data"]["avgi"]
-        avgq = data["data"]["avgq"]
-
-        #### find the frequency corresponding to the qubit dip
-        #### index [0][0] -> first readout channel, first experiment (matches display()),
-        #### otherwise argmax flattens across both declared ADC channels and overruns x_pts
-        #### project onto the signal-bearing IQ axis (background-subtracted + rotated)
-        #### rather than the raw magnitude, which is dominated by the large, noisy
-        #### background quadrature and misses the qubit feature.
+        # [0][0] = ADC 0, read 0 (a flat argmax overruns x_pts); projection, not |I + iQ|
+        # (docs/concepts/iq_conventions.md section 2).
         signal_trace = project_iq_signal(avgi[0][0], avgq[0][0])
         peak_loc = np.argmax(signal_trace)
         self.qubitFreq = x_pts[peak_loc]
@@ -187,19 +165,13 @@ class QubitSpecSliceFF(ExperimentClass):
         avgi = np.asarray(data["data"]["avgi"][0][0], dtype=float)
         avgq = np.asarray(data["data"]["avgq"][0][0], dtype=float)
 
-        # Project onto the signal-bearing IQ axis (background-subtracted + rotated)
-        # instead of the raw magnitude |I+iQ|^2. The magnitude is dominated by the
-        # large, noisy background quadrature, which buries the qubit feature and
-        # makes peak-finding lock onto background noise spikes.
+        # Projection, not |I + iQ| (docs/concepts/iq_conventions.md section 2).
         avgamp0 = project_iq_signal(avgi, avgq)
 
         min_sep_mhz = kwargs.get("min_sep_mhz", min_sep)
         fit_window_mhz = kwargs.get("fit_window_mhz", 3 * min_sep_mhz)
         prominent_ratio = kwargs.get("prominent_ratio", 0.35)
 
-        # -----------------------------
-        # Find candidate local maxima
-        # -----------------------------
         candidate_inds = []
         n = len(avgamp0)
 
@@ -236,9 +208,6 @@ class QubitSpecSliceFF(ExperimentClass):
 
         selected_peaks = sorted(selected_peaks, key=lambda i: x_pts[i])
 
-        # -----------------------------
-        # Fit at most two Lorentzians
-        # -----------------------------
         lorentz_fits = []
         for idx in selected_peaks:
             fit = fit_lorentzian_near_peak(
@@ -247,9 +216,6 @@ class QubitSpecSliceFF(ExperimentClass):
             if fit is not None:
                 lorentz_fits.append(fit)
 
-        # -----------------------------
-        # Store fit results in data
-        # -----------------------------
         data["data"]["two_tone_peak_freqs"] = np.array([x_pts[i] for i in selected_peaks])
         data["data"]["two_tone_peak_amps"] = np.array([avgamp0[i] for i in selected_peaks])
         data["data"]["lorentz_num_fits"] = len(lorentz_fits)
@@ -275,7 +241,6 @@ class QubitSpecSliceFF(ExperimentClass):
                 f"FWHM={fit['fwhm']:.6f} MHz, R2={fit['r2']:.3f}"
             )
 
-        # Build a subtitle with pulse parameters for easy identification in saved PNGs
         q_gain = self.cfg.get("qubit_gain", "?")
         if self.cfg.get("Gauss", False):
             sigma_us = self.cfg.get("sigma", "?")
@@ -284,9 +249,6 @@ class QubitSpecSliceFF(ExperimentClass):
             q_len = self.cfg.get("qubit_length", "?")
             pulse_info = f"gain={q_gain}  length={q_len} µs"
 
-        # -----------------------------
-        # Plot I/Q
-        # -----------------------------
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, ".-", color="Orange", label="I")
         plt.plot(x_pts, avgq, ".-", color="Blue", label="Q")
@@ -306,9 +268,6 @@ class QubitSpecSliceFF(ExperimentClass):
         fig.clf(True)
         plt.close(fig)
 
-        # -----------------------------
-        # Plot amplitude^2 + Lorentzian fits
-        # -----------------------------
         fig = plt.figure(figNum + 1)
         plt.plot(x_pts, avgamp0, ".-", color="Purple", label="rotated IQ projection")
 

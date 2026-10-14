@@ -13,6 +13,7 @@ class ConstantTwoToneProg(AveragerProgram):
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"])
         f_qub = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])
 
+        # 16-bit length register: docs/concepts/timing_and_units.md#pulse-envelopes
         res_len = min(self.us2cycles(cfg["tone_length"], gen_ch=cfg["res_ch"]), 65535)
         qub_len = min(self.us2cycles(cfg["tone_length"], gen_ch=cfg["qubit_ch"]), 65535)
 
@@ -46,6 +47,10 @@ class ConstantTwoToneProg(AveragerProgram):
 
 
 class ConstantTwoTone(ExperimentClass):
+    """Start near-CW resonator + qubit tones (no readout) and return.
+
+    docs/experiments/cw_tones.md."""
+
     def __init__(
         self,
         soc=None,
@@ -112,10 +117,8 @@ class ConstantTone(AveragerProgram):
         cfg["rounds"] = 1000
         self.declare_gen(
             ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
-        )  # Readout
-        freq = self.freq2reg(
-            cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]
-        )  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        )
+        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         self.set_pulse_registers(
             ch=cfg["res_ch"],
             style="const",
@@ -124,20 +127,16 @@ class ConstantTone(AveragerProgram):
             gain=cfg["pulse_gain"],
             length=self.us2cycles(cfg["length"]),
         )
-        self.synci(200)  # give processor some time to configure pulses
+        self.synci(200)
 
     def body(self):
         self.pulse(ch=self.cfg["res_ch"])
         self.sync_all()
-        print("oh yeah")
-
-    # ====================================================== #
 
 
 class SingleTone(ExperimentClass):
-    """
-    Transmission Experiment basic
-    """
+    """Brute-force constant resonator tone: 100 acquires of ConstantTone (1e5 reps x 1000
+    rounds each); docs/experiments/cw_tones.md."""
 
     def __init__(
         self,
