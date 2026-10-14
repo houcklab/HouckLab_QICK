@@ -18,7 +18,7 @@ import pytest
 from tests.refactor import equivalence as eq
 from tests.refactor.symbol_map import FILE_PHASE, SYMBOLS
 
-CURRENT_PHASE = "3b"
+CURRENT_PHASE = "3b-done"
 HAS_QICKLAB = (eq.REPO / "qicklab").is_dir()
 
 

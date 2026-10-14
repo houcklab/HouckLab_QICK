@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, during phase 3b: areas 1,2,3,7 landed; runs, experiments basic/advanced in flight).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-13 (session 2 on macOS, phase 3b complete; research review running).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -63,6 +63,14 @@ Orchestrate with dynamic workflows dispatching Opus 5.5 agents; the orchestrator
     hist_process(normalize=...) merge, classify_thermal_tail, dead code, verified identical-result improvements)
 16. `791d395c` refactor(twpa) — area 7 (hardware/pnax.py, hardware/synthhd.py, yoko ramp_current, twpa/common.py;
     all five scripts kept)
+17. `07f9900d` refactor(experiments) — area 4, basic experiments (rotate_iq deleted, `if True:` flattened, comments,
+    verified identical-result improvements)
+18. `742d357e` refactor(experiments) — area 5, advanced (single_shot ~550 dead lines + readout_optimize *_Higher*
+    classes deleted; ModifiedRamsey's readout window / active reset / schedule ledger are core/readout.py,
+    core/active_reset.py (ActiveResetMixin), core/schedule.py; ARV/SingleShot/Undriven keep their own copies)
+19. `818a782a` refactor(runs) — area 6 (analysis.iq.kmeans_split, analysis/plotting.py, core/io.py,
+    auto_coherence merges into yoko.ramp_to / spectroscopy.find_two_tone_peaks)
+20. 3b-done: `CURRENT_PHASE = "3b-done"` — the structural gate is strict again (every 3b deletion/merge done)
 Each 3b area commit: full pytest 170 passed on an isolated snapshot worktree, golden byte-identical,
 adversarial old-vs-new review (reject → fix → approve where needed). Workflow script per area:
 `~/.claude/projects/.../workflows/scripts/qicklab-3b-area-*.js` (cleanup agent, reviewer, fix loop, args =
@@ -76,7 +84,16 @@ runner, star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab 
 Windows PC in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and
 the TWPA modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
 
-## NEXT STEP: phase 3b (one commit per area, adversarial old-vs-new review each)
+## NEXT STEP: research-effectiveness review → individual bug/improvement commits, then phase 5a
+Phase 3b is complete (areas 1-7). Running/next: the read-only research review workflow (seven domain
+reviewers + a refuter per tier-A/B finding; script `qicklab-research-review-*.js`), then one commit per
+accepted finding (bug fixes incl. design.md "Known bugs", low-risk effectiveness improvements; each with
+the golden regenerated and the diff classified per label in the commit message; tier C = methodology
+changes needing the fridge go to docs as proposals), the dead-cfg-key commit (`pulse_style`, `ts` keys,
+ConstantTwoTone debug prints) with its allowlist, then 5a (Device/Session/recipes/PLAN + devices/CSTQ03.py +
+runners/CSTQ03_session.py), 5b, 6, docs rewrite, merge back.
+
+## Phase 3b plan as executed (one commit per area, adversarial old-vs-new review each)
 Areas in order (shared helpers first): 1 hardware, 2 core, 3 analysis helpers (+ switch callers), 4 experiments
 basic, 5 experiments advanced (single_shot / readout_optimize deletions, MR dedupe into core/readout,
 core/active_reset, core/schedule only where the audit proved identical math), 6 runs (dedupe KMeans/plot/save
