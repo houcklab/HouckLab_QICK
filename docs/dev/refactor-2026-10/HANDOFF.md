@@ -1,6 +1,6 @@
 # Refactor handoff — read this first
 
-Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17, F10, F03 landed).
+Branch: `qicklab_refactor` (from `bfc_code` @ 0f0a51f). Last updated 2026-10-14 (session 2, applying research-review findings; F09, F00, F08, F01, F06, F11, F22, F13, F28, F23, F15, F18, F17, F10, F03, F26 landed).
 Claude Code session that produced this: https://claude.ai/code/session_01LV3mPq1wVnxztiZabqm3RY
 
 ## Goal (user's words, condensed)
@@ -105,6 +105,9 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
 35. `2859f222` fix(readout): F10 — thermal-mode population by a two-cloud EM fit (golden: 0 leaves)
 36. `8fdde7ca` fix(runs): F03 — transmission_fit carries the display fit's minimum (golden: 24 leaves, the
     two transmission carry-over labels' downstream pulse_freq/program/config digests)
+
+37. `4ecf0ba1` fix(rabi): F26 — rotation from the analysed read, fixed sign, contrast diagnostic (golden: 88
+    data_digest leaves in the four Rabi labels)
 
 ## STATE OF THE WORKING TREE (session 2 continues, 2026-10-14)
 Commits above are verified. The WORKING TREE holds UNCOMMITTED, in-progress edits from parallel fix agents
