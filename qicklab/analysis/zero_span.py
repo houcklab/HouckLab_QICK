@@ -1,5 +1,6 @@
 """Offline zero-span parity analysis: classify_parity_trace, sliding_window_switch_rate,
-detect_bursts and the analyze_parity_run pipeline (validation primitives: zero_span_checks).
+event_switch_rate, detect_bursts, baseline_rate_and_bursts and the analyze_parity_run
+pipeline (validation primitives: zero_span_checks).
 Method: docs/experiments/zero_span_parity.md#analysis. Tests: tests/test_zero_span_analysis.py."""
 
 import json
@@ -102,6 +103,145 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         raise ValueError(f"Unknown method: {method!r}")
 
 
+def _switch_events(bits, t, gap_indices=None):
+    """
+    Per-interval switch events of a binary trace (shared by the window and baseline rates).
+
+    Returns (diffs, t_event, in_record), each of length N-1 for the N-1 sample
+    intervals: diffs[i] = |bits[i+1] - bits[i]| (0 or 1), timestamped t_event[i] = t[i+1];
+    in_record[i] is False for an interval that spans a `gap_indices` boundary, whose
+    diff is forced to 0 so no spurious switch is counted across a gap.
+    """
+    diffs = np.abs(np.diff(bits))  # length N-1, value 0 or 1
+    in_record = np.ones(diffs.size, dtype=bool)
+    if gap_indices:
+        for gi in gap_indices:
+            if 1 <= gi < bits.size:
+                diffs[gi - 1] = 0
+                in_record[gi - 1] = False
+
+    # diffs[i] corresponds to a transition that occurred between t[i] and t[i+1];
+    # assign that switch event the timestamp t[i+1].
+    t_event = t[1:]
+    return diffs, t_event, in_record
+
+
+def event_switch_rate(binary_states, t_us, gap_indices=None, exclude_us=()):
+    """
+    Switch rate in Hz from the raw switch events: n / T with a sqrt(n) standard error.
+
+    n is the number of switches and T the observed time, the sum of the sample
+    intervals t[i+1] - t[i] that do not span a `gap_indices` boundary (no uniform
+    spacing is assumed). An interval whose event timestamp t[i+1] lies inside any
+    closed [t_start_us, t_end_us] pair in `exclude_us` (e.g. a detected burst) is
+    removed from both n and T, so the switches and the exposure stay matched.
+
+    Returns
+    -------
+    dict with keys:
+      rate_Hz      : n / T, or nan when T = 0 (fewer than 2 samples, or all excluded)
+      rate_err_Hz  : sqrt(n) / T, the Gaussian (large-n) approximation to the Poisson
+                     standard error; nan when T = 0. It is 0 when n = 0 and is not a
+                     valid confidence interval for n of order 0-10 (at n = 0 the
+                     one-sided 68 % upper limit is -ln(0.32) / T ~ 1.14 / T); use
+                     n_switches and T_s for an exact Poisson interval there.
+      n_switches   : int, n
+      T_s          : float, T in seconds
+    """
+    bits = np.asarray(binary_states, dtype=int)
+    t = np.asarray(t_us, dtype=float)
+    if bits.shape != t.shape:
+        raise ValueError(f"binary_states shape {bits.shape} != t_us shape {t.shape}")
+    if bits.size < 2:
+        return {"rate_Hz": float("nan"), "rate_err_Hz": float("nan"), "n_switches": 0, "T_s": 0.0}
+    diffs, t_event, keep = _switch_events(bits, t, gap_indices)
+    for t_start, t_end in exclude_us:
+        keep &= ~((t_event >= t_start) & (t_event <= t_end))
+    n = int(diffs[keep].sum())
+    T_s = float(np.sum(np.diff(t)[keep])) * 1e-6
+    if T_s <= 0:
+        return {"rate_Hz": float("nan"), "rate_err_Hz": float("nan"), "n_switches": n, "T_s": 0.0}
+    return {"rate_Hz": n / T_s, "rate_err_Hz": float(np.sqrt(n)) / T_s, "n_switches": n, "T_s": T_s}
+
+
+MAX_BURST_PASSES = 5  # burst exclusion / re-detection passes in baseline_rate_and_bursts
+
+
+def baseline_rate_and_bursts(
+    binary_states, t_us, rate_out, gap_indices=None, k_sigma=5, min_duration_us=None
+):
+    """
+    Event-based baseline switch rate with one pass of burst exclusion, and the bursts.
+
+    1. Provisional baseline: all switches / all observed time (`event_switch_rate`).
+    2. Flag bursts in the sliding-window rates (`rate_out`, from
+       `sliding_window_switch_rate`) with `detect_bursts` at that provisional baseline.
+    3. Baseline: switches / observed time outside those bursts, each widened to the
+       full extent of its flagged windows (by (window_us - stride)/2 per side). If the
+       bursts cover the whole record, the provisional baseline is kept.
+    4. Re-run `detect_bursts` at the new baseline; bursts that only now cross the
+       threshold are excluded too, until no span is added (at most MAX_BURST_PASSES
+       passes). The returned bursts are the last detection, all of them excluded.
+
+    Returns (baseline, bursts): baseline is a dict with keys baseline_rate_Hz,
+    baseline_rate_err_Hz (sqrt(n)/T), n_switches_baseline, T_baseline_s and
+    median_window_rate_Hz (median of the window rates, the former baseline).
+    Method: docs/experiments/zero_span_parity.md#baseline-switch-rate.
+    """
+    rate = np.asarray(rate_out["rate_Hz"], dtype=float)
+    centers = rate_out["window_t_us"]
+
+    def _bursts(baseline_rate):
+        return detect_bursts(
+            rate,
+            centers,
+            baseline_rate=baseline_rate,
+            k_sigma=k_sigma,
+            min_duration_us=min_duration_us,
+            window_us=rate_out["window_us"],
+        )
+
+    # detect_bursts reports a burst as centers[s] - stride/2 .. centers[e-1] + stride/2,
+    # but the flagged windows themselves span centers[s] - window_us/2 .. centers[e-1]
+    # + window_us/2. Pad the exclusion by the difference so the burst's edge switches
+    # (window_us/4 each side at 50 % overlap) do not leak into the baseline; masking a
+    # little quiet time with its own switches is unbiased.
+    stride = float(np.median(np.diff(centers))) if len(centers) >= 2 else 0.0
+    pad = max(float(rate_out["window_us"]) - stride, 0.0) / 2.0
+
+    est = event_switch_rate(binary_states, t_us, gap_indices=gap_indices)
+    bursts = []
+    if np.isfinite(est["rate_Hz"]) and rate.size:
+        # Iterate: a lower baseline lets more bursts cross the threshold, and every
+        # reported burst must be excluded from the baseline. Stop when the detection
+        # no longer adds a span (at most MAX_BURST_PASSES passes).
+        masked = set()
+        bursts = _bursts(est["rate_Hz"])
+        for _ in range(MAX_BURST_PASSES):
+            spans = {(b["t_start_us"], b["t_end_us"]) for b in bursts}
+            if not spans or spans <= masked:
+                break
+            masked |= spans
+            quiet = event_switch_rate(
+                binary_states,
+                t_us,
+                gap_indices=gap_indices,
+                exclude_us=[(s - pad, e + pad) for s, e in sorted(masked)],
+            )
+            if quiet["T_s"] <= 0:
+                break
+            est = quiet
+            bursts = _bursts(est["rate_Hz"])
+    baseline = {
+        "baseline_rate_Hz": est["rate_Hz"],
+        "baseline_rate_err_Hz": est["rate_err_Hz"],
+        "n_switches_baseline": est["n_switches"],
+        "T_baseline_s": est["T_s"],
+        "median_window_rate_Hz": float(np.median(rate)) if rate.size else 0.0,
+    }
+    return baseline, bursts
+
+
 def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap_indices=None):
     """
     Sliding-window switch rate in Hz from a binary parity trace.
@@ -141,15 +281,7 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap
             "step_us": float(step_us),
         }
 
-    diffs = np.abs(np.diff(bits))  # length N-1, value 0 or 1
-    if gap_indices:
-        for gi in gap_indices:
-            if 1 <= gi < bits.size:
-                diffs[gi - 1] = 0
-
-    # diffs[i] corresponds to a transition that occurred between t[i] and t[i+1];
-    # assign that switch event the timestamp t[i+1].
-    t_event = t[1:]
+    diffs, t_event, _ = _switch_events(bits, t, gap_indices)
 
     t_start = t[0]
     t_end = t[-1]
@@ -192,7 +324,9 @@ def detect_bursts(
     rate_Hz       : array (M,) of switch rates per window (output of
                     sliding_window_switch_rate)
     window_t_us   : array (M,) of window center times
-    baseline_rate : float or None; defaults to median(rate_Hz) (robust)
+    baseline_rate : float or None; defaults to median(rate_Hz) (robust). analyze_parity_run
+                    passes the event-based baseline (baseline_rate_and_bursts), which
+                    need not be a whole number of switches per window.
     k_sigma       : float; threshold = baseline + k_sigma * sigma
     min_duration_us : float or None; filter bursts shorter than this
     window_us     : float or None; the sliding-window duration used to produce
@@ -502,13 +636,13 @@ def analyze_parity_run(
     rate_out = sliding_window_switch_rate(
         bits, t_us, window_us=window_us, step_us=step_us, gap_indices=gap_indices
     )
-    bursts = detect_bursts(
-        rate_out["rate_Hz"],
-        rate_out["window_t_us"],
-        baseline_rate=None,
+    baseline, bursts = baseline_rate_and_bursts(
+        bits,
+        t_us,
+        rate_out,
+        gap_indices=gap_indices,
         k_sigma=k_sigma,
         min_duration_us=min_burst_duration_us,
-        window_us=rate_out["window_us"],
     )
     stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
 
@@ -520,11 +654,6 @@ def analyze_parity_run(
         )
         _plot_dwell_histograms(stats, os.path.join(out_dir, base + "_dwell_histograms.png"))
 
-    baseline_rate = (
-        bursts[0]["baseline_rate_Hz"]
-        if bursts
-        else float(np.median(rate_out["rate_Hz"]) if rate_out["rate_Hz"].size else 0.0)
-    )
     summary = {
         "h5_path": h5_path,
         "sample_period_us": sample_period_us,
@@ -536,7 +665,7 @@ def analyze_parity_run(
         "analysis_bin_us": float(analysis_bin_us) if analysis_bin_us else 0.0,
         "mode": mode,
         "n_bursts": len(bursts),
-        "baseline_rate_Hz": baseline_rate,
+        **baseline,
         "mean_dwell_0_us": stats["mean_0"],
         "mean_dwell_1_us": stats["mean_1"],
         "n_runs_0": stats["n_runs_0"],

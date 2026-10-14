@@ -203,7 +203,8 @@ Validation-stage parameters:
     `dwell_0_us`, `dwell_1_us`, summary attrs.
   - `<base>_iq_scatter.png`, `_parity_vs_time.png`, `_switch_rate_vs_time.png`,
     `_dwell_histograms.png`.
-  - Summary fields: `baseline_rate_Hz`, `n_bursts`, `mean_dwell_0/1_us`,
+  - Summary fields: `baseline_rate_Hz`, `baseline_rate_err_Hz`, `n_switches_baseline`,
+    `T_baseline_s`, `median_window_rate_Hz`, `n_bursts`, `mean_dwell_0/1_us`,
     `n_runs_0/1`, `exp_fit_tau_0/1_us`, `raw_sample_period_us`,
     `n_raw/binned_samples`, `analysis_bin_us`, `mode`, `classifier_method`.
 - **Validation:** per-stage JSON sidecars plus raw arrays (stitched IQ, references,
@@ -229,7 +230,8 @@ Validation-stage parameters:
    `step_us` (default 50 % overlap). Windows are half-open; the last one is closed.
    No switch is counted across a `gap_indices` boundary.
 4. **Bursts.**
-   - threshold = baseline + `k_sigma`·σ, baseline = median rate.
+   - threshold = baseline + `k_sigma`·σ, baseline = event-based switch rate (see
+     [Baseline switch rate](#baseline-switch-rate)).
    - σ = max(1.4826·MAD about the median, Poisson floor). The Poisson floor is
      q·√max(baseline_counts, 1), with q = 1/(window_us·1e-6), the rate of one switch
      per window.
@@ -244,6 +246,46 @@ Validation-stage parameters:
    - Optional debouncing (`min_dwell_bins`) for the threshold-stability check.
 6. **Bimodality** (`projected_histogram_snr`): bimodal requires ΔBIC > 0 **and**
    separation SNR > 1.5 **and** both weights in (0.1, 0.9).
+
+### Baseline switch rate
+
+`baseline_rate_Hz` is the quiet-time parity switching rate, computed from the switch
+events themselves (`baseline_rate_and_bursts`, `event_switch_rate`), not from the
+sliding windows:
+
+- **Events and exposure.** n is the number of 0↔1 transitions between consecutive
+  (post-binning) samples; T is the sum of the sample intervals, with every interval
+  that spans a `gap_indices` boundary dropped from both. No uniform spacing is
+  assumed across gaps. The rate is n / T.
+- **Burst exclusion, iterated.** A provisional rate (all switches / all of T) sets
+  the burst threshold. The intervals inside each flagged burst are then removed from
+  both n and T, the rate is recomputed, and the bursts are re-detected against it;
+  because the lower rate lets more bursts cross the threshold, the exclusion is
+  repeated until no new span is flagged (at most `MAX_BURST_PASSES` = 5 passes), so
+  every reported burst is excluded from the baseline. If the bursts cover the whole
+  record, the provisional rate is kept. The excluded
+  span is the full extent of the flagged windows, `[t_start_us − pad, t_end_us +
+  pad]` with pad = (`window_us` − stride)/2 (250 µs at the default 1000 µs window
+  and 50 % overlap): the reported `[t_start_us, t_end_us]` is only stride/2 wide at
+  each end, so masking just that would let a burst's edge switches leak into the
+  baseline and bias it upward when bursts are frequent. Over-masking is unbiased,
+  since quiet switches and quiet time are removed together. Bursts too dim to cross
+  the threshold are not excluded and count toward the baseline.
+- **Uncertainty.** `baseline_rate_err_Hz` = √n / T, the Gaussian (large-n)
+  approximation to the Poisson standard error. It is good for n ≳ 10 switches but
+  is not a valid interval for n of order 0–10: it reads 0 at n = 0, where the
+  one-sided 68 % upper limit is −ln(0.32) / T ≈ 1.14 / T. For sparse records, build
+  an exact Poisson interval from `n_switches_baseline` and `T_baseline_s` (n and T).
+  With fewer than two samples, T = 0 and the rate and its error are NaN.
+- **Why not the median window rate.** Each window holds an integer number of
+  switches, so its median is 0 Hz below about 0.7 switches per window (≈ 700 Hz at
+  `window_us` = 1000; ln 2 for Poisson counts) and a multiple of 1/`window_us` above
+  it, with no error bar. With the expected 2–3 ms dwells (~400 Hz) it read 0 Hz. The
+  median is still reported as `median_window_rate_Hz`, and it remains the
+  centre of the MAD and the default of `detect_bursts` when no baseline is passed.
+- **Burst threshold.** The Poisson floor q·√max(baseline_counts, 1) takes the
+  non-integer baseline_counts = baseline / q as is: below one switch per window
+  the floor stays at q.
 
 ### The 9-stage validation chain
 

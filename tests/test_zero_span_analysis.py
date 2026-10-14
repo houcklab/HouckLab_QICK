@@ -17,8 +17,10 @@ from qicklab.analysis.dwell import _fit_exp_dwell, dwell_time_statistics
 from qicklab.analysis.zero_span import (
     _bin_iq_time,
     analyze_parity_run,
+    baseline_rate_and_bursts,
     classify_parity_trace,
     detect_bursts,
+    event_switch_rate,
     sliding_window_switch_rate,
 )
 from qicklab.analysis.zero_span_checks import (
@@ -219,6 +221,143 @@ def test_detect_bursts():
         f"MAD not centered on median: threshold {b_mc[0]['threshold_Hz'] if b_mc else None}"
     )
 
+    # A caller-supplied, non-integer (event-based) baseline: the Poisson floor is
+    # q*sqrt(max(baseline/q, 1)), so a sub-one-switch-per-window baseline keeps the
+    # one-switch floor and a larger one scales as sqrt(counts) (F17).
+    rate_nb = np.zeros(400)
+    rate_nb[rng_b.random(400) < 0.3] = q_rate
+    rate_nb[200] = 60 * q_rate
+    for base, sig in [(400.0, q_rate), (2500.0, q_rate * np.sqrt(2.5))]:
+        b_nb = detect_bursts(rate_nb, sparse_cen, baseline_rate=base, k_sigma=5, window_us=win_us)
+        assert len(b_nb) == 1, f"baseline {base}: {len(b_nb)} bursts"
+        assert b_nb[0]["baseline_rate_Hz"] == base
+        assert abs(b_nb[0]["threshold_Hz"] - (base + 5 * sig)) < 1e-6, b_nb[0]["threshold_Hz"]
+
+
+def _telegraph(rate_Hz, dt_us, n, seed, burst=None):
+    """Binary telegraph sampled every dt_us: each interval switches with probability
+    rate_Hz*dt (so the expected switch count is exactly rate_Hz * (n-1)*dt). `burst` =
+    (i0, i1, p) raises the per-interval probability to p on intervals i0..i1-1."""
+    rng = np.random.default_rng(seed)
+    p = np.full(n - 1, rate_Hz * dt_us * 1e-6)
+    if burst is not None:
+        p[burst[0] : burst[1]] = burst[2]
+    flips = rng.random(n - 1) < p
+    bits = np.concatenate([[0], np.cumsum(flips) % 2]).astype(int)
+    return bits, np.arange(n) * float(dt_us)
+
+
+@pytest.mark.parametrize("true_rate", [95.0, 222.0, 452.0, 933.0])
+def test_event_baseline_rate_recovers_telegraph(true_rate):
+    # F17: the median of per-window counts is 0 Hz below ~0.7 switches per window and
+    # quantised to 1/window above it; the event-based baseline n/T is unbiased, with a
+    # sqrt(n)/T standard error (Gaussian approximation; n is in the hundreds here).
+    bits, t = _telegraph(true_rate, 50.0, 40_001, seed=int(true_rate))  # 2 s record
+    rate_out = sliding_window_switch_rate(bits, t, window_us=1000.0, step_us=500.0)
+    base, _ = baseline_rate_and_bursts(bits, t, rate_out, k_sigma=5)
+    err = base["baseline_rate_err_Hz"]
+    assert abs(base["baseline_rate_Hz"] - true_rate) < 3 * err, (true_rate, base)
+    assert err == pytest.approx(np.sqrt(base["n_switches_baseline"]) / base["T_baseline_s"])
+    assert base["T_baseline_s"] <= 2.0
+    if true_rate < 500:
+        assert base["median_window_rate_Hz"] == 0.0  # the old estimator's failure
+
+
+def test_event_baseline_excludes_bursts():
+    # 400 Hz telegraph over 2 s with a 20 ms, ~10 kHz burst at t = 1 s. The provisional
+    # (whole-record) rate is biased by the burst; one exclusion pass recovers 400 Hz.
+    dt = 50.0
+    i0, i1 = 20_000, 20_400
+    bits, t = _telegraph(400.0, dt, 40_001, seed=3, burst=(i0, i1, 0.5))
+    rate_out = sliding_window_switch_rate(bits, t, window_us=1000.0, step_us=500.0)
+    whole = event_switch_rate(bits, t)
+    base, bursts = baseline_rate_and_bursts(bits, t, rate_out, k_sigma=5)
+    assert abs(whole["rate_Hz"] - 400.0) > 3 * whole["rate_err_Hz"]
+    assert abs(base["baseline_rate_Hz"] - 400.0) < 3 * base["baseline_rate_err_Hz"], base
+    assert bursts and all(b["t_end_us"] >= t[i0] and b["t_start_us"] <= t[i1] for b in bursts)
+    assert all(b["baseline_rate_Hz"] == base["baseline_rate_Hz"] for b in bursts)
+    excluded_s = whole["T_s"] - base["T_baseline_s"]
+    assert 0.02 <= excluded_s < 0.1, excluded_s
+    assert base["n_switches_baseline"] < whole["n_switches"]
+
+
+@pytest.mark.parametrize("n_bursts, p_burst", [(200, 0.9), (100, 0.5)])
+def test_event_baseline_masks_full_flagged_windows(n_bursts, p_burst):
+    # Many 1 ms bursts (18 kHz / 10 kHz) on a 400 Hz quiet telegraph, 2 s at 50 us. A
+    # burst is reported as centers[s] - stride/2 .. centers[e-1] + stride/2, but its
+    # flagged windows reach window_us/2 past the end centres; masking only the reported
+    # span leaks window_us/4 of burst edge per side into the baseline. The exclusion is
+    # padded by (window_us - stride)/2, which recovers the quiet rate.
+    dt, n, blen = 50.0, 40_001, 20
+    rng = np.random.default_rng(0)
+    p = np.full(n - 1, 400.0 * dt * 1e-6)
+    quiet = np.ones(n - 1, dtype=bool)
+    for s0 in rng.choice(np.arange(200, n - 1 - 200, 60), n_bursts, replace=False):
+        p[s0 : s0 + blen] = p_burst
+        quiet[s0 : s0 + blen] = False
+    flips = rng.random(n - 1) < p
+    bits = np.concatenate([[0], np.cumsum(flips) % 2]).astype(int)
+    t = np.arange(n) * dt
+    quiet_rate = flips[quiet].sum() / (quiet.sum() * dt * 1e-6)
+    rate_out = sliding_window_switch_rate(bits, t, window_us=1000.0, step_us=500.0)
+    base, _ = baseline_rate_and_bursts(bits, t, rate_out, k_sigma=5)
+    err = base["baseline_rate_err_Hz"]
+    assert abs(base["baseline_rate_Hz"] - 400.0) < 3 * err, base
+    assert abs(base["baseline_rate_Hz"] - quiet_rate) < 3 * err, (quiet_rate, base)
+    # The unpadded mask (the reported burst spans) is biased high by > 3 sigma here.
+    flagged = detect_bursts(
+        rate_out["rate_Hz"],
+        rate_out["window_t_us"],
+        baseline_rate=event_switch_rate(bits, t)["rate_Hz"],
+        k_sigma=5,
+        window_us=1000.0,
+    )
+    narrow = event_switch_rate(
+        bits, t, exclude_us=[(b["t_start_us"], b["t_end_us"]) for b in flagged]
+    )
+    assert narrow["rate_Hz"] - 400.0 > 3 * narrow["rate_err_Hz"], narrow
+
+
+def test_event_switch_rate_edge_cases():
+    # Gap-aware: the switch across the gap and the 970 us gap interval are not counted;
+    # T is the sum of the in-record intervals, not (N-1)*dt.
+    bits = np.array([0, 0, 1, 1, 0, 0])
+    t = np.array([0.0, 10.0, 20.0, 30.0, 1000.0, 1010.0])
+    r = event_switch_rate(bits, t, gap_indices=[4])
+    assert r["n_switches"] == 1 and r["T_s"] == pytest.approx(40e-6)
+    assert r["rate_Hz"] == pytest.approx(25_000.0)
+    assert r["rate_err_Hz"] == pytest.approx(25_000.0)
+    # Zero events: rate 0, error 0 (the sqrt(n) approximation, as specified), T > 0.
+    r0 = event_switch_rate(np.zeros(101, int), np.arange(101) * 10.0)
+    assert r0["rate_Hz"] == 0.0 and r0["rate_err_Hz"] == 0.0 and r0["T_s"] == pytest.approx(1e-3)
+    # Fewer than two samples, or everything excluded: no observed time -> nan, T = 0.
+    for rn in (
+        event_switch_rate(np.array([1]), np.array([0.0])),
+        event_switch_rate(np.array([], int), np.array([])),
+        event_switch_rate(bits, t, exclude_us=[(-1.0, 2000.0)]),
+    ):
+        assert np.isnan(rn["rate_Hz"]) and np.isnan(rn["rate_err_Hz"]) and rn["T_s"] == 0.0
+    b_short, bursts_short = baseline_rate_and_bursts(
+        np.array([1]), np.array([0.0]), sliding_window_switch_rate([1], [0.0], 1000.0)
+    )
+    assert np.isnan(b_short["baseline_rate_Hz"]) and bursts_short == []
+    assert b_short["median_window_rate_Hz"] == 0.0
+    # All-burst record: exclusion would leave T = 0, so the provisional (whole-record)
+    # baseline is kept. 10 switches in 10 ms -> 1000 Hz; every window far above it.
+    bits_ab = (np.arange(1001) // 95) % 2  # switches at samples 95, 190, ..., 950
+    t_ab = np.arange(1001) * 10.0
+    n_ab = 10
+    fake = {
+        "rate_Hz": np.full(21, 1e6),
+        "window_t_us": np.arange(21) * 500.0,
+        "window_us": 1000.0,
+    }
+    b_ab, bursts_ab = baseline_rate_and_bursts(bits_ab, t_ab, fake, k_sigma=5)
+    assert len(bursts_ab) == 1
+    assert b_ab["T_baseline_s"] == pytest.approx(0.01)
+    assert b_ab["n_switches_baseline"] == n_ab
+    assert b_ab["baseline_rate_Hz"] == pytest.approx(n_ab / 0.01)
+
 
 def test_dwell_time_statistics():
     rng = _rng_after_sliding_block()
@@ -373,6 +512,18 @@ def test_analyze_parity_run_end_to_end():
         )
         assert "n_bursts" in results
         assert "baseline_rate_Hz" in results
+        # F17: event-based baseline with its Poisson error and exposure, plus the old median
+        for key in (
+            "baseline_rate_err_Hz",
+            "n_switches_baseline",
+            "T_baseline_s",
+            "median_window_rate_Hz",
+        ):
+            assert key in results, key
+        assert results["T_baseline_s"] > 0
+        assert results["baseline_rate_Hz"] == pytest.approx(
+            results["n_switches_baseline"] / results["T_baseline_s"]
+        )
         assert "mean_dwell_0_us" in results and "mean_dwell_1_us" in results
 
         base = os.path.splitext(os.path.basename(h5_path))[0]
@@ -392,6 +543,7 @@ def test_analyze_parity_run_end_to_end():
         with open(sidecar_json) as f:
             sj = json.load(f)
         assert "baseline_rate_Hz" in sj
+        assert sj["baseline_rate_err_Hz"] == pytest.approx(results["baseline_rate_err_Hz"])
 
 
 def test_markov_dwell_at_two_cadences():
