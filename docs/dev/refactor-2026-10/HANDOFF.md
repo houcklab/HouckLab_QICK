@@ -126,6 +126,12 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
 41. `f7f590b0` fix(coherence): F02+F34 — bounded, guarded fit_exp_decay (dict result, ok criteria incl.
     |a| >= 3 a_err) saved as t1_fit_* / t2e_fit_* in the h5 (golden: 684 leaves = new display `sets` + new fit
     datasets in the 7 T1/T2E labels; nothing else). Not done: T2R fit saving, T1/T2E in the AutoCoherence summary.
+42. `56765a26` fix(zero_span): F19 — stage-8 controls: gain restore, rebuilds (base rebuild in a finally),
+    stitched 200 ms records, batch-means se + Welch/Student-t thresholds, both_branches_respond / branch_ratio /
+    complementarity / midpoint null, variants table in EVIDENCE.md (golden: 24 hw/count leaves, ZSP[validate] only);
+    three Opus rounds. FOLLOW-UPS: stages 1-2 set_qubit_gain(base) sits after the _preserve_cfg block, not in a
+    finally; se_batch_us (10 ms) is not tied to the measured dwell (se ~2x too small at a 30 ms dwell);
+    min_record_us / se_batch_us / k_sigma are not exposed in Control_params; control C has no decision statistic.
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
