@@ -256,8 +256,8 @@ readout window chosen by Stage 2.5 is in the parameters section (`ss_readout_tim
 `ss_adc_offset`). A display (fit/plot) failure inside a stage does not stop the run: the
 record is saved and a `display failed (record saved)` line is added to the log.
 
-T1/T2/T2E fit values are **not** in the summary (the classes do not save fits); refit from
-the `auto-T1`/`auto-T2`/`auto-T2E` records. Calibrated values are not written into the
+T1/T2/T2E fit values are **not** in the summary. The `auto-T1` and `auto-T2E` h5 records hold
+their fits (`t1_fit_*`, `t2e_fit_*`, see [t1](t1.md#outputs)); refit the `auto-T2` records. Calibrated values are not written into the
 device file; copy them by hand (`Qubit(freq=..., gain=..., pi2_gain=..., sigma=...)`).
 
 ## Analysis

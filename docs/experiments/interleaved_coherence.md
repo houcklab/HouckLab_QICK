@@ -92,8 +92,13 @@ for fn in glob.glob(f"{outer_folder}/**/*.h5", recursive=True):
 
 ## Analysis
 
-None beyond each sub-step's own display/fit (T1/T2R/T2E fits are not saved; refit from the
-arrays).
+None beyond each sub-step's own display/fit. The T1 and T2E fits are saved in their h5
+(`t1_fit_*`, `t2e_fit_*`, with `*_fit_ok`; see [t1](t1.md#outputs)), so a per-cycle time series
+needs no refit; the T2R fit is not saved (refit from the arrays). `*_fit_ok` is a quality flag,
+not an unbiased selection: when the sweep is short for the current T (for example after a TLS
+drift raises T1) it preferentially drops the fits that came out high, so filtering a series
+on it biases T low ([t1](t1.md#analysis)). Not-ok records keep their fitted values; count and
+inspect them rather than discarding them silently.
 
 ## Findings & notes
 

@@ -1,8 +1,10 @@
+import traceback
+
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import RAveragerProgram
 
-from qicklab.analysis.fitting import fit_exp_decay
+from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
 from qicklab.analysis.iq import min_q_range_phase
 from qicklab.core.experiment import ExperimentClass
 
@@ -184,13 +186,27 @@ class T1FF(ExperimentClass):
             excited = data["min_max"][-1]
             avgi = (avgi - ground) / (excited - ground)
 
-        T1_fit, T1_est, T1_err = fit_exp_decay(x_pts, avgi)
+        # Guarded: a failed fit leaves self.fit = {'ok': False, 'error': ...} and the data plot.
+        try:
+            fit = fit_exp_decay(x_pts, avgi)
+        except Exception as e:
+            traceback.print_exc()
+            fit = {"ok": False, "error": repr(e)}
+        self.fit = fit
+        # Saved by save_data (finish() displays first): docs/experiments/t1.md#outputs
+        data["data"].update(exp_decay_fit_fields(fit, "t1"))
+        data["data"]["t1_fit_rotation_rad"] = float(rotation_angle)
+        if not fit["ok"]:
+            print(f"T1 fit not reliable: {fit['error']}")
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, "o", label="i", color="orange")
-        plt.plot(x_pts, T1_fit, "-", label="fit", color="black")
+        if fit["ok"]:
+            plt.plot(x_pts, fit["yfit"], "-", label="fit", color="black")
+        elif "yfit" in fit and np.all(np.isfinite(fit["yfit"])):
+            plt.plot(x_pts, fit["yfit"], "--", label="fit (not reliable)", color="gray")
         plt.ylabel("a.u.")
         if "min_max" in data:
             plt.ylabel("Population")
@@ -201,11 +217,15 @@ class T1FF(ExperimentClass):
             + str(self.cfg["Qubit_number"])
             + " ; "
             + self.titlename
-            + "  ; T1 = "
-            + str(round(T1_est, 1))
-            + r" $\pm$ "
-            + str(round(T1_err, 1))
-            + "us"
+            + (
+                "  ; T1 = "
+                + str(round(fit["T"], 1))
+                + r" $\pm$ "
+                + str(round(fit["T_err"], 1))
+                + "us"
+                if fit["ok"]
+                else "  ; T1 fit not reliable"
+            )
         )
         plt.savefig(self.iname[:-4] + "I_Data.png")
 

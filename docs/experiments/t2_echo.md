@@ -91,19 +91,28 @@ Group `echo` (legacy `T2E_params`).
 
 | File | Content |
 |---|---|
-| `..._data_n{num_pi_pulses}.h5` | `x_pts` (expts,) us (total free evolution); `avgi`, `avgq` as returned by qick (no cavity-winding correction); `qfreq` = f_ge |
-| `..._dataI_Data.png` | rotated (or normalised) I with the fit; title `Num Pulses: n ; ... T2E = x +- y us` |
+| `..._data_n{num_pi_pulses}.h5` | `x_pts` (expts,) us (total free evolution); `avgi`, `avgq` as returned by qick (no cavity-winding correction); `qfreq` = f_ge; the fit fields below |
+| `..._dataI_Data.png` | rotated (or normalised) I with the fit; title `Num Pulses: n ; ... T2E = x +- y us`, or `T2E fit not reliable` (fit drawn dashed grey if one exists) |
 | `..._dataQ_Data.png` | rotated Q |
 | `..._data.json` | config |
 
-The T2E fit is **not** saved (title only).
+Fit fields in the h5, as for [t1](t1.md#outputs) with prefix `t2e_`: `t2e_fit_ok`,
+`t2e_fit_us`, `t2e_fit_err_us`, `t2e_fit_a`, `t2e_fit_c`, `t2e_fit_popt`, `t2e_fit_perr`
+(`[a, T2E, c]`), `t2e_fit_rotation_rad` (IQ rotation used). NaN where the fit has no value.
+The instance keeps the same result as `iT2E.fit`.
 
 ## Analysis
 
 Same as [t1](t1.md#analysis): rotation by `rotation_angle` or by the Q-range-minimising
-phase (200-point grid over [0, pi]); optional `min_max` normalisation; fit
-`a exp(-t/T) + c` with start `a = I[0] - I[-1]`, `c = I[-1]`, T at the point closest to
-`a/2.6 + c`. The x axis is the total free evolution, so the fitted T is T2E directly.
+phase (200-point grid over [0, pi]); optional `min_max` normalisation; bounded fit
+`a exp(-t/T) + c` (T in `[dx/2, 20 * span]`) with start `a = I[0] - I[-1]`, `c = I[-1]`, T at
+the point closest to `a/2.6 + c`, and the same reliability checks (`ok`). The x axis is the
+total free evolution, so the fitted T is T2E directly. A failed or unreliable fit never
+raises; the record is saved with `t2e_fit_ok = 0` (and its values, if the optimiser returned
+any). As for T1, `t2e_fit_ok` is a quality flag, not an unbiased selection: on marginal data
+(T2E comparable to the sweep, or a noisy trace) the dropped fits are mostly the ones that
+overestimate T2E, so a T2E(t) series filtered on it is biased low (numbers in
+[t1](t1.md#analysis)). Keep the sweep at 3-5 T2E.
 Assumes an exponential echo decay; a Gaussian-shaped decay (1/f noise) is fitted with an
 exponential anyway.
 
@@ -136,6 +145,3 @@ exponential anyway.
 - `x_pts = start + i * step` matches the programmed total wait only for `start = 0` and a
   quantised step (both guaranteed by the recipe).
 - If the cfg contains `rotation_angle` but not `min_max`, acquire raises `KeyError`.
-- The fit is not guarded, but a failure is caught by `finish` after display: `display_error`
-  is set, the h5 and json are still saved and the next repetition runs
-  ([architecture](../architecture.md#display-never-loses-the-record)).

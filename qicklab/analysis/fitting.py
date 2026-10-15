@@ -1,7 +1,9 @@
 """Curve-fit models and fitters: hanger transmission, Lorentzian features, Rabi cosine."""
 
+import warnings
+
 import numpy as np
-from scipy.optimize import curve_fit
+from scipy.optimize import OptimizeWarning, curve_fit
 
 
 def hanger_model_db(f, f0, Qtot, Qext, asym, offset):
@@ -244,20 +246,130 @@ def exp_decay(x, a, T1, c):
     return a * np.exp(-1 * x / T1) + c
 
 
+EXP_DECAY_T_MIN_FRAC_DX = 0.5  # T lower bound: half the median sample spacing
+EXP_DECAY_T_MAX_FRAC_SPAN = 20.0  # T upper bound: 20 x the sweep span
+EXP_DECAY_A_MAX_FRAC_PTP = 10.0  # |a| bound: 10 x the peak-to-peak of the data
+EXP_DECAY_MAXFEV = 10000
+EXP_DECAY_MIN_A_SIGMAS = 3.0  # ok needs the decay amplitude >= 3 standard errors
+
+
+def _exp_decay_failed(x_pts, error, popt=None, perr=None, T_bounds=None):
+    nan3 = np.full(3, np.nan)
+    popt = nan3 if popt is None else np.asarray(popt, dtype=float)
+    perr = nan3 if perr is None else np.asarray(perr, dtype=float)
+    return {
+        "ok": False,
+        "T": float(popt[1]),
+        "T_err": float(perr[1]),
+        "a": float(popt[0]),
+        "c": float(popt[2]),
+        "popt": popt,
+        "perr": perr,
+        "yfit": exp_decay(np.asarray(x_pts, dtype=float), *popt),
+        "T_bounds": T_bounds,
+        "error": error,
+    }
+
+
 def fit_exp_decay(x_pts, y):
-    """Single-exponential fit for T1 / T2E; returns (curve at x_pts, |T|, sigma_T).
-    T start value: x where y is closest to a/2.6 + c (docs/experiments/t1.md)."""
+    """Bounded single-exponential fit ``a exp(-x/T) + c`` for T1 / T2E (docs/experiments/t1.md#analysis).
+
+    Start values: ``a = y[0] - y[-1]``, ``c = y[-1]``, T = the x where y is closest to
+    ``a/2.6 + c`` (about the 1/e point), clipped into the bounds. Bounds come from the
+    sampling: ``T`` in ``[dx/2, 20 * span]`` (dx = median spacing, span = max - min of x),
+    ``|a| <= 10 * ptp(y)``, ``c`` free. Never raises: returns a dict
+    ``{ok, T, T_err, a, c, popt, perr, yfit, T_bounds, error}``. ``ok`` is False (with the reason
+    in ``error``) when the optimiser fails, the data are too short or non-finite, T ends on a
+    bound (decay faster than the sampling or not resolved within the sweep), or the
+    covariance is not finite, T_err >= T, or ``|a| < 3 a_err`` (no significant decay). ``popt`` / ``yfit`` are kept when a fit exists
+    (NaN otherwise) so a caller may still draw it. ``ok`` is a quality flag, not an unbiased
+    selection: on marginal data the fits it rejects are mostly the ones that overestimate T
+    (docs/experiments/t1.md#analysis).
+    """
+    x = np.asarray(x_pts, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    if x.size != y.size:
+        return _exp_decay_failed(x, f"x/y length mismatch ({x.size} vs {y.size})")
+    if x.size < 4:
+        return _exp_decay_failed(x, f"need >= 4 points for a 3-parameter fit, got {x.size}")
+    if not (np.all(np.isfinite(x)) and np.all(np.isfinite(y))):
+        return _exp_decay_failed(x, "non-finite x or y")
+
+    span = float(np.max(x) - np.min(x))
+    dx = float(np.median(np.abs(np.diff(np.sort(x)))))
+    ptp = float(np.ptp(y))
+    if span <= 0 or dx <= 0:
+        return _exp_decay_failed(x, "x has no spread")
+    if ptp <= 0:
+        return _exp_decay_failed(x, "y is constant")
+    t_lo = EXP_DECAY_T_MIN_FRAC_DX * dx
+    t_hi = EXP_DECAY_T_MAX_FRAC_SPAN * span
+    a_max = EXP_DECAY_A_MAX_FRAC_PTP * ptp
+    lb = np.array([-a_max, t_lo, -np.inf])
+    ub = np.array([a_max, t_hi, np.inf])
+    bounds = (lb, ub)
+
     a_guess = y[0] - y[-1]
     b_guess = y[-1]
     approx_t1_val = a_guess / 2.6 + b_guess
     index_t1_guess = np.argmin(np.abs(y - approx_t1_val))
-    t1_guess = x_pts[index_t1_guess]
-    guess = [a_guess, t1_guess, b_guess]
-    pOpt, pCov = curve_fit(exp_decay, x_pts, y, p0=guess)
-    perr = np.sqrt(np.diag(pCov))
+    t1_guess = x[index_t1_guess]
+    guess = np.clip([a_guess, t1_guess, b_guess], lb, ub)
 
-    T1_fit = exp_decay(x_pts, *pOpt)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", OptimizeWarning)
+            popt, pcov = curve_fit(
+                exp_decay, x, y, p0=guess, bounds=bounds, maxfev=EXP_DECAY_MAXFEV
+            )
+    except (RuntimeError, ValueError) as e:
+        return _exp_decay_failed(x, repr(e), T_bounds=(t_lo, t_hi))
+    perr = np.sqrt(np.abs(np.diag(pcov)))
 
-    T1_est = np.abs(pOpt[1])
-    T1_err = perr[1]
-    return T1_fit, T1_est, T1_err
+    T, T_err = float(popt[1]), float(perr[1])
+    error = None
+    if np.isclose(T, t_lo, rtol=1e-3, atol=0) or np.isclose(T, t_hi, rtol=1e-3, atol=0):
+        error = f"T = {T:.4g} on a bound [{t_lo:.4g}, {t_hi:.4g}]: decay not resolved by the sweep"
+    elif not np.all(np.isfinite(perr)):
+        error = "covariance not finite (parameters not constrained by the data)"
+    elif not T_err < T:
+        error = f"T_err = {T_err:.4g} >= T = {T:.4g}"
+    elif not abs(popt[0]) >= EXP_DECAY_MIN_A_SIGMAS * perr[0]:
+        error = (
+            f"|a| = {abs(popt[0]):.4g} < {EXP_DECAY_MIN_A_SIGMAS:g} x a_err = {perr[0]:.4g}:"
+            " no significant decay"
+        )
+    if error is not None:
+        return _exp_decay_failed(x, error, popt=popt, perr=perr, T_bounds=(t_lo, t_hi))
+
+    return {
+        "ok": True,
+        "T": T,
+        "T_err": T_err,
+        "a": float(popt[0]),
+        "c": float(popt[2]),
+        "popt": np.asarray(popt, dtype=float),
+        "perr": np.asarray(perr, dtype=float),
+        "yfit": exp_decay(x, *popt),
+        "T_bounds": (t_lo, t_hi),
+        "error": None,
+    }
+
+
+def exp_decay_fit_fields(fit, prefix):
+    """Flat float fields of a ``fit_exp_decay`` result for the h5, keys ``<prefix>_fit_*``.
+
+    ``_ok`` (1/0), ``_us`` (T), ``_err_us`` (sigma_T), ``_a``, ``_c``, ``_popt`` [a, T, c],
+    ``_perr``; NaN where the fit has no value (failed fit, or a ``{'ok': False, 'error'}``
+    stub from a guarded display). Key names are stable (docs/experiments/t1.md#outputs).
+    """
+    nan3 = np.full(3, np.nan)
+    return {
+        f"{prefix}_fit_ok": bool(fit.get("ok", False)),
+        f"{prefix}_fit_us": float(fit.get("T", np.nan)),
+        f"{prefix}_fit_err_us": float(fit.get("T_err", np.nan)),
+        f"{prefix}_fit_a": float(fit.get("a", np.nan)),
+        f"{prefix}_fit_c": float(fit.get("c", np.nan)),
+        f"{prefix}_fit_popt": np.asarray(fit.get("popt", nan3), dtype=float),
+        f"{prefix}_fit_perr": np.asarray(fit.get("perr", nan3), dtype=float),
+    }

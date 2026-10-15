@@ -288,9 +288,10 @@ print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
   string data write their own files (zero-span parity).
 - The `.json` next to the h5 holds the same cfg; it is the quick way to grep settings across a
   folder.
-- Fit results of `t1`, `t2_ramsey`, `t2_echo` and `chi_shift` are not saved in the h5; they
-  appear only in the png and the console. Refit from the saved data, or read the AutoCoherence
-  summary json.
+- `t1` and `t2_echo` save their exponential fit in the h5 (`t1_fit_*`, `t2e_fit_*`, see
+  [t1](experiments/t1.md#outputs)); `*_fit_ok` is a quality flag, not an unbiased selector for a
+  T(t) series ([t1](experiments/t1.md#analysis)). Fit results of `t2_ramsey` and `chi_shift` are not saved;
+  they appear only in the png and the console. Refit from the saved data.
 - Interleaved records group by cycle via the cfg:
   `cfg["interleave_run_id"], cfg["interleave_cycle"], cfg["interleave_step"]`. `run_id` is the
   wall-clock start of the loop, so separate invocations on the same day stay distinct.

@@ -59,7 +59,11 @@ Per repetition, the standard records of each experiment:
 | T2EMUX | `T2E` | `..._data_n{num_pi_pulses}.h5` + `I_Data.png`, `Q_Data.png` |
 | T2R | `T2R` | `..._data.h5` + `RotatedI_Fit.png`, `FFT.png` |
 
-No fit results are saved (see the individual pages). Pair records by timestamp.
+The T1 and T2E fits are saved in their h5 (`t1_fit_*`, `t2e_fit_*`; see [t1](t1.md#outputs),
+[t2_echo](t2_echo.md#outputs)); the T2R fit is not ([t2_ramsey](t2_ramsey.md)). Pair records
+by timestamp. `*_fit_ok` is a quality flag, not an unbiased selection: on marginal data it
+drops mostly the fits that overestimate T, so a repetition series filtered on it is biased low
+([t1](t1.md#analysis)); not-ok records keep their fitted values.
 
 ## Analysis
 
