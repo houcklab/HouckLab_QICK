@@ -144,6 +144,11 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     _analysis.json; K is per record (a control with a slightly different rep period can lose the comparison).
 45. `b0430ae6` fix(single_shot): F48 — T1_SS and the Undriven charge sweep save the completed points on abort
     (sweep_completed / points_completed + cfg aborted) and retry the shot-counter race (golden byte-identical).
+46. `206734b4` fix(readout_optimize): F33 — qubit-pulse map brackets each gain row with shared |g> blocks (463
+    programs instead of 882), g_ref_index / g_block_time / g_drift_* saved, gated drift warning (golden: 48 leaves,
+    SingleShot_QubitOptimize hw counts + fid/overlap digests + the four new keys).
+ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
+historical. Pushed to origin after 46.
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
@@ -236,10 +241,17 @@ star-imports `qicklab.runs`, deleted in 5b), `tests/`, `docs/`. The lab code run
 in the end (user, 2026-10-13): keep Windows-only lines (DLL directory, `.env`, `Z:\` roots) and the TWPA
 modules (`qicklab/twpa/*`, needed; `pywindfreak` is an optional extra, not a reason to drop them).
 
-## NEXT STEP: land the eight parked items from `qicklab_refactor_wip`, then the remaining findings, then 5a
-See TRANSFER STATE. Order: environment + green suite on the clean head first; then F21+F53 (touches the most
-labels, land it first so later diff_labels runs are clean), F04, F02+F34, F19, F25, F16, F48, F33; then F05,
-F07, F14+F20+F24+F27, tier B, dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
+## NEXT STEP: remaining tier-A findings, then tier B, dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back
+The eight parked items are landed (session 3, this Windows PC). Procedure per item is unchanged (apply-findings or
+rereview workflow with Opus agents, fast ladder, ONE full-suite golden regeneration at a time, classify, commit with
+every leaf class in the message, handoff line). Order: F05 (what is left of its part (1): the partner significance
+gate deferred from F04, estimate_noise_floor dedupe in auto_coherence/_spec_peak_snr and zero_span_checks; the
+tier-B joint two-Lorentzian fit is a later item), F07 (GMM-threshold ZSP classifier as the new default; F04 landed),
+F14+F20+F24+F27 (cover_readout_window in every regime-A program + ro_ch in ZSP; large golden change: hw digests of
+every regime-A label and ZSP; do it when nothing else is in flight), then tier B (F29-F84, group tiny ones; F46
+provenance touches many files), the dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back (End state).
+Open follow-ups recorded in items 40, 42, 43, 44 above (F04 significance gate = F05; F19 stages 1-2 finally /
+se_batch_us; F25 adding_a_device.md; F16 tier C).
 
 ## Phase 3b plan as executed (one commit per area, adversarial old-vs-new review each)
 Areas in order (shared helpers first): 1 hardware, 2 core, 3 analysis helpers (+ switch callers), 4 experiments
