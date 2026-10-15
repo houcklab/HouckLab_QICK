@@ -61,8 +61,8 @@ PLAN = [R.undriven_single_shot(charge_sweep=True, voltage_start=0.0,
   waits `charge_settle_s` after each ramp and acquires at each bias, then **returns
   to the starting voltage** in a `finally` block (also on error or Ctrl-C).
   - It needs a yoko.
-  - It rejects a zero step, an empty range and any |V| > 10 V. `ramp_to` itself only
-    rejects targets > +10 V, so a negative typo would otherwise slip through.
+  - It rejects a zero step, an empty range and any |V| > 10 V before moving the bias
+    (`ramp_to` itself rejects |target| > 10 V only when it reaches that point).
   - The range must come from the step's own parameters. The regime-B config is
     rebuilt from scratch and does not carry the session's charge range (see
     [config regimes](../concepts/config_regimes.md#what-changes-at-the-switch-a---b)).

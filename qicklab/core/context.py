@@ -9,7 +9,7 @@ import pyvisa
 
 from qicklab.hardware.board import BaseConfig, FF_Qubits
 from qicklab.hardware.rfsoc import makeProxy
-from qicklab.hardware.yoko import ramp_to
+from qicklab.hardware.yoko import open_charge_yoko, ramp_to
 
 
 @dataclass
@@ -70,9 +70,7 @@ def build_context(
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
 
     rm = pyvisa.ResourceManager()
-    yoko = rm.open_resource(yoko_addr)
-    yoko.write(":SOUR:FUNC VOLT")
-    yoko.write(":OUTP ON")
+    yoko = open_charge_yoko(rm, yoko_addr, start_voltage)
     ramp_to(yoko, start_voltage)
 
     cavity_gain = Qubit_Parameters[str(Qubit_Readout)]["Readout"]["Gain"]

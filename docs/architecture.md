@@ -443,8 +443,11 @@ Device-specific addresses live in `Device.setup`; see [devices/CSTQ03.md](device
 
 - Ramp in software. The legacy GS200 driver used 1e-4 V steps every 0.01 s and noted the
   interval must not go below 0.001 s or the fridge heats up.
-- `ramp_to` only rejects targets above 10 V, so a negative typo slips through; sweep helpers
-  validate |V| <= 10 themselves.
+- `ramp_to` rejects |target| > 10 V (both signs) and reads the level back after landing; sweep
+  helpers also validate |V| <= 10 for the whole grid before moving. `connect()` opens the yoko
+  with `open_charge_yoko` (level 0 before the output goes on; refuses the TWPA address in any
+  GPIB spelling, a source found in current mode with its output on, and the 30 V range):
+  [hardware](hardware.md#charge-bias-yoko).
 - An abort must not leave the bias parked at an arbitrary point: every later measurement would
   silently run at that charge offset. Sweeps return to the start bias on error or Ctrl-C (charge
   transmission sweep does; not every sweep does yet, see the known-bug list). `run()` closes the

@@ -261,7 +261,7 @@ class UndrivenSingleShot(ExperimentClass):
                 f"voltage_step={self.cfg['voltage_step']} (check the step sign)"
             )
         if np.any(np.abs(v) > 10):
-            # ramp_to only rejects target > 10, so a negative typo slips past it
+            # check the whole grid before moving (ramp_to would only stop at the first bad point)
             raise ValueError(f"charge sweep exceeds +-10 V: {v.min()} to {v.max()}")
         return v
 

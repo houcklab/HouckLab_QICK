@@ -21,10 +21,14 @@ then park there with `set_bias` / `set_pump` before running qubit measurements.
 
 Shared helpers: `qicklab.hardware.pnax` (`measure_s21_band`, `band_mean_dB`),
 `qicklab.hardware.synthhd` (`SynthHD`, `set_pump_channels`), `qicklab.hardware.yoko`
-(`pick_current_range`, `ramp_current`, default step period `STEP_PERIOD_S`) and `qicklab.twpa.common`
-(`timestamped_paths`). Instrument addresses and the
-pump operating point come from the device's `Setup.twpa` (`TwpaSetup(yoko_addr,
-synth_port, pnax_addr, pump=(ghz, dbm, ch), bias_ua)`). See [hardware](../hardware.md).
+(`pick_current_range`, `enable_current_output_safely`, `ramp_current`, default step period
+`STEP_PERIOD_S`, the bias address `TWPA_YOKO_ADDRESS`) and `qicklab.twpa.common`
+(`timestamped_paths`). The other instrument addresses (`PNAX_ADDRESS`, `PUMP_SYNTH_PORT`)
+and the pump operating point are module-level constants in each script for now. A per-device
+`Setup.twpa` (`TwpaSetup(yoko_addr, synth_port, pnax_addr, pump=(ghz, dbm, ch), bias_ua)`) is
+planned but not yet in code (phase 5). When it lands, the charge-yoko refusal in
+`open_charge_yoko` must also check the device's `twpa.yoko_addr`: today it compares only against
+`TWPA_YOKO_ADDRESS`. See [hardware](../hardware.md).
 
 ## Pulse sequence
 
@@ -37,7 +41,15 @@ pump OFF ──▶ set_bias (0 → target, ≤ 300 nA/s) ──▶ set_pump (fre
 ```
 
 1. Bias first, with the pump disabled, sweeping slowly from 0. Then pump.
-2. `flux_sweep` ends by ramping the bias back to 0.
+   Before any ramp, `set_bias` and `flux_sweep` run `enable_current_output_safely`: it queries
+   `:OUTP?`, `:SOUR:FUNC?` and `:SOUR:LEV?` and prints them. Output off: `:SOUR:FUNC CURR`,
+   `:SOUR:RANG <range>`, `:SOUR:LEV 0`, `:OUTP ON` (the ramp starts from 0; a stale stored
+   setpoint is discarded, never applied as a step). Output on in current mode: the setpoint is
+   kept and the ramp starts from it (`:SOUR:RANG?` is read; the range is changed only at 0 A).
+   Output on in voltage mode: the script stops without writing. Details:
+   [hardware](../hardware.md#bias-gs200-at-gpib1112instr-current-mode).
+2. `flux_sweep` ends by ramping the bias back to 0 (only once the YOKO is in current mode with
+   its output on).
 3. `pump_sweep` and `gain_compare` disable the pump RF on exit (success, exception or
    Ctrl-C).
 
@@ -54,8 +66,9 @@ python -m qicklab.twpa.pump_sweep
 python -m qicklab.twpa.gain_compare
 ```
 
-- **set_bias.** Verify the pump RF output is OFF, set `TWPA_YOKO_ADDRESS` and
-  `TARGET_CURRENT_uA`, run. `YOKO_CURR_RANGE_A = None` auto-picks the range; a number forces it.
+- **set_bias.** Verify the pump RF output is OFF, set `TARGET_CURRENT_uA`, run. The address
+  is `TWPA_YOKO_ADDRESS` in `qicklab.hardware.yoko` (shared with the charge-line opener, which
+  refuses it). `YOKO_CURR_RANGE_A = None` auto-picks the range; a number forces it.
 - **set_pump.** Verify the DC bias is parked (`set_bias`); the script does not touch the YOKO.
   Set `PUMP_SYNTH_PORT` and `PUMP_SETTINGS`: each listed channel gets its **own**
   (freq_GHz, power_dBm); give both channels the same pair to drive them identically, different
@@ -194,8 +207,6 @@ python -m qicklab.twpa.gain_compare
     grid is 10.70–10.73 GHz and −10 → 0 dBm.
 - The `set_bias` and `flux_sweep` confirmation prompts still name a Holzworth HS9004A as the
   pump generator. The pump is a Windfreak SynthHD.
-- `set_bias` issues `:SOUR:FUNC CURR` without checking the YOKO's current mode or
-  output state.
 - `flux_sweep`, `pump_sweep` and `gain_compare` open the PNA-X (and the YOKO) outside
   the `try` block. If the SynthHD connection fails, the PNA-X is left open.
 - `flux_sweep` uses a fixed VISA timeout. Raising the averages or points, or lowering

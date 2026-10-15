@@ -7,9 +7,17 @@ import sys
 
 import pyvisa
 
-from qicklab.hardware.yoko import STEP_PERIOD_S, pick_current_range, ramp_current
+from qicklab.hardware import yoko as _hw_yoko
+from qicklab.hardware.yoko import (
+    STEP_PERIOD_S,
+    enable_current_output_safely,
+    pick_current_range,
+    ramp_current,
+)
 
-TWPA_YOKO_ADDRESS = "GPIB1::12::INSTR"  # not the charge-line yoko at ::9::
+# GPIB1::12; not the charge-line yoko at ::9::. One shared constant, edit it in hardware.yoko
+# (the charge-line opener refuses this address).
+TWPA_YOKO_ADDRESS = _hw_yoko.TWPA_YOKO_ADDRESS
 
 TARGET_CURRENT_uA = 0  # datasheet nominal ≈ 11 uA; history in docs/experiments/twpa.md
 MAX_RATE_nA_per_s = 300.0  # datasheet ceiling — do not raise
@@ -74,9 +82,7 @@ def main():
     rm = pyvisa.ResourceManager()
     yoko = rm.open_resource(TWPA_YOKO_ADDRESS)
     try:
-        yoko.write(":SOUR:FUNC CURR")
-        yoko.write(f":SOUR:RANG {range_A:g}")
-        yoko.write(":OUTP ON")
+        enable_current_output_safely(yoko, range_A)
 
         max_rate_A_per_s = MAX_RATE_nA_per_s * 1e-9
 

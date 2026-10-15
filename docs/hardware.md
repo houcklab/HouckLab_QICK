@@ -95,14 +95,32 @@ behaviour.
 
 Yokogawa GS200 at `GPIB1::9::INSTR` in voltage mode, connected to the charge line.
 
-- `connect()` opens it, sets `:SOUR:FUNC VOLT`, turns the output on and ramps to the session
-  `bias_v`. `run()` closes the VISA session in `finally`. Closing does not turn the output off:
-  the source keeps holding the last level.
+- `connect()` opens it with `open_charge_yoko(rm, address, start_voltage)` and then ramps to the
+  session `bias_v`. `run()` closes the VISA session in `finally`. Closing does not turn the output
+  off: the source keeps holding the last level.
+- Bring-up order (`open_charge_yoko`, `qicklab.hardware.yoko`), so the output is never stepped:
+  1. Refuse the TWPA bias address (`yoko.TWPA_YOKO_ADDRESS`, `GPIB1::12::INSTR`) before opening.
+     GPIB addresses are compared by (board, primary address), so `GPIB1::12` and
+     `GPIB1::12::0::INSTR` are refused too. A VISA alias (e.g. from NI MAX) is not resolved.
+  2. Query `:OUTP?` (0/1), `:SOUR:FUNC?` (`VOLT`/`CURR`) and `:SOUR:LEV?`, and print them.
+  3. Function `CURR` with the output on: raise without writing anything (the address points at a
+     source that is biasing something else, e.g. the TWPA).
+  4. Output off: `:SOUR:FUNC VOLT`. Then (both cases) read `:SOUR:RANG?` and raise if the range
+     is above 10 V (the 30 V range resolves only 1 mV, coarser than the read-back tolerance below,
+     and the charge line never needs it) or if |`bias_v`| exceeds 1.2x the range (the GS200
+     maximum; above it the setpoint would be clipped). The range is never changed here; set it on
+     the instrument with the output off.
+  5. Output off: `:SOUR:LEV 0`, then `:OUTP ON`, so a stale stored setpoint is never applied.
+     Output already on in `VOLT`: the level is left alone and `ramp_to` ramps from it.
 - Always ramp. `ramp_to(yoko, target, step=0.001, delay=0.01)` reads the current level and steps
   1 mV every 10 ms, then lands exactly on the target. The legacy GS200 driver noted that the ramp
   interval must not go below 0.001 s, or the fridge heats up (the MATLAB default it copied is 0.01 s).
-- 10 V guard: `ramp_to` rejects targets above 10 V only; a negative typo (e.g. -50 V) passes. Sweep
-  helpers check |V| <= 10 themselves. Check the sign of anything you type.
+- 10 V guard: `ramp_to` rejects |target| > 10 V on both signs, before writing anything.
+- Read-back: after landing, `ramp_to` queries `:SOUR:LEV?` and raises if the level differs from the
+  target by more than 1e-4 V (`LEVEL_READBACK_TOL_V`; the 10 V range resolves 100 uV), e.g. when
+  the active range clipped the setpoint. On the 30 V range (1 mV resolution) a target that is not
+  a whole mV would trip it, so `open_charge_yoko` refuses that range at bring-up; the error message
+  names both causes.
 - Never park the bias. An aborted sweep must not leave the bias at an arbitrary point: every later
   measurement would silently run at that charge offset, while the cfg still records the session
   value. `undriven_single_shot` (charge sweep) and `charge_transmission_sweep` return to the start
@@ -129,6 +147,16 @@ resistor value was unreliable.
   above about 11 uA in normal operation.
 - GS200 current ranges are 1, 10, 100, 200 mA. A setpoint above the active range is silently
   clipped; `pick_current_range` chooses the range from the target.
+- Bring-up order (`enable_current_output_safely(yoko, range_A)`, called by `set_bias` and
+  `flux_sweep` before any ramp), so the output is never stepped:
+  1. Query `:OUTP?`, `:SOUR:FUNC?` and `:SOUR:LEV?`, and print them (a stale setpoint is visible).
+  2. Output off: `:SOUR:FUNC CURR`, `:SOUR:RANG <range_A>`, `:SOUR:LEV 0`, then `:OUTP ON`. The
+     ramp starts from 0 A; the stored setpoint is discarded.
+  3. Output on in `VOLT`: raise (switching function with the output on steps the output).
+  4. Output on in `CURR`: keep the setpoint (it is the real output; the ramp starts there). Read
+     `:SOUR:RANG?`; write `range_A` only if the level is 0 A. At a nonzero level a larger active
+     range is kept, a smaller one raises (ramp to 0 first).
+  `flux_sweep` ramps back to 0 in `finally` only if this step succeeded.
 - `ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S)` steps linearly from the
   present `:SOUR:LEV?` every `dt` s (default `yoko.STEP_PERIOD_S` = 0.05 s; the twpa scripts pass
   `set_bias.STEP_PERIOD_S`, also 0.05 s); it assumes current-source mode.

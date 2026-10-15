@@ -11,7 +11,7 @@ import numpy as np
 import pyvisa
 
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
-from qicklab.hardware.yoko import pick_current_range, ramp_current
+from qicklab.hardware.yoko import enable_current_output_safely, pick_current_range, ramp_current
 from qicklab.twpa.common import timestamped_paths
 from qicklab.twpa.set_bias import STEP_PERIOD_S, TWPA_YOKO_ADDRESS, MAX_RATE_nA_per_s
 
@@ -157,11 +157,11 @@ def main():
     s21_band = np.full((N_BIAS_POINTS, n_freq), np.nan + 1j * np.nan, dtype=complex)
     mean_band_dB = np.full(N_BIAS_POINTS, np.nan)
     t0 = time.time()
+    bias_enabled = False  # finally ramps to 0 only once the YOKO is known to be in current mode
 
     try:
-        yoko.write(":SOUR:FUNC CURR")
-        yoko.write(f":SOUR:RANG {range_A:g}")
-        yoko.write(":OUTP ON")
+        range_A = enable_current_output_safely(yoko, range_A)
+        bias_enabled = True
 
         configure_pnax(
             pnax,
@@ -211,7 +211,8 @@ def main():
         print("\n[twpa_flux_sweep] Ctrl-C — ramping bias back to 0 uA before exit.")
     finally:
         try:
-            ramp_current(yoko, 0.0, MAX_RATE_nA_per_s * 1e-9, dt=STEP_PERIOD_S)
+            if bias_enabled:
+                ramp_current(yoko, 0.0, MAX_RATE_nA_per_s * 1e-9, dt=STEP_PERIOD_S)
         except Exception as e:
             print(f"[twpa_flux_sweep] WARNING: failed to ramp bias to 0: {e}")
         try:

@@ -201,7 +201,7 @@ def charge_sweep_voltages(cfg, params):
             f"voltage_end={resolved['voltage_end']} "
             f"voltage_step={resolved['voltage_step']} (check the step sign)"
         )
-    if np.any(np.abs(v) > 10):  # ramp_to only rejects > +10 V: docs/architecture.md#yoko-safety
+    if np.any(np.abs(v) > 10):  # whole grid before moving: docs/architecture.md#yoko-safety
         raise ValueError(f"charge sweep exceeds +-10 V: {v.min()} to {v.max()}")
     return v
 

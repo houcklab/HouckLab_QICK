@@ -398,10 +398,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "ConstantTone": {
@@ -526,10 +532,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -3672,29 +3684,41 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0005",
         "W :SOUR:LEV 0.001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.001",
         "W :SOUR:LEV 0.0015",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0015",
         "W :SOUR:LEV 0.002",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.002",
         "W :SOUR:LEV 0.0025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0025",
-        "W :SOUR:LEV 0.003"
+        "W :SOUR:LEV 0.003",
+        "Q :SOUR:LEV?"
       ]
     },
     "Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW": {
@@ -5298,14 +5322,21 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -6024,10 +6055,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -11727,10 +11764,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -18087,10 +18130,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -18756,10 +18805,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -22043,10 +22098,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -30882,10 +30943,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "CLOSE"
       ]
@@ -31029,10 +31096,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -31053,10 +31126,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunChargeSweep": {
@@ -33741,12 +33820,19 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.001",
@@ -33755,6 +33841,7 @@
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005",
         "W :SOUR:LEV 0.006",
         "W :SOUR:LEV 0.007",
@@ -33762,12 +33849,14 @@
         "W :SOUR:LEV 0.009000000000000001",
         "W :SOUR:LEV 0.01",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.01",
         "W :SOUR:LEV 0.011",
         "W :SOUR:LEV 0.011999999999999999",
         "W :SOUR:LEV 0.012999999999999998",
         "W :SOUR:LEV 0.013999999999999997",
         "W :SOUR:LEV 0.015",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.015",
         "W :SOUR:LEV 0.016",
@@ -33777,6 +33866,7 @@
         "W :SOUR:LEV 0.020000000000000004",
         "W :SOUR:LEV 0.02",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.02",
         "W :SOUR:LEV 0.021",
         "W :SOUR:LEV 0.022000000000000002",
@@ -33785,12 +33875,14 @@
         "W :SOUR:LEV 0.025000000000000005",
         "W :SOUR:LEV 0.025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.025",
         "W :SOUR:LEV 0.026000000000000002",
         "W :SOUR:LEV 0.027000000000000003",
         "W :SOUR:LEV 0.028000000000000004",
         "W :SOUR:LEV 0.029000000000000005",
         "W :SOUR:LEV 0.03",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.03",
         "W :SOUR:LEV 0.031",
@@ -33800,6 +33892,7 @@
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.036000000000000004",
         "W :SOUR:LEV 0.037000000000000005",
@@ -33807,12 +33900,14 @@
         "W :SOUR:LEV 0.03900000000000001",
         "W :SOUR:LEV 0.04",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.04",
         "W :SOUR:LEV 0.041",
         "W :SOUR:LEV 0.042",
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -36636,10 +36731,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "CLOSE"
       ]
@@ -38913,13 +39014,20 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.001",
@@ -38928,6 +39036,7 @@
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005",
         "W :SOUR:LEV 0.006",
         "W :SOUR:LEV 0.007",
@@ -38935,12 +39044,14 @@
         "W :SOUR:LEV 0.009000000000000001",
         "W :SOUR:LEV 0.01",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.01",
         "W :SOUR:LEV 0.011",
         "W :SOUR:LEV 0.011999999999999999",
         "W :SOUR:LEV 0.012999999999999998",
         "W :SOUR:LEV 0.013999999999999997",
         "W :SOUR:LEV 0.015",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.015",
         "W :SOUR:LEV 0.016",
@@ -38950,6 +39061,7 @@
         "W :SOUR:LEV 0.020000000000000004",
         "W :SOUR:LEV 0.02",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.02",
         "W :SOUR:LEV 0.021",
         "W :SOUR:LEV 0.022000000000000002",
@@ -38958,12 +39070,14 @@
         "W :SOUR:LEV 0.025000000000000005",
         "W :SOUR:LEV 0.025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.025",
         "W :SOUR:LEV 0.026000000000000002",
         "W :SOUR:LEV 0.027000000000000003",
         "W :SOUR:LEV 0.028000000000000004",
         "W :SOUR:LEV 0.029000000000000005",
         "W :SOUR:LEV 0.03",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.03",
         "W :SOUR:LEV 0.031",
@@ -38973,6 +39087,7 @@
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.036000000000000004",
         "W :SOUR:LEV 0.037000000000000005",
@@ -38980,12 +39095,14 @@
         "W :SOUR:LEV 0.03900000000000001",
         "W :SOUR:LEV 0.04",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.04",
         "W :SOUR:LEV 0.041",
         "W :SOUR:LEV 0.042",
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.045",
         "W :SOUR:LEV 0.044",
@@ -39033,6 +39150,7 @@
         "W :SOUR:LEV 0.00199999999999996",
         "W :SOUR:LEV 0.0009999999999999593",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -39704,10 +39822,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -52011,10 +52135,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunModifiedRamsey": {
@@ -63205,10 +63335,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -73499,10 +73635,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -75864,48 +76006,66 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0005",
         "W :SOUR:LEV 0.001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.001",
         "W :SOUR:LEV 0.0015",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0015",
         "W :SOUR:LEV 0.002",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.002",
         "W :SOUR:LEV 0.0025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0025",
         "W :SOUR:LEV 0.003",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.003",
         "W :SOUR:LEV 0.0035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0035",
         "W :SOUR:LEV 0.004",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.0045000000000000005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0045000000000000005",
         "W :SOUR:LEV 0.005000000000000001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005000000000000001",
         "W :SOUR:LEV 0.005500000000000001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005500000000000001",
-        "W :SOUR:LEV 0.006000000000000002"
+        "W :SOUR:LEV 0.006000000000000002",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunModifiedRamsey_Control[verified]": {
@@ -83374,10 +83534,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
@@ -86071,10 +86237,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1": {
@@ -88609,10 +88781,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1SS": {
@@ -93548,10 +93726,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1T2E": {
@@ -98724,10 +98908,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1T2RT2E": {
@@ -107104,10 +107294,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2": {
@@ -110402,10 +110598,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2E": {
@@ -113031,10 +113233,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2E[rotation]": {
@@ -115776,10 +115984,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunTrans_QubitSpec": {
@@ -118470,10 +118684,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunTransmissionSweep": {
@@ -119151,10 +119371,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -120530,10 +120756,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -121862,10 +122094,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -122544,10 +122782,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -128628,10 +128872,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunZeroSpanParity": {
@@ -130224,10 +130474,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -131834,10 +132090,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -132545,10 +132807,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -133207,10 +133475,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -133881,10 +134155,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     }
@@ -134288,10 +134568,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "ConstantTone": {
@@ -134416,10 +134702,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -137562,29 +137854,41 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0005",
         "W :SOUR:LEV 0.001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.001",
         "W :SOUR:LEV 0.0015",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0015",
         "W :SOUR:LEV 0.002",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.002",
         "W :SOUR:LEV 0.0025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0025",
-        "W :SOUR:LEV 0.003"
+        "W :SOUR:LEV 0.003",
+        "Q :SOUR:LEV?"
       ]
     },
     "Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW": {
@@ -139188,14 +139492,21 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -139914,10 +140225,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -145617,10 +145934,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -151977,10 +152300,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -152646,10 +152975,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -155933,10 +156268,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -164772,10 +165113,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "CLOSE"
       ]
@@ -164919,10 +165266,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -164943,10 +165296,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunChargeSweep": {
@@ -167631,12 +167990,19 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.001",
@@ -167645,6 +168011,7 @@
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005",
         "W :SOUR:LEV 0.006",
         "W :SOUR:LEV 0.007",
@@ -167652,12 +168019,14 @@
         "W :SOUR:LEV 0.009000000000000001",
         "W :SOUR:LEV 0.01",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.01",
         "W :SOUR:LEV 0.011",
         "W :SOUR:LEV 0.011999999999999999",
         "W :SOUR:LEV 0.012999999999999998",
         "W :SOUR:LEV 0.013999999999999997",
         "W :SOUR:LEV 0.015",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.015",
         "W :SOUR:LEV 0.016",
@@ -167667,6 +168036,7 @@
         "W :SOUR:LEV 0.020000000000000004",
         "W :SOUR:LEV 0.02",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.02",
         "W :SOUR:LEV 0.021",
         "W :SOUR:LEV 0.022000000000000002",
@@ -167675,12 +168045,14 @@
         "W :SOUR:LEV 0.025000000000000005",
         "W :SOUR:LEV 0.025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.025",
         "W :SOUR:LEV 0.026000000000000002",
         "W :SOUR:LEV 0.027000000000000003",
         "W :SOUR:LEV 0.028000000000000004",
         "W :SOUR:LEV 0.029000000000000005",
         "W :SOUR:LEV 0.03",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.03",
         "W :SOUR:LEV 0.031",
@@ -167690,6 +168062,7 @@
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.036000000000000004",
         "W :SOUR:LEV 0.037000000000000005",
@@ -167697,12 +168070,14 @@
         "W :SOUR:LEV 0.03900000000000001",
         "W :SOUR:LEV 0.04",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.04",
         "W :SOUR:LEV 0.041",
         "W :SOUR:LEV 0.042",
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -170526,10 +170901,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "CLOSE"
       ]
@@ -172803,13 +173184,20 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.001",
@@ -172818,6 +173206,7 @@
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005",
         "W :SOUR:LEV 0.006",
         "W :SOUR:LEV 0.007",
@@ -172825,12 +173214,14 @@
         "W :SOUR:LEV 0.009000000000000001",
         "W :SOUR:LEV 0.01",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.01",
         "W :SOUR:LEV 0.011",
         "W :SOUR:LEV 0.011999999999999999",
         "W :SOUR:LEV 0.012999999999999998",
         "W :SOUR:LEV 0.013999999999999997",
         "W :SOUR:LEV 0.015",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.015",
         "W :SOUR:LEV 0.016",
@@ -172840,6 +173231,7 @@
         "W :SOUR:LEV 0.020000000000000004",
         "W :SOUR:LEV 0.02",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.02",
         "W :SOUR:LEV 0.021",
         "W :SOUR:LEV 0.022000000000000002",
@@ -172848,12 +173240,14 @@
         "W :SOUR:LEV 0.025000000000000005",
         "W :SOUR:LEV 0.025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.025",
         "W :SOUR:LEV 0.026000000000000002",
         "W :SOUR:LEV 0.027000000000000003",
         "W :SOUR:LEV 0.028000000000000004",
         "W :SOUR:LEV 0.029000000000000005",
         "W :SOUR:LEV 0.03",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.03",
         "W :SOUR:LEV 0.031",
@@ -172863,6 +173257,7 @@
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.035",
         "W :SOUR:LEV 0.036000000000000004",
         "W :SOUR:LEV 0.037000000000000005",
@@ -172870,12 +173265,14 @@
         "W :SOUR:LEV 0.03900000000000001",
         "W :SOUR:LEV 0.04",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.04",
         "W :SOUR:LEV 0.041",
         "W :SOUR:LEV 0.042",
         "W :SOUR:LEV 0.043000000000000003",
         "W :SOUR:LEV 0.044000000000000004",
         "W :SOUR:LEV 0.045",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.045",
         "W :SOUR:LEV 0.044",
@@ -172923,6 +173320,7 @@
         "W :SOUR:LEV 0.00199999999999996",
         "W :SOUR:LEV 0.0009999999999999593",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -173594,10 +173992,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -185901,10 +186305,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunModifiedRamsey": {
@@ -197095,10 +197505,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -207389,10 +207805,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?"
       ]
     },
@@ -209754,48 +210176,66 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
         "W :SOUR:LEV 0.0005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0005",
         "W :SOUR:LEV 0.001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.001",
         "W :SOUR:LEV 0.0015",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0015",
         "W :SOUR:LEV 0.002",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.002",
         "W :SOUR:LEV 0.0025",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0025",
         "W :SOUR:LEV 0.003",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.003",
         "W :SOUR:LEV 0.0035",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0035",
         "W :SOUR:LEV 0.004",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.004",
         "W :SOUR:LEV 0.0045000000000000005",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0045000000000000005",
         "W :SOUR:LEV 0.005000000000000001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005000000000000001",
         "W :SOUR:LEV 0.005500000000000001",
         "Q :SOUR:LEV?",
+        "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.005500000000000001",
-        "W :SOUR:LEV 0.006000000000000002"
+        "W :SOUR:LEV 0.006000000000000002",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunModifiedRamsey_Control[verified]": {
@@ -217264,10 +217704,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
         "Q :SOUR:LEV?",
@@ -219961,10 +220407,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1": {
@@ -222499,10 +222951,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1SS": {
@@ -227438,10 +227896,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1T2E": {
@@ -232614,10 +233078,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT1T2RT2E": {
@@ -240994,10 +241464,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2": {
@@ -244292,10 +244768,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2E": {
@@ -246921,10 +247403,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunT2E[rotation]": {
@@ -249666,10 +250154,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunTrans_QubitSpec": {
@@ -252360,10 +252854,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunTransmissionSweep": {
@@ -253041,10 +253541,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -254420,10 +254926,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -255752,10 +256264,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -256434,10 +256952,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -262518,10 +263042,16 @@
       },
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
-        "W :SOUR:LEV 0.0"
+        "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?"
       ]
     },
     "RunZeroSpanParity": {
@@ -264114,10 +264644,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -265724,10 +266260,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -266435,10 +266977,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -267097,10 +267645,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     },
@@ -267771,10 +268325,16 @@
       "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
+        "Q :OUTP?",
+        "Q :SOUR:FUNC?",
+        "Q :SOUR:LEV?",
         "W :SOUR:FUNC VOLT",
+        "Q :SOUR:RANG?",
+        "W :SOUR:LEV 0",
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
+        "Q :SOUR:LEV?",
         "CLOSE"
       ]
     }

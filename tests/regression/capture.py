@@ -237,21 +237,26 @@ def _iq_blobs(n, window):
 
 
 class FakeYoko:
-    """GS200 voltage source: tracks the level so ramp_to() terminates."""
+    """GS200 voltage source, output OFF on open: tracks level/output so ramp_to() terminates."""
 
     def __init__(self, address):
         self.address = address
         self.level = 0.0
+        self.output = "0"
 
     def write(self, cmd):
         STATE.yoko.append(f"W {cmd}")
         match = re.fullmatch(r":SOUR:LEV\s+(\S+)", cmd.strip())
         if match:
             self.level = float(match.group(1))
+        match = re.fullmatch(r":OUTP\s+(ON|OFF)", cmd.strip())
+        if match:
+            self.output = "1" if match.group(1) == "ON" else "0"
 
     def query(self, cmd):
         STATE.yoko.append(f"Q {cmd}")
-        return repr(self.level) if cmd.strip() == ":SOUR:LEV?" else "0"
+        answers = {":OUTP?": self.output, ":SOUR:FUNC?": "VOLT", ":SOUR:RANG?": "1E+01"}
+        return repr(self.level) if cmd.strip() == ":SOUR:LEV?" else answers.get(cmd.strip(), "0")
 
     def close(self):
         STATE.yoko.append("CLOSE")

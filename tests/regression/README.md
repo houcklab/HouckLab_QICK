@@ -134,7 +134,7 @@ Per (variant, run label) the golden holds:
 | `makeProxy()` (Pyro4) | `(FakeSoc(), FakeSocCfg())`, patched in `socProxy` and every module that star-imported it. |
 | `QickConfig` | A genuine `QickConfig` over `capture.BOARDS[variant]`: tProc v1 at 430.08 MHz, 7 mixer-less `axis_signal_gen_v6` gens, 2 `axis_readout_v2` readouts at 307.2 MHz. Gen fabric 430.08 MHz (A) or 614.4 MHz (B); readout *i* on tProc input *i* (A) or *i + 2* (B). Every program compiles through real QICK code. |
 | `QickSoc` | `FakeSoc`: records every call; answers readout requests with seeded two-blob IQ data of exactly the shape QICK returns. |
-| `pyvisa.ResourceManager` | `FakeYoko` that tracks its level, so `ramp_to` terminates. |
+| `pyvisa.ResourceManager` | `FakeYoko` that tracks its level and output state (OFF on open, voltage mode, 10 V range), so `open_charge_yoko` takes the output-off path and `ramp_to` terminates and reads back. |
 | `time.sleep`, `plt.show`, `plt.pause`, `Figure.savefig` | No-ops. |
 | `datetime` in project modules | Virtual clock, +1 s per `now()`, reset each run (otherwise back-to-back experiments with sleeps disabled would share an h5 filename). |
 
