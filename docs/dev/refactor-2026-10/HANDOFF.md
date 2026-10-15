@@ -142,6 +142,8 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     (NaN-error flip rule, drift-filter edge bias, interior bias at CSTQ03 contrast). TIER C left: add drive_off to
     the default validation_controls and confirm the 0.1 budget on the fridge; the per-record lag sum is not in
     _analysis.json; K is per record (a control with a slightly different rep period can lose the comparison).
+45. `b0430ae6` fix(single_shot): F48 — T1_SS and the Undriven charge sweep save the completed points on abort
+    (sweep_completed / points_completed + cfg aborted) and retry the shot-counter race (golden byte-identical).
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
