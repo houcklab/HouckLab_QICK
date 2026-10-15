@@ -1,4 +1,33 @@
-"""Per-rep period of a compiled tProc program (the ModifiedRamsey schedule ledger)."""
+"""tProc timing: the clock cycle, the realised axis of a register-swept wait, and the
+per-rep period of a compiled program (the ModifiedRamsey schedule ledger)."""
+
+import numpy as np
+
+
+def tproc_cycle_us(soccfg):
+    """One tProc clock cycle in us, read from the board (1 / f_time; 1/430.08 MHz =
+    0.0023251488 us on the lab board): docs/concepts/timing_and_units.md#clocks."""
+    return soccfg.cycles2us(1)
+
+
+def realised_wait_axis_us(soccfg, start, step, expts, segments=1):
+    """Wait axis (us) of a register-swept wait as the tProc realises it.
+
+    The program advances its wait register by ``us2cycles(step / segments)`` whole tProc
+    cycles per point and plays ``segments`` equal waits, so point ``i`` waits
+    ``segments * (us2cycles(start / segments) + i * us2cycles(step / segments))`` cycles,
+    not ``start + i * step`` us. Fixed pulse / sync overhead is not included. A grid that
+    is already whole cycles (e.g. a ``quantised_t2e_step`` step) is returned as
+    ``start + i * step`` unchanged, not re-derived to within float rounding.
+    docs/concepts/timing_and_units.md#register-swept-wait-axis
+    """
+    c0 = soccfg.us2cycles(start / segments)
+    dc = soccfg.us2cycles(step / segments)
+    realised = soccfg.cycles2us(segments * (c0 + dc * np.arange(expts)))
+    nominal = start + np.arange(expts) * step
+    if np.allclose(realised, nominal, rtol=1e-12, atol=1e-12):
+        return nominal
+    return realised
 
 
 class RepPeriodMixin:

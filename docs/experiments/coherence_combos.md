@@ -41,7 +41,8 @@ group but ignores its `repetitions`.
 | `repetitions` | coherence | 1000 | - | Number of sets |
 | `T1_step`, `T1_expts`, `T1_reps`, `T1_rounds` | coherence | 5, 100, 20, 20 | us, -, -, - | T1 part |
 | `T2_step`, `T2_expts`, `T2_reps`, `T2_rounds` | coherence | 0.1, 100, 20, 20 | us, -, -, - | T2R part (t1_t2r_t2e) |
-| `freq_shift` | coherence | 0.0 | MHz | T2R detuning |
+| `freq_shift` | coherence | 0.0 | MHz | T2R detuning (real, of the pi/2 pulses) |
+| `f_virt_mhz` | coherence | None | MHz | T2R virtual detuning; None = 5 fringes over the window ([t2_ramsey](t2_ramsey.md#virtual-detuning)) |
 | `relax_delay` | coherence | 3000 | us | T1 and T2R relax delay |
 | `T2_max_us`, `T2_expts`, `T2_reps`, `T2_rounds` | echo | 20, 121, 25, 25 | us, -, -, - | T2E part |
 | `num_pi_pulses` | echo | 1 | - | Echo pulses (odd) |

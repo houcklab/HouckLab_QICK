@@ -132,18 +132,26 @@ def project_iq_onto_separator(I, Q, separator):
     return scores, binary_states
 
 
-def min_q_range_phase(I, Q, n):
-    """Phase in [0, pi] (n grid points) that minimises the peak-to-peak of Q after
-    multiplying I + iQ by exp(i*phase), i.e. puts the contrast in I.
-    See docs/concepts/iq_conventions.md section 3."""
-    complex = I + 1j * Q
-    phase_values = np.linspace(0, np.pi, n)
-    multiplied_phase = [complex * np.exp(1j * phase) for phase in phase_values]
-    Q_range = np.array(
-        [np.max(IQPhase.imag) - np.min(IQPhase.imag) for IQPhase in multiplied_phase]
-    )
-    phase_index = np.argmin(Q_range)
-    return phase_values[phase_index]
+def decay_axis_phase(I, Q):
+    """Phase p in [0, 2*pi) such that (I + iQ) * exp(1j*p) puts the contrast of a decay trace
+    (T1, T2E) in I: p = -(principal axis angle of the mean-subtracted trace), with the sign chosen
+    so the rotated I of the first point (shortest wait, most excited) is at or above the trace
+    mean. 0 for a trace with no spread. Same axis as the Rabi and Ramsey rotations
+    (principal_axis_angle); see docs/concepts/iq_conventions.md section 3."""
+    sig = np.ravel(np.asarray(I, dtype=float)) + 1j * np.ravel(np.asarray(Q, dtype=float))
+    if sig.size == 0 or (np.ptp(sig.real) == 0 and np.ptp(sig.imag) == 0):
+        return 0.0
+    dev = sig - np.mean(sig)
+    phase = (-principal_axis_angle(dev)) % np.pi
+    if (dev[0] * np.exp(1j * phase)).real < 0:
+        phase += np.pi
+    return float(phase % (2 * np.pi))  # a phase just below pi + pi rounds to 2*pi
+
+
+def min_q_range_phase(I, Q, n=None):
+    """Former name of decay_axis_phase (a 200- or 500-point grid search minimising the
+    peak-to-peak of Q until 2026-10); ``n``, the old grid size, is ignored."""
+    return decay_axis_phase(I, Q)
 
 
 def kmeans_split(iq, min_blob_snr=None):

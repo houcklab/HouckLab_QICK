@@ -49,7 +49,7 @@ PLAN = [R.auto_coherence(skip_sweet_spot_search=True,     # CSTQ03 session setti
 ```
 
 Any key of the parameter table can be overridden; unspecified keys keep their defaults.
-The qubit is `qubit_readout` (see Known issues).
+The qubit is `qubit_readout`; `Qubit_Pulse` must equal it (see Known issues).
 
 ## Parameters
 
@@ -154,12 +154,14 @@ T1 / T2 / T2E (Stages 4-6)
 | `T1_reps`, `T1_rounds` | 20, 20 | - | Averaging |
 | `T1_relax_delay` | 3500 | us | |
 | `T1_repetitions` | 1 | - | Consecutive T1 records |
+| `T1_expected_us` | None | us | If set, run the [timing checks](#timing-checks) against this T1 before Stage 1 (warn only); None = no pre-flight |
 | `T2_step` | 0.1 | us | Ramsey wait step |
 | `T2_expts` | 201 | - | Points (0 ... 20 us) |
 | `T2_reps`, `T2_rounds` | 20, 20 | - | Averaging |
 | `T2_relax_delay` | 3500 | us | |
 | `T2_repetitions` | 1 | - | |
-| `T2_freq_shift` | 0.0 | MHz | Artificial detuning from f_ge |
+| `T2_freq_shift` | 0.0 | MHz | Real detuning of the pi/2 pulses from f_ge |
+| `T2_f_virt_mhz` | None | MHz | Virtual detuning (second-pulse phase advance); None = 5 fringes over the window (0.249 MHz at 201 x 0.1 us, 0.125 MHz at 401), 0 = off; see [t2_ramsey](t2_ramsey.md#virtual-detuning) |
 | `T2E_max_us` | 200 | us | Target maximum echo time (quantised: 198.1 us with n = 1) |
 | `T2E_expts` | 201 | - | Points |
 | `T2E_reps`, `T2E_rounds` | 25, 25 | - | Averaging |
@@ -223,8 +225,35 @@ verification at the pi gain with 2000 shots.
 
 **Stages 4-6.** T1, T2R and T2E with the calibrated f_ge, pi/pi2 gains and sigma, each
 followed by a 5 s pause and `soc.reset_gens()`. The T2E step is quantised as on
-[t2_echo](t2_echo.md#step-quantisation) (0.00232515 us x (n + 1) x int_steps); if
-`int_steps` is 0 it is forced to 1. T2E uses f_ge without detuning.
+[t2_echo](t2_echo.md#step-quantisation) (one tProc cycle from soccfg x (n + 1) x int_steps,
+the same `quantised_t2e_step`); if
+`int_steps` is 0 it is forced to 1. T2E uses f_ge without detuning. T2R runs with the
+virtual detuning `T2_f_virt_mhz` ([t2_ramsey](t2_ramsey.md#virtual-detuning)); after each
+T2R with a fit the log gets `fringe f`, `f_virt` and `delta = f - f_virt`, with f the
+doublet centre `(f1+f2)/2` for a 2f fit (sign vs f_ge not yet verified on hardware).
+
+### Timing checks
+
+Warn only: no relax delay or window is changed (auto-scaling is not implemented). After
+the first T1 run whose fit is usable (`ok`, finite T1 and T1_err, T1_err / T1 <= 0.5; the
+fit the T1 record already holds, not a refit) the log gets one block (once per AutoCoherence run):
+
+| Quantity | Logged as | WARNING when |
+|---|---|---|
+| `T1_relax_delay`, `T2_relax_delay`, `T2E_relax_delay` | relax / T1 | < 5 T1 (residual e^-relax/T1 excited population) or > 20 T1 (mostly idle time) |
+| T1 window = `T1_step` x `T1_expts` | window / T1 | < 3 T1 (decay unresolved) or > 10 T1 (most points on the baseline) |
+| T2R window = `T2_step` x `T2_expts` | window / 2 T1 | never (logged only) |
+| T2E window = quantised step x `T2E_expts` (as Stage 6 computes it) | window / T1 | > 6 T1 (T2E <= 2 T1, the late points carry no signal) |
+
+WARNING lines are also printed. If no T1 run has a usable fit, the log says the check was
+skipped. With `T1_expected_us` set, the same block is logged before Stage 1 against that
+value (a value that is not a number > 0 is logged as skipped). The T2E window is not checked when
+`T2E_num_pi_pulses` is not an integer >= 1 (Stage 6 still raises for it). The check never
+stops the run: if a parameter cannot be evaluated (e.g. `T2E_expts = 0`), one
+`Timing check failed (warn only, run continues): <error>` line is logged instead and the
+parameter still fails in its own stage. With the CSTQ03
+settings and T1 = 50 us the three relax delays warn (3500 us = 70 T1) and the T2E window
+warns (499 us = 10 T1); the T1 window (300 us = 6 T1) does not.
 
 ## Outputs
 
@@ -258,7 +287,8 @@ readout window chosen by Stage 2.5 is in the parameters section (`ss_readout_tim
 `ss_adc_offset`). A display (fit/plot) failure inside a stage does not stop the run: the
 record is saved and a `display failed (record saved)` line is added to the log.
 
-T1/T2/T2E fit values are **not** in the summary. The `auto-T1` and `auto-T2E` h5 records hold
+T1/T2/T2E fit values are **not** in the summary (the run log holds only the T1 used by the
+[timing checks](#timing-checks)). The `auto-T1` and `auto-T2E` h5 records hold
 their fits (`t1_fit_*`, `t2e_fit_*`, see [t1](t1.md#outputs)); refit the `auto-T2` records. Calibrated values are not written into the
 device file; copy them by hand (`Qubit(freq=..., gain=..., pi2_gain=..., sigma=...)`).
 
@@ -294,7 +324,9 @@ single-shot histogram analysis (see Findings).
 ## Known issues
 
 - The qubit is `qubit_readout` for everything: drive frequency, gain, sigma and flat-top
-  are read from the device entry of `qubit_readout`; `qubit_pulse` is ignored.
+  are read from the device entry of `qubit_readout`. A session with `Qubit_Pulse !=
+  Qubit_Readout` is therefore refused: `run_auto_coherence` raises `ValueError` before any
+  hardware call, rather than calibrate a drive that no other step of the session uses.
 - Stages 1/1.5 find peaks on `|I + iQ|^2`, the method that
   [two_tone_spec](two_tone_spec.md#findings--notes) replaced with the IQ projection
   because it misses features lying in one quadrature.

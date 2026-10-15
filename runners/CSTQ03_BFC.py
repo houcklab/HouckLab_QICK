@@ -609,6 +609,7 @@ T1T2_params = {
     "T2_reps": 20,
     "T2_rounds": 20,
     "freq_shift": 0.0,
+    "f_virt_mhz": None,  # MHz, T2R virtual detuning; None = 5 fringes over the window, 0 = off
     "relax_delay": 3000,  # 5000
     "repetitions": 1000,
 }
@@ -772,6 +773,7 @@ AutoCoherence_override_params = {
     # "T2_relax_delay":  3500,      # us
     "T2_repetitions": 3,
     # "T2_freq_shift":   0.0,       # MHz – artificial detuning from f_ge
+    # "T2_f_virt_mhz":   None,      # MHz – virtual detuning; None = 5 fringes over the window
     # ── T2Echo ──────────────────────────────────────────────────────────────
     "T2E_max_us": 500,  # us – maximum echo time
     # "T2E_expts":        201,

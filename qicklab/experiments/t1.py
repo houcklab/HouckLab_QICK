@@ -5,9 +5,10 @@ import numpy as np
 from qick import RAveragerProgram
 
 from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
-from qicklab.analysis.iq import min_q_range_phase
+from qicklab.analysis.iq import decay_axis_phase
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
+from qicklab.core.schedule import realised_wait_axis_us
 
 
 class T1Program(RAveragerProgram):
@@ -102,8 +103,8 @@ class T1Program(RAveragerProgram):
 
 
 class T1FF(ExperimentClass):
-    """T1: pi pulse, register-swept wait (from the pulse end), readout; min-Q-range IQ
-    rotation and a single-exponential fit (docs/experiments/t1.md)."""
+    """T1: pi pulse, register-swept wait (from the pulse end), readout; principal-axis IQ
+    rotation (excited end up) and a single-exponential fit (docs/experiments/t1.md)."""
 
     def __init__(
         self,
@@ -130,7 +131,7 @@ class T1FF(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = T1Program(self.soccfg, self.cfg)
 
-        x_pts, avgi, avgq = prog.acquire(
+        _, avgi, avgq = prog.acquire(
             self.soc,
             threshold=None,
             angle=None,
@@ -139,6 +140,11 @@ class T1FF(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
+        )
+        # realised register-swept wait, not start + i*step:
+        # docs/concepts/timing_and_units.md#register-swept-wait-axis
+        x_pts = realised_wait_axis_us(
+            self.soccfg, self.cfg["start"], self.cfg["step"], self.cfg["expts"]
         )
 
         avgi = np.asarray(avgi, dtype=np.float64)
@@ -174,8 +180,9 @@ class T1FF(ExperimentClass):
         avgi = data["data"]["avgi"][0][0]
         avgq = data["data"]["avgq"][0][0]
 
-        if "rotation_angle" not in self.cfg:
-            rotation_angle = min_q_range_phase(avgi, avgq, 200)
+        fixed_rotation = "rotation_angle" in self.cfg
+        if not fixed_rotation:
+            rotation_angle = decay_axis_phase(avgi, avgq)
         else:
             rotation_angle = self.cfg["rotation_angle"]
         rotated_IQ = (avgi + 1j * avgq) * np.exp(1j * rotation_angle)
@@ -183,7 +190,9 @@ class T1FF(ExperimentClass):
         avgi = rotated_IQ.real
         avgq = rotated_IQ.imag
 
-        if "min_max" in data:
+        # Fixed g/e levels only mean something on the fixed rotation they were measured with.
+        normalise = fixed_rotation and "min_max" in data
+        if normalise:
             ground = data["min_max"][0]
             excited = data["min_max"][-1]
             avgi = (avgi - ground) / (excited - ground)
@@ -210,7 +219,7 @@ class T1FF(ExperimentClass):
         elif "yfit" in fit and np.all(np.isfinite(fit["yfit"])):
             plt.plot(x_pts, fit["yfit"], "--", label="fit (not reliable)", color="gray")
         plt.ylabel("a.u.")
-        if "min_max" in data:
+        if normalise:
             plt.ylabel("Population")
         plt.xlabel("Wait time (us)")
         plt.legend()

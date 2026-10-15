@@ -537,6 +537,18 @@ def test_t1_ss_normalises_by_declared_window(board):
     assert i.shape == (1, 4) and np.all(i == 3.0) and np.all(q == -1.0)
 
 
+def test_t1_ss_plays_pi_gain(board):
+    """T1SingleShotProgram's pi pulse plays cfg['pi_gain'] (run_t1_ss writes ctx.qubit_gain, the
+    gain its single_shot calibration uses), not cfg['qubit_gain'] (the spec gain in regime A).
+    Was qubit_gain; the harness cfg has both at 4200, so no other pin moves."""
+    _, soccfg = board
+    prog = _program("T1SS", soccfg, qubit_gain=900, pi_gain=4100)
+    pulse = prog._gen_mgrs[prog.cfg["qubit_ch"]].next_pulse
+    page, gain_reg = pulse["rp"], pulse["regs"][0][3]  # arb regs: freq, phase, addr, gain, mode
+    gains = [args[2] for args in _insts(prog, "regwi") if tuple(args[:2]) == (page, gain_reg)]
+    assert gains == [4100]
+
+
 # --- Zero span: read_length on the readout clock ------------------------------------------
 def _zsp_cfg(adc_trig_offset, read_length, sample_period_us=None, capture_length_us=None):
     from qicklab.hardware.board import BaseConfig
@@ -643,3 +655,26 @@ def test_zero_span_decimated_buffer_rule_matches_declaration(board):
     assert prog.ro_chs[0]["length"] == 983 <= soccfg["readouts"][0]["buf_maxlen"]
     with pytest.raises(RuntimeError, match="rule 5"):
         _validate_cfg(_zsp_cfg(0.488, 3.4, capture_length_us=4.0), soccfg)
+
+
+# --- T2R virtual detuning (F29) ---------------------------------------------------------
+# The r_phase2 (register 4) mathi immediate in update(): phase_step =
+# deg2reg(360 * f_virt * dt, gen_ch=qubit_ch) with the default f_virt = 5 fringes over the
+# realised window (capped at 1/8 turn per step), 0.1 us step. Was 0 for every expts
+# (deg2reg(0, gen_ch=2)). The same on both boards (32-bit phase, tProc-clock step).
+T2R_PHASE_STEP = {5: 2**29, 100: 214748365, 201: 106839982, 401: 53553208}
+
+
+@pytest.mark.parametrize("expts", sorted(T2R_PHASE_STEP))
+def test_t2r_virtual_detuning_phase_step(board, expts):
+    from qicklab.experiments.t2_ramsey import ramsey_virtual_detuning
+    from qicklab.hardware.board import BaseConfig
+
+    _, soccfg = board
+    cfg = _cfg(BaseConfig, **REGIME_A_EXTRA)
+    cfg.update(step=0.1, expts=expts)
+    detuning = ramsey_virtual_detuning(soccfg, cfg, None)
+    assert detuning["phase_step"] == T2R_PHASE_STEP[expts]
+    prog = _program("T2R", soccfg, step=0.1, expts=expts, **detuning)
+    assert [args[4] for args in _insts(prog, "mathi", reg=4)] == [T2R_PHASE_STEP[expts]]
+    assert [args[4] for args in _insts(prog, "mathi", reg=3)] == [43]  # wait step, cycles

@@ -7,7 +7,7 @@ import numpy as np
 from qicklab.core.experiment import finish
 from qicklab.experiments.readout_optimize import QubitPulseOpt_wSingleShotFF, ReadOpt_wSingleShotFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
-from qicklab.experiments.t1_single_shot import T1_SS
+from qicklab.experiments.t1_single_shot import T1_SS, readout_assignment_errors
 from qicklab.experiments.undriven_single_shot import UndrivenSingleShot
 
 
@@ -163,6 +163,18 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
             angle = data_SingleShotProgram["data"]["angle"][0]
             threshold = data_SingleShotProgram["data"]["threshold"][0]
             _check_t1ss_discriminator(angle, threshold, "calibrated")
+            # P(e|g), P(g|e) of the calibration shots under this angle/threshold, for the
+            # readout-corrected curve (docs/experiments/t1_single_shot.md#analysis).
+            readout_errors = readout_assignment_errors(
+                *_extract_iq_from_singleshot_data(data_SingleShotProgram, "g"),
+                *_extract_iq_from_singleshot_data(data_SingleShotProgram, "e"),
+                angle,
+                threshold,
+            )
+            print(
+                f"[T1_SS] calibration P(e|g) = {readout_errors[0]:.4f}, "
+                f"P(g|e) = {readout_errors[1]:.4f}"
+            )
             # hist_process contrast (labelled fid); display() may overwrite the list with read 0's.
             contrast = np.ravel(np.asarray(Instance_SingleShotProgram.fid, dtype=float))[0]
             if contrast < T1SS_MIN_CALIBRATION_CONTRAST:
@@ -174,6 +186,7 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
             angle = T1SS_params["angle"]
             threshold = T1SS_params["threshold"]
             _check_t1ss_discriminator(angle, threshold, "T1SS_params")
+            readout_errors = None
         print(angle, threshold)
 
         expt_cfg = {
@@ -188,7 +201,7 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
         iT1 = T1_SS(
             path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
         )
-        dT1 = T1_SS.acquire(iT1, angle=angle, threshold=threshold)
+        dT1 = T1_SS.acquire(iT1, angle=angle, threshold=threshold, readout_errors=readout_errors)
         finish(T1_SS, iT1, dT1, plotDisp=False, figNum=2)
 
         time.sleep(10)

@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from qicklab.core.experiment import ExperimentClass, finish
+from tests.regression import capture
 
 
 class _Expt(ExperimentClass):
@@ -131,14 +132,14 @@ def test_run_t2_loop_continues_after_display_error(tmp_path, monkeypatch):
     class Ctx:
         outerFolder = str(tmp_path) + "/"
         soc = type("Soc", (), {"reset_gens": lambda self: None})()
-        soccfg = type("SocCfg", (), {"deg2reg": lambda self, deg, gen_ch: 0})()
+        soccfg = capture.FakeSocCfg("A")
         qubit_gain = pi2_gain = 1000
         qubit_frequency_center = 4000.0
         qubit_sigma = 0.05
         qubit_flattop = None
 
         def working_config(self, extra):
-            return {"reps": 3}
+            return {"reps": 3, "qubit_ch": 1, **extra}
 
     monkeypatch.setattr(coherence, "T2R", FakeT2R)
     monkeypatch.setattr(coherence.time, "sleep", lambda s: None)
@@ -294,7 +295,7 @@ def test_auto_coherence_stage_loop_continues_after_display_error(tmp_path, monke
 
     resets = []
     soc = type("Soc", (), {"reset_gens": lambda self: resets.append(1)})()
-    soccfg = type("SocCfg", (), {"deg2reg": lambda self, deg, gen_ch: 0})()
+    soccfg = capture.FakeSocCfg("A")
     monkeypatch.setattr(ac, cls_name, Fake)
     monkeypatch.setattr(ac.time, "sleep", lambda s: None)
 
@@ -302,7 +303,7 @@ def test_auto_coherence_stage_loop_continues_after_display_error(tmp_path, monke
     getattr(ac, stage_name)(
         soc=soc,
         soccfg=soccfg,
-        cfg={"reps": 3},
+        cfg={"reps": 3, "qubit_ch": 1},
         auto_folder=str(tmp_path) + "/",
         qubit_freq=4000.0,
         pi_gain=1200,

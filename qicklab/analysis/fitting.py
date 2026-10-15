@@ -430,8 +430,12 @@ def _exp_decay_failed(x_pts, error, popt=None, perr=None, T_bounds=None):
     }
 
 
-def fit_exp_decay(x_pts, y):
+def fit_exp_decay(x_pts, y, sigma=None):
     """Bounded single-exponential fit ``a exp(-x/T) + c`` for T1 / T2E (docs/experiments/t1.md#analysis).
+
+    ``sigma`` (optional, per point, all > 0) weights the points as ``curve_fit(sigma=...)`` with
+    ``absolute_sigma=False``: relative weights, the covariance is rescaled by the reduced
+    chi-square (T1_SS: docs/experiments/t1_single_shot.md#analysis). None = unweighted.
 
     Start values: ``a = y[0] - y[-1]``, ``c = y[-1]``, T = the x where y is closest to
     ``a/2.6 + c`` (about the 1/e point), clipped into the bounds. Bounds come from the
@@ -453,6 +457,10 @@ def fit_exp_decay(x_pts, y):
         return _exp_decay_failed(x, f"need >= 4 points for a 3-parameter fit, got {x.size}")
     if not (np.all(np.isfinite(x)) and np.all(np.isfinite(y))):
         return _exp_decay_failed(x, "non-finite x or y")
+    if sigma is not None:
+        sigma = np.asarray(sigma, dtype=float).ravel()
+        if sigma.size != y.size or not np.all(np.isfinite(sigma) & (sigma > 0)):
+            return _exp_decay_failed(x, "sigma must be finite, > 0 and one per point")
 
     span = float(np.max(x) - np.min(x))
     dx = float(np.median(np.abs(np.diff(np.sort(x)))))
@@ -479,7 +487,14 @@ def fit_exp_decay(x_pts, y):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", OptimizeWarning)
             popt, pcov = curve_fit(
-                exp_decay, x, y, p0=guess, bounds=bounds, maxfev=EXP_DECAY_MAXFEV
+                exp_decay,
+                x,
+                y,
+                p0=guess,
+                sigma=sigma,
+                absolute_sigma=False,
+                bounds=bounds,
+                maxfev=EXP_DECAY_MAXFEV,
             )
     except (RuntimeError, ValueError) as e:
         return _exp_decay_failed(x, repr(e), T_bounds=(t_lo, t_hi))

@@ -301,9 +301,10 @@ qick is pinned at 0.2.334; the board runs qick 0.2.367 (per the shot-buffer help
 - Only `synci` advances tProc time. The `waiti` that `measure(wait=True)` emits does not. A
   register-valued `sync` inside a loop makes the rep period not a compile-time constant (the
   undriven single-shot schedule raises in that case).
-- Echo-type sweeps quantise their step: T2E uses `step = 0.00232515 * (n_pi + 1) * k` so each of
-  the `n_pi + 1` segments is an integer number of tProc cycles. AutoCoherence uses the same
-  quantum; the two must agree.
+- Echo-type sweeps quantise their step: T2E uses `step = c * (n_pi + 1) * k`, with the tProc
+  cycle `c = soccfg.cycles2us(1)` read from the board (`core.schedule.tproc_cycle_us`), so each
+  of the `n_pi + 1` segments is an integer number of tProc cycles. The coherence run functions
+  and AutoCoherence share one function (`experiments.t2_echo.quantised_t2e_step`).
 - Streamer statistics include polling and transfer latency. The physical time base of a
   shot record is the emitted tProc schedule (including active-reset overhead), not wall-clock.
 - `AveragerProgram` reads `cfg["reps"]` in `make_program()` at construction; set `reps` before

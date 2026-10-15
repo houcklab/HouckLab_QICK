@@ -42,8 +42,9 @@ class _FakeT1:
         self.cfg = cfg
         type(self).instances.append(self)
 
-    def acquire(self, angle=None, threshold=None):
+    def acquire(self, angle=None, threshold=None, readout_errors=None):
         self.angle, self.threshold = angle, threshold
+        self.readout_errors = readout_errors
         return {"config": self.cfg, "data": {}}
 
 
@@ -61,6 +62,15 @@ class _Ctx:
         self.soc = types.SimpleNamespace(reset_gens=lambda: None)
 
 
+# Calibration shots, Q = 0 and angle 0.12 rad: rotated I' = I cos(0.12). Threshold 1.3:
+# g shots 1 of 4 above (P(e|g) = 0.25), e shots 1 of 5 below (P(g|e) = 0.2).
+CAL_SHOTS = {
+    "i_g0": np.array([-1.0, 0.0, 0.5, 3.0]),
+    "q_g0": np.zeros(4),
+    "i_e0": np.array([2.0, 2.5, 3.0, 1.0, 4.0]),
+    "q_e0": np.zeros(5),
+}
+
 T1SS = {
     "T1_step": 80,
     "T1_expts": 3,
@@ -76,7 +86,7 @@ T1SS = {
 @pytest.fixture
 def fakes(monkeypatch):
     _FakeSS.instances, _FakeT1.instances = [], []
-    _FakeSS.result = {"angle": [0.12], "threshold": [1.3], "thermal_mode": False}
+    _FakeSS.result = {"angle": [0.12], "threshold": [1.3], "thermal_mode": False, **CAL_SHOTS}
     _FakeSS.fid = [0.9]
     monkeypatch.setattr(ss_runs, "SingleShotProgramFFMUX", _FakeSS)
     monkeypatch.setattr(ss_runs, "T1_SS", _FakeT1)
@@ -106,6 +116,8 @@ def test_calibration_is_one_pi_pulse_at_pi_gain(fakes, ss_params):
     assert "number_of_pulses" not in t1.cfg
     assert t1.cfg["qubit_gain"] == SPEC_GAIN
     assert t1.cfg["pi_gain"] == PI_GAIN
+    # P(e|g), P(g|e) of the calibration shots under the calibrated angle/threshold (F66)
+    assert t1.readout_errors == pytest.approx((0.25, 0.2))
 
 
 def test_thermal_mode_calibration_raises(fakes):
@@ -144,6 +156,7 @@ def test_user_discriminator_used_without_calibration(fakes):
     (t1,) = ft1.instances
     assert (t1.angle, t1.threshold) == (0.25, -0.5)
     assert "number_of_pulses" not in t1.cfg
+    assert t1.readout_errors is None  # no calibration shots: no readout-corrected curve
 
 
 def test_low_contrast_warns_but_runs(fakes, capsys):

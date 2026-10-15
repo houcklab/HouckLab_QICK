@@ -5,9 +5,24 @@ import numpy as np
 from qick import RAveragerProgram
 
 from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
-from qicklab.analysis.iq import min_q_range_phase
+from qicklab.analysis.iq import decay_axis_phase
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
+from qicklab.core.schedule import realised_wait_axis_us, tproc_cycle_us
+
+
+def quantised_t2e_step(soccfg, t2_max_us, expts, num_pi_pulses):
+    """Return ``(int_steps, step_us)``: the T2E total-time step quantised so each of the
+    ``num_pi_pulses + 1`` waits advances by ``int_steps`` whole tProc cycles per point.
+
+    ``int_steps = floor(t2_max_us / (cycle * (n + 1) * expts))`` and
+    ``step = cycle * (n + 1) * int_steps`` with the cycle read from ``soccfg``. ``int_steps``
+    is 0 when ``expts`` points do not fit in ``t2_max_us``; the caller decides what to do.
+    docs/experiments/t2_echo.md#step-quantisation
+    """
+    cycle = tproc_cycle_us(soccfg)
+    int_steps = int(t2_max_us // (cycle * (num_pi_pulses + 1) * expts))
+    return int_steps, cycle * (num_pi_pulses + 1) * int_steps
 
 
 class T2EProgram(RAveragerProgram):
@@ -201,7 +216,7 @@ class T2EMUX(ExperimentClass):
     def acquire(self, progress=False):
         prog = T2EProgram(self.soccfg, self.cfg)
 
-        x_pts, avgi, avgq = prog.acquire(
+        _, avgi, avgq = prog.acquire(
             self.soc,
             threshold=None,
             angle=None,
@@ -210,6 +225,15 @@ class T2EMUX(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
+        )
+        # realised total wait of the n + 1 segments, not start + i*step (equal when the
+        # step is quantised): docs/concepts/timing_and_units.md#register-swept-wait-axis
+        x_pts = realised_wait_axis_us(
+            self.soccfg,
+            self.cfg["start"],
+            self.cfg["step"],
+            self.cfg["expts"],
+            segments=self.cfg["num_pi_pulses"] + 1,
         )
         print(
             x_pts,
@@ -235,10 +259,9 @@ class T2EMUX(ExperimentClass):
         avgi = data["data"]["avgi"][0][0]
         avgq = data["data"]["avgq"][0][0]
 
-        if "rotation_angle" not in self.cfg:
-            rotation_angle = min_q_range_phase(avgi, avgq, 200)
-        elif self.cfg["rotation_angle"] == None:
-            rotation_angle = min_q_range_phase(avgi, avgq, 200)
+        fixed_rotation = self.cfg.get("rotation_angle") is not None
+        if not fixed_rotation:
+            rotation_angle = decay_axis_phase(avgi, avgq)
         else:
             rotation_angle = self.cfg["rotation_angle"]
         rotated_IQ = (avgi + 1j * avgq) * np.exp(1j * rotation_angle)
@@ -246,7 +269,8 @@ class T2EMUX(ExperimentClass):
         avgi = rotated_IQ.real
         avgq = rotated_IQ.imag
 
-        if "min_max" in data:
+        # Fixed g/e levels only mean something on the fixed rotation they were measured with.
+        if fixed_rotation and "min_max" in data:
             ground = data["min_max"][0]
             excited = data["min_max"][-1]
             avgi = (avgi - ground) / (excited - ground)

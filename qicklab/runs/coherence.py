@@ -4,12 +4,8 @@ import time
 
 from qicklab.core.experiment import finish
 from qicklab.experiments.t1 import T1FF
-from qicklab.experiments.t2_echo import T2EMUX
-from qicklab.experiments.t2_ramsey import T2R
-
-# one tProc cycle (1/430.08 MHz); the T2E step is a multiple of (n_pi + 1) of it:
-# docs/experiments/t2_echo.md
-T2E_CLOCK_STEP_US = 0.00232515
+from qicklab.experiments.t2_echo import T2EMUX, quantised_t2e_step
+from qicklab.experiments.t2_ramsey import T2R, ramsey_virtual_detuning
 
 
 def run_t1(ctx, T1T2_params):
@@ -65,8 +61,8 @@ def run_t1_t2e(ctx, T1T2_params, T2E_params):
         finish(T1FF, iT1, dT1, plotDisp=plot_disp, figNum=2)
 
         num_pulses = T2E_params["num_pi_pulses"]
-        int_steps = T2E_params["T2_max_us"] // (
-            T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_params["T2_expts"]
+        int_steps, t2e_step = quantised_t2e_step(
+            ctx.soccfg, T2E_params["T2_max_us"], T2E_params["T2_expts"], num_pulses
         )
         if int_steps == 0:
             print("[T2E] Step size is 0! need to increase total time or decrease experiments")
@@ -74,7 +70,7 @@ def run_t1_t2e(ctx, T1T2_params, T2E_params):
 
         expt_cfg_T2E = {
             "start": 0,
-            "step": T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps,
+            "step": t2e_step,
             "expts": T2E_params["T2_expts"],
             "reps": T2E_params["T2_reps"],
             "rounds": T2E_params["T2_rounds"],
@@ -133,8 +129,8 @@ def run_t1_t2r_t2e(ctx, T1T2_params, T2E_params):
         _run_experiment(T1FF, "T1", expt_cfg_T1, figNum=2, plot_disp=plot_disp)
 
         num_pulses = T2E_params["num_pi_pulses"]
-        int_steps = T2E_params["T2_max_us"] // (
-            T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_params["T2_expts"]
+        int_steps, t2e_step = quantised_t2e_step(
+            ctx.soccfg, T2E_params["T2_max_us"], T2E_params["T2_expts"], num_pulses
         )
         if int_steps == 0:
             print("[T2E] Step size is 0! need to increase total time or decrease experiments")
@@ -142,7 +138,7 @@ def run_t1_t2r_t2e(ctx, T1T2_params, T2E_params):
 
         expt_cfg_T2E = {
             "start": 0,
-            "step": T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps,
+            "step": t2e_step,
             "expts": T2E_params["T2_expts"],
             "reps": T2E_params["T2_reps"],
             "rounds": T2E_params["T2_rounds"],
@@ -164,7 +160,6 @@ def run_t1_t2r_t2e(ctx, T1T2_params, T2E_params):
         expt_cfg_T2R = {
             "start": 0,
             "step": T1T2_params["T2_step"],
-            "phase_step": ctx.soccfg.deg2reg(0 * 360 / 50, gen_ch=2),
             "expts": T1T2_params["T2_expts"],
             "reps": T1T2_params["T2_reps"],
             "rounds": T1T2_params["T2_rounds"],
@@ -175,6 +170,12 @@ def run_t1_t2r_t2e(ctx, T1T2_params, T2E_params):
             "sigma": ctx.qubit_sigma,
             "flattop_length": ctx.qubit_flattop,
         }
+        # virtual detuning: docs/experiments/t2_ramsey.md#virtual-detuning
+        expt_cfg_T2R.update(
+            ramsey_virtual_detuning(
+                ctx.soccfg, ctx.working_config(expt_cfg_T2R), T1T2_params.get("f_virt_mhz")
+            )
+        )
         _run_experiment(T2R, "T2R", expt_cfg_T2R, figNum=4, plot_disp=plot_disp)
 
         time.sleep(10)
@@ -185,7 +186,6 @@ def run_t2(ctx, T1T2_params):
     T2R_cfg = {
         "start": 0,
         "step": T1T2_params["T2_step"],
-        "phase_step": ctx.soccfg.deg2reg(0 * 360 / 50, gen_ch=2),
         "expts": T1T2_params["T2_expts"],
         "reps": T1T2_params["T2_reps"],
         "rounds": T1T2_params["T2_rounds"],
@@ -196,6 +196,12 @@ def run_t2(ctx, T1T2_params):
         "sigma": ctx.qubit_sigma,
         "flattop_length": ctx.qubit_flattop,
     }
+    # virtual detuning: docs/experiments/t2_ramsey.md#virtual-detuning
+    T2R_cfg.update(
+        ramsey_virtual_detuning(
+            ctx.soccfg, ctx.working_config(T2R_cfg), T1T2_params.get("f_virt_mhz")
+        )
+    )
     for _ in range(T1T2_params["repetitions"]):
         cfg = ctx.working_config(T2R_cfg)
         iT2R = T2R(path="T2R", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
@@ -211,11 +217,11 @@ def run_t2e(ctx, T2E_params):
         plot_disp = T2E_params.get("plotDisp", T2E_params["repetitions"] <= 1)
 
         num_pulses = T2E_params["num_pi_pulses"]
-        int_steps = T2E_params["T2_max_us"] // (
-            T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_params["T2_expts"]
+        int_steps, t2e_step = quantised_t2e_step(
+            ctx.soccfg, T2E_params["T2_max_us"], T2E_params["T2_expts"], num_pulses
         )
         print(
-            f"[T2E rep {i}] int_steps={int_steps}, step(us)={T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps}, expts={T2E_params['T2_expts']}"
+            f"[T2E rep {i}] int_steps={int_steps}, step(us)={t2e_step}, expts={T2E_params['T2_expts']}"
         )
 
         if int_steps == 0:
@@ -224,7 +230,7 @@ def run_t2e(ctx, T2E_params):
         else:
             T2E_cfg = {
                 "start": 0,
-                "step": T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps,
+                "step": t2e_step,
                 "expts": T2E_params["T2_expts"],
                 "reps": T2E_params["T2_reps"],
                 "rounds": T2E_params["T2_rounds"],

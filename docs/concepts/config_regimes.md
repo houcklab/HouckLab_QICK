@@ -82,7 +82,6 @@ that later steps use it. There are exactly two:
 | Step | Reads `qubit_gain` as | Correct regime |
 |---|---|---|
 | `constant_two_tone`; `charge_sweep`, `charge_dispersion_quasicw` and `two_tone_charge_dispersion_quasicw` when their `Gauss` is False | spec drive gain | A |
-| `t1_ss` (`T1_SS` plays `cfg["qubit_gain"]` as its pi pulse) | pi gain | B only; in A it would play the spec gain |
 | `qubit_optimize` (centre of the gain scan) | pi gain (or pi/2 gain with `pi2_SS`) | B only; in A `cfg["pi2_SS"]` is missing and the step raises `KeyError` |
 | `single_shot` | pi gain, replaced by `pi2_gain` when `pi2_SS` | B |
 
@@ -193,7 +192,6 @@ would leak (no current code does).
   `transmission_fit` never reaches single-shot steps, and the calibrated `res_phase` from
   `active_reset_verify` never reaches `single_shot`.
 - `qubit_optimize` raises `KeyError: 'pi2_SS'` if called under regime A.
-- `t1_ss` plays `cfg["qubit_gain"]`; it is a pi pulse only under regime B.
 - Experiments write into their own cfg during acquire and display (`pulse_freq` left at the last
   sweep point, `reps`, `rounds`, `qubit_gain`, `Pulse`, `pulse_01`, `variable_wait`, `length`).
   The saved `.json` / h5 `config` attribute shows these mutated values, not the values the step

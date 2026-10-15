@@ -189,7 +189,7 @@ Pages: [t1](experiments/t1.md), [t2_ramsey](experiments/t2_ramsey.md),
 | step | group | CSTQ03 session values | notes |
 |---|---|---|---|
 | `t1` | `coherence` | `T1_step` 5 us x 100 points, reps 20 x rounds 20, relax 3000 us | span should cover several T1 |
-| `t2_ramsey` | `coherence` | `T2_step` 0.1 us x 100 points, `freq_shift` 0 | detune with `freq_shift` to see fringes |
+| `t2_ramsey` | `coherence` | `T2_step` 0.1 us x 100 points, `freq_shift` 0, `f_virt_mhz` None | 5 virtual fringes over the window by default ([t2_ramsey](experiments/t2_ramsey.md#virtual-detuning)) |
 | `t2_echo` | `echo` | `T2_max_us` 20, 121 points, 25 x 25, relax 500 us, `num_pi_pulses` 1 | `num_pi_pulses` must be odd and >= 1 (`ValueError` otherwise; see [t2_echo](experiments/t2_echo.md#refocusing-condition)) |
 
 `repetitions` in the `coherence` and `echo` groups repeat the whole measurement (1000 and 3000 in

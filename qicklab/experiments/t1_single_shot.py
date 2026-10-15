@@ -6,10 +6,70 @@ import numpy as np
 from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
+from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
 from qicklab.analysis.iq import count_percentage, rotate_data
 from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
+
+
+def readout_assignment_errors(i_g, q_g, i_e, q_e, angle, threshold):
+    """(P(e|g), P(g|e)) of single_shot calibration shots, counted exactly as T1_SS counts:
+    rotate by ``angle`` (rotate_data) and call a shot excited when I' > threshold.
+
+    These include the prep errors of the calibration (thermal |e> in the g shots, pi-pulse
+    infidelity and decay during readout in the e shots), not only the readout overlap
+    (docs/experiments/t1_single_shot.md#analysis). NaN for an empty set.
+    """
+    out = []
+    for i, q, excited in ((i_g, q_g, False), (i_e, q_e, True)):
+        i_rot, _ = rotate_data((np.ravel(i), np.ravel(q)), theta=angle)
+        if i_rot.size == 0:
+            out.append(float("nan"))
+            continue
+        frac_e = float(np.mean(i_rot > threshold))
+        out.append(1.0 - frac_e if excited else frac_e)
+    return tuple(out)
+
+
+def readout_corrected_population(p, eps_g, eps_e):
+    """Invert the 2x2 confusion matrix: (p - P(e|g)) / (1 - P(e|g) - P(g|e)), not clipped.
+
+    All NaN when the errors are not finite or 1 - eps_g - eps_e <= 0 (the threshold does not
+    separate g from e). Rescales the curve only: it cannot change a fitted T1. When the
+    calibration played the same pi pulse (flattop_length None: T1_SS always plays the plain
+    Gaussian) it maps t=0 to ~1 and the plateau to ~0 by construction; with a flat-top
+    calibration pulse it does not (docs/experiments/t1_single_shot.md#analysis).
+    """
+    p = np.asarray(p, dtype=float)
+    denom = 1.0 - eps_g - eps_e
+    if not (np.isfinite(eps_g) and np.isfinite(eps_e) and denom > 0):
+        return np.full(p.shape, np.nan)
+    return (p - eps_g) / denom
+
+
+def binomial_sigma(p, n, clip=False):
+    """Standard error sqrt(p(1-p)/n) of a fraction of n shots. ``clip`` moves p to at least
+    0.5/n from 0 and 1 first, so a fit weight is never infinite (docs: t1_single_shot.md)."""
+    p = np.asarray(p, dtype=float)
+    if clip:
+        p = np.clip(p, 0.5 / n, 1.0 - 0.5 / n)
+    return np.sqrt(p * (1.0 - p) / n)
+
+
+def fit_t1ss_decay(x_pts, p, n):
+    """T1 fit of a thresholded excited fraction ``p`` of ``n`` shots per point
+    (docs: t1_single_shot.md#analysis). Pass 1 is the unweighted ``fit_exp_decay``; pass 2
+    refits with the binomial sigma of pass 1's model curve (``binomial_sigma(yfit, n,
+    clip=True)``). Weights from the model, not from the observed p: observed-p weights
+    (Neyman chi-square) give the points that fluctuate low too much weight and pull T1 low by
+    1-2 sigma when the plateau holds about one excited shot per point. Returns pass 2, or
+    pass 1 when it has no finite model curve. Never raises (fit_exp_decay never does)."""
+    first = fit_exp_decay(x_pts, p)
+    yfit = np.asarray(first.get("yfit", np.nan), dtype=float)
+    if yfit.shape != np.shape(p) or not np.all(np.isfinite(yfit)):
+        return first
+    return fit_exp_decay(x_pts, p, sigma=binomial_sigma(yfit, n, clip=True))
 
 
 class T1SingleShotProgram(AveragerProgram):
@@ -56,7 +116,9 @@ class T1SingleShotProgram(AveragerProgram):
             style="arb",
             freq=self.f_qubit01,
             phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
-            gain=cfg["qubit_gain"],
+            # the pi gain the run writes (run_t1_ss: ctx.qubit_gain), not the regime-dependent
+            # qubit_gain: docs/experiments/t1_single_shot.md#pulse-sequence
+            gain=cfg["pi_gain"],
             waveform="qubit",
         )
 
@@ -100,7 +162,7 @@ class T1SingleShotProgram(AveragerProgram):
 
 class T1_SS(ExperimentClass):
     """Single-shot T1: one program per wait, shots thresholded with a single-shot angle and
-    threshold into an excited fraction (docs/experiments/t1_single_shot.md)."""
+    threshold into an excited fraction; display fits T1 (docs/experiments/t1_single_shot.md)."""
 
     def __init__(
         self,
@@ -124,7 +186,11 @@ class T1_SS(ExperimentClass):
             progress=progress,
         )
 
-    def acquire(self, threshold=None, angle=None, excited_pulse=2, progress=False):
+    def acquire(
+        self, threshold=None, angle=None, excited_pulse=2, progress=False, readout_errors=None
+    ):
+        """``readout_errors`` = (P(e|g), P(g|e)) from the calibration (run_t1_ss), or None:
+        adds the readout-corrected fraction next to the raw one."""
         tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.cfg["Excited_PulseT1"] = excited_pulse
 
@@ -159,12 +225,20 @@ class T1_SS(ExperimentClass):
             "config": self.cfg,
             "data": {
                 "Exp_values": results,
+                "Exp_err": binomial_sigma(results, self.cfg["reps"]),
                 "RotatedIQ": rotated_iq_array,
                 "threshold": threshold,
                 "angle": angle,
                 "wait_times": tpts,
             },
         }
+        if readout_errors is not None:
+            eps_g, eps_e = (float(v) for v in readout_errors)
+            self.data["data"]["readout_P_e_given_g"] = eps_g
+            self.data["data"]["readout_P_g_given_e"] = eps_e
+            self.data["data"]["Exp_values_readout_corrected"] = readout_corrected_population(
+                results, eps_g, eps_e
+            )
         return self.data
 
     def _save_partial(self, results, rotated_iq_array, tpts, threshold, angle, err):
@@ -201,14 +275,48 @@ class T1_SS(ExperimentClass):
 
         x_pts = data["data"]["wait_times"]
         expectation_values = data["data"]["Exp_values"]
+        n_shots = self.cfg["reps"]
+        exp_err = binomial_sigma(expectation_values, n_shots)
+
+        # Binomial weights from the model curve (fit_t1ss_decay), clipped off 0 so a plateau
+        # at 0 keeps a finite weight.
+        # Guarded: a failed fit leaves self.fit = {'ok': False, 'error': ...} and the data plot.
+        try:
+            fit = fit_t1ss_decay(x_pts, expectation_values, n_shots)
+        except Exception as e:
+            traceback.print_exc()
+            fit = {"ok": False, "error": repr(e)}
+        self.fit = fit
+        # Saved by save_data (finish() displays first): docs/experiments/t1_single_shot.md#outputs
+        data["data"].update(exp_decay_fit_fields(fit, "t1ss"))
+        yfit = np.asarray(fit.get("yfit", np.full(np.shape(x_pts), np.nan)), dtype=float)
+        data["data"]["t1ss_fit_curve"] = yfit
+        if not fit["ok"]:
+            print(f"T1_SS fit not reliable: {fit['error']}")
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
         fig = plt.figure(figNum)
-        plt.plot(x_pts, expectation_values, "o-", color="orange")
-        plt.ylabel("Qubit Population")
+        plt.errorbar(x_pts, expectation_values, yerr=exp_err, fmt="o", color="orange", label="data")
+        if fit["ok"]:
+            plt.plot(x_pts, yfit, "-", color="black", label="fit")
+        elif np.all(np.isfinite(yfit)):
+            plt.plot(x_pts, yfit, "--", color="gray", label="fit (not reliable)")
+        plt.ylabel("Excited fraction (raw)")
         plt.xlabel("Wait time (us)")
-        plt.title(self.titlename)
+        plt.legend()
+        plt.title(
+            self.titlename
+            + (
+                "  ; T1 = "
+                + str(round(fit["T"], 1))
+                + r" $\pm$ "
+                + str(round(fit["T_err"], 1))
+                + "us"
+                if fit["ok"]
+                else "  ; T1 fit not reliable"
+            )
+        )
         plt.savefig(self.iname)
 
         if plotDisp:

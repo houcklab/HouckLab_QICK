@@ -6,9 +6,10 @@ Class `T2R` (see `qicklab.experiments.t2_ramsey`); fit functions in
 ## What it measures
 
 Ramsey dephasing time T2* and the fringe frequency: pi/2, variable free evolution, pi/2,
-readout. The wait (and optionally the phase of the second pulse) is a register sweep. The
-fringe frequency is the detuning between the drive (`f_ge + freq_shift`) and the qubit,
-so the step also checks f_ge. The FFT-seeded fit can also resolve two frequencies, which
+readout. The wait and the phase of the second pulse are register sweeps. By default the
+second pulse's phase advances by 360 x f_virt x dt per point (a virtual detuning, see
+below), so the fringe sits at about f_virt plus the residual detuning between the drive
+(`f_ge + freq_shift`) and the qubit, and the step also checks f_ge. The FFT-seeded fit can also resolve two frequencies, which
 is how a charge-parity doublet shows up in Ramsey.
 
 ## Pulse sequence
@@ -24,7 +25,7 @@ ADC       ______________________________________________________________________
 | Pulses | two identical Gaussian pi/2 pulses, `pi2_gain`, sigma `sigma`, 4 sigma long; always Gaussian (`flattop_length` is ignored) |
 | Drive frequency | `f_ge + freq_shift` |
 | Wait | pulse edge to pulse edge (end of first to start of second) |
-| Second-pulse phase | advanced by `phase_step` (DAC phase register units) per point; the recipe sets 0 |
+| Second-pulse phase | advanced by `phase_step` (DAC phase register units of `qubit_ch`) per point = 360 x `f_virt_mhz` x dt degrees ([virtual detuning](#virtual-detuning)) |
 | PMOD trigger | none |
 | Readout | 0.05 us after the second pulse; ADC on `ro_chs`; `relax_delay` after |
 
@@ -32,7 +33,9 @@ ADC       ______________________________________________________________________
 
 ```python
 PLAN = [R.t2_ramsey()]                        # regime A, coherence group
-PLAN = [R.t2_ramsey(freq_shift=0.5)]          # 0.5 MHz artificial detuning -> visible fringes
+PLAN = [R.t2_ramsey(f_virt_mhz=0.3)]          # virtual detuning 0.3 MHz (default: 5 fringes/window)
+PLAN = [R.t2_ramsey(f_virt_mhz=0)]            # no virtual detuning (the pre-2026-10-15 run)
+PLAN = [R.t2_ramsey(freq_shift=0.5)]          # real 0.5 MHz detuning of the pi/2 pulses
 ```
 
 ## Parameters
@@ -45,10 +48,11 @@ Group `coherence` (legacy `T1T2_params`).
 | `T2_expts` | 100 | - | Number of waits (0 ... 9.9 us with the defaults) |
 | `T2_reps` | 20 | shots | Hardware averages |
 | `T2_rounds` | 20 | - | Software repeats |
-| `freq_shift` | 0.0 | MHz | Detuning added to f_ge for the pi/2 pulses (the only way to set a detuning) |
+| `freq_shift` | 0.0 | MHz | Real detuning added to f_ge for the pi/2 pulses |
+| `f_virt_mhz` | None | MHz | Virtual detuning; None = 5 fringes over the window, `5 / (T2_expts * dt)` (0.50 MHz at 100 x 0.1 us), at most 1/8 turn per step; 0 = off; must be in [0, 0.25/dt) |
 | `relax_delay` | 3000 | us | Wait after each readout (shared with t1) |
 | `repetitions` | 1000 | - | Records in a row (10 s pause + `soc.reset_gens()` after each) |
-| `phase_step` | 0 | DAC phase units | Per-point phase advance of the second pulse (virtual detuning); fixed at 0 |
+| `phase_step` | from `f_virt_mhz` | DAC phase units | Per-point phase advance of the second pulse, `deg2reg(360 * f_virt * dt, gen_ch=qubit_ch)`; set by the recipe, not a parameter |
 | `pi2_gain`, `sigma`, `f_ge` | device | DAC, us, MHz | Pulse |
 
 ## Outputs
@@ -60,9 +64,12 @@ Group `coherence` (legacy `T1T2_params`).
 | `..._data.h5` | `x_pts` (expts,) us; `avgi`, `avgq` as returned by qick (n_adc arrays of (1, expts)); no cavity-winding correction |
 | `..._dataRotatedI_Fit.png` | projected I with the fit; legend has T2* and the fitted frequency (on a failed fit: no fit curve, the title is marked "(no fit)", and `fit failed: <error>` is printed to stdout); a warning line if the fit and the FFT peak disagree by more than one FFT bin |
 | `..._dataFFT.png` | FFT of the projected trace, its peaks, and the fitted frequency |
-| `..._data.json` | config |
+| `..._data.json` | config, including `f_virt_mhz` (the value the integer `phase_step` realises) and `phase_step` |
 
-Fit results live only on the instance (`osc_fit`, `env_fit`) and are **not** saved. Plots
+Fit results live only on the instance (`osc_fit`, `env_fit`) and are **not** saved.
+`osc_fit` also holds `f_virt_mhz` and `detuning_mhz` = f - `f_virt_mhz`, with f the
+fitted f for a 1f fit and the doublet centre (f1 + f2) / 2 for a 2f fit (None without a
+fit or without `f_virt_mhz` in the cfg); the legend adds a line with both. Plots
 are never shown (`plotDisp=False`). Both dicts carry `ok` (bool); on a failed fit they are
 `{'ok': False, 'error': repr(exception), ...}` (see step 7).
 
@@ -98,7 +105,48 @@ are never shown (`plotDisp=False`). Both dicts carry `ok` (bool); on a failed fi
 
 FFT resolution is `1 / (T2_expts * T2_step)` = 0.1 MHz with the defaults; the fit
 frequency can go up to Nyquist `0.5 / T2_step` (5 MHz with the defaults), so keep
-`freq_shift` plus the expected detuning below that and well above the FFT resolution.
+`f_virt_mhz` + `freq_shift` plus the expected detuning below that and well above the FFT
+resolution (the default f_virt sits at FFT bin 5).
+
+## Virtual detuning
+
+On resonance the fringe frequency is the unknown residual detuning, often close to 0: T2*
+and f are then strongly correlated (synthetic, true T2* = 8 us, 201 x 0.1 us, noise 0.03:
+16-84 % interval of the fitted T2* 6.4-16.6 us at 0 MHz residual, 5.1-22.6 us at 0.01 MHz,
+7.8-8.3 us with a 0.3 MHz detuning), the sign of the detuning is lost and f_ge cannot be
+corrected. The recipes therefore advance the second pi/2 pulse's phase by
+`phase_step = deg2reg(360 * f_virt * dt, gen_ch=qubit_ch)` per point, with dt the realised
+step (`us2cycles(T2_step)` tProc cycles, 0.0999814 us at 0.1 us) and `qubit_ch` from the
+merged config. The pulses stay at `f_ge + freq_shift`; only the phase moves, so the signal
+is `cos(2 pi (f_virt + delta) t)` with delta the residual detuning
+(`qicklab.experiments.t2_ramsey.ramsey_virtual_detuning`).
+
+- Default (`f_virt_mhz` None): `min(5 / (T2_expts * dt), 0.125 / dt)`: 5 fringes over the
+  window (0.500 MHz for 100 x 0.1 us, 0.249 MHz for 201, 0.125 MHz for 401), capped at
+  1/8 turn (45 deg) per step for windows under 40 points.
+- Allowed: 0 <= f_virt x dt < 1/4 (90 deg per step, half of Nyquist), else `ValueError`;
+  this leaves room for the residual detuning below the 0.5/dt fit bound and keeps the
+  `mathi` immediate under 2^30. Pick f_virt well above the expected f_ge error so f_virt +
+  delta stays clear of 0 (for a doublet, above |delta| + split/2, see below).
+- The cfg holds `f_virt_mhz` as realised by the integer register (differs from the
+  requested value by at most half a phase LSB per step, 2^-33/dt ~ 1.2e-9 MHz at the
+  0.0999814 us step of a 0.1 us request) and `phase_step`.
+- Reported: `osc_fit['detuning_mhz']` = f_fit - f_virt. For a 2f fit f_fit is the
+  doublet centre (f1 + f2) / 2, not `f_report` = f1: a charge-parity doublet sits at
+  f_virt + delta +/- split/2, so f1 - f_virt would be off by half the splitting (and
+  curve_fit can return f1, f2 in either order). **The sign of
+  delta relative to f_ge is not yet verified on hardware**: theory gives a fringe at
+  |(f_drive - f_q) + f_virt| for `qubit_nqz` = 1, with the sign inverted in the 2nd Nyquist
+  zone. One-time check: run with `freq_shift = +0.05` and see whether the fringe moves to
+  f_virt + 0.05 or f_virt - 0.05. Until then use |delta| and the f_virt it was measured
+  with, not a signed f_ge correction. If |delta| > f_virt the fringe folds through 0 and
+  f_fit - f_virt is wrong; raise f_virt. In a 2f fit the lower branch folds earlier, as
+  soon as |delta| + split/2 > f_virt: the fitted branches are then |f_virt + delta +/-
+  split/2|, (f1 + f2) / 2 collapses to about split/2 (independent of f_virt + delta) and
+  the reported detuning is meaningless even though the label reads (f1 + f2) / 2. Keep
+  f_virt > |delta| + split/2; treat a 2f fit with |f1 - f2| / 2 close to or above f_virt
+  as suspect (the default f_virt, 0.249 MHz at 201 x 0.1 us, is comparable to
+  charge-parity splittings).
 
 ## Findings & notes
 
@@ -112,7 +160,10 @@ frequency can go up to Nyquist `0.5 / T2_step` (5 MHz with the defaults), so kee
   exception escaped `display`. The legend used to report the FFT bin frequency as "USED"
   (resolution ~50-100 kHz) instead of the fitted one; the `fft_peak_dominance` kwarg is now
   ignored.
-- Detuning is set with `freq_shift`, not with `phase_step` (which the recipe fixes at 0).
+- Until 2026-10-15 the recipes passed `phase_step = deg2reg(0, gen_ch=2)` (the literal
+  channel 2, not `qubit_ch`) with `freq_shift` 0: every Ramsey ran on resonance (see
+  [virtual detuning](#virtual-detuning)). AutoCoherence wrapped that call in a dead
+  try/except.
 
 ## Known issues
 
@@ -126,4 +177,9 @@ frequency can go up to Nyquist `0.5 / T2_step` (5 MHz with the defaults), so kee
 - Two FFT peaks closer than one bin can still be taken as a 2f doublet (no resolvability check).
 - The wait is edge to edge, and the x axis is correct only for `start = 0` (always the
   case from the recipe).
+- `x_pts` is the realised wait, `i * us2cycles(step)` tProc cycles
+  ([timing_and_units](../concepts/timing_and_units.md#register-swept-wait-axis)). Until
+  2026-10-15 it was `start + i*step` with the unquantised step. With r = realised/requested
+  step - 1, the fitted frequency was off by r (-0.02 % at 0.1 us, -7.0 % at 0.01 us) and
+  T2* by -r/(1 + r) (+0.02 % at 0.1 us, +7.5 % at 0.01 us).
 - The FFT figure uses figure number `figNum + 2` (skips `+1`); cosmetic.

@@ -15,16 +15,14 @@ from scipy.signal import find_peaks, savgol_filter
 from qicklab.analysis.fitting import estimate_noise_floor
 from qicklab.analysis.spectroscopy import find_two_tone_peaks
 from qicklab.core.experiment import finish
+from qicklab.core.schedule import tproc_cycle_us
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.rabi import AmplitudeRabiFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
 from qicklab.experiments.t1 import T1FF
-from qicklab.experiments.t2_echo import T2EMUX
-from qicklab.experiments.t2_ramsey import T2R
+from qicklab.experiments.t2_echo import T2EMUX, quantised_t2e_step
+from qicklab.experiments.t2_ramsey import T2R, ramsey_virtual_detuning
 from qicklab.hardware.yoko import ramp_to
-
-_T2E_CLOCK_STEP_US = 0.00232515  # one tProc cycle (1/430.08 MHz): docs/experiments/t2_echo.md
-
 
 # defaults; override any key via auto_params (meanings: docs/experiments/auto_coherence.md)
 AUTO_COHERENCE_PARAMS = {
@@ -126,6 +124,7 @@ AUTO_COHERENCE_PARAMS = {
     "T1_rounds": 20,
     "T1_relax_delay": 3500,  # us
     "T1_repetitions": 1,  # number of consecutive T1 runs
+    "T1_expected_us": None,  # us – if set, pre-flight timing checks before Stage 1 (warn only)
     # T2 Ramsey
     "T2_step": 0.1,  # us – Ramsey delay step
     "T2_expts": 201,
@@ -133,7 +132,8 @@ AUTO_COHERENCE_PARAMS = {
     "T2_rounds": 20,
     "T2_relax_delay": 3500,  # us
     "T2_repetitions": 1,
-    "T2_freq_shift": 0.0,  # MHz – artificial detuning from f_ge
+    "T2_freq_shift": 0.0,  # MHz – real detuning of the pi/2 pulses from f_ge
+    "T2_f_virt_mhz": None,  # MHz – virtual detuning (phase advance); None = 5 fringes/window
     # T2Echo
     "T2E_max_us": 200,  # us – maximum echo time
     "T2E_expts": 201,
@@ -1191,6 +1191,111 @@ def _stage_extended_pulse_opt(
     return pi_gain_opt, pi2_gain_opt, fid_final, thr_final, ang_final
 
 
+# Warn-only timing checks against T1: docs/experiments/auto_coherence.md#timing-checks
+TIMING_RELAX_MIN_T1 = 5.0  # relax_delay below this many T1 leaves residual |e> population
+TIMING_RELAX_MAX_T1 = 20.0  # relax_delay above this many T1 is mostly idle time
+TIMING_T1_WINDOW_MIN_T1 = 3.0  # T1 window (step x expts) shorter than this: decay unresolved
+TIMING_T1_WINDOW_MAX_T1 = 10.0  # longer than this: most points sit on the baseline
+TIMING_T2E_WINDOW_MAX_T1 = 6.0  # T2E window (quantised step x expts) longer than this
+TIMING_T1_MAX_REL_ERR = 0.5  # a T1 fit with T1_err / T1 above this is not used
+
+
+def _usable_t1_fit(fit):
+    """``(T1, T1_err)`` in us from a ``fit_exp_decay`` dict, or None when it is not usable
+    for the timing checks (missing, not ok, not finite, or T1_err / T1 > 0.5)."""
+    if not isinstance(fit, dict) or not fit.get("ok", False):
+        return None
+    try:
+        t1, t1_err = float(fit["T"]), float(fit["T_err"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (np.isfinite(t1) and np.isfinite(t1_err)) or t1 <= 0:
+        return None
+    if t1_err / t1 > TIMING_T1_MAX_REL_ERR:
+        return None
+    return t1, t1_err
+
+
+def _timing_checks(soccfg, params, t1_us, source):
+    """Log lines comparing the T1/T2/T2E relax delays and sweep windows with ``t1_us``.
+
+    Warn only: nothing in ``params`` is changed. Ratios are logged for every stage; a
+    ``WARNING`` line is added when relax < 5 T1 or > 20 T1, the T1 window
+    (T1_step x T1_expts) is < 3 T1 or > 10 T1, or the T2E window (quantised step x
+    T2E_expts) is > 6 T1. The T2R window is logged against 2 T1 (the T2 ceiling).
+    docs/experiments/auto_coherence.md#timing-checks
+    """
+    lines = [f"  Timing check vs T1 = {t1_us:.1f} us ({source}):"]
+    warnings = []
+    for stage in ("T1", "T2", "T2E"):
+        key = f"{stage}_relax_delay"
+        relax = float(params[key])
+        ratio = relax / t1_us
+        lines.append(f"    {key:<16} = {relax:g} us = {ratio:.1f} T1")
+        if ratio < TIMING_RELAX_MIN_T1:
+            warnings.append(
+                f"  WARNING: {key} = {ratio:.1f} T1 < {TIMING_RELAX_MIN_T1:g} T1: the qubit "
+                f"is not back in |g> between shots (residual e^-{ratio:.1f} = "
+                f"{np.exp(-ratio):.1%})."
+            )
+        elif ratio > TIMING_RELAX_MAX_T1:
+            warnings.append(
+                f"  WARNING: {key} = {ratio:.1f} T1 > {TIMING_RELAX_MAX_T1:g} T1: mostly idle "
+                f"time ({TIMING_RELAX_MIN_T1:g}-{TIMING_RELAX_MAX_T1:g} T1 = "
+                f"{TIMING_RELAX_MIN_T1 * t1_us:.0f}-{TIMING_RELAX_MAX_T1 * t1_us:.0f} us)."
+            )
+
+    t1_window = float(params["T1_step"]) * params["T1_expts"]
+    ratio = t1_window / t1_us
+    lines.append(f"    T1 window        = {t1_window:g} us = {ratio:.1f} T1")
+    if ratio < TIMING_T1_WINDOW_MIN_T1:
+        warnings.append(
+            f"  WARNING: T1 window = {ratio:.1f} T1 < {TIMING_T1_WINDOW_MIN_T1:g} T1: "
+            "the decay to the baseline is not resolved."
+        )
+    elif ratio > TIMING_T1_WINDOW_MAX_T1:
+        warnings.append(
+            f"  WARNING: T1 window = {ratio:.1f} T1 > {TIMING_T1_WINDOW_MAX_T1:g} T1: most "
+            "points sit on the baseline (larger fit scatter)."
+        )
+
+    t2r_window = float(params["T2_step"]) * params["T2_expts"]
+    lines.append(
+        f"    T2R window       = {t2r_window:g} us = {t2r_window / (2 * t1_us):.2f} x 2 T1"
+    )
+
+    n = params["T2E_num_pi_pulses"]
+    if isinstance(n, (int, np.integer)) and n >= 1:
+        int_steps, step = quantised_t2e_step(soccfg, params["T2E_max_us"], params["T2E_expts"], n)
+        if int_steps == 0:  # Stage 6 forces one step
+            step = tproc_cycle_us(soccfg) * (n + 1)
+        t2e_window = step * params["T2E_expts"]
+        ratio = t2e_window / t1_us
+        lines.append(f"    T2E window       = {t2e_window:.1f} us = {ratio:.1f} T1")
+        if ratio > TIMING_T2E_WINDOW_MAX_T1:
+            warnings.append(
+                f"  WARNING: T2E window = {ratio:.1f} T1 > {TIMING_T2E_WINDOW_MAX_T1:g} T1: "
+                "T2E <= 2 T1, so the late points carry no signal."
+            )
+    else:
+        lines.append(f"    T2E window       : not checked (T2E_num_pi_pulses = {n!r})")
+    for w in warnings:
+        print(f"[AutoCoherence]{w}")
+    return lines + warnings
+
+
+def _guarded_timing_checks(soccfg, params, t1_us, source):
+    """``_timing_checks`` that never raises. The checks are warn only, so a parameter they
+    cannot evaluate (e.g. T2E_expts = 0, T2E_max_us = None) is logged as one line here and
+    still fails in its own stage, not in Stage 4 or the pre-flight."""
+    try:
+        return _timing_checks(soccfg, params, t1_us, source)
+    except Exception as e:
+        msg = f"  Timing check failed (warn only, run continues): {e!r}"
+        print(f"[AutoCoherence]{msg}")
+        return [msg]
+
+
 def _stage_run_t1(
     soc,
     soccfg,
@@ -1211,6 +1316,7 @@ def _stage_run_t1(
     log.append("=" * 60)
 
     repetitions = params["T1_repetitions"]
+    checked = False  # timing checks run once, on the first usable T1 fit
 
     for i in range(repetitions):
         t1_cfg = {
@@ -1242,8 +1348,23 @@ def _stage_run_t1(
         log.append(f"  T1 run {i + 1}/{repetitions} saved.")
         if display_error is not None:
             log.append(f"    display failed (record saved): {display_error!r}")
+        if not checked:
+            usable = _usable_t1_fit(getattr(iT1, "fit", None))
+            if usable is not None:
+                t1_us, t1_err = usable
+                log.extend(
+                    _guarded_timing_checks(
+                        soccfg, params, t1_us, f"T1 run {i + 1} fit, +/- {t1_err:.1f} us"
+                    )
+                )
+                checked = True
         time.sleep(5)
         soc.reset_gens()
+    if not checked:
+        log.append(
+            "  Timing check skipped: no T1 fit with ok, finite T1 and T1_err/T1 <= "
+            f"{TIMING_T1_MAX_REL_ERR:g}."
+        )
 
 
 def _stage_run_t2(
@@ -1269,17 +1390,10 @@ def _stage_run_t2(
     repetitions = params["T2_repetitions"]
     freq_shift = params["T2_freq_shift"]
 
-    # phase_step is 0: no artificial detuning via phase advance
-    try:
-        phase_step = int(soccfg.deg2reg(0.0, gen_ch=cfg.get("qubit_ch", 1)))
-    except Exception:
-        phase_step = 0
-
     for i in range(repetitions):
         t2_cfg = {
             "start": 0,
             "step": params["T2_step"],
-            "phase_step": phase_step,
             "expts": params["T2_expts"],
             "reps": params["T2_reps"],
             "rounds": params["T2_rounds"],
@@ -1291,6 +1405,8 @@ def _stage_run_t2(
             "flattop_length": flattop_length,
         }
         run_cfg = cfg | t2_cfg
+        # virtual detuning: docs/experiments/t2_ramsey.md#virtual-detuning
+        run_cfg.update(ramsey_virtual_detuning(soccfg, run_cfg, params.get("T2_f_virt_mhz")))
 
         iT2R = T2R(
             path="auto-T2",
@@ -1306,6 +1422,17 @@ def _stage_run_t2(
         log.append(f"  T2 run {i + 1}/{repetitions} saved.")
         if display_error is not None:
             log.append(f"    display failed (record saved): {display_error!r}")
+        else:
+            osc = getattr(iT2R, "osc_fit", None) or {}
+            if osc.get("detuning_mhz") is not None:
+                # 2f fit: delta is from the doublet centre (f1 + f2) / 2, not f_report = f1
+                f_name = "(f1+f2)/2" if osc.get("mode") == "2f" else "f"
+                f_fringe = run_cfg["f_virt_mhz"] + osc["detuning_mhz"]
+                log.append(
+                    f"    fringe {f_name} = {f_fringe:.4f} MHz, f_virt = "
+                    f"{run_cfg['f_virt_mhz']:.4f} MHz, delta = {f_name} - f_virt = "
+                    f"{osc['detuning_mhz']:+.4f} MHz (sign vs f_ge unverified)"
+                )
         time.sleep(5)
         soc.reset_gens()
 
@@ -1335,11 +1462,11 @@ def _stage_run_t2e(
     T2E_max_us = params["T2E_max_us"]
     T2E_expts = params["T2E_expts"]
 
-    int_steps = int(T2E_max_us // (_T2E_CLOCK_STEP_US * (num_pulses + 1) * T2E_expts))
+    int_steps, t2e_step = quantised_t2e_step(soccfg, T2E_max_us, T2E_expts, num_pulses)
     if int_steps == 0:
         log.append("  WARNING: T2E step is 0. Increase T2E_max_us or reduce T2E_expts.")
         int_steps = 1
-    t2e_step = _T2E_CLOCK_STEP_US * (num_pulses + 1) * int_steps
+        t2e_step = tproc_cycle_us(soccfg) * (num_pulses + 1) * int_steps
     log.append(
         f"  num_pi_pulses={num_pulses}, step={t2e_step:.6f} us, "
         f"max_time={t2e_step * T2E_expts:.1f} us"
@@ -1476,6 +1603,17 @@ def _run_auto_coherence(
     log.append(f"flattop_length: {flattop_length}")
     log.append(f"Initial readout_freq: {readout_freq} MHz")
     log.append(f"Initial readout_gain: {readout_gain}")
+    t1_expected = params.get("T1_expected_us")
+    if t1_expected is not None:
+        try:
+            t1_value = float(t1_expected)
+        except (TypeError, ValueError):
+            t1_value = float("nan")
+        if np.isfinite(t1_value) and t1_value > 0:
+            log.append("Pre-flight (T1_expected_us):")
+            log.extend(_guarded_timing_checks(soccfg, params, t1_value, "T1_expected_us"))
+        else:
+            log.append(f"Pre-flight skipped: T1_expected_us = {t1_expected!r} is not > 0.")
 
     base_cfg = _sync_cfg_to_selected_qubit(
         cfg=config,
@@ -1721,6 +1859,13 @@ def _run_auto_coherence(
 
 
 def run_auto_coherence(ctx, AutoCoherence_override_params):
+    # the pipeline drives and reads the qubit_readout entry; refuse a cross-qubit session
+    # rather than calibrate a drive no other step uses
+    if str(ctx.Qubit_Pulse) != str(ctx.Qubit_Readout):
+        raise ValueError(
+            "AutoCoherence calibrates a single qubit; Qubit_Pulse (%s) != Qubit_Readout (%s)"
+            % (ctx.Qubit_Pulse, ctx.Qubit_Readout)
+        )
     auto_results = _run_auto_coherence(
         soc=ctx.soc,
         soccfg=ctx.soccfg,

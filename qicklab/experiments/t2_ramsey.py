@@ -14,6 +14,49 @@ from qicklab.analysis.ramsey import (
 )
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
+from qicklab.core.schedule import realised_wait_axis_us
+
+
+# Default virtual detuning: VIRTUAL_FRINGES fringes over the wait window, capped at
+# DEFAULT_MAX_TURNS_PER_STEP for short windows. Any f_virt must stay below
+# MAX_TURNS_PER_STEP = 1/4 turn (90 deg) per step: half of Nyquist, so the residual detuning
+# still fits under the 0.5/dt fit bound, and the mathi immediate stays below 2**30.
+# docs/experiments/t2_ramsey.md#virtual-detuning
+VIRTUAL_FRINGES = 5
+DEFAULT_MAX_TURNS_PER_STEP = 0.125
+MAX_TURNS_PER_STEP = 0.25
+
+
+def ramsey_virtual_detuning(soccfg, cfg, f_virt_mhz=None):
+    """Virtual detuning of a T2R run as ``{"f_virt_mhz", "phase_step"}`` for its cfg.
+
+    The second pi/2 pulse is advanced by ``phase_step`` (phase register units of
+    ``cfg["qubit_ch"]``) per point, i.e. by 360 * f_virt * dt degrees with dt the realised
+    wait step (``us2cycles(cfg["step"])`` tProc cycles), so the fringe sits at about f_virt
+    plus the residual drive-qubit detuning while the pulses stay on resonance.
+    ``f_virt_mhz`` None: VIRTUAL_FRINGES / (expts * dt), at most
+    DEFAULT_MAX_TURNS_PER_STEP / dt; 0 gives the old on-resonance run (phase_step 0).
+    The returned f_virt_mhz is the one the integer register realises.
+    """
+    qubit_ch = cfg["qubit_ch"]
+    dt = soccfg.cycles2us(soccfg.us2cycles(cfg["step"]))
+    if dt <= 0:
+        raise ValueError(f"T2R step {cfg['step']} us is shorter than one tProc cycle")
+    if f_virt_mhz is None:
+        f_virt_mhz = min(VIRTUAL_FRINGES / (cfg["expts"] * dt), DEFAULT_MAX_TURNS_PER_STEP / dt)
+    turns = f_virt_mhz * dt
+    phase_step = None
+    if 0 <= turns < MAX_TURNS_PER_STEP:
+        phase_step = int(soccfg.deg2reg(360.0 * turns, gen_ch=qubit_ch))
+    # also on the integer (rounding at the edge): the 31-bit mathi immediate must stay
+    # below 2**30 (1/4 turn of a 32-bit phase) so the step never wraps negative
+    if phase_step is None or not 0 <= phase_step < 2**30:
+        raise ValueError(
+            f"f_virt_mhz = {f_virt_mhz} MHz at a {dt:.6f} us step is {turns:.3f} turn per "
+            f"step; need 0 <= f_virt < {MAX_TURNS_PER_STEP / dt:.4f} MHz"
+        )
+    f_realised = soccfg.reg2deg(phase_step, gen_ch=qubit_ch) / 360.0 / dt
+    return {"f_virt_mhz": float(f_realised), "phase_step": phase_step}
 
 
 class T2RProgram(RAveragerProgram):
@@ -91,8 +134,9 @@ class T2RProgram(RAveragerProgram):
 
 
 class T2R(ExperimentClass):
-    """Ramsey T2*: two pi/2 pulses (plain Gaussian, pi2_gain), register-swept wait and
-    optional phase advance; FFT-seeded fit (docs/experiments/t2_ramsey.md)."""
+    """Ramsey T2*: two pi/2 pulses (plain Gaussian, pi2_gain), register-swept wait and a
+    per-point phase advance of the second pulse (virtual detuning, cfg ``phase_step`` /
+    ``f_virt_mhz``); FFT-seeded fit (docs/experiments/t2_ramsey.md)."""
 
     def __init__(
         self,
@@ -119,7 +163,7 @@ class T2R(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = T2RProgram(self.soccfg, self.cfg)
 
-        x_pts, avgi, avgq = prog.acquire(
+        _, avgi, avgq = prog.acquire(
             self.soc,
             threshold=None,
             angle=None,
@@ -128,6 +172,11 @@ class T2R(ExperimentClass):
             save_experiments=None,
             start_src="internal",
             progress=False,
+        )
+        # realised register-swept wait, not start + i*step:
+        # docs/concepts/timing_and_units.md#register-swept-wait-axis
+        x_pts = realised_wait_axis_us(
+            self.soccfg, self.cfg["start"], self.cfg["step"], self.cfg["expts"]
         )
         data = {"config": self.cfg, "data": {"x_pts": x_pts, "avgi": avgi, "avgq": avgq}}
         self.data = data
@@ -197,12 +246,16 @@ class T2R(ExperimentClass):
                 dA, dT2, df, dphi, dC = perr
                 f_fits = [f]
                 f_report = f
+                f_centre = f
                 label = f"1f fit: T2*={T2:.2f}±{dT2:.2f} us, f={f:.4f}±{df:.4f} MHz"
             else:
                 A1, A2, T2, f1, f2, phi1, phi2, C = osc_fit["popt"]
                 dA1, dA2, dT2, df1, df2, dphi1, dphi2, dC = perr
                 f_fits = [f1, f2]
                 f_report = f1
+                # doublet (e.g. charge parity): the f_ge correction is the centre, not f1
+                # (f1, f2 can also come out of curve_fit in either order)
+                f_centre = 0.5 * (f1 + f2)
                 label = (
                     f"2f fit: T2*={T2:.2f}±{dT2:.2f} us, "
                     f"f1={f1:.4f}±{df1:.4f} MHz, "
@@ -219,9 +272,23 @@ class T2R(ExperimentClass):
                 )
         else:
             f_report = None
+            f_centre = None
             label = f"fit failed: {osc_fit['error']}"
 
         osc_fit["f_report"] = f_report
+        # virtual detuning: the fringe is f_virt + delta, delta the drive-qubit detuning
+        # (sign vs f_ge unverified); 2f: delta from the doublet centre (f1 + f2) / 2
+        # docs/experiments/t2_ramsey.md#virtual-detuning
+        f_virt = self.cfg.get("f_virt_mhz")
+        osc_fit["f_virt_mhz"] = f_virt
+        osc_fit["detuning_mhz"] = None
+        if f_virt is not None and f_centre is not None:
+            osc_fit["detuning_mhz"] = f_centre - f_virt
+            f_name = "(f1+f2)/2" if osc_fit["mode"] == "2f" else "f"
+            label += (
+                f"\nf_virt={f_virt:.4f} MHz, delta={f_name}-f_virt={f_centre - f_virt:+.4f} MHz"
+                " (sign vs f_ge unverified)"
+            )
         self.osc_fit = osc_fit
         self.env_fit = env_fit
 

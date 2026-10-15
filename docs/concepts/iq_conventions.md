@@ -60,15 +60,21 @@ Evidence:
 |---|---|---|
 | `AmplitudeRabiFF` | principal axis, `0.5*angle(sum(dev**2))` of ADC 0's mean-subtracted trace | rotates both ADCs by -angle so the g->e (maximum-variance) axis lies on I, signed so I increases toward the pi pulse (mean of the first 3 points, gain ~ 0, below the trace mean; valid up to about (N-1)/4 periods); stored as `iq_rotation_rad`, with the major/minor variance ratio as `iq_axis_contrast_ratio` (near 1 = no contrast, angle arbitrary); layered on top of cable winding; shares `principal_axis_angle` with section 2 |
 | `AmplitudeRabiFF_N` | same signed principal axis, in display | same rotation; `rotation_phase` = -angle (multiplier phase), not saved |
-| `T1FF`, `T2EMUX` | min-Q-range grid search, 200 phases | same as above; optional fixed `rotation_angle` / `min_max` normalisation from cfg |
+| `T1FF`, `T2EMUX` | principal axis of the mean-subtracted trace (`decay_axis_phase`) | multiplies by `exp(1j*p)`, p = -(axis angle), so the decay lies in I, signed so the first (shortest-wait, most excited) point is at or above the trace mean; p in [0, 2*pi), 0 for a constant trace; saved as `t1_fit_rotation_rad` / `t2e_fit_rotation_rad`. A fixed cfg `rotation_angle` replaces it, and `min_max` normalisation is applied only with that fixed angle |
 | `T2R` | principal axis, `0.5*angle(sum(dev**2))` on the mean-subtracted trace | projects onto the g-e oscillation axis (fringe in I around 0, sign so the t = 0 point is positive); stored as `osc_fit['iq_axis_rad']`; shares `principal_axis_angle` with section 2 |
 | single shot (`hist_process`) | line through the g and e medians | see section 4 |
 
-Principal axis and min-Q-range aim at the same thing with different estimators and can differ
-slightly: min-Q-range is set by the two most extreme points of Q, so on a noisy trace it follows
-the noise. The min-Q-range search is `qicklab.analysis.iq.min_q_range_phase(i, q, n)`; each caller
-passes its own `n` (200 for `T1FF` and `T2EMUX`; `AmplitudeRabiFF_N` used it with 500 before
-2026-10).
+The four principal-axis rows use the same axis (`principal_axis_angle`, so the decay and Rabi axes agree to float
+precision on the same trace); they differ only in the sign rule and in whether the angle or its
+negative is stored. Until 2026-10 `T1FF` and `T2EMUX` (and, before that, `AmplitudeRabiFF_N` with
+500 points) used `min_q_range_phase`: the phase on a 200-point grid over [0, pi] that minimised
+the peak-to-peak of Q, with no sign rule. Peak-to-peak is set by the two most extreme points, so
+it follows the noise. On 300 synthetic T1 traces (100 waits over 6 T1, unit contrast at a random
+IQ angle, Gaussian noise sigma per quadrature) the median angle error (95th percentile) was
+2.3 deg (6.6) for min-Q-range against 0.8 deg (2.3) for the principal axis at sigma = 0.05, and
+5.4 (14.3) against 1.9 (5.4) at sigma = 0.10; the sign rule was right on all 600 traces and the
+fitted-T scatter was the same within 1%.
+`min_q_range_phase` is kept as an alias of `decay_axis_phase` (its `n` is ignored).
 
 ## 4. Single-shot readout: angle, threshold, "fidelity"
 

@@ -7,7 +7,7 @@ tProc v1 program.
 
 | Clock | Where | Lab board (read from `QickConfig`, October 2026) | One cycle |
 |---|---|---|---|
-| tProc `f_time` | `soccfg["tprocs"][0]["f_time"]` | 430.08 MHz | 2.32515 ns = 0.00232515 us |
+| tProc `f_time` | `soccfg["tprocs"][0]["f_time"]` | 430.08 MHz | 2.32515 ns = 0.00232515 us (`tproc_cycle_us(soccfg)`) |
 | generator fabric `f_fabric` | `soccfg["gens"][ch]["f_fabric"]` | 430.08 MHz (gen 0 and gen 1) | 2.32515 ns |
 | readout output `f_output` | `soccfg["readouts"][ch]["f_output"]` | 307.2 MHz (ro 0) | 3.255 ns |
 | averages buffer | `avg_maxlen` | 16384 | |
@@ -175,16 +175,61 @@ centre-to-centre interval equals `1/(2 df)` within 2 tProc cycles.
 ### T2E step quantisation
 
 `t2_echo` splits each wait into `num_pi_pulses + 1` equal segments and steps the segment register
-by `step/(n+1)`. To keep every segment an integer number of tProc cycles the run function sets
+by `step/(n+1)`. To keep every segment an integer number of tProc cycles the run function sets,
+with `c = tproc_cycle_us(soccfg)` (`soccfg.cycles2us(1)` = 1/`f_time`, read from the board,
+`qicklab.core.schedule`):
 
-    k    = floor(T2_max_us / (0.00232515 * (n + 1) * T2_expts))
-    step = 0.00232515 * (n + 1) * k            # us
+    k    = floor(T2_max_us / (c * (n + 1) * T2_expts))
+    step = c * (n + 1) * k                     # us
 
 Example (CSTQ03 runner values): `T2_max_us` = 20, `T2_expts` = 121, n = 1 -> k = 35, step =
 0.16276 us, last point (120 x step) about 19.53 us. If k = 0 the step prints "Step size is 0!" and stops:
-raise `T2_max_us` or lower `T2_expts`. `auto_coherence` uses the same quantum; the two must agree.
+raise `T2_max_us` or lower `T2_expts`. `auto_coherence` uses the same function
+(`qicklab.experiments.t2_echo.quantised_t2e_step`), so the two agree by construction.
+
 `num_pi_pulses` must be odd and >= 1: `T2EProgram.initialize` raises `ValueError` otherwise (see
 [t2_echo](../experiments/t2_echo.md#refocusing-condition)).
+
+History: until 2026-10-15 `c` was the hard-coded literal 0.00232515 (the 430.08 MHz cycle,
+rounded) in both the coherence run functions and AutoCoherence. On the lab board this gives
+the same k and the same cycle counts (`step` moved by about 5e-7, e.g. 0.16276050 ->
+0.16276042 us). On a board with another tProc clock the register increment
+`us2cycles(step/(n+1))` would round to a different number of cycles than the x axis
+`i * step` assumes, scaling the T2E axis (and the fitted T2E) by up to about 1-2 %
+(e.g. -1.0 % at 409.6 MHz with the defaults). All `n + 1` waits share `r_wait`, so they
+always stayed equal.
+
+### Register-swept wait axis
+
+`t1`, `t2_ramsey` and `t2_echo` sweep their wait with register 3 (`r_wait`), which `update()`
+advances by `us2cycles(step / segments)` whole tProc cycles per point (`segments` = 1 for T1
+and T2R, `num_pi_pulses + 1` for T2E). The realised wait of point `i` is therefore
+
+    x_i = cycles2us(segments * (us2cycles(start / segments) + i * us2cycles(step / segments)))
+
+and that is what `acquire` saves as `x_pts` (`qicklab.core.schedule.realised_wait_axis_us`,
+read from `soccfg`). The fixed pulse / `sync_all` overhead is a constant offset and is not
+included. `cfg["step"]` itself is left as given. The fits (T1, T2*, Ramsey frequency, T2E)
+use `x_pts`, so they follow the realised axis.
+
+How far the realised step is from the requested one at 430.08 MHz (one segment):
+
+| `step` (us) | cycles | realised / requested - 1 |
+|---|---|---|
+| 5 | 2150 | -0.019 % |
+| 0.1 | 43 | -0.019 % |
+| 0.05 | 22 | +2.3 % |
+| 0.02 | 9 | +4.6 % |
+| 0.01 | 4 | -7.0 % |
+
+A grid that is already whole cycles (a T2E step from `quantised_t2e_step`, `start` = 0) is
+returned as `start + i * step` unchanged, rather than re-derived to within float rounding.
+
+History: until 2026-10-15 `x_pts` was qick's `get_expt_pts()`, `start + i * step` with the
+unquantised step. With r the fraction in the table, the fitted Ramsey frequency was off by r
+and the fitted T1 and T2* by -r/(1 + r), the opposite sign: frequency -0.02 % and T1/T2*
++0.02 % at the CSTQ03 settings (5 us, 0.1 us); T1/T2* -2.3 %, -4.4 % and +7.5 % at 0.05,
+0.02 and 0.01 us steps.
 
 ## Registers
 
@@ -203,11 +248,9 @@ current firmware (`tproc_ch` = 0 for readout 0), but resolve it explicitly.
 ## Known issues
 
 - Wait-sweep programs (`T1FF`, `T2EMUX`, `T2R`) load `cfg["start"]` into the wait register as raw
-  tProc cycles but label the x-axis as `start + i*step` in us. Correct only for `start = 0`, which
+  tProc cycles but label the x-axis from `us2cycles(start)` (see
+  [register-swept wait axis](#register-swept-wait-axis)). Correct only for `start = 0`, which
   every run function passes.
-- `0.00232515` is hard-coded in the coherence run functions, AutoCoherence and a dead AWG
-  helper (which used `0.00232515/16` per envelope sample). A board with another tProc clock needs
-  `soccfg.cycles2us(1)` instead.
 - `T2R` ignores `flattop_length` and always plays a 4-sigma Gaussian at `pi2_gain`; if `pi2_gain`
   was calibrated for flat-top pulses the rotation is wrong.
 - The calibration code adds `deg2reg(+-phi)` to `res_phase` without wrapping, so `res_phase` can
