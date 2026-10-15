@@ -111,58 +111,58 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
     data_digest leaves in the four Rabi labels)
 
 Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ3BqMAGCkXk):
-38. `4716ed29` test(regression): golden regenerated on Windows (i7-11700F, scipy-openblas 0.3.30, numpy 2.4.1):
+38. `2b699295` test(regression): golden regenerated on Windows (i7-11700F, scipy-openblas 0.3.30, numpy 2.4.1):
     1064 leaves, sets 716 + data_digest 348 in 16 labels per board, nothing else; two further captures
     byte-identical (sha1 ea536087…)
-39. `20c0c602` fix(yoko): F21+F53 — open_charge_yoko / enable_current_output_safely / two-sided ramp_to guard
+39. `ba997e58` fix(yoko): F21+F53 — open_charge_yoko / enable_current_output_safely / two-sided ramp_to guard
     with readback (golden: 838 leaves, all yoko_writes, every label on both boards)
-40. `12ff8a8c` fix(spectroscopy): F04 — doublet selection (min_sep in every branch, window clip, seed/edge/
+40. `5f9342b2` fix(spectroscopy): F04 — doublet selection (min_sep in every branch, window clip, seed/edge/
     duplicate/quarter-step gates, min_sep hand-off + provenance keys in ZSP cfg) (golden: 304 leaves = lorentz_*
     data_digest in 6 labels + 2 ZSP cfg keys and cfg_digest in RunZeroSpanParity[*]); four Opus review rounds here
     (one reject: the first sub-grid gate at 0.5 step dropped real lines; now 0.25). DEFERRED: partner significance
     gate (F04 (c) second half): below SNR ~15 on the ZSP grid a single line is often paired with a noise maximum
     (source one_lorentzian_center_plus_peak) and the run parks between the parity lines without error; needs a
     partner-height-over-noise threshold (design decision + golden change).
-41. `f7f590b0` fix(coherence): F02+F34 — bounded, guarded fit_exp_decay (dict result, ok criteria incl.
+41. `4e6418b8` fix(coherence): F02+F34 — bounded, guarded fit_exp_decay (dict result, ok criteria incl.
     |a| >= 3 a_err) saved as t1_fit_* / t2e_fit_* in the h5 (golden: 684 leaves = new display `sets` + new fit
     datasets in the 7 T1/T2E labels; nothing else). Not done: T2R fit saving, T1/T2E in the AutoCoherence summary.
-42. `56765a26` fix(zero_span): F19 — stage-8 controls: gain restore, rebuilds (base rebuild in a finally),
+42. `5eb2063b` fix(zero_span): F19 — stage-8 controls: gain restore, rebuilds (base rebuild in a finally),
     stitched 200 ms records, batch-means se + Welch/Student-t thresholds, both_branches_respond / branch_ratio /
     complementarity / midpoint null, variants table in EVIDENCE.md (golden: 24 hw/count leaves, ZSP[validate] only);
     three Opus rounds. FOLLOW-UPS: stages 1-2 set_qubit_gain(base) sits after the _preserve_cfg block, not in a
     finally; se_batch_us (10 ms) is not tied to the measured dwell (se ~2x too small at a 30 ms dwell);
     min_record_us / se_batch_us / k_sigma are not exposed in Control_params; control C has no decision statistic.
-43. `ab896b28` fix(transmission): F25 — hanger_fit_kappa_tot_mhz / _ext_mhz = |f0|/Q in MHz replace the 1e6-too-small
+43. `988b1acb` fix(transmission): F25 — hanger_fit_kappa_tot_mhz / _ext_mhz = |f0|/Q in MHz replace the 1e6-too-small
     external-only key; four stale docs pages fixed (golden: 24 data_digest leaves, the 4 RunTransmissionSweep* labels).
     Follow-ups: docs/adding_a_device.md:100 "6/kappa" should name the angular kappa; the Q lower bound 1e2 caps
     kappa at |f0|/100 on a small IF axis (pre-existing).
-44. `ea8999b0` fix(modified_ramsey): F16 — model-free lag-covariance statistic (interior-trimmed, baseline-band
+44. `e513085f` fix(modified_ramsey): F16 — model-free lag-covariance statistic (interior-trimmed, baseline-band
     corrected, block bootstrap) drives echo_null / flip_final_pi2 / drive_off verdicts; drive_off decisive with a
     symmetric 0.1 rule (golden byte-identical: no label runs the analysis). Four Opus rounds here, three rejects
     (NaN-error flip rule, drift-filter edge bias, interior bias at CSTQ03 contrast). TIER C left: add drive_off to
     the default validation_controls and confirm the 0.1 budget on the fridge; the per-record lag sum is not in
     _analysis.json; K is per record (a control with a slightly different rep period can lose the comparison).
-45. `b0430ae6` fix(single_shot): F48 — T1_SS and the Undriven charge sweep save the completed points on abort
+45. `e4d960c4` fix(single_shot): F48 — T1_SS and the Undriven charge sweep save the completed points on abort
     (sweep_completed / points_completed + cfg aborted) and retry the shot-counter race (golden byte-identical).
-46. `206734b4` fix(readout_optimize): F33 — qubit-pulse map brackets each gain row with shared |g> blocks (463
+46. `9721f8f1` fix(readout_optimize): F33 — qubit-pulse map brackets each gain row with shared |g> blocks (463
     programs instead of 882), g_ref_index / g_block_time / g_drift_* saved, gated drift warning (golden: 48 leaves,
     SingleShot_QubitOptimize hw counts + fid/overlap digests + the four new keys).
-47. `914e45f9` fix(spectroscopy): F05 part 1 — partner significance gate (MIN_PARTNER_SNR 5, edge baseline,
+47. `72147fe5` fix(spectroscopy): F05 part 1 — partner significance gate (MIN_PARTNER_SNR 5, edge baseline,
     parity_partner_snr provenance, min_partner_snr overrides), estimate_noise_floor dedupe; three gate-off harness
     labels keep the ZSP pipeline and the two-tone quasi-CW record under the golden (43 labels per board) (golden:
     114 leaves in the plain ZSP / two-tone labels, which now raise / step to budget on the noise-only harness
     spectra). Not done: F05 part 2 (joint 1-vs-2 line fit, tier B) and AutoCoherence |I+iQ|^2 -> project_iq_signal.
-48. `16581c4a` fix(zero_span): F07 — apriori_gmm (two-Gaussian ML threshold on the record's own scores, bits withheld
+48. `5f72d402` fix(zero_span): F07 — apriori_gmm (two-Gaussian ML threshold on the record's own scores, bits withheld
     when not bimodal, classifier_* fit fields in the summary) is the default ZSP classifier; 'apriori' aliases it,
     'apriori_midpoint' keeps the old behaviour (golden byte-identical). TIER C left: automatic resolved-jump warning /
     HMM classifier; noise-crossing rate inflation is documented (bin, or SNR >= ~5), not fixable per sample.
-49. `5ce824b0` fix(experiments): F14+F20+F24+F27 — every regime-A program uses cover_readout_window (window 4608
+49. `0384a482` fix(experiments): F14+F20+F24+F27 — every regime-A program uses cover_readout_window (window 4608
     samples, tone 6581, measure waiti 6580; generator-clock tone/drive lengths; T1_SS normalises by the declared
     window; ZSP read_length on the readout clock 1536 + compiled-period check) (golden: 6254 leaves, hw/data_digest/
     sets in 33 labels; no cfg_access/outcome/yoko change). Averaged regime-A IQ amplitudes are NOT comparable with
     records before 2026-10-15. Left: the hard-coded [0, 1] readout loops (switching to ro_chs drops ADC 1 from the
     payload: separate change); sample_period_us_compiled not added.
-50. `ceec6a1a` fix(runs): tier-B batch B1 — F51 DAC gain guard (0..32767, constructor + build_context + run-level +
+50. `0397f869` fix(runs): tier-B batch B1 — F51 DAC gain guard (0..32767, constructor + build_context + run-level +
     ZSP set_qubit_gain), F52 resonator carry-over quality gate (assess_resonator_fit: depth, half-power width, edge;
     pulse_freq left unchanged on failure), F84 honoured run parameters (transmission_sweep reps/rounds, two_tone_spec
     peak kwargs, trans_qubit_spec gain 800 / relax 2500, flattop_relax_delay) (golden: 96 leaves = RunTrans_QubitSpec
