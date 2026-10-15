@@ -5927,75 +5927,69 @@
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
                   "head": [
-                    1.3997398585905734,
-                    4.350572396339696
+                    1.3997398585905734
                   ],
-                  "sha1": "c6219eb23f078f3f",
+                  "sha1": "c7c8c07ffab9c41a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
-                    2642.6697952519917,
-                    2656.559874927588
+                    2642.6697952519917
                   ],
-                  "sha1": "a266c3d04d0cf280",
+                  "sha1": "1a45147ef24ae874",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
                   "head": [
-                    0.2705066080559732,
-                    0.043321524374157
+                    0.2705066080559732
                   ],
-                  "sha1": "05b27446dc44e986",
+                  "sha1": "64cb3a83293e6c5a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
                   "head": [
-                    0.1352533040279866,
-                    0.0216607621870785
+                    0.1352533040279866
                   ],
-                  "sha1": "4fc951ddcb8028d7",
+                  "sha1": "1e7bae730d743a39",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    1
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
                   "head": [
-                    -0.4317737040021927,
-                    -0.05201539710193326
+                    -0.4317737040021927
                   ],
-                  "sha1": "7c0299590c41325c",
+                  "sha1": "fd24757821f1d313",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
                   "head": [
-                    0.757936093868106,
-                    0.717044423009555
+                    0.757936093868106
                   ],
-                  "sha1": "c09cf42c9ad9f232",
+                  "sha1": "6293695ec37fd45a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -33038,70 +33032,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    6883.9813001112325
-                  ],
-                  "sha1": "36a46819615f05ac",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2651.7770315493044
-                  ],
-                  "sha1": "9b6f0e18ad0bac69",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0006387024320206226
-                  ],
-                  "sha1": "4c7b8d8fde695aaf",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.0003193512160103113
-                  ],
-                  "sha1": "25069ecc537bdb7a",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    0.20485982599031582
-                  ],
-                  "sha1": "aa32ae5d9249816b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6131846210566295
-                  ],
-                  "sha1": "688980d4516eb573",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -35208,76 +35190,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    68770.23041004803,
-                    4707.470989032469
-                  ],
-                  "sha1": "5c0c687b3a1c3d1c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2653.3874671238445,
-                    2654.6646870861923
-                  ],
-                  "sha1": "ebbd50b40fc9e729",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0004536181289682082,
-                    0.0010764877411038674
-                  ],
-                  "sha1": "a49df06cc4cf23f5",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.0002268090644841041,
-                    0.0005382438705519337
-                  ],
-                  "sha1": "d040babbc9ed3f79",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    0
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.2824286566341131,
-                    -0.19848727838507182
-                  ],
-                  "sha1": "30b6eee08757f269",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.7094086165058305,
-                    0.6404272243494602
-                  ],
-                  "sha1": "8c5aaf74154b33d7",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -35910,70 +35874,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    32644.283637096694
-                  ],
-                  "sha1": "d4d656abf765d738",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2652.681558574526
-                  ],
-                  "sha1": "66dce88317ac9072",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0004909422775807951
-                  ],
-                  "sha1": "0079c53f25db7cc8",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.00024547113879039756
-                  ],
-                  "sha1": "a2cb8ba3b70851d1",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.12612604165605426
-                  ],
-                  "sha1": "54a7fad584b50b8c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6095932032487406
-                  ],
-                  "sha1": "0519226c82ada1ef",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -85455,70 +85407,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    1.196540977250439
-                  ],
-                  "sha1": "38e91cde257afad3",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2656.3233523751046
-                  ],
-                  "sha1": "9d29b07ac7147353",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.014057102108834277
-                  ],
-                  "sha1": "607b23dce902d39b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.007028551054417138
-                  ],
-                  "sha1": "8ab83f198197fdff",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.45833963255301335
-                  ],
-                  "sha1": "d803f6de5c03387c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.8003945662684391
-                  ],
-                  "sha1": "60814ca0ef1be03c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -117897,75 +117837,69 @@
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
                   "head": [
-                    23856.47208892125,
                     1.8774581109236335
                   ],
-                  "sha1": "90f1e5be0d719818",
+                  "sha1": "5b5b66024c9a4676",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
-                    2654.1877002109854,
                     2660.182357834698
                   ],
-                  "sha1": "320c2e71f545aa0e",
+                  "sha1": "4af339c2fcb88119",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
                   "head": [
-                    0.0006827682930837071,
                     0.12040897801714061
                   ],
-                  "sha1": "6aa8eba26c1de0c5",
+                  "sha1": "1395b3be70699ab4",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
                   "head": [
-                    0.00034138414654185354,
                     0.060204489008570304
                   ],
-                  "sha1": "afb6aa3f757e499f",
+                  "sha1": "077237c28ffd9736",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    1
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
                   "head": [
-                    -0.08193753192857238,
                     -0.2785175858903561
                   ],
-                  "sha1": "3b01739c4ae72ee6",
+                  "sha1": "f5ccee9525cf574d",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
                   "head": [
-                    0.7759512798337196,
                     0.8114401667452806
                   ],
-                  "sha1": "81d023a42a44a9dd",
+                  "sha1": "9bf9d0ed204c2e8b",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -120633,70 +120567,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    1.1869765321141228
-                  ],
-                  "sha1": "7803b25a203c029a",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2649.0596717908165
-                  ],
-                  "sha1": "746108edd63b379c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.012038874123112895
-                  ],
-                  "sha1": "01b24b918f3af84b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.006019437061556447
-                  ],
-                  "sha1": "39e185f2db567d4c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.13891550889845947
-                  ],
-                  "sha1": "9d5d53979f850705",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6961683858503454
-                  ],
-                  "sha1": "af026160010d1a65",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -130289,6 +130211,8 @@
             "n_chunks": 60,
             "nqz": 2,
             "parity_drive_freq": 2650.1094527363184,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_peak_sep_MHz": 1.5920398009948258,
             "pulse_gain": 1500,
             "qubit_ch": 1,
             "qubit_gain": 4200,
@@ -130457,7 +130381,7 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "3a469f1fea14cde4",
+              "cfg_digest": "67c28659d6162f02",
               "kwargs": {},
               "name": "save_config"
             }
@@ -131898,6 +131822,8 @@
             "n_chunks": 60,
             "nqz": 2,
             "parity_drive_freq": 2650.5174129353236,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_peak_sep_MHz": 0.5870646766165919,
             "pulse_gain": 1500,
             "qubit_ch": 1,
             "qubit_gain": 4200,
@@ -132066,7 +131992,7 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "4502972e01a0f98c",
+              "cfg_digest": "10cb630d12c12d5e",
               "kwargs": {},
               "name": "save_config"
             },
@@ -140097,75 +140023,69 @@
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
                   "head": [
-                    1.3997398585905734,
-                    4.350572396339696
+                    1.3997398585905734
                   ],
-                  "sha1": "c6219eb23f078f3f",
+                  "sha1": "c7c8c07ffab9c41a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
-                    2642.6697952519917,
-                    2656.559874927588
+                    2642.6697952519917
                   ],
-                  "sha1": "a266c3d04d0cf280",
+                  "sha1": "1a45147ef24ae874",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
                   "head": [
-                    0.2705066080559732,
-                    0.043321524374157
+                    0.2705066080559732
                   ],
-                  "sha1": "05b27446dc44e986",
+                  "sha1": "64cb3a83293e6c5a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
                   "head": [
-                    0.1352533040279866,
-                    0.0216607621870785
+                    0.1352533040279866
                   ],
-                  "sha1": "4fc951ddcb8028d7",
+                  "sha1": "1e7bae730d743a39",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    1
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
                   "head": [
-                    -0.4317737040021927,
-                    -0.05201539710193326
+                    -0.4317737040021927
                   ],
-                  "sha1": "7c0299590c41325c",
+                  "sha1": "fd24757821f1d313",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
                   "head": [
-                    0.757936093868106,
-                    0.717044423009555
+                    0.757936093868106
                   ],
-                  "sha1": "c09cf42c9ad9f232",
+                  "sha1": "6293695ec37fd45a",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -167208,70 +167128,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    6883.9813001112325
-                  ],
-                  "sha1": "36a46819615f05ac",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2651.7770315493044
-                  ],
-                  "sha1": "9b6f0e18ad0bac69",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0006387024320206226
-                  ],
-                  "sha1": "4c7b8d8fde695aaf",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.0003193512160103113
-                  ],
-                  "sha1": "25069ecc537bdb7a",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    0.20485982599031582
-                  ],
-                  "sha1": "aa32ae5d9249816b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6131846210566295
-                  ],
-                  "sha1": "688980d4516eb573",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -169378,76 +169286,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    68770.23041004803,
-                    4707.470989032469
-                  ],
-                  "sha1": "5c0c687b3a1c3d1c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2653.3874671238445,
-                    2654.6646870861923
-                  ],
-                  "sha1": "ebbd50b40fc9e729",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0004536181289682082,
-                    0.0010764877411038674
-                  ],
-                  "sha1": "a49df06cc4cf23f5",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.0002268090644841041,
-                    0.0005382438705519337
-                  ],
-                  "sha1": "d040babbc9ed3f79",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    0
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.2824286566341131,
-                    -0.19848727838507182
-                  ],
-                  "sha1": "30b6eee08757f269",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.7094086165058305,
-                    0.6404272243494602
-                  ],
-                  "sha1": "8c5aaf74154b33d7",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    2
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -170080,70 +169970,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    32644.283637096694
-                  ],
-                  "sha1": "d4d656abf765d738",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2652.681558574526
-                  ],
-                  "sha1": "66dce88317ac9072",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.0004909422775807951
-                  ],
-                  "sha1": "0079c53f25db7cc8",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.00024547113879039756
-                  ],
-                  "sha1": "a2cb8ba3b70851d1",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.12612604165605426
-                  ],
-                  "sha1": "54a7fad584b50b8c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6095932032487406
-                  ],
-                  "sha1": "0519226c82ada1ef",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -219625,70 +219503,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    1.196540977250439
-                  ],
-                  "sha1": "38e91cde257afad3",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2656.3233523751046
-                  ],
-                  "sha1": "9d29b07ac7147353",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.014057102108834277
-                  ],
-                  "sha1": "607b23dce902d39b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.007028551054417138
-                  ],
-                  "sha1": "8ab83f198197fdff",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.45833963255301335
-                  ],
-                  "sha1": "d803f6de5c03387c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.8003945662684391
-                  ],
-                  "sha1": "60814ca0ef1be03c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -252067,75 +251933,69 @@
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
                   "head": [
-                    23856.47208892125,
                     1.8774581109236335
                   ],
-                  "sha1": "90f1e5be0d719818",
+                  "sha1": "5b5b66024c9a4676",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
-                    2654.1877002109854,
                     2660.182357834698
                   ],
-                  "sha1": "320c2e71f545aa0e",
+                  "sha1": "4af339c2fcb88119",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
                   "head": [
-                    0.0006827682930837071,
                     0.12040897801714061
                   ],
-                  "sha1": "6aa8eba26c1de0c5",
+                  "sha1": "1395b3be70699ab4",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
                   "head": [
-                    0.00034138414654185354,
                     0.060204489008570304
                   ],
-                  "sha1": "afb6aa3f757e499f",
+                  "sha1": "077237c28ffd9736",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    2
+                    1
                   ],
-                  "sha1": "f5a287313a7f83fa",
+                  "sha1": "50884d3b2a9fbe85",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
                   "head": [
-                    -0.08193753192857238,
                     -0.2785175858903561
                   ],
-                  "sha1": "3b01739c4ae72ee6",
+                  "sha1": "f5ccee9525cf574d",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
                   "head": [
-                    0.7759512798337196,
                     0.8114401667452806
                   ],
-                  "sha1": "81d023a42a44a9dd",
+                  "sha1": "9bf9d0ed204c2e8b",
                   "shape": [
-                    2
+                    1
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -254803,70 +254663,58 @@
                 },
                 "data/lorentz_amplitudes": {
                   "dtype": "float64",
-                  "head": [
-                    1.1869765321141228
-                  ],
-                  "sha1": "7803b25a203c029a",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_centers": {
                   "dtype": "float64",
-                  "head": [
-                    2649.0596717908165
-                  ],
-                  "sha1": "746108edd63b379c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_fwhm": {
                   "dtype": "float64",
-                  "head": [
-                    0.012038874123112895
-                  ],
-                  "sha1": "01b24b918f3af84b",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_gamma": {
                   "dtype": "float64",
-                  "head": [
-                    0.006019437061556447
-                  ],
-                  "sha1": "39e185f2db567d4c",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_num_fits": {
                   "dtype": "int64",
                   "head": [
-                    1
+                    0
                   ],
-                  "sha1": "50884d3b2a9fbe85",
+                  "sha1": "8c2d3148e933442c",
                   "shape": []
                 },
                 "data/lorentz_offsets": {
                   "dtype": "float64",
-                  "head": [
-                    -0.13891550889845947
-                  ],
-                  "sha1": "9d5d53979f850705",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/lorentz_r2": {
                   "dtype": "float64",
-                  "head": [
-                    0.6961683858503454
-                  ],
-                  "sha1": "af026160010d1a65",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
                   "shape": [
-                    1
+                    0
                   ]
                 },
                 "data/two_tone_peak_amps": {
@@ -264459,6 +264307,8 @@
             "n_chunks": 60,
             "nqz": 2,
             "parity_drive_freq": 2650.1094527363184,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_peak_sep_MHz": 1.5920398009948258,
             "pulse_gain": 1500,
             "qubit_ch": 1,
             "qubit_gain": 4200,
@@ -264627,7 +264477,7 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "3a469f1fea14cde4",
+              "cfg_digest": "67c28659d6162f02",
               "kwargs": {},
               "name": "save_config"
             }
@@ -266068,6 +265918,8 @@
             "n_chunks": 60,
             "nqz": 2,
             "parity_drive_freq": 2650.5174129353236,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_peak_sep_MHz": 0.5870646766165919,
             "pulse_gain": 1500,
             "qubit_ch": 1,
             "qubit_gain": 4200,
@@ -266236,7 +266088,7 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "4502972e01a0f98c",
+              "cfg_digest": "10cb630d12c12d5e",
               "kwargs": {},
               "name": "save_config"
             },

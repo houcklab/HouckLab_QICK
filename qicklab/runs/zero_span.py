@@ -65,10 +65,14 @@ def run_zero_span_parity(ctx, p):
         chosen = pick_parity_drive_freq(
             data_paritySpec,
             which=p["ZSP_ParityFreqs_Cached"]["which_to_park"],
+            min_sep_mhz=p["ZSP_ParitySpec_params"]["min_sep_MHz"],
         )
         p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"] = chosen["lower"]
         p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"] = chosen["higher"]
         parity_drive_freq_MHz = chosen["picked"]
+        # provenance for the saved cfg: which selection path produced the parked line
+        parity_freq_source = chosen["source"]
+        parity_peak_sep_MHz = chosen["peak_sep_MHz"]
         print(
             f"[ZeroSpanParity] parity doublet: lower={chosen['lower']:.6f} "
             f"higher={chosen['higher']:.6f} MHz; parking at "
@@ -88,6 +92,12 @@ def run_zero_span_parity(ctx, p):
                 "ZSP_RecalibrateParityFreqs=False. Populate ZSP_ParityFreqs_Cached "
                 "or set ZSP_RecalibrateParityFreqs=True."
             )
+        parity_freq_source = "cached"
+        _lo = p["ZSP_ParityFreqs_Cached"].get("lower_peak_MHz")
+        _hi = p["ZSP_ParityFreqs_Cached"].get("higher_peak_MHz")
+        parity_peak_sep_MHz = (
+            abs(float(_hi) - float(_lo)) if _lo is not None and _hi is not None else None
+        )
 
     if p["ZSP_RecalibrateSeparator"]:
         sep = get_apriori_separator_from_singleshot(ctx)
@@ -138,6 +148,8 @@ def run_zero_span_parity(ctx, p):
         "mixer_freq": cfg["mixer_freq"],
         "read_pulse_freq": ctx.resonator_frequency_center,
         "parity_drive_freq": parity_drive_freq_MHz,
+        "parity_freq_source": parity_freq_source,
+        "parity_peak_sep_MHz": parity_peak_sep_MHz,
         "qubit_gain": zsp_qubit_gain,
         "pulse_gain": zsp_pulse_gain,
         "res_phase": p["ZSP_DriveParams"]["res_phase"],

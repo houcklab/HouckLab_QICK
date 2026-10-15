@@ -76,7 +76,32 @@ def fit_lorentzian_near_peak(x, y, peak_x, fit_window_mhz):
         return None
 
 
+def _merge_close_centers(centers, min_sep_mhz):
+    """Sort the centres and replace every run of neighbours closer than min_sep_mhz by its
+    mean: two window fits that converged on the same line count as one line."""
+    centers = np.sort(np.asarray(centers, dtype=float))
+    if centers.size == 0:
+        return centers
+    groups = [[centers[0]]]
+    for c in centers[1:]:
+        if c - groups[-1][-1] < min_sep_mhz:
+            groups[-1].append(c)
+        else:
+            groups.append([c])
+    return np.array([np.mean(g) for g in groups], dtype=float)
+
+
 def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
+    """Pick the two parity-doublet frequencies from a QubitSpecSliceFF display result.
+
+    Preference: two Lorentzian centres, else one Lorentzian centre plus a bin peak at least
+    max(min_sep_mhz, fitted HWHM) away (a bin peak inside the fitted line is that line, or an
+    unresolved blend, not its partner), else the two highest find_two_tone_peaks peaks.
+    Lorentzian centres closer than min_sep_mhz are merged (mean) first. Two frequencies are returned only when
+    they are at least min_sep_mhz apart; otherwise the result is one frequency, peak_sep
+    None and source 'single_line_unresolved' (a single line, or a doublet split below
+    min_sep_mhz, which this selection cannot resolve by design).
+    """
     x_pts = np.asarray(data_spec["data"]["x_pts"], dtype=float)
     avgi = np.asarray(data_spec["data"]["avgi"][0][0], dtype=float)
     avgq = np.asarray(data_spec["data"]["avgq"][0][0], dtype=float)
@@ -89,9 +114,11 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
         if peak_info["peak_freqs"] is not None
         else np.array([])
     )
+    peak_vals = np.asarray(peak_info.get("peak_vals", []), dtype=float)
 
     lorentz_centers = np.array(data_spec["data"].get("lorentz_centers", []), dtype=float)
     lorentz_centers = lorentz_centers[np.isfinite(lorentz_centers)]
+    lorentz_centers = _merge_close_centers(lorentz_centers, min_sep_mhz)
 
     if len(lorentz_centers) >= 2:
         chosen_freqs = np.sort(lorentz_centers[:2])
@@ -99,26 +126,32 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
 
     elif len(lorentz_centers) == 1 and len(peak_freqs) >= 1:
         lc = float(lorentz_centers[0])
-        other_peaks = [p for p in peak_freqs if abs(p - lc) >= min_sep_mhz]
-
-        if len(other_peaks) == 0:
-            other_peaks = [p for p in peak_freqs if abs(p - lc) > 1e-9]
+        # every accepted fit belongs to this one (merged) line: its widest fitted HWHM
+        gammas = np.asarray(data_spec["data"].get("lorentz_gamma", []), dtype=float)
+        gammas = gammas[np.isfinite(gammas)]
+        line_hwhm = float(np.max(gammas)) if gammas.size else 0.0
+        other_peaks = [p for p in peak_freqs if abs(p - lc) >= max(min_sep_mhz, line_hwhm)]
 
         if len(other_peaks) >= 1:
             chosen_freqs = np.sort([lc, float(other_peaks[0])])
             source = "one_lorentzian_center_plus_peak"
         else:
             chosen_freqs = np.array([lc])
-            source = "one_lorentzian_only"
+            source = "single_line_unresolved"
 
     else:
         chosen_freqs = np.sort(peak_freqs[:2])
         source = "two_highest_peaks"
+        if len(chosen_freqs) >= 2 and abs(chosen_freqs[-1] - chosen_freqs[0]) < min_sep_mhz:
+            # keep the taller bin peak
+            chosen_freqs = peak_freqs[[int(np.argmax(peak_vals))]]
 
-    if len(chosen_freqs) >= 2:
+    if len(chosen_freqs) >= 2 and abs(chosen_freqs[-1] - chosen_freqs[0]) >= min_sep_mhz:
         peak_sep = float(abs(chosen_freqs[-1] - chosen_freqs[0]))
     else:
+        chosen_freqs = np.asarray(chosen_freqs[:1], dtype=float)
         peak_sep = None
+        source = "single_line_unresolved"
 
     return {
         "freqs": chosen_freqs,
@@ -490,7 +523,7 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, pl
     }
 
 
-def pick_parity_drive_freq(spec_data, which="lower"):
+def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
     """
     Pick one of the two parity-doublet peaks from a QubitSpecSliceFF-style
     spec_data dict, using the existing choose_two_tone_freqs_from_lorentz_or_peaks
@@ -498,8 +531,10 @@ def pick_parity_drive_freq(spec_data, which="lower"):
 
     Parameters
     ----------
-    spec_data : dict (output of QubitSpecSliceFF.acquire or compatible)
-    which     : "lower" or "higher" — which doublet peak to park at
+    spec_data   : dict (output of QubitSpecSliceFF.acquire or compatible)
+    which       : "lower" or "higher" — which doublet peak to park at
+    min_sep_mhz : float, smallest doublet splitting accepted as two lines (MHz); pass the
+                  min_sep the spectroscopy display used
 
     Returns
     -------
@@ -507,17 +542,32 @@ def pick_parity_drive_freq(spec_data, which="lower"):
       picked  : float, the chosen frequency (MHz)
       lower   : float, the lower-frequency doublet peak (MHz)
       higher  : float, the higher-frequency doublet peak (MHz)
-      peak_sep_MHz : float or None, peak separation
+      peak_sep_MHz : float, peak separation (>= min_sep_mhz)
       source  : str, provenance from choose_two_tone_freqs_from_lorentz_or_peaks
+
+    Raises RuntimeError when the selection does not return two frequencies at least
+    min_sep_mhz apart (a single line, or a doublet split below min_sep_mhz): parking on a
+    blended or duplicated centre would put the drive between the parity lines. Only the
+    separation is checked, not significance, so the raise is reliable only at high SNR
+    (line height / per-point noise >= ~15 on the ZSP grid). At lower SNR a noise maximum
+    at least min_sep_mhz from the line is taken as the partner: a single line, or a
+    sub-min_sep doublet fitted as one Lorentzian at its midpoint, then passes as a doublet
+    (source "one_lorentzian_center_plus_peak", e.g. a 0.15 MHz doublet at HWHM 40 kHz
+    raises in only ~27 % of trials at SNR 8), and on a noise-only trace two noise maxima
+    pass (source "two_highest_peaks"). See docs/experiments/two_tone_spec.md, step 4.
     """
     if which not in ("lower", "higher"):
         raise ValueError(f"which must be 'lower' or 'higher', got {which!r}")
-    result = choose_two_tone_freqs_from_lorentz_or_peaks(spec_data)
+    result = choose_two_tone_freqs_from_lorentz_or_peaks(spec_data, min_sep_mhz=min_sep_mhz)
     freqs = np.asarray(result["freqs"], dtype=float)
     if freqs.size < 2:
+        found = ", ".join(f"{f:.6f}" for f in freqs) or "none"
         raise RuntimeError(
-            f"pick_parity_drive_freq: only {freqs.size} peak(s) found; "
-            f"need 2 for parity doublet. Source={result['source']}"
+            f"pick_parity_drive_freq: no resolved parity doublet (source="
+            f"{result['source']}, line(s) at {found} MHz). Need two lines at least "
+            f"min_sep_mhz={min_sep_mhz} MHz apart; a single line or a doublet split "
+            f"below min_sep cannot be parked on. Check the spectroscopy PNG, or set the "
+            f"cached parity frequencies and disable recalibration."
         )
     lower = float(np.min(freqs[:2]))
     higher = float(np.max(freqs[:2]))

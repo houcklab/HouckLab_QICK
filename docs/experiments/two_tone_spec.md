@@ -90,10 +90,79 @@ is written.
    least `prominent_ratio` x the height of peak 1. At most two peaks, reported in
    frequency order.
 3. **Lorentzian per peak.** `y = y0 + A * gamma**2 / ((x - x0)**2 + gamma**2)` (gamma =
-   HWHM, FWHM = 2 gamma) fitted within +-`fit_window_mhz` of the peak. Accepted only if
-   R^2 >= 0.60, 0 < gamma < window width, centre inside the window, and at least 6 points
-   in the window. Rejected fits are dropped silently (`lorentz_num_fits` tells you how many
-   survived).
+   HWHM, FWHM = 2 gamma) fitted within +-w of the peak, where w = `fit_window_mhz`, or,
+   when two peaks were picked, `min(fit_window_mhz, 0.5 * |peak2 - peak1|)` so that no
+   window holds both lines (one Lorentzian over both lines of a doublet lands on their
+   midpoint). A fit is accepted only if R^2 >= 0.60, 0 < gamma < window width, centre
+   inside the window, at least 6 points in the window, and:
+   - its HWHM is at least a quarter of a grid step (`MIN_FIT_GAMMA_STEPS` in
+     `qicklab/experiments/qubit_spec.py`). A fit narrower than that has collapsed onto a
+     single bin. Most such fits are noise maxima, but the width does not separate noise
+     from line, so this gate loses some real lines and lets some noise through:
+     - noise fits removed in the golden runs have HWHM between 0.003 and 0.22 step, so a
+       noise fit can sit just under the cut, and one just above it is kept;
+     - a genuine line narrower than about half a step often collapses the same way and is
+       dropped, although its collapsed centre is still several times closer to the line
+       than its bin peak. On the 0.0995 MHz Run2ToneSpec step (line at a random sub-bin
+       offset, 100 trials each) the cut loses the line's fit in about 30 % of trials at
+       HWHM 40 kHz and SNR 20 (kept 54 of the 75 the fit would otherwise return), about
+       10 % at HWHM 40 kHz and SNR 50, about a third at HWHM 30 kHz and SNR 50 and about
+       13 % at HWHM 50 kHz and SNR 20. The loss is largest midway between bins (HWHM
+       40 kHz, SNR 50: 98 % kept on a bin, 79 % midway). A cut at half a step would drop
+       most of these lines.
+
+     On such coarse grids `lorentz_*` is only reported (PNG and h5 of Run2ToneSpec,
+     RunChargeSweep, RunSpecGainLengthSweep); on the zero-span parity grid (0.00995 MHz
+     step) a 40 kHz line is four steps wide and the gate does not touch it;
+   - its centre is not on the window edge (within half a grid step of the outermost
+     point in the window: the line is outside the window, not in it);
+   - its centre is within `0.5 * max(min_sep, gamma)` of its seed peak bin (the gamma
+     term allows for a broad line, whose flat top moves the highest bin around);
+   - its centre is at least `min_sep` from an already accepted centre. The fits are taken
+     tallest peak first, so the line keeps its own fit and a flank or noise maximum
+     picked as peak 2 cannot displace it.
+
+   If the clipped window gives no acceptable fit (on a coarse grid it often holds fewer
+   than 6 points), the fit is retried with the full `fit_window_mhz`, under the same
+   gates. Rejected fits are dropped silently (`lorentz_num_fits` tells you how many
+   survived). The accepted fits are saved in frequency order.
+4. **Doublet choice** (`choose_two_tone_freqs_from_lorentz_or_peaks`, used by the
+   charge-dispersion steps and, through `pick_parity_drive_freq`, by
+   [zero_span_parity](zero_span_parity.md)). Lorentzian centres closer than `min_sep` are
+   first merged into their mean. Then: two centres (`two_lorentzian_centers`); else one
+   centre plus a peak of `find_two_tone_peaks` at least `max(min_sep, gamma)` from it,
+   gamma being the widest accepted fit's HWHM, since a bin peak inside the fitted line
+   belongs to that line (`one_lorentzian_center_plus_peak`); else the two highest
+   `find_two_tone_peaks` peaks (`two_highest_peaks`). Two frequencies are returned only
+   when they are at least `min_sep` apart. Otherwise the result is a single frequency
+   with `peak_sep = None` and source `single_line_unresolved`: a single line, or a
+   doublet split by less than `min_sep`, which this selection cannot resolve by design.
+   There is no significance test, only the separation test, so the outcome depends on
+   SNR (line peak height over the per-point noise sigma of the projected trace):
+   - on a noise-only trace the two highest noise maxima are usually at least `min_sep`
+     apart and come back as `two_highest_peaks`;
+   - a single line, or a doublet split below `min_sep` (fitted as one blended Lorentzian
+     at the midpoint), is paired with a noise maximum at least `min_sep` away whenever
+     `find_two_tone_peaks` reports one, and comes back as a doublet
+     (`one_lorentzian_center_plus_peak`) instead of `single_line_unresolved`. On the ZSP
+     grid (2 MHz span, 201 points, `min_sep` 0.2, `fit_window_mhz` 0.5,
+     `prominent_ratio` 0.1, HWHM 40 or 100 kHz, lines offset at random by up to 5 kHz,
+     200 trials each, so about +-3 %) a single line is reported unresolved in 2 % of
+     trials at SNR 6, 9-20 % at SNR 8, 43-65 % at SNR 10 and 99-100 % at SNR 15 and 20;
+     a 0.15 MHz doublet at HWHM 40 kHz in 5 %, 27 %, 72 %, 100 % and 100 % (HWHM
+     100 kHz: 29 % at SNR 6, 85 % at SNR 8, 98 % at SNR 10). The sub-grid width gate
+     of step 3 does not change these rates. The fake doublet
+     contains the blended centre, so parking on it puts the drive between the parity
+     lines. Below about SNR 15, read the doublet off the PNG, not off `source`.
+
+   Accuracy (synthetic Lorentzian doublets, SNR 20, `min_sep` 0.2, `fit_window_mhz` 0.5,
+   `prominent_ratio` 0.1, 0.01-0.04 MHz grids): for splits of about 2.5 HWHM and more,
+   both centres nearly always come out within HWHM/4 of the true lines (within 10 kHz for 40 kHz HWHM
+   lines split by 0.3 MHz or more, and for 100 kHz HWHM lines split by 0.6 MHz). Near a
+   split of 2 HWHM each window still holds the other line's tail, and both centres come
+   out about 0.2 HWHM too close together (30 kHz for a 0.3 MHz split at 150 kHz HWHM).
+   Below that the result is mostly `single_line_unresolved`. A joint two-Lorentzian fit
+   would remove the bias; it is not implemented.
 
 Display defaults when called directly (not through the step): `min_sep = 0.1` MHz,
 `fit_window_mhz = 3 * min_sep`, `prominent_ratio = 0.35`. The step passes

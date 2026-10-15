@@ -119,7 +119,25 @@ The run, in order:
 
 1. **Parity frequencies.** With `RecalibrateParityFreqs`, take a narrow
    `QubitSpecSliceFF` around the qubit centre (path `ZeroSpanParity_Spec`). Pick the
-   lower and higher peaks and park on `which_to_park`. Otherwise use the cache (rule 6).
+   lower and higher peaks with `pick_parity_drive_freq` (selection rules:
+   [two_tone_spec](two_tone_spec.md#analysis), step 4, with the spec `min_sep_MHz`) and
+   park on `which_to_park`. If the selection does not return two frequencies at least
+   `min_sep_MHz` apart (a single line, or a doublet split below `min_sep_MHz`: outcome
+   `single_line_unresolved`), the run raises RuntimeError before the separator
+   calibration rather than park on a blended centre. The guard checks separation only,
+   not significance, so it is reliable only at high SNR (line height over per-point
+   noise >= about 15 on the ZSP grid). At lower SNR a noise maximum at least
+   `min_sep_MHz` from the line is taken as the second parity line: a single line, or a
+   doublet split below `min_sep_MHz` fitted as one Lorentzian at its midpoint, is then
+   parked on without error (source `one_lorentzian_center_plus_peak`; for a 0.15 MHz
+   doublet at HWHM 40 kHz the run raises in only 27 % of trials at SNR 8 and 72 % at
+   SNR 10; figures in [two_tone_spec](two_tone_spec.md#analysis) step 4), and a trace
+   with no qubit line at all (noise only) usually yields two noise maxima
+   `min_sep_MHz` apart (`two_highest_peaks`). Check the `ZeroSpanParity_Spec` PNG
+   before trusting the parked frequency. The selection path and splitting are saved in the ZSP cfg
+   (json and h5 `config`) as `parity_freq_source` (the step-4 source, or `cached`) and
+   `parity_peak_sep_MHz` (`None` for a cache missing either peak). Otherwise use the
+   cache (rule 6).
 2. **Separator.** With `RecalibrateSeparator`, run a SingleShot g/e calibration.
    Otherwise validate the cache (rule 7). Both caches live on disk as
    `<data_root>/Q{q}/zsp_cache.json`.

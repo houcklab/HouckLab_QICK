@@ -6,6 +6,15 @@ from qicklab.analysis.iq import project_iq_signal
 from qicklab.analysis.spectroscopy import fit_lorentzian_near_peak
 from qicklab.core.experiment import ExperimentClass
 
+# QubitSpecSliceFF.display drops a Lorentzian whose HWHM is below this many grid steps: such
+# a fit has collapsed onto one bin. Most noise-maximum fits collapse far below the cut, but
+# the width does not separate noise from line: a genuine line narrower than about half a
+# step can collapse the same way (more often when it sits between bins) and is then lost
+# although its centre was still better than the bin peak, and a noise fit can land just
+# under the cut or above it. A cut at half a step would drop most sub-step lines (measured
+# rates in docs/experiments/two_tone_spec.md, step 3).
+MIN_FIT_GAMMA_STEPS = 0.25
+
 
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):
@@ -208,13 +217,49 @@ class QubitSpecSliceFF(ExperimentClass):
 
         selected_peaks = sorted(selected_peaks, key=lambda i: x_pts[i])
 
+        # Two peaks: clip each window to half their separation, so neither window holds both
+        # lines (one Lorentzian over a blended doublet lands on the midpoint).
+        window_mhz = fit_window_mhz
+        if len(selected_peaks) == 2:
+            half_sep = 0.5 * abs(x_pts[selected_peaks[1]] - x_pts[selected_peaks[0]])
+            window_mhz = min(fit_window_mhz, half_sep)
+        step_mhz = float(np.median(np.abs(np.diff(x_pts)))) if n > 1 else 0.0
+
+        def _usable(fit, idx):
+            # a fit pinned to its window edge did not find the line inside the window; a fit
+            # that wandered off its seed bin (by more than min_sep/2, or half its own HWHM for
+            # a broad line whose flat top jitters the seed) belongs to another line or to the
+            # midpoint of a blend; a fit with HWHM below a quarter step has collapsed onto a
+            # single bin (usually noise, but also some sub-step lines: MIN_FIT_GAMMA_STEPS)
+            if fit is None:
+                return False
+            if fit["gamma"] < MIN_FIT_GAMMA_STEPS * step_mhz:
+                return False
+            c = fit["center"]
+            xf = np.asarray(fit["x_fit"], dtype=float)
+            if min(c - np.min(xf), np.max(xf) - c) < 0.5 * step_mhz:
+                return False
+            return abs(c - x_pts[idx]) <= 0.5 * max(min_sep_mhz, fit["gamma"])
+
         lorentz_fits = []
-        for idx in selected_peaks:
+        # tallest seed first: on a conflict the line wins over a flank/noise maximum
+        for idx in sorted(selected_peaks, key=lambda i: avgamp0[i], reverse=True):
             fit = fit_lorentzian_near_peak(
-                x=x_pts, y=avgamp0, peak_x=x_pts[idx], fit_window_mhz=fit_window_mhz
+                x=x_pts, y=avgamp0, peak_x=x_pts[idx], fit_window_mhz=window_mhz
             )
-            if fit is not None:
-                lorentz_fits.append(fit)
+            if not _usable(fit, idx) and window_mhz < fit_window_mhz:
+                # clipped window too short (coarse grid) or fit unusable: fall back to the full
+                # window; the seed gate still rejects the midpoint fit of a resolved doublet
+                fit = fit_lorentzian_near_peak(
+                    x=x_pts, y=avgamp0, peak_x=x_pts[idx], fit_window_mhz=fit_window_mhz
+                )
+            if not _usable(fit, idx):
+                continue
+            # drop a fit that duplicates an accepted line
+            if any(abs(fit["center"] - f["center"]) < min_sep_mhz for f in lorentz_fits):
+                continue
+            lorentz_fits.append(fit)
+        lorentz_fits.sort(key=lambda f: f["center"])
 
         data["data"]["two_tone_peak_freqs"] = np.array([x_pts[i] for i in selected_peaks])
         data["data"]["two_tone_peak_amps"] = np.array([avgamp0[i] for i in selected_peaks])
