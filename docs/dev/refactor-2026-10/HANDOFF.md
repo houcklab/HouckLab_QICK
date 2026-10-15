@@ -156,6 +156,18 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     when not bimodal, classifier_* fit fields in the summary) is the default ZSP classifier; 'apriori' aliases it,
     'apriori_midpoint' keeps the old behaviour (golden byte-identical). TIER C left: automatic resolved-jump warning /
     HMM classifier; noise-crossing rate inflation is documented (bin, or SNR >= ~5), not fixable per sample.
+49. `5ce824b0` fix(experiments): F14+F20+F24+F27 — every regime-A program uses cover_readout_window (window 4608
+    samples, tone 6581, measure waiti 6580; generator-clock tone/drive lengths; T1_SS normalises by the declared
+    window; ZSP read_length on the readout clock 1536 + compiled-period check) (golden: 6254 leaves, hw/data_digest/
+    sets in 33 labels; no cfg_access/outcome/yoko change). Averaged regime-A IQ amplitudes are NOT comparable with
+    records before 2026-10-15. Left: the hard-coded [0, 1] readout loops (switching to ro_chs drops ADC 1 from the
+    payload: separate change); sample_period_us_compiled not added.
+TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
+dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
+Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
+B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
+B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
+Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
 
