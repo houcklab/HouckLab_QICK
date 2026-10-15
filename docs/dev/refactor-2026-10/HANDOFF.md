@@ -147,6 +147,11 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
 46. `206734b4` fix(readout_optimize): F33 — qubit-pulse map brackets each gain row with shared |g> blocks (463
     programs instead of 882), g_ref_index / g_block_time / g_drift_* saved, gated drift warning (golden: 48 leaves,
     SingleShot_QubitOptimize hw counts + fid/overlap digests + the four new keys).
+47. `914e45f9` fix(spectroscopy): F05 part 1 — partner significance gate (MIN_PARTNER_SNR 5, edge baseline,
+    parity_partner_snr provenance, min_partner_snr overrides), estimate_noise_floor dedupe; three gate-off harness
+    labels keep the ZSP pipeline and the two-tone quasi-CW record under the golden (43 labels per board) (golden:
+    114 leaves in the plain ZSP / two-tone labels, which now raise / step to budget on the noise-only harness
+    spectra). Not done: F05 part 2 (joint 1-vs-2 line fit, tier B) and AutoCoherence |I+iQ|^2 -> project_iq_signal.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
 
