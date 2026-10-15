@@ -137759,19 +137759,19 @@
           "fname": "<DATA>/Q5//SingleShot_OptQubit/SingleShot_OptQubit_<DATE>/SingleShot_OptQubit_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 882,
-              "configure_readout": 882,
-              "load_bin_program": 882,
-              "load_pulse_data": 882,
-              "reload_mem": 882,
-              "set_nyquist": 1764,
-              "start_readout": 882,
-              "start_src": 1764,
-              "stop_tproc": 882
+              "config_avg": 463,
+              "configure_readout": 463,
+              "load_bin_program": 463,
+              "load_pulse_data": 463,
+              "reload_mem": 463,
+              "set_nyquist": 926,
+              "start_readout": 463,
+              "start_src": 926,
+              "stop_tproc": 463
             },
-            "digest": "36b86615d5fe818522873b5291385918",
+            "digest": "4e3662a3f5ef918bc371c2dc3b62ad24",
             "first_program": "f8ee4d8d3fdd482e",
-            "n_programs": 882,
+            "n_programs": 463,
             "n_unique_programs": 442
           },
           "index": 0,
@@ -137782,8 +137782,8 @@
               },
               "name": "acquire",
               "sets": {
-                "angle": -0.8394993709964199,
-                "fid": 0.0482376852447631,
+                "angle": -1.1726287427175677,
+                "fid": 0.02435035842293909,
                 "gain_pts": {
                   "__ndarray__": {
                     "dtype": "float64",
@@ -137812,7 +137812,7 @@
                     ]
                   }
                 },
-                "threshold": -2.797791658952817
+                "threshold": 2.613110505768308
               }
             },
             {
@@ -138223,10 +138223,59 @@
                   "dtype": "float64",
                   "head": [
                     0.06212424849699394,
-                    0.038000000000000034,
-                    0.04972672672672673
+                    0.07259659659659656,
+                    0.058643814154836216
                   ],
-                  "sha1": "920dab1f81980b37",
+                  "sha1": "eef61f5ed95c9b53",
+                  "shape": [
+                    21,
+                    21
+                  ]
+                },
+                "data/g_block_time": {
+                  "dtype": "float64",
+                  "head": [
+                    1.0,
+                    2.0,
+                    3.0
+                  ],
+                  "sha1": "c23fa1ea75de343f",
+                  "shape": [
+                    22
+                  ]
+                },
+                "data/g_drift_frac": {
+                  "dtype": "float64",
+                  "head": [
+                    0.8272863812655928,
+                    0.8477200326608009,
+                    -0.8721493771323824
+                  ],
+                  "sha1": "e6ba226c8c0703f7",
+                  "shape": [
+                    21
+                  ]
+                },
+                "data/g_drift_sigma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.12581606755481672,
+                    0.05179569308189866,
+                    -0.05380259208511353
+                  ],
+                  "sha1": "650d67e6de962ceb",
+                  "shape": [
+                    21
+                  ]
+                },
+                "data/g_ref_index": {
+                  "dtype": "int64",
+                  "head": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "sha1": "59b4e8335b99c675",
                   "shape": [
                     21,
                     21
@@ -138248,10 +138297,10 @@
                   "dtype": "float64",
                   "head": [
                     0.00834364909401151,
-                    0.006722570760494756,
-                    0.006711921986014164
+                    0.008710535815976384,
+                    0.007968151800434623
                   ],
-                  "sha1": "ea576cb44b2e76a7",
+                  "sha1": "1ce44e6c3cbd67a7",
                   "shape": [
                     21,
                     21
@@ -276751,19 +276800,19 @@
           "fname": "<DATA>/Q5//SingleShot_OptQubit/SingleShot_OptQubit_<DATE>/SingleShot_OptQubit_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 882,
-              "configure_readout": 882,
-              "load_bin_program": 882,
-              "load_pulse_data": 882,
-              "reload_mem": 882,
-              "set_nyquist": 1764,
-              "start_readout": 882,
-              "start_src": 1764,
-              "stop_tproc": 882
+              "config_avg": 463,
+              "configure_readout": 463,
+              "load_bin_program": 463,
+              "load_pulse_data": 463,
+              "reload_mem": 463,
+              "set_nyquist": 926,
+              "start_readout": 463,
+              "start_src": 926,
+              "stop_tproc": 463
             },
-            "digest": "6997e8e64c127d3e153e0c0accca2124",
+            "digest": "ee388182ebc3fa5c09acfc60e00dbf6f",
             "first_program": "e6026944a6b18fec",
-            "n_programs": 882,
+            "n_programs": 463,
             "n_unique_programs": 442
           },
           "index": 0,
@@ -276774,8 +276823,8 @@
               },
               "name": "acquire",
               "sets": {
-                "angle": -0.8394993709964199,
-                "fid": 0.0482376852447631,
+                "angle": -1.1726287427175677,
+                "fid": 0.02435035842293909,
                 "gain_pts": {
                   "__ndarray__": {
                     "dtype": "float64",
@@ -276804,7 +276853,7 @@
                     ]
                   }
                 },
-                "threshold": -2.797791658952817
+                "threshold": 2.613110505768308
               }
             },
             {
@@ -277215,10 +277264,59 @@
                   "dtype": "float64",
                   "head": [
                     0.06212424849699394,
-                    0.038000000000000034,
-                    0.04972672672672673
+                    0.07259659659659656,
+                    0.058643814154836216
                   ],
-                  "sha1": "920dab1f81980b37",
+                  "sha1": "eef61f5ed95c9b53",
+                  "shape": [
+                    21,
+                    21
+                  ]
+                },
+                "data/g_block_time": {
+                  "dtype": "float64",
+                  "head": [
+                    1.0,
+                    2.0,
+                    3.0
+                  ],
+                  "sha1": "c23fa1ea75de343f",
+                  "shape": [
+                    22
+                  ]
+                },
+                "data/g_drift_frac": {
+                  "dtype": "float64",
+                  "head": [
+                    0.8272863812655928,
+                    0.8477200326608009,
+                    -0.8721493771323824
+                  ],
+                  "sha1": "e6ba226c8c0703f7",
+                  "shape": [
+                    21
+                  ]
+                },
+                "data/g_drift_sigma": {
+                  "dtype": "float64",
+                  "head": [
+                    0.12581606755481672,
+                    0.05179569308189866,
+                    -0.05380259208511353
+                  ],
+                  "sha1": "650d67e6de962ceb",
+                  "shape": [
+                    21
+                  ]
+                },
+                "data/g_ref_index": {
+                  "dtype": "int64",
+                  "head": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "sha1": "59b4e8335b99c675",
                   "shape": [
                     21,
                     21
@@ -277240,10 +277338,10 @@
                   "dtype": "float64",
                   "head": [
                     0.00834364909401151,
-                    0.006722570760494756,
-                    0.006711921986014164
+                    0.008710535815976384,
+                    0.007968151800434623
                   ],
-                  "sha1": "ea576cb44b2e76a7",
+                  "sha1": "1ce44e6c3cbd67a7",
                   "shape": [
                     21,
                     21

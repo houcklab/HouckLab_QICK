@@ -242,7 +242,7 @@ Outcomes are identical on both boards (every experiment's `hw` digest differs
 between them). Full capture: ~13 min for both boards in one process (pytest,
 24-core Windows box, BLAS pinned to one thread), dominated by
 `RunUndrivenSingleShot` (~2 min per board: the real 1e6-shot analysis),
-`RunInterleavedCoherence` (~75 s), `SingleShot_QubitOptimize` (~26 s),
+`RunInterleavedCoherence` (~75 s), `SingleShot_QubitOptimize` (~10 s),
 `RunZeroSpanParity[validate]` (~30 s).
 
 | Run label | Outcome | Captured | Skipped | Classes (count) | tProc programs |
@@ -278,7 +278,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunUndrivenSingleShot` | stopped_at_budget | 4 | 9 | UndrivenSingleShot x4 | 4 |
 | `RunT1SS` | stopped_at_budget | 8 | 9 | SingleShotProgramFFMUX x4, T1_SS x4 | 408 |
 | `SingleShot_ReadoutOptimize` | completed | 1 | 0 | ReadOpt_wSingleShotFF x1 | 294 |
-| `SingleShot_QubitOptimize` | completed | 1 | 0 | QubitPulseOpt_wSingleShotFF x1 | 882 |
+| `SingleShot_QubitOptimize` | completed | 1 | 0 | QubitPulseOpt_wSingleShotFF x1 | 463 |
 | `RunAutoCoherence` | stopped_at_budget | 5 | 9 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4 | 9 |
 | `RunAutoCoherence[fast]` | completed | 14 | 3 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4, T1FF x3, T2R x3, T2EMUX x3 | 18 |
 | `RunZeroSpanParity` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
