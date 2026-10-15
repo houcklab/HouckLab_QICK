@@ -169,6 +169,12 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     gain/relax/program + the two transmission combo labels' pulse_freq no longer carried from noise). Follow-ups:
     ZSP stage-7 power knob unguarded; charge_sweep / charge-dispersion keep spec gain only when Gauss; transmission
     JSON pulse_freq is display's fit minimum even when the gate rejects it.
+51. `192e09a3` fix(coherence): tier-B batch B2 — F83 (tProc cycle from soccfg, quantised_t2e_step), F78 (realised wait
+    axes), F29 (virtual Ramsey detuning f_virt_mhz, detuning_mhz; SIGN of the f_ge correction unverified on hardware:
+    one-time check with freq_shift = +0.05), F65 (warn-only AutoCoherence timing checks, T1_expected_us pre-flight),
+    F68+F79 (principal-axis rotation for T1/T2E), F66 (T1_SS two-pass model-weighted fit, readout-corrected population,
+    pi_gain played), F82 (AutoCoherence Qubit_Pulse != Qubit_Readout guard) (golden: 4956 leaves in the 9 coherence
+    labels: cfg step / phase_step / f_virt_mhz, T2R program hashes, fits and axes, T1_SS keys). 27 + 3 Opus agents.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
