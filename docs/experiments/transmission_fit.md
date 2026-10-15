@@ -6,8 +6,9 @@ Class `CavitySpecFF` (see `qicklab.experiments.transmission`), hanger fit in
 ## What it measures
 
 Resonator transmission |S21| versus probe frequency around the current readout frequency,
-followed by a hanger-model fit. The minimum of the fitted hanger curve replaces `pulse_freq`
-for every later regime-A step in the same plan. Use it to find or re-centre the readout
+followed by a hanger-model fit. If the trace passes the [carry-over gate](#carry-over-gate),
+the minimum of the fitted hanger curve replaces `pulse_freq` for every later regime-A step in
+the same plan. Use it to find or re-centre the readout
 resonator at the start of a session. For the same sweep with fixed averaging that can also
 track a peak (`cavity_min=False`), see [transmission_sweep](transmission_sweep.md).
 
@@ -71,8 +72,9 @@ Carry-over: `pulse_freq` of the session config is set to `hanger_fit_min_freq_mh
 minimum of the display fit's curve (readout sits at the transmission minimum; with `asym != 0`
 it differs from the `f0` parameter). It is the value saved in the h5 and marked red in
 `_hanger_fit.png`. If the display fit failed, the step prints a `WARNING` and carries the raw
-argmin of |S21| instead. The value persists for all following regime-A steps and is discarded
-at the next switch to regime B.
+argmin of |S21| instead. Either candidate is written only if it passes the
+[carry-over gate](#carry-over-gate); otherwise `pulse_freq` is left as it was. The value
+persists for all following regime-A steps and is discarded at the next switch to regime B.
 
 ## Analysis
 
@@ -95,6 +97,53 @@ Assumptions: a single dip in the window (hanger geometry). For a peak-type respo
 [transmission_sweep](transmission_sweep.md) with `cavity_min=False`; this step always fits
 a dip. Failure modes: no resonance in the window (f0 pinned to an edge), two resonances,
 or a dip at the edge of the span; check the PNG before trusting the carry-over.
+
+## Carry-over gate
+
+`qicklab.analysis.fitting.assess_resonator_fit` (and `assess_resonator_feature` when there is no
+fit) decides whether the trace holds a resonator worth moving the readout to. All checks
+must pass:
+
+| Check | Rule |
+|---|---|
+| (a) depth | baseline median minus the lowest point within one linewidth of f0 >= 6 x 1.4826 x MAD of the baseline. Baseline = points more than 3 linewidths from f0 (at least 10 of them, which caps the linewidth of a centred resonator at about (span - 10 steps)/6, i.e. ~1.6 MHz on a +-5 MHz, 201-point sweep); with a fit, the MAD is of the fit residuals there, so a Fano-sloped baseline is not counted as noise; a straight line fitted to those baseline points is removed first, so a tilted background is not either |
+| (b) linewidth | linewidth >= 2 frequency steps and < half the span; with a fit, also the data's own half-power width (number of contiguous points below half-way from the baseline to the lowest point in linear power \|S21\|^2, around the lowest point within one linewidth of f0) >= 2 steps, so a fit that settles on one bad point is rejected. Widths are counted in grid points, so a two-point run is exactly 2 steps. A real resonance narrower than 2 steps cannot be told from a spike and is rejected too: on the default +-5 MHz / 201-point grid (step 0.05 MHz) that is every kappa below 0.1 MHz, and kappa near 0.1 MHz passes only sometimes. The printed reason then says `too narrow for the grid`; raise `num_points` or narrow `span` until the step is at most kappa/2 (e.g. +-2 MHz / 401 points, step 0.01 MHz, for kappa 0.03 MHz, keeping (span - 10 steps)/6 above kappa) |
+| (c) edge | f0 >= 2 linewidths from both sweep edges |
+
+Linewidth = \|f0\|/Qtot of the display fit (`hanger_fit_kappa_tot_mhz`); for the raw argmin
+(failed fit) or a raw peak it is the number of contiguous points beyond half the feature height
+in linear power times the step (the full width at half power, which is the linewidth of a
+Lorentzian; half the dB depth would make a deep notch look one point wide). Neither `Qtot <= Qext` (the asym term makes a fitted Qtot > Qext legitimate on a
+clean dip) nor the fit's `perr` (as small as 8 kHz on pure noise) is used.
+
+If any check fails, the step prints `WARNING: no resonator dip passes the carry-over gate`, every
+failed check and the metrics (`depth_sigmas`, `linewidth_steps`, `edge_linewidths`,
+`n_baseline`, ...), then `Cavity frequency NOT updated`, and leaves `pulse_freq` unchanged (an
+earlier good carry-over survives). A gate that raises counts as failed. The verdict is printed
+only; the h5 and JSON are unchanged.
+
+What it separates, on a +-5 MHz sweep with the display fit's start point: the checks work
+together, and the depth check alone does not separate noise. Of 400 resonator-free noise traces
+(0.3 dB on a flat line) at each of 201, 401 and 1001 points, none passed the gate, but most
+fits reach 1-4 sigma, a few 4-6 sigma, and a few broad fits more than 6 sigma (8.0 sigma at 201
+points, 8.1 and 22 sigma at 401; the 22 sigma one had 3 baseline points); every trace above
+4 sigma failed at least two checks (baseline count, edge, linewidth or the data's half-power
+width). A single point pulled 1-20 dB below a flat line was rejected in 60/60 cases, by the
+data's half-power width (before that check, a fit to it passed up to 15/20 times with a
+linewidth of 2.2 steps). A 2 dB dip reaches ~20 sigma under 0.1 dB noise but only 6-8 sigma
+(marginal, 18/20 passed) under 0.3 dB, and a 14 dB dip over 100 sigma. Deep, near-critically-coupled notches (Qtot/Qext 0.9-1.05,
+20-34 dB, minimum on a grid point, with or without a 0.8 rad Fano phase) pass with a half-power
+width of about one linewidth; half-way down in dB they are one point wide, which is why the
+width is measured in power. A tilted background
+(0.3-1 dB/MHz) does not count as noise; but the hanger model has no slope term, and on such a
+tilt `display()`'s fit itself often lands on a broad Fano shape far from the dip (3 and 6 dB
+dips at 0.3 dB/MHz, every dip up to 10 dB at 0.6 dB/MHz); the gate then rejects that fit,
+correctly, and `pulse_freq` is not updated. Level the background (calibrate the line, narrow the
+span) if that happens. A real dip that fails is too shallow for the averaging (raise `reps`), too
+wide for the span (a centred linewidth above about (span - 10 steps)/6 leaves fewer than 10
+baseline points: raise `span`) or too narrow for the grid (raise
+`num_points`). Tests:
+`tests/test_resonator_gate.py`, `tests/test_run_transmission.py`.
 
 ## Findings & notes
 
@@ -119,6 +168,7 @@ or a dip at the edge of the span; check the PNG before trusting the carry-over.
 - If the display fit fails, the saved JSON records `pulse_freq` = last sweep point, not the
   sweep centre.
 - A point with zero amplitude gives `-inf` dB and breaks the fit.
-- A failed display fit is reported (`Hanger fit failed: ...`, then the step's `WARNING`) but
-  the step continues with the raw argmin; an accepted-but-wrong fit (f0 at a bound, Qtot >
-  Qext) is not yet rejected, so check the PNG.
+- A failed display fit is reported (`Hanger fit failed: ...`, then the step's `WARNING`) and
+  the step judges the raw argmin instead. The [carry-over gate](#carry-over-gate) rejects fits
+  to noise, an f0 at the sweep edge and implausible linewidths, but not a clean dip of the
+  wrong resonator (two resonances in the window): check the PNG.

@@ -91,7 +91,7 @@ spectroscopy-type step and with the regime-A base config.
 | span | `SpecSpan` | 10 MHz (+/-) | centred on `Qubit.freq` |
 | points | `SpecNumPoints` | 201 | |
 | drive gain | `gain` | 800 | the gain `two_tone_spec` actually plays (DAC units) |
-| base-config spec gain | `qubit_gain` | 1000 | used by `trans_qubit_spec`; regime-A `qubit_gain` means spec gain, not pi gain |
+| base-config spec gain | `qubit_gain` | 1000 | used by `constant_two_tone`, and by `charge_sweep`, `charge_dispersion_quasicw` and `two_tone_charge_dispersion_quasicw` when `Gauss` is False; regime-A `qubit_gain` means spec gain, not pi gain |
 | drive shape | `Gauss`, `sigma`, `qubit_length` | flat 50 us (`Gauss` False) | long weak drive = narrow line; `qubit_length` ignored when `Gauss` is True |
 | averaging | `reps`, `rounds`, `relax_delay` | 20, 10, 2500 us | |
 | peak finding | `min_sep_MHz` | 0.2 MHz | minimum separation for two peaks (doublets) |
@@ -147,7 +147,7 @@ Write back: `Qubit.gain`, and `Qubit.sigma` if changed. `pi2_gain` defaults to `
 stage 5.
 
 Known: the gain step is `int(max_gain / number_of_steps)`, so 10000/101 gives step 99 and the sweep
-ends at 9900; the flat-top path forces `relax_delay` 8000 us.
+ends at 9900; the flat-top path uses `flattop_relax_delay` (default 8000 us) instead of `relax_delay`.
 
 ## 5. Single shot and optimisation
 

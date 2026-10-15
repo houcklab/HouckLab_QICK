@@ -81,7 +81,7 @@ that later steps use it. There are exactly two:
 
 | Step | Reads `qubit_gain` as | Correct regime |
 |---|---|---|
-| `constant_two_tone`, `trans_qubit_spec` (when `Gauss` is False) | spec drive gain | A |
+| `constant_two_tone`; `charge_sweep`, `charge_dispersion_quasicw` and `two_tone_charge_dispersion_quasicw` when their `Gauss` is False | spec drive gain | A |
 | `t1_ss` (`T1_SS` plays `cfg["qubit_gain"]` as its pi pulse) | pi gain | B only; in A it would play the spec gain |
 | `qubit_optimize` (centre of the gain scan) | pi gain (or pi/2 gain with `pi2_SS`) | B only; in A `cfg["pi2_SS"]` is missing and the step raises `KeyError` |
 | `single_shot` | pi gain, replaced by `pi2_gain` when `pi2_SS` | B |

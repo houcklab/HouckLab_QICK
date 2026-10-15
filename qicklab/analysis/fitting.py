@@ -57,6 +57,159 @@ def fit_hanger_transmission(freq, amp_linear=None, amp_db=None, startpoint=None,
     }
 
 
+RESONATOR_GATE_MIN_DEPTH_SIGMAS = 6.0  # feature depth >= 6 robust sigma of the baseline
+RESONATOR_GATE_BASELINE_LINEWIDTHS = 3.0  # baseline = points more than 3 linewidths from f0
+RESONATOR_GATE_MIN_BASELINE_POINTS = 10
+RESONATOR_GATE_MIN_LINEWIDTH_STEPS = 2.0  # linewidth >= 2 frequency steps
+RESONATOR_GATE_MAX_LINEWIDTH_FRAC_SPAN = 0.5  # linewidth < half the span
+RESONATOR_GATE_EDGE_LINEWIDTHS = 2.0  # f0 >= 2 linewidths inside the span
+
+
+def _half_depth_points(y_db, idx, baseline_db, dip):
+    """Number of contiguous points around ``idx`` beyond half the feature height in linear
+    power (half-way from ``baseline_db`` to ``y_db[idx]`` in |S21|^2, where the Lorentzian FWHM
+    is defined; half the dB depth would make a deep, near-critically-coupled notch look one
+    point wide). The run's width in x is this count times the grid step."""
+    half_db = 10 * np.log10(0.5 * (10 ** (baseline_db / 10) + 10 ** (y_db[idx] / 10)))
+    beyond = (y_db <= half_db) if dip else (y_db >= half_db)
+    lo = hi = idx
+    while lo > 0 and beyond[lo - 1]:
+        lo -= 1
+    while hi < y_db.size - 1 and beyond[hi + 1]:
+        hi += 1
+    return hi - lo + 1
+
+
+def _at_least(value, threshold):
+    """``value >= threshold`` up to float rounding of step ratios (2 steps may come out as
+    1.9999999999)."""
+    return bool(value >= threshold * (1 - 1e-9))
+
+
+def assess_resonator_feature(x, y_db, f0, linewidth=None, dip=True, y_model=None):
+    """Quality gate for carrying a resonator frequency ``f0`` found in the trace ``y_db(x)``.
+
+    Checks (docs/experiments/transmission_fit.md#carry-over-gate): (a) the dip (``dip=True``) or
+    peak depth, from the off-resonant baseline median to the extreme point within one linewidth
+    of f0, is at least 6 x 1.4826 x MAD of that baseline (points more than 3 linewidths from f0;
+    at least 10 of them; with ``y_model``, the fitted curve on ``x``, the MAD is of the residuals
+    ``y_db - y_model`` there, so a Fano-skewed baseline is not counted as noise; a straight line
+    fitted to those baseline points is removed first, so a tilted background is not either);
+    (b) the linewidth is at least 2 frequency steps and below half the span, and with a given
+    ``linewidth`` (a fit) the data's own half-power width (``_half_depth_points``) around the
+    extreme point within one linewidth of f0 is at least 2 steps too, so a fit that settles on a
+    single bad point fails; (c) f0 is at least 2 linewidths inside the span. The baseline rule
+    caps a centred linewidth at about (span - 10 steps)/6. ``linewidth`` (x units) defaults to
+    the full width at half power of the feature around the point nearest f0 (no fit, e.g. a raw
+    peak), counted in grid points times the step.
+    Never raises on finite data. Returns ``(ok, reasons, metrics)``: reasons lists every failed
+    check (empty when ok), metrics the numbers they were judged on.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y_db, dtype=float).ravel()
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+    resid = y if y_model is None else y - np.asarray(y_model, dtype=float).ravel()[order]
+    f0 = float(f0)
+    span = float(x[-1] - x[0])
+    step = float(np.median(np.diff(x)))
+    if linewidth is None:
+        idx = int(np.argmin(np.abs(x - f0)))
+        linewidth = _half_depth_points(y, idx, float(np.median(y)), dip) * step
+        source = "half-power width"
+    else:
+        source = "fit"
+    lw = abs(float(linewidth))
+
+    off = np.abs(x - f0) > RESONATOR_GATE_BASELINE_LINEWIDTHS * lw
+    near = np.abs(x - f0) <= lw
+    if not near.any():
+        near = np.abs(x - f0) == np.min(np.abs(x - f0))
+    n_base = int(off.sum())
+    if n_base:
+        baseline = float(np.median(y[off]))
+        r_off = resid[off]
+        if n_base >= RESONATOR_GATE_MIN_BASELINE_POINTS:  # remove a linear background tilt
+            r_off = r_off - np.polyval(np.polyfit(x[off] - f0, r_off, 1), x[off] - f0)
+        noise = estimate_noise_floor(r_off)[1]
+    else:
+        baseline, noise = np.nan, np.nan
+    i_near = np.flatnonzero(near)
+    i_ext = int(i_near[np.argmin(y[near])] if dip else i_near[np.argmax(y[near])])
+    depth = (baseline - y[i_ext]) if dip else (y[i_ext] - baseline)
+    edge = float(min(f0 - x[0], x[-1] - f0) / lw) if lw > 0 else np.inf
+
+    metrics = {
+        "f0": f0,
+        "linewidth": lw,
+        "linewidth_source": source,
+        "linewidth_steps": lw / step if step > 0 else np.nan,
+        "span": span,
+        "depth_db": depth,
+        "noise_db": noise,
+        "depth_sigmas": depth / noise if n_base and noise > 0 else np.nan,
+        "n_baseline": n_base,
+        "edge_linewidths": edge,
+    }
+    if source == "fit":  # needs a baseline: without one only the baseline check is reported
+        data_n = _half_depth_points(y, i_ext, baseline, dip) if n_base else np.nan
+        metrics["data_width_steps"] = float(data_n)
+    kind = "dip" if dip else "peak"
+    narrow_hint = (
+        f"a resonance too narrow for the grid (step {step:.3g}); if the trace shows a real "
+        f"{kind} there, raise num_points or narrow span (do not widen it)"
+    )
+    reasons = []
+    if n_base < RESONATOR_GATE_MIN_BASELINE_POINTS:
+        reasons.append(
+            f"only {n_base} points more than {RESONATOR_GATE_BASELINE_LINEWIDTHS:g} linewidths "
+            f"from f0 (< {RESONATOR_GATE_MIN_BASELINE_POINTS}): no baseline to judge the {kind} by"
+        )
+    elif not metrics["depth_sigmas"] >= RESONATOR_GATE_MIN_DEPTH_SIGMAS:
+        reasons.append(
+            f"{kind} depth {depth:.3g} dB is {metrics['depth_sigmas']:.2f} x the baseline noise "
+            f"{noise:.3g} dB (< {RESONATOR_GATE_MIN_DEPTH_SIGMAS:g})"
+        )
+    if not _at_least(metrics["linewidth_steps"], RESONATOR_GATE_MIN_LINEWIDTH_STEPS):
+        reasons.append(
+            f"linewidth {lw:.3g} is {metrics['linewidth_steps']:.2f} frequency steps "
+            f"(< {RESONATOR_GATE_MIN_LINEWIDTH_STEPS:g}): {narrow_hint}"
+        )
+    if (
+        source == "fit"
+        and n_base
+        and not _at_least(metrics["data_width_steps"], RESONATOR_GATE_MIN_LINEWIDTH_STEPS)
+    ):
+        reasons.append(
+            f"the data's half-power width around the {kind} is "
+            f"{metrics['data_width_steps']:.2f} frequency steps "
+            f"(< {RESONATOR_GATE_MIN_LINEWIDTH_STEPS:g}): a single-point {kind}, either a "
+            f"spike or {narrow_hint}"
+        )
+    if not lw < RESONATOR_GATE_MAX_LINEWIDTH_FRAC_SPAN * span:
+        reasons.append(
+            f"linewidth {lw:.3g} is not below {RESONATOR_GATE_MAX_LINEWIDTH_FRAC_SPAN:g} x the "
+            f"span {span:.3g}"
+        )
+    if not _at_least(edge, RESONATOR_GATE_EDGE_LINEWIDTHS):
+        reasons.append(
+            f"f0 {f0:.6f} is {edge:.2f} linewidths from the sweep edge "
+            f"(< {RESONATOR_GATE_EDGE_LINEWIDTHS:g})"
+        )
+    return not reasons, reasons, metrics
+
+
+def assess_resonator_fit(x, y_db, popt):
+    """``assess_resonator_feature`` for a hanger fit: f0 = popt[0], linewidth = |f0|/Qtot (the
+    hanger FWHM on the fit axis), dip, noise from the fit residuals. Neither Qtot <= Qext (the
+    asym term makes Qtot > Qext legitimate on a clean dip) nor perr (tiny on pure noise) is used."""
+    f0, qtot = float(popt[0]), float(popt[1])
+    y_model = hanger_model_db(np.asarray(x, dtype=float), *popt)
+    return assess_resonator_feature(
+        x, y_db, f0, linewidth=abs(f0) / qtot, dip=True, y_model=y_model
+    )
+
+
 def lorentzian_dip(f, y0, A, f0, gamma):
     return y0 - A / (1.0 + ((f - f0) / gamma) ** 2)
 

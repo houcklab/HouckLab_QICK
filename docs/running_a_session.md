@@ -108,7 +108,9 @@ step can appear with different overrides. Each step belongs to a regime:
 
 `run()` rebuilds the config whenever the regime changes between consecutive steps. A rebuild
 starts from the board defaults, so it drops the two in-session carry-overs: the cavity
-frequency written by `transmission_fit`/`transmission_sweep` (`pulse_freq`) and the readout
+frequency written by `transmission_fit`/`transmission_sweep` (`pulse_freq`; written only when
+the trace passes the [carry-over gate](experiments/transmission_fit.md#carry-over-gate),
+otherwise the previous value stays) and the readout
 phase written by the active-reset calibration (`res_phase`). If a regime-B step needs a new
 cavity frequency, put it in the device file (the calibration line printed by
 `transmission_fit` is paste-ready). See [concepts/config_regimes.md](concepts/config_regimes.md)
@@ -302,7 +304,6 @@ print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
 
 Error messages and their fixes are collected in [troubleshooting.md](troubleshooting.md).
 
-- `transmission_sweep` ignores the `transmission` group's `reps`/`rounds` (always 20/20).
 - Regime switches drop `pulse_freq` and `res_phase` (above). A PLAN that runs
   `active_reset_verify` and then `single_shot` sees `res_phase` reset to 0.
 - Some steps move the bias and do not restore it (AutoCoherence sweet-spot walk, some charge

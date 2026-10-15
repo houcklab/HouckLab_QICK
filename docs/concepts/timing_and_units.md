@@ -75,6 +75,22 @@ amplitude. Code clamps scans to 32767 (`qubit_optimize`), and AutoCoherence caps
 frequency-calibration gain at 30000. `Device.validate()` rejects gains outside 0..32767 and a
 pi/2 gain larger than the pi gain.
 
+qick 0.2.334 does not check gains: 40000 compiles and the register plays it as -25536 (a
+phase-flipped, smaller tone), so a Rabi sweep past 32767 folds back instead of rising. Since
+2026-10-15 the code refuses a drive gain outside 0..32767 with a ValueError naming the parameter
+(`qicklab.core.config.check_gain` / `validate_gains`), before any folder, program or hardware call:
+
+| Where | What is checked |
+|---|---|
+| every experiment's constructor | `pulse_gain`, `qubit_gain`, `pi_gain`, `pi2_gain`, `qubit_gains`, `gain_start`/`gain_end`, `cav_gain_Start`/`Stop`, `qubit_gain_Start`/`Stop` when present; `AmplitudeRabiFF` also its register sweep `start` and `start + step*(expts-1)` |
+| `build_context` | the selected `Qubit_Parameters` `Readout.Gain`, `Qubit.Gain`, `Qubit.pi2_Gain`, and `Spec_relevant_params["qubit_gain"]` |
+| `run_amplitude_rabi`, `run_spec_gain_length_sweep` | `max_gain`, every entry of `sweep_gains` |
+| `ZeroSpanParity.set_qubit_gain` | `gain` |
+
+Fast-flux gains are not drive gains and are not checked (they may be negative). Not covered: the
+ZeroSpanParity stage-7 environment sweep, which writes its placeholder values (−10 … −4) as
+`pulse_gain` and rebuilds the program directly ([known issue](../experiments/zero_span_parity.md)).
+
 ### Nyquist zones
 
 `nqz` (readout DAC, `res_ch`) and `qubit_nqz` (qubit DAC, `qubit_ch`) are passed to

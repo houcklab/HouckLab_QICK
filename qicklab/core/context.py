@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pyvisa
 
+from qicklab.core.config import check_gain
 from qicklab.hardware.board import BaseConfig, FF_Qubits
 from qicklab.hardware.rfsoc import makeProxy
 from qicklab.hardware.yoko import open_charge_yoko, ramp_to
@@ -64,7 +65,15 @@ def build_context(
     """Connect RFSoC + yoko, build the regime-A config and return a populated Context.
 
     Regime A and its window: docs/concepts/config_regimes.md, docs/concepts/readout_window.md.
+    Raises ValueError before touching hardware if a selected gain is outside 0..32767.
     """
+    readout_entry = Qubit_Parameters[str(Qubit_Readout)]["Readout"]
+    qubit_entry = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]
+    check_gain(f"Qubit_Parameters['{Qubit_Readout}']['Readout']['Gain']", readout_entry["Gain"])
+    check_gain(f"Qubit_Parameters['{Qubit_Pulse}']['Qubit']['Gain']", qubit_entry["Gain"])
+    check_gain(f"Qubit_Parameters['{Qubit_Pulse}']['Qubit']['pi2_Gain']", qubit_entry["pi2_Gain"])
+    check_gain("Spec_relevant_params['qubit_gain']", Spec_relevant_params["qubit_gain"])
+
     soc, soccfg = makeProxy()
 
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]

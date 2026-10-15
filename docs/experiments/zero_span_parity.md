@@ -588,7 +588,8 @@ sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` t
   the None parity frequencies are fixed: [stage 8](#stage-8-instrument-controls)):
   - The stage-7 environment sweep writes the "power_dB" values (−10 … −4) directly as
     `pulse_gain` DAC units, i.e. negative gains. It is a placeholder for an
-    attenuator/YOKO sweep.
+    attenuator/YOKO sweep, and it bypasses the [gain guard](../concepts/timing_and_units.md#gains)
+    (it rebuilds the program directly).
   - `build_evidence_report` writes a non-ASCII warning sign with the default encoding.
     On this Windows machine (cp1252) a sidecar with a stale `analysis_version` raises
     UnicodeEncodeError.

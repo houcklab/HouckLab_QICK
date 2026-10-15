@@ -1,10 +1,12 @@
 """Amplitude Rabi run."""
 
+from qicklab.core.config import check_gain
 from qicklab.core.experiment import finish
 from qicklab.experiments.rabi import AmplitudeRabiFF, AmplitudeRabiFF_N
 
 
 def run_amplitude_rabi(ctx, params):
+    check_gain("Amplitude_Rabi_params['max_gain']", params["max_gain"])
     cfg = ctx.working_config()
     number_of_steps = params["number_of_steps"]
     step = int(params["max_gain"] / number_of_steps)
@@ -33,7 +35,7 @@ def run_amplitude_rabi(ctx, params):
             "rounds": params["rounds"],
             "sigma": ctx.qubit_sigma,
             "f_ge": params["qubit_freq"],
-            "relax_delay": 8000,
+            "relax_delay": params.get("flattop_relax_delay", 8000),
             "flattop_length": ctx.qubit_flattop,
         }
         cfg = cfg | ARabi_config

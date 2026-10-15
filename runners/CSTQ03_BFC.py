@@ -593,6 +593,7 @@ Amplitude_Rabi_params = {
     "reps": 10,
     "rounds": 10,
     "relax_delay": 3000,
+    "flattop_relax_delay": 8000,  # us, replaces relax_delay when the pulse qubit has a flattop_length
     "fit": False,
 }  # Always change the max gain if you don't see it, also compare what you get with Transmission data
 

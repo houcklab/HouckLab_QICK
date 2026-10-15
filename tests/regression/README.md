@@ -310,9 +310,12 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunActiveResetVerify+SingleShot` | completed | 8 | 2 | SingleShotProgramFFMUX x4, ActiveResetVerify x4 | 12 |
 | `RunTransmissionSweep+Run2ToneSpec` | completed | 2 | 0 | CavitySpecFF x1, QubitSpecSliceFF x1 | 202 |
 
-The multi-flag labels do see their carry-overs: Rabi after the transmission
-fit runs at `pulse_freq` 7099.50 MHz (7095.4 alone), and the quasi-CW after the
-two-tone search starts at 2650.99 MHz (2306.57 alone).
+The multi-flag labels do see their carry-overs: the quasi-CW after the
+two-tone search starts at 2650.99 MHz (2306.57 alone). The transmission fit's
+carry-over is exercised but rejected: the synthetic trace has no resonator, so
+the carry-over gate (F52, 2026-10-15) leaves `pulse_freq` at the device 7095.4
+MHz in both transmission multi-flag labels (before it, Rabi ran at the 7099.50
+MHz fitted to noise).
 
 **`RunChargeDispersionRamsey` raises before any capture, and that is a real
 legacy bug, not a harness artefact.** `run_charge_dispersion_ramsey` reads

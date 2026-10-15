@@ -7,6 +7,7 @@ cfg contract and the validation rules: docs/experiments/zero_span_parity.md.
 import numpy as np
 from qick import AveragerProgram
 
+from qicklab.core.config import check_gain
 from qicklab.core.experiment import (
     ExperimentClass,
 )
@@ -269,6 +270,7 @@ class ZeroSpanParity(ExperimentClass):
         """Set the drive gain and rebuild the strobe program (modulated_strobe_acquire)."""
         if self.cfg.get("mode", "strobe") != "strobe":
             raise RuntimeError("set_qubit_gain is strobe-mode only")
+        check_gain("ZeroSpanParity.set_qubit_gain gain", gain)
         self.cfg["qubit_gain"] = gain
         # A caller may have bumped reps_per_chunk since construction.
         if "reps_per_chunk" in self.cfg:

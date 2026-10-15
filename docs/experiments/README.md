@@ -55,7 +55,7 @@ consecutive steps differ in regime. Details in
 | constant_two_tone | `ConstantTwoTone` | A | Resonator + qubit tones on continuously, no readout | [cw_tones.md](cw_tones.md) |
 | constant_tone | `SingleTone` | A | Resonator tone only, no readout | [cw_tones.md](cw_tones.md) |
 | transmission_fit | `CavitySpecFF` | A | Resonator sweep + hanger fit; carries the fit minimum to later steps | [transmission_fit.md](transmission_fit.md) |
-| transmission_sweep | `CavitySpecFF` | A | Fixed-averaging resonator sweep; carries dip (or peak) to later steps | [transmission_sweep.md](transmission_sweep.md) |
+| transmission_sweep | `CavitySpecFF` | A | Resonator sweep; carries dip (or peak) to later steps | [transmission_sweep.md](transmission_sweep.md) |
 | two_tone_spec | `QubitSpecSliceFF` | A | Qubit spectroscopy, up to two peaks + Lorentzian fits | [two_tone_spec.md](two_tone_spec.md) |
 | spec_gain_length_sweep | `QubitSpecSliceFF` | A | Two-tone spec on a grid of drive gain x drive length | [spec_gain_length_sweep.md](spec_gain_length_sweep.md) |
 | trans_qubit_spec | `QubitSpecSliceFF` | A | The same two-tone spec repeated many times (time series) | [trans_qubit_spec.md](trans_qubit_spec.md) |

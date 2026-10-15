@@ -1,6 +1,81 @@
-"""Config helpers: sanity dump and the single-shot config rebuild."""
+"""Config helpers: sanity dump, the drive-gain guard and the single-shot config rebuild."""
+
+import math
+import numbers
+
+import numpy as np
 
 from qicklab.hardware.board import BaseConfig, FF_Qubits
+
+# The tProc v1 gain register is signed 16 bit. qick 0.2.334 compiles larger values without
+# complaint and the DAC plays them wrapped (40000 -> -25536: phase-flipped, wrong amplitude).
+GAIN_MAX = 2**15 - 1
+
+# Drive gains played on res_ch / qubit_ch (0..GAIN_MAX), and the gain-sweep endpoints that
+# become one of them per point. Fast-flux gains are not drive gains and are never checked.
+DRIVE_GAIN_KEYS = (
+    "pulse_gain",
+    "qubit_gain",
+    "pi_gain",
+    "pi2_gain",
+    "qubit_gains",
+    "gain_start",
+    "gain_end",
+    "cav_gain_Start",
+    "cav_gain_Stop",
+    "qubit_gain_Start",
+    "qubit_gain_Stop",
+)
+
+
+def check_gain(name, value, limit=GAIN_MAX):
+    """Raise ValueError if the drive gain `value` (a number or a sequence of them) lies outside 0..limit.
+
+    None, NaN and non-numbers are left to the code that uses them. See
+    docs/concepts/timing_and_units.md#gains.
+    """
+    if isinstance(value, (list, tuple, np.ndarray)):
+        values = np.ravel(np.asarray(value, dtype=object))
+    else:
+        values = [value]
+    for v in values:
+        if isinstance(v, bool) or not isinstance(v, numbers.Real) or math.isnan(v):
+            continue
+        if not 0 <= v <= limit:
+            hint = ""
+            if math.isfinite(v) and v > limit:
+                wrapped = (int(v) + 2**15) % 2**16 - 2**15
+                hint = f" (the 16-bit gain register would play it as {wrapped})"
+            raise ValueError(
+                f"{name} = {v} is outside the DAC gain range 0..{limit}{hint}; "
+                f"qick does not check gains, so fix {name}."
+            )
+
+
+def validate_gains(cfg, sweep_keys=None, where="cfg"):
+    """Raise ValueError if a drive gain of `cfg` (DRIVE_GAIN_KEYS) or a gain sweep endpoint is out of range.
+
+    `sweep_keys` = (start, step, expts) names a tProc register sweep over the drive gain: its
+    first point and its last point start + step * (expts - 1) are checked. Reads a plain copy
+    of `cfg`.
+    """
+    if not isinstance(cfg, dict):
+        return
+    flat = dict(cfg)
+    for key in DRIVE_GAIN_KEYS:
+        if key in flat:
+            check_gain(f"{where}['{key}']", flat[key])
+    if sweep_keys is not None:
+        start_key, step_key, expts_key = sweep_keys
+        start, step, expts = (flat.get(k) for k in sweep_keys)
+        if start is None or step is None or expts is None:
+            return
+        check_gain(f"{where}['{start_key}'] (first sweep point)", start)
+        check_gain(
+            f"{where}['{start_key}'] + {where}['{step_key}'] * ({where}['{expts_key}'] - 1) "
+            f"(last sweep point)",
+            start + step * (int(expts) - 1),
+        )
 
 
 def sanity_dump(cfg, tag=""):

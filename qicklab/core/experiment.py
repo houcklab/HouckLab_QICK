@@ -6,6 +6,8 @@ import traceback
 import h5py
 import numpy as np
 
+from qicklab.core.config import validate_gains
+
 
 class H5File(h5py.File):
     """h5py.File that flushes on open and adds float64 datasets with `add`."""
@@ -83,6 +85,9 @@ def data_paths(outerFolder, path, prefix, now):
 class ExperimentClass:
     """Base class for all experiments"""
 
+    # (start, step, expts) cfg keys when the program's register sweep is over the drive gain
+    gain_sweep_keys = None
+
     def __init__(
         self,
         path="",
@@ -98,7 +103,10 @@ class ExperimentClass:
         """Store cfg/soc/soccfg, create the dated data folder, set fname/iname/cname/titlename.
 
         `path` is both the sub-folder name and the file stem; kwargs go into __dict__ first.
+        Raises ValueError, before any folder is made, if a drive gain in `cfg` is out of range
+        (docs/concepts/timing_and_units.md#gains).
         """
+        validate_gains(cfg, self.gain_sweep_keys, where=f"{type(self).__name__} cfg")
 
         self.__dict__.update(kwargs)
         self.path = path

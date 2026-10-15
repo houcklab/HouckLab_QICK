@@ -180,6 +180,8 @@ class AmplitudeRabiFF(ExperimentClass):
     rotation and optional cosine fit. Use the Gaussian envelope here: the flat-top branch
     ignores the swept gain, so flat-top Rabi is AmplitudeRabiFF_N (docs/experiments/amplitude_rabi.md)."""
 
+    gain_sweep_keys = ("start", "step", "expts")
+
     def __init__(
         self,
         soc=None,

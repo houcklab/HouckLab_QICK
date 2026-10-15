@@ -49,7 +49,7 @@ and the charge-dispersion steps. The sweep is centred on the device qubit freque
 | Name (legacy key) | Legacy default | Units | Meaning |
 |---|---|---|---|
 | `gain` | 800 | DAC | Drive gain actually played by this step |
-| `qubit_gain` | 1000 | DAC | Spec gain in the regime-A base config; used by constant_two_tone and trans_qubit_spec, **not** by this step |
+| `qubit_gain` | 1000 | DAC | Spec gain in the regime-A base config; used by constant_two_tone, and by charge_sweep, charge_dispersion_quasicw and two_tone_charge_dispersion_quasicw when `Gauss` is False; **not** by this step or trans_qubit_spec |
 | `SpecSpan` | 10 | MHz | Half-span of the frequency sweep |
 | `SpecNumPoints` | 201 | - | Number of points |
 | `Gauss` | False | bool | False: const (flat) drive of `qubit_length`; True: Gaussian of `sigma` |
@@ -60,8 +60,8 @@ and the charge-dispersion steps. The sweep is centred on the device qubit freque
 | `relax_delay` | 2500 | us | Wait between shots |
 | `display` | True | bool | `plotDisp` for the two figures |
 | `min_sep_MHz` | 0.2 | MHz | Minimum separation for a second peak |
-| `fit_window_mhz` | 0.5 | MHz | Lorentzian fit window (half-width) around each peak. Fixed at 0.5 by this step |
-| `prominent_ratio` | 0.1 | - | Second peak must be >= this fraction of the highest. Fixed at 0.1 by this step |
+| `fit_window_mhz` | 0.5 | MHz | Lorentzian fit window (half-width) around each peak |
+| `prominent_ratio` | 0.1 | - | Second peak must be >= this fraction of the highest |
 
 ## Outputs
 
@@ -229,7 +229,8 @@ is written.
 
 Display defaults when called directly (not through the step): `min_sep = 0.1` MHz,
 `fit_window_mhz = 3 * min_sep`, `prominent_ratio = 0.35`. The step passes
-`min_sep = min_sep_MHz` (0.2), `fit_window_mhz = 0.5`, `prominent_ratio = 0.1`.
+`min_sep = min_sep_MHz` (0.2) and the spec group's `fit_window_mhz` and `prominent_ratio`
+(0.5 and 0.1 when the keys are absent).
 
 Failure modes: with `prominent_ratio = 0.1` a noise maximum 10 % as tall as the qubit
 peak becomes "peak 2" of the display (the step-4 doublet choice drops it unless it stands
@@ -255,8 +256,8 @@ wider than about 70 % of the span leaves no off-resonant edge for the baseline.
 ## Known issues
 
 - The step plays `gain` (800), not `qubit_gain` (1000); two keys for one knob.
-- `fit_window_mhz` and `prominent_ratio` from the `spec` group are ignored by this step
-  (fixed 0.5 / 0.1); the other spec steps do use them.
+- Before 2026-10 this step ignored the `spec` group's `fit_window_mhz` and
+  `prominent_ratio` (fixed 0.5 / 0.1); it now uses them like the other spec steps (F84).
 - Readouts are hard-coded to ADC 0 and 1 regardless of `ro_chs`; ADC 1 is acquired and
   saved but never analysed.
 - The frequency grid is half-open: the last point is `f_qubit + SpecSpan - step`.

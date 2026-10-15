@@ -52,7 +52,8 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 | `number_of_steps` | 101 | - | Number of gain points |
 | `reps` | 10 | shots | Hardware averages |
 | `rounds` | 10 | - | Software repeats (`AmplitudeRabiFF_N`: folded into reps, see Outputs) |
-| `relax_delay` | 3000 | us | Wait between shots (`AmplitudeRabiFF_N`: hard-coded 8000) |
+| `relax_delay` | 3000 | us | Wait between shots (Gaussian pulse, `AmplitudeRabiFF`) |
+| `flattop_relax_delay` | 8000 | us | Wait between shots when the pulse qubit has a `flattop_length` (`AmplitudeRabiFF_N`) |
 | `fit` | False | bool | Run the cosine fit in the display |
 | `sigma`, `flattop_length` | device | us | Pulse shape of `qubit_pulse` |
 
@@ -160,14 +161,16 @@ extremum (the 3 pi or 5 pi point) instead of `P/2`.
   marker would autoscale the x axis to ~1e9, so `AmplitudeRabiFF_N` hides markers that fall
   outside the swept range and prints a warning.
 - If you do not see an oscillation, raise `max_gain`, and compare with the transmission
-  data (CSTQ03 runner note).
+  data (CSTQ03 runner note). `max_gain` above 32767 raises ValueError: the gain register
+  would wrap it ([gains](../concepts/timing_and_units.md#gains)).
 
 ## Known issues
 
 - `step = int(max_gain / number_of_steps)` truncates: with 10000 / 101 the step is 99 and
   the sweep ends at 9900, not 10000. `AmplitudeRabiFF_N` uses `linspace` and does reach
   `max_gain`.
-- The flat-top branch ignores the recipe `relax_delay` and uses 8000 us.
+- The flat-top branch uses `flattop_relax_delay` (default 8000 us), not `relax_delay`.
+  Before 2026-10 it was a hard-coded 8000 that no key could change (F84).
 - `AmplitudeRabiFF_N` plots the axis as float `linspace` values but plays `int(g)`
   (difference < 1 DAC unit), and draws the fit only at the data points.
 - `AmplitudeRabiFF_N` display errors other than the (guarded) fit raise out of the

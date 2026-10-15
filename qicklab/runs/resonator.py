@@ -1,5 +1,8 @@
 """Resonator runs: constant tones, transmission fit/sweep and chi shift."""
 
+import numpy as np
+
+from qicklab.analysis.fitting import assess_resonator_feature, assess_resonator_fit
 from qicklab.core.experiment import finish
 from qicklab.experiments.chi_shift import ChiShift
 from qicklab.experiments.cw_tones import ConstantTwoTone, SingleTone
@@ -44,6 +47,53 @@ def _carried_dip_freq(inst, data):
     return inst.peakFreq_min
 
 
+def _trace_db(data):
+    """(fpts MHz, |S21| dB) of the first ADC, the trace display() fits."""
+    results = np.asarray(data["data"]["results"], dtype=float)
+    amp = np.abs(results[0][0][0] + 1j * results[0][0][1])
+    return np.asarray(data["data"]["fpts"], dtype=float), 20 * np.log10(amp)
+
+
+def _carry_if_resonator(ctx, inst, data, dip=True):
+    """Gate the carry-over (docs/experiments/transmission_fit.md#carry-over-gate).
+
+    Dip: the display fit's minimum, judged by assess_resonator_fit on its popt (or the raw argmin,
+    judged by assess_resonator_feature, when that fit failed). Peak: the raw argmax, judged by
+    assess_resonator_feature with the sign flipped. Writes ctx.config['pulse_freq'] only when the
+    gate passes; on failure prints the reasons and metrics and leaves pulse_freq unchanged.
+    """
+    d = data["data"]
+    if dip:
+        freq = _carried_dip_freq(inst, data)
+        popt = d.get("hanger_fit_popt")
+    else:
+        freq, popt = inst.peakFreq_max, None
+    try:
+        x, y_db = _trace_db(data)
+        if popt is not None:
+            ok, reasons, metrics = assess_resonator_fit(x, y_db, popt)
+        else:
+            ok, reasons, metrics = assess_resonator_feature(x, y_db, freq, dip=dip)
+    except Exception as err:
+        ok, reasons, metrics = False, [f"gate raised {err!r}"], {}
+    if ok:
+        ctx.config["pulse_freq"] = freq
+        return True
+    print(
+        f"WARNING: no resonator {'dip' if dip else 'peak'} passes the carry-over gate; "
+        f"pulse_freq LEFT at {ctx.config['pulse_freq']} MHz (candidate {freq} MHz rejected):"
+    )
+    for reason in reasons:
+        print(f"  - {reason}")
+    print(
+        "  metrics: "
+        + ", ".join(
+            f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}" for k, v in metrics.items()
+        )
+    )
+    return False
+
+
 def run_transmission_fit(ctx, params):
     cfg = ctx.working_config()
     cfg["reps"] = params["reps"]
@@ -55,32 +105,35 @@ def run_transmission_fit(ctx, params):
     data_trans = CavitySpecFF.acquire(Instance_trans)
     finish(CavitySpecFF, Instance_trans, data_trans, reraise=True, plotDisp=True, figNum=1)
 
-    # carry-over: docs/architecture.md#carry-overs
-    ctx.config["pulse_freq"] = _carried_dip_freq(Instance_trans, data_trans)
+    # gated carry-over: docs/architecture.md#carry-overs
+    carried = _carry_if_resonator(ctx, Instance_trans, data_trans, dip=True)
 
     freq_deviation = ctx.config["pulse_freq"] - ctx.resonator_frequency_center
     print(
         f"  deviation from resonator_frequency_center "
         f"({ctx.resonator_frequency_center:.6f}) = {freq_deviation:+.6f}"
     )
-    print(f"Cavity frequency found at: {ctx.config['pulse_freq']:.6f}")
+    if carried:
+        print(f"Cavity frequency found at: {ctx.config['pulse_freq']:.6f}")
+    else:
+        print(f"Cavity frequency NOT updated: pulse_freq stays {ctx.config['pulse_freq']:.6f}")
 
 
 def run_transmission_sweep(ctx, params):
     cfg = ctx.working_config()
-    cfg["reps"] = 20
-    cfg["rounds"] = 20
+    cfg["reps"] = params["reps"]
+    cfg["rounds"] = params["rounds"]
     Instance_trans = CavitySpecFF(
         path="TransmissionFF", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder
     )
     data_trans = CavitySpecFF.acquire(Instance_trans)
     finish(CavitySpecFF, Instance_trans, data_trans, reraise=True, plotDisp=True, figNum=1)
 
-    if ctx.cavity_min:  # carry-over: docs/architecture.md#carry-overs
-        ctx.config["pulse_freq"] = _carried_dip_freq(Instance_trans, data_trans)
+    # gated carry-over: docs/architecture.md#carry-overs
+    if _carry_if_resonator(ctx, Instance_trans, data_trans, dip=ctx.cavity_min):
+        print("Cavity frequency found at: ", ctx.config["pulse_freq"])
     else:
-        ctx.config["pulse_freq"] = Instance_trans.peakFreq_max
-    print("Cavity frequency found at: ", ctx.config["pulse_freq"])
+        print("Cavity frequency NOT updated: pulse_freq stays ", ctx.config["pulse_freq"])
 
 
 def run_chi_shift(ctx, params):
