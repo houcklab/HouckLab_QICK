@@ -209,6 +209,23 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
   `[verified]`), `RunAutoCoherence` in the readout-gain optimisation (use
   `[fast]`), and `RunChargeDispersionRamsey` raises before any experiment (a
   real legacy bug, below).
+* **The synthetic spectra are noise only, so the parity-doublet gate rejects
+  them.** Since the partner significance gate (F05,
+  [two_tone_spec](../../docs/experiments/two_tone_spec.md#analysis) step 4) a
+  second line must stand at least `MIN_PARTNER_SNR` = 5 per-point noise sigmas
+  above the baseline; the harness partners stand 0.01 to 2.11 sigma. So
+  `RunZeroSpanParity` and `RunZeroSpanParity[validate]` raise after the
+  spectroscopy (`partner_not_significant`), before `SingleShotProgramFFMUX` and
+  `ZeroSpanParity`, and `Run2ToneChargeDispersionQuasiCW` steps the voltage to
+  its budget without reaching `ChargeDispersionQuasiCW`. The ZSP acquisition and
+  analysis, the `[validate]` stages and the two-tone quasi-CW record are not
+  covered by these labels; `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW`
+  still reaches the quasi-CW record (centred-strongest-peak branch). With
+  `ZSP_ParitySpec_params["min_partner_snr"] = 0` (gate off) the two ZSP labels
+  run the full pipeline again and differ from the pre-gate capture only by the
+  new `parity_partner_snr` cfg key: that is what the `[gate_off]` labels do
+  (`RunZeroSpanParity[gate_off]`, `RunZeroSpanParity[validate,gate_off]`,
+  `Run2ToneChargeDispersionQuasiCW[gate_off]`), so the pipeline stays under the golden.
 * **Float digests are exact at ~9 significant digits.** A refactor that changes
   arithmetic order can, very rarely, move a value across a rounding boundary
   and flip a digest even though the value moved by one ulp; the `head` values
@@ -221,13 +238,16 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
 
 ## Run labels (golden at commit time)
 
-40 labels per board variant: 30 runner flags, 6 override variants
+43 labels per board variant: 30 runner flags, 9 override variants
 (`Flag[name]`, including the v1 `[validate]` variant), and 4 multi-flag labels
 (`FlagA+FlagB`, flags run in runner order). Labels stay the legacy flag names.
 
 | Variant label | Override applied after sections 1-2 | Why |
 |---|---|---|
 | `RunZeroSpanParity[validate]` | every `Validate_*` / `Build_*` flag = True | validation harness |
+| `RunZeroSpanParity[gate_off]` | `ZSP_ParitySpec_params["min_partner_snr"] = 0` | partner-significance gate off (F05): the noise-only harness spectrum is accepted, so SingleShot and ZeroSpanParity run |
+| `RunZeroSpanParity[validate,gate_off]` | both of the above | validation harness with the gate off |
+| `Run2ToneChargeDispersionQuasiCW[gate_off]` | `TwoToneChargeDispersion_params["min_partner_snr"] = 0` | gate off: the search accepts the noise doublet and reaches the quasi-CW record |
 | `RunModifiedRamsey[no_reset]` | `ModifiedRamsey_params["use_active_reset"] = False` | no-reset MR program path |
 | `RunModifiedRamsey_Control[verified]` | `ModifiedRamsey_Control_params["sweet_spot_max_df_mhz"] = 1e9` | search accepts at once, so the MRC Ramsey stage runs |
 | `RunAutoCoherence[fast]` | `AutoCoherence_override_params` += `auto_readout_opt=False, ss_gain_pts=3, T1_expts=5, T2_expts=5, T2E_expts=5` | reaches T1, T2R and T2E stages |
@@ -242,8 +262,7 @@ Outcomes are identical on both boards (every experiment's `hw` digest differs
 between them). Full capture: ~13 min for both boards in one process (pytest,
 24-core Windows box, BLAS pinned to one thread), dominated by
 `RunUndrivenSingleShot` (~2 min per board: the real 1e6-shot analysis),
-`RunInterleavedCoherence` (~75 s), `SingleShot_QubitOptimize` (~10 s),
-`RunZeroSpanParity[validate]` (~30 s).
+`RunInterleavedCoherence` (~75 s) and `SingleShot_QubitOptimize` (~10 s).
 
 | Run label | Outcome | Captured | Skipped | Classes (count) | tProc programs |
 |---|---|---|---|---|---|
@@ -254,7 +273,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `Run2ToneSpec` | completed | 1 | 0 | QubitSpecSliceFF x1 | 1 |
 | `RunSpecGainLengthSweep` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
 | `RunChiShift` | completed | 1 | 0 | ChiShift x1 | 202 |
-| `Run2ToneChargeDispersionQuasiCW` | stopped_at_budget | 8 | 13 | QubitSpecSliceFF x4, ChargeDispersionQuasiCW x4 | 8 |
+| `Run2ToneChargeDispersionQuasiCW` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
 | `RunModifiedRamsey` | stopped_at_budget | 10 | 18 | SingleShotProgramFFMUX x4, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 14 |
 | `RunModifiedRamsey[no_reset]` | stopped_at_budget | 9 | 16 | SingleShotProgramFFMUX x3, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 12 |
 | `RunModifiedRamsey_Control` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
@@ -281,8 +300,11 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `SingleShot_QubitOptimize` | completed | 1 | 0 | QubitPulseOpt_wSingleShotFF x1 | 463 |
 | `RunAutoCoherence` | stopped_at_budget | 5 | 9 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4 | 9 |
 | `RunAutoCoherence[fast]` | completed | 14 | 3 | AmplitudeRabiFF x1, SingleShotProgramFFMUX x4, T1FF x3, T2R x3, T2EMUX x3 | 18 |
-| `RunZeroSpanParity` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
-| `RunZeroSpanParity[validate]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 257 |
+| `RunZeroSpanParity` | raised (RuntimeError `partner_not_significant`) | 1 | 0 | QubitSpecSliceFF x1 | 1 |
+| `RunZeroSpanParity[validate]` | raised (RuntimeError `partner_not_significant`) | 1 | 0 | QubitSpecSliceFF x1 | 1 |
+| `RunZeroSpanParity[gate_off]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
+| `RunZeroSpanParity[validate,gate_off]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 286 |
+| `Run2ToneChargeDispersionQuasiCW[gate_off]` | stopped_at_budget | 8 | 12 | QubitSpecSliceFF x4, ChargeDispersionQuasiCW x4 | 8 |
 | `RunTransmissionSweep+RunAmplitudeRabi` | completed | 2 | 0 | CavitySpecFF x1, AmplitudeRabiFF x1 | 202 |
 | `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW` | completed | 4 | 0 | QubitSpecSliceFF x2, ChargeDispersionQuasiCW x2 | 4 |
 | `RunActiveResetVerify+SingleShot` | completed | 8 | 2 | SingleShotProgramFFMUX x4, ActiveResetVerify x4 | 12 |

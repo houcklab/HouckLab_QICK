@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
+from qicklab.analysis.fitting import estimate_noise_floor
 from qicklab.analysis.spectroscopy import find_two_tone_peaks
 from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
@@ -533,10 +534,8 @@ def _spec_peak_snr(avgamp0, peak_info):
     if avgamp0.size == 0:
         return 0.0
 
-    baseline = float(np.median(avgamp0))
-    mad = float(np.median(np.abs(avgamp0 - baseline)))
-    noise = 1.4826 * mad
-    if noise < 1e-12:
+    baseline, noise = estimate_noise_floor(avgamp0)
+    if noise < 1e-12:  # also a nonzero MAD sigma below 1e-12 falls back to the std
         noise = float(np.std(avgamp0)) or 1e-12
 
     peak_vals = peak_info.get("peak_vals") if peak_info else None

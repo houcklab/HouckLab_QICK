@@ -12,12 +12,23 @@ fallback, edge, sub-grid width, seed distance, duplicate with tallest seed first
 by a test with the Lorentzian fit stubbed; the sub-grid width gate is also run through the
 real fit on the coarse grid (a one-bin spike is dropped; a typical sub-step line at SNR 50
 is kept, which holds only most of the time, see the test).
-SNR 20 is deliberate: there is no significance gate, and below SNR ~15 a noise maximum is
-often accepted as the second line (documented in docs/experiments/two_tone_spec.md step 4;
-not asserted here). The two-highest-bin-peaks branch (no Lorentzian centre, bin peaks 0.199
-MHz apart), the run's min_sep_MHz hand-off to pick_parity_drive_freq and the selection
-provenance (parity_freq_source, parity_peak_sep_MHz) in the saved ZSP cfg are pinned
-directly.
+The two-highest-bin-peaks branch (no Lorentzian centre, bin peaks 0.199 MHz apart), the
+run's min_sep_MHz hand-off to pick_parity_drive_freq and the selection provenance
+(parity_freq_source, parity_peak_sep_MHz, parity_partner_snr) in the saved ZSP cfg are
+pinned directly.
+
+F05 partner significance gate (min_partner_snr, default 5 per-point noise sigmas): below
+SNR ~15 a noise maximum used to be accepted as the second line; now a single line or a
+sub-min_sep doublet at SNR 6-10 and a noise-only trace (like the regression harness's
+spectra) must raise, with the gate off they mostly come back as a doublet, and genuine
+0.3-0.6 MHz doublets at SNR 10 must pass, also broad ones (HWHM 200-300 kHz). The cut
+itself, the stronger-line choice, the differenced noise estimate and the off-resonant edge
+baseline (spectrum_noise_floor) are pinned directly; the operating curve is in
+docs/experiments/two_tone_spec.md step 4. In the two-tone charge-dispersion search
+(run_two_tone_charge_dispersion_quasicw, 1 MHz half-span, 101 points) a rejected noise
+partner must keep the voltage search stepping, and the centred-strongest-peak branch must
+save peak_sep 0.0 (and _summary.txt one peak, peak_sep None) instead of the noise
+separation; each is checked against the same run with the gate off.
 """
 
 import os
@@ -27,7 +38,8 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
-from qicklab.analysis.spectroscopy import (  # noqa: E402
+from qicklab.analysis.spectroscopy import (
+    MIN_PARTNER_SNR,  # noqa: E402
     choose_two_tone_freqs_from_lorentz_or_peaks,
     pick_parity_drive_freq,
 )
@@ -303,6 +315,7 @@ def test_run_zero_span_parity_records_selection_provenance(monkeypatch, tmp_path
     assert cfg["parity_drive_freq"] == pytest.approx(F0 - 0.3)
     assert cfg["parity_freq_source"] == "two_lorentzian_centers"
     assert cfg["parity_peak_sep_MHz"] == pytest.approx(0.6)
+    assert cfg["parity_partner_snr"] > 10.0  # SNR 20 lines
 
 
 @pytest.mark.parametrize("lower, higher, sep", [(F0 - 0.3, F0 + 0.3, 0.6), (F0 - 0.3, None, None)])
@@ -317,6 +330,7 @@ def test_run_zero_span_parity_records_cached_provenance(monkeypatch, tmp_path, l
     cfg = seen["cfg"]
     assert cfg["parity_drive_freq"] == lower
     assert cfg["parity_freq_source"] == "cached"
+    assert cfg["parity_partner_snr"] is None
     if sep is None:
         assert cfg["parity_peak_sep_MHz"] is None
     else:
@@ -549,3 +563,340 @@ def test_single_bin_spike_is_dropped_on_run2tonespec_grid(tmp_path, seed):
     centres = np.asarray(data["data"]["lorentz_centers"])
     assert np.all(np.abs(centres - x[k]) > 0.5), centres
     assert np.any(np.abs(centres - F0) <= 0.15), centres
+
+
+# --- F05: partner significance gate (min_partner_snr, spectrum_noise_floor) ---
+
+
+def _projected(data):
+    from qicklab.analysis.iq import project_iq_signal
+
+    d = data["data"]
+    return project_iq_signal(np.asarray(d["avgi"][0][0]), np.asarray(d["avgq"][0][0]))
+
+
+def test_spectrum_noise_floor_is_the_per_point_noise_under_broad_lines():
+    # the trace MAD is inflated by the Lorentzian wings (in proportion to the line height, so
+    # a broad doublet would read ~4 sigma at any SNR); the differenced estimate is not
+    from qicklab.analysis.fitting import estimate_noise_floor
+    from qicklab.analysis.spectroscopy import spectrum_noise_floor
+
+    for seed in range(5):
+        y = _projected(_spec_data([F0 - 0.3, F0 + 0.3], 0.1, seed, snr=20.0))
+        assert estimate_noise_floor(y)[1] > 3.0 / 20
+        baseline, sigma = spectrum_noise_floor(y)
+        assert sigma == pytest.approx(1.0 / 20, rel=0.2)
+
+
+def test_spectrum_noise_floor_baseline_is_the_off_resonant_edges():
+    # the whole-trace median is lifted by the wings of broad lines (a 200 kHz HWHM doublet
+    # split by 0.6 MHz, noiseless: 0.55 of the line height); the outer 15 % of each side,
+    # the baseline project_iq_signal subtracts, much less (0.15)
+    from qicklab.analysis.spectroscopy import spectrum_noise_floor
+
+    x = _grid()
+    y = sum(0.2**2 / ((x - f) ** 2 + 0.2**2) for f in (F0 - 0.3, F0 + 0.3))
+    k = int(round(0.15 * x.size))
+    baseline, _ = spectrum_noise_floor(y)
+    assert baseline == float(np.median(np.concatenate([y[:k], y[-k:]])))
+    assert np.median(y) > 0.5 and baseline < 0.16
+    short = np.array([0.0, 5.0, 1.0, 2.0, 7.0])  # too short for 3 edge bins a side
+    assert spectrum_noise_floor(short)[0] == 2.0
+    # on the projected trace the edge baseline is the one the projection removed: ~0
+    for seed in range(3):
+        b, s = spectrum_noise_floor(_projected(_spec_data([F0 - 0.3, F0 + 0.3], 0.2, seed)))
+        assert abs(b) < 1e-12 and s > 0
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_broad_genuine_doublet_passes_the_gate(tmp_path, seed):
+    # HWHM 200 kHz split 0.6 MHz at SNR 10 (and 300 kHz split 1.0 MHz at SNR 15): with the
+    # whole-trace median as baseline the weaker line read ~5 sigma and about half were rejected
+    for hwhm, split, snr in ((0.2, 0.6, 10.0), (0.3, 1.0, 15.0)):
+        lo, hi = F0 - split / 2 + 0.0037, F0 + split / 2 + 0.0037
+        data = _display(_spec_data([lo, hi], hwhm, seed, snr=snr), tmp_path)
+        r = pick_parity_drive_freq(data, which="lower", min_sep_mhz=MIN_SEP)
+        assert r["partner_snr"] >= 6.0, r
+        assert abs(r["lower"] - lo) < hwhm / 4 and abs(r["higher"] - hi) < hwhm / 4, r
+
+
+def test_partner_snr_is_the_weaker_line_over_the_noise_floor_and_the_cut_is_inclusive(tmp_path):
+    from qicklab.analysis.spectroscopy import spectrum_noise_floor
+
+    data = _display(_spec_data([F0 - 0.3, F0 + 0.3], 0.04, 0, snr=10.0), tmp_path)
+    r = choose_two_tone_freqs_from_lorentz_or_peaks(data, min_sep_mhz=MIN_SEP)
+    y, x = _projected(data), data["data"]["x_pts"]
+    b, s = spectrum_noise_floor(y)
+    snrs = [(y[int(np.argmin(np.abs(x - f)))] - b) / s for f in r["freqs"]]
+    assert r["source"] == "two_lorentzian_centers"
+    assert r["partner_snr"] == pytest.approx(min(snrs))
+    weaker = r["partner_snr"]
+    keep = choose_two_tone_freqs_from_lorentz_or_peaks(
+        data, min_sep_mhz=MIN_SEP, min_partner_snr=weaker
+    )
+    assert keep["freqs"].size == 2 and keep["source"] == "two_lorentzian_centers"
+    cut = choose_two_tone_freqs_from_lorentz_or_peaks(
+        data, min_sep_mhz=MIN_SEP, min_partner_snr=weaker + 1e-6
+    )
+    assert cut["source"] == "partner_not_significant"
+    assert cut["peak_sep"] is None and cut["partner_snr"] == pytest.approx(weaker)
+    assert cut["freqs"] == pytest.approx([r["freqs"][int(np.argmax(snrs))]])  # stronger kept
+
+
+def test_weak_partner_is_rejected_gate_on_and_kept_gate_off():
+    # one fitted line (SNR 8) plus a 30 kHz bump 0.5 MHz away, 3 sigma tall: a "doublet"
+    # without the gate (the F04 failure), the line alone with it; the same bump at 8 sigma passes
+    snr = 8.0
+    for height, significant in ((3.0, False), (8.0, True)):
+        base = _spec_data([F0], 0.04, 4, snr=snr)
+        x, w = _grid(), 0.03
+        base["data"]["avgi"] += (height / snr) * w**2 / ((x - (F0 + 0.5)) ** 2 + w**2)
+        data = _with_centres([F0], base)
+        off = choose_two_tone_freqs_from_lorentz_or_peaks(
+            data, min_sep_mhz=MIN_SEP, min_partner_snr=None
+        )
+        assert off["source"] == "one_lorentzian_center_plus_peak", off
+        assert off["partner_snr"] == pytest.approx(height, abs=1.5)
+        on = choose_two_tone_freqs_from_lorentz_or_peaks(data, min_sep_mhz=MIN_SEP)
+        if significant:
+            assert on["source"] == "one_lorentzian_center_plus_peak"
+            assert on["freqs"] == pytest.approx(off["freqs"])
+        else:
+            assert on["source"] == "partner_not_significant"
+            assert on["freqs"] == pytest.approx([F0])
+            with pytest.raises(RuntimeError, match="noise maximum"):
+                pick_parity_drive_freq(data, min_sep_mhz=MIN_SEP)
+            gate_off = pick_parity_drive_freq(data, min_sep_mhz=MIN_SEP, min_partner_snr=0)
+            assert gate_off["source"] == "one_lorentzian_center_plus_peak"
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_noise_only_trace_is_not_a_doublet(tmp_path, seed):
+    # like the regression harness's spectra (no line at all): without the gate the two
+    # highest noise maxima come back as a doublet; with it the run must stop
+    data = _display(_spec_data([], 0.04, seed), tmp_path)
+    off = choose_two_tone_freqs_from_lorentz_or_peaks(
+        data, min_sep_mhz=MIN_SEP, min_partner_snr=None
+    )
+    assert off["freqs"].size == 2, off
+    on = choose_two_tone_freqs_from_lorentz_or_peaks(data, min_sep_mhz=MIN_SEP)
+    assert on["source"] == "partner_not_significant" and on["freqs"].size == 1
+    assert on["partner_snr"] < 5.0
+    with pytest.raises(RuntimeError, match="no resolved parity doublet"):
+        pick_parity_drive_freq(data, min_sep_mhz=MIN_SEP)
+
+
+LOW_SNR_SEEDS = range(10)
+
+
+@pytest.mark.parametrize("snr", [6.0, 8.0, 10.0])
+@pytest.mark.parametrize("hwhm", [0.04, 0.1])
+def test_low_snr_single_line_raises(tmp_path, snr, hwhm):
+    # below SNR ~15 a single line used to be paired with a noise maximum (F04 limit); the gate
+    # must stop every one of these seeds, and without it most of them pass as a doublet
+    passed_without_gate = 0
+    for seed in LOW_SNR_SEEDS:
+        data = _display(_spec_data([F0 + 0.0123], hwhm, seed, snr=snr), tmp_path)
+        off = choose_two_tone_freqs_from_lorentz_or_peaks(
+            data, min_sep_mhz=MIN_SEP, min_partner_snr=None
+        )
+        passed_without_gate += off["freqs"].size == 2
+        with pytest.raises(RuntimeError, match="no resolved parity doublet"):
+            pick_parity_drive_freq(data, min_sep_mhz=MIN_SEP)
+    if snr <= 8.0:
+        assert passed_without_gate >= 5, passed_without_gate
+
+
+@pytest.mark.parametrize("snr", [6.0, 8.0])
+def test_low_snr_sub_min_sep_doublet_raises(tmp_path, snr):
+    for seed in LOW_SNR_SEEDS:
+        data = _display(_spec_data([F0 - 0.075, F0 + 0.075], 0.04, seed, snr=snr), tmp_path)
+        with pytest.raises(RuntimeError, match="no resolved parity doublet"):
+            pick_parity_drive_freq(data, min_sep_mhz=MIN_SEP)
+
+
+@pytest.mark.parametrize("split", [0.3, 0.45, 0.6])
+@pytest.mark.parametrize("hwhm", [0.04, 0.1])
+@pytest.mark.parametrize("seed", range(5))
+def test_genuine_doublet_passes_the_gate_at_snr_10(tmp_path, split, hwhm, seed):
+    lo, hi = F0 - split / 2 + 0.0037, F0 + split / 2 + 0.0037
+    data = _display(_spec_data([lo, hi], hwhm, seed, snr=10.0), tmp_path)
+    low = pick_parity_drive_freq(data, which="lower", min_sep_mhz=MIN_SEP)
+    assert low["partner_snr"] >= 5.0
+    assert abs(low["lower"] - lo) < max(0.025, hwhm / 4), low
+    assert abs(low["higher"] - hi) < max(0.025, hwhm / 4), low
+
+
+def test_run_zero_span_parity_stops_on_a_noise_only_spectrum(monkeypatch, tmp_path):
+    # the run must raise before the separator/ZSP stage; ZSP_ParitySpec_params
+    # ["min_partner_snr"] = 0 switches the gate off and the run parks on the noise doublet
+    data = _display(_spec_data([], 0.04, 0), tmp_path)
+    zs = _patch_spec(monkeypatch, data)
+    seen = _capture_zsp_cfg(monkeypatch, zs)
+    with pytest.raises(RuntimeError, match="partner_not_significant"):
+        zs.run_zero_span_parity(_RunCtx(tmp_path), _run_params())
+    assert "cfg" not in seen
+    params = _run_params()
+    params["ZSP_ParitySpec_params"]["min_partner_snr"] = 0
+    with pytest.raises(_StopAtZsp):
+        zs.run_zero_span_parity(_RunCtx(tmp_path), params)
+    assert seen["cfg"]["parity_freq_source"] == "two_highest_peaks"
+    assert seen["cfg"]["parity_partner_snr"] < 5.0
+
+
+# --- F05 in the two-tone charge-dispersion search (run_two_tone_charge_dispersion_quasicw) ---
+
+
+class _Yoko:
+    def query(self, cmd):
+        return "0.001"
+
+
+class _CdCtx(_RunCtx):
+    yoko = _Yoko()
+
+    def working_config(self):
+        return {**super().working_config(), "readout_length": 3}
+
+
+def _cd_params():
+    two_tone = {
+        "df": 0.2,
+        "dV": 0.0005,
+        "voltage_min": 0.0,
+        "voltage_max": 0.01,
+        "max_voltage_tries": 3,
+        "num_cycles": 1,
+        "use_upper_peak": True,
+        "center_peak_tol_mhz": 0.05,
+        "SpecSpan": 1.0,
+        "SpecNumPoints": 101,
+        "reps": 1,
+        "rounds": 1,
+        "relax_delay": 1,
+        "Gauss": False,
+        "qubit_length": 1,
+        "qcw_repetitions": 200,
+        "qcw_relax_delay": 1,
+    }
+    spec = {"min_sep_MHz": MIN_SEP, "fit_window_mhz": FIT_WINDOW, "prominent_ratio": 0.1}
+    spec["Gauss"] = False
+    return two_tone, spec, {}
+
+
+def _run_charge_dispersion(monkeypatch, tmp_path, spectra, gate_off=False):
+    """Run the search on pre-displayed spectra (one per attempt); return what it saved."""
+    import qicklab.runs.charge_dispersion as cd
+    from qicklab.analysis.spectroscopy import (
+        choose_two_tone_freqs_from_lorentz_or_peaks as real_choose,
+    )
+
+    queue = list(spectra)
+    out = {"specs": 0, "ramps": [], "records": [], "summary": None, "plots": []}
+
+    class FakeSpec:
+        def __init__(self, **kwargs):
+            out["specs"] += 1
+
+        def acquire(self):
+            return queue.pop(0)
+
+    class FakeQcw:
+        def __init__(self, **kwargs):
+            pass
+
+        def acquire(self, **kwargs):
+            rng = np.random.default_rng(0)
+            n = 200
+            blob = np.repeat([0.0, 1.0], n // 2)
+            return {
+                "data": {"raw_i": blob + rng.normal(0, 0.05, n), "raw_q": rng.normal(0, 0.05, n)}
+            }
+
+    def fake_plot(**kwargs):
+        out["plots"].append(dict(kwargs["peak_info"]))
+        return str(tmp_path / f"spec{len(out['plots'])}")
+
+    monkeypatch.setattr(cd, "QubitSpecSliceFF", FakeSpec)
+    monkeypatch.setattr(cd, "ChargeDispersionQuasiCW", FakeQcw)
+    monkeypatch.setattr(cd, "finish", lambda *a, **k: None)
+    monkeypatch.setattr(cd, "ramp_to", lambda yoko, v: out["ramps"].append(v))
+    monkeypatch.setattr(cd, "save_two_tone_plot", fake_plot)
+    monkeypatch.setattr(cd, "save_record", lambda base, cfg, **kw: out["records"].append(kw))
+    monkeypatch.setattr(cd, "save_cycle_summary", lambda d, s: out.__setitem__("summary", s))
+    monkeypatch.setattr(cd.plt, "savefig", lambda *a, **k: None)
+    seen = out.setdefault("chooser_kwargs", [])
+
+    def choose(data, **kw):
+        seen.append(dict(kw))
+        return real_choose(data, **kw)
+
+    monkeypatch.setattr(cd, "choose_two_tone_freqs_from_lorentz_or_peaks", choose)
+    two_tone, spec, cd_params = _cd_params()
+    if gate_off:
+        two_tone["min_partner_snr"] = 0  # the run's own switch, same key as ZSP_ParitySpec_params
+    cd.run_two_tone_charge_dispersion_quasicw(_CdCtx(tmp_path), two_tone, spec, cd_params)
+    # the run passes its params' gate value (default MIN_PARTNER_SNR) to the chooser
+    assert all(kw["min_partner_snr"] == (0 if gate_off else MIN_PARTNER_SNR) for kw in seen)
+    return out
+
+
+CD_GRID = _coarse_grid(1.0, 101)  # the runner's SpecSpan 1.0, SpecNumPoints 101
+
+
+def test_charge_dispersion_search_steps_past_a_noise_doublet(monkeypatch, tmp_path):
+    # attempt 1 is noise only (seed 0: the two highest maxima 0.40 MHz apart, the taller 0.33
+    # MHz off centre), attempt 2 a genuine 0.6 MHz doublet. Without the gate the noise pair
+    # passes df = 0.2 and the quasi-CW runs on noise; with it the search steps the voltage once
+    noise = lambda: _display_on(CD_GRID, [], 0.04, 0, tmp_path)  # noqa: E731
+    lines = [F0 - 0.2963, F0 + 0.3037]
+    doublet = lambda: _display_on(CD_GRID, lines, 0.04, 0, tmp_path)  # noqa: E731
+
+    off = _run_charge_dispersion(monkeypatch, tmp_path, [noise(), doublet()], gate_off=True)
+    assert off["specs"] == 1 and off["ramps"] == []
+    assert off["plots"][0]["source"] == "two_highest_peaks"
+    assert off["records"][0]["peak_sep"] == pytest.approx(0.396, abs=0.001)
+
+    on = _run_charge_dispersion(monkeypatch, tmp_path, [noise(), doublet()])
+    assert on["plots"][0]["source"] == "partner_not_significant"
+    assert on["plots"][0]["peak_sep"] is None and len(on["plots"][0]["peak_freqs"]) == 1
+    assert on["specs"] == 2 and on["ramps"] == [pytest.approx(0.0015)]
+    assert on["plots"][1]["source"] == "two_lorentzian_centers"
+    (record,) = on["records"]
+    assert float(record["peak_sep"]) == pytest.approx(0.6, abs=0.01)
+    assert float(record["chosen_probe_freq"]) == pytest.approx(lines[1], abs=0.01)  # upper
+    assert on["summary"] == [
+        {
+            "cycle_idx": 0,
+            "success": True,
+            "final_voltage": pytest.approx(0.0015),
+            "chosen_probe_freq": pytest.approx(lines[1], abs=0.01),
+            "peak_sep": pytest.approx(0.6, abs=0.01),
+        }
+    ]
+
+
+def test_charge_dispersion_centred_line_saves_zero_sep_without_a_significant_partner(
+    monkeypatch, tmp_path
+):
+    # one line at the centre at SNR 8 (seed 0): without the gate a noise maximum 0.34 MHz away
+    # was its partner and that separation was saved; with it the centred-strongest-peak branch
+    # still runs the quasi-CW on the line, and saves peak_sep 0.0
+    line = lambda: _display_on(CD_GRID, [F0], 0.04, 0, tmp_path, snr=8.0)  # noqa: E731
+
+    off = _run_charge_dispersion(monkeypatch, tmp_path, [line()], gate_off=True)
+    assert off["plots"][0]["source"] == "one_lorentzian_center_plus_peak"
+    assert float(off["records"][0]["peak_sep"]) == pytest.approx(0.3385, abs=0.001)
+
+    on = _run_charge_dispersion(monkeypatch, tmp_path, [line()])
+    assert on["specs"] == 1 and on["ramps"] == []
+    assert on["plots"][0]["source"] == "partner_not_significant"
+    (record,) = on["records"]
+    assert float(record["peak_sep"]) == 0.0
+    assert abs(float(record["chosen_probe_freq"]) - F0) <= 0.05
+    assert on["summary"][0]["peak_sep"] == 0.0
+    assert float(record["chosen_probe_freq"]) == float(off["records"][0]["chosen_probe_freq"])
+    text = (tmp_path / "spec1_summary.txt").read_text()
+    assert "peak_sep: None" in text
+    (freqs_line,) = [ln for ln in text.splitlines() if ln.startswith("peak_freqs:")]
+    assert np.fromstring(freqs_line.split(":", 1)[1].strip(" []"), sep=" ").size == 1

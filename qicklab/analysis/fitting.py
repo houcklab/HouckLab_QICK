@@ -109,13 +109,17 @@ def fit_lorentzian_feature(x, y, fit_dip=True):
     }
 
 
-def estimate_noise_floor(y):
+def estimate_noise_floor(y, *, zero_mad=None):
     """Robust baseline and noise sigma of a 1-D trace.
 
     Uses the median as the baseline and the median-absolute-deviation (MAD)
     scaled to a Gaussian sigma. Unlike (max - min), this is insensitive to a
     handful of tall qubit peaks or single-sample spikes, so it gives a stable
     noise estimate to threshold against.
+
+    zero_mad : callable(baseline) -> sigma, optional
+        Sigma to return when the MAD sigma is zero or not finite. Default: the
+        standard deviation, then 1e-12.
 
     Returns
     -------
@@ -126,6 +130,8 @@ def estimate_noise_floor(y):
     mad = float(np.median(np.abs(y - baseline)))
     sigma = 1.4826 * mad  # MAD -> Gaussian-equivalent std
     if not np.isfinite(sigma) or sigma <= 0:
+        if zero_mad is not None:
+            return baseline, float(zero_mad(baseline))
         sigma = float(np.std(y))
         if not np.isfinite(sigma) or sigma <= 0:
             sigma = 1e-12

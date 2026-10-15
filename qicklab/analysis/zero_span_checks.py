@@ -5,6 +5,7 @@ import numpy as np
 from scipy import stats
 
 from qicklab.analysis.dwell import dwell_time_statistics
+from qicklab.analysis.fitting import estimate_noise_floor
 from qicklab.analysis.zero_span import _bin_iq_time, classify_parity_trace
 
 
@@ -91,9 +92,8 @@ def contrast_from_sweeps(freqs, Z_on, Z_off):
     freqs, Z_on, Z_off = freqs[:n], Z_on[:n], Z_off[:n]
     contrast = np.abs(Z_on - Z_off)
     idx = int(np.argmax(contrast))
-    med = float(np.median(contrast))
-    mad = float(np.median(np.abs(contrast - med)))
-    noise_floor = 1.4826 * mad if mad > 0 else (med if med > 0 else 1.0)
+    # MAD sigma; a zero MAD falls back to the median, then 1.0
+    _, noise_floor = estimate_noise_floor(contrast, zero_mad=lambda med: med if med > 0 else 1.0)
     out.update(
         {
             "freqs": freqs,

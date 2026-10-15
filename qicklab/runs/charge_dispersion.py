@@ -8,6 +8,7 @@ import numpy as np
 from qicklab.analysis.iq import kmeans_split, project_iq_signal
 from qicklab.analysis.plotting import iq_separator_geometry, plot_separator, set_iq_limits
 from qicklab.analysis.spectroscopy import (
+    MIN_PARTNER_SNR,
     choose_two_tone_freqs_from_lorentz_or_peaks,
     save_two_tone_plot,
 )
@@ -100,6 +101,9 @@ def run_two_tone_charge_dispersion_quasicw(
             freq_choice = choose_two_tone_freqs_from_lorentz_or_peaks(
                 data_specSlice,
                 min_sep_mhz=Spec_relevant_params["min_sep_MHz"],
+                min_partner_snr=TwoToneChargeDispersion_params.get(
+                    "min_partner_snr", MIN_PARTNER_SNR
+                ),
             )
 
             peak_info = freq_choice["peak_info_raw"]

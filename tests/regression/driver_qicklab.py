@@ -73,9 +73,32 @@ def _enable(*prefixes):
     return apply
 
 
+def _all(*applies):
+    def apply(ns):
+        for a in applies:
+            a(ns)
+
+    apply.__doc__ = "; ".join(a.__doc__ for a in applies)
+    return apply
+
+
 # label -> (flags, override applied to the namespace before section 3)
 OVERRIDES = {
     "RunZeroSpanParity[validate]": (("RunZeroSpanParity",), _enable("Validate_", "Build_")),
+    # F05: the partner-significance gate rejects the harness's noise-only spectra, so the plain
+    # labels now raise before SingleShot/ZSP; gate_off keeps the whole pipeline under the golden
+    "RunZeroSpanParity[gate_off]": (
+        ("RunZeroSpanParity",),
+        _set("ZSP_ParitySpec_params", min_partner_snr=0),
+    ),
+    "RunZeroSpanParity[validate,gate_off]": (
+        ("RunZeroSpanParity",),
+        _all(_enable("Validate_", "Build_"), _set("ZSP_ParitySpec_params", min_partner_snr=0)),
+    ),
+    "Run2ToneChargeDispersionQuasiCW[gate_off]": (
+        ("Run2ToneChargeDispersionQuasiCW",),
+        _set("TwoToneChargeDispersion_params", min_partner_snr=0),
+    ),
     "RunModifiedRamsey[no_reset]": (
         ("RunModifiedRamsey",),
         _set("ModifiedRamsey_params", use_active_reset=False),

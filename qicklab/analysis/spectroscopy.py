@@ -8,8 +8,39 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, savgol_filter
 
-from qicklab.analysis.fitting import fit_lorentzian_feature, lorentzian_peak
+from qicklab.analysis.fitting import estimate_noise_floor, fit_lorentzian_feature, lorentzian_peak
 from qicklab.analysis.iq import project_iq_signal
+
+# Partner significance gate of choose_two_tone_freqs_from_lorentz_or_peaks: the weaker of two
+# selected lines must stand at least this many per-point noise sigmas above the off-resonant
+# edge baseline (spectrum_noise_floor). Operating curve: docs/experiments/two_tone_spec.md step 4.
+MIN_PARTNER_SNR = 5.0
+
+
+def spectrum_noise_floor(y, edge_frac=0.15):
+    """(baseline, sigma) of a projected two-tone trace for the partner significance gate.
+
+    baseline: the median of the outer ``edge_frac`` of each side, the off-resonant baseline
+    project_iq_signal subtracts (so about 0 on its output); the whole-trace median when the
+    trace is too short for that (same rule as project_iq_signal). The whole-trace median
+    (estimate_noise_floor) is not used: the Lorentzian wings lift it in proportion to the
+    line width and height (on the 2 MHz ZSP span a 200 kHz HWHM doublet at SNR 10 read
+    about 5 sigma and was rejected half the time). sigma: the per-point noise,
+    estimate_noise_floor's MAD sigma of the first differences divided by sqrt(2). The MAD
+    of the trace itself is not used for sigma: the wings of the lines fill most bins and
+    inflate it in proportion to the line height (a 100 kHz HWHM doublet split by 0.6 MHz
+    reads about 4 sigma whatever its true SNR); differencing removes the smooth line shape.
+    Slow baseline drift is removed too, so sigma is the point-to-point noise, not the drift.
+    """
+    y = np.asarray(y, dtype=float)
+    n = y.size
+    k = int(round(edge_frac * n))
+    if k >= 3 and 2 * k < n:
+        baseline = float(np.median(np.concatenate([y[:k], y[-k:]])))
+    else:
+        baseline = float(np.median(y))
+    _, sigma_diff = estimate_noise_floor(np.diff(y))
+    return baseline, sigma_diff / np.sqrt(2.0)
 
 
 def spec_lorentzian(x, y0, A, x0, gamma):
@@ -91,7 +122,9 @@ def _merge_close_centers(centers, min_sep_mhz):
     return np.array([np.mean(g) for g in groups], dtype=float)
 
 
-def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
+def choose_two_tone_freqs_from_lorentz_or_peaks(
+    data_spec, min_sep_mhz=0.1, min_partner_snr=MIN_PARTNER_SNR
+):
     """Pick the two parity-doublet frequencies from a QubitSpecSliceFF display result.
 
     Preference: two Lorentzian centres, else one Lorentzian centre plus a bin peak at least
@@ -101,6 +134,14 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
     they are at least min_sep_mhz apart; otherwise the result is one frequency, peak_sep
     None and source 'single_line_unresolved' (a single line, or a doublet split below
     min_sep_mhz, which this selection cannot resolve by design).
+
+    Significance: each of two such frequencies is given the height of the projected trace at
+    its nearest bin above the off-resonant edge baseline, in units of the per-point noise
+    sigma (spectrum_noise_floor). If the weaker one is below min_partner_snr (None or 0 disables
+    the gate) it is taken to be a noise maximum: the result is the stronger frequency alone,
+    peak_sep None, source 'partner_not_significant'. ``partner_snr`` is that weaker
+    height / sigma whenever two frequencies reached the gate (also when they failed it),
+    else None.
     """
     x_pts = np.asarray(data_spec["data"]["x_pts"], dtype=float)
     avgi = np.asarray(data_spec["data"]["avgi"][0][0], dtype=float)
@@ -146,8 +187,19 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
             # keep the taller bin peak
             chosen_freqs = peak_freqs[[int(np.argmax(peak_vals))]]
 
+    partner_snr = None
     if len(chosen_freqs) >= 2 and abs(chosen_freqs[-1] - chosen_freqs[0]) >= min_sep_mhz:
         peak_sep = float(abs(chosen_freqs[-1] - chosen_freqs[0]))
+        # partner significance: height of each line at its nearest bin over the noise floor
+        baseline, sigma = spectrum_noise_floor(avgamp0)
+        snrs = np.array(
+            [(avgamp0[int(np.argmin(np.abs(x_pts - f)))] - baseline) / sigma for f in chosen_freqs]
+        )
+        partner_snr = float(np.min(snrs))
+        if min_partner_snr and partner_snr < min_partner_snr:
+            chosen_freqs = np.asarray(chosen_freqs[[int(np.argmax(snrs))]], dtype=float)
+            peak_sep = None
+            source = "partner_not_significant"
     else:
         chosen_freqs = np.asarray(chosen_freqs[:1], dtype=float)
         peak_sep = None
@@ -157,6 +209,7 @@ def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
         "freqs": chosen_freqs,
         "peak_sep": peak_sep,
         "source": source,
+        "partner_snr": partner_snr,
         "peak_info_raw": peak_info,
     }
 
@@ -523,7 +576,9 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, pl
     }
 
 
-def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
+def pick_parity_drive_freq(
+    spec_data, which="lower", min_sep_mhz=0.1, min_partner_snr=MIN_PARTNER_SNR
+):
     """
     Pick one of the two parity-doublet peaks from a QubitSpecSliceFF-style
     spec_data dict, using the existing choose_two_tone_freqs_from_lorentz_or_peaks
@@ -535,6 +590,8 @@ def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
     which       : "lower" or "higher" — which doublet peak to park at
     min_sep_mhz : float, smallest doublet splitting accepted as two lines (MHz); pass the
                   min_sep the spectroscopy display used
+    min_partner_snr : float, the weaker line's height over the per-point noise must reach
+                  this (None or 0: no significance gate)
 
     Returns
     -------
@@ -544,30 +601,41 @@ def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
       higher  : float, the higher-frequency doublet peak (MHz)
       peak_sep_MHz : float, peak separation (>= min_sep_mhz)
       source  : str, provenance from choose_two_tone_freqs_from_lorentz_or_peaks
+      partner_snr : float, the weaker line's height over the per-point noise sigma
 
     Raises RuntimeError when the selection does not return two frequencies at least
-    min_sep_mhz apart (a single line, or a doublet split below min_sep_mhz): parking on a
-    blended or duplicated centre would put the drive between the parity lines. Only the
-    separation is checked, not significance, so the raise is reliable only at high SNR
-    (line height / per-point noise >= ~15 on the ZSP grid). At lower SNR a noise maximum
-    at least min_sep_mhz from the line is taken as the partner: a single line, or a
-    sub-min_sep doublet fitted as one Lorentzian at its midpoint, then passes as a doublet
-    (source "one_lorentzian_center_plus_peak", e.g. a 0.15 MHz doublet at HWHM 40 kHz
-    raises in only ~27 % of trials at SNR 8), and on a noise-only trace two noise maxima
-    pass (source "two_highest_peaks"). See docs/experiments/two_tone_spec.md, step 4.
+    min_sep_mhz apart (a single line, or a doublet split below min_sep_mhz: source
+    "single_line_unresolved") or when the weaker of the two is below min_partner_snr
+    (source "partner_not_significant": a noise maximum, typically paired with a single
+    line, a blended sub-min_sep doublet or, on a noise-only trace, another noise maximum).
+    Parking on a blended centre or a noise maximum would put the drive off the parity
+    lines. Operating curve of the gate: docs/experiments/two_tone_spec.md, step 4.
     """
     if which not in ("lower", "higher"):
         raise ValueError(f"which must be 'lower' or 'higher', got {which!r}")
-    result = choose_two_tone_freqs_from_lorentz_or_peaks(spec_data, min_sep_mhz=min_sep_mhz)
+    result = choose_two_tone_freqs_from_lorentz_or_peaks(
+        spec_data, min_sep_mhz=min_sep_mhz, min_partner_snr=min_partner_snr
+    )
     freqs = np.asarray(result["freqs"], dtype=float)
     if freqs.size < 2:
         found = ", ".join(f"{f:.6f}" for f in freqs) or "none"
+        if result["source"] == "partner_not_significant":
+            why = (
+                f"the second line is only {result['partner_snr']:.1f} x the per-point noise "
+                f"above the baseline (min_partner_snr={min_partner_snr}), so it is taken to be "
+                f"a noise maximum. Average more (reps/rounds) or raise the spec gain so both "
+                f"parity lines stand clear of the noise, widen the span if the second line "
+                f"may lie outside it"
+            )
+        else:
+            why = (
+                f"need two lines at least min_sep_mhz={min_sep_mhz} MHz apart; a single "
+                f"line or a doublet split below min_sep cannot be parked on"
+            )
         raise RuntimeError(
             f"pick_parity_drive_freq: no resolved parity doublet (source="
-            f"{result['source']}, line(s) at {found} MHz). Need two lines at least "
-            f"min_sep_mhz={min_sep_mhz} MHz apart; a single line or a doublet split "
-            f"below min_sep cannot be parked on. Check the spectroscopy PNG, or set the "
-            f"cached parity frequencies and disable recalibration."
+            f"{result['source']}, line(s) at {found} MHz): {why}. Check the spectroscopy "
+            f"PNG, or set the cached parity frequencies and disable recalibration."
         )
     lower = float(np.min(freqs[:2]))
     higher = float(np.max(freqs[:2]))
@@ -578,4 +646,5 @@ def pick_parity_drive_freq(spec_data, which="lower", min_sep_mhz=0.1):
         "higher": higher,
         "peak_sep_MHz": result.get("peak_sep"),
         "source": result.get("source"),
+        "partner_snr": result.get("partner_snr"),
     }

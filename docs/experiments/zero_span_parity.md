@@ -123,21 +123,31 @@ The run, in order:
    [two_tone_spec](two_tone_spec.md#analysis), step 4, with the spec `min_sep_MHz`) and
    park on `which_to_park`. If the selection does not return two frequencies at least
    `min_sep_MHz` apart (a single line, or a doublet split below `min_sep_MHz`: outcome
-   `single_line_unresolved`), the run raises RuntimeError before the separator
-   calibration rather than park on a blended centre. The guard checks separation only,
-   not significance, so it is reliable only at high SNR (line height over per-point
-   noise >= about 15 on the ZSP grid). At lower SNR a noise maximum at least
-   `min_sep_MHz` from the line is taken as the second parity line: a single line, or a
-   doublet split below `min_sep_MHz` fitted as one Lorentzian at its midpoint, is then
-   parked on without error (source `one_lorentzian_center_plus_peak`; for a 0.15 MHz
-   doublet at HWHM 40 kHz the run raises in only 27 % of trials at SNR 8 and 72 % at
-   SNR 10; figures in [two_tone_spec](two_tone_spec.md#analysis) step 4), and a trace
-   with no qubit line at all (noise only) usually yields two noise maxima
-   `min_sep_MHz` apart (`two_highest_peaks`). Check the `ZeroSpanParity_Spec` PNG
-   before trusting the parked frequency. The selection path and splitting are saved in the ZSP cfg
-   (json and h5 `config`) as `parity_freq_source` (the step-4 source, or `cached`) and
-   `parity_peak_sep_MHz` (`None` for a cache missing either peak). Otherwise use the
-   cache (rule 6).
+   `single_line_unresolved`), or if the weaker of the two lines is less than
+   `min_partner_snr` (default 5, `MIN_PARTNER_SNR`) times the per-point noise above the
+   off-resonant (span-edge) baseline (outcome `partner_not_significant`: the partner is
+   taken to be a noise maximum), the run raises RuntimeError before the separator
+   calibration rather than park on a blended centre or on noise. The message says which:
+   for `partner_not_significant`, average more (`reps`/`rounds`) or raise the spec gain,
+   widen `SpecSpan` if the second line may lie outside it, or use cached frequencies.
+   The significance gate closes the low-SNR hole of the separation test: on the ZSP grid
+   a single line (HWHM 40-200 kHz) and a doublet split below `min_sep_MHz` (before the
+   gate a doublet in 70.5-99 % of trials at SNR 6 and up to 54.5 % at SNR 10) and a
+   noise-only trace (before: a doublet in 98.5-100 % of trials) were stopped in all but 5
+   of 6000 trials (SNR 6-20, 200 per case; the 5 were 200 kHz HWHM single lines at SNR
+   6-8, paired with a noise maximum on the line's own shoulder), while equal-height
+   doublets split 0.3-0.6 MHz are accepted in 99-100 % of trials at SNR 10 and above
+   (98-99.5 % at SNR 8 for 40 kHz HWHM lines, 89.5-100 % for 100 kHz, 94.5 % for 200 kHz;
+   about 53-73 % at SNR 6). A doublet whose weaker line has an SNR below about 8, or whose
+   lines are so broad that their wings fill the span edges (a 300 kHz HWHM doublet split
+   by 1.0 MHz on the 2 MHz span: 64.5 % at SNR 10, 100 % at 15), therefore often stops
+   the run. Operating curve: [two_tone_spec](two_tone_spec.md#analysis) step 4.
+   Setting `ZSP_ParitySpec_params["min_partner_snr"] = 0` switches the gate off
+   (separation test only). The selection path, splitting and significance are saved in
+   the ZSP cfg (json and h5 `config`) as `parity_freq_source` (the step-4 source, or
+   `cached`), `parity_peak_sep_MHz` (`None` for a cache missing either peak) and
+   `parity_partner_snr` (the weaker line's height over the per-point noise; `None` on
+   the cached path). Otherwise use the cache (rule 6).
 2. **Separator.** With `RecalibrateSeparator`, run a SingleShot g/e calibration.
    Otherwise validate the cache (rule 7). Both caches live on disk as
    `<data_root>/Q{q}/zsp_cache.json`.
@@ -184,6 +194,7 @@ CSTQ03 runner values (legacy `ZSP_*` dicts).
 | Spec `reps` / `rounds` / `relax_delay` | 10 / 10 / 3500 | count / count / µs | Its averaging. |
 | Spec `Gauss` / `sigma` / `gain` / `qubit_length` | True / 2 / 500 / 2 | – / µs / DAC / µs | Its drive. |
 | Spec `min_sep_MHz` / `fit_window_mhz` / `prominent_ratio` | 0.2 / 0.5 / 0.1 | MHz / MHz / – | Peak picking. |
+| Spec `min_partner_snr` (optional) | 5 (`MIN_PARTNER_SNR`) | noise sigma | Significance the weaker parity line needs (step 1); 0 switches the gate off. |
 | `classifier_method` | "apriori" | – | `"apriori"` (separator) or `"kmeans"`. |
 | `window_us` | 1000.0 | µs | Sliding window for the switch rate. |
 | `k_sigma` | 5.0 | σ | Burst threshold. |

@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from qicklab.analysis.spectroscopy import pick_parity_drive_freq
+from qicklab.analysis.spectroscopy import MIN_PARTNER_SNR, pick_parity_drive_freq
 from qicklab.analysis.zero_span import analyze_parity_run
 from qicklab.core.acquisition import chunked_acquire
 from qicklab.core.experiment import finish
@@ -66,6 +66,7 @@ def run_zero_span_parity(ctx, p):
             data_paritySpec,
             which=p["ZSP_ParityFreqs_Cached"]["which_to_park"],
             min_sep_mhz=p["ZSP_ParitySpec_params"]["min_sep_MHz"],
+            min_partner_snr=p["ZSP_ParitySpec_params"].get("min_partner_snr", MIN_PARTNER_SNR),
         )
         p["ZSP_ParityFreqs_Cached"]["lower_peak_MHz"] = chosen["lower"]
         p["ZSP_ParityFreqs_Cached"]["higher_peak_MHz"] = chosen["higher"]
@@ -73,6 +74,7 @@ def run_zero_span_parity(ctx, p):
         # provenance for the saved cfg: which selection path produced the parked line
         parity_freq_source = chosen["source"]
         parity_peak_sep_MHz = chosen["peak_sep_MHz"]
+        parity_partner_snr = chosen["partner_snr"]
         print(
             f"[ZeroSpanParity] parity doublet: lower={chosen['lower']:.6f} "
             f"higher={chosen['higher']:.6f} MHz; parking at "
@@ -93,6 +95,7 @@ def run_zero_span_parity(ctx, p):
                 "or set ZSP_RecalibrateParityFreqs=True."
             )
         parity_freq_source = "cached"
+        parity_partner_snr = None
         _lo = p["ZSP_ParityFreqs_Cached"].get("lower_peak_MHz")
         _hi = p["ZSP_ParityFreqs_Cached"].get("higher_peak_MHz")
         parity_peak_sep_MHz = (
@@ -150,6 +153,7 @@ def run_zero_span_parity(ctx, p):
         "parity_drive_freq": parity_drive_freq_MHz,
         "parity_freq_source": parity_freq_source,
         "parity_peak_sep_MHz": parity_peak_sep_MHz,
+        "parity_partner_snr": parity_partner_snr,
         "qubit_gain": zsp_qubit_gain,
         "pulse_gain": zsp_pulse_gain,
         "res_phase": p["ZSP_DriveParams"]["res_phase"],

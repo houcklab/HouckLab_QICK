@@ -137,23 +137,86 @@ is written.
    when they are at least `min_sep` apart. Otherwise the result is a single frequency
    with `peak_sep = None` and source `single_line_unresolved`: a single line, or a
    doublet split by less than `min_sep`, which this selection cannot resolve by design.
-   There is no significance test, only the separation test, so the outcome depends on
-   SNR (line peak height over the per-point noise sigma of the projected trace):
-   - on a noise-only trace the two highest noise maxima are usually at least `min_sep`
-     apart and come back as `two_highest_peaks`;
-   - a single line, or a doublet split below `min_sep` (fitted as one blended Lorentzian
-     at the midpoint), is paired with a noise maximum at least `min_sep` away whenever
-     `find_two_tone_peaks` reports one, and comes back as a doublet
-     (`one_lorentzian_center_plus_peak`) instead of `single_line_unresolved`. On the ZSP
-     grid (2 MHz span, 201 points, `min_sep` 0.2, `fit_window_mhz` 0.5,
-     `prominent_ratio` 0.1, HWHM 40 or 100 kHz, lines offset at random by up to 5 kHz,
-     200 trials each, so about +-3 %) a single line is reported unresolved in 2 % of
-     trials at SNR 6, 9-20 % at SNR 8, 43-65 % at SNR 10 and 99-100 % at SNR 15 and 20;
-     a 0.15 MHz doublet at HWHM 40 kHz in 5 %, 27 %, 72 %, 100 % and 100 % (HWHM
-     100 kHz: 29 % at SNR 6, 85 % at SNR 8, 98 % at SNR 10). The sub-grid width gate
-     of step 3 does not change these rates. The fake doublet
-     contains the blended centre, so parking on it puts the drive between the parity
-     lines. Below about SNR 15, read the doublet off the PNG, not off `source`.
+   Two frequencies whose weaker line is not significant (below) also come back as one,
+   source `partner_not_significant`.
+
+   **Partner significance gate.** Two frequencies that pass the separation test are then
+   tested for significance: each gets the height of the projected trace at its nearest
+   bin above the off-resonant baseline, in units of the per-point noise sigma
+   (`spectrum_noise_floor`). The baseline is the median of the outer 15 % of each side of
+   the span, the one `project_iq_signal` subtracts (so about 0). The whole-trace median
+   (`estimate_noise_floor`) is not used: the Lorentzian wings of broad lines lift it (a
+   200 kHz HWHM doublet split by 0.6 MHz at SNR 10 then read about 5 sigma and was rejected
+   in half the trials). Sigma is `estimate_noise_floor`'s MAD sigma of the first
+   differences divided by sqrt(2); the MAD of the trace itself is inflated by the wings in
+   proportion to the line height, so a 100 kHz HWHM doublet would read about 4 sigma at
+   any SNR. The weaker of the two heights is `partner_snr`. If it is below
+   `min_partner_snr` (`MIN_PARTNER_SNR` = 5 in `qicklab/analysis/spectroscopy.py`; `None`
+   or 0 switches the gate off) it is taken to be a noise maximum and the result is the
+   stronger frequency alone, `peak_sep = None`, source `partner_not_significant`.
+   `partner_snr` is returned whenever two frequencies reached the gate. Limits: because
+   differencing removes slow drift, sigma is the point-to-point noise, and a broad
+   baseline wobble can still pass as a line; lines broad enough that their wings fill the
+   outer 15 % of the span lift the edge baseline too and read low (a 300 kHz HWHM doublet
+   split by 1.0 MHz on the 2 MHz span, each line 0.2 MHz from the outer 15 %, reads about
+   0.55 x its SNR): centre the span on the doublet and make it wide enough. The gate is provisional until checked on a real CSTQ03 doublet and single line.
+
+   Operating curve, measured through the real display on the ZSP grid (2 MHz span, 201
+   points, `min_sep` 0.2, `fit_window_mhz` 0.5, `prominent_ratio` 0.1), lines offset at
+   random by up to 5 kHz, IQ rotated by a random phase, 200 trials per case (so about
+   +-3 %). SNR = line peak height over the per-point noise sigma of the projected trace;
+   `partner_snr` of a genuine equal-height line comes out at about 0.85-1.0 x its SNR
+   (nearest bin).
+   - False doublets (a single line, a 0.15 MHz doublet below `min_sep`, or a noise-only
+     trace reported as two lines). Without the gate (`min_partner_snr=None`) such a trace
+     is paired with a noise maximum at least `min_sep` away whenever
+     `find_two_tone_peaks` reports one (source `one_lorentzian_center_plus_peak`, or
+     `two_highest_peaks` on noise only):
+
+     | Case | SNR 6 | 8 | 10 | 15 | 20 |
+     |---|---|---|---|---|---|
+     | single line, HWHM 40 kHz, no gate | 99 % | 89.5 % | 54.5 % | 2.5 % | 0 % |
+     | single line, HWHM 100 kHz, no gate | 97 % | 81.5 % | 39 % | 1 % | 0 % |
+     | single line, HWHM 200 kHz, no gate | 90.5 % | 72 % | 31.5 % | 0 % | 0 % |
+     | 0.15 MHz doublet, HWHM 40 kHz, no gate | 96 % | 75 % | 23 % | 0 % | 0 % |
+     | 0.15 MHz doublet, HWHM 100 kHz, no gate | 70.5 % | 12.5 % | 1 % | 0 % | 0 % |
+     | noise only (no line), no gate | 99.5 % | 99 % | 100 % | 99 % | 98.5 % |
+     | any of the above, gate at 5 | 0 % (1 %) | 0 % (1.5 %) | 0 % | 0 % | 0 % |
+
+     In brackets: the HWHM 200 kHz single line, the only case with false doublets at 5
+     (5 of the 6000 trials): its partner is a noise maximum on the line's own shoulder,
+     `max(min_sep, HWHM)` from the centre. The noise maxima taken as partners have a
+     median `partner_snr` of 1.4-2.6 (3.9 beside a 100 kHz line at SNR 15). At a threshold
+     of 4, 47 of the 6000 trials came out as doublets (up to 7 % for the 200 kHz single
+     line); at 6, one.
+   - Genuine doublets, equal heights, gate at 5 (accepted with both centres within
+     max(25 kHz, HWHM/4) of the true lines; split 0.3, 0.45 and 0.6 MHz for 40 and
+     100 kHz, 0.6 MHz for 200 kHz, 1.0 MHz for 300 kHz):
+
+     | HWHM | SNR 6 | 8 | 10 | 15 | 20 |
+     |---|---|---|---|---|---|
+     | 40 kHz | 64.5-73 % | 98-99.5 % | 100 % | 100 % | 100 % |
+     | 100 kHz | 55.5-66 % | 89.5-100 % | 99-100 % | 100 % | 100 % |
+     | 200 kHz | 53 % | 94.5 % | 99.5 % | 100 % | 100 % |
+     | 300 kHz (wings reach the edges) | 3 % | 21 % | 64.5 % | 100 % | 100 % |
+
+     Without the gate the same cases are accepted in 99-100 % of trials at every SNR
+     shown, except the blended 0.3 MHz doublet at 100 kHz HWHM (66.5 % at SNR 6, 89.5 %
+     at SNR 8; 55.5 % and 89.5 % with the gate) and the broad lines at SNR 6 (79.5 % at
+     200 kHz, 86.5 % at 300 kHz). A 100 kHz doublet split by 0.6 MHz off-centre (upper
+     line 0.3 MHz from the span edge) is accepted in 41 %, 95 % and 100 % of trials at
+     SNR 6, 8 and 10. With the weaker line half as tall (HWHM 40 kHz, SNR of the taller
+     line; split 0.3 and 0.6 MHz) the gate accepts 4-4.5 % at SNR 6, 20-20.5 % at 8,
+     47.5-48 % at 10, 98-99 % at 15 and 100 % at 20: what counts is the weaker line,
+     which needs an SNR of about 7.5 to be accepted in 90 % of trials or more. With the
+     whole-trace median as the baseline instead, the same trials give 1 false doublet in
+     6000, but the 200 kHz doublet is accepted in only 47 % of trials at SNR 10 and the
+     300 kHz one in 58.5 % at SNR 15.
+
+   So below an SNR of about 8 for the weaker line (10 for blended doublets, 15 for lines
+   whose wings reach the span edges) a genuine doublet is often reported as
+   `partner_not_significant`: average more or raise the drive gain rather than lower the
+   threshold.
 
    Accuracy (synthetic Lorentzian doublets, SNR 20, `min_sep` 0.2, `fit_window_mhz` 0.5,
    `prominent_ratio` 0.1, 0.01-0.04 MHz grids): for splits of about 2.5 HWHM and more,
@@ -169,7 +232,8 @@ Display defaults when called directly (not through the step): `min_sep = 0.1` MH
 `min_sep = min_sep_MHz` (0.2), `fit_window_mhz = 0.5`, `prominent_ratio = 0.1`.
 
 Failure modes: with `prominent_ratio = 0.1` a noise maximum 10 % as tall as the qubit
-peak becomes "peak 2"; check `lorentz_r2` and the PNG before reading a doublet. A feature
+peak becomes "peak 2" of the display (the step-4 doublet choice drops it unless it stands
+5 sigma above the noise); check `lorentz_r2` and the PNG before reading a doublet. A feature
 wider than about 70 % of the span leaves no off-resonant edge for the baseline.
 
 ## Findings & notes

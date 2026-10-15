@@ -63,10 +63,16 @@ PLAN = [R.charge_dispersion_ramsey(df=..., repetitions=...)]   # see Known issue
 1. Two-tone spectroscopy with `QubitSpecSliceFF` over ±`SpecSpan` around the qubit
    centre. The response is projected onto the signal-bearing IQ axis.
 2. Choose the peaks: Lorentzian centres if available, otherwise a peak finder with
-   `min_sep_MHz`.
+   `min_sep_MHz` ([two_tone_spec](two_tone_spec.md#analysis) step 4). A second peak whose
+   height is below 5 x the per-point noise (`MIN_PARTNER_SNR`, not configurable in this
+   step) is dropped as noise: one peak, separation `None`. The `TwoTone_*` amplitude
+   PNG title then shows `sep=None` and `_summary.txt` one `peak_freqs` entry and
+   `peak_sep: None`; the dashed markers are the raw bin peaks and still show both.
 3. Decide:
    - If the **strongest** peak is within `center_peak_tol_mhz` of the qubit centre,
-     accept it as the probe (any separation, including 0).
+     accept it as the probe (any separation, including 0). With no second line (one
+     peak, or the partner dropped as noise in step 2) the separation is saved as 0.0
+     in the quasi-CW record (`peak_sep`) and the cycle summary.
    - Else, if the separation ≥ `df`, take the upper peak (`use_upper_peak`) or the
      lower one as the probe.
    - Otherwise step the yoko by `dV`, bouncing between `voltage_min` (clamped to
