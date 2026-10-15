@@ -28,6 +28,8 @@ from qicklab.analysis.modified_ramsey import (
     analyze_modified_ramsey_record,
     assess_parity_record,
     compare_parity_controls,
+    drift_corrected_lag_sum,
+    lagged_autocovariance_sum,
     reset_success_vs_cycle,
 )
 from qicklab.analysis.rates import (
@@ -1132,3 +1134,406 @@ def test_forward_backward_consistency():
     vit = hmm_viterbi(sim["v"], np.full(2999, 20e-6), 400.0, 400.0, 0.0, 3.0, 1.0, 1.0)
     agree = np.mean(vit == sim["states"])
     assert agree > 0.9, "Viterbi ~ truth on clean data: " + f"agreement {agree:.3f}"
+
+
+# ---------------------------------------------------------------------------
+# 10. Control verdicts on realistic records (F16): echo null, flip inversion,
+#     drive_off carryover. Records go through analyze_modified_ramsey_record,
+#     so the model-free lag-covariance statistic is the one the runner sees.
+# ---------------------------------------------------------------------------
+
+_CTL_DT = 262e-6  # 250 us relax + readout: the CSTQ03 cadence after the T1 fix
+_CTL_N = 20000  # 5.2 s
+_CTL_CAL = _make_cal(0.0, 2.0, 1.0, seed=70)  # readout SNR 2
+
+
+def _ctl_record(seed, prob_e, label, control_type=None, mapping=(0.1, 0.9), symmetric=True):
+    """Analyse g/e shots with per-shot P(e) = prob_e through the full pipeline."""
+    return _ctl_record_v(_ctl_shots(seed, prob_e), label, control_type, mapping, symmetric)
+
+
+def _ctl_shots(seed, prob_e):
+    """Projected g/e shots (readout SNR 2) with per-shot P(e) = prob_e."""
+    rng = np.random.default_rng(seed)
+    prepared_e = rng.random(_CTL_N) < prob_e
+    return rng.normal(np.where(prepared_e, _CTL_CAL["proj_e_mean"], _CTL_CAL["proj_g_mean"]), 1.0)
+
+
+def _ctl_record_v(v, label, control_type=None, mapping=(0.1, 0.9), symmetric=True):
+    """Analyse the projected trace v through the full pipeline."""
+    axis, mid = _CTL_CAL["axis"], _CTL_CAL["midpoint"]
+    res = analyze_modified_ramsey_record(
+        mid[0] + v * axis[0],
+        mid[1] + v * axis[1],
+        _CTL_DT,
+        _CTL_CAL,
+        symmetric_hmm=symmetric,
+        mapping_probabilities=mapping,
+        save_plots=False,
+        save_sidecars=False,
+    )
+    d = {
+        "label": label,
+        "hmm": res["hmm"],
+        "acf": res["acf"],
+        "occupancy_state1": res["summary"]["occupancy_state1"],
+    }
+    if control_type:
+        d["control_type"] = control_type
+    return d
+
+
+def _telegraph_prob_e(seed, g01, g10, p_state0, p_state1):
+    hidden = simulate_telegraph_trace(
+        _CTL_N, _CTL_DT, g01, g10, mu0=0.0, mu1=1.0, sigma0=1e-9, sigma1=1e-9, seed=seed
+    )["states"]
+    return np.where(hidden == 0, p_state0, p_state1)
+
+
+def _verdict(main, control):
+    out = compare_parity_controls(main, [control])
+    return out["controls"][0], out["all_expected"]
+
+
+def _lag_stat(value, sd, n_boot=1000, seed=0):
+    """A lagged_autocovariance_sum result with Gaussian bootstrap replicates."""
+    boot = np.random.default_rng(seed).normal(value, sd, n_boot)
+    return {"available": True, "value": value, "boot": boot, "max_lag": 10, "reason": ""}
+
+
+def _dict_record(lag_value, lag_sd, seed, control_type=None, amplitude=0.5, hmm=None, occ1=0.5):
+    d = {
+        "label": control_type or "parity",
+        "hmm": hmm if hmm is not None else {"identifiable": True},
+        "acf": {
+            "amplitude": amplitude,
+            "lag_covariance_sum": _lag_stat(lag_value, lag_sd, seed=seed),
+        },
+        "occupancy_state1": occ1,
+    }
+    if control_type:
+        d["control_type"] = control_type
+    return d
+
+
+def test_lagged_autocovariance_sum():
+    rng = np.random.default_rng(71)
+    white = rng.standard_normal(40000)
+    st = lagged_autocovariance_sum
+    out = st(white, 10)
+    assert out["available"] and out["n_blocks"] >= 20 and out["block_len"] == 100, out
+    lo, hi = np.percentile(out["boot"], [2.5, 97.5])
+    assert lo < 0 < hi, f"white noise: CI [{lo:.3f}, {hi:.3f}] covers 0"
+    # AR(1) with phi = 0.5, unit innovations: C(k) = phi^k / (1 - phi^2).
+    ar = np.zeros(40000)
+    for i in range(1, ar.size):
+        ar[i] = 0.5 * ar[i - 1] + white[i]
+    expected = sum(0.5**k for k in range(1, 11)) / 0.75
+    got = st(ar, 10)["value"]
+    assert close(got, expected, 0.1), f"AR(1) lag sum {got:.3f} vs {expected:.3f}"
+    short = st(white[:300], 10)
+    assert not short["available"] and "too short" in short["reason"], short
+
+
+def test_control_verdicts_echo_null():
+    main = _ctl_record(72, _telegraph_prob_e(73, 200.0, 200.0, 0.1, 0.9), "parity")
+    assert main["hmm"]["identifiable"], main["hmm"]["unidentifiable_reasons"]
+    # Ideal echo null: i.i.d. shots, any P(e). P(e) = 0.5 was FAILED before F06/F16
+    # (ACF fit failure -> amplitude ratio nan).
+    for k, p_e in enumerate((0.5, 0.0, 0.03, 0.1, 0.2)):
+        echo = _ctl_record(80 + k, p_e, f"echo{p_e}", "echo_null")
+        entry, all_expected = _verdict(main, echo)
+        assert entry["checked"] is True and all_expected, f"P(e)={p_e}: " + entry["note"]
+        assert entry["lag_cov_ratio_upper95"] < 0.25, entry
+    # An echo that did NOT refocus (the telegraph survives) fails.
+    leaky = _ctl_record(90, _telegraph_prob_e(91, 200.0, 200.0, 0.1, 0.9), "leaky", "echo_null")
+    entry, all_expected = _verdict(main, leaky)
+    assert entry["checked"] is False and not all_expected, entry["note"]
+    # A partially refocused echo (mapping 0.29/0.71, lag ratio ~0.3): fitted with the
+    # parity mapping, the HMM locks onto a fast rate and reports "switching unresolved".
+    # That gate is not null evidence; the lag statistic (upper bound > 0.25) fails it.
+    for s in (200, 202):
+        partial = _ctl_record(
+            s, _telegraph_prob_e(s + 1, 200.0, 200.0, 0.29, 0.71), "partial", "echo_null"
+        )
+        entry, _ = _verdict(main, partial)
+        assert entry["checked"] is False, entry["note"]
+        assert entry["lag_cov_ratio_upper95"] > 0.25, entry
+
+    # A 400 Hz parity record stays identifiable and still validates the echo.
+    main400 = _ctl_record(92, _telegraph_prob_e(93, 400.0, 400.0, 0.1, 0.9), "parity400")
+    assert main400["hmm"]["identifiable"], main400["hmm"]["unidentifiable_reasons"]
+    entry, _ = _verdict(main400, _ctl_record(94, 0.5, "echo", "echo_null"))
+    assert entry["checked"] is True, entry["note"]
+
+    # An ACF fit failure by itself (e.g. non-uniform timing) is not null evidence.
+    no_evidence = {
+        "control_type": "echo_null",
+        "hmm": {"identifiable": False, "unidentifiable_reasons": ["HMM optimization failed"]},
+        "acf": {"amplitude": float("nan"), "fit_ok": False},
+    }
+    entry, _ = _verdict(main, no_evidence)
+    assert entry["checked"] is False, entry["note"]
+
+    # The model-free statistic vetoes the HMM's i.i.d. verdict when the surviving
+    # correlation is significantly above the threshold (5% lower bound >= 0.25).
+    iid = {"identifiable": False, "unidentifiable_reasons": ["uncorrelated (i.i.d.) shots"]}
+    dmain = _dict_record(1.0, 0.05, seed=1)
+    entry, _ = _verdict(dmain, _dict_record(0.5, 0.05, 2, "echo_null", hmm=iid))
+    assert entry["checked"] is False and "survived" in entry["note"], entry["note"]
+    # ... but a noisy, inconclusive lag statistic leaves the i.i.d. verdict standing.
+    entry, _ = _verdict(dmain, _dict_record(0.3, 0.3, 3, "echo_null", hmm=iid))
+    assert entry["checked"] is True, entry["note"]
+    # Without the i.i.d. verdict, the echo passes on the lag statistic only when its
+    # 95% UPPER bound is below 0.25, not merely its point estimate: lag ratio
+    # 0.2 +- 0.05 is neither bounded below nor significantly above the threshold.
+    not_iid = {"identifiable": True}
+    entry, all_expected = _verdict(dmain, _dict_record(0.2, 0.05, 5, "echo_null", hmm=not_iid))
+    assert entry["lag_cov_ratio"] < 0.25 < entry["lag_cov_ratio_upper95"], entry
+    assert "survived" not in entry["note"], entry["note"]
+    assert entry["checked"] is False and not all_expected, entry["note"]
+    entry, _ = _verdict(dmain, _dict_record(0.05, 0.02, 6, "echo_null", hmm=not_iid))
+    assert entry["checked"] is True, entry["note"]
+
+
+def test_control_verdicts_flip():
+    # Balanced parity occupancy (the expected symmetric case): a flip record whose
+    # mapping did NOT invert was PASSED before F16 (0.50 vs 1 - 0.49).
+    main = _ctl_record(100, _telegraph_prob_e(101, 200.0, 200.0, 0.1, 0.9), "parity")
+    noflip = _ctl_record(
+        102, _telegraph_prob_e(103, 200.0, 200.0, 0.1, 0.9), "noflip", "flip_final_pi2"
+    )
+    assert abs(main["occupancy_state1"] - 0.5) < 0.15, main["occupancy_state1"]
+    entry, all_expected = _verdict(main, noflip)
+    assert entry["checked"] is not True and not all_expected, entry
+    assert entry["verdict"] == "inversion uninformative", entry["note"]
+    # Same, but the "flip" telegraph runs at 3x the rate: the rate check fails it.
+    fast = _ctl_record(
+        104, _telegraph_prob_e(105, 600.0, 600.0, 0.1, 0.9), "fast", "flip_final_pi2"
+    )
+    entry, _ = _verdict(main, fast)
+    assert entry["checked"] is False, entry["note"]
+
+    # Imbalanced parity occupancy 0.3: the inversion is informative.
+    g01, g10 = 120.0, 280.0  # occ1 = 120 / 400 = 0.3
+    main3 = _ctl_record(106, _telegraph_prob_e(107, g01, g10, 0.1, 0.9), "parity", symmetric=False)
+    assert abs(main3["occupancy_state1"] - 0.3) < 0.1, main3["occupancy_state1"]
+    inverted = _ctl_record(
+        108,
+        _telegraph_prob_e(109, g01, g10, 0.9, 0.1),  # closing pi/2 flipped: mapping swapped
+        "flip",
+        "flip_final_pi2",
+        symmetric=False,
+    )
+    entry, all_expected = _verdict(main3, inverted)
+    assert entry["checked"] is True and all_expected, entry["note"]
+    not_inverted = _ctl_record(
+        110, _telegraph_prob_e(111, g01, g10, 0.1, 0.9), "flip", "flip_final_pi2", symmetric=False
+    )
+    entry, _ = _verdict(main3, not_inverted)
+    assert entry["checked"] is False, entry["note"]
+
+    # Rate drift between the parity and flip records (100k-shot statistical errors):
+    # 15% is many sigma but within FLIP_RATE_MAX_RATIO = 2, so an inverted flip
+    # still passes; a 3x rate is a different process and fails.
+    def hmm(g, err=2.5):
+        return {
+            "identifiable": True,
+            "symmetric": True,
+            "gamma01_hz": g,
+            "gamma10_hz": g,
+            "gamma01_err_hz": err,
+            "gamma10_err_hz": err,
+        }
+
+    rmain = {"hmm": hmm(200.0), "acf": {"amplitude": 0.5}, "occupancy_state1": 0.3}
+    for g_flip, expect in ((230.0, True), (170.0, True), (600.0, False), (90.0, False)):
+        flip = {
+            "control_type": "flip_final_pi2",
+            "hmm": hmm(g_flip),
+            "acf": {"amplitude": 0.5},
+            "occupancy_state1": 0.7,
+        }
+        entry, _ = _verdict(rmain, flip)
+        assert entry["checked"] is expect, f"{g_flip} Hz: " + entry["note"]
+
+    # hmm.py can return identifiable rates with NaN errors (singular Hessian): the
+    # factor-of-2 rule then decides alone, so equal rates still pass.
+    nan = float("nan")
+    for g_flip, expect in ((200.0, True), (300.0, True), (600.0, False)):
+        flip = {
+            "control_type": "flip_final_pi2",
+            "hmm": hmm(g_flip, err=nan),
+            "acf": {"amplitude": 0.5},
+            "occupancy_state1": 0.7,
+        }
+        entry, all_expected = _verdict(rmain, flip)
+        assert entry["checked"] is expect and all_expected is expect, (
+            f"{g_flip} Hz, NaN errors: " + entry["note"]
+        )
+        assert "rate errors unavailable" in entry["note"], entry["note"]
+
+
+def test_control_verdicts_drive_off():
+    main = {
+        "label": "parity",
+        "hmm": {"identifiable": True},
+        "acf": {"amplitude": 0.004582},
+        "occupancy_state1": 0.5,
+    }
+    # CSTQ03 Q2 2026-08-04: drive_off showed 2.4x the parity ACF amplitude.
+    carry = {"control_type": "drive_off", "hmm": {}, "acf": {"amplitude": 0.011050}}
+    entry, all_expected = _verdict(main, carry)
+    assert entry["checked"] is False and not all_expected, entry["note"]
+    assert "carryover" in entry["note"], entry["note"]
+    clean = {"control_type": "drive_off", "hmm": {}, "acf": {"amplitude": 0.05 * 0.004582}}
+    entry, all_expected = _verdict(main, clean)
+    assert entry["checked"] is True and all_expected, entry["note"]
+
+    # Full pipeline: a clean drive_off (i.i.d., P(e) = 0.02, ACF fit typically fails)
+    # passes on the lag statistic; T1 carryover (79% of the previous shot's
+    # excitation survives) is flagged.
+    parity = _ctl_record(112, _telegraph_prob_e(113, 200.0, 200.0, 0.1, 0.9), "parity")
+    entry, _ = _verdict(parity, _ctl_record(114, 0.02, "off", "drive_off"))
+    assert entry["checked"] is True, entry["note"]
+    rng = np.random.default_rng(115)
+    p_e = np.empty(_CTL_N)
+    excited = False
+    for i in range(_CTL_N):
+        p_e[i] = 0.79 if excited else 0.02
+        excited = rng.random() < p_e[i]
+    entry, _ = _verdict(parity, _ctl_record(116, p_e, "carry", "drive_off"))
+    assert entry["checked"] is False and "carryover" in entry["note"], entry["note"]
+
+    # Lag statistic, symmetric three-way rule: 95% upper bound < 0.1 -> passed;
+    # 5% lower bound >= 0.1 -> failed; an interval straddling 0.1 (short or noisy
+    # record) -> inconclusive, not decisive, whichever side the point estimate is on.
+    dmain = _dict_record(1.0, 0.05, seed=1)
+    for value, sd, expect, verdict in (
+        (0.03, 0.02, True, "passed"),
+        (0.25, 0.02, False, "failed"),
+        (0.05, 0.10, None, "inconclusive"),
+        (0.12, 0.10, None, "inconclusive"),
+    ):
+        entry, all_expected = _verdict(dmain, _dict_record(value, sd, 4, "drive_off"))
+        assert entry["checked"] is expect and entry["verdict"] == verdict, entry
+        assert all_expected is (expect is True), entry
+
+    # No correlation evidence at all (lag statistic unavailable, ACF amplitude nan):
+    # inconclusive, not failed.
+    blind = {
+        "control_type": "drive_off",
+        "hmm": {},
+        "acf": {
+            "amplitude": float("nan"),
+            "lag_covariance_sum": {"available": False, "reason": "record too short"},
+        },
+    }
+    entry, all_expected = _verdict(dmain, blind)
+    assert entry["checked"] is None and entry["verdict"] == "inconclusive", entry
+    assert "no correlation evidence" in entry["note"] and not all_expected, entry["note"]
+
+
+def test_lag_statistic_ignores_drift_window_edges():
+    # remove_slow_drift's rolling mean (mode="nearest") repeats the end samples over
+    # half a window, leaking a common ramp into the first/last ~W/2 shots. A clean
+    # drive_off whose first and last shots read high (5.0, 2.5 sigma above the e
+    # mean) must still pass: the lag statistic uses the interior only.
+    v = _ctl_shots(117, 0.02)
+    v[0] = v[-1] = 5.0
+    off = _ctl_record_v(v, "off", "drive_off")
+    lag = off["acf"]["lag_covariance_sum"]
+    drift = remove_slow_drift(v, _CTL_DT, 0.2, expected_dwell_s=2.5e-3)
+    assert lag["edge_trim_samples"] == drift["window_samples"] // 2 > 0, lag
+    parity = _ctl_record(118, _telegraph_prob_e(119, 200.0, 200.0, 0.25, 0.75), "parity")
+    main_value = parity["acf"]["lag_covariance_sum"]["value"]
+    # On the full corrected trace the edge ramp alone exceeds the drive_off budget.
+    full = lagged_autocovariance_sum(drift["v_corrected"], lag["max_lag"])["value"]
+    assert full > 0.3 * main_value, f"edge bias {full:.3f} vs parity {main_value:.3f}"
+    assert abs(lag["value"]) < 0.05 * main_value, f"interior lag sum {lag['value']:.3f}"
+    entry, all_expected = _verdict(parity, off)
+    assert entry["checked"] is True and all_expected, entry["note"]
+
+
+def _weak_lag_record(seed, n, a, control_type=None, hmm=None):
+    """Unit-variance noise plus a 400 Hz symmetric telegraph of step a (normalised ACF
+    amplitude A = (a/2)^2 / (1 + (a/2)^2)), drift-corrected and reduced to the lag
+    statistic exactly as analyze_modified_ramsey_record does (the 100k-shot HMM fit
+    is skipped: these records are compared on the lag statistic only)."""
+    rng = np.random.default_rng(seed)
+    v = rng.standard_normal(n)
+    if a:
+        tel = simulate_telegraph_trace(
+            n, _CTL_DT, 400.0, 400.0, 0.0, 1.0, 1e-9, 1e-9, seed=seed + 10_000
+        )["states"]
+        v = v + a * tel
+    drift = remove_slow_drift(v, _CTL_DT, 0.2, expected_dwell_s=2.5e-3)
+    lag = drift_corrected_lag_sum(drift["v_corrected"], drift["window_samples"], 10, seed=seed)
+    d = {
+        "label": control_type or "parity",
+        "hmm": hmm if hmm is not None else {"identifiable": True},
+        "acf": {"amplitude": 0.5, "lag_covariance_sum": lag},
+        "occupancy_state1": 0.5,
+    }
+    if control_type:
+        d["control_type"] = control_type
+    return d
+
+
+def test_lag_statistic_removes_drift_window_offset():
+    # Subtracting a centred rolling mean of W samples puts a flat offset of about
+    # -var/W on every lag: -var*K/W summed over lags 1..K (-0.013 at K = 10, W = 763),
+    # comparable to a weak parity record's own lag sum. The baseline band (lags
+    # 4K..8K) measures and removes it.
+    k = 10
+    raw, corrected = [], []
+    for seed in range(16):
+        lag = _weak_lag_record(400 + seed, 100_000, 0.0)["acf"]["lag_covariance_sum"]
+        assert lag["baseline_lags"] == [40, 80] and lag["edge_trim_samples"] == 381, lag
+        raw.append(lag["uncorrected_value"])
+        corrected.append(lag["value"])
+    w = remove_slow_drift(np.zeros(100), _CTL_DT, 0.2)["window_samples"]
+    assert w == 763
+    assert -1.5 * k / w < np.mean(raw) < -0.5 * k / w, f"uncorrected {np.mean(raw):.4f}"
+    assert abs(np.mean(corrected)) < 0.3 * k / w, f"corrected {np.mean(corrected):.4f}"
+    # The band is linear in the offset: an AR(1) process (decayed by lag 40) keeps its sum.
+    ar = np.zeros(40000)
+    white = np.random.default_rng(71).standard_normal(ar.size)
+    for i in range(1, ar.size):
+        ar[i] = 0.5 * ar[i - 1] + white[i]
+    expected = sum(0.5**j for j in range(1, 11)) / 0.75
+    got = lagged_autocovariance_sum(ar, 10, baseline_lags=(40, 80), drift_window=763)
+    assert close(got["value"], expected, 0.1), f"AR(1) baseline-corrected {got['value']:.3f}"
+
+
+def test_control_verdicts_weak_parity_contrast():
+    # Weak parity contrast (normalised ACF amplitude A ~ 0.02, 100k shots): without the
+    # baseline correction the drift-window offset pulled every control's lag ratio
+    # down (a drive_off at true ratio 0.2 averaged ~ -0.06 over these records and
+    # could pass). Per-record ratios scatter by ~0.15 at this contrast.
+    a = 2 * math.sqrt(0.02 / 0.98)
+    n = 100_000
+    off_ratios = []
+    for seed in range(8):
+        main = _weak_lag_record(500 + 10 * seed, n, a)
+        assert main["acf"]["lag_covariance_sum"]["available"]
+        off = _weak_lag_record(501 + 10 * seed, n, a * math.sqrt(0.2), "drive_off")
+        entry, all_expected = _verdict(main, off)
+        assert entry["verdict"] != "passed" and not all_expected, entry
+        off_ratios.append(entry["lag_cov_ratio"])
+        echo = _weak_lag_record(502 + 10 * seed, n, a * math.sqrt(0.45), "echo_null")
+        entry, _ = _verdict(main, echo)
+        assert entry["checked"] is not True, entry
+    assert 0.08 < np.mean(off_ratios) < 0.35, off_ratios
+
+    # CSTQ03 Q2 2026-08-04 contrast (A ~ 0.0046) on 20k shots: the parity lag sum is
+    # not significant, so no ratio can be formed. drive_off is then inconclusive; its
+    # ACF amplitude (fitted noise on such a record, 0.47x the parity's here) no longer
+    # decides.
+    a = 2 * math.sqrt(0.0046 / 0.9954)
+    main = _weak_lag_record(600, 20_000, a)
+    off = _weak_lag_record(601, 20_000, 0.0, "drive_off")
+    off["acf"]["amplitude"] = 0.47 * main["acf"]["amplitude"]
+    entry, all_expected = _verdict(main, off)
+    assert entry["checked"] is None and entry["verdict"] == "inconclusive", entry
+    assert "no significant lag covariance" in entry["note"] and not all_expected, entry

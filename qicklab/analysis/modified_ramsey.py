@@ -77,6 +77,219 @@ def reset_success_vs_cycle(reset_I, reset_Q, calibration, post_reset_I=None, pos
     }
 
 
+# Control verdict thresholds (docs/experiments/modified_ramsey.md#analysis, step 9).
+ECHO_NULL_MAX_LAG_COV_RATIO = 0.25  # one-sided 95% upper bound, echo vs parity
+DRIVE_OFF_MAX_CORRELATION_RATIO = 0.1  # drive_off vs parity: carryover / readout correlation
+FLIP_MIN_OCCUPANCY_IMBALANCE = 0.15  # |occ1_main - 0.5| needed for the inversion to be visible
+FLIP_MAX_INVERSION_ERROR = 0.15  # |occ1_flip - (1 - occ1_main)|
+FLIP_RATE_AGREEMENT_SIGMA = 3.0  # |gamma_eff_flip - gamma_eff_main| / combined 1-sigma error
+FLIP_RATE_MAX_RATIO = 2.0  # tolerated flip/main rate ratio (drift between records)
+_HMM_IID_REASON_KEY = "uncorrelated (i.i.d.)"
+
+
+def lagged_autocovariance_sum(
+    v,
+    max_lag,
+    n_boot=1000,
+    seed=0,
+    blocks_per_lag=10,
+    min_blocks=20,
+    max_blocks=2000,
+    baseline_lags=None,
+    drift_window=None,
+):
+    """
+    Model-free correlation statistic of a uniformly sampled trace with a block-bootstrap CI.
+
+    S = sum_{k=1..K} C(k), the autocovariance of the mean-subtracted trace summed over
+    lags 1..K (lag 0, the readout-noise variance, is excluded). It is the mean of the
+    lagged-product series w_t = x_t * (x_{t+1} + ... + x_{t+K}). The CI resamples
+    non-overlapping blocks of w with replacement: block length
+    max(blocks_per_lag * K, 2 * span, len(w) // max_blocks), capped at
+    len(w) // min_blocks and at least 2K, where span is the largest lag used
+    (max_blocks bounds the bootstrap memory on long records). No telegraph model is
+    assumed: any shot-to-shot correlation within K samples (parity switching, T1
+    carryover, correlated readout) contributes, uncorrelated shots of any P(e) give
+    S ~ 0.
+
+    Drift-corrected traces. Subtracting a centred rolling mean of W samples puts a
+    flat offset on every lag 0 < k < W/2: C(k) -> C(k) - P/W * (1 + k/W), with P the
+    record's total autocovariance sum over all lags (the trace variance for i.i.d.
+    shots). Summed over lags 1..K that is about -P * K / W, as large as a weak parity
+    record's own lag sum. Pass only the interior (drop W//2 samples at each end, where
+    a mode="nearest" edge repeats the end samples and biases S upward) and give
+    baseline_lags=(L1, L2), a lag band with K < L1 <= L2 < W/2 where the correlation
+    of interest has decayed, and drift_window=W: the offset is then measured in that
+    band and removed, w_t -> w_t - c * x_t * (x_{t+L1} + ... + x_{t+L2}) with
+    c = (K + K(K+1)/(2W)) / ((L2 - L1 + 1) * (1 + (L1 + L2)/(2W))), so the bootstrap
+    carries the baseline noise too. Without drift_window the band is taken as flat.
+
+    Returns dict: available, value (baseline-corrected when baseline_lags is given),
+    uncorrected_value, baseline_offset (value - uncorrected_value), baseline_lags
+    (None when not used), boot (n_boot replicates of S), max_lag, block_len, n_blocks,
+    reason ("" when available).
+    """
+    out = {
+        "available": False,
+        "value": float("nan"),
+        "uncorrected_value": float("nan"),
+        "baseline_offset": 0.0,
+        "baseline_lags": None,
+        "boot": np.zeros(0),
+        "max_lag": int(max_lag),
+        "block_len": 0,
+        "n_blocks": 0,
+        "reason": "",
+    }
+    x = np.ravel(np.asarray(v, dtype=float))
+    k = int(max_lag)
+    if k < 1:
+        raise ValueError("max_lag must be >= 1")
+    span = k
+    if baseline_lags is not None:
+        l1, l2 = (int(b) for b in baseline_lags)
+        if not k < l1 <= l2:
+            raise ValueError("baseline_lags must satisfy max_lag < L1 <= L2")
+        if drift_window is not None and not 2 * l2 < int(drift_window):
+            raise ValueError("baseline_lags must lie below half the drift window")
+        span = l2
+        out["baseline_lags"] = [l1, l2]
+    n_w = x.size - span
+    block_len = (
+        min(max(blocks_per_lag * k, 2 * span, n_w // max_blocks), n_w // min_blocks)
+        if n_w > 0
+        else 0
+    )
+    if block_len < 2 * k:
+        out["reason"] = (
+            f"record of {x.size} samples too short for {min_blocks} blocks of >= {2 * k} "
+            f"samples at max_lag {k}" + (f" (baseline to lag {span})" if span > k else "")
+        )
+        return out
+    x = x - x.mean()
+    cs = np.concatenate([[0.0], np.cumsum(x)])
+    w_raw = x[:n_w] * (cs[k + 1 : k + 1 + n_w] - cs[1 : 1 + n_w])
+    w = w_raw
+    if baseline_lags is not None:
+        width = l2 - l1 + 1
+        if drift_window:
+            dw = float(drift_window)
+            scale = (k + k * (k + 1) / (2.0 * dw)) / (width * (1.0 + (l1 + l2) / (2.0 * dw)))
+        else:
+            scale = k / width
+        w = w_raw - scale * x[:n_w] * (cs[l2 + 1 : l2 + 1 + n_w] - cs[l1 : l1 + n_w])
+    n_blocks = n_w // block_len
+    block_means = w[: n_blocks * block_len].reshape(n_blocks, block_len).mean(axis=1)
+    rng = np.random.default_rng(seed)
+    boot = block_means[rng.integers(0, n_blocks, size=(int(n_boot), n_blocks))].mean(axis=1)
+    value, raw = float(w.mean()), float(w_raw.mean())
+    out.update(
+        available=True,
+        value=value,
+        uncorrected_value=raw,
+        baseline_offset=value - raw,
+        boot=boot,
+        block_len=int(block_len),
+        n_blocks=int(n_blocks),
+    )
+    return out
+
+
+def drift_corrected_lag_sum(v_corr, window_samples, max_lag, seed=0, n_boot=1000):
+    """
+    lagged_autocovariance_sum of a trace corrected by remove_slow_drift (rolling mean of
+    window_samples W; W <= 1 or W >= len means no time-dependent correction).
+
+    Two artefacts of the rolling mean are removed. (1) Its mode="nearest" edges repeat
+    the first and last sample over half a window, leaking a common ramp into those
+    shots (a positive bias for an uncorrelated record): only the interior
+    v_corr[W//2 : N - W//2] is used ("edge_trim_samples" = W//2), or the full trace
+    when the interior is too short ("edge_trim_samples" = 0). (2) The flat offset
+    -P/W per lag (about -var * K / W summed over lags 1..K, comparable to a weak parity
+    record's own lag sum) is measured in the baseline band of lags 4K..min(8K, W/2 - 1)
+    and removed (lagged_autocovariance_sum baseline_lags / drift_window); without room
+    for a band of at least K lags, "baseline_lags" is None and the offset stays.
+    """
+    v_corr = np.ravel(np.asarray(v_corr, dtype=float))
+    k = int(max_lag)
+    w = int(window_samples)
+    detrended = 1 < w < v_corr.size
+    half = w // 2 if detrended else 0
+    baseline = None
+    if detrended:
+        l1, l2 = 4 * k, min(8 * k, (w - 1) // 2)
+        if l2 >= l1 + k:
+            baseline = (l1, l2)
+    # Preference: interior with baseline, interior without, then the full trace.
+    candidates = []
+    for trim in (half, 0) if half else (0,):
+        for band in (baseline, None) if baseline else (None,):
+            candidates.append((v_corr[trim : v_corr.size - trim], trim, band))
+    for trace, trim, band in candidates:
+        lag_sum = lagged_autocovariance_sum(
+            trace,
+            k,
+            n_boot=n_boot,
+            seed=seed,
+            baseline_lags=band,
+            drift_window=w if band else None,
+        )
+        if lag_sum["available"]:
+            break
+    lag_sum["edge_trim_samples"] = trim
+    return lag_sum
+
+
+def _lag_cov_ratio(ctl, main):
+    """Control/parity ratio of lagged_autocovariance_sum with one-sided 95% / 5% bounds.
+
+    "computed" is True when both records carry an available statistic, even if no ratio
+    could be formed (parity lag sum not significantly > 0, or different max_lag).
+    """
+    c = (ctl.get("acf") or {}).get("lag_covariance_sum") or {}
+    m = (main.get("acf") or {}).get("lag_covariance_sum") or {}
+    out = {
+        "ratio": float("nan"),
+        "upper95": float("nan"),
+        "lower05": float("nan"),
+        "reason": "",
+        "computed": bool(c.get("available") and m.get("available")),
+    }
+    if not out["computed"]:
+        out["reason"] = "lag-covariance statistic unavailable: " + (
+            c.get("reason") or m.get("reason") or "not computed (non-uniform timing?)"
+        )
+        return out
+    if c["max_lag"] != m["max_lag"]:
+        out["reason"] = f"lag-covariance max_lag differs ({c['max_lag']} vs {m['max_lag']})"
+        return out
+    m_boot = np.asarray(m["boot"], dtype=float)
+    c_boot = np.asarray(c["boot"], dtype=float)
+    n = min(m_boot.size, c_boot.size)
+    if not (m["value"] > 0 and n and np.percentile(m_boot[:n], 5) > 0):
+        out["reason"] = (
+            "parity record shows no significant lag covariance to normalise by "
+            "(weak contrast or short record: acquire more shots)"
+        )
+        return out
+    # The records are independent; reverse one replicate list so equal seeds do not
+    # pair identical block draws.
+    ratio_boot = c_boot[:n] / m_boot[:n][::-1]
+    out["ratio"] = float(c["value"] / m["value"])
+    out["upper95"] = float(np.percentile(ratio_boot, 95))
+    out["lower05"] = float(np.percentile(ratio_boot, 5))
+    return out
+
+
+def _effective_rate(hmm):
+    """(gamma01 + gamma10)/2 and its 1-sigma error; label-invariant, so it survives a flip."""
+    g01, g10 = hmm.get("gamma01_hz", float("nan")), hmm.get("gamma10_hz", float("nan"))
+    e01, e10 = hmm.get("gamma01_err_hz", float("nan")), hmm.get("gamma10_err_hz", float("nan"))
+    g = 0.5 * (g01 + g10)
+    err = e01 if hmm.get("symmetric") else 0.5 * math.hypot(e01, e10)
+    return float(g), float(err)
+
+
 def compare_parity_controls(main_result, control_results):
     """
     Sanity checks between the parity-sensing run and its controls.
@@ -85,32 +298,74 @@ def compare_parity_controls(main_result, control_results):
     ----------
     main_result : dict
         {"label", "hmm": fit_two_state_hmm output, "acf": autocorrelation
-        output, "occupancy_state1": float} for the parity-sensing run.
+        output, "occupancy_state1": float} for the parity-sensing run. The
+        "acf" dict of analyze_modified_ramsey_record also carries
+        "lag_covariance_sum" (lagged_autocovariance_sum of the corrected trace).
     control_results : list of dicts
         Same structure plus "control_type" in
         {"flip_final_pi2", "echo_null", "tau_offset", "drive_detuned",
          "drive_off"}.
 
-    Checks applied (each control gets checked=True/False + note):
-      flip_final_pi2 : telegraph must SURVIVE (similar amplitude/rate) with
-                       the state-occupancy mapping inverted:
-                       occ1_flip ~ 1 - occ1_main.
-      echo_null      : telegraph must be SUPPRESSED: ACF amplitude < 25% of
-                       the main run's, or the HMM must report unidentifiable.
-      tau_offset / drive_detuned / drive_off :
-                       reduced contrast expected; reported informationally
-                       with amplitude ratios.
+    Each control gets checked=True (passed) / False (failed) / None (not
+    decisive), a verdict string and a note. "lag_cov_ratio" is the control's
+    summed lag-1..K autocovariance over the parity record's, and
+    "lag_cov_ratio_upper95" / "lag_cov_ratio_lower05" its one-sided 95%
+    block-bootstrap upper / lower bounds.
 
-    Returns dict: {"controls": [...], "all_expected": bool}
+      flip_final_pi2 : the telegraph must SURVIVE (ACF amplitude ratio > 0.25)
+                       at the SAME effective HMM rate (gamma01+gamma10)/2: it
+                       fails only if the rates differ by more than
+                       FLIP_RATE_AGREEMENT_SIGMA combined 1-sigma errors AND by
+                       more than a factor FLIP_RATE_MAX_RATIO (rate drift
+                       between the two records is tolerated up to that factor).
+                       Without finite rate errors only the factor rule applies.
+                       The occupancy inversion occ1_flip ~ 1 - occ1_main
+                       (within 0.15) is tested only when |occ1_main - 0.5| >
+                       0.15; for a balanced parity record any balanced flip
+                       record would "invert", so the verdict is then
+                       "inversion uninformative" (checked=None) unless
+                       survival or the rate check failed.
+      echo_null      : the telegraph must be SUPPRESSED: the control HMM is
+                       unidentifiable by its i.i.d. gate, OR
+                       lag_cov_ratio_upper95 < 0.25. The model-free statistic
+                       vetoes the HMM: when the lag ratio's 5% lower bound is
+                       >= 0.25 the echo fails. The HMM's resolved-rate gate is
+                       not null evidence (a partially refocused echo, fitted
+                       with the parity mapping, can lock onto a fast rate),
+                       and neither is an ACF fit failure (it also happens for
+                       non-uniform timing).
+      drive_off      : no pi/2 pulses, so no parity information: its
+                       correlation must be < 0.1 of the parity record's.
+                       Passes when lag_cov_ratio_upper95 < 0.1; fails when
+                       lag_cov_ratio_lower05 >= 0.1 (inter-shot carryover /
+                       readout correlation contaminates the parity record);
+                       otherwise "inconclusive" (checked=None: the interval
+                       straddles 0.1, acquire more shots). When both records
+                       carry the lag statistic but no ratio can be formed (the
+                       parity record's own lag sum is not significantly > 0:
+                       weak contrast or short record), also "inconclusive".
+                       Only when the lag statistic is absent does the ACF
+                       amplitude ratio decide, by its point value (< 0.1
+                       passes, >= 0.1 fails; no CI, so a noisy record can fail
+                       by chance); with neither, "inconclusive".
+      tau_offset / drive_detuned :
+                       reduced contrast expected; reported informationally.
+
+    Returns dict: {"controls": [...], "all_expected": bool}. all_expected
+    needs a valid parity record, at least one decisive check, and no failed one.
     """
 
     def amp(res):
         a = res.get("acf", {}).get("amplitude", float("nan"))
         return a if (a is not None and math.isfinite(a) and a > 0) else float("nan")
 
+    def fmt(x):
+        return f"{x:.2f}" if math.isfinite(x) else "nan"
+
     main_amp = amp(main_result)
     main_occ1 = float(main_result.get("occupancy_state1", float("nan")))
-    main_identifiable = bool(main_result.get("hmm", {}).get("identifiable", False))
+    main_hmm = main_result.get("hmm") or {}
+    main_identifiable = bool(main_hmm.get("identifiable", False))
     main_valid = main_identifiable and math.isfinite(main_amp)
     entries = []
     all_ok = main_valid
@@ -123,40 +378,146 @@ def compare_parity_controls(main_result, control_results):
             if (math.isfinite(c_amp) and math.isfinite(main_amp) and main_amp > 0)
             else float("nan")
         )
+        lag = _lag_cov_ratio(ctl, main_result)
         entry = {
             "control_type": ctype,
             "label": ctl.get("label", ctype),
             "amplitude_ratio": ratio,
+            "lag_cov_ratio": lag["ratio"],
+            "lag_cov_ratio_upper95": lag["upper95"],
+            "lag_cov_ratio_lower05": lag["lower05"],
             "checked": None,
+            "verdict": "informational",
             "note": "",
         }
+        lag_note = (
+            f"lag-covariance ratio {fmt(lag['ratio'])} (95% upper {fmt(lag['upper95'])})"
+            if math.isfinite(lag["upper95"])
+            else lag["reason"]
+        )
         if ctype == "flip_final_pi2":
             occ1 = float(ctl.get("occupancy_state1", float("nan")))
             survives = math.isfinite(ratio) and ratio > 0.25
-            inverted = (
-                math.isfinite(occ1)
-                and math.isfinite(main_occ1)
-                and abs(occ1 - (1.0 - main_occ1)) < 0.15
+            ctl_hmm = ctl.get("hmm") or {}
+            g_main, e_main = _effective_rate(main_hmm)
+            g_flip, e_flip = _effective_rate(ctl_hmm)
+            combined = math.hypot(e_main, e_flip)
+            # hmm.py can report identifiable rates with NaN errors (singular Hessian);
+            # without errors the factor-of-FLIP_RATE_MAX_RATIO rule decides alone.
+            errors_ok = math.isfinite(combined) and combined > 0
+            rates_ok = (
+                bool(ctl_hmm.get("identifiable", False))
+                and math.isfinite(g_main)
+                and math.isfinite(g_flip)
+                and g_main > 0
+                and g_flip > 0
             )
-            ok = main_valid and survives and inverted
-            entry["checked"] = bool(ok)
+            rate_ok = rates_ok and (
+                max(g_flip / g_main, g_main / g_flip) <= FLIP_RATE_MAX_RATIO
+                or (errors_ok and abs(g_flip - g_main) <= FLIP_RATE_AGREEMENT_SIGMA * combined)
+            )
+            informative = (
+                math.isfinite(main_occ1) and abs(main_occ1 - 0.5) > FLIP_MIN_OCCUPANCY_IMBALANCE
+            )
+            inverted = (
+                informative
+                and math.isfinite(occ1)
+                and abs(occ1 - (1.0 - main_occ1)) < FLIP_MAX_INVERSION_ERROR
+            )
+            if not (main_valid and survives and rate_ok) or (informative and not inverted):
+                entry["checked"], entry["verdict"] = False, "failed"
+            elif informative:
+                entry["checked"], entry["verdict"] = True, "passed"
+            else:
+                entry["verdict"] = "inversion uninformative"
             entry["note"] = (
-                f"amplitude ratio {ratio:.2f} (expect ~1), occupancy(state1) "
-                f"{occ1:.2f} vs 1-main={1.0 - main_occ1:.2f} (expect equal)"
+                f"amplitude ratio {fmt(ratio)} (expect ~1); effective HMM rate "
+                f"{fmt(g_flip)} vs main {fmt(g_main)} Hz (combined 1-sigma "
+                f"{fmt(combined)}; expect equal within "
+                + (
+                    f"{FLIP_RATE_AGREEMENT_SIGMA:g} sigma or a factor {FLIP_RATE_MAX_RATIO:g}); "
+                    if errors_ok
+                    else f"a factor {FLIP_RATE_MAX_RATIO:g}: rate errors unavailable); "
+                )
+                + f"occupancy(state1) {fmt(occ1)} vs 1-main={fmt(1.0 - main_occ1)} "
+                + (
+                    "(expect equal)"
+                    if informative
+                    else f"(inversion uninformative: |occ1_main - 0.5| <= "
+                    f"{FLIP_MIN_OCCUPANCY_IMBALANCE:g})"
+                )
             )
         elif ctype == "echo_null":
-            hmm_ident = bool(ctl.get("hmm", {}).get("identifiable", False))
-            suppressed = math.isfinite(ratio) and ratio < 0.25
-            null_evidence = suppressed or (not hmm_ident and main_valid)
-            ok = main_valid and null_evidence
-            entry["checked"] = bool(ok)
-            entry["note"] = (
-                f"amplitude ratio {ratio if math.isfinite(ratio) else float('nan'):.2f} "
-                "(expect << 1: echo refocuses the static parity detuning)"
+            ctl_hmm = ctl.get("hmm") or {}
+            hmm_null = not ctl_hmm.get("identifiable", False) and any(
+                _HMM_IID_REASON_KEY in reason
+                for reason in ctl_hmm.get("unidentifiable_reasons", [])
             )
+            lag_null = (
+                math.isfinite(lag["upper95"]) and lag["upper95"] < ECHO_NULL_MAX_LAG_COV_RATIO
+            )
+            # Significant surviving correlation overrides the HMM's i.i.d. verdict.
+            lag_veto = (
+                math.isfinite(lag["lower05"]) and lag["lower05"] >= ECHO_NULL_MAX_LAG_COV_RATIO
+            )
+            ok = main_valid and (hmm_null or lag_null) and not lag_veto
+            entry["checked"] = bool(ok)
+            entry["verdict"] = "passed" if ok else "failed"
+            entry["note"] = (
+                f"HMM null (i.i.d. gate) {hmm_null}; {lag_note} "
+                f"(expect < {ECHO_NULL_MAX_LAG_COV_RATIO:g}: echo refocuses the static "
+                f"parity detuning)"
+                + (
+                    f"; 5% lower bound {fmt(lag['lower05'])} >= "
+                    f"{ECHO_NULL_MAX_LAG_COV_RATIO:g}: the telegraph survived the echo"
+                    if lag_veto
+                    else ""
+                )
+                + f"; amplitude ratio {fmt(ratio)}"
+            )
+        elif ctype == "drive_off":
+            thr = DRIVE_OFF_MAX_CORRELATION_RATIO
+            if math.isfinite(lag["upper95"]):
+                measure = (
+                    f"lag-covariance ratio {fmt(lag['ratio'])} (5% lower "
+                    f"{fmt(lag['lower05'])}, 95% upper {fmt(lag['upper95'])})"
+                )
+                # Symmetric: decisive only when the CI clears the threshold either way.
+                passed = lag["upper95"] < thr
+                failed = math.isfinite(lag["lower05"]) and lag["lower05"] >= thr
+            elif lag["computed"]:
+                # Both records carry the statistic but no ratio can be formed (e.g. the
+                # parity record's own lag sum is not significant): the ACF amplitude of
+                # such a weak record is fitted noise, so it does not decide either.
+                measure = "lag-covariance ratio not formed"
+                passed = failed = False
+            else:
+                measure = f"ACF amplitude ratio {fmt(ratio)}"
+                passed = math.isfinite(ratio) and ratio < thr
+                failed = math.isfinite(ratio) and ratio >= thr
+            if main_valid and passed:
+                entry["checked"], entry["verdict"] = True, "passed"
+                tail = ""
+            elif failed or not main_valid:
+                entry["checked"], entry["verdict"] = False, "failed"
+                if not failed:
+                    tail = ": parity record not valid"
+                else:
+                    tail = ": inter-shot carryover / readout correlation contaminates the parity record"
+            else:
+                entry["verdict"] = "inconclusive"
+                if math.isfinite(lag["upper95"]):
+                    tail = (
+                        f": 90% interval [{fmt(lag['lower05'])}, {fmt(lag['upper95'])}] "
+                        f"straddles {thr:g}; acquire more shots"
+                    )
+                elif lag["computed"]:
+                    tail = f": {lag['reason']}"
+                else:
+                    tail = f": no correlation evidence available ({lag['reason']})"
+            entry["note"] = f"{measure} (expect < {thr:g})" + tail
         else:
-            entry["checked"] = None  # informational only
-            entry["note"] = f"amplitude ratio {ratio}"
+            entry["note"] = f"amplitude ratio {fmt(ratio)}; {lag_note}"
         if entry["checked"] is not None:
             n_decisive_checks += 1
         if entry["checked"] is False:
@@ -437,7 +798,13 @@ def analyze_modified_ramsey_record(
     hmm_kwargs    : extra kwargs forwarded to fit_two_state_hmm.
 
     Returns dict with sub-results: calibration, drift, hmm, acf, psd,
-    rate_vs_bin, reset, assessment, plus scalar summary fields.
+    rate_vs_bin, reset, assessment, plus scalar summary fields. acf also
+    carries "lag_covariance_sum" (drift_corrected_lag_sum of the corrected
+    trace, lags 1..ceil(expected_dwell_s/dt): the interior half a drift window
+    away from either end, "edge_trim_samples" recording the trim, 0 when the
+    full trace had to be used; the rolling mean's flat per-lag offset removed
+    via the baseline band "baseline_lags"), the model-free statistic that
+    compare_parity_controls uses.
     """
     I = np.ravel(np.asarray(I, dtype=float))
     Q = np.ravel(np.asarray(Q, dtype=float))
@@ -535,6 +902,16 @@ def analyze_modified_ramsey_record(
         acf = autocorrelation_rate_estimate(v_corr, dt_nominal)
         psd = psd_rate_estimate(v_corr, dt_nominal)
         rvb = rate_vs_bin_size(v_corr, dt_nominal, calibration["threshold"])
+        # Model-free correlation for compare_parity_controls: lags up to one
+        # expected dwell (same K for the parity record and its controls).
+        max_lag = (
+            max(1, math.ceil(expected_dwell_s / dt_nominal - 1e-9))
+            if expected_dwell_s and expected_dwell_s > 0
+            else 1
+        )
+        acf["lag_covariance_sum"] = drift_corrected_lag_sum(
+            v_corr, int(drift.get("window_samples", 0)), max_lag, seed=seed
+        )
     else:
         skipped = drift["warnings"][0]
         acf = {
@@ -546,6 +923,15 @@ def analyze_modified_ramsey_record(
             "lags_s": np.zeros(0),
             "fit_ok": False,
             "warnings": [skipped],
+            "lag_covariance_sum": {
+                "available": False,
+                "value": float("nan"),
+                "boot": np.zeros(0),
+                "max_lag": 0,
+                "block_len": 0,
+                "n_blocks": 0,
+                "reason": skipped,
+            },
         }
         psd = {
             "f_corner_hz": float("nan"),

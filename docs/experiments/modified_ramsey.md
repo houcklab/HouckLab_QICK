@@ -339,17 +339,84 @@ diagnostics only.
 
 | Control | Change | Expected signature | Decision |
 |---|---|---|---|
-| `flip_final_pi2` | +180° closing phase | Telegraph amplitude and rates unchanged; occupancy inverted | ACF amplitude ratio > 0.25 **and** \|occ1_flip − (1 − occ1_main)\| < 0.15 |
-| `echo_null` | `use_pi_pulse=True` | Contrast suppressed (echo refocuses df) | Ratio < 0.25, or HMM unidentifiable |
+| `flip_final_pi2` | +180° closing phase | Telegraph amplitude and rates unchanged; occupancy inverted | Fails unless ACF amplitude ratio > 0.25 **and** the effective HMM rate (γ01 + γ10)/2 agrees with the parity record's (a rate fails only if it differs by more than 3 combined 1σ errors **and** by more than a factor 2, so ordinary drift between the two records is tolerated; when the HMM reports no finite rate errors, the factor-2 rule decides alone). Then, if \|occ1_main − 0.5\| > 0.15: passes when \|occ1_flip − (1 − occ1_main)\| < 0.15, else fails; if \|occ1_main − 0.5\| ≤ 0.15: "inversion uninformative" (not decisive) |
+| `echo_null` | `use_pi_pulse=True` | Contrast suppressed (echo refocuses df) | Passes if the control HMM is unidentifiable by its i.i.d. gate, **or** the lag-covariance ratio's 95% upper bound < 0.25. Fails regardless when the ratio's 5% lower bound is ≥ 0.25 (the telegraph survived) |
 | `tau_offset` | programmed tau × (1 + frac) | Off the π condition: contrast reduced or rotated | Informational |
 | `drive_detuned` | drive + detuning (default +df), bandwidth limit lifted | Both branches off-resonant, mapping degraded | Informational |
-| `drive_off` | `pi2_gain = 0` | Readout/thermal baseline, no parity information | Informational |
+| `drive_off` | `pi2_gain = 0` | Readout/thermal baseline, no parity information | Passes if the lag-covariance ratio's 95% upper bound < 0.1; fails if its 5% lower bound is ≥ 0.1 (inter-shot carryover / readout correlation contaminates the parity record); when the interval straddles 0.1, "inconclusive" (not decisive: acquire more shots), whichever side the point estimate is on. When both records carry the lag statistic but no ratio can be formed (the parity record's own lag sum is not significantly > 0: weak contrast or short record), also "inconclusive". Only when the lag statistic is absent does the ACF amplitude ratio decide, by its point value: < 0.1 passes, ≥ 0.1 fails (no CI, so a noisy record can fail by chance); with neither available, "inconclusive" (not decisive) |
+
+The **lag-covariance ratio** is model-free. For each record, `analyze_modified_ramsey_record`
+stores `acf["lag_covariance_sum"]`: the autocovariance of the drift-corrected trace summed
+over lags 1..K, with K = ceil(`expected_parity_dwell_ms` / dt). Lag 0, the readout-noise
+variance, is excluded, so uncorrelated shots of any P(e) give ≈ 0. It is computed on the
+interior of the trace, half a drift window (`edge_trim_samples` = W/2) away from either
+end: the rolling-mean drift estimate repeats the end samples there, and that common ramp
+biased the full-trace sum upward (a clean drive_off whose first and last shots read
+2.5σ above the e mean reached 0.7× a weak parity record's sum). The full trace is used
+only when the interior is too short. Subtracting the rolling mean also puts a flat
+offset of −P/W·(1 + k/W) on every lag k < W/2 (P: the record's autocovariance summed over
+all lags, the trace variance for i.i.d. shots), about −var·K/W on the lag sum (−0.013 of
+the variance at K = 10, W = 763). That is not small against a weak parity record: at the
+CSTQ03 2026-08-04 contrast (normalised ACF amplitude 0.0046) the parity lag sum itself is
+only ≈ 0.017 of the variance, and left in, the offset pulls every control's ratio down (a
+drive_off at true ratio 0.2 next to an A = 0.02 parity record measured ≈ −0.1 on 10⁵
+shots, so it could pass). The offset
+is therefore measured in a baseline band of lags 4K..min(8K, W/2 − 1), where a telegraph
+of the expected dwell has decayed to < 10⁻³ of its lag-0 value, and removed: K·(1 + (K+1)/(2W)) times the band
+mean over (1 + (L1+L2)/(2W)). `value` is the corrected sum, `uncorrected_value` the raw
+one, `baseline_lags` the band (None when W is too short for a band of ≥ K lags). Its CI is
+a block bootstrap of the baseline-corrected lagged products (so the baseline noise, about
++10 % on the CI width, is included): 1000 resamples of non-overlapping blocks of
+max(10K, 2·L2, N/2000) samples, capped at N/20 and at least 2K. The ratio is control / parity, and its
+one-sided 95% upper bound comes from the two independent bootstraps. It needs uniform
+timing and a parity record whose own lag sum is significantly > 0. At the CSTQ03
+2026-08-04 contrast that takes a few 10⁵ shots; resolving the thresholds takes far more.
+The bootstrap SD of the corrected sum is ≈ 0.011·var·√(10⁵/N) at K = 10, so a clean
+echo_null can pass (95 % upper bound < 0.25) only from about 2·10⁶ shots (≈ 8 min at
+262 µs) and a clean drive_off (< 0.1) only from about 10⁷ (≈ 45 min); below that the
+drive_off is "inconclusive" and the echo rests on the HMM's i.i.d. gate. An ACF fit failure
+alone is never counted as null evidence: the ACF is also skipped for non-uniform timing.
+Nor is the HMM's resolved-rate gate ("(γ01 + γ10)·dt > 1"): the echo is fitted with the
+parity record's assumed mapping, so a partially refocused echo (mapping 0.29/0.71
+against 0.1/0.9, lag ratio ≈ 0.3) is mis-modelled, locks onto a fast rate and trips
+that gate although the telegraph survived. Only the i.i.d. gate counts, and it fires
+for every ideal echo null tested (P(e) = 0, 0.03, 0.1, 0.2, 0.5).
+Each control entry in `_control_comparison.json` reports `amplitude_ratio`,
+`lag_cov_ratio`, `lag_cov_ratio_upper95`, `lag_cov_ratio_lower05`, `checked` (True / False / None = not
+decisive), `verdict` and a `note`.
 
 `all_expected` is True only if all of the following hold:
 
 - the parity record is identifiable and has a finite ACF amplitude;
-- at least one decisive check ran and passed;
+- at least one decisive check ran, and none failed;
 - no requested control was skipped as infeasible.
+
+For a balanced parity record (the symmetric case), the flip control is not decisive, so
+`echo_null` and `drive_off` carry the verdict. A run whose only control is `flip_final_pi2`
+therefore gets `all_expected = False` on a balanced record. The default `validation_controls` list
+does not include `drive_off` yet; add it when the inter-shot reset has to be checked.
+
+The `drive_off` threshold of 0.1 is a contamination budget: at most a tenth of the
+parity record's short-lag correlation may come from sources that carry no parity.
+Slow readout drift counts as such a source, and it can exceed the budget even with a
+complete inter-shot reset. Simulated with the default 200 ms `drift_window_ms` (dt 262 µs,
+K = 10, the same τ ≈ 122 ms readout drift in the parity record and the drive_off
+record: the CSTQ03 2026-08-04 residual), the baseline-corrected lag-covariance ratio
+(`drift_corrected_lag_sum`) comes out at about 0.8–1.2× the ACF amplitude ratio: ≈ 1×
+at the CSTQ03 contrast (normalised amplitude 0.0046), ≈ 0.8× against an A = 0.02 parity
+record. (The uncorrected sum read about 1.5×; the baseline band takes out roughly half
+of the drift residual.) The 200 µs-relax arms of that diagnostic (ACF amplitude ratio
+0.25) would therefore sit near 0.2–0.25, about twice the budget, and so would the
+250 µs acceptance run if its r(1) ratio of about 0.27 carries over to the lag sum.
+Whether that reads "failed" or "inconclusive" depends on the record length: the 5%
+lower bound clears 0.1 only once the ratio's bootstrap SD is ≲ 0.06–0.09, about 0.5–1·10⁷ shots
+at that contrast. This is a real contamination of the parity record, not a false
+alarm, but more relax time will not fix it. Shortening `drift_window_ms` helps less
+than the uncorrected sum suggests: at the 50 ms floor (20× a 2.5 ms dwell) the
+corrected ratio fell only 1.4–1.8× in the same simulations (the uncorrected residual
+fell ≈ 4×, but at short windows the high-passed drift still bends across the 4K..8K
+baseline band, so less of it is removed), leaving ≈ 0.12–0.18, still at or above the
+budget. The remedy is to remove the drift source.
 
 ### Validation controls
 
