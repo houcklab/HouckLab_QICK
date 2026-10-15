@@ -266,5 +266,9 @@ streamed in chunks. Decimated (path B, v2): the raw decimated ADC trace over `ca
 sub-us resolution, short records.
 
 ### Apriori mode (zero span)
-`classifier_method="apriori"`: classify zero-span samples with a cached or freshly measured
-single-shot separator, instead of KMeans clustering of the record itself (`"kmeans"`).
+`classifier_method="apriori_gmm"` (legacy name `"apriori"`): project zero-span samples onto the
+g → e axis of a cached or freshly measured single-shot separator and threshold them where a
+two-Gaussian fit to the projected record puts the boundary (no bits when the record is not
+bimodal), instead of KMeans clustering of the record itself (`"kmeans"`). `"apriori_midpoint"`
+thresholds at the g/e midpoint, which is wrong for driven zero-span data
+([zero_span_parity](experiments/zero_span_parity.md#analysis)).

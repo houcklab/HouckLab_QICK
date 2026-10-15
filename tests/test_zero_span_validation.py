@@ -732,3 +732,59 @@ def test_modulation_check_restores_drive_gain_on_exception(tmp_path):
     assert exp.builds[-2]["qubit_gain"] == 0  # modulated_strobe_acquire's own rebuild
     assert exp.cfg["qubit_gain"] == 200
     assert exp.builds[-1]["qubit_gain"] == 200 and exp.builds[-1]["reps"] == 2000
+
+
+# ---------------------------------------------------------------------------------------
+# Stage 7 metrics (F07): the parity bits come from a data-derived threshold
+# ---------------------------------------------------------------------------------------
+
+
+class _DrivenTelegraphFakeExp(_StrobeFakeExp):
+    """Zero-span record under a CW parity drive: the driven parity sits at g + pe (e - g)
+    (pe = 0.5, exactly the SingleShot midpoint), the other at g; drive off -> g only."""
+
+    def __init__(self, n, sp_us, out_dir, dwell_us=2000.0, noise=0.25):
+        super().__init__(n, sp_us, out_dir)
+        self._dwell = dwell_us
+        self._noise = noise
+        self.parity = None
+
+    def acquire(self, progress=False):
+        self.parity = _telegraph(self._n, self._rng, dwell_us=self._dwell, sp_us=self._sp)
+        pe = 0.5 if self.cfg["qubit_gain"] > 0 else 0.0
+        I = 5.0 * pe * self.parity + self._rng.normal(0, self._noise, self._n)
+        Q = self._rng.normal(0, self._noise, self._n)
+        t = np.arange(self._n) * self._sp
+        return {"I": I, "Q": Q, "t_us": t, "mode": "strobe", "sample_period_us": self._sp}
+
+
+def test_environment_sweep_switch_rate_uses_data_threshold(tmp_path):
+    from qicklab.analysis.zero_span import classify_parity_trace, sliding_window_switch_rate
+    from qicklab.runs.zero_span_validation import _trace_metrics, run_environment_sweep
+
+    d = str(tmp_path)
+    exp = _DrivenTelegraphFakeExp(25_000, SP_US, d)
+    true_rate = 1e6 / 2000.0  # one switch per mean dwell
+
+    m = _trace_metrics(exp, SEP)
+    assert 0.75 * true_rate < m["switch_rate"] < 1.25 * true_rate, m
+    assert 0.7 * 2000.0 < m["mean_dwell"] < 1.3 * 2000.0, m
+    assert m["separation_snr"] > 5.0, m
+
+    # the old midpoint threshold sits on the driven level: half its samples flip at random
+    data = exp.acquire()
+    mid = classify_parity_trace(data["I"], data["Q"], separator=SEP, method="apriori_midpoint")
+    rate_mid = sliding_window_switch_rate(mid["binary_states"], data["t_us"], 1000.0)
+    assert np.mean(rate_mid["rate_Hz"]) > 10 * true_rate
+
+    # drive off: unimodal, so no bits -> NaN rate and dwell (formerly ~0 Hz at the midpoint)
+    def _set_gain(e, g):
+        e.set_qubit_gain(g)
+
+    res = run_environment_sweep(exp, SEP, "qubit_gain", [200, 0], _set_gain, out_dir=d)
+    tbl = res["table"]
+    on, off = tbl["qubit_gain"].index(200), tbl["qubit_gain"].index(0)
+    assert 0.75 * true_rate < tbl["switch_rate"][on] < 1.25 * true_rate, tbl
+    assert np.isnan(tbl["switch_rate"][off]) and np.isnan(tbl["mean_dwell"][off]), tbl
+    assert np.isfinite(tbl["separation_snr"][off]) and np.isfinite(tbl["mean_signal_level"][off])
+    assert os.path.exists(res["sidecar"])

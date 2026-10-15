@@ -871,7 +871,7 @@ ZSP_DriveParams = {
 
 # Offline-analysis params (see analyze_parity_run docstring).
 ZSP_AnalysisParams = {
-    "classifier_method": "apriori",  # "apriori" | "kmeans"
+    "classifier_method": "apriori_gmm",  # "apriori_gmm" | "apriori_midpoint" | "kmeans"
     "window_us": 1000.0,
     "k_sigma": 5.0,
     "step_us": None,

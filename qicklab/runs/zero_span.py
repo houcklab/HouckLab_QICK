@@ -5,7 +5,7 @@ import os
 import numpy as np
 
 from qicklab.analysis.spectroscopy import MIN_PARTNER_SNR, pick_parity_drive_freq
-from qicklab.analysis.zero_span import analyze_parity_run
+from qicklab.analysis.zero_span import SEPARATOR_METHODS, analyze_parity_run
 from qicklab.core.acquisition import chunked_acquire
 from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
@@ -108,14 +108,15 @@ def run_zero_span_parity(ctx, p):
         p["ZSP_Separator_Cached"]["e_center"] = sep["e_center"]
         p["ZSP_Separator_Cached"]["normal"] = sep["normal"]
         p["ZSP_Separator_Cached"]["midpoint"] = sep["midpoint"]
-    elif p["ZSP_AnalysisParams"]["classifier_method"] == "apriori":
+    elif p["ZSP_AnalysisParams"]["classifier_method"] in SEPARATOR_METHODS:
         # rule 7 (docs/experiments/zero_span_parity.md): cached fields must be shape (2,)
         for _k in ("g_center", "e_center", "normal", "midpoint"):
             _v = p["ZSP_Separator_Cached"][_k]
             if _v is None:
                 raise RuntimeError(
                     f"[ZeroSpanParity §5.3 rule 7] ZSP_Separator_Cached['{_k}'] "
-                    f"is None and classifier_method='apriori'. Populate "
+                    f"is None and classifier_method="
+                    f"{p['ZSP_AnalysisParams']['classifier_method']!r}. Populate "
                     f"ZSP_Separator_Cached, set ZSP_RecalibrateSeparator=True, or "
                     f"use classifier_method='kmeans'."
                 )
@@ -197,7 +198,7 @@ def run_zero_span_parity(ctx, p):
 
     zsp_separator = (
         p["ZSP_Separator_Cached"]
-        if p["ZSP_AnalysisParams"]["classifier_method"] == "apriori"
+        if p["ZSP_AnalysisParams"]["classifier_method"] in SEPARATOR_METHODS
         else None
     )
     analyze_parity_run(

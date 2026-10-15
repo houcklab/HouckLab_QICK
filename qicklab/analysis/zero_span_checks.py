@@ -173,21 +173,26 @@ def projected_histogram_snr(scores, bins="auto"):
     return out
 
 
-def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method="apriori"):
+def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method="apriori_gmm"):
     """Reprocess the same raw IQ at several bin sizes.
 
     Returns per-bin separation SNR and dwell tau. best_bin_us maximizes separation
     SNR. NO monotonic-then-degrade assertion: the optimum can occur before T_parity.
+    Dwell entries are NaN at a bin size where classify_parity_trace withholds the bits.
     """
     sep_snr, mean_dwell, exp_tau = [], [], []
     for b in bin_list_us:
         Ib, Qb, tb, gb, _ = _bin_iq_time(I, Q, t_us, float(b), gap_indices)
         cls = classify_parity_trace(Ib, Qb, separator=separator, method=method)
-        h = projected_histogram_snr(cls["scores"])
+        h = cls.get("histogram_fit") or projected_histogram_snr(cls["scores"])
+        sep_snr.append(h["separation_snr"])
+        if cls["binary_states"] is None:
+            mean_dwell.append(np.nan)
+            exp_tau.append(np.nan)
+            continue
         dw = dwell_time_statistics(
             cls["binary_states"], tb, gap_indices=gb, merge_short_segments=True, min_dwell_bins=2
         )
-        sep_snr.append(h["separation_snr"])
         mean_dwell.append(0.5 * (dw["mean_0"] + dw["mean_1"]))
         taus = [dw["exp_fit_0"]["tau_us"], dw["exp_fit_1"]["tau_us"]]
         taus = [tt for tt in taus if np.isfinite(tt)]

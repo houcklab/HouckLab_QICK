@@ -15,9 +15,66 @@ import matplotlib.pyplot as plt
 
 from qicklab.analysis.dwell import _gap_segment_edges, dwell_time_statistics
 from qicklab.analysis.iq import project_iq_onto_separator
+from qicklab.analysis.undriven import two_gaussian_threshold
 
 
-def classify_parity_trace(I, Q, separator=None, method="apriori"):
+# classifier methods that use the SingleShot separator; "apriori" is the legacy name of
+# "apriori_gmm" (docs/experiments/zero_span_parity.md#analysis)
+SEPARATOR_METHODS = ("apriori_gmm", "apriori_midpoint", "apriori")
+
+
+def _gmm_threshold_bits(scores):
+    """Data-derived parity threshold on projected scores (method "apriori_gmm").
+
+    Fits 1- and 2-component Gaussian mixtures to the scores (projected_histogram_snr) and,
+    when the histogram passes its bimodality gate (delta BIC > 0, separation SNR > 1.5,
+    both weights in (0.1, 0.9)), thresholds at the maximum-likelihood boundary of the two
+    components (two_gaussian_threshold). Otherwise the bits are withheld (None) with a
+    warning: a continuously driven qubit sits at g + p_e (e - g) with p_e <= 1/2, so no
+    fixed point on the g/e axis (the SingleShot midpoint in particular) separates the
+    parity branches.
+    """
+    from qicklab.analysis.zero_span_checks import projected_histogram_snr  # imports this module
+
+    h = projected_histogram_snr(scores)
+    thr = float("nan")
+    if h["is_bimodal"]:
+        thr = two_gaussian_threshold(h["centers"], h["sigmas"], h["weights"])
+    if h["is_bimodal"] and np.isfinite(thr):
+        return np.asarray(scores > thr, dtype=int), thr, h, None
+    warning = (
+        f"projected scores not bimodal (delta_bic={h['delta_bic']:.3g}, "
+        f"separation_snr={h['separation_snr']:.3g}, weights={np.round(h['weights'], 3).tolist()}); "
+        f"parity bits withheld"
+    )
+    return None, thr, h, warning
+
+
+def _histogram_fit_summary(h):
+    """Summary fields of the "apriori_gmm" score-histogram fit (NaN for other methods).
+
+    Score units (midpoint-centred projection): an upper center at or above 0 sits at or
+    above the SingleShot g/e midpoint, the resolved-qubit-jump signature.
+    """
+    nan = float("nan")
+    if h is None:
+        return {
+            "classifier_separation_snr": nan,
+            "classifier_delta_bic": nan,
+            "classifier_centers": [nan, nan],
+            "classifier_sigmas": [nan, nan],
+            "classifier_weights": [nan, nan],
+        }
+    return {
+        "classifier_separation_snr": float(h["separation_snr"]),
+        "classifier_delta_bic": float(h["delta_bic"]),
+        "classifier_centers": [float(x) for x in h["centers"]],
+        "classifier_sigmas": [float(x) for x in h["sigmas"]],
+        "classifier_weights": [float(x) for x in h["weights"]],
+    }
+
+
+def classify_parity_trace(I, Q, separator=None, method="apriori_gmm"):
     """
     Project (I, Q) samples onto a 2-state axis and return binary parity labels.
 
@@ -26,11 +83,20 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
     I, Q : array_like
         1-D arrays of equal length, the raw in-phase and quadrature samples.
     separator : dict or None
-        For method="apriori": must contain "g_center" and "e_center", each
-        a length-2 array-like (I, Q) coordinate from a prior single-shot
-        calibration. Ignored if method="kmeans".
-    method : {"apriori", "kmeans"}
-        "apriori": project onto (e_center - g_center), threshold at 0.
+        For the separator methods ("apriori_gmm", "apriori_midpoint", legacy "apriori"):
+        must contain "g_center" and "e_center", each a length-2 array-like (I, Q)
+        coordinate from a prior single-shot calibration. Ignored if method="kmeans".
+    method : {"apriori_gmm", "apriori_midpoint", "kmeans"} ("apriori" = "apriori_gmm")
+        All project onto the g -> e axis about the g/e midpoint
+        (scores = (iq - (g + e)/2) @ (e - g), project_iq_onto_separator); they differ in
+        the threshold.
+        "apriori_gmm" (default): the separator is only the projection axis; the threshold
+        is the maximum-likelihood boundary of a 2-component Gaussian mixture fitted to
+        the scores themselves, and the bits are None (withheld, with a warning) when the
+        score histogram fails the bimodality gate of projected_histogram_snr.
+        "apriori_midpoint": threshold at score 0, the SingleShot g/e midpoint. Wrong for
+        driven zero-span data (the driven level sits at or below the midpoint, p_e <= 1/2);
+        kept for scores-only callers and comparison.
         "kmeans": fit KMeans(n_clusters=2) on (I, Q); label 0 = cluster with
         the lower projection on the e-g (inter-centroid) axis, with a canonical
         axis sign so the remap is independent of KMeans' arbitrary centroid
@@ -39,24 +105,43 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
     Returns
     -------
     dict with keys:
-      binary_states  : int array (N,), values 0 or 1
+      binary_states  : int array (N,), values 0 or 1; None when "apriori_gmm" withholds
       scores         : float array (N,), signed projection along separator axis
       separator_used : dict, the separator actually used (synthesized for kmeans)
-      method         : "apriori" or "kmeans" (echoes the requested method)
+      method         : "apriori_gmm", "apriori_midpoint" or "kmeans"
+      threshold      : float, the score threshold (0.0 except for "apriori_gmm"; nan
+                       when withheld)
+      warning        : str or None, why the bits were withheld
+      histogram_fit  : projected_histogram_snr output ("apriori_gmm" only)
     """
-    if method == "apriori":
+    if method in SEPARATOR_METHODS:
         if separator is None:
-            raise ValueError("method='apriori' requires a separator dict")
+            raise ValueError(f"method={method!r} requires a separator dict")
         scores, bits = project_iq_onto_separator(I, Q, separator)
-        return {
+        out = {
             "binary_states": bits,
             "scores": scores,
             "separator_used": {
                 "g_center": np.asarray(separator["g_center"], dtype=float),
                 "e_center": np.asarray(separator["e_center"], dtype=float),
             },
-            "method": "apriori",
+            "method": "apriori_midpoint",
+            "threshold": 0.0,
+            "warning": None,
         }
+        if method == "apriori_midpoint":
+            return out
+        bits, thr, h, warning = _gmm_threshold_bits(scores)
+        out.update(
+            {
+                "binary_states": bits,
+                "method": "apriori_gmm",
+                "threshold": thr,
+                "warning": warning,
+                "histogram_fit": h,
+            }
+        )
+        return out
     elif method == "kmeans":
         from sklearn.cluster import KMeans
 
@@ -71,6 +156,8 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
                     "e_center": np.array([0.0, 0.0]),
                 },
                 "method": "kmeans",
+                "threshold": 0.0,
+                "warning": None,
             }
         iq = np.column_stack([I, Q])
         km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
@@ -98,6 +185,8 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
             "scores": scores,
             "separator_used": synth_sep,
             "method": "kmeans",
+            "threshold": 0.0,
+            "warning": None,
         }
     else:
         raise ValueError(f"Unknown method: {method!r}")
@@ -422,8 +511,15 @@ def detect_bursts(
 
 def _plot_iq_scatter(I, Q, bits, separator, out_path):
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(np.asarray(I)[bits == 0], np.asarray(Q)[bits == 0], s=1, alpha=0.3, label="state 0")
-    ax.scatter(np.asarray(I)[bits == 1], np.asarray(Q)[bits == 1], s=1, alpha=0.3, label="state 1")
+    if bits is None:  # withheld by the apriori_gmm bimodality gate
+        ax.scatter(I, Q, s=1, alpha=0.3, c="gray", label="unclassified")
+    else:
+        ax.scatter(
+            np.asarray(I)[bits == 0], np.asarray(Q)[bits == 0], s=1, alpha=0.3, label="state 0"
+        )
+        ax.scatter(
+            np.asarray(I)[bits == 1], np.asarray(Q)[bits == 1], s=1, alpha=0.3, label="state 1"
+        )
     g = np.asarray(separator["g_center"], dtype=float)
     e = np.asarray(separator["e_center"], dtype=float)
     ax.plot([g[0], e[0]], [g[1], e[1]], "k--", lw=1)
@@ -562,7 +658,7 @@ def analyze_parity_run(
     separator=None,
     window_us=1000.0,
     k_sigma=5.0,
-    classifier_method="apriori",
+    classifier_method="apriori_gmm",
     step_us=None,
     min_burst_duration_us=None,
     save_plots=True,
@@ -576,10 +672,13 @@ def analyze_parity_run(
     Parameters
     ----------
     h5_path           : str, path to raw .h5 written by ZeroSpanParity.save_data
-    separator         : dict or None; required for classifier_method="apriori"
+    separator         : dict or None; required for the separator methods
     window_us         : float, sliding-window size
     k_sigma           : float, burst threshold
-    classifier_method : "apriori" | "kmeans"
+    classifier_method : "apriori_gmm" (default; legacy alias "apriori") | "apriori_midpoint"
+                        | "kmeans" (classify_parity_trace). When "apriori_gmm" withholds the
+                        bits (score histogram not bimodal), every rate, burst and dwell field
+                        is NaN, no bit-derived plot is drawn and classifier_warning says why.
     step_us           : float or None, window stride
     min_burst_duration_us : float or None
     save_plots        : bool
@@ -596,7 +695,10 @@ def analyze_parity_run(
 
     Returns
     -------
-    dict with scalar summary fields (matches sidecar JSON).
+    dict with summary fields (matches sidecar JSON), including the "apriori_gmm" score-
+    histogram fit (classifier_separation_snr, classifier_delta_bic and the two-component
+    classifier_centers / classifier_sigmas / classifier_weights lists; NaN for the other
+    methods).
     """
     if out_dir is None:
         out_dir = os.path.dirname(h5_path) or "."
@@ -632,39 +734,72 @@ def analyze_parity_run(
     cls = classify_parity_trace(I, Q, separator=separator, method=classifier_method)
     bits = cls["binary_states"]
     sep_used = cls["separator_used"]
+    withheld = bits is None
+    if cls["warning"]:
+        print(f"[analyze_parity_run] WARNING: {cls['warning']}")
 
-    rate_out = sliding_window_switch_rate(
-        bits, t_us, window_us=window_us, step_us=step_us, gap_indices=gap_indices
-    )
-    baseline, bursts = baseline_rate_and_bursts(
-        bits,
-        t_us,
-        rate_out,
-        gap_indices=gap_indices,
-        k_sigma=k_sigma,
-        min_duration_us=min_burst_duration_us,
-    )
-    stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
+    if withheld:
+        # no parity bits: report NaN, never a rate thresholded at a guessed level
+        nan = float("nan")
+        rate_out = {
+            "window_t_us": np.zeros(0),
+            "rate_Hz": np.zeros(0),
+            "switches_per_window": np.zeros(0, dtype=int),
+            "window_us": float(window_us),
+            "step_us": float(window_us // 2 if step_us is None else step_us),
+        }
+        baseline = {
+            "baseline_rate_Hz": nan,
+            "baseline_rate_err_Hz": nan,
+            "n_switches_baseline": nan,
+            "T_baseline_s": nan,
+            "median_window_rate_Hz": nan,
+        }
+        bursts = []
+        stats = {
+            "mean_0": nan,
+            "mean_1": nan,
+            "n_runs_0": nan,
+            "n_runs_1": nan,
+            "exp_fit_0": {"tau_us": nan},
+            "exp_fit_1": {"tau_us": nan},
+            "dwell_0_us": np.zeros(0),
+            "dwell_1_us": np.zeros(0),
+        }
+    else:
+        rate_out = sliding_window_switch_rate(
+            bits, t_us, window_us=window_us, step_us=step_us, gap_indices=gap_indices
+        )
+        baseline, bursts = baseline_rate_and_bursts(
+            bits,
+            t_us,
+            rate_out,
+            gap_indices=gap_indices,
+            k_sigma=k_sigma,
+            min_duration_us=min_burst_duration_us,
+        )
+        stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
 
     if save_plots:
         _plot_iq_scatter(I, Q, bits, sep_used, os.path.join(out_dir, base + "_iq_scatter.png"))
-        _plot_parity_vs_time(bits, t_us, os.path.join(out_dir, base + "_parity_vs_time.png"))
-        _plot_switch_rate(
-            rate_out, bursts, os.path.join(out_dir, base + "_switch_rate_vs_time.png")
-        )
-        _plot_dwell_histograms(stats, os.path.join(out_dir, base + "_dwell_histograms.png"))
+        if not withheld:
+            _plot_parity_vs_time(bits, t_us, os.path.join(out_dir, base + "_parity_vs_time.png"))
+            _plot_switch_rate(
+                rate_out, bursts, os.path.join(out_dir, base + "_switch_rate_vs_time.png")
+            )
+            _plot_dwell_histograms(stats, os.path.join(out_dir, base + "_dwell_histograms.png"))
 
     summary = {
         "h5_path": h5_path,
         "sample_period_us": sample_period_us,
         "raw_sample_period_us": raw_sample_period_us,
-        "n_samples": int(bits.size),
+        "n_samples": int(cls["scores"].size),
         "n_raw_samples": n_raw_samples,
         "n_binned_samples": n_binned_samples,
         "n_samples_dropped_by_binning": int(n_dropped),
         "analysis_bin_us": float(analysis_bin_us) if analysis_bin_us else 0.0,
         "mode": mode,
-        "n_bursts": len(bursts),
+        "n_bursts": float("nan") if withheld else len(bursts),
         **baseline,
         "mean_dwell_0_us": stats["mean_0"],
         "mean_dwell_1_us": stats["mean_1"],
@@ -673,6 +808,10 @@ def analyze_parity_run(
         "exp_fit_tau_0_us": stats["exp_fit_0"]["tau_us"],
         "exp_fit_tau_1_us": stats["exp_fit_1"]["tau_us"],
         "classifier_method": cls["method"],
+        "classifier_threshold": float(cls["threshold"]),
+        "bits_withheld": bool(withheld),
+        "classifier_warning": cls["warning"] or "",
+        **_histogram_fit_summary(cls.get("histogram_fit")),
     }
 
     with open(os.path.join(out_dir, base + "_analysis.json"), "w") as f:
@@ -688,7 +827,7 @@ def analyze_parity_run(
             default=lambda x: x.tolist() if isinstance(x, np.ndarray) else float(x),
         )
     with h5py.File(os.path.join(out_dir, base + "_analysis.h5"), "w") as f:
-        f.create_dataset("binary_states", data=bits)
+        f.create_dataset("binary_states", data=np.zeros(0, dtype=int) if withheld else bits)
         f.create_dataset("scores", data=cls["scores"])
         f.create_dataset("window_t_us", data=rate_out["window_t_us"])
         f.create_dataset("rate_Hz", data=rate_out["rate_Hz"])

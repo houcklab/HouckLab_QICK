@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from qicklab.analysis.dwell import _fit_exp_dwell, dwell_time_statistics
+from qicklab.analysis.rates import simulate_telegraph_trace
 from qicklab.analysis.zero_span import (
     _bin_iq_time,
     analyze_parity_run,
@@ -70,7 +71,9 @@ def _rng_after_sliding_block():
 def test_classify_parity_trace_apriori():
     rng = np.random.default_rng(1)
 
-    # --- classify_parity_trace apriori path -----------------------------------
+    # --- classify_parity_trace apriori_midpoint path --------------------------
+    # SingleShot-like clouds at g and e, where the g/e midpoint is the right threshold
+    # (it is not for zero-span data: see test_apriori_gmm_* below).
     g_center = np.array([0.0, 0.0])
     e_center = np.array([10.0, 0.0])
     sep = {"g_center": g_center, "e_center": e_center}
@@ -82,12 +85,185 @@ def test_classify_parity_trace_apriori():
     Q = np.concatenate([Q_g, Q_e])
     labels_true = np.concatenate([np.zeros(1000, int), np.ones(1000, int)])
 
-    out = classify_parity_trace(I, Q, separator=sep, method="apriori")
+    out = classify_parity_trace(I, Q, separator=sep, method="apriori_midpoint")
     assert "binary_states" in out and "scores" in out
-    assert "method" in out and out["method"] == "apriori"
+    assert "method" in out and out["method"] == "apriori_midpoint"
     assert "separator_used" in out
+    assert out["threshold"] == 0.0 and out["warning"] is None
     accuracy = np.mean(out["binary_states"] == labels_true)
     assert accuracy > 0.99, f"apriori accuracy too low: {accuracy}"
+    # the legacy name "apriori" is the GMM-threshold method; same projection, same bits here
+    out_alias = classify_parity_trace(I, Q, separator=sep, method="apriori")
+    assert out_alias["method"] == "apriori_gmm"
+    np.testing.assert_array_equal(out_alias["scores"], out["scores"])
+    assert np.mean(out_alias["binary_states"] == labels_true) > 0.99
+
+
+def _driven_parity_trace(pe, sigma, n=100_000, gamma_hz=(500.0, 500.0), sp_us=20.0, seed=1):
+    """Zero-span trace under a CW parity drive: the undriven parity sits at g, the driven
+    one at g + pe * (e - g) (pe <= 1/2 for a driven two-level qubit), |e - g| = 1."""
+    tr = simulate_telegraph_trace(n, sp_us * 1e-6, *gamma_hz, 0.0, pe, sigma, sigma, seed=seed)
+    Q = sigma * np.random.default_rng(seed + 1).standard_normal(n)
+    t_us = tr["t_s"] * 1e6
+    sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([1.0, 0.0])}
+    true_rate = event_switch_rate(tr["states"], t_us)["rate_Hz"]
+    return tr["v"], Q, t_us, tr["states"], sep, true_rate
+
+
+@pytest.mark.parametrize(
+    "pe, sigma, gamma_hz, min_acc, max_rate_factor",
+    [
+        (0.5, 0.1, (500.0, 500.0), 0.99, 2.5),  # 5-sigma split: 0.6 % per-sample errors
+        (0.35, 0.05, (500.0, 500.0), 0.99, 1.25),
+        (0.35, 0.05, (300.0, 700.0), 0.99, 1.25),  # unequal occupations
+        # 3.5-sigma split: threshold right, accuracy SNR-limited, but the per-sample switch
+        # rate is ~8.5x the truth from noise crossings (no threshold avoids that):
+        # test_apriori_gmm_rate_needs_snr_or_binning pins it and the binning remedy
+        (0.35, 0.1, (500.0, 500.0), 0.95, None),
+    ],
+)
+def test_apriori_gmm_tracks_parity_at_driven_level(pe, sigma, gamma_hz, min_acc, max_rate_factor):
+    # F07: the driven parity level sits at g + pe (e - g), at or below the g/e midpoint, so
+    # a midpoint threshold follows the qubit noise; the GMM threshold sits between the
+    # two parity levels seen in the data.
+    I, Q, t_us, states, sep, true_rate = _driven_parity_trace(pe, sigma, gamma_hz=gamma_hz)
+    out = classify_parity_trace(I, Q, separator=sep)  # default method
+    assert out["method"] == "apriori_gmm" and out["warning"] is None
+    assert out["histogram_fit"]["is_bimodal"]
+    # scores are the unchanged midpoint projection: g at -0.5, the driven level at pe - 0.5
+    assert -0.5 < out["threshold"] < pe - 0.5
+    acc = np.mean(out["binary_states"] == states)
+    assert acc > min_acc, acc
+    mid = classify_parity_trace(I, Q, separator=sep, method="apriori_midpoint")
+    np.testing.assert_array_equal(mid["scores"], out["scores"])
+    assert np.mean(mid["binary_states"] == states) < 0.8  # the old default
+    if max_rate_factor is not None:
+        rate = sliding_window_switch_rate(out["binary_states"], t_us, 1000.0)["rate_Hz"].mean()
+        assert true_rate / max_rate_factor < rate < true_rate * max_rate_factor, (rate, true_rate)
+        if pe == 0.5:
+            rate_mid = sliding_window_switch_rate(mid["binary_states"], t_us, 1000.0)
+            assert rate_mid["rate_Hz"].mean() > 10 * true_rate  # the bug: ~25x
+
+
+def _write_zsp_h5(path, I, Q, t_us, sample_period_us=20.0):
+    with h5py.File(path, "w") as f:
+        f.create_dataset("I", data=I)
+        f.create_dataset("Q", data=Q)
+        f.create_dataset("t_us", data=t_us)
+        f.create_dataset("gap_indices", data=np.array([], dtype=int))
+        f.attrs["sample_period_us"] = sample_period_us
+        f.attrs["mode"] = "strobe"
+
+
+def test_apriori_gmm_rate_needs_snr_or_binning(tmp_path):
+    # F07 review: at p_e = 0.35, sigma = 0.1 (parity levels 3.5 sigma apart) the GMM
+    # threshold is in the right place (96 % accuracy), yet every noise crossing of it
+    # counts as two switches, so the unbinned rate is several times the truth. Mean-binning
+    # 4 samples (80 us, 7 sigma, still << the 2 ms dwells) removes the crossings.
+    I, Q, t_us, _, sep, true_rate = _driven_parity_trace(0.35, 0.1)
+    h5_path = os.path.join(str(tmp_path), "ZeroSpanParity_lowsnr.h5")
+    _write_zsp_h5(h5_path, I, Q, t_us)
+    kw = dict(separator=sep, window_us=1000.0, save_plots=False, out_dir=str(tmp_path))
+    raw = analyze_parity_run(h5_path, **kw)
+    assert not raw["bits_withheld"]
+    assert raw["baseline_rate_Hz"] > 4 * true_rate, (raw["baseline_rate_Hz"], true_rate)
+    # the summary carries the documented trust criterion (separation_snr >~ 5 per sample)
+    assert 3.0 < raw["classifier_separation_snr"] < 4.0, raw["classifier_separation_snr"]
+    binned = analyze_parity_run(h5_path, analysis_bin_us=80.0, **kw)
+    assert not binned["bits_withheld"]
+    assert true_rate / 1.25 < binned["baseline_rate_Hz"] < 1.25 * true_rate, (
+        binned["baseline_rate_Hz"],
+        true_rate,
+    )
+    assert binned["classifier_separation_snr"] > 5.0, binned["classifier_separation_snr"]
+    # GMM centers in score units: g at -0.5, the driven level at pe - 0.5 = -0.15, both
+    # below the g/e midpoint (0), so no resolved-jump signature
+    c = binned["classifier_centers"]
+    assert c[0] == pytest.approx(-0.5, abs=0.02) and c[1] == pytest.approx(-0.15, abs=0.02), c
+    assert binned["classifier_threshold"] == pytest.approx(-0.325, abs=0.03)
+    assert len(binned["classifier_sigmas"]) == 2 and len(binned["classifier_weights"]) == 2
+    assert binned["classifier_delta_bic"] > 0
+    base = os.path.join(str(tmp_path), "ZeroSpanParity_lowsnr")
+    with open(base + "_analysis.json") as f:
+        sj = json.load(f)
+    assert sj["classifier_centers"] == pytest.approx(c)
+    assert sj["classifier_separation_snr"] == pytest.approx(binned["classifier_separation_snr"])
+    with h5py.File(base + "_analysis.h5", "r") as f:
+        np.testing.assert_allclose(f.attrs["classifier_centers"], c)
+        assert f.attrs["classifier_separation_snr"] == pytest.approx(
+            binned["classifier_separation_snr"]
+        )
+
+
+def test_apriori_gmm_resolved_jump_signature_in_summary(tmp_path):
+    # F07 review: when the qubit jumps are resolved within a sample, the driven parity sits
+    # at g or at e (here at e with probability 0.4), the histogram has two clean lobes at
+    # the SingleShot g and e, it passes the gate and the bits follow the qubit. The summary
+    # must expose the documented signature: the upper GMM center at the e score (+0.5),
+    # i.e. at or above the g/e midpoint (0).
+    n, sigma = 100_000, 0.1
+    tr = simulate_telegraph_trace(n, 20e-6, 500.0, 500.0, 0.0, 0.0, sigma, sigma, seed=3)
+    rng = np.random.default_rng(4)
+    I = tr["v"] + (tr["states"] == 1) * (rng.random(n) < 0.4)
+    Q = sigma * rng.standard_normal(n)
+    sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([1.0, 0.0])}
+    h5_path = os.path.join(str(tmp_path), "ZeroSpanParity_jumps.h5")
+    _write_zsp_h5(h5_path, I, Q, tr["t_s"] * 1e6)
+    res = analyze_parity_run(h5_path, separator=sep, window_us=1000.0, save_plots=False)
+    assert not res["bits_withheld"] and res["classifier_warning"] == ""  # the gate passes
+    c = res["classifier_centers"]
+    assert c[0] == pytest.approx(-0.5, abs=0.02) and c[1] == pytest.approx(0.5, abs=0.02), c
+    assert c[1] >= 0.0 and res["classifier_separation_snr"] > 5.0
+    # the methods without a histogram fit report NaN for these fields
+    mid = analyze_parity_run(
+        h5_path,
+        separator=sep,
+        window_us=1000.0,
+        save_plots=False,
+        classifier_method="apriori_midpoint",
+    )
+    assert np.isnan(mid["classifier_separation_snr"]) and np.isnan(mid["classifier_delta_bic"])
+    assert all(np.isnan(mid[k]).all() for k in ("classifier_centers", "classifier_weights"))
+
+
+def test_apriori_gmm_withholds_bits_when_not_bimodal(tmp_path):
+    # pe = 0.1 at sigma 0.1: the parity levels are 1 sigma apart, the histogram fails the
+    # bimodality gate, so no bits, and analyze_parity_run writes NaN instead of a rate
+    I, Q, t_us, _, sep, _ = _driven_parity_trace(0.1, 0.1, n=20_000)
+    out = classify_parity_trace(I, Q, separator=sep)
+    assert out["binary_states"] is None
+    assert not out["histogram_fit"]["is_bimodal"]
+    assert "withheld" in out["warning"]
+
+    h5_path = os.path.join(str(tmp_path), "ZeroSpanParity_unresolved.h5")
+    _write_zsp_h5(h5_path, I, Q, t_us)
+    res = analyze_parity_run(h5_path, separator=sep, window_us=1000.0, out_dir=str(tmp_path))
+    assert res["bits_withheld"] is True and "withheld" in res["classifier_warning"]
+    assert res["classifier_method"] == "apriori_gmm"
+    assert res["n_samples"] == I.size
+    for k in (
+        "baseline_rate_Hz",
+        "baseline_rate_err_Hz",
+        "median_window_rate_Hz",
+        "n_bursts",
+        "mean_dwell_0_us",
+        "mean_dwell_1_us",
+        "exp_fit_tau_0_us",
+        "exp_fit_tau_1_us",
+    ):
+        assert np.isnan(res[k]), (k, res[k])
+    base = os.path.join(str(tmp_path), "ZeroSpanParity_unresolved")
+    assert os.path.exists(base + "_iq_scatter.png")
+    assert not os.path.exists(base + "_switch_rate_vs_time.png")
+    with open(base + "_analysis.json") as f:
+        sj = json.load(f)
+    assert sj["bits_withheld"] is True and np.isnan(sj["baseline_rate_Hz"])
+    # the fit that failed the gate is still reported (1-sigma split: separation SNR < 1.5
+    # or a lopsided weight)
+    assert np.isfinite(res["classifier_separation_snr"]) and len(res["classifier_centers"]) == 2
+    assert sj["classifier_separation_snr"] == pytest.approx(res["classifier_separation_snr"])
+    with h5py.File(base + "_analysis.h5", "r") as f:
+        assert f["binary_states"].size == 0 and f["scores"].size == I.size
 
 
 def test_classify_parity_trace_kmeans():

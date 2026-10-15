@@ -147,7 +147,8 @@ def run_modulation_check(
         acq = modulated_strobe_acquire(experiment, schedule, reps_per_block, progress=progress)
     finally:
         experiment.set_qubit_gain(g_on)
-    cls = classify_parity_trace(acq["I"], acq["Q"], separator=separator, method="apriori")
+    # scores only (the threshold is unused): the separator projection
+    cls = classify_parity_trace(acq["I"], acq["Q"], separator=separator, method="apriori_midpoint")
     vm = verify_modulation(
         cls["scores"], acq["t_us"], acq["modulation_reference"], gap_indices=acq["gap_indices"]
     )
@@ -366,18 +367,26 @@ class CrossRunComparison:
 
 
 def _trace_metrics(experiment, separator, window_us=1000.0, progress=False):
-    """Acquire one strobe trace, classify, return the 4 stage-7 metrics."""
+    """Acquire one strobe trace, classify, return the 4 stage-7 metrics.
+
+    Bits come from the data-derived GMM threshold (classify_parity_trace "apriori_gmm");
+    switch_rate and mean_dwell are NaN when the projected histogram is not bimodal.
+    """
     data = experiment.acquire(progress=progress)
-    cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori")
-    rate = sliding_window_switch_rate(cls["binary_states"], data["t_us"], window_us)
-    dw = dwell_time_statistics(
-        cls["binary_states"], data["t_us"], merge_short_segments=True, min_dwell_bins=2
-    )
-    h = projected_histogram_snr(cls["scores"])
+    cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori_gmm")
+    h = cls["histogram_fit"]
+    bits = cls["binary_states"]
+    if bits is None:
+        switch_rate, mean_dwell = float("nan"), float("nan")
+    else:
+        rate = sliding_window_switch_rate(bits, data["t_us"], window_us)
+        dw = dwell_time_statistics(bits, data["t_us"], merge_short_segments=True, min_dwell_bins=2)
+        switch_rate = float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0
+        mean_dwell = 0.5 * (dw["mean_0"] + dw["mean_1"])
     return {
-        "switch_rate": float(np.mean(rate["rate_Hz"])) if rate["rate_Hz"].size else 0.0,
+        "switch_rate": switch_rate,
         "separation_snr": h["separation_snr"],
-        "mean_dwell": 0.5 * (dw["mean_0"] + dw["mean_1"]),
+        "mean_dwell": mean_dwell,
         "mean_signal_level": float(np.mean(np.abs(data["I"] + 1j * data["Q"]))),
     }
 
@@ -435,7 +444,8 @@ def _control_record(experiment, separator, n_blocks=1, progress=False):
             offset = t_parts[-1][-1] + step
     I = np.concatenate(I_parts)
     Q = np.concatenate(Q_parts)
-    cls = classify_parity_trace(I, Q, separator=separator, method="apriori")
+    # scores only (levels and their shifts; the threshold is unused): the separator projection
+    cls = classify_parity_trace(I, Q, separator=separator, method="apriori_midpoint")
     h = projected_histogram_snr(cls["scores"])
     return {
         "scores": cls["scores"],

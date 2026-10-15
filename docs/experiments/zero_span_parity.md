@@ -91,7 +91,8 @@ and the bound.
 6. If `RecalibrateParityFreqs = False`, the cached frequency selected by
    `which_to_park` must be set. The spec required a finite float; the code checks
    only that it is not None.
-7. If `RecalibrateSeparator = False` and `classifier_method = "apriori"`, all four
+7. If `RecalibrateSeparator = False` and `classifier_method` uses the separator
+   (`"apriori_gmm"`, `"apriori_midpoint"` or the legacy `"apriori"`), all four
    cached separator fields (`g_center`, `e_center`, `normal`, `midpoint`) must be
    arrays of shape (2,). Lists are coerced.
 8. `parity_drive_freq` must lie in the qubit generator's DDS band `[−f_dds/2,
@@ -195,7 +196,7 @@ CSTQ03 runner values (legacy `ZSP_*` dicts).
 | Spec `Gauss` / `sigma` / `gain` / `qubit_length` | True / 2 / 500 / 2 | – / µs / DAC / µs | Its drive. |
 | Spec `min_sep_MHz` / `fit_window_mhz` / `prominent_ratio` | 0.2 / 0.5 / 0.1 | MHz / MHz / – | Peak picking. |
 | Spec `min_partner_snr` (optional) | 5 (`MIN_PARTNER_SNR`) | noise sigma | Significance the weaker parity line needs (step 1); 0 switches the gate off. |
-| `classifier_method` | "apriori" | – | `"apriori"` (separator) or `"kmeans"`. |
+| `classifier_method` | "apriori_gmm" | – | `"apriori_gmm"` (separator axis, threshold from the data), `"apriori_midpoint"` (separator axis, threshold at the g/e midpoint; not for driven data) or `"kmeans"`. The legacy `"apriori"` means `"apriori_gmm"`. See [Analysis](#analysis) step 2. |
 | `window_us` | 1000.0 | µs | Sliding window for the switch rate. |
 | `k_sigma` | 5.0 | σ | Burst threshold. |
 | `step_us` | None (→ window_us // 2) | µs | Window stride. |
@@ -235,7 +236,15 @@ Validation-stage parameters:
   - Summary fields: `baseline_rate_Hz`, `baseline_rate_err_Hz`, `n_switches_baseline`,
     `T_baseline_s`, `median_window_rate_Hz`, `n_bursts`, `mean_dwell_0/1_us`,
     `n_runs_0/1`, `exp_fit_tau_0/1_us`, `raw_sample_period_us`,
-    `n_raw/binned_samples`, `analysis_bin_us`, `mode`, `classifier_method`.
+    `n_raw/binned_samples`, `analysis_bin_us`, `mode`, `classifier_method`,
+    `classifier_threshold` (score units), `bits_withheld`, `classifier_warning`, and the
+    `apriori_gmm` score-histogram fit: `classifier_separation_snr`, `classifier_delta_bic`,
+    `classifier_centers`, `classifier_sigmas`, `classifier_weights` (lower component first,
+    score units; NaN for `apriori_midpoint` and `kmeans`). The fit is reported even when
+    it fails the gate and the bits are withheld.
+  - When the bits are withheld (`bits_withheld` True, see [Analysis](#analysis) step 2),
+    every rate, burst and dwell field is NaN, `binary_states` is empty, and only
+    `_iq_scatter.png` (uncoloured) is drawn.
 - **Validation:** per-stage JSON sidecars plus raw arrays (stitched IQ, references,
   `freqs`, `Z_on`/`Z_off`), each tagged with an `analysis_version`, and `EVIDENCE.md`
   from stage 9.
@@ -247,8 +256,54 @@ Validation-stage parameters:
    `collect_shots` normalisation is the reference, so `ro_ch=0` is used deliberately,
    not `ro_chs[0]`. `di_buf`/`dq_buf` are indexed by readout **declaration order**
    (position 0), while `soccfg["readouts"][ch]` is keyed by absolute channel.
-2. **Classify** (`classify_parity_trace`):
-   - `apriori`: project onto the SingleShot separator.
+2. **Classify** (`classify_parity_trace`). The separator methods project each sample
+   onto the SingleShot g → e axis about the g/e midpoint, score = (iq − (g + e)/2)·(e − g)
+   (g at −|e−g|²/2, e at +|e−g|²/2); they differ only in where they put the threshold.
+   - `apriori_gmm` (default; the legacy name `apriori` means this): the separator is
+     only the projection axis. A two-component Gaussian mixture is fitted to the scores
+     (`projected_histogram_snr`) and the threshold is the maximum-likelihood boundary of
+     the two components (`two_gaussian_threshold`, weights and widths included,
+     `classifier_threshold` in the summary). If the score histogram fails the bimodality
+     gate of step 6, the bits are **withheld**: rates, bursts and dwells are NaN and
+     `classifier_warning` says why. Nothing is thresholded at a guessed level.
+   - Why not the midpoint: under the CW parity drive the off-resonant parity sits at
+     ≈ g and the driven one at g + p_e·(e − g), with p_e ≤ 1/2 for a driven two-level
+     qubit (less with readout dephasing). The driven level is therefore at or below
+     the g/e midpoint, and a midpoint threshold follows the qubit's noise, not the
+     parity. On a synthetic telegraph (500 Hz per state, 20 µs samples, |e−g| = 1,
+     σ = 0.1) the midpoint classifies 75 % of samples correctly at p_e = 0.5 with a
+     ~25× too high switch rate, and 53 % (chance) at p_e = 0.35; the GMM threshold
+     classifies 99.4 % and 96 % (the latter SNR-limited, as KMeans). The separator also
+     comes from a pulsed SingleShot window, not the CW steady state. Until 2026-10 the
+     midpoint was the default (`apriori`); it remains as `apriori_midpoint` and is used
+     only where nothing is thresholded (stage-3 and stage-8 levels).
+   - The threshold is now in the right place, but the switch rate is still inflated by
+     noise crossings: every sample that noise pushes across the threshold counts as two
+     switches, and no threshold avoids that. On the same synthetic telegraph the
+     unbinned sliding-window rate is ~2.2× the true rate at p_e = 0.5 (the parity
+     levels 5 σ apart) and ~8.5× at p_e = 0.35 (3.5 σ apart). Trust the rates only when
+     the levels are well separated (`classifier_separation_snr` in the summary ≳ 5 per
+     sample, i.e. per-sample errors ≲ 1 %). Otherwise mean-bin with `analysis_bin_us` to a bin still well below
+     the dwell time: binning the p_e = 0.35 trace to 80 µs (4 samples, 7 σ) brings the
+     rate to within 5 % of the truth.
+   - This is still a two-level threshold on the averaged level, and the bimodality gate
+     does not catch every failure. If the qubit jumps are resolved within a sample
+     (the driven branch sits at g or at e from sample to sample, not at the average
+     g + p_e·(e − g)), the score histogram has two clean lobes **at the SingleShot g and
+     e**. It passes the gate, and the bits follow the qubit jumps: the F07 failure
+     again. Synthetic check: driven samples at e with probability 0.4 give GMM centers at
+     exactly g and e, 70 % accuracy and a ~24× too high switch rate, with no warning.
+     The signature is the upper GMM center at or above the g/e midpoint
+     (`classifier_centers[1]` ≥ 0 in the summary, the e score being +|e−g|²/2; the
+     threshold lies below the upper center, so `classifier_threshold` ≥ 0 is a stronger,
+     sufficient form), or the state-1 cloud on the separator's e marker in
+     `_iq_scatter.png`. An averaged driven level with p_e ≤ 1/2 cannot be there. Treat
+     it as a diagnostic, not a test: the separator is pulsed SingleShot data, and the
+     `declare_readout` normalisation mismatch also rescales it relative to the
+     zero-span I/Q, so the absolute g/e positions are only approximate. No single
+     threshold separates the parities in this regime (a hidden-Markov model would; not
+     implemented). A three-lobe or skewed histogram (partly resolved jumps) is the same
+     regime.
    - `kmeans`: two clusters. Label 0 is the lower projection on the inter-centroid
      axis, with the sign canonicalised to the dominant positive component.
    - Optionally mean-bin first (`analysis_bin_us`). Never auto-bin by `read_length`:
@@ -347,7 +402,11 @@ automatic pass/fail**.
   bimodality.
 - Readout power changes both the SNR and the real parity dynamics. Stage 7 therefore
   records `switch_rate`, `separation_snr`, `mean_dwell` and `mean_signal_level` for
-  every setting.
+  every setting. The bits behind `switch_rate` and `mean_dwell` come from the
+  `apriori_gmm` threshold; at a setting whose score histogram is not bimodal (e.g.
+  drive off) both are NaN. Before 2026-10 they used the g/e midpoint and read the
+  qubit noise of the driven branch as switches. Where `separation_snr` is below ~5,
+  `switch_rate` is still inflated by noise crossings (Analysis step 2).
 - Z_on and Z_off are proportional to S21; they are not calibrated.
 - Stage-5 interpretation: the best bin may come before T_parity. A low `tau_cv`
   across thresholds indicates a robust telegraph.
