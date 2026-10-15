@@ -132,6 +132,10 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     three Opus rounds. FOLLOW-UPS: stages 1-2 set_qubit_gain(base) sits after the _preserve_cfg block, not in a
     finally; se_batch_us (10 ms) is not tied to the measured dwell (se ~2x too small at a 30 ms dwell);
     min_record_us / se_batch_us / k_sigma are not exposed in Control_params; control C has no decision statistic.
+43. `ab896b28` fix(transmission): F25 — hanger_fit_kappa_tot_mhz / _ext_mhz = |f0|/Q in MHz replace the 1e6-too-small
+    external-only key; four stale docs pages fixed (golden: 24 data_digest leaves, the 4 RunTransmissionSweep* labels).
+    Follow-ups: docs/adding_a_device.md:100 "6/kappa" should name the angular kappa; the Q lower bound 1e2 caps
+    kappa at |f0|/100 on a small IF axis (pre-existing).
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
