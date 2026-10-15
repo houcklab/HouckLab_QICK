@@ -5,6 +5,7 @@ under the ModifiedRamsey key names (docs/experiments/undriven_single_shot.md).
 """
 
 import time
+import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,7 +17,7 @@ from qicklab.analysis.undriven import (
     block_average_shots,
     project_onto_axis,
 )
-from qicklab.core.acquisition import raw_shot_buffers
+from qicklab.core.acquisition import acquire_with_retry, raw_shot_buffers
 from qicklab.core.experiment import ExperimentClass
 from qicklab.hardware.yoko import ramp_to
 
@@ -273,6 +274,7 @@ class UndrivenSingleShot(ExperimentClass):
         v_return = float(self.yoko.query(":SOUR:LEV?"))
         settle_s = float(self.cfg.get("charge_settle_s", 0.0))
         merged, summary = {}, {}
+        n_done, read_indices = 0, []
         # finally: an abort (error, Ctrl-C) must not leave the bias parked at an
         # arbitrary point, since every later measurement in the run would use it.
         try:
@@ -293,12 +295,28 @@ class UndrivenSingleShot(ExperimentClass):
                         summary.setdefault(f"sweep_{name}{read_index}", []).append(
                             self.timeseries[read_index][name]
                         )
+                read_indices = sorted(self.results)
+                n_done = k + 1
+        except BaseException as err:
+            # keep the completed biases (docs/experiments/undriven_single_shot.md#outputs)
+            self._save_partial_sweep(merged, summary, voltages, read_indices, n_done, err)
+            raise
         finally:
             ramp_to(self.yoko, v_return)
 
-        merged["sweep_voltages"] = np.asarray(voltages, dtype=float)
-        merged["read_indices"] = np.asarray(sorted(self.results))
-        merged.update({k: np.asarray(v, dtype=float) for k, v in summary.items()})
+        self.data = {
+            "config": self.cfg,
+            "data": self._sweep_payload(merged, summary, voltages, read_indices, n_done),
+        }
+        return self.data
+
+    @staticmethod
+    def _sweep_payload(merged, summary, voltages, read_indices, n_done):
+        """The sweep record for the first `n_done` biases (all of them on a completed sweep)."""
+        payload = {key: val for key, val in merged.items() if int(key[1 : key.index("_")]) < n_done}
+        payload["sweep_voltages"] = np.asarray(voltages[:n_done], dtype=float)
+        payload["read_indices"] = np.asarray(read_indices)
+        payload.update({k: np.asarray(v[:n_done], dtype=float) for k, v in summary.items()})
         # Keep the unprefixed ModifiedRamsey aliases pointing at the first bias
         # point, so an offline loader keyed on them still opens a sweep file.
         for key in (
@@ -309,15 +327,43 @@ class UndrivenSingleShot(ExperimentClass):
             "scheduled_rep_period_us",
             "gap_indices",
         ):
-            merged[key] = merged["V0_" + key]
-        self.data = {"config": self.cfg, "data": merged}
-        return self.data
+            payload[key] = payload["V0_" + key]
+        return payload
+
+    def _save_partial_sweep(self, merged, summary, voltages, read_indices, n_done, err):
+        """Save the biases completed before `err`, marked with sweep_completed; never raises."""
+        if n_done == 0:
+            return
+        try:
+            print(
+                f"[UndrivenSingleShot] sweep aborted after {n_done}/{len(voltages)} biases "
+                f"({err!r}); saving the completed biases"
+            )
+            payload = self._sweep_payload(merged, summary, voltages, read_indices, n_done)
+            payload["sweep_completed"] = n_done
+            self.cfg["sweep_completed"] = n_done
+            self.cfg["aborted"] = repr(err)
+            self.data = {"config": self.cfg, "data": payload}
+            self.save_data()
+            self.save_config()
+        except Exception:
+            traceback.print_exc()
+            print("[UndrivenSingleShot] partial save failed; re-raising the original error")
 
     def _acquire_at_bias(self):
         self.data = {"config": self.cfg, "data": {}}
 
-        prog = UndrivenSingleShotProgram(self.soccfg, self.cfg)
-        shots_i, shots_q = prog.acquire(self.soc, load_pulses=True)
+        progs = []
+
+        def make_prog():
+            progs.append(UndrivenSingleShotProgram(self.soccfg, self.cfg))
+            return progs[-1]
+
+        # fresh program per attempt on the stale-shot-counter race (docs/concepts/averaging.md)
+        shots_i, shots_q = acquire_with_retry(
+            make_prog, self.soc, label="UndrivenSingleShot", load_pulses=True
+        )
+        prog = progs[-1]
 
         read_indices = self._read_indices(len(shots_i))
         min_sep = self.cfg.get("blob_min_separation_sigma", 2.0)

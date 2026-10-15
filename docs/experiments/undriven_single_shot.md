@@ -60,6 +60,9 @@ PLAN = [R.undriven_single_shot(charge_sweep=True, voltage_start=0.0,
   voltage_step)`, so the range is half-open and `voltage_end` is not measured. It
   waits `charge_settle_s` after each ramp and acquires at each bias, then **returns
   to the starting voltage** in a `finally` block (also on error or Ctrl-C).
+  - An error or Ctrl-C after at least one bias first saves the completed biases (h5 +
+    json, no png), then re-raises. The file is marked with `sweep_completed` (number of
+    biases kept) and the cfg also gets `aborted` (the error's repr). See Outputs.
   - It needs a yoko.
   - It rejects a zero step, an empty range and any |V| > 10 V before moving the bias
     (`ramp_to` itself rejects |target| > 10 V only when it reaches that point).
@@ -111,6 +114,12 @@ Path `UndrivenSingleShot/`. One h5/png/json per pass.
   `sweep_voltages`, summary arrays `sweep_<scalar><r>` (n_blobs, separation_sigma,
   secondary_population, sigma_along_axis, gamma_mean_hz, acf_gamma_hz), and the
   aliases pointing at `V0`.
+- **Aborted charge sweep:** the same layout for the first `sweep_completed` biases
+  only (`sweep_voltages` has that length), plus a `sweep_completed` dataset; the json
+  cfg carries `sweep_completed` and `aborted`. A complete sweep has neither key, so
+  check for `sweep_completed` before treating a file as the full range.
+- Every program start (single pass and each sweep bias) goes through `acquire_with_retry`
+  (3 tries on the [stale-shot-counter race](../concepts/averaging.md#the-stale-shot-counter-race)).
 - **png:** the IQ cloud with blob fit, the time series between blobs, and the
   rate-vs-averaging panel; for a sweep, summary scalars vs voltage.
 - All fit results are saved to the h5. Nothing lives only in the plot.

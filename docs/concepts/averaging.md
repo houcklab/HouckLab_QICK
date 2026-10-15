@@ -49,9 +49,9 @@ to write more points than it allocated. The condition does not persist. `soc.sto
 (tProc v1 full reset and program reload, tens of ms) clears it, and the point can be retried
 with a **fresh** program object (the failed one has a half-written buffer).
 
-Only `CavitySpecFF` retries automatically (`acquire_with_retry`, 3 tries, also on
-"got too much data"). In every other experiment the error ends the step. Re-run it, and reduce
-`rounds` in favour of `reps`.
+`CavitySpecFF`, `T1_SS` and `UndrivenSingleShot` retry automatically (`acquire_with_retry`,
+3 tries, also on "got too much data"). In every other experiment the error ends the step. Re-run
+it, and reduce `rounds` in favour of `reps`.
 
 ## "Overflowed the averages buffer" is different
 
@@ -150,8 +150,9 @@ relax delay, about 262 us with 250 us relax; at 250 us relax, 100k shots take ab
 
 ## Known issues
 
-- Only `CavitySpecFF` retries the stale-shot-counter error; long loops of other experiments can
-  stop on it.
+- Only `CavitySpecFF`, `T1_SS` and `UndrivenSingleShot` retry the stale-shot-counter error; long
+  loops of other experiments can stop on it. `T1_SS` and the `UndrivenSingleShot` charge sweep
+  save their completed points when they stop; the others lose the step.
 - `AmplitudeRabiFF_N` and `ChiShift` rewrite `reps` / `rounds` in the experiment cfg; the saved
   config shows `reps x rounds` and `rounds = 1`, not what the step was given.
 - `trans_qubit_spec` loops `repetitions` from the coherence group (1000 in the CSTQ03 runner), and

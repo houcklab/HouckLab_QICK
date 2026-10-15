@@ -24,7 +24,7 @@ separate, reviewed commits.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ValueError: could not broadcast input array from shape (26,2) into shape (20,2)` (numbers vary; second = reps) or "got too much data" | stale tProc shot counter when programs run back to back ([averaging](concepts/averaging.md#the-stale-shot-counter-race)) | re-run; use fewer `rounds` and more `reps`. `transmission_fit` / `transmission_sweep` retry automatically (3 tries, `soc.stop_tproc()`, fresh program) |
+| `ValueError: could not broadcast input array from shape (26,2) into shape (20,2)` (numbers vary; second = reps) or "got too much data" | stale tProc shot counter when programs run back to back ([averaging](concepts/averaging.md#the-stale-shot-counter-race)) | re-run; use fewer `rounds` and more `reps`. `transmission_fit` / `transmission_sweep`, `t1_single_shot` and `undriven_single_shot` retry automatically (3 tries, `soc.stop_tproc()`, fresh program) |
 | `Overflowed the averages buffer` | tProc outruns the readout | lengthen `relax_delay`; do not retry unchanged |
 | `ValueError: cannot reshape array of size 1 into shape (1,1000)` | qick >= ~0.2.29x averages `di_buf`; code expects the raw per-shot stream | keep client qick 0.2.334, or read `prog.acc_buf` via `raw_shot_buffers` |
 | `AxisSignalGen: buffer length must be 65536 samples or less` | envelope memory full (long sigma; separate pi and pi/2 envelopes) | share one envelope; shorter sigma ([timing](concepts/timing_and_units.md#pulse-envelopes)) |

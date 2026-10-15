@@ -87,6 +87,13 @@ Path `T1SS/`.
 - **json:** the cfg, including `variable_wait` (last point) and `Excited_PulseT1`,
   which nothing reads.
 - **No fit.** T1 is not extracted or saved. Fit `Exp_values` vs `wait_times` offline.
+- **Aborted run:** an error or Ctrl-C after at least one wait point saves the completed
+  points (h5 + json, no png) before re-raising: `Exp_values`, `RotatedIQ` and
+  `wait_times` for the first `points_completed` points, `threshold`/`angle` (when not
+  None) and a `points_completed` dataset. The json cfg carries `points_completed` and
+  `aborted` (the error's repr). A complete run has neither key.
+- Each wait point's program goes through `acquire_with_retry` (3 tries on the
+  [stale-shot-counter race](../concepts/averaging.md#the-stale-shot-counter-race)).
 
 ## Analysis
 

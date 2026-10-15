@@ -1,4 +1,5 @@
 import time
+import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,6 +7,7 @@ from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
 from qicklab.analysis.iq import count_percentage, rotate_data
+from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
 
 
@@ -129,18 +131,28 @@ class T1_SS(ExperimentClass):
 
         results = []
         rotated_iq_array = []
-        for t in tqdm(tpts, position=0, disable=True):
-            self.cfg["variable_wait"] = t
-            print(t)
-            start = time.time()
-            prog = T1SingleShotProgram(self.soccfg, self.cfg)
-            shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
-            print(time.time() - start)
+        try:
+            for t in tqdm(tpts, position=0, disable=True):
+                self.cfg["variable_wait"] = t
+                print(t)
+                start = time.time()
+                # fresh program per attempt on the stale-shot-counter race (docs/concepts/averaging.md)
+                shots_i0, shots_q0 = acquire_with_retry(
+                    lambda: T1SingleShotProgram(self.soccfg, self.cfg),
+                    self.soc,
+                    label=f"T1_SS wait {t}",
+                    load_pulses=True,
+                )
+                print(time.time() - start)
 
-            rotated_iq = rotate_data((shots_i0, shots_q0), theta=angle)
-            rotated_iq_array.append(rotated_iq)
-            excited_percentage = count_percentage(rotated_iq, threshold=threshold)
-            results.append(excited_percentage)
+                rotated_iq = rotate_data((shots_i0, shots_q0), theta=angle)
+                excited_percentage = count_percentage(rotated_iq, threshold=threshold)
+                rotated_iq_array.append(rotated_iq)
+                results.append(excited_percentage)
+        except BaseException as err:
+            # keep the completed wait points (docs/experiments/t1_single_shot.md#outputs)
+            self._save_partial(results, rotated_iq_array, tpts, threshold, angle, err)
+            raise
 
         results = np.transpose(results)
 
@@ -155,6 +167,34 @@ class T1_SS(ExperimentClass):
             },
         }
         return self.data
+
+    def _save_partial(self, results, rotated_iq_array, tpts, threshold, angle, err):
+        """Save the wait points completed before `err`, marked with points_completed; never raises."""
+        n_done = len(results)
+        if n_done == 0:
+            return
+        try:
+            print(
+                f"[T1_SS] aborted after {n_done}/{len(tpts)} wait points ({err!r}); "
+                "saving the completed points"
+            )
+            payload = {
+                "Exp_values": np.transpose(results),
+                "RotatedIQ": rotated_iq_array[:n_done],
+                "threshold": threshold,
+                "angle": angle,
+                "wait_times": tpts[:n_done],
+            }
+            payload = {k: v for k, v in payload.items() if v is not None}
+            payload["points_completed"] = n_done
+            self.cfg["points_completed"] = n_done
+            self.cfg["aborted"] = repr(err)
+            self.data = {"config": self.cfg, "data": payload}
+            self.save_data(self.data)
+            self.save_config()
+        except Exception:
+            traceback.print_exc()
+            print("[T1_SS] partial save failed; re-raising the original error")
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         if data is None:
