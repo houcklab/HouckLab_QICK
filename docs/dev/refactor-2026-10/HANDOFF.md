@@ -110,6 +110,13 @@ see fit"), preceded by a research-effectiveness review workflow (one Opus agent 
 37. `4ecf0ba1` fix(rabi): F26 — rotation from the analysed read, fixed sign, contrast diagnostic (golden: 88
     data_digest leaves in the four Rabi labels)
 
+Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ3BqMAGCkXk):
+38. `4716ed29` test(regression): golden regenerated on Windows (i7-11700F, scipy-openblas 0.3.30, numpy 2.4.1):
+    1064 leaves, sets 716 + data_digest 348 in 16 labels per board, nothing else; two further captures
+    byte-identical (sha1 ea536087…)
+39. `20c0c602` fix(yoko): F21+F53 — open_charge_yoko / enable_current_output_safely / two-sided ramp_to guard
+    with readback (golden: 838 leaves, all yoko_writes, every label on both boards)
+
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
 is where the code runs in the end; see "End state"). Everything needed is in git, nothing on the Mac.
@@ -247,7 +254,10 @@ source .venv/bin/activate                 # macOS/Linux        (Windows: .venv\S
 pip install -r docs/dev/refactor-2026-10/requirements-test.txt   # pinned, cross-platform, ~15 packages
 python -m pytest tests                    # ~11-15 min; expect: all pass (platform note below)
 ```
-Python 3.13.5 was used; 3.11+ is required. `requirements-lock.txt` is the full Windows `pip freeze`, kept for
+Python 3.13.5 was used; 3.11+ is required. Windows PC (session 3): the `py` launcher only had 3.8/3.9, so
+`winget install --id Python.Python.3.13 --scope user` was used (3.13.15); the pins installed cleanly. That PC has
+16 GB RAM: run ONE golden capture at a time (three concurrent captures were all killed for low memory); a full
+`pytest tests` takes ~14 min there, `pytest tests/regression` ~10 min. Set `PYTHONUTF8=1` (cp1252 console). `requirements-lock.txt` is the full Windows `pip freeze`, kept for
 reference only — do not install it on macOS. The `.venv` is not in git. The committed `.env` holds a Windows
 PYTHONPATH; pytest does not need it (`pyproject.toml` sets `pythonpath = ["."]`), and `python -m <module>`
 from the repo root works everywhere. PyCharm users: mark the repo root as sources root.
