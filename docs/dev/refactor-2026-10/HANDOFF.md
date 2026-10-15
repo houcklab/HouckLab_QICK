@@ -136,6 +136,12 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     external-only key; four stale docs pages fixed (golden: 24 data_digest leaves, the 4 RunTransmissionSweep* labels).
     Follow-ups: docs/adding_a_device.md:100 "6/kappa" should name the angular kappa; the Q lower bound 1e2 caps
     kappa at |f0|/100 on a small IF axis (pre-existing).
+44. `ea8999b0` fix(modified_ramsey): F16 — model-free lag-covariance statistic (interior-trimmed, baseline-band
+    corrected, block bootstrap) drives echo_null / flip_final_pi2 / drive_off verdicts; drive_off decisive with a
+    symmetric 0.1 rule (golden byte-identical: no label runs the analysis). Four Opus rounds here, three rejects
+    (NaN-error flip rule, drift-filter edge bias, interior bias at CSTQ03 contrast). TIER C left: add drive_off to
+    the default validation_controls and confirm the 0.1 budget on the fridge; the per-record lag sum is not in
+    _analysis.json; K is per record (a control with a slightly different rep period can lose the comparison).
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
