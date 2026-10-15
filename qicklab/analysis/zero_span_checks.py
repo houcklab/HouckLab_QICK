@@ -1,6 +1,8 @@
-"""Zero-span parity validation primitives (modulation, contrast, bimodality, bin-size and threshold sweeps)."""
+"""Zero-span parity validation primitives (modulation, contrast, bimodality, bin-size and threshold
+sweeps, stage-8 control statistics)."""
 
 import numpy as np
+from scipy import stats
 
 from qicklab.analysis.dwell import dwell_time_statistics
 from qicklab.analysis.zero_span import _bin_iq_time, classify_parity_trace
@@ -232,3 +234,180 @@ def threshold_stability(scores, t_us, threshold_list=None, gap_indices=None, min
         "tau1_per_threshold": tau1,
         "tau_cv": tau_cv,
     }
+
+
+def batch_means_se(x, t_us, batch_us, min_batches=4):
+    """Mean of a correlated record and its standard error from non-overlapping batch means.
+
+    A parity telegraph is correlated over its dwell time, so std/sqrt(N) of the raw samples
+    understates the error. The record is cut into consecutive batches of
+    round(batch_us / dt) samples (dt = median sample spacing, trailing partial batch
+    dropped); se = std(batch means, ddof=1) / sqrt(n_batches), with n_batches - 1 degrees
+    of freedom. batch_us must be much longer than the correlation time. se is NaN when
+    fewer than min_batches fit. Returns (mean, se, n_batches); mean is over the whole record.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    t_us = np.asarray(t_us, dtype=float).ravel()
+    if x.size == 0:
+        return np.nan, np.nan, 0
+    mean = float(np.mean(x))
+    dt = float(np.median(np.diff(t_us))) if t_us.size > 1 else 0.0
+    if dt <= 0 or not np.isfinite(dt):
+        return mean, np.nan, 0
+    blen = max(1, int(round(float(batch_us) / dt)))
+    n_b = x.size // blen
+    if n_b < max(2, int(min_batches)):
+        return mean, np.nan, int(n_b)
+    bm = x[: n_b * blen].reshape(n_b, blen).mean(axis=1)
+    return mean, float(np.std(bm, ddof=1) / np.sqrt(n_b)), int(n_b)
+
+
+def _record_stats(rec, batch_us, min_batches):
+    lvl, lvl_se, n_b = batch_means_se(rec["scores"], rec["t_us"], batch_us, min_batches)
+    return {"level": lvl, "level_se": lvl_se, "n_batches": n_b}
+
+
+def _combine(terms):
+    """se and Welch-Satterthwaite dof of sum(c * level) over independent records.
+
+    terms: (c, stats) pairs. Both are NaN when any se is undefined."""
+    var_parts = [(c**2) * s["level_se"] ** 2 for c, s in terms]
+    var = float(np.sum(var_parts))
+    if not np.isfinite(var):
+        return np.nan, np.nan
+    if var <= 0:
+        return 0.0, np.nan
+    den = float(np.sum([v**2 / (s["n_batches"] - 1) for v, (_, s) in zip(var_parts, terms)]))
+    return float(np.sqrt(var)), (var**2 / den if den > 0 else np.inf)
+
+
+def critical_value(k_sigma, dof):
+    """Student-t critical value with the tail probability of a normal k_sigma threshold.
+
+    With few batches the se is itself uncertain, so delta/se is t-distributed with the
+    Welch dof; comparing it to k_sigma would inflate the false-alarm rate (k_sigma = 3,
+    4 batches per record: ~2 % instead of 0.27 %). The same value serves a one-sided
+    test at k_sigma and a two-sided |z| test. NaN for an undefined dof."""
+    if dof == np.inf:
+        return float(k_sigma)
+    if not np.isfinite(dof) or dof <= 0:
+        return np.nan
+    return float(stats.t.isf(stats.norm.sf(k_sigma), dof))
+
+
+def _shift(on, off, k_sigma):
+    """delta = level_on - level_off (independent records), se, z = delta/se, dof, t_crit."""
+    delta = float(on["level"] - off["level"])
+    se, dof = _combine([(1.0, on), (-1.0, off)])
+    z = delta / se if (np.isfinite(se) and se > 0) else np.nan
+    return {
+        "delta": delta,
+        "delta_se": float(se),
+        "delta_z": float(z),
+        "delta_dof": float(dof),
+        "t_crit": critical_value(k_sigma, dof),
+    }
+
+
+def _defined(s):
+    return bool(np.isfinite(s["delta_z"]) and np.isfinite(s["t_crit"]))
+
+
+def level_shift_null(record, off_record, batch_us, k_sigma=3.0, min_batches=4):
+    """Null control: the mean projected level must not move from the drive-off reference.
+
+    record / off_record: dicts with "scores" and "t_us". null_ok is |z| < t_crit (two-sided,
+    tail probability of a normal k_sigma, Welch dof from the batch means). Tri-state: None,
+    with insufficient_batches True, when the se is undefined (a record holds fewer than
+    min_batches batches), so a short record is not read as a null violation.
+    """
+    on = _record_stats(record, batch_us, min_batches)
+    off = _record_stats(off_record, batch_us, min_batches)
+    s = _shift(on, off, k_sigma)
+    ok = _defined(s)
+    return {
+        **s,
+        "null_ok": bool(abs(s["delta_z"]) < s["t_crit"]) if ok else None,
+        "insufficient_batches": not ok,
+        "n_batches": min(on["n_batches"], off["n_batches"]),
+    }
+
+
+def branch_response_test(
+    lower, higher, off_record, batch_us, e_minus_g, k_sigma=3.0, min_batches=4, pe_drive=0.5
+):
+    """Stage-8 variant D: does driving EACH parity branch raise the mean level above drive-off?
+
+    Driving a branch excites only the samples in the parity whose transition is that peak,
+    so both shifts are positive (toward e): delta_lower = P_lower * p_e,lower * |e - g| and
+    delta_higher = P_higher * p_e,higher * |e - g| (projected). P_lower is the occupation of
+    the parity whose transition is the lower peak; which parity that is depends on the
+    offset charge. A sign comparison of the two shifts therefore cannot reverse for a
+    genuine signal. Records are dicts with "scores" and "t_us"; e_minus_g is the projected
+    e - g distance in score units (|e_center - g_center|^2 for project_iq_onto_separator).
+    Reported:
+
+    - both_branches_respond: z_lower > t_crit_lower and z_higher > t_crit_higher (one-sided,
+      tail probability of a normal k_sigma, Welch dof); None, with insufficient_batches
+      True, when an se is undefined;
+    - branch_ratio = delta_lower / delta_higher, expected P_lower p_e,lower /
+      (P_higher p_e,higher), with a delta-method se that includes the shared reference;
+    - complementarity = (delta_lower + delta_higher) / (pe_drive * e_minus_g): ~1
+      (P_lower + P_higher = 1) when both branches are driven to the same excited
+      population pe_drive; below 1 when under-driven or with thermal population p_th
+      (~1 - p_th / pe_drive); above 1 when e_minus_g is too small (the SingleShot
+      calibration centres are plain means, pulled together by pi infidelity, T1 during
+      the readout and p_th), so a value clearly above 1 means a separator or pe_drive
+      miscalibration. Built from mean levels, which are linear in p_e whether a sample
+      is a projective outcome or a time average over the near-CW drive (a thresholded
+      bright fraction is not).
+      Secondary: it depends on the assumed pe_drive and says nothing about P_lower itself.
+      complementarity_z = (complementarity - 1) / complementarity_se.
+    """
+    lo = _record_stats(lower, batch_us, min_batches)
+    hi = _record_stats(higher, batch_us, min_batches)
+    off = _record_stats(off_record, batch_us, min_batches)
+    s_lo = _shift(lo, off, k_sigma)
+    s_hi = _shift(hi, off, k_sigma)
+    d_lo, d_hi = s_lo["delta"], s_hi["delta"]
+    ok = _defined(s_lo) and _defined(s_hi)
+    respond = (
+        bool(s_lo["delta_z"] > s_lo["t_crit"] and s_hi["delta_z"] > s_hi["t_crit"]) if ok else None
+    )
+    ratio = d_lo / d_hi if d_hi != 0 else np.nan
+    if d_hi != 0 and ok:
+        # var(d_lo) + r^2 var(d_hi) - 2 r cov(d_lo, d_hi); cov = var(off), the shared reference
+        var = s_lo["delta_se"] ** 2 + ratio**2 * s_hi["delta_se"] ** 2
+        var -= 2.0 * ratio * off["level_se"] ** 2
+        ratio_se = float(np.sqrt(max(var, 0.0)) / abs(d_hi))
+    else:
+        ratio_se = np.nan
+    norm = float(pe_drive) * float(e_minus_g)
+    if norm > 0:
+        comp = (d_lo + d_hi) / norm
+        c_se, c_dof = _combine([(1.0, lo), (1.0, hi), (-2.0, off)])
+        c_se = c_se / norm
+    else:
+        comp, c_se, c_dof = np.nan, np.nan, np.nan
+    c_z = (comp - 1.0) / c_se if (np.isfinite(c_se) and c_se > 0) else np.nan
+    out = {}
+    for name, s in (("lower", s_lo), ("higher", s_hi)):
+        out[f"delta_{name}"] = s["delta"]
+        out[f"delta_{name}_se"] = s["delta_se"]
+        out[f"delta_{name}_z"] = s["delta_z"]
+        out[f"delta_{name}_dof"] = s["delta_dof"]
+        out[f"t_crit_{name}"] = s["t_crit"]
+    out.update(
+        {
+            "both_branches_respond": respond,
+            "insufficient_batches": not ok,
+            "branch_ratio": float(ratio),
+            "branch_ratio_se": ratio_se,
+            "complementarity": float(comp),
+            "complementarity_se": float(c_se),
+            "complementarity_z": float(c_z),
+            "complementarity_dof": float(c_dof),
+            "n_batches": min(lo["n_batches"], hi["n_batches"], off["n_batches"]),
+        }
+    )
+    return out

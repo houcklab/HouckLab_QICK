@@ -321,8 +321,8 @@ automatic pass/fail**.
 | 5 | Bin-size dependence | Reprocess at t_bin ∈ {0.1, 0.2, 0.5, 1.0} ms; levels separate better until t_bin approaches T_parity (~2–3 ms) | **not implemented** (`bin_size_sweep` exists, unused) |
 | 6 | Dwell times | Exponential dwell distributions, stable vs threshold | **not implemented** (`threshold_stability` exists, unused) |
 | 7 | Environment | Rate vs power, detuning, drive-off; temperature logged by hand | `run_environment_sweep` |
-| 8 | Instrument controls | A drive off; B drive far detuned; C probe off-resonance → contrast vanishes; D drive on the other branch → assignment reverses (`branch_sign_flip` is strong evidence) | `run_control_suite` |
-| 9 | Evidence report | Collate stages 1–8 into EVIDENCE.md | `build_evidence_report` |
+| 8 | Instrument controls | A drive off, B drive far detuned → level stays at the drive-off reference (`null_ok`); C probe off-resonance → contrast vanishes; D drive each branch in turn → both raise the level (`both_branches_respond`), branch ratio, complementarity, midpoint null; nulls and responses tested with batch-means errors against a Student-t critical value ([below](#stage-8-instrument-controls)) | `run_control_suite` |
+| 9 | Evidence report | Collate stages 1–8 into EVIDENCE.md (scalar tables; stage 8 also a variant/metric table) | `build_evidence_report` |
 
 - **Run order:** stage 1 → stage 2 → stage 1 again (refine) → stage 3 (gate) →
   stage 4 → stages 5/6 → stage 8 → stage 7 → stage 9. Optimise the probe (stage 1)
@@ -352,6 +352,9 @@ automatic pass/fail**.
   compiled with `reps_per_chunk` (2000 after stage 1, 10000 without it). Each
   half-period then held 2–10× the requested samples, and the true square wave ran at
   12.5 or 2.5 Hz where 25 Hz was reported.
+- **Gain restore.** `run_modulation_check` then restores the drive gain and rebuilds
+  the program (also on an exception). Before 2026-10 it did not, so stages 8 and 7,
+  which run after stage 3, ran with the drive off.
 - **Frequencies saved.** The sidecar scalars hold both values:
   - `nominal_modulation_freq_hz`: the requested frequency after rounding to whole reps
     (also `modulation_freq_hz` in the sidecar metadata);
@@ -363,6 +366,95 @@ automatic pass/fail**.
   out the dead time between block programs (Python rebuild, load and start of every
   block). In wall-clock time the square wave is therefore slower and
   uneven. `chunk_wall_clock_starts` holds the block start times.
+
+### Stage-8 instrument controls
+
+`run_control_suite` takes one record per setting and projects it on the separator
+(score > 0 = bright, e). Every variant rebuilds the program (`set_qubit_gain`) after
+its cfg change, and the base point is rebuilt at the end, also when an acquisition
+raises. A drive-off record is the reference. The per-variant results are in the
+sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` table.
+
+- **Record length.** One acquisition holds `reps_per_chunk` samples (at most
+  `avg_maxlen`). After stage 1 that is `reps_per_point`, e.g. 2000 × 20 µs = 40 ms.
+  Each control record therefore stitches ⌈`min_record_us` / (`reps_per_chunk` ×
+  `sample_period_us`)⌉ acquisitions of the same program, with `min_record_us` = 200 ms
+  by default. The stitched time omits the dead time between acquisitions. The sidecar
+  holds `blocks_per_record` and `record_us`. To lengthen the records, pass a larger
+  `min_record_us`; changing the ZSP `reps_per_chunk` has no effect, because stage 1
+  overwrites it.
+- **Error bars.** A parity telegraph is correlated over its dwell (~2–3 ms), so
+  std/√N of the samples is far too small. Every mean has a batch-means standard
+  error: consecutive batches of `se_batch_us` = 10 ms, se = std(batch means)/√n_b,
+  with n_b − 1 degrees of freedom. A shift from the reference is delta = level −
+  off_level, se = √(se² + se_off²), z = delta/se. The two records are independent, so
+  z has a Student-t distribution with the Welch–Satterthwaite dof (`delta_*_dof`). It is
+  compared with `t_crit`, the t value that has the same tail probability as a normal
+  `k_sigma` = 3. With 4 batches per record (dof 3–6), comparing z with 3 would give a
+  null false-alarm rate of ~2 % instead of 0.27 %. At 200 ms (20 batches, dof ≈ 38),
+  t_crit ≈ 3.2.
+- **Undetermined.** If a record holds fewer than `min_batches` = 4 batches, the se is
+  NaN. `null_ok` / `both_branches_respond` are then **None** (not False) and
+  `insufficient_batches` is True, so a short record is not read as a null violation.
+- **A (drive off), B (drive detuned by `detune_mhz`).** Nulls: `delta`, `delta_se`,
+  `delta_z`, `delta_dof`, `t_crit`, `null_ok` = |z| < t_crit.
+- **C (probe off-resonance).** `mean_level` and `separation_snr` only: moving the probe
+  moves both clouds, so the drive-off reference at the probe point does not apply.
+- **D (both branches).** The drive goes to the lower peak, the higher peak and their
+  midpoint (from `parity_freqs`, the cached peaks). Driving a peak excites only the
+  samples in the parity whose transition that peak is. Which parity has the lower
+  peak depends on the offset charge (the branches cross at n_g = 0.25 mod 0.5), so
+  write P_lower for the occupation of the lower-peak parity. **Both** shifts are
+  positive (toward e): delta_lower = P_lower·p_e,lower·|e−g| and delta_higher =
+  P_higher·p_e,higher·|e−g| (projected). Reported:
+  - `both_branches_respond`: z_lower > t_crit_lower and z_higher > t_crit_higher
+    (one-sided);
+  - `branch_ratio` = delta_lower/delta_higher ± `branch_ratio_se` (the shared
+    reference is included), expected P_lower·p_e,lower / (P_higher·p_e,higher);
+  - `complementarity` = (delta_lower + delta_higher)/(`pe_drive`·|e−g|) ±
+    `complementarity_se`, with `complementarity_z` = (complementarity − 1)/se. Here
+    |e−g| is the projected separator distance (`e_minus_g` in the sidecar, i.e.
+    |e_center − g_center|²). P_lower + P_higher = 1, so the value is ~1 when both
+    branches are driven to the same excited population `pe_drive` (0.5 assumed) and
+    the separator is exact. This is a secondary, model-dependent check: it depends on
+    the assumed `pe_drive` and on the separator scale, and says nothing about P_lower,
+    which is near 0.5 for a symmetric telegraph. Biases:
+    - **below 1:** a weaker (unsaturated) drive. Thermal excited population p_th is
+      present with the drive off too, so each shift is P_branch·(p_e − p_th)·|e−g| and
+      the value is ≈ 1 − p_th/`pe_drive`. e decay during the ZSP readout lowers it
+      further only beyond the decay already in the calibration (next point);
+    - **above 1:** `e_minus_g` comes from the SingleShot π-pulse calibration
+      (`get_apriori_separator_from_singleshot`), whose centres are plain means.
+      e_center is pulled toward g by π infidelity and by T1 decay during the readout,
+      g_center toward e by thermal population, so |e−g| is too small and the value
+      too large by ≈ 1/(1 − ε_π − ε_T1 − p_th). Any scale mismatch between the ZSP
+      readout and the SingleShot separator enters as the same factor (see the
+      `declare_readout` entry under [Known issues](#known-issues));
+    - a value clearly above 1 therefore points to a separator or `pe_drive`
+      miscalibration, not to the parity physics.
+
+    It uses mean levels, which stay linear in p_e when a sample is a time average over
+    the near-CW drive rather than a projective outcome; a thresholded bright fraction
+    would not;
+  - the midpoint null `delta_midpoint`, `delta_midpoint_z`, `t_crit_midpoint`,
+    `midpoint_null_ok`. It fails when the doublet splitting is not large compared with
+    the (power-broadened) drive linewidth, i.e. the two branches are not resolved at
+    this gain.
+- **Skips.** A variant whose frequencies are unset (None) is recorded as
+  `{"skipped": reason}` instead of driving at 0 + `detune_mhz` or raising.
+- **History (before 2026-10).** Variant D was `swap_branch`, with
+  `sign_lower`/`sign_higher` and `branch_sign_flip` = sign(lvl_lower − off) ≠
+  sign(lvl_higher − off). By the argument above it is False for a genuine parity
+  signal, so it was not evidence. It was dropped and the outputs renamed. Other
+  problems fixed at the same time:
+  - variants C and D changed `read_pulse_freq` / `parity_drive_freq` without
+    rebuilding, so C ran with B's detuned program and D measured the lower branch
+    twice;
+  - each control was a single 40 ms acquisition with no error bar;
+  - the cfg helper wrote None into absent keys, and None parity frequencies raised
+    TypeError.
+
+  An 8_control_suite sidecar with a `swap_branch` variant predates these fixes.
 
 ## Findings & notes
 
@@ -414,20 +506,11 @@ automatic pass/fail**.
   Modified Ramsey and Undriven derive the period from the compiled schedule instead.
 - `res_phase` defaults to 0 and ignores any calibrated rotation.
 - `current_voltage` is taken from the session start voltage and may be stale.
-- Validation harness:
-  - The stage-3 modulation check never restores `qubit_gain`. It ends at the last
-    schedule entry (0), with the program rebuilt at gain 0. Because stage 3 runs
-    before stages 8 and 7, **every control variant and the environment sweep then run
-    with the drive OFF**.
-  - Control C changes `read_pulse_freq` and control D changes `parity_drive_freq`
-    without rebuilding the program. Both are therefore measured at the original
-    frequencies, and `branch_sign_flip` can never genuinely be True.
+- Validation harness (the stage-3 gain restore, the C/D rebuilds, the cfg helper and
+  the None parity frequencies are fixed: [stage 8](#stage-8-instrument-controls)):
   - The stage-7 environment sweep writes the "power_dB" values (−10 … −4) directly as
     `pulse_gain` DAC units, i.e. negative gains. It is a placeholder for an
     attenuator/YOKO sweep.
-  - The cfg-preservation helper writes None into keys that were absent at entry. With
-    unset frequencies, controls drive at `0 + 50 MHz`. Control D raises TypeError when
-    the cached parity frequencies are None.
   - `build_evidence_report` writes a non-ASCII warning sign with the default encoding.
     On this Windows machine (cp1252) a sidecar with a stale `analysis_version` raises
     UnicodeEncodeError.

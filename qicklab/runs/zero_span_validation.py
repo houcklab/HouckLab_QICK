@@ -16,7 +16,10 @@ from qicklab.analysis.dwell import dwell_time_statistics
 from qicklab.analysis.spectroscopy import find_two_tone_peaks
 from qicklab.analysis.zero_span import classify_parity_trace, sliding_window_switch_rate
 from qicklab.analysis.zero_span_checks import (
+    batch_means_se,
+    branch_response_test,
     contrast_from_sweeps,
+    level_shift_null,
     projected_histogram_snr,
     verify_modulation,
 )
@@ -29,14 +32,18 @@ def _preserve_cfg(experiment, *keys):
 
     Stages that sweep read_pulse_freq / parity_drive_freq / qubit_gain mutate
     experiment.cfg in a loop; without this an exception mid-sweep would leave
-    the experiment parked at a swept value. set_qubit_gain is called explicitly
-    by callers to rebuild the program after restoring the gain.
+    the experiment parked at a swept value. A key absent at entry is removed again
+    (not set to None). set_qubit_gain is called explicitly by callers to rebuild the
+    program after restoring the gain.
     """
-    saved = {k: experiment.cfg.get(k) for k in keys}
+    saved = {k: experiment.cfg[k] for k in keys if k in experiment.cfg}
     try:
         yield
     finally:
         experiment.cfg.update(saved)
+        for k in keys:
+            if k not in saved:
+                experiment.cfg.pop(k, None)
 
 
 def _timestamp():
@@ -126,7 +133,9 @@ def run_modulation_check(
     One block = one half-period (explicit factor of 2). Builds an alternating
     [G_on, 0] schedule, acquires, projects, and verifies recovery. Both frequencies are
     in stitched sample time, which omits the dead time between block programs
-    (docs/experiments/zero_span_parity.md#stage-3-modulation-timing).
+    (docs/experiments/zero_span_parity.md#stage-3-modulation-timing). The drive gain
+    G_on is restored (program rebuilt) afterwards; modulated_strobe_acquire leaves the
+    last gain of the schedule, 0.
     """
     sp_us = float(experiment.cfg["sample_period_us"])
     g_on = experiment.cfg["qubit_gain"]
@@ -134,7 +143,10 @@ def run_modulation_check(
     reps_per_block = max(1, reps_per_block)
     actual_freq = 1.0 / (2.0 * reps_per_block * sp_us * 1e-6)
     schedule = [g_on, 0] * int(n_periods)
-    acq = modulated_strobe_acquire(experiment, schedule, reps_per_block, progress=progress)
+    try:
+        acq = modulated_strobe_acquire(experiment, schedule, reps_per_block, progress=progress)
+    finally:
+        experiment.set_qubit_gain(g_on)
     cls = classify_parity_trace(acq["I"], acq["Q"], separator=separator, method="apriori")
     vm = verify_modulation(
         cls["scores"], acq["t_us"], acq["modulation_reference"], gap_indices=acq["gap_indices"]
@@ -402,12 +414,44 @@ def run_environment_sweep(
     return {"table": tbl, "comparison": cmp, "sidecar": json_path}
 
 
-def _signed_level(experiment, separator, progress=False):
-    """Mean projected V relative to the separator midpoint, plus separation SNR."""
-    data = experiment.acquire(progress=progress)
-    cls = classify_parity_trace(data["I"], data["Q"], separator=separator, method="apriori")
+def _control_record(experiment, separator, n_blocks=1, progress=False):
+    """Acquire n_blocks strobe records with the current program, stitch and classify them.
+
+    Each block is one acquire() (reps_per_chunk samples, bounded by avg_maxlen); block k's
+    t_us is offset to follow block k-1 by one sample spacing, so the stitched time omits
+    the dead time between acquisitions. Returns the projected scores, t_us, the mean level
+    and the histogram separation SNR.
+    """
+    I_parts, Q_parts, t_parts = [], [], []
+    offset = 0.0
+    for _ in range(max(1, int(n_blocks))):
+        data = experiment.acquire(progress=progress)
+        t_c = np.asarray(data["t_us"], dtype=float).ravel()
+        I_parts.append(np.asarray(data["I"]).ravel())
+        Q_parts.append(np.asarray(data["Q"]).ravel())
+        t_parts.append(t_c - (t_c[0] if t_c.size else 0.0) + offset)
+        if t_c.size:
+            step = float(t_c[1] - t_c[0]) if t_c.size > 1 else 0.0
+            offset = t_parts[-1][-1] + step
+    I = np.concatenate(I_parts)
+    Q = np.concatenate(Q_parts)
+    cls = classify_parity_trace(I, Q, separator=separator, method="apriori")
     h = projected_histogram_snr(cls["scores"])
-    return float(np.mean(cls["scores"])), h["separation_snr"]
+    return {
+        "scores": cls["scores"],
+        "t_us": np.concatenate(t_parts),
+        "mean_level": float(np.mean(cls["scores"])),
+        "separation_snr": h["separation_snr"],
+    }
+
+
+def _control_blocks(cfg, min_record_us):
+    """Acquisitions per control record so that the stitched record spans >= min_record_us."""
+    reps = cfg.get("reps_per_chunk", cfg.get("reps"))
+    sp_us = cfg.get("sample_period_us")
+    if not reps or not sp_us or not min_record_us:
+        return 1
+    return max(1, int(np.ceil(float(min_record_us) / (int(reps) * float(sp_us)) - 1e-9)))
 
 
 def run_control_suite(
@@ -418,80 +462,170 @@ def run_control_suite(
     parity_freqs=None,
     progress=False,
     out_dir=None,
+    k_sigma=3.0,
+    se_batch_us=10000.0,
+    min_batches=4,
+    pe_drive=0.5,
+    min_record_us=200000.0,
 ):
-    """Stage 8: A=drive off, B=detuned, C=probe off-res, D=swap branch (auto both).
+    """Stage 8: A=drive off, B=drive detuned, C=probe off-res, D=drive each branch in turn.
 
-    Contrast should vanish for A/B/C; assignment should reverse for D
-    (branch_sign_flip True is the strong evidence).
+    Every variant rebuilds the program (set_qubit_gain) after its cfg change, and the base
+    point is restored and rebuilt at the end, also when an acquisition raises. Each record is
+    ceil(min_record_us / (reps_per_chunk * sample_period_us)) acquisitions of the current
+    program, stitched. Levels are the mean projected score; each shift from the drive-off
+    reference has a batch-means standard error (batches of se_batch_us, much longer than
+    the parity dwell) and is tested against a Student-t critical value with the tail
+    probability of a normal k_sigma (Welch dof).
+    A, B: null_ok = |z| < t_crit. C: mean level and separation SNR only (the probe move
+    shifts both clouds, so the drive-off reference does not apply).
+    D: lower, higher and their midpoint; both_branches_respond, branch_ratio and
+    complementarity (zero_span_checks.branch_response_test), midpoint_null_ok as for A/B.
+    null_ok / both_branches_respond are None (insufficient_batches True) when a record holds
+    fewer than min_batches batches. A variant whose frequencies are unset (None) is skipped
+    with a reason. See docs/experiments/zero_span_parity.md#stage-8-instrument-controls.
     """
     cfg = experiment.cfg
     base = {
-        "qubit_gain": cfg["qubit_gain"],
+        "qubit_gain": cfg.get("qubit_gain"),
         "parity_drive_freq": cfg.get("parity_drive_freq"),
         "read_pulse_freq": cfg.get("read_pulse_freq"),
     }
+    pf = parity_freqs or {}
+    stat_kw = {"batch_us": se_batch_us, "k_sigma": k_sigma, "min_batches": min_batches}
+    n_blocks = _control_blocks(cfg, min_record_us)
+    e_minus_g = float(
+        np.sum(
+            (np.asarray(separator["e_center"], float) - np.asarray(separator["g_center"], float))
+            ** 2
+        )
+    )
     results = {}
 
-    with _preserve_cfg(experiment, "qubit_gain", "parity_drive_freq", "read_pulse_freq"):
-        # drive-off reference for sign baseline
-        experiment.set_qubit_gain(0)
-        off_level, _ = _signed_level(experiment, separator, progress=progress)
+    def record():
+        return _control_record(experiment, separator, n_blocks=n_blocks, progress=progress)
+
+    try:
+        with _preserve_cfg(experiment, "qubit_gain", "parity_drive_freq", "read_pulse_freq"):
+            # drive-off reference for every shift
+            experiment.set_qubit_gain(0)
+            off = record()
+            experiment.set_qubit_gain(base["qubit_gain"])
+
+            if "A" in variants:
+                experiment.set_qubit_gain(0)
+                rec = record()
+                results["A"] = {
+                    "label": "drive_off",
+                    "mean_level": rec["mean_level"],
+                    "separation_snr": rec["separation_snr"],
+                    **level_shift_null(rec, off, **stat_kw),
+                }
+                experiment.set_qubit_gain(base["qubit_gain"])
+            if "B" in variants:
+                if base["parity_drive_freq"] is None:
+                    results["B"] = {"label": "drive_detuned", "skipped": "parity_drive_freq unset"}
+                else:
+                    experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"] + detune_mhz
+                    experiment.set_qubit_gain(base["qubit_gain"])
+                    rec = record()
+                    results["B"] = {
+                        "label": "drive_detuned",
+                        "mean_level": rec["mean_level"],
+                        "separation_snr": rec["separation_snr"],
+                        **level_shift_null(rec, off, **stat_kw),
+                    }
+                    experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
+            if "C" in variants:
+                if base["read_pulse_freq"] is None:
+                    results["C"] = {
+                        "label": "probe_off_resonance",
+                        "skipped": "read_pulse_freq unset",
+                    }
+                else:
+                    experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"] + detune_mhz
+                    experiment.set_qubit_gain(base["qubit_gain"])
+                    rec = record()
+                    results["C"] = {
+                        "label": "probe_off_resonance",
+                        "mean_level": rec["mean_level"],
+                        "separation_snr": rec["separation_snr"],
+                    }
+                    experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
+            if "D" in variants:
+                f_lo, f_hi = pf.get("lower"), pf.get("higher")
+                if f_lo is None or f_hi is None:
+                    results["D"] = {
+                        "label": "both_branches",
+                        "skipped": "parity_freqs lower/higher unset",
+                    }
+                else:
+                    f_lo, f_hi = float(f_lo), float(f_hi)
+                    f_mid = 0.5 * (f_lo + f_hi)
+                    recs = {}
+                    for name, fq in (("lower", f_lo), ("higher", f_hi), ("midpoint", f_mid)):
+                        experiment.cfg["parity_drive_freq"] = fq
+                        experiment.set_qubit_gain(base["qubit_gain"])
+                        recs[name] = record()
+                    br = branch_response_test(
+                        recs["lower"],
+                        recs["higher"],
+                        off,
+                        e_minus_g=e_minus_g,
+                        pe_drive=pe_drive,
+                        **stat_kw,
+                    )
+                    mid = level_shift_null(recs["midpoint"], off, **stat_kw)
+                    results["D"] = {
+                        "label": "both_branches",
+                        "parity_drive_freq_lower": f_lo,
+                        "parity_drive_freq_higher": f_hi,
+                        "parity_drive_freq_midpoint": f_mid,
+                        "mean_level_lower": recs["lower"]["mean_level"],
+                        "mean_level_higher": recs["higher"]["mean_level"],
+                        "mean_level_midpoint": recs["midpoint"]["mean_level"],
+                        "separation_snr_lower": recs["lower"]["separation_snr"],
+                        "separation_snr_higher": recs["higher"]["separation_snr"],
+                        **br,
+                        "delta_midpoint": mid["delta"],
+                        "delta_midpoint_se": mid["delta_se"],
+                        "delta_midpoint_z": mid["delta_z"],
+                        "delta_midpoint_dof": mid["delta_dof"],
+                        "t_crit_midpoint": mid["t_crit"],
+                        "midpoint_null_ok": mid["null_ok"],
+                    }
+                    experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
+    finally:
+        # after _preserve_cfg has restored cfg: rebuild the base program, also when an
+        # acquire raised mid-suite (the program would otherwise stay at a control point)
         experiment.set_qubit_gain(base["qubit_gain"])
 
-        if "A" in variants:
-            experiment.set_qubit_gain(0)
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
-            results["A"] = {"label": "drive_off", "mean_level": lvl, "separation_snr": snr}
-            experiment.set_qubit_gain(base["qubit_gain"])
-        if "B" in variants:
-            experiment.cfg["parity_drive_freq"] = (base["parity_drive_freq"] or 0.0) + detune_mhz
-            experiment.set_qubit_gain(base["qubit_gain"])
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
-            results["B"] = {"label": "drive_detuned", "mean_level": lvl, "separation_snr": snr}
-            experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
-        if "C" in variants:
-            experiment.cfg["read_pulse_freq"] = (base["read_pulse_freq"] or 0.0) + detune_mhz
-            lvl, snr = _signed_level(experiment, separator, progress=progress)
-            results["C"] = {
-                "label": "probe_off_resonance",
-                "mean_level": lvl,
-                "separation_snr": snr,
-            }
-            experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
-        if "D" in variants:
-            pf = parity_freqs or {
-                "lower": base["parity_drive_freq"],
-                "higher": base["parity_drive_freq"],
-            }
-            experiment.cfg["parity_drive_freq"] = float(pf["lower"])
-            experiment.set_qubit_gain(base["qubit_gain"])
-            lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress)
-            experiment.cfg["parity_drive_freq"] = float(pf["higher"])
-            lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress)
-            sgn_lo = int(np.sign(lvl_lo - off_level))
-            sgn_hi = int(np.sign(lvl_hi - off_level))
-            results["D"] = {
-                "label": "swap_branch",
-                "mean_level_lower": lvl_lo,
-                "mean_level_higher": lvl_hi,
-                "separation_snr_lower": snr_lo,
-                "separation_snr_higher": snr_hi,
-                "sign_lower": sgn_lo,
-                "sign_higher": sgn_hi,
-                "branch_sign_flip": bool(sgn_lo != sgn_hi),
-            }
-            experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
-    experiment.set_qubit_gain(base["qubit_gain"])
-
+    off_level, off_se, n_b = batch_means_se(off["scores"], off["t_us"], se_batch_us, min_batches)
+    record_us = float(off["t_us"][-1] - off["t_us"][0]) if off["t_us"].size > 1 else 0.0
     json_path, _ = _stage_sidecar(
         experiment,
         "8_control_suite",
-        scalars={"off_level": off_level},
+        scalars={"off_level": off_level, "off_level_se": off_se, "n_batches_off": n_b},
         arrays=None,
-        extra_meta={"variants": results},
+        extra_meta={
+            "variants": results,
+            "k_sigma": k_sigma,
+            "se_batch_us": se_batch_us,
+            "min_batches": min_batches,
+            "pe_drive": pe_drive,
+            "e_minus_g": e_minus_g,
+            "min_record_us": min_record_us,
+            "blocks_per_record": n_blocks,
+            "record_us": record_us,
+        },
         out_dir=out_dir,
     )
-    return {"variants": results, "off_level": off_level, "sidecar": json_path}
+    return {
+        "variants": results,
+        "off_level": off_level,
+        "off_level_se": off_se,
+        "sidecar": json_path,
+    }
 
 
 _STAGE_ORDER = [
@@ -510,7 +644,8 @@ def build_evidence_report(run_dir, out_path):
     """Stage 9: collate per-stage sidecars into one markdown report. NO pass/fail.
 
     Scans run_dir for *.json sidecars, groups by stage prefix, embeds figures and
-    scalar tables in canonical order. Flags stale analysis_version.
+    scalar tables in canonical order (plus the per-variant table of stage 8). Flags stale
+    analysis_version.
     """
     sidecars = []
     for fn in sorted(os.listdir(run_dir)):
@@ -552,6 +687,19 @@ def build_evidence_report(run_dir, out_path):
             lines.append("|---|---|")
             for k, v in sc.items():
                 lines.append(f"| {k} | {v} |")
+            lines.append("")
+        # stage 8 keeps its per-variant outcomes (null_ok, both_branches_respond,
+        # branch_ratio +- se, complementarity +- se, ...) in "variants", not in scalars
+        variants = m.get("variants")
+        if isinstance(variants, dict) and variants:
+            lines.append("| variant | metric | value |")
+            lines.append("|---|---|---|")
+            for name, res in variants.items():
+                if not isinstance(res, dict):
+                    continue
+                for k, v in res.items():
+                    if not isinstance(v, (dict, list)):
+                        lines.append(f"| {name} | {k} | {v} |")
             lines.append("")
         png = os.path.join(run_dir, m["_file"].replace(".json", ".png"))
         if os.path.exists(png):

@@ -568,7 +568,7 @@ SYMBOLS = [
     Entry(L + '.Experiments.validate_ZeroSpanParity', 'CrossRunComparison', 'qicklab.runs.zero_span_validation', 'CrossRunComparison', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.validate_ZeroSpanParity', '_trace_metrics', 'qicklab.runs.zero_span_validation', '_trace_metrics', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.validate_ZeroSpanParity', 'run_environment_sweep', 'qicklab.runs.zero_span_validation', 'run_environment_sweep', 'moved', '3a-i', ''),
-    Entry(L + '.Experiments.validate_ZeroSpanParity', '_signed_level', 'qicklab.runs.zero_span_validation', '_signed_level', 'moved', '3a-i', ''),
+    Entry(L + '.Experiments.validate_ZeroSpanParity', '_signed_level', 'qicklab.runs.zero_span_validation', '_signed_level', 'deleted', '3b', "replaced by _control_record, which keeps the projected record so the stage-8 controls get batch-means errors and a both-branches test (review/findings.json F19, 2026-10-14)"),
     Entry(L + '.Experiments.validate_ZeroSpanParity', 'run_control_suite', 'qicklab.runs.zero_span_validation', 'run_control_suite', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.validate_ZeroSpanParity', '_STAGE_ORDER', 'qicklab.runs.zero_span_validation', '_STAGE_ORDER', 'moved', '3a-i', ''),
     Entry(L + '.Experiments.validate_ZeroSpanParity', 'build_evidence_report', 'qicklab.runs.zero_span_validation', 'build_evidence_report', 'moved', '3a-i', ''),

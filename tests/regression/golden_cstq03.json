@@ -136707,19 +136707,19 @@
           "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 254,
-              "configure_readout": 254,
-              "load_bin_program": 254,
-              "reload_mem": 254,
-              "set_nyquist": 508,
-              "start_readout": 254,
-              "start_src": 508,
-              "stop_tproc": 254
+              "config_avg": 283,
+              "configure_readout": 283,
+              "load_bin_program": 283,
+              "reload_mem": 283,
+              "set_nyquist": 566,
+              "start_readout": 283,
+              "start_src": 566,
+              "stop_tproc": 283
             },
-            "digest": "a6fb4061cd0ac69fb1896a305ae14b52",
+            "digest": "f5f45186c23999c8bdef8f38e5a6ff31",
             "first_program": "563747bb4751335b",
-            "n_programs": 254,
-            "n_unique_programs": 170
+            "n_programs": 283,
+            "n_unique_programs": 173
           },
           "index": 2,
           "methods": [
@@ -136861,7 +136861,7 @@
               "name": "save_config"
             },
             {
-              "count": 194,
+              "count": 223,
               "kwargs": {
                 "progress": false
               },
@@ -275667,19 +275667,19 @@
           "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 254,
-              "configure_readout": 254,
-              "load_bin_program": 254,
-              "reload_mem": 254,
-              "set_nyquist": 508,
-              "start_readout": 254,
-              "start_src": 508,
-              "stop_tproc": 254
+              "config_avg": 283,
+              "configure_readout": 283,
+              "load_bin_program": 283,
+              "reload_mem": 283,
+              "set_nyquist": 566,
+              "start_readout": 283,
+              "start_src": 566,
+              "stop_tproc": 283
             },
-            "digest": "9984b1761d91d9467d51e6279559fc54",
+            "digest": "510f33ca7a19bb115823c00c1429ed85",
             "first_program": "ef871286d5a40715",
-            "n_programs": 254,
-            "n_unique_programs": 170
+            "n_programs": 283,
+            "n_unique_programs": 173
           },
           "index": 2,
           "methods": [
@@ -275821,7 +275821,7 @@
               "name": "save_config"
             },
             {
-              "count": 194,
+              "count": 223,
               "kwargs": {
                 "progress": false
               },
