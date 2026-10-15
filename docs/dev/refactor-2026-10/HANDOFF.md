@@ -162,6 +162,13 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     sets in 33 labels; no cfg_access/outcome/yoko change). Averaged regime-A IQ amplitudes are NOT comparable with
     records before 2026-10-15. Left: the hard-coded [0, 1] readout loops (switching to ro_chs drops ADC 1 from the
     payload: separate change); sample_period_us_compiled not added.
+50. `ceec6a1a` fix(runs): tier-B batch B1 — F51 DAC gain guard (0..32767, constructor + build_context + run-level +
+    ZSP set_qubit_gain), F52 resonator carry-over quality gate (assess_resonator_fit: depth, half-power width, edge;
+    pulse_freq left unchanged on failure), F84 honoured run parameters (transmission_sweep reps/rounds, two_tone_spec
+    peak kwargs, trans_qubit_spec gain 800 / relax 2500, flattop_relax_delay) (golden: 96 leaves = RunTrans_QubitSpec
+    gain/relax/program + the two transmission combo labels' pulse_freq no longer carried from noise). Follow-ups:
+    ZSP stage-7 power knob unguarded; charge_sweep / charge-dispersion keep spec gain only when Gauss; transmission
+    JSON pulse_freq is display's fit minimum even when the gate rejects it.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
