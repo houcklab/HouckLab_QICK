@@ -152,6 +152,10 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     labels keep the ZSP pipeline and the two-tone quasi-CW record under the golden (43 labels per board) (golden:
     114 leaves in the plain ZSP / two-tone labels, which now raise / step to budget on the noise-only harness
     spectra). Not done: F05 part 2 (joint 1-vs-2 line fit, tier B) and AutoCoherence |I+iQ|^2 -> project_iq_signal.
+48. `16581c4a` fix(zero_span): F07 — apriori_gmm (two-Gaussian ML threshold on the record's own scores, bits withheld
+    when not bimodal, classifier_* fit fields in the summary) is the default ZSP classifier; 'apriori' aliases it,
+    'apriori_midpoint' keeps the old behaviour (golden byte-identical). TIER C left: automatic resolved-jump warning /
+    HMM classifier; noise-crossing rate inflation is documented (bin, or SNR >= ~5), not fixable per sample.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
 
