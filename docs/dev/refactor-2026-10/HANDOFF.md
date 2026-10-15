@@ -123,6 +123,9 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     gate (F04 (c) second half): below SNR ~15 on the ZSP grid a single line is often paired with a noise maximum
     (source one_lorentzian_center_plus_peak) and the run parks between the parity lines without error; needs a
     partner-height-over-noise threshold (design decision + golden change).
+41. `f7f590b0` fix(coherence): F02+F34 — bounded, guarded fit_exp_decay (dict result, ok criteria incl.
+    |a| >= 3 a_err) saved as t1_fit_* / t2e_fit_* in the h5 (golden: 684 leaves = new display `sets` + new fit
+    datasets in the 7 T1/T2E labels; nothing else). Not done: T2R fit saving, T1/T2E in the AutoCoherence summary.
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
