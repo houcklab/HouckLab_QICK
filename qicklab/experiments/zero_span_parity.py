@@ -153,7 +153,7 @@ class _ZeroSpanParityProgBase(AveragerProgram):
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["read_length"]),
+                length=self.us2cycles(cfg["read_length"], ro_ch=ch),
                 freq=cfg["read_pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -193,8 +193,10 @@ class _ZeroSpanParityProgBase(AveragerProgram):
             adcs=self.cfg["ro_chs"],
             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
             wait=True,
-            syncdelay=0,
         )
+        # The rep period: the synci below advances by the end of the last tone or ADC window.
+        self.rep_period_cycles = int(self.get_max_timestamp())
+        self.sync_all(0)
 
 
 class ZeroSpanParityProgStrobe(_ZeroSpanParityProgBase):
@@ -203,6 +205,19 @@ class ZeroSpanParityProgStrobe(_ZeroSpanParityProgBase):
 
     def _const_length_us(self):
         return self.cfg["sample_period_us"]
+
+    def body(self):
+        super().body()
+        # t_us assumes one sample_period_us per rep. Allow one tProc cycle for the tone's
+        # generator-clock rounding (gen f_fabric != tProc f_time).
+        expected = self.us2cycles(self.cfg["sample_period_us"])
+        if abs(self.rep_period_cycles - expected) > 1:
+            raise RuntimeError(
+                f"[ZeroSpanParity] compiled strobe rep period {self.rep_period_cycles} tProc "
+                f"cycles ({self.cycles2us(self.rep_period_cycles):.4f} us) != sample_period_us "
+                f"{self.cfg['sample_period_us']} us ({expected} cycles): the readout window "
+                f"outlasts the tones. Increase sample_period_us or shorten read_length."
+            )
 
 
 class ZeroSpanParityProgDecimated(_ZeroSpanParityProgBase):

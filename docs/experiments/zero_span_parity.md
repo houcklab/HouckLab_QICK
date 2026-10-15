@@ -86,8 +86,8 @@ and the bound.
 5. Decimated: `round(read_length · f_output) ≤ buf_maxlen` (1024 on the current
    board). The original spec wrote this in terms of `capture_length_us`; the code
    checks `read_length`, because the decimated buffer is sized by the declared readout
-   length. It is a nominal estimate that may be off by O(1) sample where the tProc and
-   readout clocks differ.
+   length, `us2cycles(read_length, ro_ch)`, the number qick checks against the buffer
+   (3.2 µs = 983 samples passes, 3.4 µs = 1044 fails).
 6. If `RecalibrateParityFreqs = False`, the cached frequency selected by
    `which_to_park` must be set. The spec required a finite float; the code checks
    only that it is not None.
@@ -298,9 +298,10 @@ Validation-stage parameters:
      threshold lies below the upper center, so `classifier_threshold` ≥ 0 is a stronger,
      sufficient form), or the state-1 cloud on the separator's e marker in
      `_iq_scatter.png`. An averaged driven level with p_e ≤ 1/2 cannot be there. Treat
-     it as a diagnostic, not a test: the separator is pulsed SingleShot data, and the
-     `declare_readout` normalisation mismatch also rescales it relative to the
-     zero-span I/Q, so the absolute g/e positions are only approximate. No single
+     it as a diagnostic, not a test: the separator is pulsed SingleShot data (and in
+     records before 2026-10-15 the `declare_readout` normalisation mismatch also
+     rescaled it relative to the zero-span I/Q by about 1.4), so the absolute g/e
+     positions are only approximate. No single
      threshold separates the parities in this regime (a hidden-Markov model would; not
      implemented). A three-lobe or skewed histogram (partly resolved jumps) is the same
      regime.
@@ -498,8 +499,9 @@ sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` t
       e_center is pulled toward g by π infidelity and by T1 decay during the readout,
       g_center toward e by thermal population, so |e−g| is too small and the value
       too large by ≈ 1/(1 − ε_π − ε_T1 − p_th). Any scale mismatch between the ZSP
-      readout and the SingleShot separator enters as the same factor (see the
-      `declare_readout` entry under [Known issues](#known-issues));
+      readout and the SingleShot separator enters as the same factor (before 2026-10-15
+      the `declare_readout` bug made it about 1.4, see
+      [readout window](../concepts/readout_window.md#history));
     - a value clearly above 1 therefore points to a separator or `pe_drive`
       miscalibration, not to the parity physics.
 
@@ -541,8 +543,12 @@ sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` t
   307.2 MHz on this firmware. The loopback observed samples coming back at about the
   tProc clock (~430 MHz) instead. `t_us` uses the nominal rate, so
   `read_length_us`, `capture_length_us`, `samples_per_capture` and
-  `decimated_fs_source` are saved for post-hoc reconstruction. The likely cause is the
-  `declare_readout` bug below.
+  `decimated_fs_source` are saved for post-hoc reconstruction. The likely cause was the
+  `declare_readout` bug fixed on 2026-10-15: the window was declared as a tProc-cycle
+  count, which qick reads as readout samples, so the buffer held about 1.4x more samples
+  than planned at the correct 307.2 MHz. `decimated_fs_source` stays
+  `"soccfg.f_output_unverified"` until a loopback confirms `samples_per_capture` =
+  `read_length` x 307.2.
 - The decimated buffer is small: buf_maxlen = 1024 samples, so about 2.4 µs per capture
   at 430 MHz (3.3 µs at 307.2 MHz). Path B is much more constrained than the original
   ms-record assumption.
@@ -557,23 +563,25 @@ sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` t
 
 ## Known issues
 
-- **`declare_readout` omits `ro_ch`.** The readout length is given in tProc cycles,
-  but qick 0.2.334 interprets it as decimated samples. The integration window and the
-  decimated record are therefore f_time/f_output (about 1.4×) longer than
-  `read_length`. This also means:
-  - the strobe normalisation (which divides by the readout-clock count) is off by the
-    same factor relative to the SingleShot separator;
-  - the rule-5 estimate counts the wrong number of samples.
-
-  [modified_ramsey](modified_ramsey.md), [active_reset_verify](active_reset_verify.md)
-  and [undriven_single_shot](undriven_single_shot.md) all pass `ro_ch`.
+- **Records before 2026-10-15** were taken with `declare_readout` given a tProc-cycle
+  count (no `ro_ch`), which qick 0.2.334 reads as decimated samples: the window and the
+  decimated record were f_time/f_output (about 1.4×) longer than `read_length`, the
+  strobe I/Q were 1.4× too large relative to the SingleShot separator, and rule 5
+  counted the wrong number of samples
+  ([readout window](../concepts/readout_window.md#history)).
 - The decimated defaults (`read_length = 80 µs`) give ≈ 24576 samples at 307.2 MHz,
   far above buf_maxlen = 1024. Rule 5 rejects them on the current board.
 - A `rounds` key in the cfg would override `soft_avgs` inside AveragerProgram,
   bypassing the soft-average gate (decimated) and keeping only the last round
   (strobe). The run does not set `rounds` today.
-- Strobe `t_us = index · sample_period_us` ignores the per-rep tProc overhead.
-  Modified Ramsey and Undriven derive the period from the compiled schedule instead.
+- The strobe rep period is max(`us2cycles(sample_period_us)`, ADC trigger offset +
+  readout window), so with rule 1 satisfied the tones set it and `t_us = index ·
+  sample_period_us` is exact for the default cfg (to under one tProc cycle where the
+  generator and tProc clocks differ). The rule-1 +1.0 µs margin is purely conservative.
+  Before 2026-10-15 the 1.4× window could set the period instead (10 µs window, 11.5 µs
+  period: 14.50 µs per rep, +26 % on every rate and dwell). The program now raises at
+  construction if the compiled period differs from `us2cycles(sample_period_us)` by more
+  than one tProc cycle.
 - `res_phase` defaults to 0 and ignores any calibrated rotation.
 - `current_voltage` is taken from the session start voltage and may be stale.
 - Validation harness (the stage-3 gain restore, the C/D rebuilds, the cfg helper and

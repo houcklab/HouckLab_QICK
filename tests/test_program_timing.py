@@ -5,6 +5,8 @@ synthetic board variant (A: gen fabric clock = tProc clock, readout i on tProc
 input i; B: gen fabric 614.4 MHz != tProc 430.08 MHz, readout i on tProc input
 i + 2). The integers below were obtained from the pre-refactor code; the
 refactor (shared readout/reset/schedule helpers) must reproduce them exactly.
+The regime-A and zero-span pins at the end were set by the readout-window fix
+(each records the value it replaced).
 """
 
 import pytest
@@ -403,3 +405,241 @@ def test_t2e_accepts_odd_pi_pulses(board, n):
     cfg = _cfg(BaseConfig, **T2E_PARAMS, num_pi_pulses=n)
     prog = T2EProgram(soccfg, cfg)
     assert len(_insts(prog, "sync")) == n + 1
+
+
+# --- Regime-A programs: readout window on the readout clock, tone covers it -------------
+# Before the fix every program below declared us2cycles(readout_length) tProc cycles as
+# the window (6451 readout samples = 21.0 us for a 15 us window), played a 6580-cycle tone
+# converted on the tProc clock (10.71 us on board B), and its measure() waiti ran to
+# int(129 + 6451 * 1.4) = 9160 tProc cycles, ~6 us after the tone ended.
+REGIME_A_EXTRA = {
+    "start": 0,
+    "step": 1,
+    "expts": 3,
+    "cav_relax_delay": 10,
+    "qubit_length": 50.0,
+    "Gauss": False,
+    "res_phase": 0,
+    "mixer_freq": 0,
+    "trig_buffer_start": 0.05,
+    "trig_buffer_end": 0.05,
+    "trig_delay": 0.0,
+    "pulse_01": True,
+    "qubit_freq": 2651.0,
+    "phase_step": 0,
+    "num_pi_pulses": 1,
+    "df": 1.0,
+    "variable_wait": 1.0,
+}
+REGIME_A = {
+    "CavitySpecFF": ("qicklab.experiments.transmission", "CavitySpecFFProg"),
+    "QubitSpecSliceFF": ("qicklab.experiments.qubit_spec", "QubitSpecSliceFFProg"),
+    "AmplitudeRabiFF": ("qicklab.experiments.rabi", "AmplitudeRabiFFProg"),
+    "AmplitudeRabiPoint": ("qicklab.experiments.rabi", "AmplitudeRabiPointProg"),
+    "Chi": ("qicklab.experiments.chi_shift", "ChiProgram"),
+    "T1": ("qicklab.experiments.t1", "T1Program"),
+    "T2R": ("qicklab.experiments.t2_ramsey", "T2RProgram"),
+    "T2E": ("qicklab.experiments.t2_echo", "T2EProgram"),
+    "ChargeDispersion": ("qicklab.experiments.charge_dispersion", "ChargeDispersionProgram"),
+    "ChargeDispersionQuasiCW": (
+        "qicklab.experiments.charge_dispersion",
+        "ChargeDispersionQuasiCWProg",
+    ),
+    "T1SS": ("qicklab.experiments.t1_single_shot", "T1SingleShotProgram"),
+}
+# Programs that declare ADC 0 and 1 whatever ro_chs is; the rest declare ro_chs = [0].
+TWO_ADC = {"QubitSpecSliceFF", "AmplitudeRabiFF", "AmplitudeRabiPoint", "ChargeDispersionQuasiCW"}
+# int(end of the ADC window) [tProc cycles] = the measure(wait=True) waiti immediate:
+# int(129 + 4608 * 430.08 / 307.2) = int(6580.2). Was 9160.
+ADC_END_WAITI = {"A": 6580, "B": 6580}
+# Const qubit drive of QubitSpecSliceFF / ChargeDispersionQuasiCW for qubit_length = 50 us,
+# in generator cycles (50 * f_fabric). Was 21504 (tProc clock) on both boards.
+SPEC_DRIVE = {"A": 21504, "B": 30720}
+# ConstantTone, length 15.3 us, generator cycles. Was 6580 on both boards.
+CONSTANT_TONE = {"A": 6580, "B": 9400}
+
+
+def _program(name, soccfg, **overrides):
+    import importlib
+
+    from qicklab.hardware.board import BaseConfig
+
+    module, cls = REGIME_A[name]
+    cfg = _cfg(BaseConfig, **REGIME_A_EXTRA)
+    cfg.update(overrides)
+    return getattr(importlib.import_module(module), cls)(soccfg, cfg)
+
+
+@pytest.mark.parametrize("name", sorted(REGIME_A))
+def test_regime_a_readout_window(board, name):
+    variant, soccfg = board
+    prog = _program(name, soccfg)
+    window, tone, extension, offset = READOUT[variant]
+    declared = [0, 1] if name in TWO_ADC else [0]
+    assert {ch: ro["length"] for ch, ro in prog.ro_chs.items()} == dict.fromkeys(
+        declared, round(15.0 * 307.2)
+    )
+    assert _readout(prog) == (window, tone, extension, offset)
+    # The resonator const pulse plays the covering tone, in generator cycles.
+    res_ch = prog.cfg["res_ch"]
+    assert prog._gen_mgrs[res_ch].next_pulse["length"] == prog.readout_tone_cycles
+    f_time = soccfg["tprocs"][0]["f_time"]
+    f_fabric = soccfg["gens"][res_ch]["f_fabric"]
+    adc_end = offset + window * f_time / soccfg["readouts"][0]["f_output"]
+    assert int(adc_end) == ADC_END_WAITI[variant]
+    assert [w[1] for w in _insts(prog, "waiti")] == [ADC_END_WAITI[variant]]
+    # The tone outlasts the ADC window by less than one generator cycle.
+    tone_end = tone * f_time / f_fabric
+    assert 0 <= tone_end - adc_end < f_time / f_fabric
+
+
+def test_regime_a_rejects_short_tone(board):
+    _, soccfg = board
+    with pytest.raises(ValueError, match="must cover"):
+        _program("T1", soccfg, length=15.0)
+
+
+@pytest.mark.parametrize("name", ["QubitSpecSliceFF", "ChargeDispersionQuasiCW"])
+def test_const_spec_drive_on_generator_clock(board, name):
+    variant, soccfg = board
+    prog = _program(name, soccfg)
+    qubit_ch = prog.cfg["qubit_ch"]
+    cycles = prog._gen_mgrs[qubit_ch].next_pulse["length"]
+    assert cycles == SPEC_DRIVE[variant]
+    assert cycles / soccfg["gens"][qubit_ch]["f_fabric"] == pytest.approx(50.0, abs=1e-3)
+
+
+def test_constant_tone_on_generator_clock(board):
+    from qicklab.experiments.cw_tones import ConstantTone
+    from qicklab.hardware.board import BaseConfig
+
+    variant, soccfg = board
+    prog = ConstantTone(soccfg, _cfg(BaseConfig, mixer_freq=0))
+    assert prog._gen_mgrs[prog.cfg["res_ch"]].next_pulse["length"] == CONSTANT_TONE[variant]
+
+
+def test_t1_ss_normalises_by_declared_window(board):
+    """T1_SS divides each shot by the window it declares (4608 samples), so its shots are in
+    SingleShotProgram's per-sample units. The pre-fix program declared 6451 samples but
+    divided by 4608, leaving its IQ 1.4x too large for the single_shot threshold."""
+    import numpy as np
+
+    _, soccfg = board
+    prog = _program("T1SS", soccfg, reps=4)
+    ch = prog.cfg["ro_chs"][0]
+    declared = prog.ro_chs[ch]["length"]
+    assert declared == 4608
+    assert prog.readout_window_cycles[ch] == declared
+    # FakeSoc / the ADC: the raw sum of a constant per-sample value v over the window.
+    prog.di_buf = [np.full(4, declared * 3.0)]
+    prog.dq_buf = [np.full(4, declared * -1.0)]
+    i, q = prog.collect_shots()
+    assert i.shape == (1, 4) and np.all(i == 3.0) and np.all(q == -1.0)
+
+
+# --- Zero span: read_length on the readout clock ------------------------------------------
+def _zsp_cfg(adc_trig_offset, read_length, sample_period_us=None, capture_length_us=None):
+    from qicklab.hardware.board import BaseConfig
+
+    cfg = dict(BaseConfig)
+    cfg.update(
+        {
+            "mixer_freq": 0.0,
+            "read_pulse_freq": 7095.4,
+            "parity_drive_freq": 1000.0,
+            "qubit_gain": 1000,
+            "pulse_gain": 1500,
+            "res_phase": 0,
+            "adc_trig_offset": adc_trig_offset,
+            "read_length": read_length,
+            "start_src": "internal",
+        }
+    )
+    if sample_period_us is not None:
+        cfg.update(mode="strobe", sample_period_us=sample_period_us, reps_per_chunk=100, reps=100)
+    else:
+        cfg.update(mode="decimated", capture_length_us=capture_length_us, reps=1, soft_avgs=1)
+    return cfg
+
+
+def _last_synci(prog):
+    return _insts(prog, "synci")[-1][0]
+
+
+# (adc_trig_offset, read_length, sample_period_us): the rule-1 floor (offset + read + 1.0)
+# exactly. The old window (4300 tProc-cycle count read as samples) made the first one
+# 'waiti 0, 6236; synci 6236' = 14.50 us per rep instead of 11.5.
+@pytest.mark.parametrize(("offset", "read", "sp"), [(0.5, 10.0, 11.5), (0.488, 5.0, 6.488)])
+def test_zero_span_strobe_period_is_sample_period(board, offset, read, sp):
+    from qicklab.experiments.zero_span_parity import ZeroSpanParityProgStrobe, _validate_cfg
+
+    _, soccfg = board
+    cfg = _zsp_cfg(offset, read, sample_period_us=sp)
+    _validate_cfg(cfg, soccfg)
+    prog = ZeroSpanParityProgStrobe(soccfg, cfg)
+    assert prog.ro_chs[0]["length"] == round(read * 307.2)
+    assert _last_synci(prog) == prog.rep_period_cycles == soccfg.us2cycles(sp)
+
+
+def test_zero_span_default_strobe(board):
+    """CSTQ03 default (0.488 / 5 / 20 us): window 1536 readout samples (was 2150); the
+    period is the tone's, 20 us, to within board B's < 1 tProc cycle generator rounding."""
+    from qicklab.experiments.zero_span_parity import ZeroSpanParityProgStrobe
+
+    variant, soccfg = board
+    prog = ZeroSpanParityProgStrobe(soccfg, _zsp_cfg(0.488, 5.0, sample_period_us=20.0))
+    assert prog.ro_chs[0]["length"] == 1536
+    assert soccfg.us2cycles(20.0) == 8602
+    assert _last_synci(prog) == {"A": 8602, "B": 8601}[variant]
+
+
+def test_zero_span_strobe_normalises_by_declared_window(board):
+    """_acquire_strobe divides the raw sums by the window the program declares (1536 samples
+    for 5 us), so strobe I/Q are in the single-shot separator's per-sample units. Before the
+    fix the program declared 2150 samples and _acquire_strobe divided by 1536 (I/Q 1.4x)."""
+    import numpy as np
+
+    from qicklab.experiments.zero_span_parity import ZeroSpanParity, ZeroSpanParityProgStrobe
+
+    _, soccfg = board
+    cfg = _zsp_cfg(0.488, 5.0, sample_period_us=20.0)
+    prog = ZeroSpanParityProgStrobe(soccfg, cfg)
+    declared = prog.ro_chs[cfg["ro_chs"][0]]["length"]
+    assert declared == 1536
+
+    class _Stub:
+        _acquire_strobe = ZeroSpanParity._acquire_strobe
+
+        def __init__(self):
+            self.cfg, self.soccfg, self.soc, self.prog = cfg, soccfg, None, prog
+
+    n = cfg["reps"]
+    prog.di_buf = [np.full(n, declared * 3.0)]
+    prog.dq_buf = [np.full(n, declared * -1.0)]
+    prog.acquire = lambda *_a, **_k: None
+    out = _Stub()._acquire_strobe(progress=False)
+    assert out["ro_norm_cycles"] == declared
+    assert np.allclose(out["I"], 3.0) and np.allclose(out["Q"], -1.0)
+
+
+def test_zero_span_strobe_rejects_readout_bound_period(board):
+    """Below the rule-1 floor (program built without _validate_cfg) the ADC window, not the
+    tones, would set the rep period: the program refuses to compile."""
+    from qicklab.experiments.zero_span_parity import ZeroSpanParityProgStrobe
+
+    _, soccfg = board
+    with pytest.raises(RuntimeError, match="compiled strobe rep period"):
+        ZeroSpanParityProgStrobe(soccfg, _zsp_cfg(0.5, 10.0, sample_period_us=9.0))
+
+
+def test_zero_span_decimated_buffer_rule_matches_declaration(board):
+    """Rule 5's estimate round(read_length * f_output) is the declared buffer length."""
+    from qicklab.experiments.zero_span_parity import ZeroSpanParityProgDecimated, _validate_cfg
+
+    _, soccfg = board
+    ok = _zsp_cfg(0.488, 3.2, capture_length_us=4.0)
+    _validate_cfg(ok, soccfg)
+    prog = ZeroSpanParityProgDecimated(soccfg, ok)
+    assert prog.ro_chs[0]["length"] == 983 <= soccfg["readouts"][0]["buf_maxlen"]
+    with pytest.raises(RuntimeError, match="rule 5"):
+        _validate_cfg(_zsp_cfg(0.488, 3.4, capture_length_us=4.0), soccfg)

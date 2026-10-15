@@ -168,14 +168,16 @@ The single-shot family has its own window; zero-span parity overrides it again w
 builder printed the window at connect:
 `[readout window] integration 15 us, adc_trig_offset 0.3 us, resonator tone 15.3 us`.
 
-Single-shot, Modified Ramsey and ActiveResetVerify must integrate the same physical ADC window
-and play the same tone, because thresholds calibrated in one are consumed by the others.
+Single-shot, Modified Ramsey, ActiveResetVerify, T1_SS and the regime-A programs must
+integrate the same physical ADC window and play the same tone, because thresholds and windows
+calibrated in one are consumed by the others.
 Each duration is converted with its owning clock (tProc for the trigger offset, readout clock
 for the window, generator clock for the tone) and the tone is extended by the minimum number of
 generator cycles needed after cross-clock rounding:
 `ceil(adc_end_tproc * f_fabric / f_time - 1e-12)`. The shared function is
-`qicklab.core.readout.cover_readout_window` (used by ModifiedRamsey); SingleShotProgram,
-ActiveResetVerify and UndrivenSingleShot still carry their own copies of the same arithmetic.
+`qicklab.core.readout.cover_readout_window` (used by ModifiedRamsey, T1_SS and every regime-A
+program); SingleShotProgram, ActiveResetVerify and UndrivenSingleShot still carry their own
+copies of the same arithmetic.
 
 ### Carry-overs
 

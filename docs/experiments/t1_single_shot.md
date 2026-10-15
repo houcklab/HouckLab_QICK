@@ -26,9 +26,12 @@ ADC       ───────────────────────�
 - Channels: `qubit_ch`, `res_ch`, `ro_chs` (only `ro_chs[0]` is used).
 - No trigger pin. Plain gaussian only: `flattop_length` is ignored.
 - `variable_wait = start + k·step` (µs).
-- No cross-clock tone extension. The tone length is `us2cycles(length)` (tProc clock)
-  and the readout window is declared with `us2cycles(readout_length)`, also the tProc
-  clock (see Known issues).
+- Readout window: set by `cover_readout_window`. The ADC window is `readout_length` on
+  the readout clock (`readout_window_cycles`), the tone covers `adc_trig_offset` plus
+  that window on the generator clock (`readout_tone_cycles`), with the cross-clock tone
+  extension of [single_shot](single_shot.md#pulse-sequence). Shots are normalised by
+  the declared window, so their IQ scale matches the `single_shot` calibration (see
+  Findings & notes).
 
 ## How to run
 
@@ -104,18 +107,16 @@ error floor, not at 0, and starts below 1 by the pi infidelity plus the readout 
 
 ## Findings & notes
 
-None recorded for this step in the legacy code.
+- 2026-10-15: the window and tone are set by `cover_readout_window`, as in
+  [single_shot](single_shot.md), and shots are normalised by the declared window of
+  `ro_chs[0]`. Before, the window was declared with a tProc-clock cycle count (1.4x
+  `readout_length` on the lab board) but normalised by the readout-clock count, so the
+  `single_shot` threshold and angle were applied on a scale f_time/f_output too large.
+  Populations from before that date are unreliable
+  ([readout window](../concepts/readout_window.md#history)).
 
 ## Known issues
 
-- **Window mismatch with the calibration.** The readout window is declared with a
-  tProc-clock cycle count, but shots are normalised with the readout-clock count
-  (`us2cycles(readout_length, ro_ch=0)`).
-  - On the current board (f_time 430.08 MHz, f_output 307.2 MHz) the integrated
-    window is therefore about 1.4x longer than `readout_length`.
-  - The normalisation does not match the [single_shot](single_shot.md) program that
-    produced the threshold. The threshold is applied on a different scale.
-  - The audit rates this plausible: it depends on the clocks of the board.
 - The program plays `qubit_gain`, not `pi_gain`. Before the regime-B config rebuild,
   `qubit_gain` is the spectroscopy gain.
 - `flattop_length` is ignored. Devices with a flat-top pi pulse get a mis-rotation.

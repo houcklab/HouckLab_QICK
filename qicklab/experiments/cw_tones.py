@@ -125,7 +125,7 @@ class ConstantTone(AveragerProgram):
             freq=freq,
             phase=0,
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"]),
         )
         self.synci(200)
 

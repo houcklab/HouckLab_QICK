@@ -13,6 +13,7 @@ from qicklab.analysis.ramsey import (
     project_ramsey_iq,
 )
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class T2RProgram(RAveragerProgram):
@@ -28,10 +29,11 @@ class T2RProgram(RAveragerProgram):
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -60,7 +62,7 @@ class T2RProgram(RAveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         self.sync_all(self.us2cycles(0.2))
@@ -78,7 +80,7 @@ class T2RProgram(RAveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(self.cfg["relax_delay"]),
         )

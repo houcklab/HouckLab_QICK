@@ -7,6 +7,7 @@ from qick import RAveragerProgram
 from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
 from qicklab.analysis.iq import min_q_range_phase
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class T2EProgram(RAveragerProgram):
@@ -31,10 +32,11 @@ class T2EProgram(RAveragerProgram):
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -44,7 +46,7 @@ class T2EProgram(RAveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
@@ -155,7 +157,7 @@ class T2EProgram(RAveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(self.cfg["relax_delay"]),
         )

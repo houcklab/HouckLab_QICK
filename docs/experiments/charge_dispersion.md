@@ -160,10 +160,8 @@ in the CSTQ03 runner), not a key of its own.
      returns two clusters, so a single blob is split ~50/50 by noise.
 - **Time axis.** `rep = 1.0 + 0.5 + readout_length + 10 + relax_delay` µs. This is an
   approximation, not derived from the program. It omits the qubit pulse length (8 µs
-  for a σ = 2 µs Gaussian; 50 µs for the CSTQ03 flat spec drive with `Gauss` False)
-  and the regime-A window stretch (see
-  [readout window](../concepts/readout_window.md#known-issues)), so the axis runs
-  short: about 0.4 % (8 µs pulse, 2000 µs relax) up to about 5 % (50 µs pulse, the
+  for a σ = 2 µs Gaussian; 50 µs for the CSTQ03 flat spec drive with `Gauss` False),
+  so the axis runs short: about 0.4 % (8 µs pulse, 2000 µs relax) up to about 5 % (50 µs pulse, the
   850 µs `qcw_relax_delay`).
 - **Ramsey.** Single averaged point; no fit.
 

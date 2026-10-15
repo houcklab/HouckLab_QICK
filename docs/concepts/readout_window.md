@@ -21,8 +21,9 @@ through the offset plus the whole window:
 
     length = adc_trig_offset + readout_length
 
-The config builders set `length` this way. `SingleShotProgram`, `ModifiedRamsey`,
-`ActiveResetVerify` and `UndrivenSingleShot` fill it in if missing and raise `ValueError` if a
+The config builders set `length` this way. Every program that reads out with
+`readout_length` (the regime-A programs, `T1_SS`, `SingleShotProgram`, `ModifiedRamsey`,
+`ActiveResetVerify`, `UndrivenSingleShot`) fills it in if missing and raises `ValueError` if a
 `length` shorter than the sum is passed.
 
 The legacy builder printed the window at connect; a session prints the same line:
@@ -99,11 +100,21 @@ The program stores `readout_window_cycles`, `readout_tone_cycles` and
 `readout_tone_extension_cycles`.
 
 Why it matters: the active-reset threshold is calibrated with `SingleShotProgram` and consumed by
-`ModifiedRamsey` and `ActiveResetVerify`. All three must integrate the same physical window and
-play the same tone, or the threshold lands in the wrong place. The shared calculation is
-`qicklab.core.readout.cover_readout_window`, used by `ModifiedRamsey`. `SingleShotProgram`,
-`ActiveResetVerify` and `UndrivenSingleShot` still carry their own copies of the same
-arithmetic (UndrivenSingleShot does not store `readout_tone_extension_cycles`).
+`ModifiedRamsey` and `ActiveResetVerify`; `T1_SS` reuses the `single_shot` threshold and angle;
+`auto_coherence` picks the window with `SingleShotProgram` and uses it for T1/T2R/T2E. All of
+them must integrate the same physical window and play the same tone, or the threshold lands in
+the wrong place and the chosen window is not the one used. The shared calculation is
+`qicklab.core.readout.cover_readout_window`, used by `ModifiedRamsey`, `T1_SS` and every
+regime-A program (`CavitySpecFF`, `QubitSpecSliceFF`, `AmplitudeRabiFF`, `AmplitudeRabiFF_N`,
+`ChiShift`, `T1FF`, `T2R`, `T2EMUX`, `ChargeDispersion`, `ChargeDispersionQuasiCW`).
+`SingleShotProgram`, `ActiveResetVerify` and `UndrivenSingleShot` still carry their own copies
+of the same arithmetic (UndrivenSingleShot does not store `readout_tone_extension_cycles`).
+Programs that also declare ADC 1 (below) convert its window on its own readout clock; the
+tone covers the `ro_chs` windows.
+
+`ZeroSpanParity` converts `read_length` on the readout clock too
+(`us2cycles(read_length, ro_ch=ch)`) but sets its tones from `sample_period_us` /
+`capture_length_us`, not from `cover_readout_window`.
 
 ## History
 
@@ -118,28 +129,43 @@ arithmetic (UndrivenSingleShot does not store `readout_tone_extension_cycles`).
   timing check (`tests/hardware/verify_modified_ramsey_timing.py`) builds its CSTQ03 Q6 cfg with a
   1 us offset, 15 us window and 16 us tone.
 - How 0.3 us and 0.488 us were chosen (cable latency, resonator ring-up, a scan) is not recorded.
+- 2026-10-15: fixed the regime-A window. `CavitySpecFF`, `QubitSpecSliceFF`, `AmplitudeRabiFF`,
+  `AmplitudeRabiFF_N`, `ChiShift`, `T1FF`, `T2R`, `T2EMUX`, `ChargeDispersion`,
+  `ChargeDispersionQuasiCW`, `T1_SS` and `ZeroSpanParity` used to call
+  `declare_readout(length=us2cycles(readout_length))` without `ro_ch`. In qick 0.2.334 (tProc
+  v1) that length is a number of decimated **readout** samples,
+  so the window was `readout_length * f_time / f_output` = 1.4 x `readout_length` on the lab
+  board. For 15 us / 0.3 us the tone ended at 15.3 us and the ADC integrated from 0.3 us to
+  about 21.3 us, so about 6 us of noise after the tone stopped (never measured on hardware).
+  The resonator tone and the constant spectroscopy drive were also converted on the tProc
+  clock, which is only right where the generator fabric clock equals it (true on the lab
+  board, 430.08 MHz). Consequences, all removed by the fix:
+  - `T1_SS` normalised its shots by the readout-clock window while integrating the 1.4x one,
+    so its IQ scale differed by f_time/f_output from the `single_shot` calibration whose
+    threshold and angle it applies;
+  - the `auto_coherence` Stage 2.5 window (chosen with `SingleShotProgram`) did not transfer
+    to T1/T2R/T2E, which integrated 1.4x as long;
+  - a `ZeroSpanParity` strobe `sample_period_us` between the rule-1 floor and
+    `adc_trig_offset + 1.4 x read_length` stretched the rep period beyond `sample_period_us`,
+    so `t_us`, rates and dwell times were off (+26 % for 10 us / 11.5 us), and rule 5 accepted
+    decimated windows qick then rejected as too long for the buffer.
+
+  **Averaged IQ records taken before this date are not directly comparable in raw amplitude
+  (or noise) with newer ones**: the old ones averaged 1.4x the samples, the last ~30 % of them
+  after the tone (ring-down plus noise). Fitted times, frequencies and the T2E rotation angle
+  are unaffected by the scale. The contrast-to-noise gain from dropping the tail is not
+  measured; it depends on how much ring-down the tail held (resonator kappa): expect about
+  1.03-1.18x.
 
 ## Known issues
 
-- **Regime-A programs declare the ADC window in tProc cycles.** `CavitySpecFF`,
-  `QubitSpecSliceFF`, `AmplitudeRabiFF`, `AmplitudeRabiFF_N`, `ChiShift`, `T1FF`, `T2EMUX`, `T2R`,
-  `ChargeDispersion`, `ChargeDispersionQuasiCW` and `T1_SS` call
-  `declare_readout(length=us2cycles(readout_length))` without `ro_ch`. In qick 0.2.334 (tProc v1)
-  that length is a number of **readout** samples, so the physical window is
-  `readout_length * f_time / f_output` = 1.4 x `readout_length` on the lab board, while the tone
-  (tProc cycles = generator cycles here) is `length`. Derived consequence for 15 us / 0.3 us: the
-  tone ends at 15.3 us, the window runs from 0.3 us to about 21.3 us, so about 6 us of the window
-  integrates after the tone has stopped. Not measured on hardware. Only `SingleShotProgram`,
-  `ModifiedRamsey`, `ActiveResetVerify` and `UndrivenSingleShot` use the readout clock.
-- `T1_SS` declares its window in tProc cycles but normalises shots by the readout-clock window,
-  so its IQ scale differs (by f_time/f_output) from the `single_shot` calibration it reuses the
-  threshold and angle from. Plausible, clock-dependent; check before trusting `t1_ss` populations.
-- `ZeroSpanParity` declares its readout the same way (`us2cycles(read_length)` without `ro_ch`).
-  The zero-span notes report that on some firmware `soccfg` `f_output` is "empirically not the
-  decimated rate" seen in a loopback test; this declaration is a plausible cause. The decimated
-  buffer-size check and the strobe normalisation inherit the same factor. Sidecars store
-  `read_length_us`, `capture_length_us`, `samples_per_capture` and `decimated_fs_source` so
-  records can be re-timed later.
+- The regime-A window bug (fixed 2026-10-15, see [History](#history)) affects every averaged
+  regime-A record, `t1_ss` population and zero-span record taken before that date.
+- `ZeroSpanParity` decimated: the zero-span notes report that a loopback test saw samples
+  return at about the tProc rate instead of `soccfg` `f_output`. The old declaration (1.4x more
+  samples than planned) is the likely explanation, not yet confirmed by a new loopback; sidecars
+  keep `decimated_fs_source = "soccfg.f_output_unverified"` and store `read_length_us`,
+  `capture_length_us` and `samples_per_capture` so records can be re-timed later.
 - `QubitSpecSliceFF`, `AmplitudeRabiFF`, `AmplitudeRabiFF_N` and `ChargeDispersionQuasiCW` declare
   readouts on ADC channels `[0, 1]` regardless of `ro_chs`; ADC 1 is acquired and saved but not
   analysed.

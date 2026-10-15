@@ -204,7 +204,9 @@ is accepted regardless.
 (readout_length, adc_offset) pair: 6 x 5 = 30 runs with the defaults. The pair with the
 highest contrast replaces `ss_readout_time`/`ss_adc_offset` for Stage 3 and
 `readout_length`/`adc_trig_offset`/`length` for Stages 4-6. The resonator tone length is
-`max(length, adc_offset + readout_length)`.
+`max(length, adc_offset + readout_length)`. T1/T2R/T2E integrate the same physical window as
+the single-shot runs that chose it (before 2026-10-15 they integrated 1.4x `readout_length`, so
+the winner did not transfer: [readout window](../concepts/readout_window.md#history)).
 
 **Stage 3 - pi gain by single shot (default).** Gains `linspace(pi (1 - 0.20), pi (1 + 0.20), 21)`
 (unique integers), 1000 shots each; pick the highest contrast. If the best gain is on an

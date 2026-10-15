@@ -5,6 +5,7 @@ import numpy as np
 from qick import AveragerProgram, RAveragerProgram
 
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class ChargeDispersionProgram(AveragerProgram):
@@ -22,10 +23,11 @@ class ChargeDispersionProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
 
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -55,7 +57,7 @@ class ChargeDispersionProgram(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         self.sync_all(self.us2cycles(0.2))
@@ -74,7 +76,7 @@ class ChargeDispersionProgram(AveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(self.cfg["relax_delay"]),
         )
@@ -183,10 +185,12 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
             ro_ch=cfg["ro_chs"][0],
         )
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        cover_readout_window(self, cfg)
+        # ADC 0 and 1 regardless of ro_chs (docs/concepts/readout_window.md#known-issues).
         for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.us2cycles(cfg["readout_length"], ro_ch=ch),
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -225,7 +229,7 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
                 freq=self.f_start,
                 phase=0,
                 gain=cfg["qubit_gain"],
-                length=self.us2cycles(cfg["qubit_length"]),
+                length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
             )
             self.qubit_length_us = cfg["qubit_length"]
         self.set_pulse_registers(
@@ -234,7 +238,7 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
     def body(self):
@@ -244,7 +248,7 @@ class ChargeDispersionQuasiCWProg(RAveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=[0, 1],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(10),
         )

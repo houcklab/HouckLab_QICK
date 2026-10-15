@@ -8,6 +8,7 @@ from tqdm.notebook import tqdm
 from qicklab.analysis.fitting import cos_func, fit_rabi_cosine
 from qicklab.analysis.iq import principal_axis_angle
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 def _print_fit_flags(label, fit):
@@ -77,10 +78,12 @@ class AmplitudeRabiFFProg(RAveragerProgram):
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        cover_readout_window(self, cfg)
+        # ADC 0 and 1 regardless of ro_chs (docs/concepts/readout_window.md#known-issues).
         for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.us2cycles(cfg["readout_length"], ro_ch=ch),
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -136,7 +139,7 @@ class AmplitudeRabiFFProg(RAveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         trig_length = cfg["trig_buffer_start"] + cfg["trig_buffer_end"] + cfg["sigma"] * 4
@@ -161,7 +164,7 @@ class AmplitudeRabiFFProg(RAveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=[0, 1],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(10),
         )
@@ -348,10 +351,12 @@ class AmplitudeRabiPointProg(AveragerProgram):
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        cover_readout_window(self, cfg)
+        # ADC 0 and 1 regardless of ro_chs (docs/concepts/readout_window.md#known-issues).
         for ch in [0, 1]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.us2cycles(cfg["readout_length"], ro_ch=ch),
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -398,7 +403,7 @@ class AmplitudeRabiPointProg(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         self.sync_all(self.us2cycles(0.05))
@@ -417,7 +422,7 @@ class AmplitudeRabiPointProg(AveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=[0, 1],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(10),
         )

@@ -9,6 +9,7 @@ from tqdm.notebook import tqdm
 from qicklab.analysis.iq import count_percentage, rotate_data
 from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class T1SingleShotProgram(AveragerProgram):
@@ -24,10 +25,11 @@ class T1SingleShotProgram(AveragerProgram):
 
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -37,7 +39,7 @@ class T1SingleShotProgram(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         self.f_qubit01 = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
@@ -69,7 +71,7 @@ class T1SingleShotProgram(AveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.ro_chs,
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(self.cfg["relax_delay"]),
         )
@@ -89,12 +91,9 @@ class T1SingleShotProgram(AveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
-            self.cfg["readout_length"], ro_ch=0
-        )
-        shots_q0 = self.dq_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
-            self.cfg["readout_length"], ro_ch=0
-        )
+        ro_norm = self.readout_window_cycles[self.cfg["ro_chs"][0]]
+        shots_i0 = self.di_buf[0].reshape((1, self.cfg["reps"])) / ro_norm
+        shots_q0 = self.dq_buf[0].reshape((1, self.cfg["reps"])) / ro_norm
 
         return shots_i0, shots_q0
 

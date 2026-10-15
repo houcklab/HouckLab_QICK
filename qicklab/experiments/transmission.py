@@ -8,6 +8,7 @@ from tqdm.notebook import tqdm
 from qicklab.analysis.fitting import fit_hanger_transmission
 from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class CavitySpecFFProg(AveragerProgram):
@@ -16,10 +17,11 @@ class CavitySpecFFProg(AveragerProgram):
         self.declare_gen(
             ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
         )
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -30,7 +32,7 @@ class CavitySpecFFProg(AveragerProgram):
             freq=freq,
             phase=0,
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
         self.synci(200)
 
@@ -39,7 +41,7 @@ class CavitySpecFFProg(AveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=self.cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(10),
         )

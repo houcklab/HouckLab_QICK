@@ -34,6 +34,10 @@ round-trip through the firmware's quantisation. A raw integer in a program (`syn
 Rule of thumb for which clock owns a duration: the tProc owns waits, trigger times and the ADC
 trigger offset; the generator owns pulse and envelope lengths; the readout owns the ADC window.
 See [readout window](readout_window.md#three-clocks-one-window) for the case where all three meet.
+In qick 0.2.334 (tProc v1) `declare_readout(length=...)` takes readout samples, so the window
+must be `us2cycles(readout_length, ro_ch=ch)`; a bare `us2cycles(readout_length)` gives a window
+f_time/f_output (1.4x on the lab board) too long. All programs convert it this way since
+2026-10-15 ([history](readout_window.md#history)).
 
 ## Units
 

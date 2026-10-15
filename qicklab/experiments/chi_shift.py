@@ -6,6 +6,7 @@ from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class ChiProgram(AveragerProgram):
@@ -15,10 +16,11 @@ class ChiProgram(AveragerProgram):
         self.declare_gen(
             ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0]
         )
+        cover_readout_window(self, cfg)
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"],
             )
@@ -35,7 +37,7 @@ class ChiProgram(AveragerProgram):
             freq=freq,
             phase=0,
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"]),
+            length=self.readout_tone_cycles,
         )
 
         # 4-sigma envelope: docs/concepts/timing_and_units.md#pulse-envelopes
@@ -75,7 +77,7 @@ class ChiProgram(AveragerProgram):
         self.measure(
             pulse_ch=self.cfg["res_ch"],
             adcs=[0],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.adc_trig_offset_cycles,
             wait=True,
             syncdelay=self.us2cycles(10),
         )
