@@ -116,6 +116,13 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     byte-identical (sha1 ea536087…)
 39. `20c0c602` fix(yoko): F21+F53 — open_charge_yoko / enable_current_output_safely / two-sided ramp_to guard
     with readback (golden: 838 leaves, all yoko_writes, every label on both boards)
+40. `12ff8a8c` fix(spectroscopy): F04 — doublet selection (min_sep in every branch, window clip, seed/edge/
+    duplicate/quarter-step gates, min_sep hand-off + provenance keys in ZSP cfg) (golden: 304 leaves = lorentz_*
+    data_digest in 6 labels + 2 ZSP cfg keys and cfg_digest in RunZeroSpanParity[*]); four Opus review rounds here
+    (one reject: the first sub-grid gate at 0.5 step dropped real lines; now 0.25). DEFERRED: partner significance
+    gate (F04 (c) second half): below SNR ~15 on the ZSP grid a single line is often paired with a noise maximum
+    (source one_lorentzian_center_plus_peak) and the run parks between the parity lines without error; needs a
+    partner-height-over-noise threshold (design decision + golden change).
 
 ## TRANSFER STATE (2026-10-14, end of macOS session 2) — READ THIS BEFORE ANYTHING ELSE
 The macOS machine is being left; the next machine is a Windows PC that is NOT the final lab PC (the lab PC
