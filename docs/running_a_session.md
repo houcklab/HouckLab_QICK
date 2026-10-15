@@ -302,9 +302,6 @@ print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
 
 Error messages and their fixes are collected in [troubleshooting.md](troubleshooting.md).
 
-- `transmission_fit` prints a kappa that is a factor 1e6 too small and is the external
-  linewidth f0/Qext, not the total linewidth f0/Qtot. Do not use it for
-  `reset_readout_relax_delay`.
 - `transmission_sweep` ignores the `transmission` group's `reps`/`rounds` (always 20/20).
 - Regime switches drop `pulse_freq` and `res_phase` (above). A PLAN that runs
   `active_reset_verify` and then `single_shot` sees `res_phase` reset to 0.

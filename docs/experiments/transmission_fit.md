@@ -62,7 +62,7 @@ into the regime-A base config.
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `fpts` (N,) MHz; `results` (1, n_adc, 2, N) = [read, ro_ch, I/Q, freq]; if the display fit succeeds also `hanger_fit_popt` (5,) = [f0, Qtot, Qext, asym, offset], `hanger_fit_perr` (5,), `hanger_fit_f0_mhz`, `hanger_fit_min_freq_mhz`, `hanger_raw_min_freq_mhz`, `hanger_fit_Qtot`, `hanger_fit_Qext`, `hanger_fit_Qint`, `hanger_fit_kappa_mhz` |
+| `..._data.h5` | `fpts` (N,) MHz; `results` (1, n_adc, 2, N) = [read, ro_ch, I/Q, freq]; if the display fit succeeds also `hanger_fit_popt` (5,) = [f0, Qtot, Qext, asym, offset], `hanger_fit_perr` (5,), `hanger_fit_f0_mhz`, `hanger_fit_min_freq_mhz`, `hanger_raw_min_freq_mhz`, `hanger_fit_Qtot`, `hanger_fit_Qext`, `hanger_fit_Qint`, `hanger_fit_kappa_tot_mhz` (kappa/2pi = \|f0\|/Qtot, MHz), `hanger_fit_kappa_ext_mhz` (\|f0\|/Qext, MHz) |
 | `..._data.png` | I, Q, \|S21\| vs frequency (GHz axis) with the raw minimum marked |
 | `..._data_hanger_fit.png` | dB data, fit, raw and fit minima (only if the fit succeeded) |
 | `..._data.json` | config; `pulse_freq` = fit minimum if the display fit succeeded, else the **last sweep point** |
@@ -116,9 +116,6 @@ or a dip at the edge of the span; check the PNG before trusting the carry-over.
 
 ## Known issues
 
-- The printed `kappa` (and `hanger_fit_kappa_mhz` in the h5) is `(f0/Qext)/1e6`: 1e6 too
-  small, and it is the external (coupling) rate f0/Qext, not the total linewidth f0/Qtot.
-  Compute kappa/2pi = f0/Qtot (MHz) yourself from the saved `hanger_fit_popt`.
 - If the display fit fails, the saved JSON records `pulse_freq` = last sweep point, not the
   sweep centre.
 - A point with zero amplitude gives `-inf` dB and breaks the fit.

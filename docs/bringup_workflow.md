@@ -75,7 +75,9 @@ with the directional coupler 1400 good and 1500 maybe too much; Q2 coarsely tune
 
 Write back: `Readout.freq` from the calibration line `transmission_fit` prints. The in-session
 `pulse_freq` carry-over is lost at the next switch to the single-shot regime, so the device file
-must hold it. Do not use the kappa it prints (wrong by 1e6 and the external linewidth only).
+must hold it. The kappa it prints is kappa_tot/2pi in MHz (total linewidth; kappa_ext/2pi is printed too):
+use it for `Readout.kappa_mhz`, and note that `reset_readout_relax_delay` >= 6/kappa needs the angular
+kappa, i.e. 6/(2 pi x kappa_tot/2pi) (0.19 MHz -> 5 us).
 
 ## 3. Two-tone spectroscopy: find the qubit
 
@@ -239,8 +241,9 @@ Before the first record ([experiments/modified_ramsey.md](experiments/modified_r
    [devices/CSTQ03.md](devices/CSTQ03.md#modified-ramsey-at-df--27-mhz-timing-choice).
 3. Validate active reset with [`active_reset_verify`](experiments/active_reset_verify.md). Working reset: prep `|e>` with reset ON gives
    P(g) >= 0.9 x P(g) of prep `|g>` with reset ON, and recovery P(g | e, ON) - P(g | e, OFF) >= 0.3,
-   flat across repeated reads. `reset_readout_relax_delay` >= about 6/kappa (5 us on TATQ01/BFE;
-   CSTQ03 kappa unmeasured).
+   flat across repeated reads. `reset_readout_relax_delay` >= about 6/kappa with kappa the
+   angular linewidth, i.e. 6/(2 pi x kappa_tot/2pi) using the kappa_tot/2pi the transmission fit
+   prints (0.19 MHz -> 5 us; 5 us on TATQ01/BFE; CSTQ03 kappa unmeasured).
 4. Set `mr_relax_delay` to about 5 x T1 without active reset. The CSTQ03 Q2 2026-08-04 diagnostic
    showed incomplete inter-shot reset faking a kHz parity rate at relax 0.
 5. Take many dwells (CSTQ03: 100k shots at 250 us relax, about 10 500 dwells), keep

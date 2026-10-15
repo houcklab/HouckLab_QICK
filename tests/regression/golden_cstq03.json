@@ -124081,12 +124081,20 @@
                   "sha1": "1294fc9471272c67",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    2.1919796866838812e-08
+                    0.02191979686683881
                   ],
-                  "sha1": "018b09cfc71f57a4",
+                  "sha1": "a66bae12a94ec57c",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02195203129320675
+                  ],
+                  "sha1": "9599ece7f6ea1b32",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -124797,12 +124805,20 @@
                   "sha1": "697ff323284ffe84",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    3.2744326070892684e-08
+                    0.032744326070892685
                   ],
-                  "sha1": "730d97b5766cea9b",
+                  "sha1": "7247dbeec2feee4a",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.03276105502548517
+                  ],
+                  "sha1": "bebbf65ee4017281",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -126172,12 +126188,20 @@
                   "sha1": "955a8da70e136694",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    2.4471513650754832e-08
+                    0.024471513650754832
                   ],
-                  "sha1": "f243df244c51ad00",
+                  "sha1": "15d881a34fa0b5f1",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.14754720998607893
+                  ],
+                  "sha1": "1708c6c05769a24e",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -127480,12 +127504,20 @@
                   "sha1": "0e79e4d1d9077761",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    9.928403932445777e-09
+                    0.009928403932445777
                   ],
-                  "sha1": "144b5b8a5227f1d5",
+                  "sha1": "c7b4b8939b96f4d7",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.046847326028708586
+                  ],
+                  "sha1": "6fa95a1e14959ef5",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -263041,12 +263073,20 @@
                   "sha1": "1294fc9471272c67",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    2.1919796866838812e-08
+                    0.02191979686683881
                   ],
-                  "sha1": "018b09cfc71f57a4",
+                  "sha1": "a66bae12a94ec57c",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.02195203129320675
+                  ],
+                  "sha1": "9599ece7f6ea1b32",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -263757,12 +263797,20 @@
                   "sha1": "697ff323284ffe84",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    3.2744326070892684e-08
+                    0.032744326070892685
                   ],
-                  "sha1": "730d97b5766cea9b",
+                  "sha1": "7247dbeec2feee4a",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.03276105502548517
+                  ],
+                  "sha1": "bebbf65ee4017281",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -265132,12 +265180,20 @@
                   "sha1": "955a8da70e136694",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    2.4471513650754832e-08
+                    0.024471513650754832
                   ],
-                  "sha1": "f243df244c51ad00",
+                  "sha1": "15d881a34fa0b5f1",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.14754720998607893
+                  ],
+                  "sha1": "1708c6c05769a24e",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -266440,12 +266496,20 @@
                   "sha1": "0e79e4d1d9077761",
                   "shape": []
                 },
-                "data/hanger_fit_kappa_mhz": {
+                "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    9.928403932445777e-09
+                    0.009928403932445777
                   ],
-                  "sha1": "144b5b8a5227f1d5",
+                  "sha1": "c7b4b8939b96f4d7",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz": {
+                  "dtype": "float64",
+                  "head": [
+                    0.046847326028708586
+                  ],
+                  "sha1": "6fa95a1e14959ef5",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {

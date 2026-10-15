@@ -77,8 +77,6 @@ fail harmlessly), but the carry-over uses the raw maximum.
 
 - `reps`/`rounds` are hard-coded to 20/20; values from the `transmission` group are ignored
   (only `TransSpan`/`TransNumPoints`, which live in the base config, take effect).
-- Same `kappa` scaling problem as transmission_fit (`hanger_fit_kappa_mhz` is
-  `(f0/Qext)/1e6`).
 - Saved JSON `pulse_freq` = fit minimum if the fit succeeded, else the last sweep point.
 - In the legacy runner the flag names were swapped: `RunTransmissionSweep` ran
   transmission_fit and `RunTransmissionSweeps` ran this step. Use the step names.

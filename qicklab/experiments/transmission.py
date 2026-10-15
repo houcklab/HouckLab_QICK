@@ -157,7 +157,11 @@ class CavitySpecFF(ExperimentClass):
                 f0_fit, Qtot_fit, Qext_fit, asym_fit, offset_fit = popt
                 df0_fit, dQtot_fit, dQext_fit, dasym_fit, doffset_fit = perr
                 Qint_fit = fit_result["Qint"]
-                kappa_mhz = (f0_fit / Qext_fit) / 1e6
+                # kappa/2pi in MHz: the hanger model's Lorentzian FWHM is |f0|/Qtot on the fit
+                # axis (fpts, MHz). With a nonzero cavity_LO the Qs are relative to that IF axis,
+                # not physical Qs, but |f0_fit|/Q is still the correct width in MHz.
+                kappa_tot_mhz = abs(f0_fit) / Qtot_fit  # total linewidth
+                kappa_ext_mhz = abs(f0_fit) / Qext_fit  # coupling (external) rate
 
                 x_fit_dense = np.linspace(np.min(fpts), np.max(fpts), 4000)
                 y_fit_dense = fit_result["model"](x_fit_dense, *popt)
@@ -177,7 +181,8 @@ class CavitySpecFF(ExperimentClass):
                 data["data"]["hanger_fit_Qtot"] = np.asarray(Qtot_fit)
                 data["data"]["hanger_fit_Qext"] = np.asarray(Qext_fit)
                 data["data"]["hanger_fit_Qint"] = np.asarray(Qint_fit)
-                data["data"]["hanger_fit_kappa_mhz"] = np.asarray(kappa_mhz)
+                data["data"]["hanger_fit_kappa_tot_mhz"] = np.asarray(kappa_tot_mhz)
+                data["data"]["hanger_fit_kappa_ext_mhz"] = np.asarray(kappa_ext_mhz)
 
                 print("Hanger resonator fit:")
                 print(
@@ -190,7 +195,8 @@ class CavitySpecFF(ExperimentClass):
                 print(f"  Qtot             = {Qtot_fit:.6e} ± {dQtot_fit:.6e}")
                 print(f"  Qext             = {Qext_fit:.6e} ± {dQext_fit:.6e}")
                 print(f"  Qint             = {Qint_fit:.6e}")
-                print(f"  kappa            = {kappa_mhz:.6f} MHz")
+                print(f"  kappa_tot/2pi    = {kappa_tot_mhz:.6f} MHz (|f0|/Qtot)")
+                print(f"  kappa_ext/2pi    = {kappa_ext_mhz:.6f} MHz (|f0|/Qext)")
                 print(f"  asym             = {asym_fit:.6e} ± {dasym_fit:.6e}")
                 print(f"  offset           = {offset_fit:.6e} ± {doffset_fit:.6e}")
 

@@ -241,8 +241,9 @@ advised lowering the gate deliberately; this measurement supersedes it.
 at least about 6/kappa of the readout resonator so the pi fires on a photon-free qubit. The
 5 us in use equals 6/kappa for the TATQ01/BFE Q2 resonator (kappa/2pi = 190 kHz, measured
 2026-06-06). **kappa has not been measured for CSTQ03**; measure it per readout resonator and
-set `Readout.kappa_mhz`. Do not take kappa from the `transmission_fit` printout (it is 1e6 too
-small and is the external linewidth). ActiveResetVerify must use the same
+set `Readout.kappa_mhz`. `transmission_fit` prints and saves kappa_tot/2pi in MHz
+(`hanger_fit_kappa_tot_mhz`, the total linewidth |f0|/Qtot) and kappa_ext/2pi; use kappa_tot,
+and remember 6/kappa = 6/(2 pi x kappa_tot/2pi): 0.19 MHz gives 5 us. ActiveResetVerify must use the same
 `reset_readout_relax_delay` as Modified Ramsey; its own relax delay is 3500 us (>= 3 x T1).
 
 ## Archived: v2b "nu cell" parameter set
