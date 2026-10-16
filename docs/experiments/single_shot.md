@@ -51,11 +51,11 @@ ADC       ───────────────────────�
     `length < adc_trig_offset + readout_length` raises.
   - [modified_ramsey](modified_ramsey.md), [active_reset_verify](active_reset_verify.md)
     and [undriven_single_shot](undriven_single_shot.md) use the same arithmetic
-    (`qicklab.core.readout` in ModifiedRamsey, own copies elsewhere), so they
+    (all call `qicklab.core.readout.cover_readout_window`), so they
     integrate the same physical window and thresholds transfer between them. This
     matters most for the [active-reset](active_reset.md) threshold.
-- Shots are normalised by `us2cycles(readout_length, ro_ch)` (the "normalised units"
-  used everywhere else).
+- Shots are normalised by the declared window `readout_window_cycles[ro_ch]` =
+  `us2cycles(readout_length, ro_ch)` (the "normalised units" used everywhere else).
 
 ## How to run
 
@@ -100,6 +100,26 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
   (shape `(shots,)`, normalised units). If r differs from its enumeration index i,
   the same data is also saved under `i_g<i>` …. Also `threshold` (list per read),
   `angle` (list per read, rad) and `thermal_mode = 0`.
+- **h5, normal mode, readout figures of merit** (per read r, also under `<i>` when r
+  differs; since 2026-10, so readout quality can be tracked across calibrations):
+  - `contrast_hist<r>`: the `hist_process` contrast C (the png number, `inst.fid`).
+  - `P_e_given_g<r>`, `P_g_given_e<r>`: fraction of g shots above / e shots at or below
+    the saved threshold after rotating by the saved angle, counted by
+    `readout_assignment_errors`, the same helper `t1_ss` uses for its readout correction
+    (so its printed P(e|g), P(g|e) are these numbers exactly). They include prep errors
+    (thermal |e⟩, pi infidelity, decay during readout).
+  - `assignment_fidelity<r>` = 1 − (P_e_given_g + P_g_given_e)/2 = (1 + C)/2.
+  - `g_center_median<r>`, `e_center_median<r>` (the centres the angle uses) and
+    `g_center_mean<r>`, `e_center_mean<r>`, each (I, Q).
+  - From `calibrate_readout_from_labeled_shots` (mean/LDA axis, the Modified Ramsey
+    calibration): `snr_analog<r>`, `cal_contrast<r>`, and its own discriminator
+    `cal_axis<r>`, `cal_midpoint<r>`, `cal_threshold<r>` (on (IQ − cal_midpoint)·cal_axis,
+    not on the rotated I; `t1_ss` and active reset use `threshold`/`angle`).
+    `readout_gate_pass<r>` = 1 when none of the parity-analysis readout gates trips
+    (analog SNR < 1, contrast < 0.3, fewer than 500 shots in a class), else 0; each
+    tripped gate is printed as a WARNING. All of these are NaN when the calibration
+    raises (fewer than 10 shots per class, coincident centres).
+  Not in thermal mode (no labelled e cloud).
 - **h5, thermal mode:** `i_thermal<r>`, `q_thermal<r>`, the population fit
   `thermal_population<r>` (ML mixture weight, fraction), `thermal_population_err<r>`
   (its standard error), `thermal_pi_population<r>` (excited fraction of the pi run),
@@ -118,11 +138,12 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
   `thermal_center_g`, `thermal_center_e`) are also saved under `<i>`; the png shows the
   first read.
 - **png:** three panels (unrotated, rotated, I histogram), titled
-  `Fidelity = xx.xx %`. In thermal mode: a tail-labelled scatter titled with the
+  `Contrast C = xx.xx % (F_assign = yy.yy %)` (`Fidelity = xx.xx %` before 2026-10;
+  same C). In thermal mode: a tail-labelled scatter titled with the
   fitted population ± SE and the tail fraction.
 - **json:** the cfg.
-- **The "fidelity" is NOT saved** in the h5. It exists only in the png title and in
-  the attribute `fid` after `display()`. Threshold and angle are saved.
+- The contrast is also the attribute `fid` (per-read list after `acquire()`, read 0's
+  value after `display()`). Before 2026-10 it was not saved in the h5.
 
 ## Analysis
 
@@ -130,15 +151,20 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
 
 1. Rotate both clouds by `θ = −arctan2(Q̃_e − Q̃_g, Ĩ_e − Ĩ_g)` (tilde = median), so
    the g→e axis lies along +I.
-2. Histogram the rotated I of each cloud in 200 bins spanning both blobs.
-3. `contrast(x) = |cumsum(n_g) − cumsum(n_e)| / (½N_g + ½N_e)`. The threshold is at
-   the maximum; "fid" is the maximum value.
+2. Take the exact empirical CDF of the rotated I of each cloud (every shot counts).
+3. `contrast(t) = CDF_g(t) − CDF_e(t)` with g := I ≤ t (the rule `t1_ss` applies).
+   "fid" is the maximum; the threshold is the midpoint between the maximising shot
+   value and the next one, so "fid" is exactly the contrast the saved threshold gives
+   on these shots. The 200-bin histogram is drawn in the png only, with the threshold
+   as a dashed line. Before 2026-10 the contrast came from that histogram and the
+   threshold was the left edge of the peak bin
+   ([IQ conventions, known issues](../concepts/iq_conventions.md#known-issues)).
 
 **"Fidelity" is the readout contrast**, `C = P(g|g) + P(e|e) − 1`. It is not the
 assignment fidelity. For equal priors at the optimal threshold, `F_assign = (1 + C)/2`;
-for example, the legacy "Fidelity = 44.90 %" means F_assign ≈ 0.72. Nothing in
-the single-shot code applies the (1+C)/2 conversion. The Modified Ramsey analysis
-(`calibrate_readout_from_labeled_shots`) reports both under unambiguous names. The
+for example, the legacy "Fidelity = 44.90 %" means F_assign ≈ 0.72. The h5 saves
+both (`contrast_hist<r>`, `assignment_fidelity<r>`, see [Outputs](#outputs)), as does
+the Modified Ramsey analysis (`calibrate_readout_from_labeled_shots`). The
 display clips "fid" at 1.0.
 
 Thermal mode, population (`fit_thermal_population`; details in
@@ -211,9 +237,11 @@ Failure modes:
 
 ## Known issues
 
-- The threshold is the **left** edge of the optimal histogram bin (off by one bin).
-  With `ran` given, the histogram range is centred on the g blob only, so the e blob
-  can fall outside it.
+- With `ran` given, the plotted histogram range is centred on the g blob only, so the
+  e blob can fall outside the plot. This affects the png only: the contrast and
+  threshold use every shot (see [Analysis](#analysis)). Before 2026-10 the threshold
+  was the left edge of the optimal histogram bin (off by one bin) and shots outside
+  the range were not counted.
 - `display()` replaces the per-read lists `fid/threshold/angle` with scalars of read
   0. Code that reads `inst.fid[0]` before `display()` sees the list; after it, a scalar.
 - `display()` only plots read index 0. Other reads are reachable only through the

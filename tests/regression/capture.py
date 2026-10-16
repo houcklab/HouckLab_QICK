@@ -918,8 +918,8 @@ _THREADPOOLS = []
 def _single_threaded():
     """Pin BLAS/OpenMP pools to one thread for the whole session.
 
-    Multi-threaded reductions (sklearn KMeans in MixedShots, BLAS) are not
-    bit-reproducible, and curve_fit amplifies the last-ulp jitter to ~1e-8
+    Multi-threaded reductions (BLAS; formerly also sklearn KMeans in MixedShots)
+    are not bit-reproducible, and curve_fit amplifies the last-ulp jitter to ~1e-8
     relative -- enough to flip the save_data digests between two runs.
     """
     try:

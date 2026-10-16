@@ -19,6 +19,7 @@ from qicklab.analysis.undriven import (
 )
 from qicklab.core.acquisition import acquire_with_retry, raw_shot_buffers
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 from qicklab.hardware.yoko import ramp_to
 
 
@@ -44,30 +45,7 @@ class UndrivenSingleShotProgram(AveragerProgram):
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
         # Tone covers offset + window across clocks (docs/concepts/readout_window.md).
-        required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
-        cfg.setdefault("length", required_tone_us)
-        if cfg["length"] < required_tone_us:
-            raise ValueError(
-                "cfg['length'] must cover cfg['adc_trig_offset'] + "
-                f"cfg['readout_length'] ({cfg['length']} us < "
-                f"{required_tone_us} us)"
-            )
-
-        self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
-        requested_tone_cycles = self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"])
-        self.readout_window_cycles = {
-            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in cfg["ro_chs"]
-        }
-
-        f_time = self.soccfg["tprocs"][0]["f_time"]
-        res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
-        adc_end_tproc = max(
-            self.adc_trig_offset_cycles
-            + self.readout_window_cycles[ch] * f_time / self.soccfg["readouts"][ch]["f_output"]
-            for ch in cfg["ro_chs"]
-        )
-        required_tone_cycles = int(np.ceil(adc_end_tproc * res_f_fabric / f_time - 1e-12))
-        self.readout_tone_cycles = max(requested_tone_cycles, required_tone_cycles)
+        cover_readout_window(self, cfg)
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
@@ -109,7 +87,7 @@ class UndrivenSingleShotProgram(AveragerProgram):
         di_buf, dq_buf = raw_shot_buffers(self)
         for i in range(len(di_buf)):
             ro_ch = self.cfg["ro_chs"][i]
-            norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
+            norm = self.readout_window_cycles[ro_ch]
             all_i.append(di_buf[i].reshape((1, self.cfg["reps"])) / norm)
             all_q.append(dq_buf[i].reshape((1, self.cfg["reps"])) / norm)
         return all_i, all_q

@@ -6,9 +6,168 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-from qicklab.analysis.readout import MixedShots, hist_process
+from qicklab.analysis.readout import (
+    calibrate_readout_from_labeled_shots,
+    hist_process,
+    labelled_overlap_error,
+    readout_assignment_errors,
+)
 from qicklab.core.experiment import ExperimentClass
 from qicklab.experiments.single_shot import SingleShotProgram
+
+# Side of the NaN-aware box filter summarize_contrast_map() smooths the contrast map with.
+SMOOTH_SIZE = 3
+
+
+def contrast_point_stats(i_g, q_g, i_e, q_e, fid, threshold, angle):
+    """(Pgg, Pee, fid_err) of one g/e single-shot pair at hist_process's (threshold, angle).
+
+    Pgg = P(assigned g | prepared g) and Pee = P(assigned e | prepared e) are counted with
+    ``readout_assignment_errors`` (rotate by ``angle``, excited := I' > ``threshold``), so
+    Pgg + Pee - 1 is the contrast ``fid`` hist_process returned; a mismatch beyond float
+    tolerance prints a warning. fid_err = sqrt(Pgg(1 - Pgg)/Ng + Pee(1 - Pee)/Ne), with the
+    actual class sizes Ng, Ne, is the binomial standard error of the contrast at a fixed
+    threshold. It ignores that the threshold was chosen on the same shots to maximise the
+    contrast, which biases C upward by a further ~0.003-0.011 (under 0.5 fid_err) at 1000
+    shots per class for well-separated clouds (C >~ 0.4), ~0.015 at C ~ 0.1-0.2, and ~0.04
+    (about 2 fid_err) at zero true contrast, so off-resonant or low-gain points read
+    C ~ 0.04 +/- 0.02 rather than 0. NaN for an empty class. See
+    docs/experiments/readout_optimize.md#analysis.
+    """
+    p_e_given_g, p_g_given_e = readout_assignment_errors(i_g, q_g, i_e, q_e, angle, threshold)
+    pgg, pee = 1.0 - p_e_given_g, 1.0 - p_g_given_e
+    if np.isfinite(fid) and not abs(pgg + pee - 1.0 - fid) <= 1e-9:
+        print(
+            f"WARNING: Pgg + Pee - 1 = {pgg + pee - 1.0!r} differs from the contrast {fid!r} "
+            "(threshold and rotation do not reproduce hist_process)."
+        )
+    n_g, n_e = np.size(i_g), np.size(i_e)
+    if n_g == 0 or n_e == 0:
+        return pgg, pee, np.nan
+    return pgg, pee, float(np.sqrt(pgg * (1.0 - pgg) / n_g + pee * (1.0 - pee) / n_e))
+
+
+def analog_snr(i_g, q_g, i_e, q_e):
+    """snr_analog of calibrate_readout_from_labeled_shots (the number the parity readout gates
+    use: moment separation / pooled moment std, prep errors included); NaN when it raises."""
+    try:
+        return calibrate_readout_from_labeled_shots(i_g, q_g, i_e, q_e)["snr_analog"]
+    except ValueError:
+        return np.nan
+
+
+def _box_sum(a, size):
+    """Sum of each size x size neighbourhood, edges extended by the nearest value."""
+    r = size // 2
+    padded = np.pad(a, r, mode="edge")
+    out = np.zeros(a.shape, dtype=padded.dtype)
+    for di in range(size):
+        for dj in range(size):
+            out = out + padded[di : di + a.shape[0], dj : dj + a.shape[1]]
+    return out
+
+
+def summarize_contrast_map(fid_mat, fid_err_mat, gain_pts, freq_pts, size=SMOOTH_SIZE):
+    """Recommended grid point of a gain (rows) x frequency (columns) contrast map.
+
+    The map is smoothed with a NaN-aware ``size`` x ``size`` box filter (mean of the finite
+    neighbours, edges extended by the nearest value) to damp the winner's curse of picking the
+    brightest raw pixel; no 2-D fit. The recommendation is the argmax of the smoothed map over
+    the points that have a finite contrast. Returns a dict of h5-ready values:
+    ``fid_smooth_mat``; ``best_gain``, ``best_freq`` (axis values there), ``best_fid`` and
+    ``best_fid_err`` (raw contrast and its standard error there), ``best_fid_smooth`` (the
+    smoothed maximum); ``tied_mask`` (points with fid_mat >= best_fid_smooth - best_fid_err,
+    i.e. within one standard error of the smoothed maximum); ``median_fid_err``. Scalars are
+    NaN and ``tied_mask`` all False when no point is finite. Works for single-row or
+    single-column grids. See docs/experiments/readout_optimize.md#analysis.
+    """
+    fid = np.asarray(fid_mat, dtype=float)
+    err = np.asarray(fid_err_mat, dtype=float)
+    finite = np.isfinite(fid)
+    total = _box_sum(np.where(finite, fid, 0.0), size)
+    count = _box_sum(finite.astype(np.int64), size)
+    smooth = np.full(fid.shape, np.nan)
+    np.divide(total, count, out=smooth, where=count > 0)
+    finite_err = err[np.isfinite(err)]
+    out = {
+        "fid_smooth_mat": smooth,
+        "tied_mask": np.zeros(fid.shape, dtype=bool),
+        "best_gain": np.nan,
+        "best_freq": np.nan,
+        "best_fid": np.nan,
+        "best_fid_err": np.nan,
+        "best_fid_smooth": np.nan,
+        "median_fid_err": float(np.median(finite_err)) if finite_err.size else np.nan,
+    }
+    candidates = np.where(finite, smooth, np.nan)
+    if not np.any(np.isfinite(candidates)):
+        return out
+    row, col = np.unravel_index(int(np.nanargmax(candidates)), fid.shape)
+    best_smooth = float(smooth[row, col])
+    best_err = float(err[row, col])
+    out.update(
+        tied_mask=finite & (fid >= best_smooth - best_err),
+        best_gain=float(gain_pts[row]),
+        best_freq=float(freq_pts[col]),
+        best_fid=float(fid[row, col]),
+        best_fid_err=best_err,
+        best_fid_smooth=best_smooth,
+    )
+    return out
+
+
+def contrast_optimum_edges(summary, gain_pts, freq_pts):
+    """Axes ("gain", "frequency") on whose first or last point the recommendation lies.
+
+    Only axes with at least 3 points count (on a shorter axis every point is an edge). A
+    border point is smoothed over fewer distinct neighbours (edge replication) and so has
+    more noise than an interior point: on a map that is flat within noise the smoothed argmax
+    lands on the border far more often than the border's share of the grid (about 78% vs
+    35% of points on a 7x21 map, 63% vs 18% on 21x21). See
+    docs/experiments/readout_optimize.md#analysis.
+    """
+    edges = []
+    if not np.isfinite(summary["best_fid_smooth"]):
+        return edges
+    for name, best, pts in (
+        ("gain", summary["best_gain"], gain_pts),
+        ("frequency", summary["best_freq"], freq_pts),
+    ):
+        pts = np.asarray(pts, dtype=float)
+        if pts.size >= 3 and best in (float(pts[0]), float(pts[-1])):
+            edges.append(name)
+    return edges
+
+
+def report_contrast_optimum(summary, what, gain_pts, freq_pts):
+    """Print the summarize_contrast_map() recommendation for the ``what`` (readout/qubit) map,
+    with a warning when it lies on the map border (contrast_optimum_edges)."""
+    if not np.isfinite(summary["best_fid_smooth"]):
+        print(f"No finite contrast in the {what} map: no recommendation.")
+        return
+    print(
+        f"Recommended {what} point (argmax of the {SMOOTH_SIZE}x{SMOOTH_SIZE}-smoothed contrast; "
+        f"NOT written back): gain {summary['best_gain']:.0f}, frequency "
+        f"{summary['best_freq']:.4f} MHz: C = {summary['best_fid']:.3f} "
+        f"+/- {summary['best_fid_err']:.3f} (smoothed {summary['best_fid_smooth']:.3f}); "
+        f"{int(np.sum(summary['tied_mask']))} of {summary['tied_mask'].size} points are within "
+        "one standard error of the smoothed maximum (tied_mask)."
+    )
+    edges = contrast_optimum_edges(summary, gain_pts, freq_pts)
+    if edges:
+        print(
+            f"WARNING: the recommended {what} point is on the edge of the "
+            f"{' and '.join(edges)} sweep. Border points are noisier after smoothing, so on a "
+            "map that is flat within noise this is usually noise: trust it only if the contrast "
+            "clearly rises toward that edge (then extend the sweep); otherwise read tied_mask."
+        )
+
+
+def fid_err_title(fid_err_mat):
+    """Colorbar title of the fidelity panel: the median per-point standard error, in %."""
+    err = np.asarray(fid_err_mat, dtype=float)
+    err = err[np.isfinite(err)]
+    return f"median 1 s.e. {np.median(err) * 100:.1f}%" if err.size else ""
 
 
 class ReadOpt_wSingleShotFF(ExperimentClass):
@@ -72,6 +231,12 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
         Y_step = Y[1] - Y[0]
         Z_fid = np.full((len(Y), len(X)), np.nan)
         Z_overlap = np.full((len(Y), len(X)), np.nan)
+        snr_mat = np.full((len(Y), len(X)), np.nan)
+        fid_err_mat = np.full((len(Y), len(X)), np.nan)
+        Pgg_mat = np.full((len(Y), len(X)), np.nan)
+        Pee_mat = np.full((len(Y), len(X)), np.nan)
+        threshold_mat = np.full((len(Y), len(X)), np.nan)
+        angle_mat = np.full((len(Y), len(X)), np.nan)
         print(X)
         print(Y)
         self.data = {
@@ -79,8 +244,14 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
             "data": {
                 "fid_mat": Z_fid,
                 "overlap_mat": Z_overlap,
+                "snr_mat": snr_mat,
                 "trans_fpts": self.trans_fpts,
                 "gain_pts": self.gain_pts,
+                "fid_err_mat": fid_err_mat,
+                "Pgg_mat": Pgg_mat,
+                "Pee_mat": Pee_mat,
+                "threshold_mat": threshold_mat,
+                "angle_mat": angle_mat,
             },
         }
 
@@ -126,6 +297,12 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
 
                 Z_fid[idf_cavgain, idx_trans] = fid
                 self.data["data"]["fid_mat"][idf_cavgain, idx_trans] = fid
+                pgg, pee, fid_err = contrast_point_stats(i_g, q_g, i_e, q_e, fid, threshold, angle)
+                fid_err_mat[idf_cavgain, idx_trans] = fid_err
+                Pgg_mat[idf_cavgain, idx_trans] = pgg
+                Pee_mat[idf_cavgain, idx_trans] = pee
+                threshold_mat[idf_cavgain, idx_trans] = threshold
+                angle_mat[idf_cavgain, idx_trans] = angle
 
                 if idf_cavgain == 0 and idx_trans == 0:
                     ax_plot_0 = axs[0].imshow(
@@ -148,30 +325,18 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
                     cbar0.remove()
                     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend="both")
                     cbar0.set_label("fidelity (%)", rotation=90)
+                cbar0.ax.set_title(fid_err_title(fid_err_mat), fontsize=8)
 
                 axs[0].set_ylabel("Cavity Gain (a.u.)")
                 axs[0].set_xlabel("Cavity Frequency (GHz)")
                 axs[0].set_title("fidelity")
 
-                # Overlap metric: g+e shots pooled for an arb/flat_top drive, e shots only
-                # for a const drive (docs/experiments/readout_optimize.md).
-                if self.cfg["qubit_pulse_style"] in ["flat_top", "arb"]:
-                    mixed_i = np.concatenate((i_g, i_e))
-                    mixed_q = np.concatenate((q_g, q_e))
-
-                    mixed = MixedShots(mixed_i, mixed_q)
-
-                    overlapErr = mixed.OverlapErr
-
+                # Overlap metric: labelled g/e fit for an arb/flat_top/const drive
+                # (docs/experiments/readout_optimize.md#analysis).
+                snr_mat[idf_cavgain, idx_trans] = analog_snr(i_g, q_g, i_e, q_e)
+                if self.cfg["qubit_pulse_style"] in ["flat_top", "arb", "const"]:
+                    overlapErr = labelled_overlap_error(i_g, q_g, i_e, q_e)
                     Z_overlap[idf_cavgain, idx_trans] = overlapErr
-                    self.data["data"]["overlap_mat"][idf_cavgain, idx_trans] = overlapErr
-
-                elif self.cfg["qubit_pulse_style"] == "const":
-                    mixed = MixedShots(i_e, q_e)
-
-                    overlapErr = mixed.OverlapErr
-                    Z_overlap[idf_cavgain, idx_trans] = overlapErr
-                    self.data["data"]["overlap_mat"][idf_cavgain, idx_trans] = overlapErr
 
                 if idf_cavgain == 0 and idx_trans == 0:
                     ax_plot_1 = axs[1].imshow(
@@ -212,6 +377,10 @@ class ReadOpt_wSingleShotFF(ExperimentClass):
                     print("estimated end: " + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
 
         print("actual end: " + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+        optimum = summarize_contrast_map(Z_fid, fid_err_mat, self.gain_pts, self.trans_fpts)
+        self.data["data"].update(optimum)
+        report_contrast_optimum(optimum, "readout", self.gain_pts, self.trans_fpts)
 
         plt.savefig(self.iname)
 
@@ -344,6 +513,12 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
         n_rows, n_cols = len(Y), len(X)
         Z_fid = np.full((n_rows, n_cols), np.nan)
         Z_overlap = np.full((n_rows, n_cols), np.nan)
+        snr_mat = np.full((n_rows, n_cols), np.nan)
+        fid_err_mat = np.full((n_rows, n_cols), np.nan)
+        Pgg_mat = np.full((n_rows, n_cols), np.nan)
+        Pee_mat = np.full((n_rows, n_cols), np.nan)
+        threshold_mat = np.full((n_rows, n_cols), np.nan)
+        angle_mat = np.full((n_rows, n_cols), np.nan)
         # g block b is taken before gain row b (b = n_rows: after the last row); row r is
         # bracketed by blocks r and r + 1.
         g_ref_index = np.full((n_rows, n_cols), -1)
@@ -356,12 +531,18 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
             "data": {
                 "fid_mat": Z_fid,
                 "overlap_mat": Z_overlap,
+                "snr_mat": snr_mat,
                 "qubit_fpts": self.qubit_fpts,
                 "gain_pts": self.gain_pts,
                 "g_ref_index": g_ref_index,
                 "g_block_time": g_block_time,
                 "g_drift_frac": g_drift_frac,
                 "g_drift_sigma": g_drift_sigma,
+                "fid_err_mat": fid_err_mat,
+                "Pgg_mat": Pgg_mat,
+                "Pee_mat": Pee_mat,
+                "threshold_mat": threshold_mat,
+                "angle_mat": angle_mat,
             },
         }
 
@@ -395,6 +576,8 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
                     cbars[k].remove()
                 cbars[k] = fig.colorbar(images[k], ax=axs[k], extend="both")
                 cbars[k].set_label(label, rotation=90)
+                if k == 0:
+                    cbars[k].ax.set_title(fid_err_title(fid_err_mat), fontsize=8)
                 axs[k].set_ylabel("Qubit Gain (a.u.)")
                 axs[k].set_xlabel("Qubit Frequency (GHz)")
                 axs[k].set_title(title)
@@ -418,6 +601,12 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
             self.fid, self.threshold, self.angle = fid, threshold, angle
             Z_fid[row, col] = fid
             g_ref_index[row, col] = block
+            pgg, pee, fid_err = contrast_point_stats(i_g, q_g, i_e, q_e, fid, threshold, angle)
+            fid_err_mat[row, col] = fid_err
+            Pgg_mat[row, col] = pgg
+            Pee_mat[row, col] = pee
+            threshold_mat[row, col] = threshold
+            angle_mat[row, col] = angle
             print(
                 "Fidelity: ",
                 fid,
@@ -426,13 +615,11 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
                 "frequency: ",
                 self.qubit_fpts[col],
             )
-            # Overlap metric: g+e shots pooled for an arb/flat_top drive, e shots only
-            # for a const drive (docs/experiments/qubit_optimize.md).
-            if self.cfg["qubit_pulse_style"] in ["flat_top", "arb"]:
-                mixed = MixedShots(np.concatenate((i_g, i_e)), np.concatenate((q_g, q_e)))
-                Z_overlap[row, col] = mixed.OverlapErr
-            elif self.cfg["qubit_pulse_style"] == "const":
-                Z_overlap[row, col] = MixedShots(i_e, q_e).OverlapErr
+            # Overlap metric: labelled g/e fit for an arb/flat_top/const drive
+            # (docs/experiments/qubit_optimize.md).
+            snr_mat[row, col] = analog_snr(i_g, q_g, i_e, q_e)
+            if self.cfg["qubit_pulse_style"] in ["flat_top", "arb", "const"]:
+                Z_overlap[row, col] = labelled_overlap_error(i_g, q_g, i_e, q_e)
 
         startTime = datetime.datetime.now()
         print("starting date time: " + startTime.strftime("%Y/%m/%d %H:%M:%S"))
@@ -492,6 +679,10 @@ class QubitPulseOpt_wSingleShotFF(ExperimentClass):
                     )
 
         print("actual end: " + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+        optimum = summarize_contrast_map(Z_fid, fid_err_mat, self.gain_pts, self.qubit_fpts)
+        self.data["data"].update(optimum)
+        report_contrast_optimum(optimum, "qubit", self.gain_pts, self.qubit_fpts)
 
         plt.savefig(self.iname)
 

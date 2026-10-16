@@ -588,7 +588,7 @@ SYMBOLS = [
     Entry(L + '.Experiments.verify_ModifiedRamsey_timing', '<main>', 'tests.hardware.verify_modified_ramsey_timing', '<main>', 'moved', '3a-i', ''),
     # --- Helpers.MixedShots_analysis  [3a-i] ---
     Entry(L + '.Helpers.MixedShots_analysis', '<module>', 'qicklab.analysis.readout', '<module>', 'moved', '3a-i', 'module header: docstring + imports (imports rewritten explicit, no star)'),
-    Entry(L + '.Helpers.MixedShots_analysis', 'MixedShots', 'qicklab.analysis.readout', 'MixedShots', 'moved', '3a-i', '3b: drop unused Plot* methods'),
+    Entry(L + '.Helpers.MixedShots_analysis', 'MixedShots', 'qicklab.analysis.readout', 'MixedShots', 'deleted', '3b', 'KMeans-seeded unlabelled blob overlap (non-deterministic, mostly NaN at the lab SNR) replaced by the labelled two-Gaussian overlap in analysis.readout (review/findings.json F59, 2026-10-16); ' + '3b: drop unused Plot* methods'),
     # --- Helpers.hist_analysis  [3a-i] ---
     Entry(L + '.Helpers.hist_analysis', '<module>', 'qicklab.analysis.readout', '<module>', 'moved', '3a-i', 'module header: docstring + imports (imports rewritten explicit, no star)'),
     Entry(L + '.Helpers.hist_analysis', 'hist_process', 'qicklab.analysis.readout', 'hist_process', 'moved', '3a-i', "3b: hist_process(..., normalize='pooled') default reproduces this one", 'qicklab.analysis.readout', 'hist_process'),

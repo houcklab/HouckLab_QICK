@@ -4,10 +4,11 @@ import time
 
 import numpy as np
 
+from qicklab.analysis.readout import readout_assignment_errors
 from qicklab.core.experiment import finish
 from qicklab.experiments.readout_optimize import QubitPulseOpt_wSingleShotFF, ReadOpt_wSingleShotFF
 from qicklab.experiments.single_shot import SingleShotProgramFFMUX
-from qicklab.experiments.t1_single_shot import T1_SS, readout_assignment_errors
+from qicklab.experiments.t1_single_shot import T1_SS
 from qicklab.experiments.undriven_single_shot import UndrivenSingleShot
 
 

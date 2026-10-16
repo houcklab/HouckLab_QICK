@@ -4,8 +4,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
 
-from qicklab.analysis.readout import classify_thermal_tail, fit_thermal_population, hist_process
+from qicklab.analysis.readout import (
+    classify_thermal_tail,
+    fit_thermal_population,
+    hist_process,
+    single_shot_figures_of_merit,
+)
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class SingleShotProgram(AveragerProgram):
@@ -39,31 +45,7 @@ class SingleShotProgram(AveragerProgram):
 
         # Same window/tone as ModifiedRamsey and ActiveResetVerify, so the
         # active-reset threshold transfers: docs/concepts/readout_window.md
-        required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
-        cfg.setdefault("length", required_tone_us)
-        if cfg["length"] < required_tone_us:
-            raise ValueError(
-                "cfg['length'] must cover cfg['adc_trig_offset'] + "
-                f"cfg['readout_length'] ({cfg['length']} us < "
-                f"{required_tone_us} us)"
-            )
-
-        self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
-        requested_tone_cycles = self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"])
-        self.readout_window_cycles = {
-            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in cfg["ro_chs"]
-        }
-
-        f_time = self.soccfg["tprocs"][0]["f_time"]
-        res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
-        adc_end_tproc = max(
-            self.adc_trig_offset_cycles
-            + self.readout_window_cycles[ch] * f_time / self.soccfg["readouts"][ch]["f_output"]
-            for ch in cfg["ro_chs"]
-        )
-        required_tone_cycles = int(np.ceil(adc_end_tproc * res_f_fabric / f_time - 1e-12))
-        self.readout_tone_cycles = max(requested_tone_cycles, required_tone_cycles)
-        self.readout_tone_extension_cycles = self.readout_tone_cycles - requested_tone_cycles
+        cover_readout_window(self, cfg)
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
@@ -164,7 +146,7 @@ class SingleShotProgram(AveragerProgram):
         all_q = []
         for i in range(len(self.di_buf)):
             ro_ch = self.cfg["ro_chs"][i]
-            norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
+            norm = self.readout_window_cycles[ro_ch]
             shots_i0 = self.di_buf[i].reshape((1, self.cfg["reps"])) / norm
             shots_q0 = self.dq_buf[i].reshape((1, self.cfg["reps"])) / norm
             all_i.append(shots_i0)
@@ -398,6 +380,17 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 self.data["data"]["q_e" + str(i)] = q_e
 
             fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
+
+            # Figures of merit at the saved angle/threshold: docs/experiments/single_shot.md#outputs
+            fom, fom_warnings = single_shot_figures_of_merit(
+                i_g, q_g, i_e, q_e, fid, threshold, angle
+            )
+            for warning in fom_warnings:
+                print(f"[SingleShot] Read {read_index}: WARNING {warning}")
+            for key, value in fom.items():
+                self.data["data"][key + str(read_index)] = value
+                if str(read_index) != str(i):
+                    self.data["data"][key + str(i)] = value
 
             self.data_in_hist = [i_g, q_g, i_e, q_e]
             self.fid.append(fid)

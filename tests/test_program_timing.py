@@ -146,21 +146,105 @@ def test_undriven_rejects_register_sync(legacy, board):
         prog.scheduled_rep_period_cycles()
 
 
-def test_readout_windows(legacy, board):
+# (readout_tone_cycles, extension) when cfg['length'] = 16 us exceeds offset + window: the
+# requested tone already covers the ADC window, so it is played unextended.
+LONG_TONE = {"A": (6881, 0), "B": (9830, 0)}
+ARV_EXTRA = {"use_active_reset": True, "readout_threshold": 0.0, "prep_excited": True}
+
+
+@pytest.mark.parametrize("overrides", [{}, {"ro_chs": [0, 1]}, {"length": 16.0}])
+def test_readout_windows(legacy, board, overrides):
+    """SS, MR, ARV and US share core.readout.cover_readout_window, so the window, tone and
+    extension agree. US now stores the extension too (it did not when it kept its own copy)."""
     variant, soccfg = board
     base = legacy["BaseConfig"]
     window, tone, extension, offset = READOUT[variant]
+    if "length" in overrides:
+        tone, extension = LONG_TONE[variant]
     progs = {
-        "SS": legacy["SS"](soccfg, _cfg(base)),
-        "MR": _mr(legacy, soccfg, True),
-        "ARV": legacy["ARV"](
-            soccfg, _cfg(base, use_active_reset=True, readout_threshold=0.0, prep_excited=True)
-        ),
-        "US": legacy["US"](soccfg, _cfg(base)),
+        "SS": legacy["SS"](soccfg, _cfg(base, **overrides)),
+        "ARV": legacy["ARV"](soccfg, _cfg(base, **ARV_EXTRA, **overrides)),
+        "US": legacy["US"](soccfg, _cfg(base, **overrides)),
     }
+    if not overrides:
+        progs["MR"] = _mr(legacy, soccfg, True)
+    ro_chs = overrides.get("ro_chs", [0])
     for name, prog in progs.items():
-        expected = (window, tone, None if name == "US" else extension, offset)
-        assert _readout(prog) == expected, name
+        assert _readout(prog) == (window, tone, extension, offset), name
+        assert prog.readout_window_cycles == dict.fromkeys(ro_chs, window), name
+        assert {ch: ro["length"] for ch, ro in prog.ro_chs.items()} == dict.fromkeys(
+            ro_chs, window
+        ), name
+        assert prog._gen_mgrs[prog.cfg["res_ch"]].next_pulse["length"] == tone, name
+
+
+@pytest.mark.parametrize("name", ["SS", "ARV", "US"])
+def test_single_shot_family_uses_shared_window(legacy, board, monkeypatch, name):
+    """The single-shot family calls core.readout.cover_readout_window (no private copy), so
+    the active-reset threshold transfers between the calibration and its consumers."""
+    import importlib
+
+    _, soccfg = board
+    cls = legacy[name]
+    module = importlib.import_module(cls.__module__)
+    real = module.cover_readout_window
+    calls = []
+
+    def spy(prog, cfg):
+        calls.append(prog)
+        return real(prog, cfg)
+
+    monkeypatch.setattr(module, "cover_readout_window", spy)
+    extra = ARV_EXTRA if name == "ARV" else {}
+    prog = cls(soccfg, _cfg(legacy["BaseConfig"], **extra))
+    assert calls == [prog]
+
+
+# Stored per-channel windows that differ from each other and from us2cycles(readout_length),
+# so dividing by channel 0's window everywhere, or by a recomputed us2cycles, fails.
+FAKE_WINDOWS = {0: 1000, 1: 250}
+
+
+@pytest.mark.parametrize("name", ["SS", "US"])
+def test_single_shot_normalises_by_declared_window(legacy, board, name):
+    """collect_shots divides each ro_ch's raw sums by that channel's stored
+    readout_window_cycles[ch]."""
+    import numpy as np
+
+    _, soccfg = board
+    prog = legacy[name](soccfg, _cfg(legacy["BaseConfig"], ro_chs=[0, 1], shots=4))
+    assert all(prog.ro_chs[ch]["length"] not in FAKE_WINDOWS.values() for ch in (0, 1))
+    prog.readout_window_cycles = dict(FAKE_WINDOWS)
+    prog.di_buf = [np.full(4, FAKE_WINDOWS[ch] * 3.0) for ch in (0, 1)]
+    prog.dq_buf = [np.full(4, FAKE_WINDOWS[ch] * -1.0) for ch in (0, 1)]
+    i, q = prog.collect_shots()
+    for ch in (0, 1):
+        assert i[ch].shape == (1, 4) and np.all(i[ch] == 3.0) and np.all(q[ch] == -1.0)
+
+
+def test_active_reset_verify_normalises_by_declared_window(legacy, board):
+    """ARV's collect_shots picks verification read k of each rep out of the
+    reads_per_rep-interleaved stream and divides by the stored readout_window_cycles[ro_ch]."""
+    import numpy as np
+
+    _, soccfg = board
+    reps = 3
+    prog = legacy["ARV"](
+        soccfg, _cfg(legacy["BaseConfig"], use_active_reset=False, reps=reps, n_verify_reads=2)
+    )
+    assert prog.ro_chs[0]["length"] != FAKE_WINDOWS[0]
+    prog.readout_window_cycles = {0: FAKE_WINDOWS[0]}
+    # acquire() sets the layout before collect_shots; mirror it without hardware
+    prog.reads_per_rep = rpr = prog.reset_cycles + prog.n_verify_reads
+    assert prog.n_verify_reads == 2
+    # read slot s of rep r carries value 10*r + s (in per-sample units)
+    per_sample = np.array([[10.0 * r + s for s in range(rpr)] for r in range(reps)]).ravel()
+    prog.di_buf = [per_sample * FAKE_WINDOWS[0]]
+    prog.dq_buf = [-per_sample * FAKE_WINDOWS[0]]
+    vi, vq = prog.collect_shots()
+    expected = np.array([[10.0 * r + prog.reset_cycles + k for r in range(reps)] for k in range(2)])
+    assert vi.shape == (2, reps)
+    assert np.array_equal(vi, expected) and np.array_equal(vq, -expected)
 
 
 def test_gen_clock_changes_readout_tone(legacy):

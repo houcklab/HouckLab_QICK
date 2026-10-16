@@ -4,7 +4,7 @@
 
 A 2-D grid over qubit drive gain and qubit drive frequency. At every point the step
 takes an e single-shot block, pairs it with a |g> reference block, and records the
-histogram "fidelity" (a contrast) and the double-Gaussian overlap error, as in
+single-shot "fidelity" (a contrast) and the labelled double-Gaussian overlap error, as in
 [readout_optimize](readout_optimize.md). The |g> reference plays no qubit pulse, so it
 does not depend on the grid point: it is taken once per gain-row boundary, not at
 every point (see [Analysis](#analysis)). Use it to fine-tune the pi pulse, or the
@@ -66,7 +66,8 @@ single_shot group. It is not the session's current `f_ge`.
 
 Path `SingleShot_OptQubit/`.
 
-- **h5:** `fid_mat` (gain × freq), `overlap_mat`, `qubit_fpts` (MHz), `gain_pts`
+- **h5:** `fid_mat` (gain × freq), `overlap_mat`, `snr_mat` (since 2026-10; analog SNR,
+  as on [readout_optimize](readout_optimize.md#outputs)), `qubit_fpts` (MHz), `gain_pts`
   (DAC), and the g-reference record:
   - `g_ref_index` (gain × freq): which g block `G[b]` each point was analysed against
     (`r` or `r + 1` for row `r`).
@@ -77,18 +78,48 @@ Path `SingleShot_OptQubit/`.
     (positive = toward e). NaN if the row has no finite fidelity.
   - `g_drift_sigma` (`qubit_gain_Points`): the same shift in units of the g cloud's
     width along that axis (1.4826 × MAD of `G[r]`).
-- **png:** written inside `acquire()`. `display()` is a no-op.
+  - since 2026-10, the per-point statistics and the recommended point, with the same
+    names and meaning as on [readout_optimize](readout_optimize.md#outputs):
+    `fid_err_mat`, `Pgg_mat`, `Pee_mat`, `threshold_mat`, `angle_mat`,
+    `fid_smooth_mat`, `tied_mask`, `best_gain`, `best_freq`, `best_fid`,
+    `best_fid_err`, `best_fid_smooth`, `median_fid_err`.
+- **png:** written inside `acquire()`. `display()` is a no-op. The fidelity colorbar
+  title gives the median per-point standard error.
 - **json:** the cfg. It holds the last grid point's `qubit_gain` and `f_ge`, and
   `Pulse = True`.
-- No optimum is computed or written back.
+- The recommended point (argmax of the 3×3-smoothed contrast) is printed and saved,
+  but not written back.
 
 ## Analysis
 
 Same metrics as [readout_optimize](readout_optimize.md#analysis): per-class
-normalised CDF-gap contrast, and `MixedShots` overlap error (lower is better). With
-the regime-B `arb` drive, the overlap is computed on the concatenated g+e shots. A
-good point maximises contrast and minimises overlap. The two need not coincide when
-the readout itself limits the separation. `hist_process` runs once per point.
+normalised CDF-gap contrast, and the labelled overlap error `2 Φ(−d/2)` (lower is
+better; `labelled_overlap_error`, computed from the point's g reference and e shots for
+an `arb`, `flat_top` or `const` drive; before 2026-10 it was the KMeans-based `MixedShots`
+on the concatenated g+e shots). The overlap excludes state-preparation error that its
+likelihood test can resolve, so on this map it measures the **readout** separation of the g
+and excited clouds, not the quality of the pulse. Once a resolvable fraction of the e shots
+is excited, the fit finds that minority and the overlap sits near the readout-limited value
+whatever the excitation: with 1000+1000 synthetic shots it is within ≈0.01 of `2 Φ(−d/2)`
+from about 30% excitation up to 100% at d = 4 (from about 50% at d = 2–3). It reads
+clearly high only where little is excited (below ≈20% at d = 4, ≈30% at d = 2–3: far off
+resonance, very low gain) and approaches 1 only below ≈5–10%. **Choose the pulse from
+`fid_mat` (contrast), not from the overlap**; the overlap tells you how well the readout can resolve the state you reached.
+Without the likelihood test about 1 in 13 points with no separation at all read below 0.8
+and looked like good points; with it about 1 in 2000 still does (reading 0.41–0.48), and
+about 0.3–1% of weakly separated points (d ≈ 0.25–0.5) still read 0.2–0.55 too low (details in
+[readout_optimize](readout_optimize.md#analysis)). `hist_process` runs once per point.
+The per-point standard error `fid_err_mat`, the smoothed map, the recommended point and
+`tied_mask` are computed as on [readout_optimize](readout_optimize.md#analysis), including
+the printed warning when the recommendation is on the map border (on a 21×21 map that is
+flat within noise this happens about 63% of the time against 18% of the points, so a border
+recommendation is usually noise unless the contrast clearly rises toward that edge). Points
+in the same half-row share their g shots (below), so `fid_err` is the right error of
+one point but overstates the noise of the difference between two points of a half-row.
+Off-resonant columns have near-zero true contrast, where the threshold-selection bias that
+`fid_err` leaves out is about +0.04 (2 standard errors) at 1000 shots, so they read
+C ≈ 0.04 ± 0.02 rather than 0 (see the per-point uncertainty bullet on
+[readout_optimize](readout_optimize.md#analysis)).
 
 **Shared g reference.** Each point's e block is paired with the bracketing g block
 nearer to it in time: the first `ceil(QubitNumPoints / 2)` columns of row `r` use

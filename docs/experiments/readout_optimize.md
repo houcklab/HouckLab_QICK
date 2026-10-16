@@ -4,8 +4,8 @@
 
 A 2-D grid over readout (cavity) DAC gain and readout frequency. At every grid point
 the step takes a full g/e single-shot pair with the [single_shot](single_shot.md)
-program and records two figures of merit: the histogram "fidelity" (actually a
-contrast, see below) and the **overlap error** of a double-Gaussian fit. Use it to
+program and records two figures of merit: the single-shot "fidelity" (actually a
+contrast, see below) and the **overlap error** of a labelled double-Gaussian fit. Use it to
 choose `pulse_gain` / `pulse_freq` for the single-shot readout. The companion step
 [qubit_optimize](qubit_optimize.md) does the same over qubit gain × qubit frequency.
 Code: see `qicklab.experiments.readout_optimize`.
@@ -53,32 +53,131 @@ written are shown after the arrow.
 Path `SingleShot_OptReadout/`.
 
 - **h5:** `fid_mat` (gain × freq), `overlap_mat` (gain × freq), `trans_fpts` (MHz),
-  `gain_pts` (DAC).
+  `gain_pts` (DAC), and (since 2026-10) the per-point statistics and the recommended
+  point (see [Analysis](#analysis)):
+  - gain × freq: `snr_mat` (analog SNR of the labelled g/e shots, the
+    `calibrate_readout_from_labeled_shots` number the parity readout gates use),
+    `fid_err_mat` (standard error of `fid_mat`), `Pgg_mat`, `Pee_mat`
+    (P(assigned g | prepared g), P(assigned e | prepared e) at that point's threshold),
+    `threshold_mat`, `angle_mat` (the `hist_process` threshold and rotation of each point),
+    `fid_smooth_mat` (the 3×3-smoothed contrast), `tied_mask` (1 = within one standard
+    error of the smoothed maximum).
+  - scalars: `best_gain`, `best_freq` (MHz), `best_fid`, `best_fid_err` (raw contrast and
+    its standard error there), `best_fid_smooth`, `median_fid_err`. NaN if no point has
+    a finite contrast.
 - **png:** two heatmaps, fidelity (%) and overlap error. They are written at the end
   of `acquire()`; `display()` does nothing.
 - **json:** the cfg. It holds the **last** grid point's `pulse_gain` and `pulse_freq`,
   not the optimum.
-- **No optimum is computed or written back.** Read the heatmaps and set the readout
-  gain/frequency in the device file.
+- The fidelity colorbar title gives the median per-point standard error
+  (`median 1 s.e. x.x%`): contrast differences smaller than about twice that are noise.
+- **A recommended point is printed and saved, but not written back.** At the end of
+  `acquire()` it prints
+
+  ```
+  Recommended readout point (argmax of the 3x3-smoothed contrast; NOT written back): gain 3400, frequency 7095.3700 MHz: C = 0.712 +/- 0.016 (smoothed 0.705); 12 of 147 points are within one standard error of the smoothed maximum (tied_mask).
+  ```
+
+  If the recommendation lies on the first or last point of an axis with at least 3 points,
+  a second line `WARNING: the recommended readout point is on the edge of the ... sweep`
+  follows (see *Border bias* below). Any point in `tied_mask` is statistically as good.
+  Read the heatmaps and set the readout gain/frequency in the device file.
 
 ## Analysis
 
-- **"Fidelity".** This step uses the per-class-normalised variant of `hist_process`:
-  `max[ cumsum(n_g)/N_g − cumsum(n_e)/N_e ]`. It is a readout **contrast**, and it is
-  numerically different from the [single_shot](single_shot.md#analysis) number,
-  which uses pooled normalisation. Both variants are kept on purpose (the
-  per-class one came from the Inductive_Coupler code). `F_assign = (1+C)/2` applies.
-- **Overlap metric** (`MixedShots`):
-  1. KMeans splits the shots into two clusters.
-  2. The data are rotated onto the inter-centroid axis and the rotated I is
-     histogrammed (200 bins).
-  3. A double Gaussian is fitted, seeded from the cluster stats.
-  4. `OverlapErr = max(A_overlap/A_1, A_overlap/A_2)`, where `A_overlap` is the area
-     under min(G1, G2). **Lower is better.** It is NaN if either ratio exceeds 0.9.
-- **Which shots go into the overlap.**
-  - With an `arb` or `flat_top` qubit drive (the regime-B default), the g and e shots
-    are concatenated.
-  - With a `const` drive, only the e shots are used.
+- **"Fidelity".** `hist_process(normalize="per_class")`:
+  `max_t [ CDF_g(t) − CDF_e(t) ]` over the exact empirical CDFs of the rotated I
+  ([IQ conventions section 4](../concepts/iq_conventions.md)). It is a readout
+  **contrast**, the same number [single_shot](single_shot.md#analysis) computes for the
+  same shots (since 2026-10 the two `normalize` strings give identical numbers; before,
+  both were histogram-based and could differ in the threshold). `F_assign = (1+C)/2`
+  applies.
+- **Per-point uncertainty.** `contrast_point_stats` recounts the shots at the point's
+  own threshold and rotation: `Pgg`, `Pee`, with `Pgg + Pee − 1 = C` exactly (a
+  mismatch prints a warning), and
+  `fid_err = sqrt(Pgg(1 − Pgg)/N_g + Pee(1 − Pee)/N_e)` with the actual class sizes.
+  At 1000 shots per class this is about 0.021 at C ≈ 0.38, 0.015 at C ≈ 0.68 and 0.006
+  at C ≈ 0.95, as large as the contrast differences near the optimum. It is the error
+  at a fixed threshold: choosing the threshold on the same shots biases C up by a further
+  amount that `fid_err` does not include. At 1000 shots per class it is ~0.003–0.011
+  (under half a standard error) for well-separated clouds (C ≳ 0.4), ~0.015 at
+  C ≈ 0.1–0.2, and ~0.04 (about 2 standard errors) at zero true contrast. So a point with
+  no real separation (low gain, far off resonance) reads C ≈ 0.04 ± 0.02, not 0, and the
+  low-contrast part of a map is biased up by more than its error bar suggests.
+- **Recommended point** (`summarize_contrast_map`). The brightest raw pixel of a
+  147-point map is inflated by about 2 standard errors of noise (winner's curse), so the
+  map is first smoothed with a 3×3 box filter (mean of the finite neighbours, edges
+  extended by the nearest value; NaN points are skipped). The recommendation is the
+  argmax of the smoothed map over the measured points. `tied_mask` marks the points whose
+  raw contrast is at least `best_fid_smooth − best_fid_err`. There is deliberately no 2-D
+  fit: the 100 kHz frequency axis is nearly flat and contrast vs gain is not quadratic.
+  The helper returns NaN and an empty mask for an all-NaN map and also handles
+  single-row or single-column maps, but `acquire()` never produces one: a one-point sweep
+  axis still raises IndexError (see [Known issues](#known-issues)).
+- **Border bias of the recommendation.** Edge replication counts a border point several
+  times in its own 3×3 mean (a corner 4 of 9 times), so the smoothed value on the border
+  is noisier than in the interior (about 1.7× at a corner), and the winner's curse the
+  smoothing damps piles up there. On a map that is flat within noise the recommendation
+  lands on the border far more often than the border's share of the points: about 78% vs
+  35% on the 7×21 readout grid and 63% vs 18% on a 21×21 grid (corners 18% and 12% vs 3%
+  and 1%). Truncating the window instead of replicating the edge (73% on 7×21) or ranking
+  by the smoothed value minus its own standard error (62% on 7×21) only reduces this, so
+  the ranking is left as the plain smoothed argmax and the printout warns instead
+  (`contrast_optimum_edges`). A recommendation on the border is usually noise unless the
+  contrast clearly rises toward that edge, in which case the sweep should be extended
+  past it; otherwise read `tied_mask`, which is not biased toward the border. Because the
+  maps are centred on the current setting, a border recommendation on a flat map would
+  otherwise steer you away from a setting that is as good.
+- **Overlap metric** (`labelled_overlap_error`, since 2026-10):
+  1. The g and e shots are projected onto the g-median → e-median line (the
+     `hist_process` axis).
+  2. One unbinned maximum-likelihood fit is made to both labelled sets together: g shots
+     ~ (1 − w_g) N(μ_g, σ) + w_g N(μ_e, σ), e shots ~ (1 − w_e) N(μ_e, σ) + w_e N(μ_g, σ),
+     with one shared σ, minority weights w_g, w_e in [0, 0.5], centres seeded at the
+     labelled medians and σ at the pooled moment std.
+  3. The minority components are kept only when they raise the joint log-likelihood by
+     2 ΔlnL ≥ 9 over the same model with w_g = w_e = 0 (class means and the pooled std,
+     i.e. the moment separation). Otherwise d comes from that w = 0 fit.
+  4. `overlap_mat = 2 Φ(−d/2)` with d = |μ_e − μ_g| / σ: the error of an ideal-prep readout
+     of two equal Gaussians at a midpoint threshold. **Lower is better.** Where the
+     likelihood test keeps them, the minority components absorb state-preparation errors
+     (thermal |e> in g, pi infidelity and decay in e), so unlike `1 − fid_mat` or
+     `2 Φ(−snr_mat/2)` the overlap does not include them.
+  - Why step 3: without it, a weakly separated pair can be fitted as a symmetric mixture
+    (w_g = w_e = 0.5) with a spurious d ≈ 1. With 1000 shots per class a single cloud
+    (d = 0, true overlap 1) then read below 0.8 in about 1 trial in 13, down to 0.52, and
+    d = 0.25 read 0.14 low on average. Those are the off-resonant and low-gain points of
+    the qubit_optimize map, and they looked like good points.
+  - With step 3, 1000 shots per class and ideal preparation (1000–10000 synthetic trials
+    per d), it is deterministic, finite at every d, and its mean is within 0.02 of
+    2 Φ(−d/2) at every separation, only just at d = 0: the fitted separation is never
+    exactly 0, so a single cloud reads ≈0.019 low on average (single-point scatter ≈0.013
+    at d = 0, ≈0.018 at d = 1, ≈0.014 at d = 2, spurious fits excluded). The test does not
+    remove every spurious mixture: at d = 0 about 0.05% of points (7 in 13600) keep one and
+    read 0.41–0.48 (the rest stay above ≈0.91), and at d ≈ 0.25–0.5 about 0.3–1% do and
+    read 0.2–0.55 low, so treat an isolated good-looking point in a poorly
+    separated region with suspicion.
+  - The price of step 3: prep error that the likelihood test cannot resolve stays in the
+    number. With 5% thermal g and 10% unexcited e shots it reads ≈0.05 high at d = 1,
+    ≈0.035 high at d = 1.5 and is correct from d ≈ 2 on. The error is toward a worse
+    reading, never a better one.
+  - NaN only when a class has fewer than 2 shots, the medians coincide, the clouds have
+    zero width or the fit is not finite.
+  - Imperfect excitation of the e shots (the qubit_optimize map): once the excited fraction
+    is resolvable the fit treats the unexcited e shots as prep error, so the overlap stays
+    near the readout-limited value from roughly 30–50% excitation up to 100% (within ≈0.01
+    at d = 4 from 30%, at d = 2–3 from 50%). It reads clearly high only below ≈20%
+    excitation at d = 4 (≈30% at d = 2–3) and approaches 1 only below ≈5–10%. It measures
+    readout separation, not pulse quality; choose the pulse from `fid_mat`.
+  - Before 2026-10 the overlap came from `MixedShots`: an unseeded KMeans split of the
+    pooled g+e shots (e shots only for a `const` drive), a double-Gaussian fit to the
+    mixed 200-bin histogram and max(A_overlap/A_1, A_overlap/A_2), NaN when either ratio
+    exceeded 0.9. At analog SNR ≈ 1 it was NaN at about 2/3 of the points, biased high
+    (0.72 vs 0.62 at d = 1) and not reproducible (reruns on the same shots differed by up
+    to 0.13). It is deleted.
+- **Which shots go into the overlap.** The labelled g and e shots of the point, for an
+  `arb`, `flat_top` or `const` qubit drive (any other `qubit_pulse_style` leaves the point
+  NaN, as before). `snr_mat` is computed at every point regardless of the style.
 
 ## Findings & notes
 
@@ -93,11 +192,6 @@ None recorded with dates. Readout-gain history per qubit lives on
   `X[1] − X[0]`).
 - `hist_process` is computed twice per point. That is wasted time, but the result is
   the same.
-- If the double-Gaussian fit fails, it prints "curve_fit failed" and the parameters
-  fall back to all ones. `OverlapErr` for that point is then computed from the dummy
-  fit and means nothing.
-- MixedShots uses `arctan`, not `arctan2`. If the two cluster centres share the same
-  I, the rotation divides by zero.
 - `pulse_gains = [gain/32000]` is written into the cfg each point (legacy
   normalisation). It appears unused by the program.
 - Calling `save_data()` without an argument raises.

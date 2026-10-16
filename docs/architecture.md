@@ -175,9 +175,8 @@ Each duration is converted with its owning clock (tProc for the trigger offset, 
 for the window, generator clock for the tone) and the tone is extended by the minimum number of
 generator cycles needed after cross-clock rounding:
 `ceil(adc_end_tproc * f_fabric / f_time - 1e-12)`. The shared function is
-`qicklab.core.readout.cover_readout_window` (used by ModifiedRamsey, T1_SS and every regime-A
-program); SingleShotProgram, ActiveResetVerify and UndrivenSingleShot still carry their own
-copies of the same arithmetic.
+`qicklab.core.readout.cover_readout_window` (used by SingleShotProgram, ModifiedRamsey,
+ActiveResetVerify, UndrivenSingleShot, T1_SS and every regime-A program).
 
 ### Carry-overs
 
@@ -421,10 +420,10 @@ readout. Lengthen `relax_delay`; never retry it blindly.
 - Readout "fidelity" printed by the legacy histogram analysis is the contrast
   C = P(g|g) + P(e|e) - 1, not assignment fidelity; with equal priors and the optimal
   threshold F_assign = (1 + C)/2.
-- Two histogram analyses coexist in `qicklab.analysis.readout`: the QM_Team version (pooled
-  normalisation) and the relocated Inductive_Coupler version used by readout optimisation
-  (per-class signed normalisation, `print_fidelities=`). They give different numbers and were
-  kept separate to preserve behaviour.
+- The two legacy histogram analyses (QM_Team pooled normalisation; Inductive_Coupler per-class
+  normalisation with `print_fidelities=`) are one function, `hist_process(normalize=...)`. Since
+  2026-10 it computes the contrast and threshold from the exact empirical CDFs, so both
+  `normalize` strings give identical numbers ([IQ conventions section 4](concepts/iq_conventions.md)).
 
 ## Hardware notes
 

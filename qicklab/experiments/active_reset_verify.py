@@ -4,6 +4,7 @@ from qick import AveragerProgram
 
 from qicklab.core.active_reset import ActiveResetMixin
 from qicklab.core.experiment import ExperimentClass
+from qicklab.core.readout import cover_readout_window
 
 
 class ActiveResetVerifyProgram(ActiveResetMixin, AveragerProgram):
@@ -47,31 +48,7 @@ class ActiveResetVerifyProgram(ActiveResetMixin, AveragerProgram):
         # Match ModifiedRamsey exactly: ADC windows use the readout clock,
         # resonator pulses use the generator fabric clock, and trigger/delay
         # values use the tProc clock.
-        required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
-        cfg.setdefault("length", required_tone_us)
-        if cfg["length"] < required_tone_us:
-            raise ValueError(
-                "cfg['length'] must cover cfg['adc_trig_offset'] + "
-                f"cfg['readout_length'] ({cfg['length']} us < "
-                f"{required_tone_us} us)"
-            )
-
-        self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
-        requested_tone_cycles = self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"])
-        self.readout_window_cycles = {
-            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch) for ch in cfg["ro_chs"]
-        }
-
-        f_time = self.soccfg["tprocs"][0]["f_time"]
-        res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
-        adc_end_tproc = max(
-            self.adc_trig_offset_cycles
-            + self.readout_window_cycles[ch] * f_time / self.soccfg["readouts"][ch]["f_output"]
-            for ch in cfg["ro_chs"]
-        )
-        required_tone_cycles = int(np.ceil(adc_end_tproc * res_f_fabric / f_time - 1e-12))
-        self.readout_tone_cycles = max(requested_tone_cycles, required_tone_cycles)
-        self.readout_tone_extension_cycles = self.readout_tone_cycles - requested_tone_cycles
+        cover_readout_window(self, cfg)
 
         for ch in cfg["ro_chs"]:
             self.declare_readout(
@@ -178,7 +155,7 @@ class ActiveResetVerifyProgram(ActiveResetMixin, AveragerProgram):
 
     def collect_shots(self):
         ro_ch = self.cfg["ro_chs"][0]
-        norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
+        norm = self.readout_window_cycles[ro_ch]
         reps = self.cfg["reps"]
         reads_per_rep = self.reads_per_rep
         # Verification read k of each rep lives at di_buf[ch][reset_cycles+k :: reads_per_rep].

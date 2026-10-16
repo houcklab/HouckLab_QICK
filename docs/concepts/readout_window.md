@@ -104,11 +104,11 @@ Why it matters: the active-reset threshold is calibrated with `SingleShotProgram
 `auto_coherence` picks the window with `SingleShotProgram` and uses it for T1/T2R/T2E. All of
 them must integrate the same physical window and play the same tone, or the threshold lands in
 the wrong place and the chosen window is not the one used. The shared calculation is
-`qicklab.core.readout.cover_readout_window`, used by `ModifiedRamsey`, `T1_SS` and every
-regime-A program (`CavitySpecFF`, `QubitSpecSliceFF`, `AmplitudeRabiFF`, `AmplitudeRabiFF_N`,
-`ChiShift`, `T1FF`, `T2R`, `T2EMUX`, `ChargeDispersion`, `ChargeDispersionQuasiCW`).
-`SingleShotProgram`, `ActiveResetVerify` and `UndrivenSingleShot` still carry their own copies
-of the same arithmetic (UndrivenSingleShot does not store `readout_tone_extension_cycles`).
+`qicklab.core.readout.cover_readout_window`, used by `SingleShotProgram`, `ModifiedRamsey`,
+`ActiveResetVerify`, `UndrivenSingleShot`, `T1_SS` and every regime-A program (`CavitySpecFF`,
+`QubitSpecSliceFF`, `AmplitudeRabiFF`, `AmplitudeRabiFF_N`, `ChiShift`, `T1FF`, `T2R`,
+`T2EMUX`, `ChargeDispersion`, `ChargeDispersionQuasiCW`). The single-shot family normalises its
+shots by the stored `readout_window_cycles[ro_ch]`.
 Programs that also declare ADC 1 (below) convert its window on its own readout clock; the
 tone covers the `ro_chs` windows.
 

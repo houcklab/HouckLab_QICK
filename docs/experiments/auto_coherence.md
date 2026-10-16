@@ -115,7 +115,7 @@ Single shot (Stage 3)
 | `ss_relax_delay` | 3500 | us | Wait between shots |
 | `ss_readout_time` | 15 | us | Readout window (replaced by the Stage 2.5 winner) |
 | `ss_adc_offset` | 1 | us | ADC trigger offset (replaced by the Stage 2.5 winner) |
-| `ss_target_fidelity` | 0.70 | - | Warning threshold only; compared with histogram contrast (see Findings) |
+| `ss_target_fidelity` | 0.70 | - | Warning threshold only; compared with the single-shot contrast (see Findings) |
 | `ss_gain_pts` | 21 | - | Gain points in the scan |
 | `ss_max_scan_expansions` | 2 | - | Re-centre and widen if the best point is on the scan edge |
 | `ss_gain_span_growth` | 1.8 | - | Span multiplier per expansion |
@@ -255,7 +255,7 @@ the winner did not transfer: [readout window](../concepts/readout_window.md#hist
 it and widen the span x1.8, up to 2 times. Warn if the best contrast is below 0.70. The pi
 gain is then the period P of a fit `C(g) = B - A cos(pi g / P)` (C = Cread sin^2(pi g / 2P):
 a maximum at g = P) to every scanned point within +-60 % of the latest scan centre (at lower
-excitation the rectified histogram contrast is unreliable): (B, A) by linear least squares on
+excitation the single-shot contrast, which cannot go below 0, is unreliable): (B, A) by linear least squares on
 a grid of P over 0.7 ... 1.3 x that centre, then `curve_fit` on (B, A, P) with P kept in that
 window (`qicklab.analysis.fitting.fit_pi_gain_contrast`). The log gives P +- dP (covariance),
 A and B. The fit is not used, and the highest-contrast gain is kept, with fewer than 5
@@ -350,7 +350,7 @@ device file; copy them by hand (`Qubit(freq=..., gain=..., pi2_gain=..., sigma=.
 
 Stage logic is described above. Each stage's records can be re-analysed with the
 standalone page's analysis. The "fidelity" used throughout is the value returned by the
-single-shot histogram analysis (see Findings).
+single-shot analysis (`hist_process`, see Findings).
 
 ## Findings & notes
 
@@ -361,8 +361,8 @@ single-shot histogram analysis (see Findings).
   above: 1000 / 2000 shots, `AutoCoherence/run_<timestamp>/`, sigma x 0.70.
 - `ExperimentClass` concatenates `outerFolder + path` with no separator, so the run folder
   must end with "/"; the step appends it.
-- The "fidelity" from the single-shot histogram is the readout **contrast**
-  C = max|CDF_g - CDF_e| = P(g|g) + P(e|e) - 1, not the assignment fidelity
+- The "fidelity" from the single-shot analysis is the readout **contrast**
+  C = max_t [CDF_g(t) - CDF_e(t)] = P(g|g) + P(e|e) - 1, not the assignment fidelity
   (1 + C)/2. `ss_target_fidelity = 0.70` is therefore a contrast threshold. See
   [single_shot](single_shot.md) and
   [concepts/iq_conventions.md](../concepts/iq_conventions.md).

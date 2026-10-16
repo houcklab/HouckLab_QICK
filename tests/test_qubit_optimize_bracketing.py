@@ -19,7 +19,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
 import qicklab.experiments.readout_optimize as ro  # noqa: E402
-from qicklab.analysis.readout import hist_process  # noqa: E402
+from qicklab.analysis.readout import hist_process, labelled_overlap_error  # noqa: E402
 
 SHOTS = 2000
 SIGMA = 0.3  # cloud width (both quadratures)
@@ -60,17 +60,9 @@ class _FakeProg:
         return np.array([[i]]), np.array([[q]])
 
 
-class _FakeMixedShots:
-    """Deterministic stand-in for MixedShots (which uses an unseeded KMeans)."""
-
-    def __init__(self, shots_i, shots_q):
-        self.OverlapErr = float(np.mean(shots_i)) + 1e-3 * len(shots_i)
-
-
 @pytest.fixture
 def run(monkeypatch, tmp_path):
     monkeypatch.setattr(ro, "SingleShotProgram", _FakeProg)
-    monkeypatch.setattr(ro, "MixedShots", _FakeMixedShots)
 
     def _run(n_rows=3, n_cols=5, drift=0.0, style="arb", seed=1, e_centre=E_I):
         _FakeProg.log, _FakeProg.drift, _FakeProg.e_centre = [], drift, e_centre
@@ -156,8 +148,9 @@ def test_each_point_analysed_against_its_block(run, style):
                 data=[g["i"], g["q"], e["i"], e["q"]], plot=False, normalize="per_class"
             )
             assert d["fid_mat"][r, c] == fid
-            mixed_i = np.concatenate((g["i"], e["i"])) if style == "arb" else e["i"]
-            assert d["overlap_mat"][r, c] == _FakeMixedShots(mixed_i, None).OverlapErr
+            # the overlap and the SNR use the same labelled g/e pair for every drive style
+            assert d["overlap_mat"][r, c] == labelled_overlap_error(g["i"], g["q"], e["i"], e["q"])
+            assert d["snr_mat"][r, c] == ro.analog_snr(g["i"], g["q"], e["i"], e["q"])
     # fid/threshold/angle attributes hold the last grid point's analysis, as before
     assert exp.fid == fid and exp.threshold == threshold and exp.angle == angle
 
@@ -200,7 +193,14 @@ def test_save_data_writes_new_arrays(run):
     exp, data, _ = run(n_rows=2, n_cols=3)
     exp.save_data(data)
     with h5py.File(exp.fname, "r") as f:
-        for key in ("fid_mat", "overlap_mat", "g_ref_index", "g_block_time", "g_drift_sigma"):
+        for key in (
+            "fid_mat",
+            "overlap_mat",
+            "snr_mat",
+            "g_ref_index",
+            "g_block_time",
+            "g_drift_sigma",
+        ):
             assert key in f
         assert f["g_drift_frac"].shape == (2,)
         np.testing.assert_array_equal(f["g_ref_index"][()], data["data"]["g_ref_index"])

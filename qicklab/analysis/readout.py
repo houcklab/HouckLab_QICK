@@ -1,5 +1,5 @@
-"""Single-shot readout analysis: g/e histogram contrast (hist_process), KMeans blob overlap
-(MixedShots), labelled-shot calibration and IQ-trace projection.
+"""Single-shot readout analysis: g/e empirical-CDF contrast (hist_process), labelled g/e
+overlap error (labelled_overlap_error), labelled-shot calibration and IQ-trace projection.
 Conventions and the meaning of "fidelity": docs/concepts/iq_conventions.md."""
 
 import math
@@ -7,145 +7,121 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.optimize
+import scipy.special
 from sklearn.cluster import KMeans
 
+from qicklab.analysis.iq import rotate_data
 
-class MixedShots:
-    """KMeans-split a mixed g/e shot cloud, rotate the centre line onto I and fit two Gaussians
-    to the I histogram. ``OverlapErr`` = Gaussian overlap area / smaller blob area (NaN when the
-    overlap exceeds 90% of either blob). Not deterministic: KMeans has no random_state."""
+# labelled_overlap_error keeps the minority (prep-error) components only when they raise the
+# joint log-likelihood by at least this much (2 Delta lnL) over the same fit with w_g = w_e = 0.
+_MIXTURE_MIN_2DLNL = 9.0
 
-    def __init__(self, shots_i, shots_q, ran=None, numbins=200):
-        self.i_raw = shots_i
-        self.q_raw = shots_q
 
-        iqData = np.stack((shots_i, shots_q), axis=1)
+def labelled_overlap_error(i_g, q_g, i_e, q_e):
+    """Separation-limited overlap error of labelled g/e single shots, 2 Phi(-d/2).
 
-        self.kmeans = KMeans(n_clusters=2, n_init=5, max_iter=1000).fit(iqData)
+    The shots are projected onto the g-median -> e-median line (hist_process's axis) and one
+    unbinned maximum-likelihood fit is made to both labelled sets together:
+    g shots ~ (1 - w_g) N(mu_g, sigma) + w_g N(mu_e, sigma) and
+    e shots ~ (1 - w_e) N(mu_e, sigma) + w_e N(mu_g, sigma), with a shared sigma, minority
+    weights w_g, w_e in [0, 0.5], centres seeded at the labelled medians and sigma at the
+    pooled moment std. The minority components absorb state-preparation errors (thermal |e>
+    in the g shots, pi-pulse infidelity and decay in the e shots), so with
+    d = |mu_e - mu_g| / sigma the result 2 Phi(-d/2) is the readout error of two equal
+    Gaussians at a midpoint threshold with ideal preparation. It does not include prep
+    errors, unlike 1 - contrast or 2 Phi(-snr_analog/2) from the moment stds.
+    The minority components are kept only when they raise the joint log-likelihood by
+    2 Delta lnL >= _MIXTURE_MIN_2DLNL (9) over the w_g = w_e = 0 fit (class means and the
+    pooled ML std, i.e. the moment separation); otherwise that w = 0 fit gives d. Without this
+    test a weakly separated pair can be fitted as a symmetric two-component mixture
+    (w_g = w_e = 0.5) with a spurious d ~ 1: at d = 0 one point in ~13 read below 0.8. With
+    1000 + 1000 shots and ideal prep (1000-10000 trials per d) the mean is within 0.02 of
+    2 Phi(-d/2) at every d, only just at d = 0, where the fitted |d| > 0 biases it ~0.019 low
+    (single-trial sd ~0.013 at d = 0, ~0.018 at d = 1, ~0.014 at d = 2, spurious fits
+    excluded). The test still keeps a spurious mixture in ~0.05% of trials at d = 0 (reading
+    0.41-0.48; the rest stay above ~0.91) and in 0.3-1% at d = 0.25-0.5 (reading 0.2-0.55
+    low), so an isolated low point in a poorly separated region may be one. Prep error the test
+    cannot resolve is kept: with 5% thermal g and 10% unexcited e it reads ~0.05 high at
+    d = 1, ~0.035 high at d = 1.5 and is exact at d >= 2. Deterministic. NaN when a class
+    has fewer than 2 shots, the medians or the stds vanish, or the fit is not finite.
+    docs/experiments/readout_optimize.md#analysis."""
+    i_g, q_g, i_e, q_e = (np.ravel(np.asarray(x, dtype=float)) for x in (i_g, q_g, i_e, q_e))
+    if i_g.size < 2 or i_e.size < 2:
+        return np.nan
+    c_g = np.array([np.median(i_g), np.median(q_g)])
+    c_e = np.array([np.median(i_e), np.median(q_e)])
+    norm = float(np.hypot(*(c_e - c_g)))
+    if not norm > 0:
+        return np.nan
+    axis = (c_e - c_g) / norm
+    v_g = np.column_stack([i_g, q_g]) @ axis
+    v_e = np.column_stack([i_e, q_e]) @ axis
+    s0 = math.sqrt(0.5 * (np.var(v_g) + np.var(v_e)))
+    if not s0 > 0:
+        return np.nan
+    # Work in units of the moment std about the median midpoint (the fit is scale-free).
+    m0 = 0.5 * (np.median(v_g) + np.median(v_e))
+    z_g, z_e = (v_g - m0) / s0, (v_e - m0) / s0
+    log_norm = 0.5 * math.log(2 * math.pi)
 
-        Centers = self.kmeans.cluster_centers_
-        self.cen1 = Centers[0]
-        self.cen2 = Centers[1]
+    def nll(p):
+        mu_g, mu_e, log_s, w_g, w_e = p
+        s = math.exp(log_s)
 
-        self._SeperateBlobs()
-        self._Rotate()
+        def mix_logpdf(z, mu_major, mu_minor, w):
+            a = -0.5 * ((z - mu_major) / s) ** 2
+            b = -0.5 * ((z - mu_minor) / s) ** 2
+            with np.errstate(divide="ignore"):
+                return np.logaddexp(np.log1p(-w) + a, np.log(w) + b) - log_s - log_norm
 
-        if ran is None:
-            ran = np.ptp(self.i_rot) * 0.05
+        return -(mix_logpdf(z_g, mu_g, mu_e, w_g).sum() + mix_logpdf(z_e, mu_e, mu_g, w_e).sum())
 
-        self.ran = ran
+    p0 = [np.median(z_g), np.median(z_e), 0.0, 0.01, 0.01]
+    bounds = [(None, None), (None, None), (-20.0, 5.0), (0.0, 0.5), (0.0, 0.5)]
+    fit = scipy.optimize.minimize(nll, p0, method="L-BFGS-B", bounds=bounds)
+    mu_g, mu_e, log_s = fit.x[:3]
+    d = abs(mu_e - mu_g) / math.exp(log_s)
+    if not (np.all(np.isfinite(fit.x)) and np.isfinite(fit.fun) and math.isfinite(d)):
+        return np.nan
+    # Nested w_g = w_e = 0 fit in closed form: class means and the pooled ML std.
+    mu0_g, mu0_e = z_g.mean(), z_e.mean()
+    s_0 = math.sqrt(
+        (((z_g - mu0_g) ** 2).sum() + ((z_e - mu0_e) ** 2).sum()) / (z_g.size + z_e.size)
+    )
+    if 2.0 * (nll([mu0_g, mu0_e, math.log(s_0), 0.0, 0.0]) - fit.fun) < _MIXTURE_MIN_2DLNL:
+        d = abs(mu0_e - mu0_g) / s_0
+    return float(scipy.special.erfc(d / (2 * math.sqrt(2))))  # 2 Phi(-d/2)
 
-        self.iRange = [np.min(self.i_rot) - self.ran, np.max(self.i_rot) + self.ran]
 
-        self.nMixed, self.binsMixed = np.histogram(self.i_rot, bins=numbins, range=self.iRange)
+def cdf_gap_threshold(v_g, v_e):
+    """Exact empirical-CDF threshold for the 1-D rule g := v <= thr, e := v > thr.
 
-        self.nBlob1, self.binsBlob1 = np.histogram(self.i_blob1, bins=numbins, range=self.iRange)
-
-        self.nBlob2, self.binsBlob2 = np.histogram(self.i_blob2, bins=numbins, range=self.iRange)
-
-        self._DoubleGausFit()
-
-    def _SeperateBlobs(self):
-        blobNums = self.kmeans.labels_
-        empty = np.array([])
-        i_raw = np.asarray(self.i_raw)
-        q_raw = np.asarray(self.q_raw)
-        self.i_blob1 = np.append(empty, i_raw[blobNums == 0])
-        self.q_blob1 = np.append(empty, q_raw[blobNums == 0])
-        self.i_blob2 = np.append(empty, i_raw[blobNums == 1])
-        self.q_blob2 = np.append(empty, q_raw[blobNums == 1])
-
-        distArr1 = np.zeros(len(self.i_blob1))
-        distArr2 = np.zeros(len(self.i_blob2))
-
-        for i in range(len(self.i_blob1)):
-            distArr1[i] = np.sqrt(
-                (self.cen1[0] - self.i_blob1[i]) ** 2 + (self.cen1[1] - self.q_blob1[i]) ** 2
-            )
-        for i in range(len(self.i_blob2)):
-            distArr2[i] = np.sqrt(
-                (self.cen2[0] - self.i_blob2[i]) ** 2 + (self.cen2[1] - self.q_blob2[i]) ** 2
-            )
-
-        self.blob1_avgSize = np.mean(distArr1)
-        self.blob2_avgSize = np.mean(distArr2)
-
-    def _Rotate(self):
-        self.theta = -np.arctan((self.cen2[1] - self.cen1[1]) / (self.cen2[0] - self.cen1[0]))
-        theta = self.theta
-
-        self.i_rot = self.i_raw * np.cos(theta) - self.q_raw * np.sin(theta)
-        self.q_rot = self.i_raw * np.sin(theta) + self.q_raw * np.cos(theta)
-
-        self.cen1_rot = np.copy(self.cen1)
-        self.cen1_rot[0] = self.cen1[0] * np.cos(theta) - self.cen1[1] * np.sin(theta)
-        self.cen1_rot[1] = self.cen1[0] * np.sin(theta) + self.cen1[1] * np.cos(theta)
-
-        self.cen2_rot = np.copy(self.cen2)
-        self.cen2_rot[0] = self.cen2[0] * np.cos(theta) - self.cen2[1] * np.sin(theta)
-        self.cen2_rot[1] = self.cen2[0] * np.sin(theta) + self.cen2[1] * np.cos(theta)
-
-        self.i_blob1_rot = self.i_blob1 * np.cos(theta) - self.q_blob1 * np.sin(theta)
-        self.q_blob1_rot = self.i_blob1 * np.sin(theta) + self.q_blob1 * np.cos(theta)
-
-        self.i_blob2_rot = self.i_blob2 * np.cos(theta) - self.q_blob2 * np.sin(theta)
-        self.q_blob2_rot = self.i_blob2 * np.sin(theta) + self.q_blob2 * np.cos(theta)
-
-    def _DoubleGausFit(self):
-        amp1 = np.max(self.nBlob1)
-        cen1 = self.cen1_rot[0]
-        sig1 = self.blob1_avgSize
-        amp2 = np.max(self.nBlob2)
-        cen2 = self.cen2_rot[0]
-        sig2 = self.blob2_avgSize
-
-        self.FitX = np.linspace(self.iRange[0], self.iRange[1], 500)
-
-        P0 = [amp1, cen1, sig1, amp2, cen2, sig2]
-
-        def _gaussian(x, amp, cen, sig):
-            return (
-                amp
-                * (1 / (sig * (np.sqrt(2 * np.pi))))
-                * (np.exp((-1.0 / 2.0) * (((x - cen) / sig) ** 2)))
-            )
-
-        def _2gaussian(x, amp1, cen1, sig1, amp2, cen2, sig2):
-            return amp1 * (1 / (sig1 * (np.sqrt(2 * np.pi)))) * (
-                np.exp((-1.0 / 2.0) * (((x - cen1) / sig1) ** 2))
-            ) + amp2 * (1 / (sig2 * (np.sqrt(2 * np.pi)))) * (
-                np.exp((-1.0 / 2.0) * (((x - cen2) / sig2) ** 2))
-            )
-
-        try:
-            self.popt_gauss2, self.pcov_gauss2 = scipy.optimize.curve_fit(
-                _2gaussian, self.binsMixed[0:-1], self.nMixed, p0=P0
-            )
-        except RuntimeError:
-            print("Error - curve_fit failed")
-            self.popt_gauss2 = (1, 1, 1, 1, 1, 1)
-            self.pcov_gauss2 = (1, 1, 1, 1, 1, 1)
-
-        self.perr_gauss2 = np.sqrt(np.diag(self.pcov_gauss2))
-
-        self.DoubleGaussFit = _2gaussian(self.FitX, *self.popt_gauss2)
-        self.Blob1GaussFit = _gaussian(self.FitX, *self.popt_gauss2[0:3])
-        self.Blob2GaussFit = _gaussian(self.FitX, *self.popt_gauss2[3:6])
-
-        self.OverlapFit = np.zeros(len(self.FitX))
-        self.OverlapFit[:] = np.minimum(self.Blob1GaussFit, self.Blob2GaussFit)
-
-        self.Blob1_area = np.trapezoid(self.Blob1GaussFit, self.FitX)
-        self.Blob2_area = np.trapezoid(self.Blob2GaussFit, self.FitX)
-        Overlap_area = np.trapezoid(self.OverlapFit, self.FitX)
-        self.Overlap_area = Overlap_area
-        self.OverlapErr = np.max([Overlap_area / self.Blob1_area, Overlap_area / self.Blob2_area])
-
-        if self.Overlap_area / self.Blob1_area > 0.9:
-            self.OverlapErr = math.nan
-
-        if self.Overlap_area / self.Blob2_area > 0.9:
-            self.OverlapErr = math.nan
+    Returns ``(contrast, threshold)`` with contrast = max over thr of
+    P(v_g <= thr) - P(v_e <= thr) (per-class normalised, so unequal class sizes are handled)
+    and threshold = the midpoint of the first maximal plateau (between the maximising
+    sample value and the next distinct sample value). The comparison uses integer counts,
+    so the result does not depend on float rounding or on the order of the shots. If no
+    threshold separates g below e the contrast is 0 and the threshold is the largest
+    sample (every shot classed g; its contrast is exactly 0, so the pair stays
+    self-consistent). NaN, NaN for an empty class."""
+    v_g = np.sort(np.ravel(np.asarray(v_g, dtype=float)))
+    v_e = np.sort(np.ravel(np.asarray(v_e, dtype=float)))
+    n_g, n_e = v_g.size, v_e.size
+    if n_g == 0 or n_e == 0:
+        return np.nan, np.nan
+    u = np.unique(np.concatenate([v_g, v_e]))
+    c_g = np.searchsorted(v_g, u, side="right").astype(np.int64)
+    c_e = np.searchsorted(v_e, u, side="right").astype(np.int64)
+    score = c_g * n_e - c_e * n_g  # exact (n_g * n_e) * gap; gap(u[-1]) == 0
+    best = score.max()
+    k = int(np.argmax(score == best))
+    if best <= 0:
+        return np.float64(0.0), np.float64(u[-1])  # gap(u[-1]) == 0 exactly
+    j = k
+    while j + 1 < u.size and score[j + 1] == best:
+        j += 1
+    threshold = 0.5 * (u[k] + u[j + 1])  # j + 1 exists: score[-1] == 0 < best
+    return np.float64(c_g[k] / n_g - c_e[k] / n_e), np.float64(threshold)
 
 
 def hist_process(
@@ -158,9 +134,14 @@ def hist_process(
     normalize="pooled",
     print_fidelities=False,
 ):
-    """Rotate g/e shots onto the median-to-median line, histogram I (200 bins) and return
-    (contrast, threshold bin edge, theta). normalize="pooled" (single_shot) or "per_class"
-    (readout_optimize); they give different numbers: docs/concepts/iq_conventions.md section 4."""
+    """Rotate g/e shots onto the median-to-median line and return (contrast, threshold, theta).
+
+    Contrast and threshold come from the exact empirical CDFs of the rotated I values
+    (``cdf_gap_threshold``; rule g := I <= threshold, the rule ``iq.count_percentage``
+    applies), so ``fid`` is exactly the contrast the saved threshold achieves on these shots.
+    The 200-bin histogram is drawn for the plot only. ``normalize`` accepts "pooled" and
+    "per_class" for the callers' sake; both give the same numbers (per-class normalisation).
+    docs/concepts/iq_conventions.md section 4."""
     if normalize not in ("pooled", "per_class"):
         raise ValueError(f"normalize must be 'pooled' or 'per_class', got {normalize!r}")
     per_class = normalize == "per_class"
@@ -195,20 +176,29 @@ def hist_process(
     ie_new = ie * np.cos(theta) - qe * np.sin(theta)
     qe_new = ie * np.sin(theta) + qe * np.cos(theta)
 
-    xg, yg = np.median(ig_new), np.median(qg_new)
-    xe, ye = np.median(ie_new), np.median(qe_new)
-
-    if ran is None:
-        xg_range = np.ptp(ig_new)
-        xe_range = np.ptp(ie_new)
-        if xg > xe:
-            xlims = [xe - 0.6 * xe_range, xg + 0.6 * xg_range]
-        else:
-            xlims = [xg - 0.6 * xg_range, xe + 0.6 * xe_range]
-    else:
-        xlims = [xg - ran, xg + ran]
+    fid, threshold = cdf_gap_threshold(ig_new, ie_new)
+    ne_contrast = np.mean(np.asarray(ie_new) <= threshold)  # P(assigned g | prepared e)
+    ng_contrast = np.mean(np.asarray(ig_new) > threshold)  # P(assigned e | prepared g)
+    if print_fidelities:
+        # The relocated per-class variant printed the pair twice; kept verbatim.
+        for _ in range(2):
+            print("ne contrast: ", ne_contrast)
+            print("ng contrast: ", ng_contrast)
 
     if plot:
+        xg, yg = np.median(ig_new), np.median(qg_new)
+        xe, ye = np.median(ie_new), np.median(qe_new)
+
+        if ran is None:
+            xg_range = np.ptp(ig_new)
+            xe_range = np.ptp(ie_new)
+            if xg > xe:
+                xlims = [xe - 0.6 * xe_range, xg + 0.6 * xg_range]
+            else:
+                xlims = [xg - 0.6 * xg_range, xe + 0.6 * xe_range]
+        else:
+            xlims = [xg - ran, xg + ran]
+
         axs[1].scatter(ig_new, qg_new, label="g", color="r", marker="*", alpha=alpha)
         axs[1].scatter(ie_new, qe_new, label="e", color="b", marker="*", alpha=alpha)
         axs[1].scatter(xg, yg, color="k", marker="o")
@@ -218,43 +208,17 @@ def hist_process(
         axs[1].set_title(f"Rotated; Angle = {theta:.3f}" if per_class else "Rotated")
         axs[1].axis("equal")
 
-        ng, binsg, pg = axs[2].hist(
-            ig_new, bins=numbins, range=xlims, color="r", label="g", alpha=0.5
-        )
-        ne, binse, pe = axs[2].hist(
-            ie_new, bins=numbins, range=xlims, color="b", label="e", alpha=0.5
-        )
+        axs[2].hist(ig_new, bins=numbins, range=xlims, color="r", label="g", alpha=0.5)
+        axs[2].hist(ie_new, bins=numbins, range=xlims, color="b", label="e", alpha=0.5)
         axs[2].set_xlabel("I(a.u.)")
         axs[2].legend(loc="upper right")
-
-    else:
-        ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)
-        ne, binse = np.histogram(ie_new, bins=numbins, range=xlims)
-
-    if per_class:
-        contrast = np.cumsum(ng) / ng.sum() - np.cumsum(ne) / ne.sum()
-    else:
-        contrast = np.abs((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum()))
-    tind = contrast.argmax()
-    threshold = binsg[tind]
-    fid = contrast[tind]
-    if per_class or print_fidelities:
-        ne_contrast = np.cumsum(ne)[tind] / ne.sum()
-        ng_contrast = 1 - np.cumsum(ng)[tind] / ng.sum()
-    if print_fidelities:
-        # The relocated per-class variant printed the pair twice; kept verbatim.
-        for _ in range(2):
-            print("ne contrast: ", ne_contrast)
-            print("ng contrast: ", ng_contrast)
-
-    if plot:
+        axs[2].axvline(threshold, 0, 20, color="black", alpha=0.7, ls="--")
         if per_class:
-            axs[2].axvline(threshold, 0, 20, color="black", alpha=0.7, ls="--")
             axs[2].set_title(
                 f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}"
             )
         else:
-            axs[2].set_title(f"Fidelity = {fid * 100:.2f}%")
+            axs[2].set_title(f"Contrast C = {fid * 100:.2f}% (F_assign = {50 * (1 + fid):.2f}%)")
 
     return fid, threshold, theta
 
@@ -410,6 +374,76 @@ def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
         "use_lda": bool(use_lda),
         "warnings": warnings,
     }
+
+
+def readout_assignment_errors(i_g, q_g, i_e, q_e, angle, threshold):
+    """(P(e|g), P(g|e)) of single_shot calibration shots, counted exactly as T1_SS counts:
+    rotate by ``angle`` (rotate_data) and call a shot excited when I' > threshold.
+
+    These include the prep errors of the calibration (thermal |e> in the g shots, pi-pulse
+    infidelity and decay during readout in the e shots), not only the readout overlap
+    (docs/experiments/t1_single_shot.md#analysis). NaN for an empty set.
+    """
+    out = []
+    for i, q, excited in ((i_g, q_g, False), (i_e, q_e, True)):
+        i_rot, _ = rotate_data((np.ravel(i), np.ravel(q)), theta=angle)
+        if i_rot.size == 0:
+            out.append(float("nan"))
+            continue
+        frac_e = float(np.mean(i_rot > threshold))
+        out.append(1.0 - frac_e if excited else frac_e)
+    return tuple(out)
+
+
+def single_shot_figures_of_merit(i_g, q_g, i_e, q_e, contrast, threshold, angle):
+    """Readout figures of merit of one g/e single_shot read, saved per read in its h5.
+
+    ``contrast``, ``threshold``, ``angle`` are the hist_process outputs (the saved pair).
+    P_e_given_g / P_g_given_e are counted at that pair by readout_assignment_errors (the
+    helper run_t1_ss uses, so both agree bit for bit) and assignment_fidelity =
+    1 - (P_e_given_g + P_g_given_e)/2 = (1 + contrast)/2. snr_analog, cal_* and
+    readout_gate_pass come from calibrate_readout_from_labeled_shots (mean/LDA axis, its own
+    threshold relative to cal_midpoint); gate pass = none of its warnings (SNR < 1, contrast
+    < 0.3, fewer than 500 shots in a class), the gates the parity analysis uses. Those are NaN
+    when it raises (fewer than 10 shots per class, coincident centres). Returns
+    (dict key -> value, list of warnings). docs/experiments/single_shot.md#outputs."""
+    i_g, q_g, i_e, q_e = (np.ravel(np.asarray(x, dtype=float)) for x in (i_g, q_g, i_e, q_e))
+    p_e_given_g, p_g_given_e = readout_assignment_errors(i_g, q_g, i_e, q_e, angle, threshold)
+    fom = {
+        "contrast_hist": contrast,
+        "assignment_fidelity": 1.0 - 0.5 * (p_e_given_g + p_g_given_e),
+        "P_e_given_g": p_e_given_g,
+        "P_g_given_e": p_g_given_e,
+        "g_center_median": np.array([np.median(i_g), np.median(q_g)]),
+        "e_center_median": np.array([np.median(i_e), np.median(q_e)]),
+        "g_center_mean": np.array([np.mean(i_g), np.mean(q_g)]),
+        "e_center_mean": np.array([np.mean(i_e), np.mean(q_e)]),
+    }
+    try:
+        cal = calibrate_readout_from_labeled_shots(i_g, q_g, i_e, q_e)
+    except Exception as err:
+        cal = None
+        warnings = [f"labelled-shot calibration failed: {err}"]
+    if cal is None:
+        fom.update(
+            snr_analog=np.nan,
+            cal_contrast=np.nan,
+            cal_threshold=np.nan,
+            cal_axis=np.full(2, np.nan),
+            cal_midpoint=np.full(2, np.nan),
+            readout_gate_pass=np.nan,
+        )
+    else:
+        warnings = list(cal["warnings"])
+        fom.update(
+            snr_analog=cal["snr_analog"],
+            cal_contrast=cal["contrast"],
+            cal_threshold=cal["threshold"],
+            cal_axis=cal["axis"],
+            cal_midpoint=cal["midpoint"],
+            readout_gate_pass=float(not warnings),
+        )
+    return fom, warnings
 
 
 def project_iq_trace(I, Q, calibration):

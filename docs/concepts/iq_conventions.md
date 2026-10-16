@@ -82,22 +82,37 @@ fitted-T scatter was the same within 1%.
 
 1. medians of each cloud; rotate all shots by `theta = -arctan2(Qe - Qg, Ie - Ig)` so the g->e line
    lies along I;
-2. histogram the rotated I of each class in 200 bins;
-3. contrast curve `|cumsum(n_g) - cumsum(n_e)| / (0.5*N_g + 0.5*N_e)`; its maximum gives the
-   threshold (a bin edge) and the printed "fidelity".
+2. exact empirical CDFs of the rotated I of each class (every shot counts, no binning);
+3. contrast curve `CDF_g(t) - CDF_e(t)` (per-class normalised; rule g := I <= t, e := I > t, the
+   rule `t1_ss` applies); its maximum is the printed "fidelity", and the threshold is the midpoint
+   between the maximising shot value and the next shot value (`cdf_gap_threshold`). The
+   comparison uses integer counts, so equal maxima are resolved the same way every time (the
+   lowest one wins) and the result does not depend on the order of the shots. If the e cloud
+   lies left of g (clouds nearly coincide) the contrast is 0, not |...|, and the threshold is the
+   largest shot value (every shot classed g, contrast exactly 0).
+
+The returned `fid` is therefore exactly the contrast the returned threshold achieves on the same
+shots. The 200-bin histogram is drawn in the plot only, with the threshold as a dashed line.
 
 The printed "Fidelity" is the **readout contrast**
-C = max |CDF_g - CDF_e| = P(g|g) + P(e|e) - 1, not the assignment fidelity. With equal priors and
-the optimal threshold, F_assign = (1 + C)/2. Example: a legacy "Fidelity = 44.90%" is C = 0.449,
-F_assign = 72.45%. The display clips the value to at most 1.0.
+C = max_t [CDF_g(t) - CDF_e(t)] = P(g|g) + P(e|e) - 1 (signed: e above the threshold), not the
+assignment fidelity. With equal priors and the optimal threshold, F_assign = (1 + C)/2. Example:
+a legacy "Fidelity = 44.90%" is C = 0.449, F_assign = 72.45%. Since 2026-10 the single_shot png
+title reads "Contrast C = ... (F_assign = ...)" and its h5 saves both per read
+(`contrast_hist<r>`, `assignment_fidelity<r>`; docs/experiments/single_shot.md#outputs). The
+display clips the value to at most 1.0.
 
 `single_shot` prints `angle` (theta) and `threshold`; `t1_ss` reuses them to classify its shots.
 
-Two variants exist and give different numbers: the QM-team version (pooled normalisation as
-above) and the version relocated from the Inductive_Coupler project, used by `readout_optimize`
-and `qubit_optimize` (per-class signed normalisation, `print_fidelities=`). The refactor keeps
-both as one function, `hist_process(..., normalize="pooled" | "per_class", print_fidelities=False)`;
-`single_shot` uses the default `"pooled"`, `readout_optimize` passes `"per_class"`.
+`hist_process(..., normalize="pooled" | "per_class", print_fidelities=False)` merges the QM-team
+version (pooled normalisation, used by `single_shot`) and the version relocated from the
+Inductive_Coupler project (per-class signed normalisation, used by `readout_optimize` and
+`qubit_optimize`). Both strings are still accepted and give bit-identical numbers (per-class
+normalisation, which is the correct contrast when the class sizes differ); the string only
+changes the plot titles. `print_fidelities=True` prints P(e assigned g) and P(g assigned e) at the
+threshold. Before 2026-10 the two variants were histogram-based and agreed only in substance:
+float rounding broke ties between equal contrast plateaus differently, moving the threshold by
+up to 0.45 sigma at d = 1.
 
 Readout quality gates used by the parity analysis: analog SNR < 1 warns; contrast < 0.3 warns;
 fewer than 500 labelled shots per class warns.
@@ -230,9 +245,14 @@ missing) it silently returns all labels 0 and a NaN threshold.
   (its data have shape (2, 1, N)), so the ADC 0 - ADC 1 background offset, not the Rabi axis, set
   the angle and most of the contrast could end up in Q; its sign was arbitrary. It now uses ADC 0
   only, with a fixed sign (section 3).
-- `hist_process` returns the **left** edge of the bin where the contrast peaks; the optimum lies
-  up to one bin higher. When `ran` is given the histogram range is centred on the g cloud only and
-  the e cloud can fall outside it.
+- Before 2026-10 `hist_process` took the contrast from a 200-bin histogram and returned the
+  **left** edge of the peak bin, while the counts ran to its right edge: the saved threshold sat
+  up to one bin (0.04-0.08 sigma) low, the saved `fid` was about 0.5% (absolute) higher than the
+  contrast that threshold achieves on the same shots, and shots outside the histogram range
+  (a long tail away from the other cloud, or the e cloud when `ran` was given) were not counted.
+  It now uses the exact empirical CDFs (section 4); thresholds and fids saved before then differ
+  slightly from a re-analysis. When `ran` is given the plotted histogram range is still centred
+  on the g cloud only.
 - `hist_process` in the readout-optimise variant prints misassignment fractions labelled
   "ne contrast" / "ng contrast", twice.
 - Before 2026-10-13 `ActiveResetVerify` used the fixed `1 << 24` offset and the readout index

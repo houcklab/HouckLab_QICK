@@ -94,10 +94,11 @@ golden is kept.
    time; any other installed version fails every golden test with a message
    saying so.
 9. **Determinism.** BLAS/OpenMP thread pools are pinned to one thread
-   (`threadpoolctl`). With several threads, sklearn's `KMeans` (inside
-   `MixedShots`) is not bit-reproducible and `curve_fit` amplified the jitter
-   to about 1e-8 relative in `overlap_mat`, which changed its digest from run
-   to run.
+   (`threadpoolctl`). With several threads, multi-threaded reductions (BLAS, and
+   sklearn's `KMeans` inside the former `MixedShots`, removed 2026-10-16 by F59) were
+   not bit-reproducible and `curve_fit` amplified the jitter to about 1e-8 relative in
+   `overlap_mat`, which changed its digest from run to run. The pin stays: BLAS
+   reductions alone can flip a rounding.
 
 ## What one capture contains
 
@@ -347,7 +348,7 @@ numpy's per-architecture SIMD math and scipy's compiled MINPACK move the
 optimizer: `lorentz_*` (two-tone Lorentzian fits), `hanger_fit_*` (transmission
 hanger fit), `env_fit`/`osc_fit` (T2R display fits), `ts_acf_*` and the
 `projection*` columns (undriven time-series fits and threshold), `overlap_mat`
-(KMeans in `MixedShots`). The hanger fit is ill-conditioned on this data (its
+(then KMeans in `MixedShots`; a labelled two-Gaussian fit since F59). The hanger fit is ill-conditioned on this data (its
 `Qint` moved from 2.2e8 to 2.7e5), so its `f0` moved too.
 
 The only `cfg`/`hw` differences were the deterministic consequence of that

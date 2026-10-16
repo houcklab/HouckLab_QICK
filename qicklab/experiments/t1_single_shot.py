@@ -8,28 +8,10 @@ from tqdm.notebook import tqdm
 
 from qicklab.analysis.fitting import exp_decay_fit_fields, fit_exp_decay
 from qicklab.analysis.iq import count_percentage, rotate_data
+from qicklab.analysis.readout import readout_assignment_errors  # noqa: F401 (moved; re-exported)
 from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
-
-
-def readout_assignment_errors(i_g, q_g, i_e, q_e, angle, threshold):
-    """(P(e|g), P(g|e)) of single_shot calibration shots, counted exactly as T1_SS counts:
-    rotate by ``angle`` (rotate_data) and call a shot excited when I' > threshold.
-
-    These include the prep errors of the calibration (thermal |e> in the g shots, pi-pulse
-    infidelity and decay during readout in the e shots), not only the readout overlap
-    (docs/experiments/t1_single_shot.md#analysis). NaN for an empty set.
-    """
-    out = []
-    for i, q, excited in ((i_g, q_g, False), (i_e, q_e, True)):
-        i_rot, _ = rotate_data((np.ravel(i), np.ravel(q)), theta=angle)
-        if i_rot.size == 0:
-            out.append(float("nan"))
-            continue
-        frac_e = float(np.mean(i_rot > threshold))
-        out.append(1.0 - frac_e if excited else frac_e)
-    return tuple(out)
 
 
 def readout_corrected_population(p, eps_g, eps_e):

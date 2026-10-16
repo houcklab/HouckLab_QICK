@@ -144,7 +144,9 @@ NaN fields, never an exception.
 **Readout-corrected curve.** With `calibrate_SS = True` the run counts the calibration
 shots (`i_g0`/`q_g0`, `i_e0`/`q_e0`) with the same angle and threshold: `P(e|g)` = fraction of
 g-prep shots above threshold, `P(g|e)` = fraction of pi-prep shots below it
-(`readout_assignment_errors`). `Exp_values_readout_corrected = (p − P(e|g)) / (1 − P(e|g) −
+(`qicklab.analysis.readout.readout_assignment_errors`, the helper the single_shot calibration
+uses for the `P_e_given_g0`/`P_g_given_e0` it saves, so the two agree exactly).
+`Exp_values_readout_corrected = (p − P(e|g)) / (1 − P(e|g) −
 P(g|e))`, unclipped (noise can take it outside [0, 1]), all NaN when
 `1 − P(e|g) − P(g|e) <= 0`. What it is and is not:
 
