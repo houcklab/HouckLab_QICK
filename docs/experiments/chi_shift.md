@@ -5,9 +5,11 @@ Class `ChiShift` (see `qicklab.experiments.chi_shift`). Regime **A**.
 ## What it measures
 
 The dispersive shift: a resonator transmission sweep taken twice at every frequency, once
-with the qubit in |g> and once after a pi pulse. chi is reported as
-`f_min(|1>) - f_min(|0>)`, the difference of the two transmission minima. Needs a
-calibrated pi pulse ([amplitude_rabi](amplitude_rabi.md)).
+with the qubit in |g> and once after a pi pulse. The result is the shift of the resonator
+between the qubit states, `f_e - f_g` (= 2chi in the usual convention, chi = half of it),
+from a joint fit of both traces that allows for an imperfect pi pulse and a thermal
+population (see Analysis); the difference of the two transmission minima is kept as a
+fallback. Needs a calibrated pi pulse ([amplitude_rabi](amplitude_rabi.md)).
 
 ## Pulse sequence
 
@@ -57,18 +59,83 @@ The pi pulse uses the device values of `qubit_pulse` (gain, sigma, flat-top, fre
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `fpts` (N,) MHz; `results_ground`, `results_01` (1, n_adc, 2, N) |
-| `..._data.png` | \|S21\| for both states (GHz axis), minima marked; chi in the title |
+| `..._data.h5` | `fpts` (N,) MHz; `results_ground`, `results_01` (1, n_adc, 2, N); the fit fields below |
+| `..._data.png` | \|S21\| for both states (GHz axis), minima marked, fit curves when the fit is ok; f_e - f_g (= 2chi) and the pi-trace population in the title |
 | `..._data.json` | config (with `pulse_freq` = last sweep point, `pulse_01 = True`, `rounds = 1`) |
 
-chi is printed and put in the title only; it is **not** saved in the h5.
+Fit fields in the h5 (scalars unless noted; MHz; written by `display`):
+
+| Key | Content |
+|---|---|
+| `chi_argmin` | `f_min(pi trace) - f_min(g trace)`, the old estimate (= f_e - f_g, biased, grid-quantised) |
+| `chi_fit_ok` | 1 if the joint fit passed its checks, else 0 (significance is not one of them: see [Small shifts](#analysis)) |
+| `chi_fit`, `chi_err` | fitted `f_e - f_g` (= 2chi, **not** chi) and its standard error; when the fit is not ok `chi_fit` = `chi_argmin` and `chi_err` = NaN |
+| `p_g_exc`, `p_g_exc_err` | excited population of the no-pi trace (thermal; `a`) |
+| `p_pi_exc`, `p_pi_exc_err` | excited population of the pi trace (`b`) |
+| `kappa_fit`, `kappa_fit_err` | resonator FWHM (\|S21\|^2 dip) |
+| `fr_fit`, `fr_fit_err` | resonator frequency with the qubit in \|g>, on the `fpts` axis (add `cavity_LO`/1e6 for RF) |
+| `fit_ground`, `fit_01` (N,) | fitted \|S21\| of the two traces on `fpts` (NaN when not ok) |
+
+All fit fields except `chi_argmin` / `chi_fit` are NaN when the fit is not ok. The console
+prints the fit, chi = (f_e - f_g)/2 with its error, and the reason when the fit failed.
 
 ## Analysis
 
-`argmin(|I + iQ|)` for each trace (ADC 0), converted to GHz with `cavity_LO`; chi =
-difference in MHz. No fit. Resolution is the grid step (`2*TransSpan/TransNumPoints` =
-0.0198 MHz with the defaults). Assumes the resonator is a dip; a peak-type resonator
-gives meaningless chi.
+**Argmin (fallback).** `argmin(|I + iQ|)` for each trace (ADC 0), converted to GHz with
+`cavity_LO`; `chi_argmin` = difference in MHz. Resolution is the grid step
+(`2*TransSpan/TransNumPoints` = 0.0198 MHz with the defaults). It is biased toward zero
+whenever the pi trace is not pure |e>: the averaged trace is a population mixture of the two
+state responses, whose minimum sits between them (hanger, kappa 0.43 MHz, default grid:
+true -0.10 MHz reads about -0.09 / -0.07 / -0.05 at excited population 0.9 / 0.7 / 0.5; true
+-0.30 MHz reads about -0.21 at 0.5).
+
+**Joint fit** (`qicklab.analysis.fitting.fit_dispersive_shift`). Both |S21| traces are fitted
+together on the `fpts` axis with
+
+```
+|S|(f; p) = amp * | (1 - p) S(f; fr) + p S(f; fr + delta) |
+S(f; fr)  = 1 - (depth - i asym) / (1 + 2i (f - fr)/kappa)        (hanger_s21)
+```
+
+shared `fr, kappa, depth, asym, delta, amp`; `p = a` in [0, 0.5] for the no-pi trace
+(thermal population) and `p = b` in [0.5, 1] for the pi trace (pi infidelity and decay before
+or during the readout). The two responses add as complex amplitudes at each point (the
+averaged IQ is the population-weighted mean), but only the magnitude is fitted: every point
+and state is a separately compiled program, so no phase reference (offset, cable delay) is
+shared between them. `delta = f_e - f_g` (= 2chi); chi = delta/2 is printed. Seeds: fr = g
+argmin, kappa = |S21|^2 FWHM of the g dip, delta in {d, 2d, -2d} (d = pi argmin - g argmin),
+b in {0.5, 0.9}, a = 0.02; the lowest cost wins. Unweighted least squares; errors from
+(J^T J)^-1 scaled by the reduced chi-square. `chi_fit_ok` = 0 (and the h5 falls back to the
+argmin) when the optimiser fails, an error is not finite, fr or kappa ends on a bound,
+or the fitted g dip is under 6 residual rms (no resonance in the data). A pi-trace population
+`b < 0.6` prints a warning and issues a `UserWarning` (bad pi pulse). On synthetic traces
+(kappa 0.43 MHz, default grid, a = 0-0.1, b = 0.5-0.9) the fit recovers delta within its
+errors where the argmin is off by 20-50 % (`tests/test_chi_shift_fit.py`).
+
+**Small shifts.** An ok fit with `|chi_fit| < 2 chi_err` is kept: the console adds a "not
+resolved" note and the title "(not resolved)", but `chi_fit` holds the fitted value, not the
+argmin. Gating on significance is deliberately not part of `chi_fit_ok`: it would keep only
+the fits that scattered away from zero (biased outward) and replace the rest with the argmin
+(biased inward), so a series of `chi_fit` values would mix two biased estimates. Read
+significance from `|chi_fit| / chi_err` yourself. Even ungated, the fit is not unbiased when
+|delta| is below about kappa/4. There the two traces constrain only the product
+`(p_pi_exc - p_g_exc) * chi_fit`, which is recovered without bias. The fitted populations are
+pulled toward each other (so `b < 0.6` can warn spuriously) and `chi_fit` is pushed away from
+zero. Synthetic traces, a = 0.05, 1 % noise, 100 trials:
+
+| true delta (MHz) | b | mean `chi_fit` | mean of the resolved fits only | argmin | resolved |
+|---|---|---|---|---|---|
+| -0.10 | 0.9 | -0.100 | -0.100 | -0.088 | 100 % |
+| -0.05 | 0.5 | -0.052 | -0.064 | -0.024 | 50 % |
+| -0.03 | 0.9 | -0.044 | -0.059 | -0.027 | 37 % |
+| 0 | 0.9 | -0.004 | -0.022 | 0.001 | 15 % |
+
+At delta = 0 the populations drop out of the model and the linearised `chi_err` is
+unreliable (some fits report a far too small one), so "resolved" there is not a calibrated
+2-sigma test.
+
+Both estimates assume the resonator is a dip; a peak-type resonator gives a meaningless
+result.
 
 ## Findings & notes
 

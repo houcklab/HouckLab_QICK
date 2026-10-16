@@ -60,7 +60,7 @@ f_time/f_output (1.4x on the lab board) too long. All programs convert it this w
   IF-style MHz in `fpts` and plot `(fpts + cavity_LO/1e6)/1e3` GHz. The hanger fit runs on `fpts`,
   so the fitted f0 is absolute only while `cavity_LO` = 0.
 - `mixer_freq` (MHz) is the readout DAC mixer/NCO. Only `CavitySpecFF`, `QubitSpecSliceFF`,
-  `ChiShift`, `SingleTone`, `ChargeDispersionQuasiCW` and `ZeroSpanParity` pass it to
+  `ChiShift`, `SingleTone`, `ConstantTwoTone`, `ChargeDispersionQuasiCW` and `ZeroSpanParity` pass it to
   `declare_gen`; the others work only because it is 0.0.
 - The DDS accepts `[-f_dds/2, +f_dds/2]` (the `freq2reg` range check), not `[0, f_dds]`.
 - Sweep grids are not all alike. Two-tone spec: `start = f - SpecSpan`, `step = 2*SpecSpan/N`, N
@@ -121,7 +121,8 @@ zones.
   `deg2reg(90)`; flat-top at 0; single shot, T2R and the T2E pi/2 pulses at 0; T2E pi pulses at 90
   (CPMG). `res_phase` is passed raw as a register value.
 - Constant pulses and the tProc length register are 16 bit: at most 65535 generator cycles,
-  152.38 us at 430.08 MHz. `constant_two_tone` caps `tone_length` there (CSTQ03 uses 151 us);
+  152.38 us at 430.08 MHz. `constant_two_tone` caps `tone_length` there (CSTQ03 uses 151 us), but
+  its tones are `periodic` (true CW), so the cap only bounds the repetition period;
   `zero_span_parity` checks `sample_period_us` / `capture_length_us` against it.
 
 ## How time advances in a tProc v1 program

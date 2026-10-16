@@ -10,18 +10,26 @@ from qicklab.experiments.transmission import CavitySpecFF
 
 
 def run_constant_two_tone(ctx, params=None):
-    for _ in range(1000000):
-        Instance_trans = ConstantTwoTone(
-            path="ConstantTwoTone",
-            cfg=ctx.working_config(),
-            soc=ctx.soc,
-            soccfg=ctx.soccfg,
-            outerFolder=ctx.outerFolder,
-        )
-        Instance_trans.acquire()
+    """CW resonator + qubit tones until Enter (or params['hold_s'] seconds), then stopped.
+
+    One program; the tones are stopped (soc.reset_gens()) before this returns, also on Ctrl-C.
+    The tone settings are saved as the run's JSON. docs/experiments/cw_tones.md.
+    """
+    hold_s = (params or {}).get("hold_s")
+    Instance_trans = ConstantTwoTone(
+        path="ConstantTwoTone",
+        cfg=ctx.working_config(),
+        soc=ctx.soc,
+        soccfg=ctx.soccfg,
+        outerFolder=ctx.outerFolder,
+    )
+    Instance_trans.save_config()
+    Instance_trans.acquire(hold_s=hold_s)
 
 
 def run_constant_tone(ctx, params=None):
+    """CW resonator tone until Enter (or params['hold_s'] seconds), then stopped (as above)."""
+    hold_s = (params or {}).get("hold_s")
     Instance_trans = SingleTone(
         path="TransmissionFF",
         cfg=ctx.working_config(),
@@ -29,7 +37,8 @@ def run_constant_tone(ctx, params=None):
         soccfg=ctx.soccfg,
         outerFolder=ctx.outerFolder,
     )
-    SingleTone.acquire(Instance_trans)
+    Instance_trans.save_config()
+    Instance_trans.acquire(hold_s=hold_s)
 
 
 def _carried_dip_freq(inst, data):

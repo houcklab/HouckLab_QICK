@@ -65,7 +65,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto ADC 0's principal axis (both ADCs by the same angle); `iq_rotation_rad`; `iq_axis_contrast_ratio`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_pi_gain`, `fit_i_flag` (quality bitmask, see Analysis), and the same three for Q |
+| `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto ADC 0's principal axis (both ADCs by the same angle); `iq_rotation_rad`; `iq_axis_contrast_ratio`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_perr` (4,) (1-sigma errors of `fit_i_popt`, sqrt of the covariance diagonal), `fit_i_pi_gain`, `fit_i_pi_gain_err` (= dP/2), `fit_i_flag` (quality bitmask, see Analysis), and the same five for Q (a fit that fails leaves its keys out) |
 | `..._data.png` | I and Q vs gain, fits and pi markers |
 | `..._data.json` | config |
 
@@ -73,7 +73,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 
 | File | Content |
 |---|---|
-| `..._data_Q{qubit_pulse}.h5` | `x_pts` (float linspace), `avgi`, `avgq` (1, 1, N), winding-corrected, **not** rotated. Fit results are **not** saved |
+| `..._data_Q{qubit_pulse}.h5` | `x_pts` (float linspace), `avgi`, `avgq` (1, 1, N), winding-corrected, **not** rotated; with `rotate=True` also `rotation_phase` (the multiplier phase: rotated = raw x exp(1j rotation_phase)); with `fit=True` the same `fit_i_*` / `fit_q_*` keys as `AmplitudeRabiFF` (popt, perr, pi_gain, pi_gain_err, flag; fitted to the rotated trace; a fit that fails leaves its keys out). Before 2026-10 no fit result was saved |
 | `..._data.png` | rotated I and Q, fits, pi markers (only if inside the swept range) |
 | `..._data.json` | config, with `reps = reps x rounds`, `rounds = 1`, `qubit_gain` = last gain |
 
@@ -100,7 +100,7 @@ The pi gain is not written back automatically; copy it into the device file
   `pi_gain = P/2`. Each fit is guarded (a failure prints and leaves the key out).
 - `AmplitudeRabiFF_N`: in display (`rotate=True`), the trace is rotated by the same signed
   principal-axis angle and the ratio is printed (kept as `rotation_phase` = -angle, the
-  multiplier phase, and `iq_axis_contrast_ratio` on the instance; neither is saved), then
+  multiplier phase, saved, and `iq_axis_contrast_ratio` on the instance, not saved), then
   fitted the same way. Each fit is guarded (a failure prints and that quadrature is drawn
   without a fit). Before 2026-10 it used the phase in [0, pi] (500-point grid) that minimised
   the peak-to-peak of Q, an estimator set by the two most extreme (noisiest) points.
@@ -124,7 +124,7 @@ period the error is noise-limited (a 21-point sweep at 0.75 to 1 period misses 3
 time in five), so read it against `dpi_gain`.
 
 Quality flags (printed as `[warn]` lines, returned as `flags` and the bitmask `flag_code`,
-stored by `AmplitudeRabiFF` as `fit_i_flag` / `fit_q_flag`; they never raise):
+stored as `fit_i_flag` / `fit_q_flag`; they never raise):
 
 | Bit | Condition | Meaning |
 |---|---|---|

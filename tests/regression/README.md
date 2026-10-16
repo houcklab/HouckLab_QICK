@@ -75,7 +75,12 @@ golden is kept.
    drops its single `from ... import *` line (replaced by a blank line, so line
    numbers hold) and seeds the exec namespace with exactly the names that
    star-import binds from `RUNS_PACKAGE`. A post-refactor driver changes that
-   constant and the patch targets, nothing else.
+   constant and the patch targets. It also makes `input()` raise EOFError for
+   the whole replay (`driver_qicklab._no_stdin`). The CW-tone steps
+   (`run_constant_tone`, `run_constant_two_tone`) wait on `input()`. With the
+   patch they always take their no-stdin path and stop the tones at once,
+   whether the capture runs from a terminal, under `pytest -s` or behind a
+   pipe. Without it they would block behind the redirected, invisible prompt.
 7. **`cfg_access`.** `ExperimentClass.__init__` stores
    `self.cfg = capture.RecordingDict(cfg)`. Explicit lookups (`[]`, `get`, `in`,
    `setdefault`) and mutations (`[]=`, `del`, `pop`, `popitem`, `clear`,

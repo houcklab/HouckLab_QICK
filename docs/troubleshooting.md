@@ -65,7 +65,7 @@ separate, reviewed commits.
 | `UnicodeEncodeError` writing `EVIDENCE.md` (zero-span validation) | file opened with the Windows default code page (cp1252) **(legacy bug)** | none yet; run with `PYTHONUTF8=1` |
 | Saved `.json` shows `pulse_freq` at the edge of the sweep | `CavitySpecFF` sweeps `pulse_freq` in place; with `fit=False` or a failed fit it stays at the last point | expected; use the fit result or the step's printed value |
 | Paths with mixed `/`, `//`, `\` | `outerFolder + path` concatenation | expected; do not normalise ([hardware](hardware.md#data-paths)) |
-| T2 (Ramsey) / chi values missing from the h5 | these fits are drawn in the PNG title but not saved (T1 and T2E fits are saved as `t1_fit_*` / `t2e_fit_*`, see [t1](experiments/t1.md#outputs)) | refit from `x_pts`, `avgi`, `avgq` |
+| T2 (Ramsey) values missing from the h5 | this fit is drawn in the PNG title but not saved (T1 and T2E fits are saved as `t1_fit_*` / `t2e_fit_*`, see [t1](experiments/t1.md#outputs); chi_shift saves `chi_fit` / `chi_err` / `chi_argmin`, see [chi_shift](experiments/chi_shift.md#outputs)) | refit from `x_pts`, `avgi`, `avgq` |
 | Rabi pi marker missing, x axis autoscaled to ~1e9 | the cosine fit failed (no visible oscillation) and returned a runaway period | raise `max_gain`; compare with transmission data |
 
 ## Results look wrong

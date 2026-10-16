@@ -273,6 +273,8 @@ class AmplitudeRabiFF(ExperimentClass):
                 fit_i = fit_rabi_cosine(x_pts, avgi)
                 data["data"]["fit_i_popt"] = np.asarray(fit_i["popt"])
                 data["data"]["fit_i_pi_gain"] = np.asarray(fit_i["pi_gain"])
+                data["data"]["fit_i_perr"] = np.asarray(fit_i["perr"])
+                data["data"]["fit_i_pi_gain_err"] = np.asarray(fit_i["dpi_gain"])
                 data["data"]["fit_i_flag"] = np.asarray(fit_i["flag_code"])
                 print(f"I fit: P={fit_i['P']:.3f}, pi={fit_i['pi_gain']:.3f}")
                 _print_fit_flags("I", fit_i)
@@ -283,6 +285,8 @@ class AmplitudeRabiFF(ExperimentClass):
                 fit_q = fit_rabi_cosine(x_pts, avgq)
                 data["data"]["fit_q_popt"] = np.asarray(fit_q["popt"])
                 data["data"]["fit_q_pi_gain"] = np.asarray(fit_q["pi_gain"])
+                data["data"]["fit_q_perr"] = np.asarray(fit_q["perr"])
+                data["data"]["fit_q_pi_gain_err"] = np.asarray(fit_q["dpi_gain"])
                 data["data"]["fit_q_flag"] = np.asarray(fit_q["flag_code"])
                 print(f"Q fit: P={fit_q['P']:.3f}, pi={fit_q['pi_gain']:.3f}")
                 _print_fit_flags("Q", fit_q)
@@ -528,6 +532,18 @@ class AmplitudeRabiFF_N(ExperimentClass):
                 _print_fit_flags(lbl, f)
                 fits.append(f)
             fit_i, fit_q = fits
+
+        # saved by save_data (docs/experiments/amplitude_rabi.md#outputs)
+        if rotate:
+            data["data"]["rotation_phase"] = np.asarray(self.rotation_phase)
+        for q, f in (("i", fit_i), ("q", fit_q)):
+            if f is None:
+                continue
+            data["data"][f"fit_{q}_popt"] = np.asarray(f["popt"])
+            data["data"][f"fit_{q}_perr"] = np.asarray(f["perr"])
+            data["data"][f"fit_{q}_pi_gain"] = np.asarray(f["pi_gain"])
+            data["data"][f"fit_{q}_pi_gain_err"] = np.asarray(f["dpi_gain"])
+            data["data"][f"fit_{q}_flag"] = np.asarray(f["flag_code"])
 
         self.fit_i = fit_i
         self.fit_q = fit_q

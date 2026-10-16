@@ -602,6 +602,70 @@ def test_constant_tone_on_generator_clock(board):
     assert prog._gen_mgrs[prog.cfg["res_ch"]].next_pulse["length"] == CONSTANT_TONE[variant]
 
 
+# CW tones: one periodic const pulse per gen at t = 0, then end (F69). Mode word =
+# (stdysel zero | periodic | outsel dds = 0b01101) << 16 | period [gen cycles]. Was the oneshot
+# word 0b01001 << 16 | period (A: 596404 / 654782, B: 599224 / 655359), replayed reps times by
+# an AveragerProgram loop with a sync_all per rep. The periods are unchanged: ConstantTone
+# CONSTANT_TONE, ConstantTwoToneProg min(us2cycles(151 us, gen), 65535) = 64942 (A), 65535 (B).
+CW_MODE = {
+    "A": {"ConstantTone": {0: 858548}, "ConstantTwoToneProg": {0: 916910, 1: 916910}},
+    "B": {"ConstantTone": {0: 861368}, "ConstantTwoToneProg": {0: 917503, 1: 917503}},
+}
+
+
+@pytest.mark.parametrize("name", ["ConstantTone", "ConstantTwoToneProg"])
+def test_cw_tones_are_one_periodic_program(board, name):
+    import qicklab.experiments.cw_tones as cw
+    from qicklab.hardware.board import BaseConfig
+
+    variant, soccfg = board
+    cfg = _cfg(BaseConfig, mixer_freq=0, tone_length=151, qubit_freq=2651.0)
+    before = dict(cfg)
+    prog = getattr(cw, name)(soccfg, cfg)
+    assert cfg == before  # the caller's cfg is not touched (ConstantTone wrote reps/rounds)
+    names = [inst["name"] for inst in prog.prog_list]
+    assert names[-1] == "end" and names.count("end") == 1
+    assert not {"loopnz", "synci", "sync", "memwi", "waiti", "label"} & set(names)
+    modes = {}
+    for ch, want in CW_MODE[variant][name].items():
+        pulse = prog._gen_mgrs[ch].next_pulse
+        page, mode_reg = pulse["rp"], pulse["regs"][0][4]
+        (mode,) = [a[2] for a in _insts(prog, "regwi") if tuple(a[:2]) == (page, mode_reg)]
+        modes[ch] = mode
+        assert (mode >> 16) & 0b00100  # periodic
+        assert not (mode >> 16) & 0b10000  # phrst = 0: phase-continuous
+        _, t_reg = prog._gen_regmap[(ch, "t")]
+        assert [a[2] for a in _insts(prog, "regwi") if tuple(a[:2]) == (page, t_reg)] == [0]
+    assert modes == CW_MODE[variant][name]
+    assert len(_insts(prog, "set")) == len(CW_MODE[variant][name])
+
+
+# Resonator freq register of both CW programs = CavitySpecFF's for pulse_freq 7095.4 MHz: the
+# resonator gen is declared with ro_ch = ro_chs[0] and freq2reg rounds to the readout's
+# frequency grid (F69). ConstantTwoToneProg passed no ro_ch before: 133643508 on board A
+# (B's grid is already common to gen and readout, so B's integer is unchanged).
+RES_FREQ_REG = {"A": 133643509, "B": 775006890}
+
+
+@pytest.mark.parametrize("name", ["ConstantTone", "ConstantTwoToneProg"])
+def test_cw_res_tone_declared_like_cavity_spec(board, name):
+    import qicklab.experiments.cw_tones as cw
+    from qicklab.hardware.board import BaseConfig
+
+    variant, soccfg = board
+
+    def res_freq(prog):
+        ch = prog.cfg["res_ch"]
+        assert prog.gen_chs[ch]["ro_ch"] == prog.cfg["ro_chs"][0]
+        page, reg = prog._gen_regmap[(ch, "freq")]
+        return [a[2] for a in _insts(prog, "regwi") if tuple(a[:2]) == (page, reg)]
+
+    cfg = _cfg(BaseConfig, mixer_freq=0, tone_length=151, qubit_freq=2651.0)
+    spec = _program("CavitySpecFF", soccfg)
+    assert spec.cfg["pulse_freq"] == cfg["pulse_freq"]
+    assert res_freq(getattr(cw, name)(soccfg, cfg)) == res_freq(spec) == [RES_FREQ_REG[variant]]
+
+
 def test_t1_ss_normalises_by_declared_window(board):
     """T1_SS divides each shot by the window it declares (4608 samples), so its shots are in
     SingleShotProgram's per-sample units. The pre-fix program declared 6451 samples but

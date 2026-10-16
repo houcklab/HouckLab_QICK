@@ -17,6 +17,22 @@ from qicklab.core.readout import cover_readout_window
 MIN_FIT_GAMMA_STEPS = 0.25
 
 
+def lorentz_fit_errors(fit):
+    """(centre_err, fwhm_err) in MHz of a fit_lorentzian_near_peak result, one standard error
+    from the fit covariance: sqrt(pcov[2, 2]) and 2 sqrt(pcov[3, 3]) (popt = y0, A, x0, gamma;
+    FWHM = 2 gamma). NaN, never an exception, for a covariance entry that is missing, infinite,
+    NaN or negative (curve_fit's singular covariance, e.g. a parameter on its bound)."""
+
+    def err(i):
+        try:
+            var = float(np.asarray(fit["pcov"], dtype=float)[i, i])
+        except (KeyError, IndexError, TypeError, ValueError):
+            return np.nan
+        return float(np.sqrt(var)) if np.isfinite(var) and var >= 0 else np.nan
+
+    return err(2), 2.0 * err(3)
+
+
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
@@ -273,6 +289,9 @@ class QubitSpecSliceFF(ExperimentClass):
         data["data"]["lorentz_amplitudes"] = np.array([f["amplitude"] for f in lorentz_fits])
         data["data"]["lorentz_offsets"] = np.array([f["offset"] for f in lorentz_fits])
         data["data"]["lorentz_r2"] = np.array([f["r2"] for f in lorentz_fits])
+        fit_errs = [lorentz_fit_errors(f) for f in lorentz_fits]
+        data["data"]["lorentz_center_err"] = np.array([e[0] for e in fit_errs])
+        data["data"]["lorentz_fwhm_err"] = np.array([e[1] for e in fit_errs])
 
         self.data = data
 

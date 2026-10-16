@@ -328,6 +328,8 @@ def test_auto_coherence_stage_loop_continues_after_display_error(tmp_path, monke
 _DIRECT_SAVE_ALLOWED = {
     ("auto_coherence.py", "_acquire_spec"),
     ("modified_ramsey.py", "run_modified_ramsey"),
+    ("resonator.py", "run_constant_tone"),  # CW tones: save_config only, no display (F69)
+    ("resonator.py", "run_constant_two_tone"),
     ("zero_span.py", "run_zero_span_parity"),
 }
 

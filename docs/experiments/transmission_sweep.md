@@ -68,9 +68,9 @@ steps and is discarded at the next switch to regime B.
 ## Analysis
 
 `display(fit=True)` runs the hanger fit described in
-[transmission_fit](transmission_fit.md#analysis) (start point from the trace: Qtot =
-max(|f0|/(span/10), 1e3), Qext = 1.5 Qtot, asym 0, offset 0) and stores the results in the
-h5. No second fit. The fit assumes a dip; with `cavity_min=False` it still runs (and may
+[transmission_fit](transmission_fit.md#analysis) (fit in (f0, Qint, Qext, asym, offset), so
+Qtot < Qext; start point from the trace: Qtot = max(|f0|/(span/10), 1e3), Qext from the dip
+depth, asym 0, offset = the edge level) and stores the results and their errors in the h5. No second fit. The fit assumes a dip; with `cavity_min=False` it still runs (and may
 fail harmlessly), but the carry-over uses the raw maximum, gated without the fit.
 
 ## Findings & notes

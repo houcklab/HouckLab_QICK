@@ -63,7 +63,7 @@ into the regime-A base config.
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `fpts` (N,) MHz; `results` (1, n_adc, 2, N) = [read, ro_ch, I/Q, freq]; if the display fit succeeds also `hanger_fit_popt` (5,) = [f0, Qtot, Qext, asym, offset], `hanger_fit_perr` (5,), `hanger_fit_f0_mhz`, `hanger_fit_min_freq_mhz`, `hanger_raw_min_freq_mhz`, `hanger_fit_Qtot`, `hanger_fit_Qext`, `hanger_fit_Qint`, `hanger_fit_kappa_tot_mhz` (kappa/2pi = \|f0\|/Qtot, MHz), `hanger_fit_kappa_ext_mhz` (\|f0\|/Qext, MHz) |
+| `..._data.h5` | `fpts` (N,) MHz; `results` (1, n_adc, 2, N) = [read, ro_ch, I/Q, freq]; if the display fit succeeds also `hanger_fit_popt` (5,) = [f0, Qtot, Qext, asym, offset], `hanger_fit_perr` (5,), `hanger_fit_pcov` (5, 5) (the full covariance in the `hanger_fit_popt` layout; `hanger_fit_perr` is the square root of its diagonal), `hanger_fit_f0_mhz`, `hanger_fit_min_freq_mhz`, `hanger_raw_min_freq_mhz`, `hanger_fit_Qtot`, `hanger_fit_Qext`, `hanger_fit_Qint`, `hanger_fit_kappa_tot_mhz` (kappa/2pi = \|f0\|/Qtot, MHz), `hanger_fit_kappa_ext_mhz` (\|f0\|/Qext, MHz), and their 1-sigma errors `hanger_fit_Qtot_err`, `hanger_fit_Qext_err`, `hanger_fit_Qint_err`, `hanger_fit_kappa_tot_mhz_err`, `hanger_fit_kappa_ext_mhz_err` (from the full covariance, see [Analysis](#analysis)) |
 | `..._data.png` | I, Q, \|S21\| vs frequency (GHz axis) with the raw minimum marked |
 | `..._data_hanger_fit.png` | dB data, fit, raw and fit minima (only if the fit succeeded) |
 | `..._data.json` | config; `pulse_freq` = fit minimum if the display fit succeeded, else the **last sweep point** |
@@ -79,19 +79,46 @@ persists for all following regime-A steps and is discarded at the next switch to
 ## Analysis
 
 One hanger fit runs, inside `CavitySpecFF.display(fit=True)` (printed, saved to h5, drives the
-carry-over). Start point from the trace: f0 = raw minimum, Qtot = max(|f0| / (span/10), 1e3),
-Qext = 1.5 Qtot, asym = 0, offset = 0.
+carry-over). Start point from the trace (`hanger_startpoint`): f0 = raw minimum,
+Qtot = max(|f0| / (span/10), 1e3), offset = the edge level (mean of the medians of the first
+and last tenth of the points), Qext = Qtot / (1 - 10^(-depth/20)) from the dip depth below that
+level (Qtot/Qext clipped to [0.01, 0.99]), asym = 0.
 
 Model (MATLAB-style hanger, on |S21| in dB):
 
 ```
 S21_dB(f) = 20 log10 | 1 - (Qtot/Qext - 2i Qtot asym / (2 pi f0)) / (1 + 2i Qtot (f - f0)/f0) | + offset
-Qint = | 1 / (1/Qtot - 1/Qext) |
+Qtot = 1 / (1/Qint + 1/Qext)
 ```
 
-Bounds: f0 inside the swept range, Qtot and Qext in [1e2, 1e9], asym in [-1e7, 1e7],
+The fit parameters are (f0, Qint, Qext, asym, offset) (`hanger_model_db_qint`); Qtot is derived,
+so Qtot < Qext always. This matters because |S21| depends on a = Qtot/Qext only through
+(1 - a)^2: every dip has an unphysical twin a -> 2 - a (Qtot > Qext, same curve, same Qtot and
+Qint, wrong Qext and kappa_ext) that a fit in (Qtot, Qext) could land on, and the old
+Qint = |1/(1/Qtot - 1/Qext)| hid it (finding F36). Magnitude alone already fixes the dip depth
+|1 - a|; this removes the twin, it does not tell under- from over-coupling. `hanger_fit_popt`
+keeps the [f0, Qtot, Qext, asym, offset] layout.
+
+Bounds: f0 inside the swept range, Qint and Qext in [1e2, 1e9], asym in [-1e7, 1e7],
 offset in [-200, 200] dB. The fit is done on the IF-style `fpts` axis, so `f0` is an
 absolute frequency only while `cavity_LO = 0`.
+
+Error bars: the fit is unweighted least squares in dB, but under Gaussian IQ noise a dB point's
+noise is proportional to 1/|S21|, so near a dip the plain curve_fit covariance was too small
+(median |pull| ~1.8 on Qtot for Qi = 1e5, Qc = 2e4). The covariance is now the sandwich
+estimator for that noise model (|S21| of the fitted curve relative to its baseline, floored at
+1e-2); every saved error (`hanger_fit_perr`, the `_err` keys) is propagated from the full
+covariance (Qtot and Qext correlate at rho ~ 0.7). On synthetic complex data (201 points,
+1-5% IQ noise per quadrature, Qi/Qc = 1e5/2e4, 3e4/3e4, 2e4/1e5 on +-5 MHz, 200 traces each) the
+median |pull| of f0, Qtot, Qint, Qext and both kappas is 0.55-0.9 (0.67 is exact) and 92-97% of
+pulls fall within 2 sigma (86% for kappa_tot on the under-coupled trace at 5% noise). The
+Jacobian's f0 step is 1e-6 linewidths (|f0|/Qtot), so the f0 error holds at high Q too: for
+Qi = Qc = 5e5 (+-0.2 MHz) and 2e6 (Qtot = 1e6, kappa = 7 kHz, +-0.05 MHz), 1% noise, 100 traces,
+the median |pull| on f0 and Qtot is 0.58-0.60 with 95-97% within 2 sigma (a step of 1e-6 |f0|
+made perr_f0 1.2x and 1.9x too large there). A
+1/|S21|-weighted fit would be slightly more precise but lets an unmodelled background tilt
+(0.3 dB/MHz) pull it onto a broad Fano shape away from even a 20 dB dip, so the estimate stays
+unweighted. Tests: `tests/test_hanger_fit.py`.
 
 Assumptions: a single dip in the window (hanger geometry). For a peak-type response use
 [transmission_sweep](transmission_sweep.md) with `cavity_min=False`; this step always fits
@@ -113,8 +140,9 @@ must pass:
 Linewidth = \|f0\|/Qtot of the display fit (`hanger_fit_kappa_tot_mhz`); for the raw argmin
 (failed fit) or a raw peak it is the number of contiguous points beyond half the feature height
 in linear power times the step (the full width at half power, which is the linewidth of a
-Lorentzian; half the dB depth would make a deep notch look one point wide). Neither `Qtot <= Qext` (the asym term makes a fitted Qtot > Qext legitimate on a
-clean dip) nor the fit's `perr` (as small as 8 kHz on pure noise) is used.
+Lorentzian; half the dB depth would make a deep notch look one point wide). Neither `Qtot <= Qext` (the fit always returns Qtot < Qext; a popt with Qtot > Qext is
+the |S21| twin of one with Qtot/Qext -> 2 - Qtot/Qext and is judged the same) nor the fit's
+`perr` (small on pure noise) is used.
 
 If any check fails, the step prints `WARNING: no resonator dip passes the carry-over gate`, every
 failed check and the metrics (`depth_sigmas`, `linewidth_steps`, `edge_linewidths`,
@@ -125,10 +153,11 @@ only; the h5 and JSON are unchanged.
 What it separates, on a +-5 MHz sweep with the display fit's start point: the checks work
 together, and the depth check alone does not separate noise. Of 400 resonator-free noise traces
 (0.3 dB on a flat line) at each of 201, 401 and 1001 points, none passed the gate, but most
-fits reach 1-4 sigma, a few 4-6 sigma, and a few broad fits more than 6 sigma (8.0 sigma at 201
-points, 8.1 and 22 sigma at 401; the 22 sigma one had 3 baseline points); every trace above
-4 sigma failed at least two checks (baseline count, edge, linewidth or the data's half-power
-width). A single point pulled 1-20 dB below a flat line was rejected in 60/60 cases, by the
+fits reach 1-4 sigma and a few 4-6 sigma (with the start point and fit before F36, a few broad
+fits also reached more than 6 sigma: 8.0 sigma at 201 points, 8.1 and 22 sigma at 401; the 22
+sigma one had 3 baseline points; with the current ones none of the 1200 exceeded 5.9 sigma).
+Every trace above 4 sigma failed at least two checks (baseline count, edge, linewidth or the
+data's half-power width), before and after. A single point pulled 1-20 dB below a flat line was rejected in 60/60 cases, by the
 data's half-power width (before that check, a fit to it passed up to 15/20 times with a
 linewidth of 2.2 steps). A 2 dB dip reaches ~20 sigma under 0.1 dB noise but only 6-8 sigma
 (marginal, 18/20 passed) under 0.3 dB, and a 14 dB dip over 100 sigma. Deep, near-critically-coupled notches (Qtot/Qext 0.9-1.05,
@@ -136,8 +165,8 @@ linewidth of 2.2 steps). A 2 dB dip reaches ~20 sigma under 0.1 dB noise but onl
 width of about one linewidth; half-way down in dB they are one point wide, which is why the
 width is measured in power. A tilted background
 (0.3-1 dB/MHz) does not count as noise; but the hanger model has no slope term, and on such a
-tilt `display()`'s fit itself often lands on a broad Fano shape far from the dip (3 and 6 dB
-dips at 0.3 dB/MHz, every dip up to 10 dB at 0.6 dB/MHz); the gate then rejects that fit,
+tilt `display()`'s fit itself often lands on a broad Fano shape far from the dip (3 dB dips at
+0.3 dB/MHz, every dip up to 10 dB at 0.6 dB/MHz; before F36 also 6 dB dips at 0.3 dB/MHz); the gate then rejects that fit,
 correctly, and `pulse_freq` is not updated. Level the background (calibrate the line, narrow the
 span) if that happens. A real dip that fails is too shallow for the averaging (raise `reps`), too
 wide for the span (a centred linewidth above about (span - 10 steps)/6 leaves fewer than 10
@@ -147,6 +176,12 @@ baseline points: raise `span`) or too narrow for the grid (raise
 
 ## Findings & notes
 
+- Until 2026-10 (finding F36) the fit ran in (f0, Qtot, Qext, asym, offset) from Qext = 1.5 Qtot
+  and offset = 0 dB, and reported Qint = |1/(1/Qtot - 1/Qext)|. A start on the Qtot > Qext twin
+  (see [Analysis](#analysis)) stayed there: on Qi = Qc = 3e4 it returned the correct f0, Qtot
+  and Qint but Qext = 1e4 instead of 3e4 (kappa_ext 3x too large), with nothing printed. Its
+  errors came from the unweighted-dB covariance, about 2.7x too small near the dip; Qint had no
+  error at all. f0 and Qint were never wrong; Qext and kappa_ext could be.
 - Until 2026-10 the step ran a second hanger fit of its own, started at
   `[center, 4.1e4, 4.3e4, asym 1e3, 0]` (copied from a MATLAB fit in Hz), and carried its `f0`.
   In MHz that asym start is ~1e6 too large (the start curve is a +65 dB peak, not a dip); on

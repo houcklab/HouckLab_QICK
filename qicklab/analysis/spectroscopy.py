@@ -648,3 +648,448 @@ def pick_parity_drive_freq(
         "source": result.get("source"),
         "partner_snr": result.get("partner_snr"),
     }
+
+
+# Summary of run_spec_gain_length_sweep (docs/experiments/spec_gain_length_sweep.md#analysis).
+GAIN_SWEEP_MAX_LINES = 2  # columns per grid point: display selects at most two peaks
+GAIN_SWEEP_MIN_SNR = 5.0  # peak height over the per-point noise for a line to be used
+GAIN_SWEEP_WINDOW_FWHM = 3.0  # summary refit: window half-width target, in FWHM
+GAIN_SWEEP_MIN_WINDOW_FWHM = 2.0  # refit window capped below this many FWHM: width censored
+GAIN_SWEEP_BROADENING = 1.2  # recommendation: FWHM <= this x the zero-power FWHM
+GAIN_SWEEP_MIN_FIT_POINTS = 3
+GAIN_SWEEP_RESOLUTION_STEPS = 3.0  # FWHM_0 below this many grid steps: resolution-limited
+GAIN_SWEEP_VALLEY_SIGMA = 4.0  # two peaks are two lines only if the trace dips this far between
+GAIN_SWEEP_BLEND_SPLITTING = 1.0  # single line >= this x the group's doublet splitting: a blend
+
+_POINT_SCALARS = (
+    "q_length",
+    "q_gain",
+    "step_mhz",
+    "noise_sigma",
+    "lorentz_num_fits",
+    "fwhm_line",
+    "fwhm_line_err",
+    "snr_line",
+    "center_line",
+    "splitting_mhz",
+)
+_POINT_COLUMNS = (
+    "peak_freqs",
+    "peak_amps",
+    "snr",
+    "lorentz_centers",
+    "lorentz_fwhm",
+    "lorentz_amplitudes",
+    "lorentz_r2",
+    "refit_centers",
+    "refit_fwhm",
+    "refit_fwhm_err",
+    "refit_window_mhz",
+    "refit_censored",
+)
+_GROUP_KEYS = (
+    "length",
+    "status",
+    "n_points",
+    "n_blended",
+    "a",
+    "c",
+    "fwhm0",
+    "fwhm0_err",
+    "t2star_lower_us",
+    "fourier_fwhm_mhz",
+    "recommended_gain",
+    "highest_unbroadened_gain",
+    "splitting_min_mhz",
+    "splitting_max_mhz",
+)
+
+
+def _padded(values, n=GAIN_SWEEP_MAX_LINES):
+    out = np.full(n, np.nan)
+    v = np.asarray(values if values is not None else [], dtype=float).ravel()[:n]
+    out[: v.size] = v
+    return out
+
+
+def _diag_err(pcov, i):
+    try:
+        var = float(np.asarray(pcov, dtype=float)[i, i])
+    except (IndexError, TypeError, ValueError):
+        return np.nan
+    return float(np.sqrt(var)) if np.isfinite(var) and var >= 0 else np.nan
+
+
+def _adaptive_lorentz(x, y, seed, w0, cap, min_sep_mhz):
+    """fit_lorentzian_near_peak with the window half-width grown to GAIN_SWEEP_WINDOW_FWHM x
+    the fitted FWHM (doubled after a failed fit), never beyond ``cap``. A fit whose centre
+    left the seed by more than half of max(min_sep, HWHM) is rejected (display's seed gate).
+    Returns (fit, window) of the last accepted fit, or (None, nan)."""
+    w = min(w0, cap)
+    best = (None, np.nan)
+    for _ in range(8):
+        fit = fit_lorentzian_near_peak(x, y, seed, w)
+        if fit is not None and abs(fit["center"] - seed) > 0.5 * max(min_sep_mhz, fit["gamma"]):
+            fit = None
+        if fit is not None:
+            fit["fwhm_err"] = 2.0 * _diag_err(fit["pcov"], 3)
+            best = (fit, w)
+            target = min(GAIN_SWEEP_WINDOW_FWHM * fit["fwhm"], cap)
+            if w >= target:
+                break
+            w = target
+        else:
+            if w >= cap:
+                break
+            w = min(2.0 * w, cap)
+    return best
+
+
+def _two_lorentzians(x, y0, a1, x1, g1, a2, x2, g2):
+    return y0 + a1 * g1**2 / ((x - x1) ** 2 + g1**2) + a2 * g2**2 / ((x - x2) ** 2 + g2**2)
+
+
+def _fit_doublet(x, y, seeds, heights, w0, cap, min_sep_mhz):
+    """Joint two-Lorentzian fit of a resolved doublet (seeds ascending) on the window
+    |x - midpoint| <= half-separation + w, w grown to GAIN_SWEEP_WINDOW_FWHM x the wider
+    FWHM, never beyond ``cap``. None when curve_fit fails, R^2 < 0.6, or a centre leaves its
+    seed by more than half of max(min_sep, HWHM). Else ([fit_lo, fit_hi], w), each fit a
+    dict like fit_lorentzian_near_peak's (center, gamma, fwhm, fwhm_err, x_fit)."""
+    lo, hi = float(seeds[0]), float(seeds[1])
+    half, mid = 0.5 * (hi - lo), 0.5 * (lo + hi)
+    g0 = max(min(0.5 * w0, 0.5 * half), 1e-6)
+    gam = [g0, g0]
+    w = min(w0, cap)
+    best = None
+    for _ in range(6):
+        mask = np.abs(x - mid) <= half + w
+        if np.sum(mask) < 8:
+            break
+        xf, yf = x[mask], y[mask]
+        gmax = float(np.ptp(xf))
+        p0 = [0.0, heights[0], lo, min(gam[0], gmax), heights[1], hi, min(gam[1], gmax)]
+        lb = [-np.inf, 0.0, lo - half, 1e-9, 0.0, mid, 1e-9]
+        ub = [np.inf, np.inf, mid, gmax, np.inf, hi + half, gmax]
+        try:
+            popt, pcov = curve_fit(_two_lorentzians, xf, yf, p0=p0, bounds=(lb, ub), maxfev=20000)
+        except Exception:
+            break
+        ss_tot = np.sum((yf - np.mean(yf)) ** 2)
+        r2 = 1 - np.sum((yf - _two_lorentzians(xf, *popt)) ** 2) / ss_tot if ss_tot > 0 else np.nan
+        centres, gam = (popt[2], popt[5]), (popt[3], popt[6])
+        if not np.isfinite(r2) or r2 < 0.60:
+            break
+        if any(abs(c - s) > 0.5 * max(min_sep_mhz, g) for c, s, g in zip(centres, (lo, hi), gam)):
+            break
+        fits = [
+            {
+                "center": float(popt[k]),
+                "gamma": float(popt[k + 1]),
+                "fwhm": 2.0 * float(popt[k + 1]),
+                "fwhm_err": 2.0 * _diag_err(pcov, k + 1),
+                "x_fit": xf,
+            }
+            for k in (2, 5)
+        ]
+        best = (fits, w)
+        target = min(GAIN_SWEEP_WINDOW_FWHM * 2.0 * max(gam), cap)
+        if w >= target:
+            break
+        w = target
+    return best
+
+
+def gain_sweep_point(data, q_length, q_gain, *, fit_window_mhz, span_mhz, min_sep_mhz):
+    """One row of the gain x length summary from a displayed QubitSpecSliceFF record.
+
+    Copies display's peaks and Lorentzians (two columns, NaN-padded), adds each peak's SNR
+    (height over the edge baseline in units of the per-point noise, spectrum_noise_floor)
+    and refits every peak with SNR >= GAIN_SWEEP_MIN_SNR with an adaptive window
+    (_adaptive_lorentz, window capped at the half-span). Two such peaks count as a doublet
+    only when the trace between them dips GAIN_SWEEP_VALLEY_SIGMA noise sigmas below the
+    lower one (then both are refitted jointly, _fit_doublet); otherwise the second is a
+    noise maximum on the flank of one broad line and only the taller is refitted. display's
+    own window (fit_window_mhz) biases lines wider than about 2 fit_window_mhz and rejects
+    wider ones, so its lorentz_fwhm is not used for the saturation fit. A refit width is
+    censored when the fitted data reach less than GAIN_SWEEP_MIN_WINDOW_FWHM x FWHM beyond
+    the centre (on the outer side of a doublet). ``fwhm_line`` is the narrower uncensored
+    branch (``snr_line`` its SNR, ``center_line`` its refit centre), ``splitting_mhz`` the
+    refit centre separation of a doublet. Reads ``data`` only. Never raises: a record without usable data gives a NaN
+    row."""
+    row = {k: np.nan for k in _POINT_SCALARS}
+    row.update({k: np.full(GAIN_SWEEP_MAX_LINES, np.nan) for k in _POINT_COLUMNS})
+    row["q_length"] = float(q_length)
+    row["q_gain"] = float(q_gain)
+    try:
+        d = data["data"]
+        x = np.asarray(d["x_pts"], dtype=float)
+        y = project_iq_signal(
+            np.asarray(d["avgi"][0][0], dtype=float), np.asarray(d["avgq"][0][0], dtype=float)
+        )
+        baseline, sigma = spectrum_noise_floor(y)
+        row["step_mhz"] = float(np.median(np.abs(np.diff(x)))) if x.size > 1 else np.nan
+        row["noise_sigma"] = sigma
+        for key in ("lorentz_centers", "lorentz_fwhm", "lorentz_amplitudes", "lorentz_r2"):
+            row[key] = _padded(d.get(key))
+        row["lorentz_num_fits"] = float(d.get("lorentz_num_fits", 0))
+        freqs = np.asarray(d.get("two_tone_peak_freqs", []), dtype=float).ravel()
+        amps = np.asarray(d.get("two_tone_peak_amps", []), dtype=float).ravel()
+        order = np.argsort(freqs)[:GAIN_SWEEP_MAX_LINES]
+        freqs, amps = freqs[order], amps[order]
+        snr = (amps - baseline) / sigma
+        row["peak_freqs"] = _padded(freqs)
+        row["peak_amps"] = _padded(amps)
+        row["snr"] = _padded(snr)
+
+        strong = [i for i in range(freqs.size) if snr[i] >= GAIN_SWEEP_MIN_SNR]
+        cap = float(span_mhz) if span_mhz else 0.5 * float(np.ptp(x))
+        if len(strong) == 2:
+            i0, i1 = np.searchsorted(x, freqs[strong[0]]), np.searchsorted(x, freqs[strong[1]])
+            valley = float(np.min(y[i0 : i1 + 1]))
+            if valley >= np.min(amps[strong]) - GAIN_SWEEP_VALLEY_SIGMA * sigma:
+                # a noise maximum on the flank of one broad line: refit the taller only
+                strong = [strong[int(np.argmax(amps[strong]))]]
+        for i in strong:
+            row["refit_censored"][i] = 1.0
+        if len(strong) == 2:
+            res = _fit_doublet(x, y, freqs[strong], amps[strong], fit_window_mhz, cap, min_sep_mhz)
+            fits = [] if res is None else list(zip(strong, res[0], [res[1]] * 2))
+        else:
+            fits = []
+            for i in strong:
+                fit, w = _adaptive_lorentz(x, y, freqs[i], fit_window_mhz, cap, min_sep_mhz)
+                if fit is not None:
+                    fits.append((i, fit, w))
+        for i, fit, w in fits:
+            xf = np.asarray(fit["x_fit"], dtype=float)
+            margin = min(fit["center"] - np.min(xf), np.max(xf) - fit["center"])
+            if len(fits) == 2:  # the inner flank is modelled by the joint fit
+                margin = (
+                    fit["center"] - np.min(xf) if i == strong[0] else np.max(xf) - fit["center"]
+                )
+            row["refit_centers"][i] = fit["center"]
+            row["refit_fwhm"][i] = fit["fwhm"]
+            row["refit_fwhm_err"][i] = fit["fwhm_err"]
+            row["refit_window_mhz"][i] = w
+            row["refit_censored"][i] = float(margin < GAIN_SWEEP_MIN_WINDOW_FWHM * fit["fwhm"])
+        ok = [i for i in strong if row["refit_censored"][i] == 0.0]
+        if ok:
+            i = min(ok, key=lambda j: row["refit_fwhm"][j])
+            row["fwhm_line"] = row["refit_fwhm"][i]
+            row["fwhm_line_err"] = row["refit_fwhm_err"][i]
+            row["snr_line"] = row["snr"][i]
+            row["center_line"] = row["refit_centers"][i]
+        if np.all(np.isfinite(row["refit_centers"])):
+            row["splitting_mhz"] = float(abs(row["refit_centers"][1] - row["refit_centers"][0]))
+    except Exception as exc:  # the summary never stops the sweep
+        print(f"[gain_sweep_point] length={q_length} gain={q_gain}: no summary row ({exc!r})")
+    return row
+
+
+def fit_power_broadening(gains, fwhm, fwhm_err=None):
+    """Saturation fit FWHM^2 = a + c gain^2 (a, c >= 0) on the finite, positive points.
+
+    Weighted by the FWHM^2 errors 2 FWHM fwhm_err when every one is finite and positive,
+    unweighted otherwise. Returns {status, n_points, a, c, fwhm0, fwhm0_err} with status
+    "insufficient" (fewer than GAIN_SWEEP_MIN_FIT_POINTS points; NaN fields), "failed"
+    (curve_fit raised) or "fit". fwhm0 = sqrt(a), fwhm0_err from pcov (NaN at a = 0)."""
+    g = np.asarray(gains, dtype=float).ravel()
+    f = np.asarray(fwhm, dtype=float).ravel()
+    e = None if fwhm_err is None else np.asarray(fwhm_err, dtype=float).ravel()
+    keep = np.isfinite(g) & np.isfinite(f) & (f > 0)
+    out = {"status": "insufficient", "n_points": int(keep.sum()), "a": np.nan, "c": np.nan}
+    out.update({"fwhm0": np.nan, "fwhm0_err": np.nan})
+    if keep.sum() < GAIN_SWEEP_MIN_FIT_POINTS:
+        return out
+    g, f = g[keep], f[keep]
+    sig = None
+    if e is not None:
+        e = e[keep]
+        if np.all(np.isfinite(e) & (e > 0)):
+            sig = 2.0 * f * e
+    gmax = float(np.max(np.abs(g))) or 1.0
+    u = (g / gmax) ** 2
+    y = f**2
+    slope0 = max(float(np.polyfit(u, y, 1)[0]), 0.0) if np.ptp(u) > 0 else 0.0
+    a0 = max(float(np.min(y)) - slope0 * float(np.min(u)), 0.0)
+    try:
+        popt, pcov = curve_fit(
+            lambda uu, a, c: a + c * uu,
+            u,
+            y,
+            p0=[a0, slope0],
+            bounds=([0.0, 0.0], [np.inf, np.inf]),
+            sigma=sig,
+            maxfev=20000,
+        )
+    except Exception:
+        out["status"] = "failed"
+        return out
+    a, c_scaled = float(popt[0]), float(popt[1])
+    fwhm0 = float(np.sqrt(a))
+    out.update(
+        status="fit",
+        a=a,
+        c=c_scaled / gmax**2,
+        fwhm0=fwhm0,
+        fwhm0_err=_diag_err(pcov, 0) / (2.0 * fwhm0) if fwhm0 > 0 else np.nan,
+    )
+    return out
+
+
+def summarize_gain_length_sweep(rows, *, gauss=False, sigma_us=None):
+    """Per-length saturation summary of gain_sweep_point rows.
+
+    Groups by qubit_length (one group, length NaN, when ``gauss``: the length does not
+    change a Gaussian drive). Per group: fit_power_broadening on the rows with an
+    uncensored ``fwhm_line`` (SNR >= GAIN_SWEEP_MIN_SNR by construction) that is not a
+    blend. A blend (point ``blended`` = 1) is a single-line row of a group with a resolved
+    doublet somewhere, whose width is at least GAIN_SWEEP_BLEND_SPLITTING x the group's
+    smallest splitting: at that width the doublet is no longer resolved, and one Lorentzian
+    over the merged pair is about splitting + branch FWHM wide, not a branch width. Status "ok" when
+    FWHM_0 exceeds GAIN_SWEEP_RESOLUTION_STEPS grid steps and the Fourier width 1/T of the
+    drive (T = qubit_length, or 4 sigma for a Gaussian); then t2star_lower_us =
+    1/(pi FWHM_0) (MHz -> us), a lower bound on T2*. "resolution-limited" otherwise (no T2*
+    bound), "insufficient" / "failed" from the fit. Recommendation (printed and saved, never
+    written back): the smallest gain whose line has SNR >= GAIN_SWEEP_MIN_SNR and FWHM <=
+    GAIN_SWEEP_BROADENING x the reference width (FWHM_0 when "ok"; when
+    "resolution-limited", the larger of FWHM_0 and the narrowest measured line), and the
+    highest such gain (most signal without measurable broadening). Returns
+    {"points": {key: array}, "groups": {key: array}, "gauss": bool}."""
+    pts = {k: np.array([r[k] for r in rows], dtype=float) for k in _POINT_SCALARS}
+    pts.update(
+        {
+            k: np.array([r[k] for r in rows], dtype=float).reshape(-1, GAIN_SWEEP_MAX_LINES)
+            for k in _POINT_COLUMNS
+        }
+    )
+    lengths = [np.nan] if gauss else sorted({float(v) for v in pts["q_length"]})
+    groups = {k: [] for k in _GROUP_KEYS}
+    has_line = np.isfinite(pts["fwhm_line"])
+    pts["blended"] = np.where(has_line, 0.0, np.nan)
+    for L in lengths:
+        sel = np.ones(len(rows), bool) if gauss else pts["q_length"] == L
+        split = pts["splitting_mhz"][sel]
+        split = split[np.isfinite(split)]
+        if split.size:
+            single = sel & has_line & ~np.isfinite(pts["splitting_mhz"])
+            blend = single & (pts["fwhm_line"] >= GAIN_SWEEP_BLEND_SPLITTING * float(split.min()))
+            pts["blended"][blend] = 1.0
+        use = sel & has_line & (pts["blended"] == 0.0)
+        fit = fit_power_broadening(
+            pts["q_gain"][use], pts["fwhm_line"][use], pts["fwhm_line_err"][use]
+        )
+        steps = pts["step_mhz"][sel]
+        step = float(np.nanmedian(steps)) if np.any(np.isfinite(steps)) else np.nan
+        if gauss:
+            T = 4.0 * float(sigma_us) if sigma_us else np.nan
+        else:
+            T = L
+        fourier = 1.0 / T if np.isfinite(T) and T > 0 else np.nan
+        status, t2, ref = fit["status"], np.nan, np.nan
+        if status == "fit":
+            f0 = fit["fwhm0"]
+            resolved = f0 > GAIN_SWEEP_RESOLUTION_STEPS * step and not f0 <= fourier
+            if resolved:
+                status, t2, ref = "ok", 1.0 / (np.pi * f0), f0
+            else:
+                status = "resolution-limited"
+                ref = max(f0, float(np.min(pts["fwhm_line"][use])))
+        rec = hi = np.nan
+        if np.isfinite(ref):
+            good = use & (pts["fwhm_line"] <= GAIN_SWEEP_BROADENING * ref)
+            if np.any(good):
+                rec = float(np.min(pts["q_gain"][good]))
+                hi = float(np.max(pts["q_gain"][good]))
+        values = {
+            "length": L,
+            "status": status,
+            "n_points": fit["n_points"],
+            "n_blended": float(np.sum(sel & (pts["blended"] == 1.0))),
+            "a": fit["a"],
+            "c": fit["c"],
+            "fwhm0": fit["fwhm0"],
+            "fwhm0_err": fit["fwhm0_err"],
+            "t2star_lower_us": t2,
+            "fourier_fwhm_mhz": fourier,
+            "recommended_gain": rec,
+            "highest_unbroadened_gain": hi,
+            "splitting_min_mhz": float(split.min()) if split.size else np.nan,
+            "splitting_max_mhz": float(split.max()) if split.size else np.nan,
+        }
+        for k in _GROUP_KEYS:
+            groups[k].append(values[k])
+    groups = {k: np.array(v, dtype=str if k == "status" else float) for k, v in groups.items()}
+    return {"points": pts, "groups": groups, "gauss": bool(gauss)}
+
+
+def print_gain_length_summary(summary):
+    """One console line per length group of summarize_gain_length_sweep."""
+    g = summary["groups"]
+    if summary["gauss"]:
+        print("GainLengthSweep summary: Gauss=True, all lengths pooled (the length loop repeats)")
+    for i in range(len(g["status"])):
+        name = "all lengths" if summary["gauss"] else f"length {g['length'][i]:g} us"
+        line = f"GainLengthSweep {name}: {g['status'][i]} ({int(g['n_points'][i])} lines used"
+        if g["n_blended"][i]:
+            line += f", {int(g['n_blended'][i])} merged-doublet blends left out"
+        line += ")"
+        if np.isfinite(g["fwhm0"][i]):
+            line += f", FWHM_0 = {g['fwhm0'][i]:.4f} +/- {g['fwhm0_err'][i]:.4f} MHz"
+        if np.isfinite(g["t2star_lower_us"][i]):
+            line += f", T2* >= {g['t2star_lower_us'][i]:.3f} us"
+        if np.isfinite(g["recommended_gain"][i]):
+            line += (
+                f"; recommended gain {g['recommended_gain'][i]:g} (highest within "
+                f"{GAIN_SWEEP_BROADENING} x FWHM_0: {g['highest_unbroadened_gain'][i]:g})"
+            )
+        if np.isfinite(g["splitting_min_mhz"][i]):
+            line += (
+                f"; doublet splitting {g['splitting_min_mhz'][i]:.4f} to "
+                f"{g['splitting_max_mhz'][i]:.4f} MHz"
+            )
+        print(line)
+
+
+def save_gain_length_summary(summary, folder, plotDisp=False):
+    """Write GainLengthSweep_summary_<timestamp>.npz (point_* and group_* arrays, no pickled
+    objects) and .png (FWHM and SNR vs gain per length, with the saturation fits) into
+    ``folder``. Returns the npz path."""
+    stem = os.path.join(
+        folder, "GainLengthSweep_summary_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    )
+    arrays = {"point_" + k: v for k, v in summary["points"].items()}
+    arrays.update({"group_" + k: v for k, v in summary["groups"].items()})
+    arrays["gauss"] = np.array(summary["gauss"])
+    np.savez(stem + ".npz", **arrays)
+
+    p, g = summary["points"], summary["groups"]
+    fig, (ax_w, ax_s) = plt.subplots(1, 2, figsize=(11, 4.5))
+    for i in range(len(g["status"])):
+        sel = np.ones(p["q_gain"].size, bool)
+        label = "all lengths"
+        if not summary["gauss"]:
+            sel = p["q_length"] == g["length"][i]
+            label = f"{g['length'][i]:g} us"
+        blend = sel & (p["blended"] == 1.0)
+        (h,) = ax_w.plot(p["q_gain"][sel & ~blend], p["fwhm_line"][sel & ~blend], "o", label=label)
+        if np.any(blend):
+            ax_w.plot(p["q_gain"][blend], p["fwhm_line"][blend], "x", color=h.get_color())
+        if np.isfinite(g["a"][i]) and np.any(sel):
+            gg = np.linspace(0, np.nanmax(p["q_gain"][sel]), 200)
+            ax_w.plot(gg, np.sqrt(g["a"][i] + g["c"][i] * gg**2), "-", color=h.get_color())
+        ax_s.plot(p["q_gain"][sel], p["snr_line"][sel], "o", color=h.get_color(), label=label)
+    ax_s.axhline(GAIN_SWEEP_MIN_SNR, linestyle="--", color="gray")
+    ax_w.set_xlabel("qubit_gain (DAC)")
+    ax_w.set_ylabel("FWHM (MHz)")
+    ax_w.set_title("FWHM^2 = FWHM_0^2 + c gain^2")
+    ax_s.set_xlabel("qubit_gain (DAC)")
+    ax_s.set_ylabel("SNR (peak / per-point noise)")
+    ax_w.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(stem + ".png")
+    if plotDisp:
+        plt.show()
+    plt.close(fig)
+    print(f"GainLengthSweep summary saved: {stem}.npz")
+    return stem + ".npz"

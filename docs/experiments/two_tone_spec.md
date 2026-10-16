@@ -69,7 +69,7 @@ and the charge-dispersion steps. The sweep is centred on the device qubit freque
 
 | File | Content |
 |---|---|
-| `..._data.h5` | `x_pts` (N,) MHz; `avgi`, `avgq` (2, 1, N) = [ADC, read, freq], cavity-winding corrected; display results `two_tone_peak_freqs`, `two_tone_peak_amps`, `lorentz_num_fits`, `lorentz_centers`, `lorentz_fwhm`, `lorentz_gamma`, `lorentz_amplitudes`, `lorentz_offsets`, `lorentz_r2` |
+| `..._data.h5` | `x_pts` (N,) MHz; `avgi`, `avgq` (2, 1, N) = [ADC, read, freq], cavity-winding corrected; display results `two_tone_peak_freqs`, `two_tone_peak_amps`, `lorentz_num_fits`, `lorentz_centers`, `lorentz_fwhm`, `lorentz_gamma`, `lorentz_amplitudes`, `lorentz_offsets`, `lorentz_r2`, and the 1-sigma fit errors `lorentz_center_err` (sqrt of the centre's covariance entry) and `lorentz_fwhm_err` (2 sqrt of gamma's), NaN where the covariance entry is not finite (one entry per accepted fit, like the other `lorentz_*` arrays; empty when no fit is accepted) |
 | `..._data_IQ.png` | I and Q vs drive frequency, peaks marked; title has gain and length/sigma |
 | `..._data_Amp2_LorentzFits.png` | rotated IQ projection + Lorentzian fits |
 | `..._data.json` | config |

@@ -13,11 +13,8 @@
             "qubit_freq",
             "qubit_gain",
             "qubit_nqz",
-            "reps",
             "res_ch",
             "ro_chs",
-            "rounds",
-            "soft_avgs",
             "tone_length"
           ],
           "written": []
@@ -94,293 +91,29 @@
           "hw": {
             "calls": {
               "load_bin_program": 1,
+              "reset_gens": 1,
               "set_nyquist": 2,
               "start_src": 2,
               "start_tproc": 1,
               "stop_tproc": 1
             },
-            "digest": "3b9e41ae500f8ce7ce6997cd50d2903a",
-            "first_program": "8c7922b426d1efb1",
+            "digest": "2af089ae260e826c742763273dc99972",
+            "first_program": "90e0d89d5be406fc",
             "n_programs": 1,
             "n_unique_programs": 1
           },
           "index": 0,
           "methods": [
             {
+              "cfg_delta": {},
+              "cfg_digest": "efdc845032836edf",
               "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
-              },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
+              "name": "save_config"
             },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "3b9e41ae500f8ce7ce6997cd50d2903a",
-            "first_program": "8c7922b426d1efb1",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 1,
-          "methods": [
             {
-              "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
+              "kwargs": {
+                "hold_s": null
               },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
-            },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "3b9e41ae500f8ce7ce6997cd50d2903a",
-            "first_program": "8c7922b426d1efb1",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 2,
-          "methods": [
-            {
-              "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
-              },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
-            },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "3b9e41ae500f8ce7ce6997cd50d2903a",
-            "first_program": "8c7922b426d1efb1",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 3,
-          "methods": [
-            {
-              "kwargs": {},
               "name": "acquire"
             }
           ],
@@ -391,11 +124,9 @@
       ],
       "hw_outside_experiments": null,
       "outcome": {
-        "status": "stopped_at_budget"
+        "status": "completed"
       },
-      "skipped": {
-        "ConstantTwoTone/ConstantTwoTone": 9
-      },
+      "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
         "Q :OUTP?",
@@ -407,7 +138,8 @@
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
-        "Q :SOUR:LEV?"
+        "Q :SOUR:LEV?",
+        "CLOSE"
       ]
     },
     "ConstantTone": {
@@ -419,16 +151,10 @@
             "nqz",
             "pulse_freq",
             "pulse_gain",
-            "reps",
             "res_ch",
-            "ro_chs",
-            "rounds",
-            "soft_avgs"
+            "ro_chs"
           ],
-          "written": [
-            "reps",
-            "rounds"
-          ]
+          "written": []
         }
       },
       "experiments": [
@@ -501,22 +227,30 @@
           "fname": "<DATA>/Q5//TransmissionFF/TransmissionFF_<DATE>/TransmissionFF_<TS>_data.h5",
           "hw": {
             "calls": {
-              "load_bin_program": 100,
-              "reload_mem": 100000,
-              "set_nyquist": 100,
-              "start_readout": 100000,
-              "start_src": 200,
-              "stop_tproc": 100
+              "load_bin_program": 1,
+              "reset_gens": 1,
+              "set_nyquist": 1,
+              "start_src": 2,
+              "start_tproc": 1,
+              "stop_tproc": 1
             },
-            "digest": "ee7f7e00c94345e69ba50642e021d24a",
-            "first_program": "53f87402720f1c1d",
-            "n_programs": 100,
+            "digest": "84c84a011b62f0cdc5d24fff274d8597",
+            "first_program": "7a293ede18cd1c19",
+            "n_programs": 1,
             "n_unique_programs": 1
           },
           "index": 0,
           "methods": [
             {
+              "cfg_delta": {},
+              "cfg_digest": "efdc845032836edf",
               "kwargs": {},
+              "name": "save_config"
+            },
+            {
+              "kwargs": {
+                "hold_s": null
+              },
               "name": "acquire"
             }
           ],
@@ -1147,6 +881,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -1156,6 +898,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -1814,6 +1564,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -1823,6 +1581,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -2481,6 +2247,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -2490,6 +2264,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -3148,6 +2930,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -3157,6 +2947,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -3946,6 +3744,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -3955,6 +3761,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -4613,6 +4427,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -4622,6 +4444,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -5565,6 +5395,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -5574,6 +5412,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -6232,6 +6078,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -6241,6 +6095,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -6999,6 +6861,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -7008,6 +6878,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -7766,6 +7644,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -7775,6 +7661,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -8701,6 +8595,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.027523789541194534
+                  ],
+                  "sha1": "6e39f8776d74ca8e",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -8717,6 +8621,16 @@
                     0.27050507943949775
                   ],
                   "sha1": "0e593dd6a7c88378",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.12118446984832112
+                  ],
+                  "sha1": "ccab0062570435fa",
                   "shape": [
                     1
                   ]
@@ -38580,7 +38494,7 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
           "qicklab/runs/charge_dispersion.py:462:run_charge_dispersion_ramsey"
         ],
@@ -39193,6 +39107,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -39202,6 +39124,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -39850,6 +39780,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -39859,6 +39797,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -40507,6 +40453,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -40516,6 +40470,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -41164,6 +41126,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -41173,6 +41143,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -41981,6 +41959,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -41990,6 +41976,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -42665,6 +42659,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -42674,6 +42676,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -43349,6 +43359,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -43358,6 +43376,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -44035,6 +44061,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.04130529195421603
+                  ],
+                  "sha1": "3b235925e150a546",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -44051,6 +44087,16 @@
                     0.0910564643963267
                   ],
                   "sha1": "329aa2c9001a78c6",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.13633523810778325
+                  ],
+                  "sha1": "bf8a18600568312a",
                   "shape": [
                     1
                   ]
@@ -47174,6 +47220,62 @@
                   "sha1": "4599d54c00023676",
                   "shape": []
                 },
+                "data/chi_argmin": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.17821782178195633
+                  ],
+                  "sha1": "4d60f57767ed36c4",
+                  "shape": []
+                },
+                "data/chi_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/chi_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.17821782178195633
+                  ],
+                  "sha1": "4d60f57767ed36c4",
+                  "shape": []
+                },
+                "data/chi_fit_ok": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/fit_01": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN,
+                    NaN,
+                    NaN
+                  ],
+                  "sha1": "35863a1818c92bdd",
+                  "shape": [
+                    101
+                  ]
+                },
+                "data/fit_ground": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN,
+                    NaN,
+                    NaN
+                  ],
+                  "sha1": "35863a1818c92bdd",
+                  "shape": [
+                    101
+                  ]
+                },
                 "data/fpts": {
                   "dtype": "float64",
                   "head": [
@@ -47185,6 +47287,70 @@
                   "shape": [
                     101
                   ]
+                },
+                "data/fr_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/fr_fit_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/kappa_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/kappa_fit_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_g_exc": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_g_exc_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_pi_exc": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_pi_exc_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
                 },
                 "data/results_01": {
                   "dtype": "float64",
@@ -93951,6 +94117,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -93960,6 +94134,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -94608,6 +94790,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -94617,6 +94807,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -95265,6 +95463,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -95274,6 +95480,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -95922,6 +96136,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -95931,6 +96153,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -131798,6 +132028,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -131807,6 +132045,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -132455,6 +132701,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -132464,6 +132718,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -133114,6 +133376,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.024821721465901992
+                  ],
+                  "sha1": "9c39056ea3073b84",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -133130,6 +133402,16 @@
                     0.12041197023923277
                   ],
                   "sha1": "528ff1af98082e0c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.07275405940686766
+                  ],
+                  "sha1": "b41da1b19df4dc75",
                   "shape": [
                     1
                   ]
@@ -133781,6 +134063,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -133790,6 +134080,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -134028,7 +134326,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7097.316729182296
+                "peakFreq_min": 7098.764591147787
               }
             },
             {
@@ -134228,9 +134526,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7097.316729182296
+                    7098.764591147787
                   ],
-                  "sha1": "e4a3c7ecde439470",
+                  "sha1": "106eb48588353bc6",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -134458,67 +134756,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    323813.8437368722
+                    300186888.2425507
                   ],
-                  "sha1": "6a6b15a5eb8bd5b2",
+                  "sha1": "2d92189b915ee438",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1379019168880.3708
+                  ],
+                  "sha1": "62f516eb217fc34c",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    218191611.15201274
+                    3771.4936655350184
                   ],
-                  "sha1": "75768d02ceb39a67",
+                  "sha1": "43b9d2a854e213f9",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    6149.426618384351
+                  ],
+                  "sha1": "6cdaacd1da667c91",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    323333.99017322704
+                    3771.4462817673766
                   ],
-                  "sha1": "6d61950e06adb4b9",
+                  "sha1": "ebbe0f2c3a7c8b57",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    6073.106464482992
+                  ],
+                  "sha1": "0e46d4c34d663c43",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7097.309882972995
+                    7097.80560092385
                   ],
-                  "sha1": "1294fc9471272c67",
+                  "sha1": "79dc10e2148b2aad",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.021917870468627018
+                    2.364462233003605e-05
                   ],
-                  "sha1": "d356575f5c94ec6b",
+                  "sha1": "2856a55c5e0d73ad",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.10862029610987738
+                  ],
+                  "sha1": "a9f96e8e5ba37a92",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.021950398345594885
+                    1.8819850716785693
                   ],
-                  "sha1": "b24ab8827f2a5c97",
+                  "sha1": "f417f43ce1e84ae0",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    3.0304459991353445
+                  ],
+                  "sha1": "6118352bf75b8115",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7097.316729182296
+                    7098.764591147787
                   ],
-                  "sha1": "e4a3c7ecde439470",
+                  "sha1": "106eb48588353bc6",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    2.1977217579064794,
+                    2013.2388836475893,
+                    -1730878581140.5693
+                  ],
+                  "sha1": "179b9fe9df5d74cd",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.05979324124138934,
-                    4382182.303693919,
-                    2979553214.293599
+                    1.48247150323589,
+                    6073.106464482992,
+                    1379019168880.3708
                   ],
-                  "sha1": "4bcd78b9a3927b44",
+                  "sha1": "4254c407382b1341",
                   "shape": [
                     5
                   ]
@@ -134526,11 +134877,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7097.309882972995,
-                    323333.99017322704,
-                    323813.8437368722
+                    7097.80560092385,
+                    3771.4462817673766,
+                    300186888.2425507
                   ],
-                  "sha1": "7bde876cb40b6b78",
+                  "sha1": "e5ed5b2ab3617c15",
                   "shape": [
                     5
                   ]
@@ -134564,9 +134915,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7097.316729182296
+                "pulse_freq": 7098.764591147787
               },
-              "cfg_digest": "306fe7453824370d",
+              "cfg_digest": "c80516db8e1b331b",
               "kwargs": {},
               "name": "save_config"
             }
@@ -134752,7 +135103,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7095.536284071018
+                "peakFreq_min": 7095.161190297574
               }
             },
             {
@@ -134952,9 +135303,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7095.536284071018
+                    7095.161190297574
                   ],
-                  "sha1": "300da7c599a78421",
+                  "sha1": "237c89743e6a1041",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -135182,67 +135533,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    215183.79316078743
+                    432274.3457657752
                   ],
-                  "sha1": "9c8f756b560eb687",
+                  "sha1": "3f4482f6e7d496c9",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    28000203.456476554
+                  ],
+                  "sha1": "5e152e9c92f62939",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    420613349.0603554
+                    1623927.0553386738
                   ],
-                  "sha1": "f3f9ea229628e1e7",
+                  "sha1": "ead1f245855a199f",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    506605142.3792371
+                  ],
+                  "sha1": "6b96cdd385c3807f",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    215293.93651693084
+                    341397.4939618322
                   ],
-                  "sha1": "1670aa7e1ac76ab0",
+                  "sha1": "3f902bd548e5be7e",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    4938488.723181497
+                  ],
+                  "sha1": "7566d68ba7343681",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7095.538720320917
+                    7095.154709956638
                   ],
-                  "sha1": "732c20854f02c24f",
+                  "sha1": "0c948b2d31d16597",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.032974317517579316
+                    0.016413545655566377
                   ],
-                  "sha1": "37c53d0beec2fc8f",
+                  "sha1": "072d488f8602af84",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1.0631734292548074
+                  ],
+                  "sha1": "74a944fd59a65c03",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.03295744801323246
+                    0.020782679531765595
                   ],
-                  "sha1": "cc91e6954ec18a62",
+                  "sha1": "6f5837da44c55964",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.30063211032219617
+                  ],
+                  "sha1": "aa0f8b6bb9c2ab2d",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7095.536284071018
+                    7095.161190297574
                   ],
-                  "sha1": "300da7c599a78421",
+                  "sha1": "237c89743e6a1041",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0007087397284624297,
+                    -101551.79355135931,
+                    538481.6626836822
+                  ],
+                  "sha1": "af808867cc0fa2a0",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.034162221663386165,
-                    1122970.7608820093,
-                    1457243892.5994499
+                    0.026622166111389765,
+                    4938488.723181497,
+                    28000203.456476554
                   ],
-                  "sha1": "19b2113870ea1319",
+                  "sha1": "6794fdf79c91034c",
                   "shape": [
                     5
                   ]
@@ -135250,11 +135654,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7095.538720320917,
-                    215293.93651693084,
-                    215183.79316078743
+                    7095.154709956638,
+                    341397.4939618322,
+                    432274.3457657752
                   ],
-                  "sha1": "894e90ab3e126133",
+                  "sha1": "2ceb1c73c5c127c9",
                   "shape": [
                     5
                   ]
@@ -135288,9 +135692,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7095.536284071018
+                "pulse_freq": 7095.161190297574
               },
-              "cfg_digest": "6e1e7fad06753071",
+              "cfg_digest": "067d808c31460e1e",
               "kwargs": {},
               "name": "save_config"
             }
@@ -135859,6 +136263,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -135868,6 +136280,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -136565,49 +136985,89 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    290117.80386394437
+                    290034.0796480926
                   ],
-                  "sha1": "44fb962627389d68",
+                  "sha1": "72358cc4ee15d402",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    211071.15853001273
+                  ],
+                  "sha1": "1a10da70b8339aa7",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    57686.6822077954
+                    57664.90990507301
                   ],
-                  "sha1": "ab349e3f0d49db99",
+                  "sha1": "704c5f6064506c71",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    47914.0531840733
+                  ],
+                  "sha1": "1c2660abb9728197",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    48118.797268390736
+                    48101.345056542625
                   ],
-                  "sha1": "028a9e29b1703d60",
+                  "sha1": "634974a2de368315",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    36065.56825574931
+                  ],
+                  "sha1": "5cd720ecfcb6ef05",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7099.467337223863
+                    7099.467346434958
                   ],
-                  "sha1": "955a8da70e136694",
+                  "sha1": "b9811bc05ef8f95e",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.0244709812450989
+                    0.024478045321601388
                   ],
-                  "sha1": "17853a3f3ebd2542",
+                  "sha1": "6840a4413acba1c0",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.017813893911297455
+                  ],
+                  "sha1": "537a6810c59f3849",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.14754041539370535
+                    0.14759394644972212
                   ],
-                  "sha1": "fecfa09439c59f76",
+                  "sha1": "822c8d6d5dbb6f74",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.11066348424910813
+                  ],
+                  "sha1": "3f37e7eccbf55cc2",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -136618,14 +137078,27 @@
                   "sha1": "cf0bcb39a0da3f29",
                   "shape": []
                 },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0029070903832630296,
+                    -104.26323076458243,
+                    -5686.409037069428
+                  ],
+                  "sha1": "7e08831d45b5bd87",
+                  "shape": [
+                    5,
+                    5
+                  ]
+                },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.04984700136474961,
-                    32699.03640812888,
-                    198191.08059975505
+                    0.05391744043686634,
+                    36065.56825574931,
+                    211071.15853001273
                   ],
-                  "sha1": "8579a5052157611f",
+                  "sha1": "8943cbbe1cc74fa5",
                   "shape": [
                     5
                   ]
@@ -136633,11 +137106,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7099.467337223863,
-                    48118.797268390736,
-                    290117.80386394437
+                    7099.467346434958,
+                    48101.345056542625,
+                    290034.0796480926
                   ],
-                  "sha1": "4b0d1838104399fe",
+                  "sha1": "68f45931f64d86db",
                   "shape": [
                     5
                   ]
@@ -137451,7 +137924,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7093.250712678169
+                "peakFreq_min": 7093.245711427857
               }
             },
             {
@@ -137651,9 +138124,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7093.250712678169
+                    7093.245711427857
                   ],
-                  "sha1": "61b05f39ce33a2fe",
+                  "sha1": "cee86e6a6604322c",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -137881,67 +138354,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    714430.8591736081
+                    1079297.4983956518
                   ],
-                  "sha1": "406fd65023a967e1",
+                  "sha1": "d4642e0a98767a36",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1919482.6511082149
+                  ],
+                  "sha1": "3f75963ee66c71e2",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    190179.6460342131
+                    171068.47680629362
                   ],
-                  "sha1": "71babe52f97a933d",
+                  "sha1": "eec7a882eafb3260",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    245920.95786125903
+                  ],
+                  "sha1": "4dff491558688912",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    150197.46855840605
+                    147663.79022875064
                   ],
-                  "sha1": "a2a2ae06d5a61a36",
+                  "sha1": "f0a2fe19d3191ad4",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    195636.34236836736
+                  ],
+                  "sha1": "6e712692b7dfd242",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7093.256905927293
+                    7093.232532731729
                   ],
-                  "sha1": "36562e15aaa13fa4",
+                  "sha1": "e30904ca59b3b771",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.00992854216030388
+                    0.0065720828068958174
                   ],
-                  "sha1": "9a7f92979bd8d170",
+                  "sha1": "fed6786743283343",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.011688104982997596
+                  ],
+                  "sha1": "14bdcf1cd39b7bbd",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.04722620809796802
+                    0.04803637047202553
                   ],
-                  "sha1": "3577656dc304ab11",
+                  "sha1": "d2cd54a17dcdc29e",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.06364244798026851
+                  ],
+                  "sha1": "dabcd5b067db6b54",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7093.250712678169
+                    7093.245711427857
                   ],
-                  "sha1": "61b05f39ce33a2fe",
+                  "sha1": "cee86e6a6604322c",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.012601374436885367,
+                    -4943.293543712017,
+                    108375.37472646568
+                  ],
+                  "sha1": "d9c75dbc3fe5ac5e",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.10961193257527124,
-                    189286.9835757333,
-                    962344.5150734758
+                    0.11225584366475255,
+                    195636.34236836736,
+                    1919482.6511082149
                   ],
-                  "sha1": "d44ca60592456063",
+                  "sha1": "19576af1eacc07c0",
                   "shape": [
                     5
                   ]
@@ -137949,11 +138475,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7093.256905927293,
-                    150197.46855840605,
-                    714430.8591736081
+                    7093.232532731729,
+                    147663.79022875064,
+                    1079297.4983956518
                   ],
-                  "sha1": "06fd8922da513215",
+                  "sha1": "09e83b675d9da9dd",
                   "shape": [
                     5
                   ]
@@ -137987,9 +138513,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7093.250712678169
+                "pulse_freq": 7093.245711427857
               },
-              "cfg_digest": "59e3f8fd2e1d0955",
+              "cfg_digest": "bd2cbc64963dff8d",
               "kwargs": {},
               "name": "save_config"
             }
@@ -144680,6 +145206,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -144689,6 +145223,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -144783,7 +145325,7 @@
         "message": "pick_parity_drive_freq: no resolved parity doublet (source=partner_not_significant, line(s) at 2650.109453 MHz): the second line is only 1.0 x the per-point noise above the baseline (min_partner_snr=5.0), so it is taken to be a noise maximum. Average more (reps/rounds) or raise the spec gain so both parity lines stand clear of the noise, widen the span if the second line may lie outside it. Check ",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
           "qicklab/runs/zero_span.py:65:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
@@ -145439,6 +145981,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -145448,6 +145998,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -147311,6 +147869,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -147320,6 +147886,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -149122,6 +149696,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -149131,6 +149713,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -149225,7 +149815,7 @@
         "message": "pick_parity_drive_freq: no resolved parity doublet (source=partner_not_significant, line(s) at 2651.104478 MHz): the second line is only 0.0 x the per-point noise above the baseline (min_partner_snr=5.0), so it is taken to be a noise maximum. Average more (reps/rounds) or raise the spec gain so both parity lines stand clear of the noise, widen the span if the second line may lie outside it. Check ",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
           "qicklab/runs/zero_span.py:65:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
@@ -151940,11 +152530,8 @@
             "qubit_freq",
             "qubit_gain",
             "qubit_nqz",
-            "reps",
             "res_ch",
             "ro_chs",
-            "rounds",
-            "soft_avgs",
             "tone_length"
           ],
           "written": []
@@ -152021,293 +152608,29 @@
           "hw": {
             "calls": {
               "load_bin_program": 1,
+              "reset_gens": 1,
               "set_nyquist": 2,
               "start_src": 2,
               "start_tproc": 1,
               "stop_tproc": 1
             },
-            "digest": "2e1d4d6dd847bb4b9d7da9e8ba2a4148",
-            "first_program": "2e7be3a24e4a68eb",
+            "digest": "ab3ec488df410a306bcb6ad8af971429",
+            "first_program": "e13bd2c77266c767",
             "n_programs": 1,
             "n_unique_programs": 1
           },
           "index": 0,
           "methods": [
             {
+              "cfg_delta": {},
+              "cfg_digest": "efdc845032836edf",
               "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
-              },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
+              "name": "save_config"
             },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "2e1d4d6dd847bb4b9d7da9e8ba2a4148",
-            "first_program": "2e7be3a24e4a68eb",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 1,
-          "methods": [
             {
-              "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
+              "kwargs": {
+                "hold_s": null
               },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
-            },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "2e1d4d6dd847bb4b9d7da9e8ba2a4148",
-            "first_program": "2e7be3a24e4a68eb",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 2,
-          "methods": [
-            {
-              "kwargs": {},
-              "name": "acquire"
-            }
-          ],
-          "outerFolder": "<DATA>/Q5//",
-          "path": "ConstantTwoTone",
-          "run": "Constant2Tone"
-        },
-        {
-          "cfg": {
-            "FF_Qubits": {
-              "1": {
-                "channel": 2,
-                "delay_time": 0.021500000000000002
-              },
-              "2": {
-                "channel": 4,
-                "delay_time": 0
-              },
-              "3": {
-                "channel": 5,
-                "delay_time": 0
-              },
-              "4": {
-                "channel": 6,
-                "delay_time": 0
-              }
-            },
-            "SpecNumPoints": 201,
-            "SpecSpan": 10,
-            "TransNumPoints": 201,
-            "TransSpan": 5,
-            "adc_trig_offset": 0.3,
-            "cav_relax_delay": 30,
-            "cavity_LO": 0,
-            "cavity_min": true,
-            "cavity_winding_freq": 0,
-            "cavity_winding_offset": 0,
-            "current_voltage": 0.0,
-            "end_ts_gain": 6000,
-            "expts": 201,
-            "length": 15.3,
-            "mixer_freq": 0.0,
-            "nqz": 2,
-            "pulse_freq": 7095.4,
-            "pulse_gain": 1500,
-            "pulse_style": "const",
-            "qubit_ch": 1,
-            "qubit_freq": 2651,
-            "qubit_gain": 1000,
-            "qubit_length": 50,
-            "qubit_nqz": 1,
-            "qubit_pulse_style": "const",
-            "readout_length": 15.0,
-            "relax_delay": 3000,
-            "reps": 1000,
-            "res_ch": 0,
-            "res_phase": 0,
-            "ro_chs": [
-              0
-            ],
-            "start": 2641,
-            "start_ts_gain": 500,
-            "step": 0.09950248756218906,
-            "tone_length": 151,
-            "trig_buffer_end": 0.02,
-            "trig_buffer_start": 0.02,
-            "trig_delay": 0.082,
-            "ts_step": 100,
-            "voltage_end": 0.05,
-            "voltage_start": 0.0,
-            "voltage_step": 0.005
-          },
-          "cls": "ConstantTwoTone",
-          "fname": "<DATA>/Q5//ConstantTwoTone/ConstantTwoTone_<DATE>/ConstantTwoTone_<TS>_data.h5",
-          "hw": {
-            "calls": {
-              "load_bin_program": 1,
-              "set_nyquist": 2,
-              "start_src": 2,
-              "start_tproc": 1,
-              "stop_tproc": 1
-            },
-            "digest": "2e1d4d6dd847bb4b9d7da9e8ba2a4148",
-            "first_program": "2e7be3a24e4a68eb",
-            "n_programs": 1,
-            "n_unique_programs": 1
-          },
-          "index": 3,
-          "methods": [
-            {
-              "kwargs": {},
               "name": "acquire"
             }
           ],
@@ -152318,11 +152641,9 @@
       ],
       "hw_outside_experiments": null,
       "outcome": {
-        "status": "stopped_at_budget"
+        "status": "completed"
       },
-      "skipped": {
-        "ConstantTwoTone/ConstantTwoTone": 9
-      },
+      "skipped": {},
       "yoko_writes": [
         "OPEN GPIB1::9::INSTR",
         "Q :OUTP?",
@@ -152334,7 +152655,8 @@
         "W :OUTP ON",
         "Q :SOUR:LEV?",
         "W :SOUR:LEV 0.0",
-        "Q :SOUR:LEV?"
+        "Q :SOUR:LEV?",
+        "CLOSE"
       ]
     },
     "ConstantTone": {
@@ -152346,16 +152668,10 @@
             "nqz",
             "pulse_freq",
             "pulse_gain",
-            "reps",
             "res_ch",
-            "ro_chs",
-            "rounds",
-            "soft_avgs"
+            "ro_chs"
           ],
-          "written": [
-            "reps",
-            "rounds"
-          ]
+          "written": []
         }
       },
       "experiments": [
@@ -152428,22 +152744,30 @@
           "fname": "<DATA>/Q5//TransmissionFF/TransmissionFF_<DATE>/TransmissionFF_<TS>_data.h5",
           "hw": {
             "calls": {
-              "load_bin_program": 100,
-              "reload_mem": 100000,
-              "set_nyquist": 100,
-              "start_readout": 100000,
-              "start_src": 200,
-              "stop_tproc": 100
+              "load_bin_program": 1,
+              "reset_gens": 1,
+              "set_nyquist": 1,
+              "start_src": 2,
+              "start_tproc": 1,
+              "stop_tproc": 1
             },
-            "digest": "19c5cd2d2f818abf302c3de2d820a9c4",
-            "first_program": "9ab4ce127eab38ea",
-            "n_programs": 100,
+            "digest": "88093d3006abd18c1b027dc9e7f782ef",
+            "first_program": "cc436372f50a81c0",
+            "n_programs": 1,
             "n_unique_programs": 1
           },
           "index": 0,
           "methods": [
             {
+              "cfg_delta": {},
+              "cfg_digest": "efdc845032836edf",
               "kwargs": {},
+              "name": "save_config"
+            },
+            {
+              "kwargs": {
+                "hold_s": null
+              },
               "name": "acquire"
             }
           ],
@@ -153074,6 +153398,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -153083,6 +153415,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -153741,6 +154081,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -153750,6 +154098,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -154408,6 +154764,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -154417,6 +154781,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -155075,6 +155447,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -155084,6 +155464,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -155873,6 +156261,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -155882,6 +156278,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -156540,6 +156944,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -156549,6 +156961,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -157492,6 +157912,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -157501,6 +157929,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -158159,6 +158595,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -158168,6 +158612,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -158926,6 +159378,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -158935,6 +159395,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -159693,6 +160161,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -159702,6 +160178,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -160628,6 +161112,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.027523789541194534
+                  ],
+                  "sha1": "6e39f8776d74ca8e",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -160644,6 +161138,16 @@
                     0.27050507943949775
                   ],
                   "sha1": "0e593dd6a7c88378",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.12118446984832112
+                  ],
+                  "sha1": "ccab0062570435fa",
                   "shape": [
                     1
                   ]
@@ -190507,7 +191011,7 @@
         "message": "'df'",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
           "qicklab/runs/charge_dispersion.py:462:run_charge_dispersion_ramsey"
         ],
@@ -191120,6 +191624,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -191129,6 +191641,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -191777,6 +192297,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -191786,6 +192314,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -192434,6 +192970,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -192443,6 +192987,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -193091,6 +193643,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -193100,6 +193660,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -193908,6 +194476,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -193917,6 +194493,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -194592,6 +195176,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -194601,6 +195193,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -195276,6 +195876,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -195285,6 +195893,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -195962,6 +196578,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.04130529195421603
+                  ],
+                  "sha1": "3b235925e150a546",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -195978,6 +196604,16 @@
                     0.0910564643963267
                   ],
                   "sha1": "329aa2c9001a78c6",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.13633523810778325
+                  ],
+                  "sha1": "bf8a18600568312a",
                   "shape": [
                     1
                   ]
@@ -199101,6 +199737,62 @@
                   "sha1": "4599d54c00023676",
                   "shape": []
                 },
+                "data/chi_argmin": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.17821782178195633
+                  ],
+                  "sha1": "4d60f57767ed36c4",
+                  "shape": []
+                },
+                "data/chi_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/chi_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    -0.17821782178195633
+                  ],
+                  "sha1": "4d60f57767ed36c4",
+                  "shape": []
+                },
+                "data/chi_fit_ok": {
+                  "dtype": "bool",
+                  "head": [
+                    false
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/fit_01": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN,
+                    NaN,
+                    NaN
+                  ],
+                  "sha1": "35863a1818c92bdd",
+                  "shape": [
+                    101
+                  ]
+                },
+                "data/fit_ground": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN,
+                    NaN,
+                    NaN
+                  ],
+                  "sha1": "35863a1818c92bdd",
+                  "shape": [
+                    101
+                  ]
+                },
                 "data/fpts": {
                   "dtype": "float64",
                   "head": [
@@ -199112,6 +199804,70 @@
                   "shape": [
                     101
                   ]
+                },
+                "data/fr_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/fr_fit_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/kappa_fit": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/kappa_fit_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_g_exc": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_g_exc_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_pi_exc": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/p_pi_exc_err": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
                 },
                 "data/results_01": {
                   "dtype": "float64",
@@ -245878,6 +246634,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -245887,6 +246651,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -246535,6 +247307,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -246544,6 +247324,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -247192,6 +247980,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -247201,6 +247997,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -247849,6 +248653,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -247858,6 +248670,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -283725,6 +284545,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -283734,6 +284562,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -284382,6 +285218,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -284391,6 +285235,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -285041,6 +285893,16 @@
                     1
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.024821721465901992
+                  ],
+                  "sha1": "9c39056ea3073b84",
+                  "shape": [
+                    1
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [
@@ -285057,6 +285919,16 @@
                     0.12041197023923277
                   ],
                   "sha1": "528ff1af98082e0c",
+                  "shape": [
+                    1
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.07275405940686766
+                  ],
+                  "sha1": "b41da1b19df4dc75",
                   "shape": [
                     1
                   ]
@@ -285708,6 +286580,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -285717,6 +286597,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -285955,7 +286843,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7097.316729182296
+                "peakFreq_min": 7098.764591147787
               }
             },
             {
@@ -286155,9 +287043,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7097.316729182296
+                    7098.764591147787
                   ],
-                  "sha1": "e4a3c7ecde439470",
+                  "sha1": "106eb48588353bc6",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -286385,67 +287273,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    323813.8437368722
+                    300186888.2425507
                   ],
-                  "sha1": "6a6b15a5eb8bd5b2",
+                  "sha1": "2d92189b915ee438",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1379019168880.3708
+                  ],
+                  "sha1": "62f516eb217fc34c",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    218191611.15201274
+                    3771.4936655350184
                   ],
-                  "sha1": "75768d02ceb39a67",
+                  "sha1": "43b9d2a854e213f9",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    6149.426618384351
+                  ],
+                  "sha1": "6cdaacd1da667c91",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    323333.99017322704
+                    3771.4462817673766
                   ],
-                  "sha1": "6d61950e06adb4b9",
+                  "sha1": "ebbe0f2c3a7c8b57",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    6073.106464482992
+                  ],
+                  "sha1": "0e46d4c34d663c43",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7097.309882972995
+                    7097.80560092385
                   ],
-                  "sha1": "1294fc9471272c67",
+                  "sha1": "79dc10e2148b2aad",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.021917870468627018
+                    2.364462233003605e-05
                   ],
-                  "sha1": "d356575f5c94ec6b",
+                  "sha1": "2856a55c5e0d73ad",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.10862029610987738
+                  ],
+                  "sha1": "a9f96e8e5ba37a92",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.021950398345594885
+                    1.8819850716785693
                   ],
-                  "sha1": "b24ab8827f2a5c97",
+                  "sha1": "f417f43ce1e84ae0",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    3.0304459991353445
+                  ],
+                  "sha1": "6118352bf75b8115",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7097.316729182296
+                    7098.764591147787
                   ],
-                  "sha1": "e4a3c7ecde439470",
+                  "sha1": "106eb48588353bc6",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    2.1977217579064794,
+                    2013.2388836475893,
+                    -1730878581140.5693
+                  ],
+                  "sha1": "179b9fe9df5d74cd",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.05979324124138934,
-                    4382182.303693919,
-                    2979553214.293599
+                    1.48247150323589,
+                    6073.106464482992,
+                    1379019168880.3708
                   ],
-                  "sha1": "4bcd78b9a3927b44",
+                  "sha1": "4254c407382b1341",
                   "shape": [
                     5
                   ]
@@ -286453,11 +287394,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7097.309882972995,
-                    323333.99017322704,
-                    323813.8437368722
+                    7097.80560092385,
+                    3771.4462817673766,
+                    300186888.2425507
                   ],
-                  "sha1": "7bde876cb40b6b78",
+                  "sha1": "e5ed5b2ab3617c15",
                   "shape": [
                     5
                   ]
@@ -286491,9 +287432,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7097.316729182296
+                "pulse_freq": 7098.764591147787
               },
-              "cfg_digest": "306fe7453824370d",
+              "cfg_digest": "c80516db8e1b331b",
               "kwargs": {},
               "name": "save_config"
             }
@@ -286679,7 +287620,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7095.536284071018
+                "peakFreq_min": 7095.161190297574
               }
             },
             {
@@ -286879,9 +287820,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7095.536284071018
+                    7095.161190297574
                   ],
-                  "sha1": "300da7c599a78421",
+                  "sha1": "237c89743e6a1041",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -287109,67 +288050,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    215183.79316078743
+                    432274.3457657752
                   ],
-                  "sha1": "9c8f756b560eb687",
+                  "sha1": "3f4482f6e7d496c9",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    28000203.456476554
+                  ],
+                  "sha1": "5e152e9c92f62939",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    420613349.0603554
+                    1623927.0553386738
                   ],
-                  "sha1": "f3f9ea229628e1e7",
+                  "sha1": "ead1f245855a199f",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    506605142.3792371
+                  ],
+                  "sha1": "6b96cdd385c3807f",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    215293.93651693084
+                    341397.4939618322
                   ],
-                  "sha1": "1670aa7e1ac76ab0",
+                  "sha1": "3f902bd548e5be7e",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    4938488.723181497
+                  ],
+                  "sha1": "7566d68ba7343681",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7095.538720320917
+                    7095.154709956638
                   ],
-                  "sha1": "732c20854f02c24f",
+                  "sha1": "0c948b2d31d16597",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.032974317517579316
+                    0.016413545655566377
                   ],
-                  "sha1": "37c53d0beec2fc8f",
+                  "sha1": "072d488f8602af84",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1.0631734292548074
+                  ],
+                  "sha1": "74a944fd59a65c03",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.03295744801323246
+                    0.020782679531765595
                   ],
-                  "sha1": "cc91e6954ec18a62",
+                  "sha1": "6f5837da44c55964",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.30063211032219617
+                  ],
+                  "sha1": "aa0f8b6bb9c2ab2d",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7095.536284071018
+                    7095.161190297574
                   ],
-                  "sha1": "300da7c599a78421",
+                  "sha1": "237c89743e6a1041",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0007087397284624297,
+                    -101551.79355135931,
+                    538481.6626836822
+                  ],
+                  "sha1": "af808867cc0fa2a0",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.034162221663386165,
-                    1122970.7608820093,
-                    1457243892.5994499
+                    0.026622166111389765,
+                    4938488.723181497,
+                    28000203.456476554
                   ],
-                  "sha1": "19b2113870ea1319",
+                  "sha1": "6794fdf79c91034c",
                   "shape": [
                     5
                   ]
@@ -287177,11 +288171,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7095.538720320917,
-                    215293.93651693084,
-                    215183.79316078743
+                    7095.154709956638,
+                    341397.4939618322,
+                    432274.3457657752
                   ],
-                  "sha1": "894e90ab3e126133",
+                  "sha1": "2ceb1c73c5c127c9",
                   "shape": [
                     5
                   ]
@@ -287215,9 +288209,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7095.536284071018
+                "pulse_freq": 7095.161190297574
               },
-              "cfg_digest": "6e1e7fad06753071",
+              "cfg_digest": "067d808c31460e1e",
               "kwargs": {},
               "name": "save_config"
             }
@@ -287786,6 +288780,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -287795,6 +288797,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -288492,49 +289502,89 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    290117.80386394437
+                    290034.0796480926
                   ],
-                  "sha1": "44fb962627389d68",
+                  "sha1": "72358cc4ee15d402",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    211071.15853001273
+                  ],
+                  "sha1": "1a10da70b8339aa7",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    57686.6822077954
+                    57664.90990507301
                   ],
-                  "sha1": "ab349e3f0d49db99",
+                  "sha1": "704c5f6064506c71",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    47914.0531840733
+                  ],
+                  "sha1": "1c2660abb9728197",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    48118.797268390736
+                    48101.345056542625
                   ],
-                  "sha1": "028a9e29b1703d60",
+                  "sha1": "634974a2de368315",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    36065.56825574931
+                  ],
+                  "sha1": "5cd720ecfcb6ef05",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7099.467337223863
+                    7099.467346434958
                   ],
-                  "sha1": "955a8da70e136694",
+                  "sha1": "b9811bc05ef8f95e",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.0244709812450989
+                    0.024478045321601388
                   ],
-                  "sha1": "17853a3f3ebd2542",
+                  "sha1": "6840a4413acba1c0",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.017813893911297455
+                  ],
+                  "sha1": "537a6810c59f3849",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.14754041539370535
+                    0.14759394644972212
                   ],
-                  "sha1": "fecfa09439c59f76",
+                  "sha1": "822c8d6d5dbb6f74",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.11066348424910813
+                  ],
+                  "sha1": "3f37e7eccbf55cc2",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
@@ -288545,14 +289595,27 @@
                   "sha1": "cf0bcb39a0da3f29",
                   "shape": []
                 },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.0029070903832630296,
+                    -104.26323076458243,
+                    -5686.409037069428
+                  ],
+                  "sha1": "7e08831d45b5bd87",
+                  "shape": [
+                    5,
+                    5
+                  ]
+                },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.04984700136474961,
-                    32699.03640812888,
-                    198191.08059975505
+                    0.05391744043686634,
+                    36065.56825574931,
+                    211071.15853001273
                   ],
-                  "sha1": "8579a5052157611f",
+                  "sha1": "8943cbbe1cc74fa5",
                   "shape": [
                     5
                   ]
@@ -288560,11 +289623,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7099.467337223863,
-                    48118.797268390736,
-                    290117.80386394437
+                    7099.467346434958,
+                    48101.345056542625,
+                    290034.0796480926
                   ],
-                  "sha1": "4b0d1838104399fe",
+                  "sha1": "68f45931f64d86db",
                   "shape": [
                     5
                   ]
@@ -289378,7 +290441,7 @@
               },
               "name": "display",
               "sets": {
-                "peakFreq_min": 7093.250712678169
+                "peakFreq_min": 7093.245711427857
               }
             },
             {
@@ -289578,9 +290641,9 @@
                 "config/pulse_freq": {
                   "dtype": "float64",
                   "head": [
-                    7093.250712678169
+                    7093.245711427857
                   ],
-                  "sha1": "61b05f39ce33a2fe",
+                  "sha1": "cee86e6a6604322c",
                   "shape": []
                 },
                 "config/pulse_gain": {
@@ -289808,67 +290871,120 @@
                 "data/hanger_fit_Qext": {
                   "dtype": "float64",
                   "head": [
-                    714430.8591736081
+                    1079297.4983956518
                   ],
-                  "sha1": "406fd65023a967e1",
+                  "sha1": "d4642e0a98767a36",
+                  "shape": []
+                },
+                "data/hanger_fit_Qext_err": {
+                  "dtype": "float64",
+                  "head": [
+                    1919482.6511082149
+                  ],
+                  "sha1": "3f75963ee66c71e2",
                   "shape": []
                 },
                 "data/hanger_fit_Qint": {
                   "dtype": "float64",
                   "head": [
-                    190179.6460342131
+                    171068.47680629362
                   ],
-                  "sha1": "71babe52f97a933d",
+                  "sha1": "eec7a882eafb3260",
+                  "shape": []
+                },
+                "data/hanger_fit_Qint_err": {
+                  "dtype": "float64",
+                  "head": [
+                    245920.95786125903
+                  ],
+                  "sha1": "4dff491558688912",
                   "shape": []
                 },
                 "data/hanger_fit_Qtot": {
                   "dtype": "float64",
                   "head": [
-                    150197.46855840605
+                    147663.79022875064
                   ],
-                  "sha1": "a2a2ae06d5a61a36",
+                  "sha1": "f0a2fe19d3191ad4",
+                  "shape": []
+                },
+                "data/hanger_fit_Qtot_err": {
+                  "dtype": "float64",
+                  "head": [
+                    195636.34236836736
+                  ],
+                  "sha1": "6e712692b7dfd242",
                   "shape": []
                 },
                 "data/hanger_fit_f0_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7093.256905927293
+                    7093.232532731729
                   ],
-                  "sha1": "36562e15aaa13fa4",
+                  "sha1": "e30904ca59b3b771",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_ext_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.00992854216030388
+                    0.0065720828068958174
                   ],
-                  "sha1": "9a7f92979bd8d170",
+                  "sha1": "fed6786743283343",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_ext_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.011688104982997596
+                  ],
+                  "sha1": "14bdcf1cd39b7bbd",
                   "shape": []
                 },
                 "data/hanger_fit_kappa_tot_mhz": {
                   "dtype": "float64",
                   "head": [
-                    0.04722620809796802
+                    0.04803637047202553
                   ],
-                  "sha1": "3577656dc304ab11",
+                  "sha1": "d2cd54a17dcdc29e",
+                  "shape": []
+                },
+                "data/hanger_fit_kappa_tot_mhz_err": {
+                  "dtype": "float64",
+                  "head": [
+                    0.06364244798026851
+                  ],
+                  "sha1": "dabcd5b067db6b54",
                   "shape": []
                 },
                 "data/hanger_fit_min_freq_mhz": {
                   "dtype": "float64",
                   "head": [
-                    7093.250712678169
+                    7093.245711427857
                   ],
-                  "sha1": "61b05f39ce33a2fe",
+                  "sha1": "cee86e6a6604322c",
                   "shape": []
+                },
+                "data/hanger_fit_pcov": {
+                  "dtype": "float64",
+                  "head": [
+                    0.012601374436885367,
+                    -4943.293543712017,
+                    108375.37472646568
+                  ],
+                  "sha1": "d9c75dbc3fe5ac5e",
+                  "shape": [
+                    5,
+                    5
+                  ]
                 },
                 "data/hanger_fit_perr": {
                   "dtype": "float64",
                   "head": [
-                    0.10961193257527124,
-                    189286.9835757333,
-                    962344.5150734758
+                    0.11225584366475255,
+                    195636.34236836736,
+                    1919482.6511082149
                   ],
-                  "sha1": "d44ca60592456063",
+                  "sha1": "19576af1eacc07c0",
                   "shape": [
                     5
                   ]
@@ -289876,11 +290992,11 @@
                 "data/hanger_fit_popt": {
                   "dtype": "float64",
                   "head": [
-                    7093.256905927293,
-                    150197.46855840605,
-                    714430.8591736081
+                    7093.232532731729,
+                    147663.79022875064,
+                    1079297.4983956518
                   ],
-                  "sha1": "06fd8922da513215",
+                  "sha1": "09e83b675d9da9dd",
                   "shape": [
                     5
                   ]
@@ -289914,9 +291030,9 @@
             },
             {
               "cfg_delta": {
-                "pulse_freq": 7093.250712678169
+                "pulse_freq": 7093.245711427857
               },
-              "cfg_digest": "59e3f8fd2e1d0955",
+              "cfg_digest": "bd2cbc64963dff8d",
               "kwargs": {},
               "name": "save_config"
             }
@@ -296607,6 +297723,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -296616,6 +297740,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -296710,7 +297842,7 @@
         "message": "pick_parity_drive_freq: no resolved parity doublet (source=partner_not_significant, line(s) at 2650.109453 MHz): the second line is only 1.0 x the per-point noise above the baseline (min_partner_snr=5.0), so it is taken to be a noise maximum. Average more (reps/rounds) or raise the spec gain so both parity lines stand clear of the noise, widen the span if the second line may lie outside it. Check ",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
           "qicklab/runs/zero_span.py:65:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
@@ -297366,6 +298498,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -297375,6 +298515,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -299238,6 +300386,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -299247,6 +300403,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -301049,6 +302213,14 @@
                     0
                   ]
                 },
+                "data/lorentz_center_err": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
                 "data/lorentz_centers": {
                   "dtype": "float64",
                   "head": [],
@@ -301058,6 +302230,14 @@
                   ]
                 },
                 "data/lorentz_fwhm": {
+                  "dtype": "float64",
+                  "head": [],
+                  "sha1": "35636cefeee45731",
+                  "shape": [
+                    0
+                  ]
+                },
+                "data/lorentz_fwhm_err": {
                   "dtype": "float64",
                   "head": [],
                   "sha1": "35636cefeee45731",
@@ -301152,7 +302332,7 @@
         "message": "pick_parity_drive_freq: no resolved parity doublet (source=partner_not_significant, line(s) at 2651.104478 MHz): the second line is only 0.0 x the per-point noise above the baseline (min_partner_snr=5.0), so it is taken to be a noise maximum. Average more (reps/rounds) or raise the spec gain so both parity lines stand clear of the noise, widen the span if the second line may lie outside it. Check ",
         "status": "raised",
         "traceback": [
-          "tests/regression/driver_qicklab.py:249:run_one",
+          "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
           "qicklab/runs/zero_span.py:65:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"

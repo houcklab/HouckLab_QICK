@@ -1,10 +1,16 @@
 import time
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
+from qicklab.analysis.fitting import (
+    CHI_FIT_MIN_DELTA_SIGMAS,
+    CHI_FIT_MIN_PI_POPULATION,
+    fit_dispersive_shift,
+)
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
 
@@ -87,9 +93,39 @@ class ChiProgram(AveragerProgram):
             self.sync_all(self.us2cycles(self.cfg["relax_delay"] - self.cfg["cav_relax_delay"]))
 
 
+def _chi_fit_fields(fit, chi_argmin_mhz, n_pts):
+    """Flat h5 fields of a ``fit_dispersive_shift`` result (MHz; fr on the fpts axis);
+    docs/experiments/chi_shift.md#outputs. ``chi_fit`` falls back to the argmin value, with
+    ``chi_err`` NaN, when the fit is not ok; the other fit fields are then NaN. Note: despite
+    the names, ``chi_fit`` / ``chi_err`` hold f_e - f_g (= 2chi) and its error, not chi."""
+    ok = bool(fit.get("ok", False))
+
+    def val(key):
+        return float(fit[key]) if ok else np.nan
+
+    nan = np.full(n_pts, np.nan)
+    return {
+        "chi_argmin": float(chi_argmin_mhz),
+        "chi_fit_ok": ok,
+        "chi_fit": val("delta") if ok else float(chi_argmin_mhz),
+        "chi_err": val("delta_err"),
+        "p_g_exc": val("a"),
+        "p_g_exc_err": val("a_err"),
+        "p_pi_exc": val("b"),
+        "p_pi_exc_err": val("b_err"),
+        "kappa_fit": val("kappa"),
+        "kappa_fit_err": val("kappa_err"),
+        "fr_fit": val("fr"),
+        "fr_fit_err": val("fr_err"),
+        "fit_ground": np.asarray(fit["yfit_g"], dtype=float) if ok else nan,
+        "fit_01": np.asarray(fit["yfit_pi"], dtype=float) if ok else nan,
+    }
+
+
 class ChiShift(ExperimentClass):
-    """Dispersive shift: transmission sweep without and with a pi pulse; chi from the two
-    transmission minima. Half-open grid around pulse_freq + cavity_shift
+    """Dispersive shift: transmission sweep without and with a pi pulse; f_e - f_g (= 2chi)
+    from a joint population-mixture fit of the two traces, with the difference of the two
+    transmission minima kept as a fallback. Half-open grid around pulse_freq + cavity_shift
     (docs/experiments/chi_shift.md)."""
 
     def __init__(
@@ -172,11 +208,54 @@ class ChiShift(ExperimentClass):
 
         print(f"Ground peak frequency: {f_ground:.9f} GHz")
         print(f"|1> peak frequency:    {f_01:.9f} GHz")
-        print(f"Chi shift:             {chi_shift_ghz:.9f} GHz = {chi_shift_mhz:.6f} MHz")
+        print(f"f_e - f_g (argmin):     {chi_shift_ghz:.9f} GHz = {chi_shift_mhz:.6f} MHz")
+
+        # Joint mixture fit of both traces: docs/experiments/chi_shift.md#analysis
+        fpts = np.asarray(data["data"]["fpts"], dtype=float)
+        try:
+            fit = fit_dispersive_shift(fpts, avgamp_ground, avgamp_01)
+        except Exception as exc:  # the fit must not cost the plot or the record
+            fit = {"ok": False, "error": repr(exc)}
+        data["data"].update(_chi_fit_fields(fit, chi_shift_mhz, fpts.size))
+        if fit["ok"]:
+            print(
+                f"Joint fit: f_e - f_g (= 2chi) = {fit['delta']:.6f} +- {fit['delta_err']:.6f} MHz;"
+                f" chi = {fit['delta'] / 2:.6f} +- {fit['delta_err'] / 2:.6f} MHz"
+            )
+            print(
+                f"  excited population: no-pi trace {fit['a']:.3f} +- {fit['a_err']:.3f},"
+                f" pi trace {fit['b']:.3f} +- {fit['b_err']:.3f}"
+            )
+            print(
+                f"  kappa = {fit['kappa']:.6f} +- {fit['kappa_err']:.6f} MHz,"
+                f" f_r = {fit['fr']:.6f} +- {fit['fr_err']:.6f} MHz (fpts axis)"
+            )
+            if not fit["resolved"]:
+                print(
+                    f"  note: |f_e - f_g| < {CHI_FIT_MIN_DELTA_SIGMAS:g} x its error; the fitted"
+                    " value is kept (unbiased), but the shift is not resolved"
+                )
+            if fit["b"] < CHI_FIT_MIN_PI_POPULATION:
+                msg = (
+                    f"ChiShift: pi-trace excited population {fit['b']:.3f} +- {fit['b_err']:.3f}"
+                    f" < {CHI_FIT_MIN_PI_POPULATION}: bad pi pulse (or decay before readout)"
+                )
+                print("WARNING: " + msg)
+                warnings.warn(msg, stacklevel=2)
+            title_chi = (
+                f"f_e - f_g (= 2chi) = {fit['delta']:.3f} +- {fit['delta_err']:.3f} MHz (fit),"
+                f" p_pi = {fit['b']:.2f}" + ("" if fit["resolved"] else " (not resolved)")
+            )
+        else:
+            print(f"Joint fit failed ({fit['error']}): f_e - f_g from the argmin only")
+            title_chi = f"f_e - f_g (= 2chi) = {chi_shift_mhz:.3f} MHz (argmin; fit failed)"
 
         plt.figure(figNum + 1)
         plt.plot(x_pts, avgamp_ground, label="Ground", color="red", ls="-", marker=".")
         plt.plot(x_pts, avgamp_01, label="01", color="blue", ls="-", marker=".")
+        if fit["ok"]:
+            plt.plot(x_pts, fit["yfit_g"], color="darkred", lw=2, label="Ground fit")
+            plt.plot(x_pts, fit["yfit_pi"], color="navy", lw=2, label="01 fit")
 
         plt.axvline(
             f_ground, color="red", ls="--", alpha=0.7, label=f"Ground peak = {f_ground:.6f} GHz"
@@ -186,7 +265,7 @@ class ChiShift(ExperimentClass):
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.legend()
-        plt.title(self.titlename + f"\nChi shift = {chi_shift_mhz:.3f} MHz")
+        plt.title(self.titlename + "\n" + title_chi)
 
         plt.savefig(self.iname)
 

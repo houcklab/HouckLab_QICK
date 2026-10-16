@@ -54,7 +54,7 @@ Pages: [transmission_fit](experiments/transmission_fit.md),
 [transmission_sweep](experiments/transmission_sweep.md).
 Steps: `transmission_fit` (hanger fit, writes the fitted curve's minimum into the session config) or
 `transmission_sweep` (takes the min or max point). `constant_tone` plays a CW readout tone for
-looking at the line on a spectrum analyser.
+looking at the line on a spectrum analyser, until you press Enter (then `soc.reset_gens()`).
 
 | knob | where | CSTQ03 value | notes |
 |---|---|---|---|

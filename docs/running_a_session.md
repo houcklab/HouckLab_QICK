@@ -126,6 +126,11 @@ parameters.
 |---|---|---|---|---|
 | `constant_tone` | SingleTone | `TransmissionFF` | A | |
 | `constant_two_tone` | ConstantTwoTone | `ConstantTwoTone` | A | tones |
+
+The two CW steps hold their tones until you press Enter (or for `hold_s` seconds when the step is
+given `hold_s`; with no interactive stdin and no `hold_s` the tones stop at once) and always call
+`soc.reset_gens()` before returning. After a hard kill, run `soc.reset_gens()` yourself: a periodic
+tone keeps playing otherwise ([cw_tones](experiments/cw_tones.md#stray-tone-hazard)).
 | `transmission_fit` | CavitySpecFF | `TransmissionFF` | A | transmission |
 | `transmission_sweep` | CavitySpecFF | `TransmissionFF` | A | transmission |
 | `two_tone_spec` | QubitSpecSliceFF | `QubitSpecFF` | A | spec |
@@ -292,8 +297,10 @@ print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
   folder.
 - `t1` and `t2_echo` save their exponential fit in the h5 (`t1_fit_*`, `t2e_fit_*`, see
   [t1](experiments/t1.md#outputs)); `*_fit_ok` is a quality flag, not an unbiased selector for a
-  T(t) series ([t1](experiments/t1.md#analysis)). Fit results of `t2_ramsey` and `chi_shift` are not saved;
-  they appear only in the png and the console. Refit from the saved data.
+  T(t) series ([t1](experiments/t1.md#analysis)). `chi_shift` saves its joint fit (`chi_fit`,
+  `chi_err`, `chi_fit_ok`, populations, kappa, fr; see [chi_shift](experiments/chi_shift.md#outputs)).
+  Fit results of `t2_ramsey` are not saved; they appear only in the png and the console. Refit
+  from the saved data.
 - Interleaved records group by cycle via the cfg:
   `cfg["interleave_run_id"], cfg["interleave_cycle"], cfg["interleave_step"]`. `run_id` is the
   wall-clock start of the loop, so separate invocations on the same day stay distinct.

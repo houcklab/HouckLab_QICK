@@ -22,8 +22,10 @@ their current values. Besides one run per flag there are:
 This is the post-refactor driver: identical to ``driver_legacy`` except for
 the package constants (``RUNS_PACKAGE = "qicklab.runs"``, the experiment base
 class from ``qicklab.core.experiment``, the proxy factory in
-``qicklab.hardware.rfsoc`` under both its new name and its legacy alias). The
-fixture and the run labels are unchanged, so the golden keys exactly as before.
+``qicklab.hardware.rfsoc`` under both its new name and its legacy alias), and
+``input()`` raising EOFError during a replay (``_no_stdin``: the CW-tone steps
+hold on it and must never block the capture). The fixture and the run labels
+are unchanged, so the golden keys exactly as before.
 
 Usage:  python -m tests.regression.driver_qicklab          (rewrites the golden)
         python -m tests.regression.driver_qicklab RunT1    (dry run, A and B)
@@ -228,6 +230,26 @@ def _traceback_tail(exc, n=4):
     return out
 
 
+@contextlib.contextmanager
+def _patched(obj, name, value):
+    saved = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, saved)
+
+
+def _no_stdin(prompt=""):
+    """input() during a replay: there is no operator, whatever the terminal.
+
+    The CW-tone steps (run_constant_tone / run_constant_two_tone) hold their tones on input();
+    raising EOFError puts them on their no-stdin path (stop the tones at once) under a tty,
+    `pytest -s` or a pipe alike, instead of blocking behind the redirected, invisible prompt.
+    """
+    raise EOFError("no interactive stdin in the regression replay")
+
+
 def run_one(label, stmts, override, prefix_code, runs_names):
     import matplotlib.pyplot as plt
 
@@ -238,7 +260,11 @@ def run_one(label, stmts, override, prefix_code, runs_names):
     out_sink = sys.stdout if verbose else io.StringIO()
     err_sink = sys.stderr if verbose else io.StringIO()
     try:
-        with contextlib.redirect_stdout(out_sink), contextlib.redirect_stderr(err_sink):
+        with (
+            contextlib.redirect_stdout(out_sink),
+            contextlib.redirect_stderr(err_sink),
+            _patched(builtins, "input", _no_stdin),
+        ):
             ns = {"__name__": "__cstq03_replay__", "__file__": str(FIXTURE)}
             ns["__builtins__"] = builtins
             ns.update(runs_names)

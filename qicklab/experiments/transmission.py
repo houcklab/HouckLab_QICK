@@ -5,7 +5,7 @@ import numpy as np
 from qick import AveragerProgram
 from tqdm.notebook import tqdm
 
-from qicklab.analysis.fitting import fit_hanger_transmission
+from qicklab.analysis.fitting import fit_hanger_transmission, hanger_startpoint
 from qicklab.core.acquisition import acquire_with_retry
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
@@ -132,24 +132,9 @@ class CavitySpecFF(ExperimentClass):
 
         if fit:
             try:
-                span_mhz = float(np.max(fpts) - np.min(fpts))
-                y_edge = 0.5 * (
-                    np.median(y_db[: max(3, len(y_db) // 10)])
-                    + np.median(y_db[-max(3, len(y_db) // 10) :])
-                )
-                depth_db = float(y_edge - raw_min_val_db)
-
-                center_guess = raw_min_freq_mhz
-                Qtot_guess = max(abs(center_guess) / max(span_mhz / 10, 1e-6), 1e3)
-                Qext_guess = Qtot_guess * 1.5
-
-                startpoint = [
-                    center_guess,  # f0 [MHz]
-                    Qtot_guess,  # Qtot
-                    Qext_guess,  # Qext
-                    0.0,  # asym
-                    0.0,  # offset
-                ]
+                # [f0 = raw minimum, Qtot from span/10, Qext from the dip depth, asym 0,
+                # offset = edge level]; the fit itself runs in (f0, Qint, Qext, asym, offset).
+                startpoint = hanger_startpoint(fpts, y_db)
 
                 fit_result = fit_hanger_transmission(freq=fpts, amp_db=y_db, startpoint=startpoint)
 
@@ -159,11 +144,14 @@ class CavitySpecFF(ExperimentClass):
                 f0_fit, Qtot_fit, Qext_fit, asym_fit, offset_fit = popt
                 df0_fit, dQtot_fit, dQext_fit, dasym_fit, doffset_fit = perr
                 Qint_fit = fit_result["Qint"]
+                dQint_fit = fit_result["Qint_err"]
                 # kappa/2pi in MHz: the hanger model's Lorentzian FWHM is |f0|/Qtot on the fit
                 # axis (fpts, MHz). With a nonzero cavity_LO the Qs are relative to that IF axis,
                 # not physical Qs, but |f0_fit|/Q is still the correct width in MHz.
                 kappa_tot_mhz = abs(f0_fit) / Qtot_fit  # total linewidth
                 kappa_ext_mhz = abs(f0_fit) / Qext_fit  # coupling (external) rate
+                dkappa_tot_mhz = fit_result["kappa_tot_err"]  # full-covariance errors
+                dkappa_ext_mhz = fit_result["kappa_ext_err"]
 
                 x_fit_dense = np.linspace(np.min(fpts), np.max(fpts), 4000)
                 y_fit_dense = fit_result["model"](x_fit_dense, *popt)
@@ -177,6 +165,7 @@ class CavitySpecFF(ExperimentClass):
 
                 data["data"]["hanger_fit_popt"] = np.asarray(popt)
                 data["data"]["hanger_fit_perr"] = np.asarray(perr)
+                data["data"]["hanger_fit_pcov"] = np.asarray(fit_result["pcov"])
                 data["data"]["hanger_fit_f0_mhz"] = np.asarray(f0_fit)
                 data["data"]["hanger_fit_min_freq_mhz"] = np.asarray(fit_min_freq_mhz)
                 data["data"]["hanger_raw_min_freq_mhz"] = np.asarray(raw_min_freq_mhz)
@@ -185,6 +174,11 @@ class CavitySpecFF(ExperimentClass):
                 data["data"]["hanger_fit_Qint"] = np.asarray(Qint_fit)
                 data["data"]["hanger_fit_kappa_tot_mhz"] = np.asarray(kappa_tot_mhz)
                 data["data"]["hanger_fit_kappa_ext_mhz"] = np.asarray(kappa_ext_mhz)
+                data["data"]["hanger_fit_Qtot_err"] = np.asarray(dQtot_fit)
+                data["data"]["hanger_fit_Qext_err"] = np.asarray(dQext_fit)
+                data["data"]["hanger_fit_Qint_err"] = np.asarray(dQint_fit)
+                data["data"]["hanger_fit_kappa_tot_mhz_err"] = np.asarray(dkappa_tot_mhz)
+                data["data"]["hanger_fit_kappa_ext_mhz_err"] = np.asarray(dkappa_ext_mhz)
 
                 print("Hanger resonator fit:")
                 print(
@@ -196,9 +190,13 @@ class CavitySpecFF(ExperimentClass):
                 )
                 print(f"  Qtot             = {Qtot_fit:.6e} ± {dQtot_fit:.6e}")
                 print(f"  Qext             = {Qext_fit:.6e} ± {dQext_fit:.6e}")
-                print(f"  Qint             = {Qint_fit:.6e}")
-                print(f"  kappa_tot/2pi    = {kappa_tot_mhz:.6f} MHz (|f0|/Qtot)")
-                print(f"  kappa_ext/2pi    = {kappa_ext_mhz:.6f} MHz (|f0|/Qext)")
+                print(f"  Qint             = {Qint_fit:.6e} ± {dQint_fit:.6e}")
+                print(
+                    f"  kappa_tot/2pi    = {kappa_tot_mhz:.6f} ± {dkappa_tot_mhz:.6f} MHz (|f0|/Qtot)"
+                )
+                print(
+                    f"  kappa_ext/2pi    = {kappa_ext_mhz:.6f} ± {dkappa_ext_mhz:.6f} MHz (|f0|/Qext)"
+                )
                 print(f"  asym             = {asym_fit:.6e} ± {dasym_fit:.6e}")
                 print(f"  offset           = {offset_fit:.6e} ± {doffset_fit:.6e}")
 

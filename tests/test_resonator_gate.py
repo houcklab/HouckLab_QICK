@@ -23,6 +23,7 @@ from qicklab.analysis.fitting import (
     assess_resonator_fit,
     fit_hanger_transmission,
     hanger_model_db,
+    hanger_startpoint,
 )
 
 FPTS = np.linspace(7090.0, 7100.0, 201)  # +-5 MHz, 0.05 MHz steps (CSTQ03 Transmission_params)
@@ -31,13 +32,10 @@ F0, KAPPA = 7095.2, 0.3  # MHz; kappa = |f0|/Qtot
 
 def _display_fit(y_db):
     """The fit CavitySpecFF.display runs (same start point)."""
-    i = int(np.argmin(y_db))
-    q = max(abs(FPTS[i]) / ((FPTS[-1] - FPTS[0]) / 10), 1e3)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return fit_hanger_transmission(
-            FPTS, amp_db=y_db, startpoint=[FPTS[i], q, 1.5 * q, 0.0, 0.0]
-        )["popt"]
+        startpoint = hanger_startpoint(FPTS, y_db)
+        return fit_hanger_transmission(FPTS, amp_db=y_db, startpoint=startpoint)["popt"]
 
 
 def _hanger(qtot_over_qext, asym=0.0, noise_db=0.1, seed=0, f0=F0, kappa=KAPPA):
