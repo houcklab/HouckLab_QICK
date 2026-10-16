@@ -181,6 +181,10 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     shortest-window-within-SE rule; extended mode per N) (golden: 570 leaves in RunModifiedRamsey_Control(+verified)
     only). Known: extended mode still returns the best step across all N; ss_target_fidelity compares the measured
     scan contrast, not the fitted maximum.
+53. `5b5f8c3f` fix(readout): tier-B batch B4 — F63 (single-shot family on cover_readout_window), F62 (hist_process exact-CDF
+    contrast and threshold, self-consistent (fid, threshold)), F61 (single-shot figures of merit saved per read),
+    F60 (map uncertainties + smoothed recommendation), F59 (labelled two-Gaussian overlap + snr_mat; MixedShots deleted,
+    symbol map row) (golden: 2668 leaves in 12 labels, all downstream of the SS threshold plus the new keys).
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
