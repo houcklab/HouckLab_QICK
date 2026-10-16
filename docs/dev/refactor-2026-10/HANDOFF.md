@@ -175,6 +175,12 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     F68+F79 (principal-axis rotation for T1/T2E), F66 (T1_SS two-pass model-weighted fit, readout-corrected population,
     pi_gain played), F82 (AutoCoherence Qubit_Pulse != Qubit_Readout guard) (golden: 4956 leaves in the 9 coherence
     labels: cfg step / phase_step / f_virt_mhz, T2R program hashes, fits and axes, T1_SS keys). 27 + 3 Opus agents.
+52. `e81a68fc` fix(auto_coherence): tier-B batch B3 — F35 (sweet-spot walk: SNR gate on every spectrum, start-voltage
+    gain raise, one pass with a visited set, re-acquire at the best, failure flag; MRC marks the cycle not verified;
+    calibration sweet_spot_found / sweet_spot_sep_mhz), F64 (pi gain from a cosine fit with argmax fallbacks; Stage 2.5
+    shortest-window-within-SE rule; extended mode per N) (golden: 570 leaves in RunModifiedRamsey_Control(+verified)
+    only). Known: extended mode still returns the best step across all N; ss_target_fidelity compares the measured
+    scan contrast, not the fitted maximum.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
