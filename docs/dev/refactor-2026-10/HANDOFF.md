@@ -185,11 +185,20 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     contrast and threshold, self-consistent (fid, threshold)), F61 (single-shot figures of merit saved per read),
     F60 (map uncertainties + smoothed recommendation), F59 (labelled two-Gaussian overlap + snr_mat; MixedShots deleted,
     symbol map row) (golden: 2668 leaves in 12 labels, all downstream of the SS threshold plus the new keys).
+54. `8d92d564` fix(spectroscopy): tier-B batch B5 — F36 (hanger fit in (f0, Qint, Qext): the Qtot/Qext twin is unreachable,
+    sandwich covariance, propagated hanger_fit_*_err keys), F37 (ChiShift joint two-trace fit: chi_fit / chi_err with a
+    'resolved' flag, chi_argmin kept), F69 (constant_tone / constant_two_tone are true periodic CW tones, one program,
+    reset_gens in a finally; the harness makes input() raise EOFError), F70 (lorentz_*_err, Rabi fit perr, AmplitudeRabiFF_N
+    fit keys, hanger pcov), F71 (gain-length sweep summary: peak SNR, saturation fit, T2* bound, recommendation) (golden:
+    474 leaves in 19 labels: hanger values on the pure-noise fixture incl. the pulse_freq carry-over, new keys, the two CW
+    labels down to one program). Known: a magnitude-only hanger fit does not resolve under/over-coupling; the chi fit's
+    b-delta trade-off below ~kappa/4; a doublet never resolved in a gain group is fitted as one line.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
+Landed: B1-B5 (items 50-54). Next: B6 (brief ready), then B7-B10.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
