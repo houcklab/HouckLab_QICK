@@ -78,16 +78,16 @@ Sweet-spot search (Stage 1)
 | `ss_dV` | 5e-4 | V | Voltage step of the Strategy-B walk |
 | `ss_voltage_min` | 0.000 | V | Lower voltage bound |
 | `ss_voltage_max` | 0.010 | V | Upper voltage bound |
-| `ss_max_tries` | 200 | - | Maximum walk steps |
+| `ss_max_tries` | 200 | - | Hard cap on walk spectra (the walk also ends after one pass of the voltage range) |
 | `cd_period_mv` | None | mV | Charge-dispersion period; enables Strategy A |
 
-f_ge calibration (Stage 1.5)
+f_ge calibration (Stage 1.5; the `freqcal_*` keys also apply to Stage 1)
 
 | Key | Default | Units | Meaning |
 |---|---|---|---|
 | `calibrate_qubit_freq` | True | bool | Run Stage 1.5 (no yoko move) |
-| `freqcal_auto_gain` | True | bool | Raise the spec gain while the peak is weak |
-| `freqcal_min_snr` | 4.0 | - | Peak SNR (median baseline, 1.4826 x MAD noise) below which the gain is raised |
+| `freqcal_auto_gain` | True | bool | Raise the spec gain while the peak is weak (Stage 1.5, and the Stage 1 start spectrum) |
+| `freqcal_min_snr` | 4.0 | - | Peak SNR (median baseline, 1.4826 x MAD noise) below which the gain is raised; in Stage 1 also the gate below which a spectrum counts as no line (0 disables the gate) |
 | `freqcal_gain_growth` | 1.8 | - | Gain multiplier per retry |
 | `freqcal_max_gain` | 30000 | DAC | Gain cap (under the 32767 ceiling) |
 | `freqcal_max_gain_retries` | 5 | - | Maximum retries |
@@ -172,18 +172,53 @@ T1 / T2 / T2E (Stages 4-6)
 ## Stages in detail
 
 **Stage 1 - sweet-spot search** (skipped when `skip_sweet_spot_search=True`: f_ge from the
-device, voltage held and recorded). One spectrum at the current voltage. Peaks are found on
+device, voltage held and recorded). One spectrum at the current voltage, taken with the
+Stage 1.5 gain raise (below): while its peak SNR < `freqcal_min_snr` the spec gain is
+multiplied by 1.8, up to 5 times. The rest of the search keeps the raised gain only if the
+start spectrum then cleared the gate; if no gain showed a line there (e.g. the line is
+outside the span at the start charge) the walk goes back to `spec_gain`. Peaks are found on
 `|I + iQ|^2` after Savitzky-Golay smoothing (window 5, order 2), prominence >= 0.25 x
 (max - min) (`prominence_fraction` 0.25, which works for typical two-tone SNR), minimum distance `round(0.10 MHz / df)` points; up to two peaks. f_ge = the
-midpoint of two peaks, or the single peak. Accept immediately if there is one peak or the
-separation is below `ss_accept_sep`; without a yoko, use the midpoint. Otherwise:
+midpoint of two peaks, or the single peak.
 
-- *Strategy A* (only if `cd_period_mv` is set and the separation is >= `ss_search_df_trigger`):
-  ramp once by +`cd_period_mv`/2 (clipped to the voltage bounds), re-measure, accept if the
-  peaks merged. It typically converges in 1-2 spectra.
-- *Strategy B* (fallback): walk in steps of `ss_dV`, reversing at the bounds, up to
-  `ss_max_tries` spectra, tracking the voltage with the smallest separation; stop on
-  acceptance, else return to the best voltage.
+**SNR gate.** Every Stage 1 spectrum gets the Stage 1.5 peak SNR. Below `freqcal_min_snr`
+(4.0) it is "no data": it is never accepted and never becomes the best point. (The peak
+finder falls back to the global maximum when nothing clears its prominence bar, so a
+noise-only spectrum otherwise reads as "one peak" and would end the search.)
+
+Accept immediately if the spectrum clears the gate and has one peak or a separation below
+`ss_accept_sep`; without a yoko, use the midpoint. Otherwise:
+
+- *Strategy A* (only if `cd_period_mv` is set, the start spectrum clears the gate and its
+  separation is >= `ss_search_df_trigger`): ramp once by +`cd_period_mv`/2 (clipped to the
+  voltage bounds), re-measure, accept if the peaks merged. It typically converges in 1-2
+  spectra.
+- *Strategy B* (fallback): walk in steps of `ss_dV`, up first, reversing at the bounds and
+  passing over voltages already measured, so each voltage of the grid in
+  [`ss_voltage_min`, `ss_voltage_max`] is measured once (21 spectra with the defaults, about
+  5 min at ~15 s each). Voltages are compared rounded to 0.1 uV, and a float-drift overshoot
+  of a bound (<= 1 nV) lands on the bound. The walk stops on acceptance, when the range is
+  covered, or after `ss_max_tries` spectra.
+
+Without acceptance the yoko returns to the voltage with the smallest separation among the
+spectra that cleared the gate (start, Strategy A or walk) and **one new spectrum is taken
+there**, because offset charge
+drifts during the walk; f_ge and the returned peaks come from that spectrum. If no spectrum
+cleared the gate (or the new one does not), the search reports failure: the yoko goes back
+to the start voltage, f_ge stays at the input centre frequency, and the returned peak dict
+is that of the start spectrum with `sweet_spot_ok = False` (it always carries
+`sweet_spot_ok` and `snr`). `sweet_spot_ok` only says that a line cleared the gate: it is
+also True when the search settled on the best voltage without reaching `ss_accept_sep`.
+The summary json and the step's return value record the outcome as
+`calibration["sweet_spot_found"]`, which is True only when the returned spectrum cleared the
+gate and shows a single line or a separation below `ss_accept_sep` (False on failure and on
+"best voltage, not accepted"), and `calibration["sweet_spot_sep_mhz"]`, the separation of
+the returned spectrum (None for a single line or on failure). Either way the pipeline
+continues (Stage 1.5 re-centres f_ge with its own gain raise). Before 2026-10 (F35) the walk bounced between the bounds
+re-measuring the same voltages for up to `ss_max_tries` = 200 spectra (~50 min; 1000 for
+modified_ramsey_control), returned the stored, possibly hour-old spectrum of the best
+voltage, ignored the start spectrum after a Strategy A jump, and accepted a noise-only
+spectrum as a single peak.
 
 The yoko is left at the chosen voltage. The same search is available on its own as
 `find_sweet_spot` (used by [modified_ramsey_control](modified_ramsey_control.md)).
@@ -203,25 +238,43 @@ multiplied by 0.70 (floor 0.01 us) and the Rabi repeated, up to 10 times; the la
 is accepted regardless.
 
 **Stage 2.5 - readout window.** At the Rabi pi gain, one single-shot run (1000 shots) per
-(readout_length, adc_offset) pair: 6 x 5 = 30 runs with the defaults. The pair with the
-highest contrast replaces `ss_readout_time`/`ss_adc_offset` for Stage 3 and
+(readout_length, adc_offset) pair: 6 x 5 = 30 runs with the defaults. Of the pairs whose
+contrast is within one standard error of the best, C >= C_best - SE with
+SE = sqrt((1 - C_best^2) / (2 ss_shots)) (= sqrt(2 F (1 - F) / shots) for the assignment
+fidelity F = (1 + C) / 2; 0.013 at C = 0.81 with 1000 shots), the shortest `readout_length`
+(then the smallest `adc_offset`) wins and is logged with C_best and SE: within the noise the
+30 contrasts do not rank, and a plain maximum picks the luckiest cell. The winner replaces
+`ss_readout_time`/`ss_adc_offset` for Stage 3 and
 `readout_length`/`adc_trig_offset`/`length` for Stages 4-6. The resonator tone length is
 `max(length, adc_offset + readout_length)`. T1/T2R/T2E integrate the same physical window as
 the single-shot runs that chose it (before 2026-10-15 they integrated 1.4x `readout_length`, so
 the winner did not transfer: [readout window](../concepts/readout_window.md#history)).
 
 **Stage 3 - pi gain by single shot (default).** Gains `linspace(pi (1 - 0.20), pi (1 + 0.20), 21)`
-(unique integers), 1000 shots each; pick the highest contrast. If the best gain is on an
-edge, re-centre on it and widen the span x1.8, up to 2 times. Warn if the best contrast is
-below 0.70. Final run at the best gain with 2000 shots (contrast, threshold, angle go to
-the summary). `pi2_gain = pi_gain // 2`.
+(unique integers), 1000 shots each. If the highest-contrast gain is on an edge, re-centre on
+it and widen the span x1.8, up to 2 times. Warn if the best contrast is below 0.70. The pi
+gain is then the period P of a fit `C(g) = B - A cos(pi g / P)` (C = Cread sin^2(pi g / 2P):
+a maximum at g = P) to every scanned point within +-60 % of the latest scan centre (at lower
+excitation the rectified histogram contrast is unreliable): (B, A) by linear least squares on
+a grid of P over 0.7 ... 1.3 x that centre, then `curve_fit` on (B, A, P) with P kept in that
+window (`qicklab.analysis.fitting.fit_pi_gain_contrast`). The log gives P +- dP (covariance),
+A and B. The fit is not used, and the highest-contrast gain is kept, with fewer than 5
+points, a failed fit, A <= 0, P on the window edge or P outside the fitted gains; the log
+says which. In simulated scans (binomial 1000-shot contrasts, Cread 0.8, Rabi estimate within
+5 %) the argmax scatters by ~4 % rms around the true pi gain for both 21 points over +-20 %
+and 100 points over +-60 %; the fit gives 0.8 % and 0.2 % (`tests/test_pi_gain_fit.py`). Final run at the chosen gain with 2000 shots
+(contrast, threshold, angle go to the summary). `pi2_gain = pi_gain // 2`.
 
 **Stage 3 - error-amplified pi / pi/2 (`extended_pi_pi2_opt=True`).** For each N in
 `pi_nsteps_list` (odd N: N pi pulses end in |e>), scan 51 gains around the current centre
-with `number_of_pulses = N`; the best gain becomes the next centre and the span shrinks
-x0.40 (initial +-20 %). Then the same for pi/2 starting at `pi_gain // 2` with
-`pi2_nsteps_list` (N = 2(2k+1) pi/2 pulses also end in |e>). Final N = 1 single-shot
-verification at the pi gain with 2000 shots.
+with `number_of_pulses = N`; the contrasts are fitted as in the default mode with N pi
+rotations at P, `C(g) = B - A cos(pi N g / P)`, and the fitted P (the highest-contrast gain
+under the same fallbacks) becomes the next centre; the span shrinks x0.40 (initial +-20 %).
+The P window is centre x [1 - h, 1 + h] with h = min(0.3, 0.5 / N): the other solutions of a
+narrow scan (a contrast minimum, the next fringe) lie ~1/N away. Then the same for pi/2
+starting at `pi_gain // 2` with `pi2_nsteps_list` (N = 2(2k+1) pi/2 pulses also end in |e>;
+fitted with N/2 pi rotations at P). Final N = 1 single-shot verification at the pi gain
+with 2000 shots.
 
 **Stages 4-6.** T1, T2R and T2E with the calibrated f_ge, pi/pi2 gains and sigma, each
 followed by a 5 s pause and `soc.reset_gens()`. The T2E step is quantised as on
@@ -273,7 +326,8 @@ warns (499 us = 10 T1); the T1 window (300 us = 6 T1) does not.
 Inside each `auto-*` folder the usual `<path>_<YYYY_MM_DD>/<path>_<timestamp>_data.*`
 layout applies. The summary holds the calibrated values (`qubit_frequency`, `pi_gain`,
 `pi2_gain`, `rabi_sigma`, `flattop_length`, `fidelity`, `ss_threshold`, `ss_angle`,
-`sweet_spot_voltage`), every parameter used, and the full stage log. The step returns the
+`sweet_spot_voltage`; only when Stage 1 ran: `sweet_spot_found`, `sweet_spot_sep_mhz`), every parameter
+used, and the full stage log. The step returns the
 same values plus `auto_folder` and `summary_file`.
 
 The summary is written after the calibration block, after each of T1, T2 and T2E, and once
@@ -334,15 +388,19 @@ single-shot histogram analysis (see Findings).
   a two-peak spectrum can never be accepted; acceptance happens only when a single peak is
   found.
 - The spectrum grid is asymmetric by one step (last point `centre + span - step`).
-- Strategy A drops the starting voltage from the best-voltage tracking: if the half-period
-  jump makes things worse, the search cannot return to the start.
+- The Stage 1 gain raise can go up to `freqcal_max_gain` (30000). A gain high enough to
+  power-broaden the doublet into one line would be accepted as a sweet spot; the raise
+  stops at the first gain whose spectrum clears the SNR gate, and the walk keeps a raised
+  gain only when it did show a line at the start voltage, which limits but does not
+  exclude this. Conversely a line that only clears the gate at a raised gain is missed by
+  the walk when the start voltage showed no line at all.
 - Stage 2 always uses the register-swept `AmplitudeRabiFF`, even when the qubit has a
   `flattop_length` (the flat part then does not follow the gain; see
   [amplitude_rabi](amplitude_rabi.md#findings--notes)).
 - Reducing sigma at a fixed `rabi_max_gain` can push the pi gain past the sweep; this is
   not checked (fallback: global maximum).
-- In extended mode the returned gain is the one with the highest contrast over all N steps,
-  not the one from the largest N.
+- In extended mode the returned gain is the chosen (fitted) gain of the N step with the
+  highest measured contrast over all N steps, not the one from the largest N.
 - `T2E_num_pi_pulses` must be odd and >= 1, but this is checked only when Stage 6 builds
   its first `T2EProgram` (`ValueError`; see [t2_echo](t2_echo.md#refocusing-condition)).
   With an even value the run therefore aborts late: the whole calibration and the T1 and

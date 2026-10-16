@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
-from qicklab.analysis.fitting import estimate_noise_floor
+from qicklab.analysis.fitting import estimate_noise_floor, fit_pi_gain_contrast
 from qicklab.analysis.spectroscopy import find_two_tone_peaks
 from qicklab.core.experiment import finish
 from qicklab.core.schedule import tproc_cycle_us
@@ -90,8 +90,9 @@ AUTO_COHERENCE_PARAMS = {
     "ss_gain_span_growth": 1.8,  # multiplier for each edge-hit expansion
     "ss_gain_span_frac": 0.20,  # ± fraction of estimated pi_gain to scan
     # Readout parameter optimisation (Stage 2.5)
-    # Sweeps readout_length × adc_trig_offset at the Rabi pi_gain to find the
-    # integration window that maximises single-shot fidelity.
+    # Sweeps readout_length × adc_trig_offset at the Rabi pi_gain and keeps the
+    # shortest window (then smallest offset) whose single-shot contrast is within one
+    # standard error of the best cell.
     # Set auto_readout_opt=False to skip (faster runs, fixed readout params).
     "auto_readout_opt": True,  # run Stage 2.5
     "readout_length_start": 5.0,  # us – shortest window to test
@@ -104,7 +105,8 @@ AUTO_COHERENCE_PARAMS = {
     # When extended_pi_pi2_opt=True, Stage 3 replaces the simple scan with a
     # sequential error-amplification scheme.  For each N in the nsteps list,
     # SingleShot is run with number_of_pulses=N at each candidate gain; the
-    # best gain becomes the new centre, and the search span shrinks by
+    # gain from a cosine fit to N pi rotations (N/2 for pi2; scan argmax if the
+    # fit is not usable) becomes the new centre, and the search span shrinks by
     # ext_gain_span_shrink each step.
     #
     #   pi  uses odd N  [1, 3, 5, 7, 11] – odd N rotations land on |e⟩
@@ -145,17 +147,49 @@ AUTO_COHERENCE_PARAMS = {
 }
 
 
-def _choose_next_voltage(current_v, dv, vmin, vmax, direction):
-    """Step voltage in *direction*, reversing at bounds. Returns (new_v, direction)."""
+def _choose_next_voltage(current_v, dv, vmin, vmax, direction, tol=0.0):
+    """Step voltage in *direction*, reversing at bounds. Returns (new_v, direction).
+
+    An overshoot of at most *tol* is clipped onto the bound instead of reversing.
+    """
     proposed = current_v + direction * dv
-    if proposed > vmax:
+    if proposed > vmax + tol:
         direction = -1
         proposed = current_v + direction * dv
-    if proposed < vmin:
+    if proposed < vmin - tol:
         direction = +1
         proposed = current_v + direction * dv
     proposed = float(np.clip(proposed, vmin, vmax))
     return proposed, direction
+
+
+def _voltage_key(v):
+    """Walk voltages are compared rounded to 0.1 uV: repeated +-dV steps accumulate float error."""
+    return round(float(v), 7)
+
+
+def _next_unvisited_voltage(current_v, dv, vmin, vmax, direction, visited):
+    """Next Strategy-B voltage not yet measured, or (None, direction) once [vmin, vmax] is covered.
+
+    Steps like _choose_next_voltage (reversing at the bounds) and passes over voltages whose
+    _voltage_key is in *visited*; a second reversal within one call means every grid voltage
+    on both sides has been measured. A float-drift overshoot of a bound (<= 1 nV) lands on
+    the bound, so vmin and vmax are measured when they lie on the dV grid.
+    """
+    n_grid = int(abs(vmax - vmin) / abs(dv)) + 2 if dv else 0
+    v, reversals = current_v, 0
+    for _ in range(2 * n_grid + 2):
+        next_v, next_dir = _choose_next_voltage(v, dv, vmin, vmax, direction, tol=1e-9)
+        if abs(next_v - v) < 1e-15:
+            return None, direction
+        if next_dir != direction:
+            reversals += 1
+            if reversals > 1:
+                return None, next_dir
+        v, direction = next_v, next_dir
+        if _voltage_key(v) not in visited:
+            return v, direction
+    return None, direction
 
 
 def _acquire_spec(soc, soccfg, cfg, outerFolder, qubit_freq_center, params):
@@ -384,47 +418,80 @@ def _stage_sweet_spot_search(
     """
     Stage 1 – Two-tone spec sweep to find the sweet spot (single resonance peak).
 
+    Every spectrum must clear the peak-SNR gate (SNR >= freqcal_min_snr, as in Stage 1.5);
+    one that does not is "no data": never accepted, never the best point. The start
+    spectrum uses the Stage 1.5 gain-raising loop; the walk keeps the raised gain only if
+    the start spectrum then cleared the gate, else it goes back to spec_gain.
+    The Strategy-B walk measures each grid voltage once (one pass of [vmin, vmax]); without
+    acceptance it returns to the best voltage and re-acquires a spectrum there.
+
+    On failure (no spectrum, or the re-acquired one, cleared the gate) the yoko is ramped
+    back to the start voltage.
+
     Returns
     -------
-    qubit_frequency : float  (MHz)
-    final_voltage   : float or None
-    peak_info       : dict
+    qubit_frequency : float  (MHz); qubit_freq_center on failure
+    final_voltage   : float or None (the start voltage on failure)
+    peak_info       : dict from find_two_tone_peaks of the returned spectrum (the start
+                      spectrum on failure), plus "snr" and "sweet_spot_ok" (False on failure)
     """
     log.append("=" * 60)
     log.append("STAGE 1 – Two-tone spec / sweet-spot search")
     log.append("=" * 60)
 
-    x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
-        soc, soccfg, cfg, auto_folder, qubit_freq_center, params
+    min_snr = float(params.get("freqcal_min_snr", 4.0))
+    x_pts, avgi, avgq, avgamp0, peak_info, snr, _, gain = _acquire_spec_auto_gain(
+        soc, soccfg, cfg, auto_folder, qubit_freq_center, params, log
     )
+    if snr >= min_snr:
+        params = {**params, "spec_gain": gain}  # the walk keeps the gain that showed the line
+    elif gain != int(params["spec_gain"]):
+        # no line at any gain here: no evidence a raise is needed, and a high gain
+        # can power-broaden a doublet into one line
+        log.append(f"  No line at the start voltage; the walk uses spec_gain={params['spec_gain']}")
 
     current_voltage = None
     if yoko is not None:
         current_voltage = float(yoko.query(":SOUR:LEV?"))
+    start_voltage, start_peak_info, start_snr = current_voltage, peak_info, snr
 
     peak_sep = peak_info["peak_sep"]
     sep_str = f"{peak_sep:.4f} MHz" if peak_sep is not None else "None (single peak)"
     log.append(f"  Initial voltage : {current_voltage}")
     log.append(f"  Initial peaks   : {peak_info['peak_freqs']}")
     log.append(f"  Initial sep     : {sep_str}")
+    log.append(f"  Initial SNR     : {snr:.2f} (gate {min_snr})")
 
     def _qubit_freq_from_peaks(pi):
         if len(pi["peak_freqs"]) == 2:
             return float(np.mean(pi["peak_freqs"]))  # midpoint of f+ and f-
         return float(pi["peak_freqs"][0])
 
-    # If already at sweet spot (one peak or tiny sep)
+    def _result(qfreq, voltage, pi, s, ok):
+        return qfreq, voltage, {**pi, "snr": float(s), "sweet_spot_ok": bool(ok)}
+
+    def _no_line(where):
+        log.append(
+            f"  WARNING: no spectrum cleared the SNR gate ({min_snr}) {where}; "
+            f"sweet spot NOT found, f_ge left at {qubit_freq_center:.6f} MHz"
+        )
+
     accept_sep = params["ss_accept_sep"]
-    if peak_sep is None or peak_sep < accept_sep:
+    snr_ok = snr >= min_snr
+    # If already at sweet spot (one peak or tiny sep)
+    if snr_ok and (peak_sep is None or peak_sep < accept_sep):
         qfreq = _qubit_freq_from_peaks(peak_info)
         log.append(f"  Already near sweet spot.  f_ge = {qfreq:.6f} MHz")
-        return qfreq, current_voltage, peak_info
+        return _result(qfreq, current_voltage, peak_info, snr, True)
 
     if yoko is None:
         # No voltage control available; use centre of the two peaks
+        if not snr_ok:
+            _no_line("and no yoko to move")
+            return _result(qubit_freq_center, current_voltage, peak_info, snr, False)
         qfreq = _qubit_freq_from_peaks(peak_info)
         log.append(f"  No yoko provided.  Using peak midpoint: {qfreq:.6f} MHz")
-        return qfreq, current_voltage, peak_info
+        return _result(qfreq, current_voltage, peak_info, snr, True)
 
     # Voltage search
     dV = params["ss_dV"]
@@ -436,8 +503,23 @@ def _stage_sweet_spot_search(
 
     direction = +1  # initial search direction
 
+    # minimum separation over the spectra that cleared the SNR gate, and where it was
+    best_sep_found = np.inf
+    best_voltage = None
+    best_peak_info = None
+    best_snr = 0.0
+
+    def _consider(voltage, pi, s):
+        nonlocal best_sep_found, best_voltage, best_peak_info, best_snr
+        sep = pi["peak_sep"]
+        if s >= min_snr and sep is not None and sep < best_sep_found:
+            best_sep_found, best_voltage, best_peak_info, best_snr = sep, voltage, pi, s
+
+    _consider(current_voltage, peak_info, snr)
+    visited = {_voltage_key(current_voltage)}
+
     # Strategy A: half-period step if cd_period_mv is known
-    if cd_period is not None and peak_sep >= df_trigger:
+    if cd_period is not None and snr_ok and peak_sep >= df_trigger:
         half_period_V = (cd_period * 1e-3) / 2.0
         candidate_v = current_voltage + half_period_V
         # Keep within bounds
@@ -448,78 +530,126 @@ def _stage_sweet_spot_search(
         )
         ramp_to(yoko, candidate_v)
         current_voltage = candidate_v
+        visited.add(_voltage_key(current_voltage))
 
         x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
             soc, soccfg, cfg, auto_folder, qubit_freq_center, params
         )
+        snr = _spec_peak_snr(avgamp0, peak_info)
         peak_sep = peak_info["peak_sep"]
         log.append(
-            f"  After half-period step: sep = {peak_sep:.4f} MHz"
+            f"  After half-period step: sep = {peak_sep:.4f} MHz, SNR={snr:.2f}"
             if peak_sep is not None
-            else "  After half-period step: single peak"
+            else f"  After half-period step: single peak, SNR={snr:.2f}"
         )
-        if peak_sep is None or peak_sep < accept_sep:
+        if snr >= min_snr and (peak_sep is None or peak_sep < accept_sep):
             qfreq = _qubit_freq_from_peaks(peak_info)
             log.append(f"  Sweet spot found at V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz")
-            return qfreq, current_voltage, peak_info
+            return _result(qfreq, current_voltage, peak_info, snr, True)
+        _consider(current_voltage, peak_info, snr)
 
-    # Strategy B: incremental walk toward minimum separation
-    # Track the minimum separation and its corresponding voltage.
-    best_sep_found = peak_sep if peak_sep is not None else np.inf
-    best_voltage = current_voltage
-    best_peak_info = peak_info
-
-    log.append(f"  Starting incremental walk (max {max_tries} steps, dV={dV * 1e3:.2f} mV)")
+    # Strategy B: one pass of [vmin, vmax] toward minimum separation, each voltage once
+    log.append(
+        f"  Starting incremental walk (one pass, max {max_tries} steps, dV={dV * 1e3:.2f} mV)"
+    )
 
     for attempt in range(max_tries):
-        next_v, direction = _choose_next_voltage(current_voltage, dV, vmin, vmax, direction)
-        if abs(next_v - current_voltage) < 1e-15:
-            log.append("  Voltage stalled at bounds; stopping search.")
+        next_v, direction = _next_unvisited_voltage(
+            current_voltage, dV, vmin, vmax, direction, visited
+        )
+        if next_v is None:
+            log.append("  Every voltage in [vmin, vmax] measured; stopping search.")
             break
 
         ramp_to(yoko, next_v)
         current_voltage = next_v
+        visited.add(_voltage_key(current_voltage))
 
         x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
             soc, soccfg, cfg, auto_folder, qubit_freq_center, params
         )
+        snr = _spec_peak_snr(avgamp0, peak_info)
         peak_sep = peak_info["peak_sep"]
 
+        if snr < min_snr:
+            log.append(
+                f"  Attempt {attempt + 1}: V={current_voltage:.6f} V, SNR={snr:.2f} < "
+                f"{min_snr}: no line, ignored"
+            )
+            continue
+
         if peak_sep is None or peak_sep < accept_sep:
-            best_sep_found = 0.0
-            best_voltage = current_voltage
-            best_peak_info = peak_info
+            qfreq = _qubit_freq_from_peaks(peak_info)
             log.append(
                 f"  Attempt {attempt + 1}: V={current_voltage:.6f} V → "
-                f"sweet spot found (sep={peak_sep})"
+                f"sweet spot found (sep={peak_sep}, SNR={snr:.2f})"
             )
-            break
+            log.append(
+                f"  Sweet-spot search complete. V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz"
+            )
+            return _result(qfreq, current_voltage, peak_info, snr, True)
 
-        if peak_sep < best_sep_found:
-            best_sep_found = peak_sep
-            best_voltage = current_voltage
-            best_peak_info = peak_info
-
+        _consider(current_voltage, peak_info, snr)
         log.append(
-            f"  Attempt {attempt + 1}: V={current_voltage:.6f} V, sep={peak_sep:.4f} MHz "
-            f"(best so far: {best_sep_found:.4f} MHz)"
+            f"  Attempt {attempt + 1}: V={current_voltage:.6f} V, sep={peak_sep:.4f} MHz, "
+            f"SNR={snr:.2f} (best so far: {best_sep_found:.4f} MHz)"
         )
 
-    # Move to the best voltage found
+    def _fail(where):
+        _no_line(f"{where}; returning to the start voltage")
+        if abs(current_voltage - start_voltage) > 1e-9:
+            ramp_to(yoko, start_voltage)
+        return _result(qubit_freq_center, start_voltage, start_peak_info, start_snr, False)
+
+    if best_voltage is None:
+        return _fail(f"in {len(visited)} voltage(s)")
+
+    # Move to the best voltage and re-measure there: offset charge drifts during the walk
     if abs(current_voltage - best_voltage) > 1e-9:
-        log.append(f"  Returning to best voltage {best_voltage:.6f} V")
+        log.append(f"  Returning to best voltage {best_voltage:.6f} V and re-acquiring")
         ramp_to(yoko, best_voltage)
         current_voltage = best_voltage
-        peak_info = best_peak_info
+        x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
+            soc, soccfg, cfg, auto_folder, qubit_freq_center, params
+        )
+        snr = _spec_peak_snr(avgamp0, peak_info)
+    else:
+        peak_info, snr = best_peak_info, best_snr
+
+    if snr < min_snr:
+        return _fail(f"on re-acquiring at the best voltage {best_voltage:.6f} V (SNR {snr:.2f})")
 
     qfreq = _qubit_freq_from_peaks(peak_info)
     final_sep = peak_info["peak_sep"]
     sep_txt = f"sep={final_sep:.4f} MHz" if final_sep is not None else "single peak"
     log.append(
-        f"  Sweet-spot search complete. V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz, {sep_txt}"
+        f"  Sweet-spot search complete. V={current_voltage:.6f} V, f_ge={qfreq:.6f} MHz, "
+        f"{sep_txt}, SNR={snr:.2f}"
     )
 
-    return qfreq, current_voltage, peak_info
+    return _result(qfreq, current_voltage, peak_info, snr, True)
+
+
+_SWEET_SPOT_KEYS = ("sweet_spot_found", "sweet_spot_sep_mhz")
+
+
+def _sweet_spot_record(peak_info, accept_sep):
+    """
+    Calibration entries summarising a Stage 1 result (peak_info from _stage_sweet_spot_search).
+
+    sweet_spot_found   : True only when the returned spectrum cleared the SNR gate AND shows a
+                         single line or a separation below accept_sep (ss_accept_sep). False
+                         both when the search failed the SNR gate (yoko back at the start) and
+                         when it settled on the best voltage without reaching ss_accept_sep.
+    sweet_spot_sep_mhz : peak separation of the returned spectrum in MHz; None for a single
+                         line or when the search failed the SNR gate.
+    """
+    ok = bool(peak_info["sweet_spot_ok"])
+    sep = peak_info["peak_sep"] if ok else None
+    return {
+        "sweet_spot_found": bool(ok and (sep is None or sep < accept_sep)),
+        "sweet_spot_sep_mhz": None if sep is None else float(sep),
+    }
 
 
 def _spec_peak_snr(avgamp0, peak_info):
@@ -545,6 +675,55 @@ def _spec_peak_snr(avgamp0, peak_info):
         peak = float(np.max(avgamp0))
 
     return (peak - baseline) / noise
+
+
+def _acquire_spec_auto_gain(soc, soccfg, cfg, auto_folder, qubit_freq_center, params, log):
+    """
+    One two-tone spec, re-run at higher drive gain while its peak SNR < freqcal_min_snr.
+
+    The gain grows by freqcal_gain_growth per retry, up to freqcal_max_gain or
+    freqcal_max_gain_retries retries; freqcal_auto_gain=False takes the first spectrum.
+    Used by Stage 1.5 and by the start spectrum of Stage 1.
+
+    Returns (x_pts, avgi, avgq, avgamp0, peak_info, snr, gain, measured_gain): the last
+    spectrum, the loop's final gain (Stage 1.5 reports it; one growth step above
+    measured_gain when the retries run out) and the gain that spectrum was taken at.
+    """
+    auto_gain = params.get("freqcal_auto_gain", True)
+    gain = int(params["spec_gain"])
+    gain_growth = float(params.get("freqcal_gain_growth", 1.8))
+    gain_cap = int(params.get("freqcal_max_gain", 30000))
+    max_retries = int(params.get("freqcal_max_gain_retries", 5))
+    min_snr = float(params.get("freqcal_min_snr", 4.0))
+
+    snr = 0.0
+    for attempt in range(max_retries + 1):
+        spec_params = {**params, "spec_gain": gain}
+        x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
+            soc, soccfg, cfg, auto_folder, qubit_freq_center, spec_params
+        )
+        measured_gain = gain
+        snr = _spec_peak_snr(avgamp0, peak_info)
+        log.append(f"  Attempt {attempt + 1}: spec_gain={gain}, peak SNR={snr:.2f}")
+
+        if not auto_gain or snr >= min_snr:
+            break
+
+        next_gain = min(gain_cap, int(round(gain * gain_growth)))
+        if next_gain <= gain:
+            log.append(
+                f"    Peak weak (SNR {snr:.2f} < {min_snr}) but spec_gain "
+                f"capped at {gain}; stopping."
+            )
+            break
+
+        log.append(
+            f"    Peak not clearly visible (SNR {snr:.2f} < {min_snr}); "
+            f"raising spec_gain {gain} -> {next_gain}"
+        )
+        gain = next_gain
+
+    return x_pts, avgi, avgq, avgamp0, peak_info, snr, gain, measured_gain
 
 
 def _stage_calibrate_qubit_freq(
@@ -574,38 +753,10 @@ def _stage_calibrate_qubit_freq(
     log.append("=" * 60)
 
     auto_gain = params.get("freqcal_auto_gain", True)
-    gain = int(params["spec_gain"])
-    gain_growth = float(params.get("freqcal_gain_growth", 1.8))
-    gain_cap = int(params.get("freqcal_max_gain", 30000))
-    max_retries = int(params.get("freqcal_max_gain_retries", 5))
     min_snr = float(params.get("freqcal_min_snr", 4.0))
-
-    peak_info = None
-    snr = 0.0
-    for attempt in range(max_retries + 1):
-        spec_params = {**params, "spec_gain": gain}
-        x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
-            soc, soccfg, cfg, auto_folder, qubit_freq_center, spec_params
-        )
-        snr = _spec_peak_snr(avgamp0, peak_info)
-        log.append(f"  Attempt {attempt + 1}: spec_gain={gain}, peak SNR={snr:.2f}")
-
-        if not auto_gain or snr >= min_snr:
-            break
-
-        next_gain = min(gain_cap, int(round(gain * gain_growth)))
-        if next_gain <= gain:
-            log.append(
-                f"    Peak weak (SNR {snr:.2f} < {min_snr}) but spec_gain "
-                f"capped at {gain}; stopping."
-            )
-            break
-
-        log.append(
-            f"    Peak not clearly visible (SNR {snr:.2f} < {min_snr}); "
-            f"raising spec_gain {gain} -> {next_gain}"
-        )
-        gain = next_gain
+    x_pts, avgi, avgq, avgamp0, peak_info, snr, gain, _ = _acquire_spec_auto_gain(
+        soc, soccfg, cfg, auto_folder, qubit_freq_center, params, log
+    )
 
     if auto_gain and snr < min_snr:
         log.append(
@@ -740,8 +891,9 @@ def _stage_optimize_readout(
     Stage 2.5 – Sweep readout_length × adc_trig_offset at the Rabi pi_gain.
 
     Tries all combinations of readout integration window length and ADC trigger
-    offset to find the pair that maximises single-shot fidelity.  The optimised
-    values are returned and propagated to Stage 3 and the coherence stages.
+    offset; returns the shortest readout_length (then smallest adc_offset) whose contrast
+    is within one standard error of the best (_select_readout_window). The values are
+    propagated to Stage 3 and the coherence stages.
 
     Returns
     -------
@@ -773,10 +925,7 @@ def _stage_optimize_readout(
         f"{params['adc_offset_stop']:.2f} us  ({int(params['adc_offset_pts'])} pts)"
     )
 
-    best_fid = -1.0
-    best_readout_length = float(params["ss_readout_time"])
-    best_adc_offset = float(params["ss_adc_offset"])
-
+    cells = []  # (readout_length, adc_offset, contrast)
     for rl in readout_lengths:
         for ao in adc_offsets:
             fid, _, _, _, _ = _run_single_shot_at_gain(
@@ -798,16 +947,54 @@ def _stage_optimize_readout(
             log.append(
                 f"    readout_length={rl:.1f} us, adc_offset={ao:.2f} us -> fidelity={fid:.4f}"
             )
-            if fid > best_fid:
-                best_fid = fid
-                best_readout_length = float(rl)
-                best_adc_offset = float(ao)
+            cells.append((float(rl), float(ao), fid))
 
+    chosen = _select_readout_window(cells, params["ss_shots"])
+    if chosen is None:
+        log.append("  No finite fidelity; keeping ss_readout_time / ss_adc_offset.")
+        return float(params["ss_readout_time"]), float(params["ss_adc_offset"])
+    best_readout_length, best_adc_offset, fid, best_fid, se = chosen
     log.append(
-        f"  Best: readout_length={best_readout_length:.1f} us, "
-        f"adc_offset={best_adc_offset:.2f} us, fidelity={best_fid:.4f}"
+        f"  Best fidelity {best_fid:.4f} (SE {se:.4f}); shortest window within one SE: "
+        f"readout_length={best_readout_length:.1f} us, "
+        f"adc_offset={best_adc_offset:.2f} us, fidelity={fid:.4f}"
     )
     return best_readout_length, best_adc_offset
+
+
+def _contrast_se(contrast, shots):
+    """Standard error of a single-shot contrast C from `shots` shots per state:
+    sqrt(2 F (1 - F) / shots) with F = (1 + C) / 2, i.e. sqrt((1 - C^2) / (2 shots))."""
+    c = min(max(float(contrast), 0.0), 1.0)
+    return float(np.sqrt((1.0 - c * c) / (2.0 * max(int(shots), 1))))
+
+
+def _select_readout_window(cells, shots):
+    """Stage 2.5 rule: among (readout_length, adc_offset, contrast) cells, the shortest
+    readout_length (then smallest adc_offset) whose contrast >= best - SE(best). Returns
+    (readout_length, adc_offset, contrast, best, se), or None when no contrast is finite."""
+    finite = [cell for cell in cells if np.isfinite(cell[2])]
+    if not finite:
+        return None
+    best = max(cell[2] for cell in finite)
+    se = _contrast_se(best, shots)
+    rl, ao, fid = min((cell for cell in finite if cell[2] >= best - se), key=lambda c: c[:2])
+    return rl, ao, fid, best, se
+
+
+def _fit_or_argmax_gain(gains, fids, centre, argmax_gain, log, rotations=1.0, label=""):
+    """Gain from fit_pi_gain_contrast on the scanned (gains, fids), else argmax_gain.
+    Logs P +- dP or the reason for the fallback."""
+    fit = fit_pi_gain_contrast(gains, fids, centre, rotations=rotations)
+    tag = f"[{label}] " if label else ""
+    if fit["ok"]:
+        log.append(
+            f"  {tag}Cosine fit ({fit['n']} pts, {rotations:g} pi rotation(s) at P): "
+            f"P = {fit['P']:.1f} +- {fit['dP']:.1f}, A = {fit['A']:.4f}, B = {fit['B']:.4f}"
+        )
+        return int(round(fit["P"]))
+    log.append(f"  {tag}Cosine fit not used ({fit['reason']}); keeping the argmax {argmax_gain}")
+    return int(argmax_gain)
 
 
 def _stage_singleshot_optimize(
@@ -824,7 +1011,8 @@ def _stage_singleshot_optimize(
     log,
 ):
     """
-    Stage 3 – SingleShot gain scan to find the gain that maximises fidelity.
+    Stage 3 – SingleShot gain scan; pi gain from a cosine fit to the contrasts
+    (fit_pi_gain_contrast), the scan argmax when the fit is not usable.
 
     Returns
     -------
@@ -858,6 +1046,8 @@ def _stage_singleshot_optimize(
 
     best_fid = -1.0
     best_gain = pi_gain_estimate
+    scan_center = pi_gain_estimate
+    scanned_gains, scanned_fids = [], []
 
     for g in gains:
         fid, thr, ang, _, _ = _run_single_shot_at_gain(
@@ -876,6 +1066,8 @@ def _stage_singleshot_optimize(
             qubit_readout=qubit_readout,
         )
         log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}")
+        scanned_gains.append(int(g))
+        scanned_fids.append(fid)
         if fid > best_fid:
             best_fid = fid
             best_gain = int(g)
@@ -917,6 +1109,8 @@ def _stage_singleshot_optimize(
                 qubit_readout=qubit_readout,
             )
             log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}")
+            scanned_gains.append(int(g))
+            scanned_fids.append(fid)
             if fid > best_fid:
                 best_fid = fid
                 best_gain = int(g)
@@ -929,7 +1123,10 @@ def _stage_singleshot_optimize(
             f"{target_fid:.4f}.  Proceeding anyway."
         )
 
-    # Final high-shot measurement at best gain
+    # every scanned point within PI_GAIN_FIT_MAX_REL_DEV of the latest scan centre
+    best_gain = _fit_or_argmax_gain(scanned_gains, scanned_fids, scan_center, best_gain, log)
+
+    # Final high-shot measurement at the chosen gain
     log.append(f"  Final SingleShot run at gain={best_gain}, shots={full_shots} …")
     fid_final, thr_final, ang_final, _, _ = _run_single_shot_at_gain(
         soc,
@@ -975,6 +1172,7 @@ def _optimize_gain_sequence(
     pulse_path,
     log,
     label,
+    rotations_per_pulse=1.0,
 ):
     """
     Iterative gain refinement using error amplification.
@@ -983,10 +1181,14 @@ def _optimize_gain_sequence(
       1. Build a gain grid of *gain_pts* points centred on the current best gain
          with a span of ±current_span fraction.
       2. Run SingleShot with number_of_pulses=N at each grid point.
-      3. Select the gain with the highest fidelity as the new centre.
+      3. Fit the contrasts with fit_pi_gain_contrast, rotations = N x
+         *rotations_per_pulse* (1 for pi, 0.5 for pi/2 pulses); the fitted gain (the
+         argmax when the fit is not usable) is the new centre.
       4. Multiply the span by *gain_span_shrink* for the next step.
 
-    Returns (best_gain, best_fid, best_thr, best_angle).
+    Returns (best_gain, best_fid, best_thr, best_angle) of the N step whose best measured
+    fidelity is highest: that step's chosen gain, with the fidelity, threshold and angle
+    of its best measured point.
     """
     current_center = int(gain_estimate)
     current_span = float(gain_span_init)
@@ -1011,6 +1213,7 @@ def _optimize_gain_sequence(
         step_best_gain = current_center
         step_best_thr = 0.0
         step_best_angle = 0.0
+        step_fids = []
 
         for g in gains:
             fid, thr, ang, _, _ = _run_single_shot_at_gain(
@@ -1031,6 +1234,7 @@ def _optimize_gain_sequence(
                 path=pulse_path,
             )
             log.append(f"    gain={int(g):6d}  fidelity={fid:.4f}  (N={n_pulses})")
+            step_fids.append(fid)
             if fid > step_best_fid:
                 step_best_fid = fid
                 step_best_gain = int(g)
@@ -1039,6 +1243,15 @@ def _optimize_gain_sequence(
 
         log.append(
             f"  [{label}] N={n_pulses}: best gain={step_best_gain}, fidelity={step_best_fid:.4f}"
+        )
+        step_best_gain = _fit_or_argmax_gain(
+            gains,
+            step_fids,
+            current_center,
+            step_best_gain,
+            log,
+            rotations=n_pulses * rotations_per_pulse,
+            label=f"{label} N={n_pulses}",
         )
 
         # Advance centre and shrink span
@@ -1157,6 +1370,7 @@ def _stage_extended_pulse_opt(
         pulse_path="auto-Pi2Opt",
         log=log,
         label="pi/2",
+        rotations_per_pulse=0.5,
     )
     log.append(f"  Pi/2 optimisation done: pi2_gain={pi2_gain_opt}, fidelity={pi2_fid:.4f}")
 
@@ -1656,6 +1870,7 @@ def _run_auto_coherence(
                 yoko=yoko,
                 log=log,
             )
+            calibration.update(_sweet_spot_record(peak_info, params["ss_accept_sep"]))
         calibration["qubit_frequency"] = qubit_freq
         calibration["sweet_spot_voltage"] = sweet_spot_voltage
         stage_reached = "sweet_spot_search"
@@ -1767,6 +1982,8 @@ def _run_auto_coherence(
             "ss_threshold": ss_threshold,
             "ss_angle": ss_angle,
             "sweet_spot_voltage": sweet_spot_voltage,
+            # only when Stage 1 ran
+            **{k: calibration[k] for k in _SWEET_SPOT_KEYS if k in calibration},
         }
 
         log.append("")

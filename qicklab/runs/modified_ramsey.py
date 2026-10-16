@@ -512,7 +512,10 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
             print(f"  {line_mrc}")
 
         S_sweet_mrc = float(pki_sw["peak_sep"]) if pki_sw["peak_sep"] is not None else 0.0
-        sweet_verified = pki_sw["peak_sep"] is None or S_sweet_mrc < sweet_max_df_mrc
+        # sweet_spot_ok False: the search failed the peak-SNR gate (yoko back at the start)
+        sweet_verified = pki_sw["sweet_spot_ok"] and (
+            pki_sw["peak_sep"] is None or S_sweet_mrc < sweet_max_df_mrc
+        )
 
         # reported only; the program derives tau from df = cd_max_mhz
         tau_mrc = 1.0 / (2.0 * cd_max_mhz_mrc)
@@ -788,10 +791,14 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
             )
 
         else:
+            reason_mrc = (
+                f"S_sweet={S_sweet_mrc:.4f} MHz >= threshold {sweet_max_df_mrc} MHz"
+                if pki_sw["sweet_spot_ok"]
+                else f"search failed the peak-SNR gate, start-voltage SNR {pki_sw['snr']:.2f}"
+            )
             print(
                 f"[MRC] Cycle {cycle_idx_mrc + 1}: sweet spot not verified "
-                f"(S_sweet={S_sweet_mrc:.4f} MHz >= threshold {sweet_max_df_mrc} MHz). "
-                f"Skipping Ramsey run."
+                f"({reason_mrc}). Skipping Ramsey run."
             )
             cycle_summary_mrc.append(
                 {

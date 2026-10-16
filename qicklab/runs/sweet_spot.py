@@ -9,7 +9,8 @@ def find_sweet_spot(
     """Stage 1 of run_auto_coherence on its own: move the yoko to the charge sweet spot.
 
     `save_folder` must end with "/"; strategies and sweet_params keys: docs/experiments/auto_coherence.md
-    Returns (qubit_freq, sweet_spot_voltage, peak_info, log).
+    Returns (qubit_freq, sweet_spot_voltage, peak_info, log); peak_info["sweet_spot_ok"] is
+    False when no spectrum cleared the peak-SNR gate (yoko back at the start voltage).
     """
     params = {**AUTO_COHERENCE_PARAMS, **(sweet_params or {})}
     log = []

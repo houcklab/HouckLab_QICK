@@ -226,6 +226,11 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
   new `parity_partner_snr` cfg key: that is what the `[gate_off]` labels do
   (`RunZeroSpanParity[gate_off]`, `RunZeroSpanParity[validate,gate_off]`,
   `Run2ToneChargeDispersionQuasiCW[gate_off]`), so the pipeline stays under the golden.
+  The sweet-spot search gates every spectrum on peak SNR >= 4 (F35,
+  [auto_coherence](../../docs/experiments/auto_coherence.md#stages-in-detail)); the
+  harness spectra stand 0.8 to 7.8, so `RunModifiedRamsey_Control[verified]` runs the
+  gain raise and part of the walk in its first cycle (accepting at 2.5 mV) and
+  `RunModifiedRamsey_Control` spends its budget in the gain raise and the first walk steps.
 * **Float digests are exact at ~9 significant digits.** A refactor that changes
   arithmetic order can, very rarely, move a value across a rounding boundary
   and flip a digest even though the value moved by one ulp; the `head` values
@@ -249,7 +254,7 @@ fixed 2026-10-13, the pre-fix `waiti` stopped at the window end).
 | `RunZeroSpanParity[validate,gate_off]` | both of the above | validation harness with the gate off |
 | `Run2ToneChargeDispersionQuasiCW[gate_off]` | `TwoToneChargeDispersion_params["min_partner_snr"] = 0` | gate off: the search accepts the noise doublet and reaches the quasi-CW record |
 | `RunModifiedRamsey[no_reset]` | `ModifiedRamsey_params["use_active_reset"] = False` | no-reset MR program path |
-| `RunModifiedRamsey_Control[verified]` | `ModifiedRamsey_Control_params["sweet_spot_max_df_mhz"] = 1e9` | search accepts at once, so the MRC Ramsey stage runs |
+| `RunModifiedRamsey_Control[verified]` | `ModifiedRamsey_Control_params["sweet_spot_max_df_mhz"] = 1e9` | search accepts the first spectrum that clears the peak-SNR gate, so the MRC Ramsey stage runs |
 | `RunAutoCoherence[fast]` | `AutoCoherence_override_params` += `auto_readout_opt=False, ss_gain_pts=3, T1_expts=5, T2_expts=5, T2E_expts=5` | reaches T1, T2R and T2E stages |
 | `RunT2E[rotation]` | `T2E_params` += `rotation_angle=0.3, min_max=[0.0, 1.0]` | rotation branch of T2E |
 | `RunChargeSweep[yoko_fixed]` | session flag `yoko_fixed = True` | held-bias repeat: one `:SOUR:LEV?` read-back, held `current_voltage` + `nominal_voltage`/`repeat_index`/`acq_time` per slice |
@@ -277,7 +282,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunModifiedRamsey` | stopped_at_budget | 10 | 18 | SingleShotProgramFFMUX x4, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 14 |
 | `RunModifiedRamsey[no_reset]` | stopped_at_budget | 9 | 16 | SingleShotProgramFFMUX x3, ModifiedRamsey x6 (4 records, 2 `ModifiedRamsey_Controls`) | 12 |
 | `RunModifiedRamsey_Control` | stopped_at_budget | 4 | 9 | QubitSpecSliceFF x4 | 4 |
-| `RunModifiedRamsey_Control[verified]` | stopped_at_budget | 8 | 9 | QubitSpecSliceFF x4, ModifiedRamsey x4 | 8 |
+| `RunModifiedRamsey_Control[verified]` | stopped_at_budget | 8 | 29 | QubitSpecSliceFF x4, ModifiedRamsey x4 | 8 |
 | `RunChargeDispersionQuasiCW` | completed | 1 | 0 | ChargeDispersionQuasiCW x1 | 1 |
 | `RunChargeDispersionRamsey` | raised (KeyError 'df') | 0 | 0 | - | 0 |
 | `RunAmplitudeRabi` | completed | 1 | 0 | AmplitudeRabiFF x1 | 1 |

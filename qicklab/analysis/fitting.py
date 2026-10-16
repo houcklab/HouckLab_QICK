@@ -1,4 +1,5 @@
-"""Curve-fit models and fitters: hanger transmission, Lorentzian features, Rabi cosine."""
+"""Curve-fit models and fitters: hanger transmission, Lorentzian features, Rabi cosine,
+single-shot pi-gain contrast."""
 
 import warnings
 
@@ -399,6 +400,90 @@ def fit_rabi_cosine(x, y):
         "flags": flags,
         "flag_code": flag_code,
     }
+
+
+PI_GAIN_FIT_MIN_PTS = 5  # fewer points: no fit, the caller keeps the scan argmax
+PI_GAIN_FIT_P_HALF_WIDTH = 0.3  # P window: centre x [1 - h, 1 + h], h <= 0.5 / rotations
+PI_GAIN_FIT_MAX_REL_DEV = 0.6  # points with |g / centre - 1| above this are not fitted
+PI_GAIN_FIT_GRID_PTS = 241
+
+
+def _pi_gain_model(rotations):
+    """Contrast model ``B - A cos(pi rotations g / P)`` (cos_func with period 2 P / rotations)."""
+    return lambda g, B, A, P: cos_func(g, B, -A, 2.0 * P / rotations, 0.0)
+
+
+def fit_pi_gain_contrast(gains, contrast, centre, rotations=1.0):
+    """Gain at which ``rotations`` pi rotations land on |e>, from a single-shot contrast scan.
+
+    Model ``C(g) = B - A cos(pi rotations g / P)`` (C = Cread sin^2(pi rotations g / (2 P))
+    for B = A = Cread / 2): a maximum at g = P when A > 0. rotations = N for N pi pulses,
+    N / 2 for N pi/2 pulses. Only points with |g / centre - 1| <= PI_GAIN_FIT_MAX_REL_DEV are
+    fitted (at low excitation the rectified histogram contrast is unreliable). (B, A) are
+    linear least squares on a grid of P over the window centre x [1 - h, 1 + h], h = min(0.3,
+    0.5 / rotations) (other solutions of the same data lie ~1 / rotations away: a minimum, or
+    the next fringe), then curve_fit refines (B, A, P) with P held in the window. Never
+    raises: ``ok`` is False, with ``reason``, for fewer than PI_GAIN_FIT_MIN_PTS points, a
+    failed fit, A <= 0, P on the window edge, or P outside the fitted gains. Returns dict:
+    ok, reason, P, dP, A, B, n (points fitted). See docs/experiments/auto_coherence.md.
+    """
+    g = np.asarray(gains, dtype=float).ravel()
+    c = np.asarray(contrast, dtype=float).ravel()
+    centre = float(centre)
+    rotations = float(rotations)
+    out = {"ok": False, "reason": "", "P": np.nan, "dP": np.nan, "A": np.nan, "B": np.nan, "n": 0}
+    keep = np.isfinite(g) & np.isfinite(c)
+    if centre > 0:
+        keep &= np.abs(g / centre - 1.0) <= PI_GAIN_FIT_MAX_REL_DEV + 1e-9
+    g, c = g[keep], c[keep]
+    out["n"] = int(g.size)
+    if centre <= 0:
+        out["reason"] = f"scan centre {centre} <= 0"
+        return out
+    if g.size < PI_GAIN_FIT_MIN_PTS or np.unique(g).size < PI_GAIN_FIT_MIN_PTS:
+        out["reason"] = f"{g.size} points (< {PI_GAIN_FIT_MIN_PTS} distinct gains)"
+        return out
+
+    h = min(PI_GAIN_FIT_P_HALF_WIDTH, 0.5 / rotations)
+    P_lo, P_hi = centre * (1.0 - h), centre * (1.0 + h)
+    best = None
+    for P in np.linspace(P_lo, P_hi, PI_GAIN_FIT_GRID_PTS):
+        design = np.column_stack([np.ones_like(g), -np.cos(np.pi * rotations * g / P)])
+        (B, A), *_ = np.linalg.lstsq(design, c, rcond=None)
+        sse = float(np.sum((c - design @ np.array([B, A])) ** 2))
+        if best is None or sse < best[0]:
+            best = (sse, B, A, P)
+    _, B0, A0, P0 = best
+
+    model = _pi_gain_model(rotations)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", OptimizeWarning)
+            popt, pcov = curve_fit(
+                model,
+                g,
+                c,
+                p0=[B0, A0, P0],
+                bounds=([-np.inf, -np.inf, P_lo], [np.inf, np.inf, P_hi]),
+                maxfev=10000,
+            )
+    except (RuntimeError, ValueError, OptimizeWarning) as exc:
+        out["reason"] = f"fit failed ({type(exc).__name__})"
+        return out
+    perr = np.sqrt(np.diag(pcov))
+    B, A, P = (float(v) for v in popt)
+    out.update(B=B, A=A, P=P, dP=float(perr[2]))
+    if not np.all(np.isfinite(popt)) or not np.all(np.isfinite(perr)):
+        out["reason"] = "fit failed (non-finite parameters or covariance)"
+    elif A <= 0:
+        out["reason"] = f"A = {A:.4g} <= 0 (P is a contrast minimum)"
+    elif not P_lo + 1e-6 * centre < P < P_hi - 1e-6 * centre:
+        out["reason"] = f"P = {P:.1f} on the edge of the window [{P_lo:.0f}, {P_hi:.0f}]"
+    elif not g.min() <= P <= g.max():
+        out["reason"] = f"P = {P:.1f} outside the fitted gains [{g.min():.0f}, {g.max():.0f}]"
+    else:
+        out["ok"] = True
+    return out
 
 
 def exp_decay(x, a, T1, c):

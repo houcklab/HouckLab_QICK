@@ -40,10 +40,19 @@ model sets:
      peaks separated by ≥ `df`, jump **half a period** from the current V, then take
      one more spectrum. Typically 1–2 acquisitions.
    - **Strategy B** (fallback): walk in `dV` steps between `voltage_min` and
-     `voltage_max`, at most `max_voltage_tries` steps, tracking the minimum
-     separation. Return to the best voltage found.
+     `voltage_max`, measuring each voltage once (one pass of the range; at most
+     `max_voltage_tries` steps), tracking the minimum separation. Return to the best
+     voltage found and take one new spectrum there.
+   - Every spectrum must clear the peak-SNR gate (`freqcal_min_snr` = 4.0 of
+     [auto_coherence](auto_coherence.md#stages-in-detail)); the first one gets the
+     auto_coherence gain raise (spec `gain` x 1.8, up to 5 times); the walk keeps the
+     raised gain only if it showed a line there, else it uses `gain`. A spectrum below
+     the gate is never accepted.
    - Accept when a single peak is found, or when sep < `sweet_spot_max_df_mhz`.
    - Qubit frequency = midpoint of the two peaks, or the single peak.
+   - If no spectrum of the search clears the gate, or the one re-taken at the best
+     voltage does not, the yoko returns to the start voltage and the cycle is **not
+     verified** (no Ramsey).
 2. **Ramsey** at V_sweet, only if the sweet spot was verified. The sequence is the
    [modified_ramsey](modified_ramsey.md#pulse-sequence) program with
    `df = cd_max_mhz`, `f_ge` = the frequency found, and `rounds = 1`:
@@ -79,7 +88,7 @@ Legacy `ModifiedRamsey_Control_params` keys. Defaults are the CSTQ03 runner valu
 | `df` | 0.5 | MHz | Separation that triggers the Strategy-A half-period jump. |
 | `dV` | 0.0005 | V | Strategy-B step. |
 | `voltage_min` / `voltage_max` | 0.000 / 0.010 | V | Search bounds. |
-| `max_voltage_tries` | 1000 | count | Strategy-B step limit. |
+| `max_voltage_tries` | 1000 | count | Strategy-B hard step limit (one pass of the range, 21 steps with these bounds, ends the walk first). |
 | `num_cycles` | 1000 | count | Search + Ramsey cycles. |
 | `SpecSpan` | 1.0 | MHz | ± spectroscopy span. |
 | `SpecNumPoints` | 101 | count | Spectroscopy points. |
@@ -108,7 +117,8 @@ corrective reset flip) is on.
     `_state_hysteresis.png`, `_state_hysteresis_jumps.png`;
   - `.npz`, `_config.json`;
   - one `CycleSummary_<ts>.json` per run.
-  - A cycle whose sweet spot is not verified is recorded with
+  - A cycle whose sweet spot is not verified (separation too large, or no spectrum
+    cleared the SNR gate) is recorded with
     `stage_failed = "sweet_spot_not_verified"` and **no Ramsey is run**.
 - No rate fit is saved: the hysteresis switch count is the output.
 - Not to be confused with the interleaved `validation_controls` of
@@ -153,7 +163,11 @@ corrective reset flip) is on.
   A null here is therefore not comparable to a modified_ramsey record.
 - `use_active_reset=True` is forwarded, but no separator or threshold is calibrated.
   The program then raises (missing `readout_threshold`).
-- "No peaks at all" (`peak_sep` None) is treated as a verified sweet spot.
+- A single line (`peak_sep` None) that clears the SNR gate is a verified sweet spot
+  whatever `sweet_spot_max_df_mhz` says. (Before 2026-10 (F35) a noise-only spectrum,
+  which the peak finder reports as one peak, was too.)
+- The SNR-gate keys (`freqcal_*`) are not forwarded from `ModifiedRamsey_Control_params`;
+  the auto_coherence defaults apply.
 - **Acceptance threshold vs peak finder.** The peak finder never returns two peaks
   closer than its 0.10 MHz minimum separation, so `sep < 0.1 MHz` is effectively
   unreachable for a two-peak spectrum. Acceptance in practice comes only from a
