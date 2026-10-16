@@ -81,8 +81,20 @@ and the bound.
 2. Strobe: `us2cycles(sample_period_us)` on both `qubit_ch` and `res_ch` ≤ 65535
    (16-bit const-pulse length).
 3. Decimated: the same 65535-cycle cap for `capture_length_us`.
-4. Strobe: `reps_per_chunk ≤ soccfg["readouts"][ro_ch]["avg_maxlen"]` (16384 on the
-   current board).
+4. Strobe: `reps_per_chunk ≤ 2·10⁷` (`_MAX_REPS_PER_CHUNK`, a client-memory cap: qick
+   keeps ~16 B per sample in its raw buffer and the record is copied several times as
+   floats). Until 2026-10 this rule was `reps_per_chunk ≤ avg_maxlen` (16384), which
+   is not a qick limit: in qick 0.2.334 the averages buffer is a ring buffer that the
+   board-side streamer drains during `acquire()`, one stride (10 % of `avg_maxlen`,
+   1638 samples) at a time. The real limit is qick's own "Overflowed the averages
+   buffer" `RuntimeError` (the streamer fell more than one buffer behind), which
+   `acquire_with_retry` deliberately does not retry. When `reps_per_chunk ≥
+   avg_maxlen` the record wraps the ring, and the check prints a warning (no error) if
+   the headroom per stride, `(avg_maxlen − stride) · sample_period_us`, is below
+   100 ms (`_STREAM_HEADROOM_WARN_MS`); at 20 µs it is 295 ms. The runner defaults
+   (10000 × 60 chunks) are unchanged; one 600000-sample chunk would record the same
+   12 s without the 59 dead gaps (`UndrivenSingleShot` already takes 10⁶ shots in one
+   `acquire()`), pending a board loopback check at the 20 µs cadence.
 5. Decimated: `round(read_length · f_output) ≤ buf_maxlen` (1024 on the current
    board). The original spec wrote this in terms of `capture_length_us`; the code
    checks `read_length`, because the decimated buffer is sized by the declared readout
@@ -152,7 +164,12 @@ The run, in order:
 2. **Separator.** With `RecalibrateSeparator`, run a SingleShot g/e calibration.
    Otherwise validate the cache (rule 7). Both caches live on disk as
    `<data_root>/Q{q}/zsp_cache.json`.
-3. Build the cfg and **acquire**:
+3. Build the cfg. With any of stages 1-3 enabled (strobe only), run them now, on their
+   own `ZeroSpanParity` instance, and feed their results into the cfg (see
+   [Run order and feedback](#run-order-and-feedback)): stage 1 sets `read_pulse_freq`
+   (re-deriving the separator at that probe, or keeping the resonator centre with a
+   cached separator), stage 2 refines `parity_drive_freq`, stage 3 is the gate.
+4. Build a **fresh** `ZeroSpanParity` from the final cfg and **acquire** the main record:
    - **Strobe, `n_chunks > 1`:** `chunked_acquire` stitches the `acquire()` calls,
      makes `t_us` monotonic and marks chunk boundaries in `gap_indices`. Gaps between
      chunks are not modelled in `t_us`; analysis never counts a switch across a gap.
@@ -160,9 +177,9 @@ The run, in order:
      `chunked_acquire` replaces `experiment.data` with the stitched record. A plain
      `save_data()` afterwards therefore saves the whole record.
    - **Decimated:** `n_captures` captures are stitched with `gap_indices`.
-4. **Analysis.** `analyze_parity_run` writes its sidecars into the same run folder as
+5. **Analysis.** `analyze_parity_run` writes its sidecars into the same run folder as
    the raw h5.
-5. **Validation stages**, strobe only (see below).
+6. **Validation stages 8, 7 and 9**, on the main record's instance (see below).
 
 **Record length (strobe)** = `reps_per_chunk · n_chunks · sample_period_us`. With the
 defaults that is 10000 × 60 × 20 µs ≈ 12 s.
@@ -179,8 +196,8 @@ CSTQ03 runner values (legacy `ZSP_*` dicts).
 | `ZSP_RecalibrateSeparator` | True | bool | Run the SingleShot calibration first. |
 | `which_to_park` | "lower" | – | Parity branch to drive. |
 | Strobe `sample_period_us` | 20.0 | µs | Sample period. Floor = offset + window + 1 µs. |
-| Strobe `reps_per_chunk` | 10000 | count | ≤ avg_maxlen. |
-| Strobe `n_chunks` | 60 | count | Chunks to stitch. |
+| Strobe `reps_per_chunk` | 10000 | count | Samples per program; ≤ 2·10⁷ (rule 4), not bounded by avg_maxlen. |
+| Strobe `n_chunks` | 60 | count | Chunks to stitch; each boundary is a dead gap (`gap_indices`). |
 | Strobe `read_length` | 5.0 | µs | ADC window. |
 | Strobe `adc_trig_offset` | 0.488 | µs | ADC offset. |
 | Decimated `capture_length_us` | 100.0 | µs | Tone length per capture. |
@@ -209,8 +226,11 @@ Validation-stage parameters:
 | Key | Default | Meaning |
 |---|---|---|
 | `StaticContrast.freq_span_mhz` / `n_points` / `reps_per_point` | 2.0 / 41 / 2000 | Stage 1 probe-frequency sweep. |
-| `ContrastVsQubit.qfreq_span_mhz` / `n_points` | 10.0 / 81 | Stage 2 drive-frequency sweep. |
+| `ContrastVsQubit.qfreq_span_mhz` / `n_points` | 10.0 / 81 | Stage 2 drive-frequency sweep. Refining `parity_drive_freq` needs ≥ 6 points within the capture range (step ≤ capture / 3): the default 0.125 MHz step refines only for a doublet splitting ≥ ~0.75 MHz; use more points (e.g. 161) for a narrower doublet. |
+| `ContrastVsQubit.min_peak_snr` (optional) | 5 (`MIN_PARTNER_SNR`) | Contrast SNR a stage-2 peak needs to refine `parity_drive_freq`. |
+| `ContrastVsQubit.doublet_sep_tol_MHz` (optional) | max(25 % of the splitting, 2 grid steps) | How far the stage-2 pair separation may differ from the cached splitting and still assign the parked branch by line order. |
 | `Modulation.modulation_freq_hz` / `n_periods` | 25 / 10 | Stage 3 square wave (40 ms period). |
+| `Modulation.min_block_t` / `min_abs_correlation` / `min_snr` (optional) | unset (flag at \|block_t\| < 5) | Stage-3 gate; the ones set replace the default and make a failure raise before the main record. |
 | `Control.variants` / `detune_mhz` | A, B, C, D / 50.0 | Stage 8. |
 | `Environment.param_name` / `values` | "power_dB" / [−10, −8, −6, −4] | Stage 7 (see Known issues). |
 
@@ -219,9 +239,19 @@ Validation-stage parameters:
 - **Raw**, path `ZeroSpanParity/` (under `<outer>/ZeroSpanParity/`). The h5 is opened
   in append mode, so the config attribute survives, and datasets are deleted and
   recreated, so re-saving is idempotent.
-  - Datasets: `I`, `Q`, `t_us`, `gap_indices`; plus `capture_sizes` and
-    `chunk_wall_clock_starts` when present.
-  - Attributes: `wall_clock_start`, `sample_period_us`, `mode`, `decimated_fs_MHz`,
+  - Datasets: `I`, `Q`, `t_us`, `gap_indices`; plus `capture_sizes`,
+    `chunk_wall_clock_starts` and `chunk_wall_clock_ends` when present (chunked strobe
+    records and decimated captures). Each start is taken just before and each end just
+    after the chunk's `acquire()` call, so the bracket also holds that chunk's program
+    load, buffer configuration and final transfer. The times therefore bound the dead
+    time rather than measure it. With T the sampling time of one chunk
+    (`reps_per_chunk × sample_period_us`; for a decimated capture, its sample count ×
+    `sample_period_us`), the gap between chunk i's last sample and chunk i+1's first
+    sample satisfies `starts[i+1] − ends[i] ≤ gap ≤ ends[i+1] − starts[i] − 2T`, and
+    `(ends[i] − starts[i]) − T` is chunk i's load/configure/transfer overhead. Both
+    assume `sample_period_us` is the true rep period, which is not checked against the
+    board.
+  - Attributes: `wall_clock_start`, `wall_clock_end`, `sample_period_us`, `mode`, `decimated_fs_MHz`,
     `decimated_fs_source` (`"soccfg.f_output_unverified"`), `read_length_us`,
     `capture_length_us`, `adc_trig_offset_us`, `ro_norm_cycles`,
     `samples_per_capture` (actual first-capture length, not total/n_captures),
@@ -235,19 +265,29 @@ Validation-stage parameters:
     `_dwell_histograms.png`.
   - Summary fields: `baseline_rate_Hz`, `baseline_rate_err_Hz`, `n_switches_baseline`,
     `T_baseline_s`, `median_window_rate_Hz`, `n_bursts`, `mean_dwell_0/1_us`,
-    `n_runs_0/1`, `exp_fit_tau_0/1_us`, `raw_sample_period_us`,
+    `n_runs_0/1`, `tau_mle_0/1_us`, `tau_err_0/1_us`, `n_exits_0/1`, `n_interior_0/1`,
+    `exp_fit_tau_0/1_us` (legacy histogram fit, biased high), `raw_sample_period_us`,
     `n_raw/binned_samples`, `analysis_bin_us`, `mode`, `classifier_method`,
     `classifier_threshold` (score units), `bits_withheld`, `classifier_warning`, and the
     `apriori_gmm` score-histogram fit: `classifier_separation_snr`, `classifier_delta_bic`,
     `classifier_centers`, `classifier_sigmas`, `classifier_weights` (lower component first,
     score units; NaN for `apriori_midpoint` and `kmeans`). The fit is reported even when
     it fails the gate and the bits are withheld.
+  - Readout-error model and threshold-free rates ([Analysis](#analysis) step 7):
+    `readout_eps_0/1`, `readout_eps`, `threshold_spurious_rate_Hz_est`,
+    `threshold_switch_rate_Hz`, `acf_tau_corr_us`, `acf_gamma_Hz`, `acf_fit_ok`,
+    `psd_f_corner_Hz`, `psd_gamma_Hz`, `psd_fit_ok`, `hmm_identifiable`,
+    `hmm_gamma01/10_Hz`, `hmm_gamma01/10_err_Hz`, `hmm_switch_rate_Hz`,
+    `hmm_emission_snr`, `hmm_n_samples`, `hmm_unidentifiable_reasons`,
+    `rate_switch_threshold/acf/psd/hmm_Hz`, `rate_agreement_max_ratio`,
+    `rates_disagree`, `rate_agreement` (one printed line) and `rate_warnings`.
   - When the bits are withheld (`bits_withheld` True, see [Analysis](#analysis) step 2),
     every rate, burst and dwell field is NaN, `binary_states` is empty, and only
     `_iq_scatter.png` (uncoloured) is drawn.
 - **Validation:** per-stage JSON sidecars plus raw arrays (stitched IQ, references,
-  `freqs`, `Z_on`/`Z_off`), each tagged with an `analysis_version`, and `EVIDENCE.md`
-  from stage 9.
+  `freqs`, `Z_on`/`Z_off` and their standard errors), each tagged with an
+  `analysis_version`, and `EVIDENCE.md` from stage 9. The stage-1/2 error fields are
+  listed under [Stage-1/2 contrast SNR](#stage-12-contrast-snr).
 
 ## Analysis
 
@@ -313,7 +353,12 @@ Validation-stage parameters:
    - Per-sample SNR in decimated mode is much lower than in strobe mode.
 3. **Sliding-window rate.** Switches are counted in windows of `window_us` with stride
    `step_us` (default 50 % overlap). Windows are half-open; the last one is closed.
-   No switch is counted across a `gap_indices` boundary.
+   No switch is counted across a `gap_indices` boundary. Each window's rate is its
+   switch count over the time it covers, `covered_us` = min(`window_us`, t_end − start
+   + sample period): only a last window that runs past the record end (or a record
+   shorter than one window) is shorter than `window_us`, and it is kept, not dropped.
+   A window that would start after the last sample (only when `step_us` > `window_us`)
+   holds no data and is not returned.
 4. **Bursts.**
    - threshold = baseline + `k_sigma`·σ, baseline = event-based switch rate (see
      [Baseline switch rate](#baseline-switch-rate)).
@@ -322,15 +367,111 @@ Validation-stage parameters:
      per window.
    - The floor exists because more than 50 % of windows hold zero switches, so the MAD
      is 0.
+   - A partial last window (`covered_us` = c < `window_us`) is held to its own
+     threshold: σ_c = max(1.4826·MAD·√(window_us/c), q_c·√max(baseline/q_c, 1)) with
+     q_c = 1/(c·1e-6), the same significance as a full window. With `k_sigma` ≥ 1 a
+     single switch in a short tail therefore never reads as a burst; a real one is
+     still flagged and excluded from the baseline. The reported `threshold_Hz` is the
+     full-window one.
 5. **Dwell times.**
-   - Run lengths per state, split at gaps. The last run of each segment is
-     extrapolated by one sample period.
-   - Exponential fit to the histogram by log-linear regression **weighted by
-     √count**. Unweighted OLS overweights sparse tail bins and biases τ about 10 %
-     high, which failed the ±5 % acceptance criterion.
-   - Optional debouncing (`min_dwell_bins`) for the threshold-stability check.
+   - Run lengths per state, in µs and in samples, split at gaps. The last run of each
+     segment is extrapolated by one sample period. The first and last run of each
+     segment are **censored** (cut by the segment edge); `mean_dwell_0/1_us` still
+     averages all runs.
+   - **Dwell time τ (`tau_mle_0/1_us`)**: maximum-likelihood estimate of τ_s = 1/γ_s
+     for a continuous-time two-state telegraph (rates γ_0 out of 0, γ_1 out of 1)
+     sampled every sp, with the censored runs included. Sampled, the telegraph is a
+     two-state Markov chain: every step from a sample in state s to the next sample of
+     the same segment is a trial that leaves s with probability
+     P_s = (γ_s/Γ)·(1 − exp(−Γ·sp)), Γ = γ_0 + γ_1 (a switch inside the step can be
+     undone by a second one, so P_s depends on both rates). Its MLE is
+     P_s = N_exits / exposure (`p_exit_0/1` in the dwell dict), where N_exits
+     (`n_exits_0/1`) counts the switches out of s and the exposure counts the samples in
+     s that have a next sample in the same segment: a run of n samples adds n trials,
+     or n − 1 if it is the segment's last run, which has no exit. Inverting,
+     λ = 1 − P_0 − P_1, Γ = −ln(λ)/sp and τ_s = (P_0 + P_1)/(P_s·Γ). The single-state
+     form −sp/ln(1 − P_s) would read high by about sp/(2·τ_other) (+9.5 % for
+     τ_0 = 60 µs, τ_1 = 120 µs at sp = 20 µs). `tau_err_0/1_us` is the delta-method error
+     through both P_0 and P_1 (binomial variances), ≈ τ/√N_exits. sp is the median
+     within-segment sample spacing. τ is NaN with fewer than 5 exits from s, or when
+     λ ≤ 0 (P_0 + P_1 ≥ 1, e.g. every run one sample long: switching not resolved at
+     this sp). `n_interior_0/1` is the number of uncensored runs, for information.
+   - Bias, on event-driven continuous-time telegraphs (exponential dwells, random
+     sampling phase, sp = 20 µs, τ = 60 µs to 2 ms, 200 replicates): within ±1.3 % at
+     100 dwells and ±1.1 % at 300, consistent with zero at that replicate count, with
+     `tau_err` matching the replicate scatter; the histogram fit reads +15 % to +30 %
+     there. Asymmetric telegraphs ((τ_0, τ_1, sp) = (60, 120, 20), (200, 400, 20),
+     (2000, 4000, 100) µs) are recovered to under 0.5 %. For segments as short as 5 τ
+     (τ = 2 ms, 40 replicates) the bias stays under 0.5 %. The mean of the interior runs
+     alone is biased low by about τ/T_segment, because long dwells are the ones a
+     segment cuts off: −23 % at 5 τ, −10 % at 10 τ, −3 % at 20 τ, under 1 % at 100 τ.
+     That is why the censored runs are kept.
+   - The exponential fit to the histogram (log-linear regression weighted by √count,
+     `exp_fit_tau_0/1_us`) is kept for the histogram overlay binning and as a legacy
+     field. At 100–300 dwells it reads τ about 15 % high (+5 % at 1000), so it meets the
+     ±5 % acceptance criterion only for N ≳ 1000. The `_dwell_histograms.png` overlay is
+     the MLE run-length law, N·(bin width/sp)·P_s·(1 − P_s)^((x − sp)/sp).
+   - Optional debouncing (`min_dwell_bins` = m) for the bin-size and threshold-stability
+     checks. Debouncing removes runs shorter than m and lengthens their neighbours, so
+     there the first m − 1 steps of every run whose start is observed are not counted
+     as trials (for the interior runs, P = 1/(mean(n) − (m − 1))), then τ is inverted as
+     above. This is an approximation, not exact: the debounced trace is not a sampled
+     telegraph, because debouncing also merges the real dwells shorter than m. At m = 2
+     on continuous-time telegraphs, with or without 1 % one-sample readout flips, τ is
+     recovered within about 1 % at τ = 100 sp but reads high by about 7 % at τ = 20 sp
+     and 11 % at τ = 10 sp.
 6. **Bimodality** (`projected_histogram_snr`): bimodal requires ΔBIC > 0 **and**
    separation SNR > 1.5 **and** both weights in (0.1, 0.9).
+7. **Readout-error model and threshold-free rates** (`_noise_robust_rates`). Every
+   threshold-counted rate and dwell above assumes perfect assignment, but each
+   misassigned sample adds two spurious switches. The summary therefore carries, for
+   every classifier method (the score fit is the `apriori_gmm` one, or the same
+   `projected_histogram_snr` fit run on the scores for the other methods):
+   - **eps.** `readout_eps_0` = P(score > threshold | lower Gaussian), `readout_eps_1`
+     = P(score ≤ threshold | upper Gaussian), `readout_eps` = w_0·eps_0 + w_1·eps_1,
+     and `threshold_spurious_rate_Hz_est` = 2·eps·(1 − eps)/`sample_period_us` (the
+     post-binning period: binning lowers eps, which is the existing remedy).
+   - **ACF** on the scores (`autocorrelation_rate_us`, lag 0 excluded): lag products
+     are summed only inside the gap-free segments and normalised per lag by their pair
+     count (the segment-length-weighted mean ACF), then fitted once. For unequal rates
+     `acf_gamma_Hz` = 1/(2 τ_corr) is (γ_01 + γ_10)/2.
+   - **PSD** on the scores (`psd_rate_estimate`, Welch + Lorentzian, `psd_gamma_Hz` =
+     π f_c = (γ_01 + γ_10)/2). Welch windows run across acquisition gaps, so when the
+     record has gaps the PSD rate is still reported but warned and left out of the
+     agreement below (`rate_switch_psd_Hz` = NaN): on many short captures it reads
+     about as high as a gap-blind count.
+   - **HMM** (`fit_two_state_hmm`, fixed Gaussian emissions from the score fit, default
+     gates including `min_emission_snr` = 0.7, which must not be lowered) on at most
+     `hmm_max_samples` (default 100 000) leading samples. That usually takes 3-8 s, but
+     up to about a minute when the L-BFGS-B fit fails and the HMM's Powell fallback runs
+     (`rate_warnings` then says "retried with Powell"): the regression harness's gapped
+     record with no time correlation (6e5 samples, 60 captures) takes 55 s, and the HMM
+     withholds it anyway. Lower `hmm_max_samples` to bound it. The per-step dt is
+     diff(`t_us`), except that every step across a `gap_indices` boundary is set to
+     `HMM_GAP_DT_S` = 1000 s: saved `t_us` is contiguous across the dead time (see
+     above), so without this the HMM would read a parity change across a boundary as a
+     transition. With it each gap-free segment is an independent restart, as for the
+     other estimators. On 120 captures of 400 µs (true 752 Hz) a gap-blind HMM gives
+     1844 Hz and this one 731 Hz. Its start rate is the midpoint-crossing count over the
+     gap-free steps. Its rates are NaN unless `hmm_identifiable`;
+     `hmm_unidentifiable_reasons` says why.
+   - eps, the HMM and the occupancy scale below need a usable score fit: ΔBIC > 0 and
+     separation SNR > 1.5 (the step-6 gate without the weight condition, so a lopsided
+     parity occupancy still qualifies). A fit failing that is no emission model: on a
+     1σ split it would put the HMM at about 3× the true rate.
+   - **Agreement.** All four estimators are expressed as a switch rate (switches per
+     second, what threshold counting measures): `rate_switch_threshold_Hz` = all
+     switches / all observed time (`event_switch_rate`, bursts included; NaN when the
+     bits are withheld), HMM 2·γ_01·γ_10/(γ_01 + γ_10), ACF and PSD (γ_01 + γ_10)/2 ×
+     4·w_0·w_1 (the fit weights), the PSD only for a gap-free record. `rates_disagree`
+     is True when the largest finite one exceeds the smallest by more than
+     `RATE_AGREEMENT_MAX_RATIO` = 2. The
+     `rate_agreement` line is printed. On a 3.5σ split (eps ≈ 4 %, sp = 20 µs, true
+     520 Hz) threshold counting gives 4307 Hz (spurious estimate 3796 Hz), the ACF
+     544 Hz, the PSD 524 Hz and the HMM 528 Hz.
+   - The existing threshold fields (`baseline_rate_Hz`, dwells, bursts) are unchanged;
+     these are reported beside them. Every block is guarded: a failure leaves its
+     fields NaN with a note in `rate_warnings`.
 
 ### Baseline switch rate
 
@@ -376,12 +517,13 @@ sliding windows:
 
 Before trusting a natural parity telegraph, the signal must be shown to be
 parity-dependent, time-resolved, and not drift, noise or drive artifact. The harness
-is strobe-only (decimated timing is unverified) and collates evidence; it gives **no
+is strobe-only (decimated timing is unverified) and collates evidence. Apart from the
+stage-1/2 feedback and the stage-3 gate ([below](#run-order-and-feedback)), it gives **no
 automatic pass/fail**.
 
 | Stage | Name | What | Status |
 |---|---|---|---|
-| 1 | Static contrast | Drive parked on one branch; sweep the probe frequency; maximise \|Z_on − Z_off\| | `run_static_contrast` |
+| 1 | Static contrast | Drive parked on one branch; sweep the probe frequency; maximise \|Z_on − Z_off\|; contrast SNR from per-point batch-means errors, max SNR tested against a 5 % threshold ([below](#stage-12-contrast-snr)) | `run_static_contrast` |
 | 2 | Contrast vs qubit frequency | Sweep the drive frequency at the stage-1 probe; see the two branches | `run_contrast_vs_qubit_freq` |
 | 3 | Artificial modulation | Square-wave the drive gain (~25 Hz) by software block alternation; recover it from the IQ trace. **Pipeline-sanity gate**: do not proceed if not recovered | `run_modulation_check` |
 | 4 | Two-level telegraph | Continuous record, projected histogram should be bimodal | **not implemented** (`projected_histogram_snr` exists) |
@@ -393,11 +535,14 @@ automatic pass/fail**.
 
 - **Run order:** stage 1 → stage 2 → stage 1 again (refine) → stage 3 (gate) →
   stage 4 → stages 5/6 → stage 8 → stage 7 → stage 9. Optimise the probe (stage 1)
-  before sweeping the qubit frequency: a bad probe point can miss the branches.
+  before sweeping the qubit frequency: a bad probe point can miss the branches. The
+  run implements 1 → 2 → 3 → main record → 8 → 7 → 9 (no second stage-1 pass; stages
+  4-6 are not implemented).
 - Stage 1 does not use the g/e separator. It compares averaged complex responses
-  with the drive on and off. Before calling stage 1, the run sets both
-  `reps_per_chunk` and `reps` to `reps_per_point`, because the strobe program is
-  rebuilt from `cfg["reps"]`.
+  with the drive on and off. For stage 1 only, the run sets both `reps_per_chunk` and
+  `reps` to `reps_per_point` (the strobe program is rebuilt from `cfg["reps"]`), and
+  restores both afterwards, so stages 2-3, the main record and stages 8/7 use the
+  run's `reps_per_chunk`.
 - Stage 2 has no telegraph at a driven steady state. It uses the complex-response
   difference against the drive-off baseline, `|⟨Z⟩_on − ⟨Z⟩_off|`, not histogram
   bimodality.
@@ -410,8 +555,166 @@ automatic pass/fail**.
   `switch_rate` is still inflated by noise crossings (Analysis step 2).
 - Z_on and Z_off are proportional to S21; they are not calibrated.
 - Stage-5 interpretation: the best bin may come before T_parity. A low `tau_cv`
-  across thresholds indicates a robust telegraph.
-- `reps_per_block` must satisfy avg_maxlen (16384).
+  across thresholds indicates a robust telegraph only when every threshold sits in the
+  gap between the two score clouds. The default `threshold_list` (30th-70th percentiles
+  of the scores) does not: for a balanced, well-separated telegraph those percentiles
+  fall inside a cloud, about 0.25 sigma from its centre, so each threshold reads that
+  cloud's noise as switches. At the defaults a clean telegraph and pure noise give
+  similar `tau_cv` (about 0.6 each in the unit-test traces), and the clean one can come
+  out higher. Pass thresholds that lie between the cloud centres (e.g. from the
+  `apriori_gmm` fit) until the defaults are moved. `bin_size_sweep` (`exp_tau_per_bin`)
+  and `threshold_stability` (`tau0/1_per_threshold`, `tau_cv`) use the dwell-time MLE
+  (Analysis step 5), not the histogram fit.
+- `reps_per_block` must be ≤ avg_maxlen (16384), so each modulation block fits the
+  averages buffer without streaming. This is a choice of `modulated_strobe_acquire`,
+  not a qick limit (rule 4 above); it bounds the slowest square wave to
+  1 / (2 · 16384 · `sample_period_us`), 1.5 Hz at 20 µs.
+
+### Run order and feedback
+
+The parked drive frequency comes from a pulsed spectroscopy (readout off during the
+drive), so it misses the AC-Stark shift of the CW readout the record uses (about
+2χn̄, comparable to the 0.2-2.7 MHz parity splitting) and the measurement broadening.
+Stages 1-3 measure under that CW readout, so they run first and feed the main record:
+
+- **Instances.** Stages 1-3 run on their own `ZeroSpanParity` instance, built from a
+  copy of the cfg. The main record is a fresh instance built from the final cfg, so its
+  program depends only on the chosen values, not on what the stages left in the cfg.
+  Stages 8 and 7 run on the main instance after the record. Every sidecar and
+  `EVIDENCE.md` go to the same run folder.
+- **Stage 1 → `read_pulse_freq`.** When `best_freq` is finite and its own
+  `contrast_snr` (the SNR at `best_freq`, not `contrast_snr_max`) exceeds
+  `contrast_snr_threshold`, the cfg's `read_pulse_freq` becomes `best_freq`; otherwise it
+  stays at the resonator centre (a printed FLAG). Stage 2, stage 3 and the main record
+  use it.
+- **Separator at the new probe.** The g → e axis that every separator classifier
+  projects on (`classifier_method` `apriori_gmm` / `apriori_midpoint`: the main
+  analysis, stage 3, stages 8 and 7) is only valid at the probe it was calibrated at:
+  the I/Q frame and the g − e difference vector rotate with probe detuning, so the
+  projected contrast falls as cos θ. When `best_freq` differs from the resonator centre
+  and the classifier uses the separator, the run re-derives it with a SingleShot g/e
+  calibration at `best_freq` (`get_apriori_separator_from_singleshot(ctx,
+  pulse_freq=best_freq)`, a second `SingleShot_MRCalib` file) when
+  `RecalibrateSeparator` is True. With a cached separator it does not move the probe
+  (a printed FLAG, `read_pulse_freq_source = resonator_center_cached_separator`).
+  `kmeans` needs no separator, so it adopts `best_freq` without one; but stages 3, 8
+  and 7 score the record on the separator projection, so `kmeans` with
+  `Validate_ModulationCheck`, `Validate_ControlSuite` or `Validate_EnvironmentSweep`
+  raises RuntimeError at the start of the run, before any acquisition (before 2026-10 it
+  crashed after the main record, in the first of those stages). `kmeans` runs with
+  stages 1-2 only.
+- **Stage 2 → `parity_drive_freq`** (`nearest_contrast_peak`). The capture range is
+  half the doublet splitting `parity_peak_sep_MHz` when both lines are known, else the
+  spec `min_sep_MHz`. Branch assignment: when both cached lines are known and stage 2
+  (`find_two_tone_peaks`, grid points) finds exactly two lines whose separation matches
+  the cached splitting within `doublet_sep_tol_MHz` (default max(25 % of the splitting,
+  2 grid steps)), the parked line is the lower or higher of the two, by
+  `which_to_park` (`parity_stage2_doublet = matched`). The CW-readout shift is common to
+  both lines, so this assignment is right for any common shift inside the stage-2 span,
+  including one larger than half the splitting, where the line nearest the parked
+  frequency is the partner (printed). Otherwise the stage-2 line nearest the parked
+  frequency is used, and only within the capture range. That line is the parked one, not
+  its partner, only for a common shift below half the splitting, so when the cached
+  splitting is known but stage 2 does not show a matching doublet (one line found, or a
+  pair at a different separation) the run prints a FLAG
+  (`parity_stage2_doublet = mismatch`; `unknown` when the partner is not cached). In
+  that case a common shift between half and 1.5 times the splitting would put the
+  parked frequency on the partner branch: re-run the spectroscopy under the CW
+  readout. The assigned grid peak must have `contrast_snr_per_point` ≥ `min_peak_snr`
+  (default 5). Its centre is then refined below the grid step by a Lorentzian fit
+  (`fit_lorentzian_near_peak`, the two-tone acceptance gates: ≥ 6 points, R², width) to
+  the stage-2 contrast within the capture range of that grid peak. The fitted centre
+  replaces the parked line when it differs from the parked line by more than 2 fit
+  standard errors (and, for a nearest-line assignment, lies within the capture range);
+  a shift consistent with zero leaves it in place. Otherwise (no peak, low SNR, fit
+  failed — e.g. fewer than 6 grid points in the capture range — centre outside the
+  capture range, or consistent with no shift) the line is not refined (a printed FLAG
+  with the reason). The line is never snapped to a raw grid point. The single-line fit
+  is biased by a neighbouring line's tail (a few kHz for a 0.6 MHz doublet of 0.1 MHz
+  HWHM lines). Stage 3 and the main record use the refined line; the main cfg records
+  `parity_stage2_doublet` and the stage-2 pair separation `parity_stage2_peak_sep_MHz`.
+- **Stage 3 gate.** The default statistic is the block-means t, `block_t`
+  (`modulation_block_t`): the record is cut at `gap_indices` into its on/off blocks
+  (one half-period, `reps_per_block` samples each), each block's mean score is one
+  sample, and `block_t` is the Welch t of mean(on) − mean(off) (signed, positive toward
+  e). A block is much longer than the parity correlation time, so the block means are
+  close to independent and the null is about Student t with 2·`n_periods` − 2 dof;
+  the default threshold \|`block_t`\| ≥ 5 (`MODULATION_MIN_BLOCK_T`) is a false-alarm
+  probability of about 1e-4 at `n_periods` = 10. Without recipe values a failure only
+  prints a FLAG. The recipe keys `min_block_t` (on \|`block_t`\|), `min_abs_correlation`
+  and `min_snr` replace the default: exactly the ones set are tested, and a failure
+  raises RuntimeError before the main record. NaN fails. The per-sample `snr`
+  (\|level_on − level_off\| / pooled per-sample σ) and `correlation` (about
+  snr/√(snr² + 4)) scale with the single-shot separation and not with the record
+  length: a parked drive that excites one parity to p_e ≈ 0.5 shifts the level by about
+  0.25·\|e − g\|, so at a single-shot separation SNR of 2 the per-sample snr is about 0.5
+  and the correlation about 0.24 although the telegraph is easily resolved. They are
+  heuristics, used only when the recipe sets them.
+- **Provenance**, in the main record's cfg (json and h5 `config`), only for the stages
+  that ran: `read_pulse_freq_nominal` (the resonator centre) and `read_pulse_freq_source`
+  (`stage1_static_contrast` or `resonator_center`); `parity_drive_freq_unrefined`,
+  `parity_drive_freq_refined` (bool) and `parity_drive_freq_stage2_snr` (the nearest
+  peak's SNR, None without a peak); `parity_drive_freq_stage2_fit_center` and
+  `parity_drive_freq_stage2_fit_se` (only when the Lorentzian fit ran and passed); `separator_probe_freq` (only when the separator was
+  re-derived at `best_freq`); `modulation_correlation`, `modulation_snr`,
+  `modulation_block_t`, `modulation_gate_passed`. The `read_pulse_freq_source` values
+  are `stage1_static_contrast`, `resonator_center` (not significant) and
+  `resonator_center_cached_separator` (significant, but the cached separator blocks the
+  move).
+- **Stage 8 control D** drives the cached spectroscopy lines. When stage 2 refined the
+  parked line, both cached lines are shifted by the same refinement
+  (`parity_drive_freq` − `parity_drive_freq_unrefined`) for control D, so D drives the
+  record's lines under the CW readout (the Stark shift 2χn̄ is common to both parity
+  lines). The on-disk cache keeps the spectroscopy values.
+- **Before 2026-10 (F44)** the main record was taken and analysed first, at the
+  resonator centre and the spectroscopy line; the stage-1 `best_freq` and the stage-2
+  peaks were only printed and the stage-3 gate was not applied. Stages 2, 3, 8 and 7
+  reused the record's instance with stage 1's `reps_per_point` left in `reps_per_chunk`
+  (2000 instead of 10000 when stage 1 ran).
+
+### Stage-1/2 contrast SNR
+
+- **Per-point errors.** Each acquisition (one record of `reps_per_point` time-ordered
+  strobe samples in stage 1, `reps_per_chunk` in stage 2) gives the mean Z = ⟨I⟩ + i⟨Q⟩
+  and batch-means standard errors of ⟨I⟩ and ⟨Q⟩ plus their covariance (`complex_response_stats`): the record is cut into
+  `n_blocks` = 20 contiguous blocks, se = std(block means)/√n_b with n_b − 1 dof (fewer
+  blocks, each ≥ 2 samples, below 40 reps; NaN below 2 blocks). The samples are
+  correlated by the parity telegraph and drift, so std/√N would be too small. The
+  number of acquisitions is unchanged (one per point and drive setting).
+- **SNR.** For D = Z_on − Z_off, σ² = uᵀ(C_on + C_off)u with u = D/\|D\| and C the 2×2
+  covariance of the mean (I, Q); the covariance term matters when the telegraph runs
+  along a diagonal of the IQ plane. `contrast_snr` = \|D\|/σ at `best_freq`;
+  `contrast_snr_max` is the largest over the sweep. `contrast_significant` is True when
+  `contrast_snr_max` exceeds `contrast_snr_threshold`, the value the largest of N
+  pure-noise SNRs exceeds with probability `alpha` = 0.05: under no signal \|D\|/σ is
+  Rayleigh (exact σ) or √(2 F(2, ν)) (σ from ν = n_b − 1 dof, the smallest over the
+  points), and the points are treated as independent. For N = 41, ν = 19 the threshold
+  is 4.40 (3.66 with exact σ); the largest of 41 pure-noise SNRs is typically ~3.
+- **Fields.** Stage-1 scalars: `contrast_snr`, `contrast_snr_method`
+  (`standard_error`), `contrast_snr_max`, `contrast_snr_threshold`,
+  `contrast_significant` (stored as 1.0/0.0), `alpha`, `contrast_peak_to_mad`,
+  `n_blocks`, `n_batches_min`; arrays `Z_on_se_real/imag`, `Z_off_se_real/imag`
+  (se of ⟨I⟩ / ⟨Q⟩), `Z_on_cov_IQ`, `Z_off_cov_IQ`, `contrast_se` (σ) and
+  `contrast_snr_per_point`. Stage 2: arrays `z_on_se_real/imag`, `z_on_cov_IQ`,
+  `contrast_se`, `contrast_snr_per_point`; scalars `z_off_se_real/imag`,
+  `z_off_cov_IQ`, `n_blocks`, `n_batches_min`. Stage 2's single drive-off baseline
+  error is shared by all its points: a correlated offset, not independent noise, so
+  its per-point SNRs are not independent and no significance flag is given. The
+  contrast plots draw ±σ error bars.
+- **Block length vs T_parity.** At the stage-1 defaults (2000 reps × 20 µs = 40 ms) a
+  block is 2 ms, comparable to T_parity (~2–3 ms). On a drive-on record dominated by the
+  telegraph the batch-means se is then low by up to ~40 % (exponential correlation,
+  block = dwell) and the SNR up to ~1.6× too high. Stage 2 runs at the run's
+  `reps_per_chunk` (10000 × 20 µs = 200 ms, 10 ms blocks), where the bias is smaller.
+  Pass a smaller `n_blocks` to `run_static_contrast` / `run_contrast_vs_qubit_freq`, or a
+  larger `reps_per_point` (stage 1) / `reps_per_chunk` (stage 2), when the telegraph
+  dominates the noise.
+- **Before 2026-10 (F45)** `contrast_snr` was the peak contrast over the MAD of the
+  contrast curve itself (`estimate_noise_floor`): a shape ratio that scores a noiseless
+  Lorentzian above 3, not a signal-to-noise ratio, and no stage stored an error. That
+  value is kept as `contrast_peak_to_mad`. `contrast_from_sweeps` called without
+  standard errors still returns it as `contrast_snr`, with `contrast_snr_method` =
+  `peak_to_mad`.
 
 ### Stage-3 modulation timing
 
@@ -436,7 +739,9 @@ automatic pass/fail**.
 - **Dead time.** Both values are in stitched sample time. The stitched `t_us` leaves
   out the dead time between block programs (Python rebuild, load and start of every
   block). In wall-clock time the square wave is therefore slower and
-  uneven. `chunk_wall_clock_starts` holds the block start times.
+  uneven. `chunk_wall_clock_starts` and `chunk_wall_clock_ends` bracket each block's
+  `acquire()` call, so they bound the dead time between blocks (see Outputs) rather than
+  measure it.
 
 ### Stage-8 instrument controls
 
@@ -446,14 +751,15 @@ its cfg change, and the base point is rebuilt at the end, also when an acquisiti
 raises. A drive-off record is the reference. The per-variant results are in the
 sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` table.
 
-- **Record length.** One acquisition holds `reps_per_chunk` samples (at most
-  `avg_maxlen`). After stage 1 that is `reps_per_point`, e.g. 2000 × 20 µs = 40 ms.
+- **Record length.** One acquisition holds `reps_per_chunk` samples, the run's value
+  (stage 1 restores it), e.g. 10000 × 20 µs = 200 ms.
   Each control record therefore stitches ⌈`min_record_us` / (`reps_per_chunk` ×
   `sample_period_us`)⌉ acquisitions of the same program, with `min_record_us` = 200 ms
   by default. The stitched time omits the dead time between acquisitions. The sidecar
   holds `blocks_per_record` and `record_us`. To lengthen the records, pass a larger
-  `min_record_us`; changing the ZSP `reps_per_chunk` has no effect, because stage 1
-  overwrites it.
+  `min_record_us` or a larger ZSP `reps_per_chunk`. Before 2026-10 (F44) stage 1 left
+  its `reps_per_point` (2000, 40 ms) in `reps_per_chunk`, so with stage 1 enabled each
+  record stitched 5 acquisitions instead of 1.
 - **Error bars.** A parity telegraph is correlated over its dwell (~2–3 ms), so
   std/√N of the samples is far too small. Every mean has a batch-means standard
   error: consecutive batches of `se_batch_us` = 10 ms, se = std(batch means)/√n_b,
@@ -472,7 +778,8 @@ sidecar's `variants`; EVIDENCE.md renders them as a `variant | metric | value` t
 - **C (probe off-resonance).** `mean_level` and `separation_snr` only: moving the probe
   moves both clouds, so the drive-off reference at the probe point does not apply.
 - **D (both branches).** The drive goes to the lower peak, the higher peak and their
-  midpoint (from `parity_freqs`, the cached peaks). Driving a peak excites only the
+  midpoint (from `parity_freqs`, the cached peaks, both shifted by the stage-2
+  refinement when it fired: [Run order and feedback](#run-order-and-feedback)). Driving a peak excites only the
   samples in the parity whose transition that peak is. Which parity has the lower
   peak depends on the offset charge (the branches cross at n_g = 0.25 mod 0.5), so
   write P_lower for the occupation of the lower-peak parity. **Both** shifts are

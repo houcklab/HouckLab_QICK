@@ -6,10 +6,29 @@ block, L581-737) with the same assertions: _validate_cfg rules against a fake so
 decimated soft_avgs opt-in gate, and the strobe I/Q normalisation to single-shot units.
 """
 
+import datetime
+import time
+
 import numpy as np
 import pytest
 
 from qicklab.experiments.zero_span_parity import ZeroSpanParity, _validate_cfg
+
+
+def _ticking_now():
+    """Return now() as an ISO string with a clock tick on either side.
+
+    The fake acquire calls this, so a wall clock taken before the call is strictly earlier
+    than the returned time and one taken after it is strictly later.
+    """
+    time.sleep(0.002)
+    t = datetime.datetime.now().isoformat()
+    time.sleep(0.002)
+    return t
+
+
+def _ts(iso):
+    return datetime.datetime.fromisoformat(iso)
 
 
 class _FakeSocCfg:
@@ -92,10 +111,38 @@ def test_rule2_sample_period_too_long(base, sc):
     _expect_rule(bad, sc, "rule 2")
 
 
-def test_rule4_reps_per_chunk_too_large(base, sc):
+def test_rule4_reps_per_chunk_not_capped_at_avg_maxlen(base, sc, capsys):
+    # F43: the averages buffer is a streamed ring buffer, so one 12 s chunk (600000 samples
+    # at 20 us, > avg_maxlen 16384) is valid and, with 295 ms of headroom, prints no warning.
+    ok = dict(base)
+    ok["reps_per_chunk"] = 600000
+    _validate_cfg(ok, sc)
+    assert "rule 4 warning" not in capsys.readouterr().out
+
+
+def test_rule4_reps_per_chunk_memory_cap(base, sc):
+    from qicklab.experiments.zero_span_parity import _MAX_REPS_PER_CHUNK
+
+    assert _MAX_REPS_PER_CHUNK == 20_000_000
+    at_cap = dict(base)
+    at_cap["reps_per_chunk"] = _MAX_REPS_PER_CHUNK
+    _validate_cfg(at_cap, sc)
     bad = dict(base)
-    bad["reps_per_chunk"] = 10**6
+    bad["reps_per_chunk"] = _MAX_REPS_PER_CHUNK + 1
     _expect_rule(bad, sc, "rule 4")
+
+
+def test_rule4_streaming_headroom_warning(base, sc, capsys):
+    # headroom per stride = (16384 - 1638) * 3 us = 44 ms < 100 ms: warn, do not raise
+    fast = dict(base)
+    fast.update({"read_length": 1.0, "sample_period_us": 3.0, "reps_per_chunk": 16384})
+    _validate_cfg(fast, sc)
+    out = capsys.readouterr().out
+    assert "rule 4 warning" in out and "44.2 ms" in out, out
+    # a chunk that fits the buffer never wraps the ring: no warning at the same cadence
+    fast["reps_per_chunk"] = 16383
+    _validate_cfg(fast, sc)
+    assert "rule 4 warning" not in capsys.readouterr().out
 
 
 def test_rule5_read_length_too_long_decimated(dec_base, sc):
@@ -167,6 +214,52 @@ def test_soft_avgs_gate_requires_opt_in(base, sc):
     assert "soft_avgs" in str(exc.value), exc.value
 
 
+def test_decimated_records_per_capture_end_times(dec_base, sc):
+    # F43: _acquire_decimated takes a start time before and an end time after every
+    # acquire_decimated() call, so chunk_wall_clock_ends has one entry per capture and each
+    # capture's start < (time inside its acquire) < its end, strictly; wall_clock_end is the
+    # last capture's end.
+    n_len = 8
+
+    class _FakeDecProg:
+        def __init__(self):
+            self.calls = []
+            self.inside = []
+
+        def acquire_decimated(self, soc, load_pulses=True, start_src="internal", progress=False):
+            self.calls.append(load_pulses)
+            self.inside.append(_ticking_now())
+            i = np.arange(n_len, dtype=float) + 10.0 * len(self.calls)
+            return [np.stack([i, -i])]  # (2, length): the reps=1 shape
+
+    class _DecStub:
+        _acquire_decimated = ZeroSpanParity._acquire_decimated
+
+        def __init__(self, cfg, soccfg, prog):
+            self.cfg = cfg
+            self.soccfg = soccfg
+            self.soc = None
+            self.prog = prog
+
+    cfg = dict(dec_base)
+    cfg["n_captures"] = 3
+    prog = _FakeDecProg()
+    out = _DecStub(cfg, sc, prog)._acquire_decimated(progress=False)
+
+    assert prog.calls == [True, False, False]  # pulses loaded on the first capture only
+    starts = out["chunk_wall_clock_starts"]
+    ends = out["chunk_wall_clock_ends"]
+    assert len(starts) == len(ends) == 3
+    for s, t, e in zip(starts, prog.inside, ends):
+        assert _ts(s) < _ts(t) < _ts(e), (s, t, e)
+    for e, t_next in zip(ends[:-1], prog.inside[1:]):
+        assert _ts(e) < _ts(t_next), (e, t_next)
+    assert out["wall_clock_end"] == ends[-1]
+    assert out["wall_clock_start"] <= starts[0]
+    assert out["I"].size == 3 * n_len
+    assert list(out["gap_indices"]) == [n_len, 2 * n_len]
+
+
 def test_strobe_iq_normalised_to_single_shot_units(base, sc):
     # Strobe raw di_buf values are integrated over the readout window
     # (~us2cycles(read_length, ro_ch) summands), but the apriori separator from
@@ -177,7 +270,10 @@ def test_strobe_iq_normalised_to_single_shot_units(base, sc):
             self.di_buf = {0: np.full(n, di_val, dtype=float)}
             self.dq_buf = {0: np.full(n, dq_val, dtype=float)}
 
+            self.inside = None
+
         def acquire(self, *_a, **_k):
+            self.inside = _ticking_now()
             return None
 
     class _StrobeStub:
@@ -204,3 +300,10 @@ def test_strobe_iq_normalised_to_single_shot_units(base, sc):
     assert out["ro_norm_cycles"] == 1920.0, out["ro_norm_cycles"]
     assert out["read_length_us"] == 5.0
     assert out["mode"] == "strobe"
+    # F43: the start time is taken before and the end time after prog.acquire, so the
+    # chunk's acquire() call is bracketed (strictly, because the fake acquire ticks the clock)
+    assert _ts(out["wall_clock_start"]) < _ts(fake.inside) < _ts(out["wall_clock_end"]), (
+        out["wall_clock_start"],
+        fake.inside,
+        out["wall_clock_end"],
+    )

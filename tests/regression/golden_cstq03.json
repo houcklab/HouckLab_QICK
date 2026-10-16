@@ -47821,11 +47821,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1334.1090797536965,
-                          619.7522415840125,
-                          238.44138844437893
+                          1334.1104138641103,
+                          619.7534810909747,
+                          238.44234221374776
                         ],
-                        "sha1": "5a35ac9a304f76f6",
+                        "sha1": "09773244821a7a02",
                         "shape": [
                           7
                         ]
@@ -47875,6 +47875,14 @@
                     "gamma01_hz": 2222.3573851653746,
                     "gamma10_hz": 953.1465687227179,
                     "gamma_mean_hz": 1587.7519769440462,
+                    "hmm_emission_snr": 5.583115597810611,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210324,
                     "n_10": 210323,
                     "n_samples": 1000000,
@@ -47937,7 +47945,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1334.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1334.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 449.66 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -48865,11 +48875,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1334.1090797536965,
-                    619.7522415840125,
-                    238.44138844437893
+                    1334.1104138641103,
+                    619.7534810909747,
+                    238.44234221374776
                   ],
-                  "sha1": "5a35ac9a304f76f6",
+                  "sha1": "09773244821a7a02",
                   "shape": [
                     7
                   ]
@@ -48930,6 +48940,70 @@
                     1587.7519769440462
                   ],
                   "sha1": "cf7faa81cef1acdb",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.583115597810611
+                  ],
+                  "sha1": "14dc41d12cc064bf",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -51008,11 +51082,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1332.5835572434646,
-                          616.1176287010067,
-                          237.25839489694337
+                          1332.5848898283543,
+                          616.1188609387285,
+                          237.25934393431908
                         ],
-                        "sha1": "959567d7e750d7c0",
+                        "sha1": "7696e1a50d914a62",
                         "shape": [
                           7
                         ]
@@ -51062,6 +51136,14 @@
                     "gamma01_hz": 2221.2391441030663,
                     "gamma10_hz": 951.7964484994089,
                     "gamma_mean_hz": 1586.5177963012377,
+                    "hmm_emission_snr": 5.592290245668099,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210083,
                     "n_10": 210083,
                     "n_samples": 1000000,
@@ -51124,7 +51206,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1332.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1332.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 451.54 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -52052,11 +52136,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1332.5835572434646,
-                    616.1176287010067,
-                    237.25839489694337
+                    1332.5848898283543,
+                    616.1188609387285,
+                    237.25934393431908
                   ],
-                  "sha1": "959567d7e750d7c0",
+                  "sha1": "7696e1a50d914a62",
                   "shape": [
                     7
                   ]
@@ -52117,6 +52201,70 @@
                     1586.5177963012377
                   ],
                   "sha1": "f3631bd8c0c433aa",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.592290245668099
+                  ],
+                  "sha1": "bac2e0b1cfd6b531",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -54193,11 +54341,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1331.1151228936988,
-                          616.2000893772355,
-                          238.65705482836182
+                          1331.1164540101527,
+                          616.201321779879,
+                          238.65800946039963
                         ],
-                        "sha1": "5aded4158bb29c82",
+                        "sha1": "397ad816b4d95cec",
                         "shape": [
                           7
                         ]
@@ -54247,6 +54395,14 @@
                     "gamma01_hz": 2220.9142720823165,
                     "gamma10_hz": 950.3570866895715,
                     "gamma_mean_hz": 1585.635679385944,
+                    "hmm_emission_snr": 5.592561006930994,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209852,
                     "n_10": 209851,
                     "n_samples": 1000000,
@@ -54309,7 +54465,9 @@
                     "warnings": [
                       "readout-noise variance is 1270.6x the telegraph amplitude; the autocorrelation rate is noise-dominated",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1331.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1331.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 15.83 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots"
                     ]
                   }
                 }
@@ -55237,11 +55395,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1331.1151228936988,
-                    616.2000893772355,
-                    238.65705482836182
+                    1331.1164540101527,
+                    616.201321779879,
+                    238.65800946039963
                   ],
-                  "sha1": "5aded4158bb29c82",
+                  "sha1": "397ad816b4d95cec",
                   "shape": [
                     7
                   ]
@@ -55302,6 +55460,70 @@
                     1585.635679385944
                   ],
                   "sha1": "db3ef208cfc67a57",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.592561006930994
+                  ],
+                  "sha1": "ce347dccade1e191",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -57382,11 +57604,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1330.579128498212,
-                          618.7595419047971,
-                          240.33798399764024
+                          1330.5804590786709,
+                          618.760779426356,
+                          240.33894535342162
                         ],
-                        "sha1": "2b8ca6e81611b5f9",
+                        "sha1": "c8d2dd3c9a07af32",
                         "shape": [
                           7
                         ]
@@ -57436,6 +57658,14 @@
                     "gamma01_hz": 2216.154444533997,
                     "gamma10_hz": 950.6852875808886,
                     "gamma_mean_hz": 1583.4198660574427,
+                    "hmm_emission_snr": 5.590742645735244,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209767,
                     "n_10": 209767,
                     "n_samples": 1000000,
@@ -57498,7 +57728,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1330.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1330.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.52 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -58426,11 +58658,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1330.579128498212,
-                    618.7595419047971,
-                    240.33798399764024
+                    1330.5804590786709,
+                    618.760779426356,
+                    240.33894535342162
                   ],
-                  "sha1": "2b8ca6e81611b5f9",
+                  "sha1": "c8d2dd3c9a07af32",
                   "shape": [
                     7
                   ]
@@ -58491,6 +58723,70 @@
                     1583.4198660574427
                   ],
                   "sha1": "668a3be18e04dd58",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.590742645735244
+                  ],
+                  "sha1": "fe03f6881fbcf724",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -138879,11 +139175,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1329.7006051399287,
-                          616.8344022713028,
-                          238.39381497732387
+                          1329.7019348418632,
+                          616.8356359425746,
+                          238.39476855639808
                         ],
-                        "sha1": "cba0044b4544e668",
+                        "sha1": "b39d1f9d23d3e708",
                         "shape": [
                           7
                         ]
@@ -138933,6 +139229,14 @@
                     "gamma01_hz": 2222.206791766034,
                     "gamma10_hz": 948.6825191665135,
                     "gamma_mean_hz": 1585.4446554662736,
+                    "hmm_emission_snr": 5.588542108356568,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209628,
                     "n_10": 209629,
                     "n_samples": 1000000,
@@ -138995,7 +139299,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1329.7 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1329.7 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 449.93 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -139891,11 +140197,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1329.7006051399287,
-                    616.8344022713028,
-                    238.39381497732387
+                    1329.7019348418632,
+                    616.8356359425746,
+                    238.39476855639808
                   ],
-                  "sha1": "cba0044b4544e668",
+                  "sha1": "b39d1f9d23d3e708",
                   "shape": [
                     7
                   ]
@@ -139956,6 +140262,70 @@
                     1585.4446554662736
                   ],
                   "sha1": "cf6a480c8a95dea7",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.588542108356568
+                  ],
+                  "sha1": "cc1c338f730c1e74",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -140388,11 +140758,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1333.3986493123411,
-                          620.3294663176138,
-                          239.7544161350983
+                          1333.3999827123237,
+                          620.3307069790277,
+                          239.7553751565989
                         ],
-                        "sha1": "c225700f84bb9092",
+                        "sha1": "7dd2f1bb4eef96b4",
                         "shape": [
                           7
                         ]
@@ -140442,6 +140812,14 @@
                     "gamma01_hz": 2222.199871587061,
                     "gamma10_hz": 952.453003056368,
                     "gamma_mean_hz": 1587.3264373217144,
+                    "hmm_emission_snr": 5.584092487332964,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210211,
                     "n_10": 210212,
                     "n_samples": 1000000,
@@ -140504,7 +140882,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1333.4 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1333.4 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.02 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -141400,11 +141780,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1333.3986493123411,
-                    620.3294663176138,
-                    239.7544161350983
+                    1333.3999827123237,
+                    620.3307069790277,
+                    239.7553751565989
                   ],
-                  "sha1": "c225700f84bb9092",
+                  "sha1": "7dd2f1bb4eef96b4",
                   "shape": [
                     7
                   ]
@@ -141465,6 +141845,70 @@
                     1587.3264373217144
                   ],
                   "sha1": "b79f4bd9447c02e9",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.584092487332964
+                  ],
+                  "sha1": "f6a37081900adc95",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -141897,11 +142341,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1329.8591833634455,
-                          617.7922147413444,
-                          238.15911920651897
+                          1329.8605132239586,
+                          617.7934503282451,
+                          238.16007184680632
                         ],
-                        "sha1": "01c091fe1eddbd4c",
+                        "sha1": "1e89d427477af1a5",
                         "shape": [
                           7
                         ]
@@ -141951,6 +142395,14 @@
                     "gamma01_hz": 2220.341889196241,
                     "gamma10_hz": 949.1843699032556,
                     "gamma_mean_hz": 1584.7631295497483,
+                    "hmm_emission_snr": 5.594831741254271,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209653,
                     "n_10": 209654,
                     "n_samples": 1000000,
@@ -142013,7 +142465,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1329.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1329.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.68 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -142909,11 +143363,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1329.8591833634455,
-                    617.7922147413444,
-                    238.15911920651897
+                    1329.8605132239586,
+                    617.7934503282451,
+                    238.16007184680632
                   ],
-                  "sha1": "01c091fe1eddbd4c",
+                  "sha1": "1e89d427477af1a5",
                   "shape": [
                     7
                   ]
@@ -142974,6 +143428,70 @@
                     1584.7631295497483
                   ],
                   "sha1": "c016f079bcc5cd36",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.594831741254271
+                  ],
+                  "sha1": "b8540ad6e8c1968b",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -143406,11 +143924,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1332.9038852549686,
-                          619.1369580767672,
-                          240.24918019247082
+                          1332.9052181601867,
+                          619.1381963531599,
+                          240.25014119303555
                         ],
-                        "sha1": "4bc0967a7b891b33",
+                        "sha1": "5f82d87de81051a6",
                         "shape": [
                           7
                         ]
@@ -143460,6 +143978,14 @@
                     "gamma01_hz": 2217.5866330252766,
                     "gamma10_hz": 952.7947011879712,
                     "gamma_mean_hz": 1585.190667106624,
+                    "hmm_emission_snr": 5.5920910321275406,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210134,
                     "n_10": 210133,
                     "n_samples": 1000000,
@@ -143522,7 +144048,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1332.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1332.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.1 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.31 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -144418,11 +144946,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1332.9038852549686,
-                    619.1369580767672,
-                    240.24918019247082
+                    1332.9052181601867,
+                    619.1381963531599,
+                    240.25014119303555
                   ],
-                  "sha1": "4bc0967a7b891b33",
+                  "sha1": "5f82d87de81051a6",
                   "shape": [
                     7
                   ]
@@ -144483,6 +145011,70 @@
                     1585.190667106624
                   ],
                   "sha1": "eb30db9f1a5228a5",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.5920910321275406
+                  ],
+                  "sha1": "6a1cad2a7ea8c874",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -145327,7 +145919,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
-          "qicklab/runs/zero_span.py:65:run_zero_span_parity",
+          "qicklab/runs/zero_span.py:247:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
         ],
         "type": "RuntimeError"
@@ -147107,6 +147699,18 @@
                   "sha1": "1e8c38f91dc1532c",
                   "shape": []
                 },
+                "data/chunk_wall_clock_ends": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>",
+                    "<ISO>",
+                    "<ISO>"
+                  ],
+                  "sha1": "04b57608ec5b1bed",
+                  "shape": [
+                    60
+                  ]
+                },
                 "data/chunk_wall_clock_starts": {
                   "dtype": "str",
                   "head": [
@@ -147182,6 +147786,14 @@
                   "shape": [
                     600000
                   ]
+                },
+                "data/wall_clock_end": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
                 },
                 "data/wall_clock_start": {
                   "dtype": "str",
@@ -148938,21 +149550,90 @@
           "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 283,
-              "configure_readout": 283,
-              "load_bin_program": 283,
-              "reload_mem": 283,
-              "set_nyquist": 566,
-              "start_readout": 283,
-              "start_src": 566,
-              "stop_tproc": 283
+              "config_avg": 184,
+              "configure_readout": 184,
+              "load_bin_program": 184,
+              "reload_mem": 184,
+              "set_nyquist": 368,
+              "start_readout": 184,
+              "start_src": 368,
+              "stop_tproc": 184
             },
-            "digest": "202676c95f047753f04197ebd63333a3",
-            "first_program": "7bd0cbd021ac4b69",
-            "n_programs": 283,
-            "n_unique_programs": 173
+            "digest": "37e4de0163e65e91b26b9dc3960807ce",
+            "first_program": "73420ecc3c909fdc",
+            "n_programs": 184,
+            "n_unique_programs": 166
           },
           "index": 2,
+          "methods": [
+            {
+              "count": 184,
+              "kwargs": {
+                "progress": false
+              },
+              "name": "acquire"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//ZeroSpanParity/",
+          "path": "ZeroSpanParity",
+          "run": "RunZeroSpanParity[validate,gate_off]"
+        },
+        {
+          "cfg": {
+            "adc_trig_offset": 0.488,
+            "mixer_freq": 0.0,
+            "mode": "strobe",
+            "modulation_block_t": 1.0240165757923287,
+            "modulation_correlation": -0.012165502410304988,
+            "modulation_gate_passed": false,
+            "modulation_snr": 0.016345534900761963,
+            "n_chunks": 60,
+            "nqz": 2,
+            "parity_drive_freq": 2650.039800995025,
+            "parity_drive_freq_refined": false,
+            "parity_drive_freq_stage2_snr": 2.468067251183596,
+            "parity_drive_freq_unrefined": 2650.039800995025,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_partner_snr": 1.5339648490840376,
+            "parity_peak_sep_MHz": 1.3731343283579918,
+            "parity_stage2_doublet": "mismatch",
+            "parity_stage2_peak_sep_MHz": 1.0,
+            "pulse_gain": 1500,
+            "qubit_ch": 1,
+            "qubit_gain": 4200,
+            "qubit_nqz": 1,
+            "read_length": 5.0,
+            "read_pulse_freq": 7095.4,
+            "read_pulse_freq_nominal": 7095.4,
+            "read_pulse_freq_source": "resonator_center",
+            "reps_per_chunk": 10000,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "sample_period_us": 20.0,
+            "start_src": "internal"
+          },
+          "cls": "ZeroSpanParity",
+          "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 71,
+              "configure_readout": 71,
+              "load_bin_program": 71,
+              "reload_mem": 71,
+              "set_nyquist": 142,
+              "start_readout": 71,
+              "start_src": 142,
+              "stop_tproc": 71
+            },
+            "digest": "77623e2c73975d9869688942e848d138",
+            "first_program": "7bd0cbd021ac4b69",
+            "n_programs": 71,
+            "n_unique_programs": 10
+          },
+          "index": 3,
           "methods": [
             {
               "count": 60,
@@ -148966,11 +149647,11 @@
                 "data/I": {
                   "dtype": "float64",
                   "head": [
-                    5.317708333333333,
-                    -5.994791666666667,
-                    -8.002604166666666
+                    7.190755208333333,
+                    4.75,
+                    4.502604166666667
                   ],
-                  "sha1": "58367b3c877708d8",
+                  "sha1": "a170f2b22141e28b",
                   "shape": [
                     600000
                   ]
@@ -148978,11 +149659,11 @@
                 "data/Q": {
                   "dtype": "float64",
                   "head": [
-                    3.8958333333333335,
-                    -1.73046875,
-                    -2.529296875
+                    0.5182291666666666,
+                    2.6705729166666665,
+                    1.0846354166666667
                   ],
-                  "sha1": "b028a7d90bf6775c",
+                  "sha1": "f78e3d2fc98ad108",
                   "shape": [
                     600000
                   ]
@@ -148994,6 +149675,18 @@
                   ],
                   "sha1": "1e8c38f91dc1532c",
                   "shape": []
+                },
+                "data/chunk_wall_clock_ends": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>",
+                    "<ISO>",
+                    "<ISO>"
+                  ],
+                  "sha1": "04b57608ec5b1bed",
+                  "shape": [
+                    60
+                  ]
                 },
                 "data/chunk_wall_clock_starts": {
                   "dtype": "str",
@@ -149071,6 +149764,14 @@
                     600000
                   ]
                 },
+                "data/wall_clock_end": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
                 "data/wall_clock_start": {
                   "dtype": "str",
                   "head": [
@@ -149087,12 +149788,12 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "28509e572b6fe930",
+              "cfg_digest": "55b90d4a0ec34ff2",
               "kwargs": {},
               "name": "save_config"
             },
             {
-              "count": 223,
+              "count": 11,
               "kwargs": {
                 "progress": false
               },
@@ -149817,7 +150518,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
-          "qicklab/runs/zero_span.py:65:run_zero_span_parity",
+          "qicklab/runs/zero_span.py:247:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
         ],
         "type": "RuntimeError"
@@ -200338,11 +201039,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1334.118918026017,
-                          619.7568118934545,
-                          238.4431468098286
+                          1334.120252146269,
+                          619.7580514095572,
+                          238.44410058623095
                         ],
-                        "sha1": "0a2da3344754a0cf",
+                        "sha1": "e51eea04a8d0fd4d",
                         "shape": [
                           7
                         ]
@@ -200392,6 +201093,14 @@
                     "gamma01_hz": 2222.373773748198,
                     "gamma10_hz": 953.1535976198649,
                     "gamma_mean_hz": 1587.7636856840313,
+                    "hmm_emission_snr": 5.583115597810611,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210324,
                     "n_10": 210323,
                     "n_samples": 1000000,
@@ -200454,7 +201163,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1334.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1334.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.10 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -201382,11 +202093,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1334.118918026017,
-                    619.7568118934545,
-                    238.4431468098286
+                    1334.120252146269,
+                    619.7580514095572,
+                    238.44410058623095
                   ],
-                  "sha1": "0a2da3344754a0cf",
+                  "sha1": "e51eea04a8d0fd4d",
                   "shape": [
                     7
                   ]
@@ -201447,6 +202158,70 @@
                     1587.7636856840313
                   ],
                   "sha1": "9edcf002abadc121",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.583115597810611
+                  ],
+                  "sha1": "14dc41d12cc064bf",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -203525,11 +204300,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1332.5933842659508,
-                          616.1221722073095,
-                          237.26014453850917
+                          1332.5947168606676,
+                          616.1234044541184,
+                          237.26109358288352
                         ],
-                        "sha1": "369a443b81a128df",
+                        "sha1": "5d6d51ab3bf01c83",
                         "shape": [
                           7
                         ]
@@ -203579,6 +204354,14 @@
                     "gamma01_hz": 2221.2555244395176,
                     "gamma10_hz": 951.8034674402107,
                     "gamma_mean_hz": 1586.529495939864,
+                    "hmm_emission_snr": 5.592290245668099,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210083,
                     "n_10": 210083,
                     "n_samples": 1000000,
@@ -203641,7 +204424,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1332.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1332.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 451.60 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -204569,11 +205354,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1332.5933842659508,
-                    616.1221722073095,
-                    237.26014453850917
+                    1332.5947168606676,
+                    616.1234044541184,
+                    237.26109358288352
                   ],
-                  "sha1": "369a443b81a128df",
+                  "sha1": "5d6d51ab3bf01c83",
                   "shape": [
                     7
                   ]
@@ -204634,6 +205419,70 @@
                     1586.529495939864
                   ],
                   "sha1": "f860a7ca3e31cb65",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.592290245668099
+                  ],
+                  "sha1": "bac2e0b1cfd6b531",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -206710,11 +207559,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1331.1249390873425,
-                          616.2046334916374,
-                          238.65881478422463
+                          1331.1262702136125,
+                          616.2058659033692,
+                          238.65976942330235
                         ],
-                        "sha1": "e46ba07f8721dcfc",
+                        "sha1": "97647460f4b1e69c",
                         "shape": [
                           7
                         ]
@@ -206764,6 +207613,14 @@
                     "gamma01_hz": 2220.930650023027,
                     "gamma10_hz": 950.3640950159239,
                     "gamma_mean_hz": 1585.6473725194753,
+                    "hmm_emission_snr": 5.592561006930994,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209852,
                     "n_10": 209851,
                     "n_samples": 1000000,
@@ -206826,7 +207683,9 @@
                     "warnings": [
                       "readout-noise variance is 1270.6x the telegraph amplitude; the autocorrelation rate is noise-dominated",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1331.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1331.1 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 447.64 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -207754,11 +208613,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1331.1249390873425,
-                    616.2046334916374,
-                    238.65881478422463
+                    1331.1262702136125,
+                    616.2058659033692,
+                    238.65976942330235
                   ],
-                  "sha1": "e46ba07f8721dcfc",
+                  "sha1": "97647460f4b1e69c",
                   "shape": [
                     7
                   ]
@@ -207819,6 +208678,70 @@
                     1585.6473725194753
                   ],
                   "sha1": "6f76e4675e572a99",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.592561006930994
+                  ],
+                  "sha1": "ce347dccade1e191",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -209899,11 +210822,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1330.5889407392112,
-                          618.7641048936609,
-                          240.33975634937022
+                          1330.5902713294824,
+                          618.7653424243457,
+                          240.34071771224106
                         ],
-                        "sha1": "67629134c76ede1d",
+                        "sha1": "35bb64981cf5b552",
                         "shape": [
                           7
                         ]
@@ -209953,6 +210876,14 @@
                     "gamma01_hz": 2216.1707873737696,
                     "gamma10_hz": 950.6922983275302,
                     "gamma_mean_hz": 1583.43154285065,
+                    "hmm_emission_snr": 5.590742645735244,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209767,
                     "n_10": 209767,
                     "n_samples": 1000000,
@@ -210015,7 +210946,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1330.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1330.6 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.76 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -210943,11 +211876,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1330.5889407392112,
-                    618.7641048936609,
-                    240.33975634937022
+                    1330.5902713294824,
+                    618.7653424243457,
+                    240.34071771224106
                   ],
-                  "sha1": "67629134c76ede1d",
+                  "sha1": "35bb64981cf5b552",
                   "shape": [
                     7
                   ]
@@ -211008,6 +211941,70 @@
                     1583.43154285065
                   ],
                   "sha1": "a47569f807d9c36e",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.590742645735244
+                  ],
+                  "sha1": "fe03f6881fbcf724",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -291396,11 +292393,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1329.7104109023333,
-                          616.8389510633904,
-                          238.39557299194712
+                          1329.7117406140737,
+                          616.8401847437599,
+                          238.39652657805345
                         ],
-                        "sha1": "191aaad1afbac675",
+                        "sha1": "81918cbaf8524e33",
                         "shape": [
                           7
                         ]
@@ -291450,6 +292447,14 @@
                     "gamma01_hz": 2222.223179238319,
                     "gamma10_hz": 948.6895151439122,
                     "gamma_mean_hz": 1585.4563471911156,
+                    "hmm_emission_snr": 5.588542108356568,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209628,
                     "n_10": 209629,
                     "n_samples": 1000000,
@@ -291512,7 +292517,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1329.7 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1329.7 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 449.90 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -292408,11 +293415,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1329.7104109023333,
-                    616.8389510633904,
-                    238.39557299194712
+                    1329.7117406140737,
+                    616.8401847437599,
+                    238.39652657805345
                   ],
-                  "sha1": "191aaad1afbac675",
+                  "sha1": "81918cbaf8524e33",
                   "shape": [
                     7
                   ]
@@ -292473,6 +293480,70 @@
                     1585.4563471911156
                   ],
                   "sha1": "8895e09efe535f8d",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.588542108356568
+                  ],
+                  "sha1": "cc1c338f730c1e74",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -292905,11 +293976,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1333.4084823456535,
-                          620.3340408837497,
-                          239.75618418335742
+                          1333.4098157554693,
+                          620.3352815543128,
+                          239.75714321193027
                         ],
-                        "sha1": "6c03c8a15a90ef7b",
+                        "sha1": "f2d95a4b915894d1",
                         "shape": [
                           7
                         ]
@@ -292959,6 +294030,14 @@
                     "gamma01_hz": 2222.216259008314,
                     "gamma10_hz": 952.4600268388749,
                     "gamma_mean_hz": 1587.3381429235944,
+                    "hmm_emission_snr": 5.584092487332964,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210211,
                     "n_10": 210212,
                     "n_samples": 1000000,
@@ -293021,7 +294100,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1333.4 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1333.4 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 15.43 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots"
                     ]
                   }
                 }
@@ -293917,11 +294998,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1333.4084823456535,
-                    620.3340408837497,
-                    239.75618418335742
+                    1333.4098157554693,
+                    620.3352815543128,
+                    239.75714321193027
                   ],
-                  "sha1": "6c03c8a15a90ef7b",
+                  "sha1": "f2d95a4b915894d1",
                   "shape": [
                     7
                   ]
@@ -293982,6 +295063,70 @@
                     1587.3381429235944
                   ],
                   "sha1": "4e45e63760ef5238",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.584092487332964
+                  ],
+                  "sha1": "f6a37081900adc95",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -294414,11 +295559,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1329.8689902952715,
-                          617.7967705967375,
-                          238.1608754903985
+                          1329.8703201655915,
+                          617.7980061927499,
+                          238.16182813771107
                         ],
-                        "sha1": "a1fcd7addc7bc1d4",
+                        "sha1": "5f618ecfbfdf0421",
                         "shape": [
                           7
                         ]
@@ -294468,6 +295613,14 @@
                     "gamma01_hz": 2220.358262915963,
                     "gamma10_hz": 949.1913695815093,
                     "gamma_mean_hz": 1584.7748162487362,
+                    "hmm_emission_snr": 5.594831741254271,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 209653,
                     "n_10": 209654,
                     "n_samples": 1000000,
@@ -294530,7 +295683,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1329.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1329.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 449.24 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots"
                     ]
                   }
                 }
@@ -295426,11 +296581,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1329.8689902952715,
-                    617.7967705967375,
-                    238.1608754903985
+                    1329.8703201655915,
+                    617.7980061927499,
+                    238.16182813771107
                   ],
-                  "sha1": "a1fcd7addc7bc1d4",
+                  "sha1": "5f618ecfbfdf0421",
                   "shape": [
                     7
                   ]
@@ -295491,6 +296646,70 @@
                     1584.7748162487362
                   ],
                   "sha1": "27121b2e18c63ae6",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.594831741254271
+                  ],
+                  "sha1": "b8540ad6e8c1968b",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -295923,11 +297142,11 @@
                       "__ndarray__": {
                         "dtype": "float64",
                         "head": [
-                          1332.913714639686,
-                          619.141523848854,
-                          240.2509518893248
+                          1332.9150475547335,
+                          619.1427621343782,
+                          240.2519128969764
                         ],
-                        "sha1": "c255e4b73c80f96f",
+                        "sha1": "5a285c787b33abb5",
                         "shape": [
                           7
                         ]
@@ -295977,6 +297196,14 @@
                     "gamma01_hz": 2217.6029864266,
                     "gamma10_hz": 952.8017274903015,
                     "gamma_mean_hz": 1585.2023569584508,
+                    "hmm_emission_snr": 5.5920910321275406,
+                    "hmm_gamma01_err_hz": NaN,
+                    "hmm_gamma01_hz": NaN,
+                    "hmm_gamma10_err_hz": NaN,
+                    "hmm_gamma10_hz": NaN,
+                    "hmm_gamma_mean_hz": NaN,
+                    "hmm_identifiable": false,
+                    "hmm_n_samples": 100000,
                     "n_01": 210134,
                     "n_10": 210133,
                     "n_samples": 1000000,
@@ -296039,7 +297266,9 @@
                     "warnings": [
                       "too few positive autocorrelation lags to fit; the telegraph amplitude may be below the readout noise",
                       "shortest dwell is only 1.4 samples (< 5): switching is close to the sampling period, so transitions are being missed and the rate is a LOWER bound. Shorten relax_delay to sample faster.",
-                      "switch rate falls from 1332.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph"
+                      "switch rate falls from 1332.9 Hz to 0.0 Hz across the bin-size sweep: crossings at small bin sizes are dominated by readout noise. Read the rate off a plateau at larger averaging and set shot_average there; if the sweep never flattens, the record has no resolvable telegraph",
+                      "HMM fitted on the first 100000 of 1000000 samples",
+                      "HMM rate withheld: 2-state HMM improves on uncorrelated (i.i.d.) shots by only -0.0 log-likelihood (< 10): no statistical evidence for temporal switching; (gamma01 + gamma10) * dt = 450.84 > 1: switching unresolved at this cadence / indistinguishable from uncorrelated shots; fitted rate pinned to a fit bound; the likelihood does not constrain the rate inside the allowed range"
                     ]
                   }
                 }
@@ -296935,11 +298164,11 @@
                 "data/ts_bin_rate_hz5": {
                   "dtype": "float64",
                   "head": [
-                    1332.913714639686,
-                    619.141523848854,
-                    240.2509518893248
+                    1332.9150475547335,
+                    619.1427621343782,
+                    240.2519128969764
                   ],
-                  "sha1": "c255e4b73c80f96f",
+                  "sha1": "5a285c787b33abb5",
                   "shape": [
                     7
                   ]
@@ -297000,6 +298229,70 @@
                     1585.2023569584508
                   ],
                   "sha1": "4bedea5fe3d30a5e",
+                  "shape": []
+                },
+                "data/ts_hmm_emission_snr5": {
+                  "dtype": "float64",
+                  "head": [
+                    5.5920910321275406
+                  ],
+                  "sha1": "6a1cad2a7ea8c874",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma01_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_err_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma10_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_gamma_mean_hz5": {
+                  "dtype": "float64",
+                  "head": [
+                    NaN
+                  ],
+                  "sha1": "e5eda0cf887eb283",
+                  "shape": []
+                },
+                "data/ts_hmm_identifiable5": {
+                  "dtype": "int64",
+                  "head": [
+                    0
+                  ],
+                  "sha1": "8c2d3148e933442c",
+                  "shape": []
+                },
+                "data/ts_hmm_n_samples5": {
+                  "dtype": "int64",
+                  "head": [
+                    100000
+                  ],
+                  "sha1": "a05abc140658ccb6",
                   "shape": []
                 },
                 "data/ts_index5": {
@@ -297844,7 +299137,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
-          "qicklab/runs/zero_span.py:65:run_zero_span_parity",
+          "qicklab/runs/zero_span.py:247:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
         ],
         "type": "RuntimeError"
@@ -299624,6 +300917,18 @@
                   "sha1": "1e8c38f91dc1532c",
                   "shape": []
                 },
+                "data/chunk_wall_clock_ends": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>",
+                    "<ISO>",
+                    "<ISO>"
+                  ],
+                  "sha1": "04b57608ec5b1bed",
+                  "shape": [
+                    60
+                  ]
+                },
                 "data/chunk_wall_clock_starts": {
                   "dtype": "str",
                   "head": [
@@ -299699,6 +301004,14 @@
                   "shape": [
                     600000
                   ]
+                },
+                "data/wall_clock_end": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
                 },
                 "data/wall_clock_start": {
                   "dtype": "str",
@@ -301455,21 +302768,90 @@
           "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
           "hw": {
             "calls": {
-              "config_avg": 283,
-              "configure_readout": 283,
-              "load_bin_program": 283,
-              "reload_mem": 283,
-              "set_nyquist": 566,
-              "start_readout": 283,
-              "start_src": 566,
-              "stop_tproc": 283
+              "config_avg": 184,
+              "configure_readout": 184,
+              "load_bin_program": 184,
+              "reload_mem": 184,
+              "set_nyquist": 368,
+              "start_readout": 184,
+              "start_src": 368,
+              "stop_tproc": 184
             },
-            "digest": "e75c23f3742089b02117f62b37be07fa",
-            "first_program": "61a6b0f45c2bdc87",
-            "n_programs": 283,
-            "n_unique_programs": 173
+            "digest": "02d131f9f29203c547ec17ea3fb86c6b",
+            "first_program": "f19fbe3c71515df1",
+            "n_programs": 184,
+            "n_unique_programs": 166
           },
           "index": 2,
+          "methods": [
+            {
+              "count": 184,
+              "kwargs": {
+                "progress": false
+              },
+              "name": "acquire"
+            }
+          ],
+          "outerFolder": "<DATA>/Q5//ZeroSpanParity/",
+          "path": "ZeroSpanParity",
+          "run": "RunZeroSpanParity[validate,gate_off]"
+        },
+        {
+          "cfg": {
+            "adc_trig_offset": 0.488,
+            "mixer_freq": 0.0,
+            "mode": "strobe",
+            "modulation_block_t": 1.0240165757923287,
+            "modulation_correlation": -0.012165502410304988,
+            "modulation_gate_passed": false,
+            "modulation_snr": 0.016345534900761963,
+            "n_chunks": 60,
+            "nqz": 2,
+            "parity_drive_freq": 2650.039800995025,
+            "parity_drive_freq_refined": false,
+            "parity_drive_freq_stage2_snr": 2.468067251183596,
+            "parity_drive_freq_unrefined": 2650.039800995025,
+            "parity_freq_source": "two_highest_peaks",
+            "parity_partner_snr": 1.5339648490840376,
+            "parity_peak_sep_MHz": 1.3731343283579918,
+            "parity_stage2_doublet": "mismatch",
+            "parity_stage2_peak_sep_MHz": 1.0,
+            "pulse_gain": 1500,
+            "qubit_ch": 1,
+            "qubit_gain": 4200,
+            "qubit_nqz": 1,
+            "read_length": 5.0,
+            "read_pulse_freq": 7095.4,
+            "read_pulse_freq_nominal": 7095.4,
+            "read_pulse_freq_source": "resonator_center",
+            "reps_per_chunk": 10000,
+            "res_ch": 0,
+            "res_phase": 0,
+            "ro_chs": [
+              0
+            ],
+            "sample_period_us": 20.0,
+            "start_src": "internal"
+          },
+          "cls": "ZeroSpanParity",
+          "fname": "<DATA>/Q5//ZeroSpanParity/ZeroSpanParity/ZeroSpanParity_<DATE>/ZeroSpanParity_<TS>_data.h5",
+          "hw": {
+            "calls": {
+              "config_avg": 71,
+              "configure_readout": 71,
+              "load_bin_program": 71,
+              "reload_mem": 71,
+              "set_nyquist": 142,
+              "start_readout": 71,
+              "start_src": 142,
+              "stop_tproc": 71
+            },
+            "digest": "c742090e1eba4325ddab44d3f83e07e4",
+            "first_program": "61a6b0f45c2bdc87",
+            "n_programs": 71,
+            "n_unique_programs": 10
+          },
+          "index": 3,
           "methods": [
             {
               "count": 60,
@@ -301483,11 +302865,11 @@
                 "data/I": {
                   "dtype": "float64",
                   "head": [
-                    5.317708333333333,
-                    -5.994791666666667,
-                    -8.002604166666666
+                    7.190755208333333,
+                    4.75,
+                    4.502604166666667
                   ],
-                  "sha1": "58367b3c877708d8",
+                  "sha1": "a170f2b22141e28b",
                   "shape": [
                     600000
                   ]
@@ -301495,11 +302877,11 @@
                 "data/Q": {
                   "dtype": "float64",
                   "head": [
-                    3.8958333333333335,
-                    -1.73046875,
-                    -2.529296875
+                    0.5182291666666666,
+                    2.6705729166666665,
+                    1.0846354166666667
                   ],
-                  "sha1": "b028a7d90bf6775c",
+                  "sha1": "f78e3d2fc98ad108",
                   "shape": [
                     600000
                   ]
@@ -301511,6 +302893,18 @@
                   ],
                   "sha1": "1e8c38f91dc1532c",
                   "shape": []
+                },
+                "data/chunk_wall_clock_ends": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>",
+                    "<ISO>",
+                    "<ISO>"
+                  ],
+                  "sha1": "04b57608ec5b1bed",
+                  "shape": [
+                    60
+                  ]
                 },
                 "data/chunk_wall_clock_starts": {
                   "dtype": "str",
@@ -301588,6 +302982,14 @@
                     600000
                   ]
                 },
+                "data/wall_clock_end": {
+                  "dtype": "str",
+                  "head": [
+                    "<ISO>"
+                  ],
+                  "sha1": "3771d0beb9412807",
+                  "shape": []
+                },
                 "data/wall_clock_start": {
                   "dtype": "str",
                   "head": [
@@ -301604,12 +303006,12 @@
               "cfg_delta": {
                 "reps": 10000
               },
-              "cfg_digest": "28509e572b6fe930",
+              "cfg_digest": "55b90d4a0ec34ff2",
               "kwargs": {},
               "name": "save_config"
             },
             {
-              "count": 223,
+              "count": 11,
               "kwargs": {
                 "progress": false
               },
@@ -302334,7 +303736,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:790:<module>",
-          "qicklab/runs/zero_span.py:65:run_zero_span_parity",
+          "qicklab/runs/zero_span.py:247:run_zero_span_parity",
           "qicklab/analysis/spectroscopy.py:635:pick_parity_drive_freq"
         ],
         "type": "RuntimeError"

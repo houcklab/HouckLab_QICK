@@ -140,10 +140,13 @@ def _forward_loglik(
                 a0, a1 = b0, b1
     else:
         lt = _step_log_transitions(gamma01, gamma10, dt_steps)
+        # pre-listed scalars, as in the uniform path (per-step numpy indexing is ~20x slower)
+        t00, t01 = lt[:, 0, 0].tolist(), lt[:, 0, 1].tolist()
+        t10, t11 = lt[:, 1, 0].tolist(), lt[:, 1, 1].tolist()
         for i in range(1, n):
-            t = lt[i - 1]
-            b0 = ladd(a0 + t[0, 0], a1 + t[1, 0]) + le0[i]
-            b1 = ladd(a0 + t[0, 1], a1 + t[1, 1]) + le1[i]
+            j = i - 1
+            b0 = ladd(a0 + t00[j], a1 + t10[j]) + le0[i]
+            b1 = ladd(a0 + t01[j], a1 + t11[j]) + le1[i]
             a0, a1 = b0, b1
     return ladd(a0, a1)
 

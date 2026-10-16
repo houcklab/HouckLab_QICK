@@ -286,13 +286,16 @@ fname = sorted(glob.glob(folder + "/T1_*/T1_*_data*.h5"))[-1]   # newest
 
 with h5py.File(fname, "r") as f:
     cfg = json.loads(f.attrs["config"])        # the exact cfg the experiment ran with
-    data = {k: f[k][()] for k in f.keys()}     # every dataset, float64
+    data = {k: f[k][()] for k in f.keys()}     # every dataset (float64 for most steps)
 
 print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
 ```
 
 - Every dataset is float64 (the base writer forces it). Experiments that save complex or
-  string data write their own files (zero-span parity).
+  string data write their own files (zero-span parity). Undriven single-shot is the other
+  exception: it stores raw traces as float32, 0/1 labels as uint8 and duplicate keys as h5py
+  SoftLinks, which the loop above follows transparently; its dropped index/time axes are
+  rebuilt from saved scalars ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)).
 - The `.json` next to the h5 holds the same cfg; it is the quick way to grep settings across a
   folder.
 - `t1` and `t2_echo` save their exponential fit in the h5 (`t1_fit_*`, `t2e_fit_*`, see

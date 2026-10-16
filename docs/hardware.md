@@ -217,8 +217,10 @@ Every experiment writes three files with one timestamp:
 - `path` (`"T1"`, `"QubitSpecFF"`, `"SingleShot"`, ...) is fixed per step and unchanged by the
   refactor. Some experiments append a suffix to the h5 name (`_Q{n}` for T1 and the soft-sweep
   Rabi, `_n{num_pi_pulses}` for T2E).
-- The h5 holds one float64 dataset per data key and the full cfg as a JSON string in
-  `attrs["config"]`; the `.json` holds the same cfg. Load offline with h5py:
+- The h5 holds one float64 dataset per data key (undriven single-shot also writes
+  float32/uint8 traces and SoftLinks, see
+  [its outputs](experiments/undriven_single_shot.md#outputs)) and the full cfg as a JSON
+  string in `attrs["config"]`; the `.json` holds the same cfg. Load offline with h5py:
   `cfg = json.loads(f.attrs["config"])`.
 - Scripts are intentionally not embedded in the h5 ("caused more trouble than convenience",
   Ge Yang, legacy comment).

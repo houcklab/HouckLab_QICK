@@ -84,6 +84,7 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         raise ValueError(f"n_chunks must be >= 1, got {n_chunks}")
     I_parts, Q_parts, t_parts = [], [], []
     wall_clocks = []
+    wall_clock_ends = []
     gap_indices = []
     cum_offset_us = 0.0
     cum_idx = 0
@@ -126,6 +127,7 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         Q_parts.append(Q_c)
         t_parts.append(t_shifted)
         wall_clocks.append(out.get("wall_clock_start", None))
+        wall_clock_ends.append(out.get("wall_clock_end", None))
         cum_idx += I_c.size
 
     stitched = {
@@ -134,8 +136,10 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         "t_us": np.concatenate(t_parts),
         "gap_indices": gap_indices,
         "chunk_wall_clock_starts": wall_clocks,
+        "chunk_wall_clock_ends": wall_clock_ends,
         "n_chunks": int(n_chunks),
         "wall_clock_start": wall_clocks[0] if wall_clocks else None,
+        "wall_clock_end": wall_clock_ends[-1] if wall_clock_ends else None,
     }
     stitched.update(first_meta)
     # the inner acquire() left only the last chunk in experiment.data
@@ -147,7 +151,7 @@ def chunked_acquire(experiment, n_chunks, progress=False):
 
 
 def _check_reps_per_block(experiment, reps_per_block):
-    """Raise unless 1 <= reps_per_block <= avg_maxlen (zero_span_parity rule 4)."""
+    """Raise unless 1 <= reps_per_block <= avg_maxlen (one block fits the averages buffer)."""
     if reps_per_block < 1:
         raise ValueError(f"reps_per_block must be >= 1, got {reps_per_block}")
     soccfg = getattr(experiment, "soccfg", None)
@@ -157,9 +161,9 @@ def _check_reps_per_block(experiment, reps_per_block):
     avg_maxlen = int(soccfg["readouts"][ro_chs[0]]["avg_maxlen"])
     if reps_per_block > avg_maxlen:
         raise RuntimeError(
-            f"[ZeroSpanParity §5.3 rule 4] reps_per_block={reps_per_block} > "
-            f"avg_maxlen={avg_maxlen} for readout ch {ro_chs[0]}. "
-            f"Shorten the blocks (raise modulation_freq_hz)."
+            f"[modulated_strobe_acquire] reps_per_block={reps_per_block} > "
+            f"avg_maxlen={avg_maxlen} for readout ch {ro_chs[0]}: each block is kept within "
+            f"the averages buffer. Shorten the blocks (raise modulation_freq_hz)."
         )
 
 
@@ -179,7 +183,7 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
     if "reps_per_chunk" in cfg:
         cfg["reps_per_chunk"] = reps_per_block
     I_parts, Q_parts, t_parts = [], [], []
-    ref_parts, gaps, wall_starts = [], [], []
+    ref_parts, gaps, wall_starts, wall_ends = [], [], [], []
     cum_idx = 0
     cum_offset_us = 0.0
     sample_period = float(cfg.get("sample_period_us", 0.0))
@@ -209,6 +213,7 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
             Q_parts.append(Q_c)
             ref_parts.append(np.full(I_c.size, 1.0 if gain > 0 else 0.0))
             wall_starts.append(data.get("wall_clock_start"))
+            wall_ends.append(data.get("wall_clock_end"))
             cum_idx += I_c.size
     finally:
         cfg.update(saved)
@@ -226,6 +231,7 @@ def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress
         "gap_indices": gaps,
         "block_labels": list(gain_schedule),
         "chunk_wall_clock_starts": wall_starts,
+        "chunk_wall_clock_ends": wall_ends,
         "n_chunks": len(gain_schedule),
         "reps_per_block": reps_per_block,
         "sample_period_us": sample_period,

@@ -38,6 +38,11 @@ _SHARED_REQUIRED = (
     "read_length",
 )
 
+# Rule 4 (strobe): reps_per_chunk cap from client memory, not from the averages buffer.
+_MAX_REPS_PER_CHUNK = 20_000_000
+# Rule 4 warning: ring-buffer headroom below which a streamed chunk risks an overflow.
+_STREAM_HEADROOM_WARN_MS = 100.0
+
 
 def _validate_cfg(cfg, soccfg):
     """Raise RuntimeError on the first violated rule (1-5, 8, 9 of
@@ -85,15 +90,31 @@ def _validate_cfg(cfg, soccfg):
     except (KeyError, IndexError, TypeError) as ex:
         raise RuntimeError(f"[ZeroSpanParity cfg] cannot read soccfg['readouts'][{ro_ch}]: {ex!r}")
     if mode == "strobe":
-        avg_maxlen = int(ro_info["avg_maxlen"])
+        # Rule 4: qick streams the averages buffer as a ring buffer during acquire(), so
+        # reps_per_chunk is not bounded by avg_maxlen; only client memory bounds it.
         reps = int(cfg["reps_per_chunk"])
-        if reps > avg_maxlen:
+        if reps > _MAX_REPS_PER_CHUNK:
             raise RuntimeError(
                 f"[ZeroSpanParity §5.3 rule 4] reps_per_chunk={reps} > "
-                f"avg_maxlen={avg_maxlen} for readout ch {ro_ch}. "
-                f"Reduce reps_per_chunk (and increase n_chunks if longer record "
-                f"is needed)."
+                f"{_MAX_REPS_PER_CHUNK} (client-memory cap: ~16 B per sample in qick's raw "
+                f"buffer, several float copies downstream). Reduce reps_per_chunk and "
+                f"increase n_chunks."
             )
+        avg_maxlen = int(ro_info["avg_maxlen"])
+        if reps >= avg_maxlen:
+            # The board-side streamer reads every stride (10% of the buffer) and must do so
+            # before the tProc wraps the ring; qick raises "Overflowed the averages buffer"
+            # if it does not, which acquire_with_retry deliberately does not retry.
+            stride = int(0.1 * avg_maxlen)
+            headroom_ms = (avg_maxlen - stride) * float(cfg["sample_period_us"]) * 1e-3
+            if headroom_ms < _STREAM_HEADROOM_WARN_MS:
+                print(
+                    f"[ZeroSpanParity rule 4 warning] reps_per_chunk={reps} >= "
+                    f"avg_maxlen={avg_maxlen}: the record streams through the ring buffer "
+                    f"with only {headroom_ms:.1f} ms headroom per {stride}-sample stride "
+                    f"(< {_STREAM_HEADROOM_WARN_MS:g} ms). Overflow risk: lengthen "
+                    f"sample_period_us or keep reps_per_chunk < avg_maxlen."
+                )
     else:
         # Buffer sized by the declared read_length, not capture_length_us; nominal estimate.
         buf_maxlen = int(ro_info["buf_maxlen"])
@@ -299,6 +320,7 @@ class ZeroSpanParity(ExperimentClass):
             readouts_per_experiment=1,
             save_experiments=None,
         )
+        wall_clock_end = datetime.datetime.now().isoformat()
         ro_ch = cfg["ro_chs"][0]
         # ro_ch=0 (not ro_chs[0]) to match the single-shot separator's units
         # (docs/architecture.md#readout-buffers).
@@ -316,6 +338,7 @@ class ZeroSpanParity(ExperimentClass):
             "t_us": t_us,
             "gap_indices": np.array([], dtype=int),
             "wall_clock_start": wall_clock_start,
+            "wall_clock_end": wall_clock_end,
             "sample_period_us": sp,
             "read_length_us": float(cfg["read_length"]),
             "adc_trig_offset_us": float(cfg["adc_trig_offset"]),
@@ -353,6 +376,7 @@ class ZeroSpanParity(ExperimentClass):
         I_parts, Q_parts, t_parts = [], [], []
         capture_sizes = []
         chunk_wall_clocks = []
+        chunk_wall_clock_ends = []
         gap_indices = []
         cum_offset_us = 0.0
         cum_idx = 0
@@ -365,6 +389,7 @@ class ZeroSpanParity(ExperimentClass):
                 start_src=cfg["start_src"],
                 progress=progress,
             )
+            chunk_wall_clock_ends.append(datetime.datetime.now().isoformat())
             # (2, length) for reps=1, (reps, 2, length) for reps>1, (length, 2) on some paths.
             arr = np.asarray(dec[0])
             if arr.ndim == 2 and arr.shape[0] == 2:
@@ -398,7 +423,9 @@ class ZeroSpanParity(ExperimentClass):
             "t_us": t_us,
             "gap_indices": np.asarray(gap_indices, dtype=int),
             "wall_clock_start": wall_clock_start,
+            "wall_clock_end": chunk_wall_clock_ends[-1],
             "chunk_wall_clock_starts": chunk_wall_clocks,
+            "chunk_wall_clock_ends": chunk_wall_clock_ends,
             "n_captures": int(n_captures),
             "sample_period_us": sp,
             "decimated_fs_MHz": decimated_fs_MHz,
@@ -439,12 +466,14 @@ class ZeroSpanParity(ExperimentClass):
             _put("gap_indices", np.asarray(data.get("gap_indices", []), dtype=int))
             if "capture_sizes" in data:
                 _put("capture_sizes", np.asarray(data["capture_sizes"], dtype=int))
-            if "chunk_wall_clock_starts" in data:
-                wcs = [str(s) if s is not None else "" for s in data["chunk_wall_clock_starts"]]
-                _put("chunk_wall_clock_starts", np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
+            for key in ("chunk_wall_clock_starts", "chunk_wall_clock_ends"):
+                if key in data:
+                    wcs = [str(s) if s is not None else "" for s in data[key]]
+                    _put(key, np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
             # Keep in sync with the acquire-path dicts; missing keys are skipped.
             scalar_keys = (
                 "wall_clock_start",
+                "wall_clock_end",
                 "sample_period_us",
                 "mode",
                 "decimated_fs_MHz",

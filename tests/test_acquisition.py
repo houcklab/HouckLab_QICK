@@ -50,6 +50,7 @@ class _MetaFakeExp:
             "Q": np.arange(self.n, dtype=float),
             "t_us": np.arange(self.n, dtype=float) * self.sp,
             "wall_clock_start": f"2026-05-16T12:00:{self.calls:02d}",
+            "wall_clock_end": f"2026-05-16T12:00:{self.calls:02d}.5",
             "sample_period_us": self.sp,
             "read_length_us": 5.0,
             "adc_trig_offset_us": 0.488,
@@ -179,6 +180,9 @@ def test_chunked_acquire():
     assert np.all(np.diff(stitched["t_us"]) > 0)
     # Per-chunk wall clock timestamps are recorded
     assert len(stitched["chunk_wall_clock_starts"]) == 5
+    # a chunk without wall_clock_end gives None (F43), the list stays aligned with the starts
+    assert stitched["chunk_wall_clock_ends"] == [None] * 5
+    assert stitched["wall_clock_end"] is None
     # n_chunks == 1 case: gap_indices empty
     one = chunked_acquire(_FakeExp(n_per_chunk=100), n_chunks=1)
     assert list(one["gap_indices"]) == []
@@ -220,6 +224,13 @@ def test_chunked_acquire_propagates_metadata():
             f"chunked_acquire did not propagate {k}: got {meta_stitched.get(k)}, expected {v}"
         )
     assert meta_stitched["wall_clock_start"] == "2026-05-16T12:00:01"
+    # F43: per-chunk end times; with the starts they bound the dead time between chunks
+    assert meta_stitched["chunk_wall_clock_ends"] == [
+        "2026-05-16T12:00:01.5",
+        "2026-05-16T12:00:02.5",
+        "2026-05-16T12:00:03.5",
+    ]
+    assert meta_stitched["wall_clock_end"] == "2026-05-16T12:00:03.5"
 
 
 def test_save_data_persists_chunked_acquire_metadata():
@@ -251,6 +262,12 @@ def test_save_data_persists_chunked_acquire_metadata():
                 for s in np.array(f["chunk_wall_clock_starts"])
             ]
             assert len(wcs) == 3 and all(w.startswith("2026-05-16T") for w in wcs), wcs
+            wce = [
+                s.decode("utf-8") if isinstance(s, bytes) else str(s)
+                for s in np.array(f["chunk_wall_clock_ends"])
+            ]
+            assert wce == [f"2026-05-16T12:00:0{i}.5" for i in (1, 2, 3)], wce
+            assert str(f.attrs["wall_clock_end"]) == "2026-05-16T12:00:03.5"
             assert int(f.attrs["n_chunks"]) == 3
             assert float(f.attrs["sample_period_us"]) == 20.0
             assert str(f.attrs["mode"]) == "strobe"
@@ -276,6 +293,8 @@ def test_modulated_strobe_acquire():
     assert acq["gap_indices"] == [n_per * k for k in range(1, len(schedule))], acq["gap_indices"]
     assert np.all(np.diff(acq["t_us"]) > 0), "t_us not monotonic"
     assert acq["block_labels"] == schedule, acq["block_labels"]
+    # one start and one end time per block (None: the fake records no end time)
+    assert len(acq["chunk_wall_clock_starts"]) == len(acq["chunk_wall_clock_ends"]) == 8
     # 500 reps/half-period at 20 us -> half=10 ms -> period 20 ms -> 50 Hz
     assert abs(acq["modulation_freq_hz"] - 50.0) < 1.0, acq["modulation_freq_hz"]
     # the main-record chunk size is restored, and the program rebuilt with it once, still at the
@@ -302,10 +321,10 @@ def test_modulated_strobe_acquire_rejects_bad_reps_per_block():
     exp = _ModFakeExp(10000, 20.0)
     with pytest.raises(ValueError, match="reps_per_block"):
         modulated_strobe_acquire(exp, [100, 0], 0)
-    # rule 4: one block is one strobe program, so reps_per_block <= avg_maxlen
+    # each modulation block is kept within the averages buffer: reps_per_block <= avg_maxlen
     exp.soccfg = {"readouts": {0: {"avg_maxlen": 16384}}}
     exp.cfg["ro_chs"] = [0]
-    with pytest.raises(RuntimeError, match="rule 4"):
+    with pytest.raises(RuntimeError, match="avg_maxlen=16384"):
         modulated_strobe_acquire(exp, [100, 0], 16385)
     assert exp.compiled == [] and exp.cfg["reps_per_chunk"] == 10000
 

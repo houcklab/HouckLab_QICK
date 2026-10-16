@@ -258,8 +258,8 @@ Before the first record ([experiments/modified_ramsey.md](experiments/modified_r
 `zero_span_parity` ([experiments/zero_span_parity.md](experiments/zero_span_parity.md)): strobe
 mode (one sample per rep) or decimated mode (continuous capture). Run the modulation check first:
 it is the pipeline-sanity gate. Hard limits are checked at construction (sample period >= ADC
-offset + read length + 1 us; at most 65535 cycles per period or capture; reps per chunk <= 16384;
-decimated samples <= 1024).
+offset + read length + 1 us; at most 65535 cycles per period or capture; reps per chunk <= 2e7, a
+memory cap, since the averages buffer is streamed; decimated samples <= 1024).
 
 ### Undriven single shot
 

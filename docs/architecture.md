@@ -90,6 +90,11 @@ file stem. `os.makedirs` runs in `__init__`, so constructing an experiment creat
   Complex, string and object arrays cannot go through the base class; experiments that need
   them (ZeroSpanParity) override `save_data`, open the file in `"a"` mode so the `config`
   attribute is not truncated, and delete-then-recreate datasets so a re-save is idempotent.
+  UndrivenSingleShot also overrides it, to shrink its file: raw traces as float32, 0/1 labels
+  as uint8, regenerable index/time axes dropped, and copies (averaged traces at
+  `shot_average = 1`, the ModifiedRamsey `shots_*` aliases) written as h5py SoftLinks, which
+  `f[k][()]` follows transparently. Its in-memory `data` stays float64
+  ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)).
 - Re-saving an existing key through the base class raises `ValueError` (h5py 3 behaviour; the
   legacy `except RuntimeError` overwrite branch never fires).
 - `save_config()` writes the full `cfg` to the `.json` and to the h5 attribute `config`

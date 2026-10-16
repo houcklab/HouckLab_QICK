@@ -314,7 +314,7 @@ between them). Full capture: ~13 min for both boards in one process (pytest,
 | `RunZeroSpanParity` | raised (RuntimeError `partner_not_significant`) | 1 | 0 | QubitSpecSliceFF x1 | 1 |
 | `RunZeroSpanParity[validate]` | raised (RuntimeError `partner_not_significant`) | 1 | 0 | QubitSpecSliceFF x1 | 1 |
 | `RunZeroSpanParity[gate_off]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 63 |
-| `RunZeroSpanParity[validate,gate_off]` | completed | 3 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x1 | 286 |
+| `RunZeroSpanParity[validate,gate_off]` | completed | 4 | 0 | QubitSpecSliceFF x1, SingleShotProgramFFMUX x1, ZeroSpanParity x2 | 258 |
 | `Run2ToneChargeDispersionQuasiCW[gate_off]` | stopped_at_budget | 8 | 12 | QubitSpecSliceFF x4, ChargeDispersionQuasiCW x4 | 8 |
 | `RunTransmissionSweep+RunAmplitudeRabi` | completed | 2 | 0 | CavitySpecFF x1, AmplitudeRabiFF x1 | 202 |
 | `Run2ToneChargeDispersionQuasiCW+RunChargeDispersionQuasiCW` | completed | 4 | 0 | QubitSpecSliceFF x2, ChargeDispersionQuasiCW x2 | 4 |

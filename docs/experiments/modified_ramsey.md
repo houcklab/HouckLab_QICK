@@ -330,7 +330,8 @@ diagnostics only.
    - If the HMM and the ACF or PSD disagree by > 3×, the record is flagged: at least
      one estimator is not measuring parity.
 7. **Rate vs bin size.** A falling rate means noise crossings; a plateau means real
-   switching.
+   switching. The rate is n_switches / ((n_bins − 1)·b·dt), the same estimator the
+   Undriven bin sweep uses.
 8. **Reset readouts.** Pre-correction ground fraction per reset row (see
    [active_reset](active_reset.md#reset-readout-k-is-taken-before-flip-k)).
 9. **Controls** (`build_control_variants` + `compare_parity_controls`). Controls

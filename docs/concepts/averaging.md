@@ -17,7 +17,7 @@ in single-shot programs, silently loses data.
 | `Repeat` | experiment loop | `undriven_single_shot` passes; each pass its own files, only the last is displayed | |
 | `num_cycles` | experiment loop | records of `modified_ramsey`, `modified_ramsey_control`, `two_tone_charge_dispersion_quasicw` | `ss_recalib_every_n_cycles`, `validation_controls_every_n_cycles` count these |
 | `cycles` | experiment loop | `interleaved_coherence` cycles (undriven SS -> T1 -> T2R -> T2E) | inner `Repeat` / `repetitions` forced to 1 |
-| `reps_per_chunk`, `n_chunks` | `zero_span_parity` strobe | shots per program, programs per record | record length = `reps_per_chunk x n_chunks x sample_period_us x 1e-6` s (about 12 s for 10000 x 60 x 20 us) |
+| `reps_per_chunk`, `n_chunks` | `zero_span_parity` strobe | shots per program, programs per record | record length = `reps_per_chunk x n_chunks x sample_period_us x 1e-6` s (about 12 s for 10000 x 60 x 20 us); `reps_per_chunk` is not bounded by `avg_maxlen` (the averages buffer is streamed), only by a 2e7 memory cap |
 | `n_captures` | `zero_span_parity` decimated | back-to-back decimated captures, concatenated | boundaries recorded in `gap_indices` |
 | `average_shots` | analysis (`undriven_single_shot`) | average n consecutive shots into one time-series point | noise falls as 1/sqrt(n), but switching faster than n x rep period averages away; pick n on the plateau of the rate-vs-averaging panel |
 | `average_n_shots` | analysis (`modified_ramsey`) | bin size of the legacy hard-threshold plot only | keep well below one dwell (see the Modified Ramsey page) |
@@ -115,7 +115,13 @@ Single-shot style programs read one accumulated I/Q value per shot from the raw 
   timestamp repeats, spec §6.2). Python + tProc gaps between chunks are **not** modelled in
   `t_us`; `gap_indices` (first index of every chunk after the first, `n_chunks - 1` entries)
   marks them so the analysis never counts a switch across one. It also returns
-  `chunk_wall_clock_starts`, `n_chunks`, `wall_clock_start`, and the mode/unit keys (`mode`,
+  `chunk_wall_clock_starts` and `chunk_wall_clock_ends` (each chunk's optional
+  `wall_clock_start` / `wall_clock_end`, None when absent). They bracket each chunk's
+  `acquire()` call, program load and final transfer included, so with T the sampling time
+  of one chunk they bound the gap between chunk i's last sample and chunk i+1's first:
+  `starts[i+1] - ends[i] <= gap <= ends[i+1] - starts[i] - 2T`; `(ends[i] - starts[i]) - T`
+  is chunk i's overhead. It also returns `n_chunks`, `wall_clock_start` (first chunk),
+  `wall_clock_end` (last chunk), and the mode/unit keys (`mode`,
   `sample_period_us`, `read_length_us`, `adc_trig_offset_us`, `ro_norm_cycles`,
   `decimated_fs_MHz`, `decimated_fs_source`, `capture_length_us`, `samples_per_capture`,
   `soft_avgs`, `n_captures`) copied from the first chunk. It sets
@@ -123,8 +129,9 @@ Single-shot style programs read one accumulated I/Q value per shot from the raw 
 - `modulated_strobe_acquire(experiment, gain_schedule, reps_per_block)` runs one block per gain
   (e.g. `[G_on, 0, G_on, 0, ...]`), calling `experiment.set_qubit_gain(gain)` before each
   `acquire()`. `reps_per_block` (= time samples per block) must be >= 1 (else `ValueError`)
-  and satisfy `avg_maxlen` (rule 4, checked before any block when the experiment has a
-  `soccfg` and `ro_chs`; else `RuntimeError`). `set_qubit_gain` compiles `cfg["reps"]`, which
+  and <= `avg_maxlen`, so each block fits the averages buffer without streaming (checked
+  before any block when the experiment has a `soccfg` and `ro_chs`; else `RuntimeError`).
+  This cap is the helper's choice, not a qick limit (see zero_span_parity rule 4). `set_qubit_gain` compiles `cfg["reps"]`, which
   it re-syncs from `cfg["reps_per_chunk"]`, so for the blocks the helper sets both keys to
   `reps_per_block`. Afterwards (also when a block raises) it restores both keys and rebuilds
   the program once with them at the last gain applied. It returns the `chunked_acquire` keys

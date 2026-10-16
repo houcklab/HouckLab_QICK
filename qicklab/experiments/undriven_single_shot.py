@@ -4,9 +4,11 @@ No |e> reference, so no fidelity. The record is a uniformly sampled time series 
 under the ModifiedRamsey key names (docs/experiments/undriven_single_shot.md).
 """
 
+import re
 import time
 import traceback
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
@@ -166,8 +168,79 @@ _TS_KEYS = (
     "bin_dt_us",
     "bin_rate_hz",
     "bin_n_switches",
+    "hmm_gamma01_hz",
+    "hmm_gamma10_hz",
+    "hmm_gamma01_err_hz",
+    "hmm_gamma10_err_hz",
+    "hmm_gamma_mean_hz",
+    "hmm_emission_snr",
+    "hmm_n_samples",
 )
 _SWEEP_TS_SCALARS = ("gamma_mean_hz", "acf_gamma_hz")
+
+# On-disk layout of the h5 (save_data only; self.data keeps every key in float64 for
+# display()). Per read tag r: full-length float traces as float32 (~6e-8 relative, far below
+# readout noise), 0/1 label traces as uint8, an averaged trace that equals its raw twin
+# (shot_average == 1) as an h5py SoftLink to it, and the per-read index/time axes dropped:
+# shot_index = arange(N), shot_time_us = shot_index * scheduled_rep_period_us,
+# ts_index = arange(N // n) * n + (n - 1) / 2 with n = shot_average, ts_time_us = ts_index *
+# scheduled_rep_period_us. The ModifiedRamsey aliases shots_i/shots_q are SoftLinks to the
+# first read's i_raw/q_raw; shot_index (uint32) and shot_time_us stay one real copy each.
+_DISK_FLOAT32 = ("i_raw", "q_raw", "projection_raw", "i", "q", "projection")
+_DISK_UINT8 = ("labels", "ts_states")
+_DISK_DROPPED = ("shot_index", "shot_time_us", "ts_index", "ts_time_us")
+_DISK_TWINS = (("i", "i_raw"), ("q", "q_raw"), ("projection", "projection_raw"))
+_MR_LINKED = (("shots_i", "i_raw"), ("shots_q", "q_raw"))
+
+
+def _disk_layout(payload):
+    """(datasets, links) to write for an UndrivenSingleShot payload; `payload` is not modified.
+
+    datasets maps key -> value (numpy arrays already in their on-disk dtype where it is not
+    float64); links maps key -> target key, written as h5py SoftLinks (followed transparently
+    on read). Handles the single-bias layout and the charge-sweep V<k>_ layout.
+    """
+    datasets = dict(payload)
+    links = {}
+    bias = (re.match(r"V(\d+)_", k) for k in payload)
+    prefixes = sorted({m.group(0) for m in bias if m}, key=lambda p: int(p[1:-1]))
+    for prefix in prefixes or [""]:
+        tags = [str(r) for r in np.atleast_1d(payload[prefix + "read_indices"]).tolist()]
+        for tag in tags:
+            for name in _DISK_DROPPED:
+                datasets.pop(prefix + name + tag, None)
+            for avg, raw in _DISK_TWINS:
+                a, b = payload.get(prefix + avg + tag), payload.get(prefix + raw + tag)
+                if a is not None and b is not None and np.array_equal(a, b):
+                    datasets.pop(prefix + avg + tag)
+                    links[prefix + avg + tag] = prefix + raw + tag
+            for name in _DISK_FLOAT32:
+                key = prefix + name + tag
+                if key in datasets:
+                    datasets[key] = np.asarray(datasets[key], dtype=np.float32)
+            for name in _DISK_UINT8:
+                key = prefix + name + tag
+                if key in datasets:
+                    vals = np.asarray(datasets[key])
+                    if vals.size == 0 or (vals.min() >= 0 and vals.max() <= 1):
+                        datasets[key] = vals.astype(np.uint8)
+        if tags:
+            for alias, raw in _MR_LINKED:
+                if prefix + alias in datasets:
+                    datasets.pop(prefix + alias)
+                    links[prefix + alias] = prefix + raw + tags[0]
+        if prefix + "shot_index" in datasets:
+            datasets[prefix + "shot_index"] = np.asarray(
+                datasets[prefix + "shot_index"], dtype=np.uint32
+            )
+    if prefixes:
+        # sweep: the unprefixed ModifiedRamsey aliases point at the first bias
+        for alias in ("shots_i", "shots_q", "shot_index", "shot_time_us"):
+            target = prefixes[0] + alias
+            if alias in datasets and (target in datasets or target in links):
+                datasets.pop(alias)
+                links[alias] = links.get(target, target)
+    return datasets, links
 
 
 class UndrivenSingleShot(ExperimentClass):
@@ -433,6 +506,7 @@ class UndrivenSingleShot(ExperimentClass):
             for name in _TS_KEYS:
                 d["ts_" + name + tag] = ts[name]
             d["ts_acf_fit_ok" + tag] = int(ts["acf_fit_ok"])
+            d["ts_hmm_identifiable" + tag] = int(ts["hmm_identifiable"])
 
             self._print_read_summary(read_index, raw, res, ts, min_sep, n_avg)
 
@@ -501,6 +575,12 @@ class UndrivenSingleShot(ExperimentClass):
                 f"state1={ts['tau_dwell_us'][1] * 1e-3:.3f} ms; rates "
                 f"gamma01={ts['gamma01_hz']:.1f} Hz, "
                 f"gamma10={ts['gamma10_hz']:.1f} Hz"
+            )
+        if ts["hmm_identifiable"]:
+            print(
+                f"    HMM (noise-robust, {ts['hmm_n_samples']} samples): "
+                f"gamma01={ts['hmm_gamma01_hz']:.1f} +/- {ts['hmm_gamma01_err_hz']:.1f} Hz, "
+                f"gamma10={ts['hmm_gamma10_hz']:.1f} +/- {ts['hmm_gamma10_err_hz']:.1f} Hz"
             )
         if ts["acf_fit_ok"]:
             print(
@@ -908,7 +988,21 @@ class UndrivenSingleShot(ExperimentClass):
         ax.set_title("rate vs averaging\n(plateau = real, falling = noise)", fontsize=9)
 
     def save_data(self, data=None):
+        """Write the slimmed on-disk layout (see _disk_layout); self.data is left untouched."""
         if data is None:
             data = self.data
         print(f"Saving {self.fname}")
-        super().save_data(data=data["data"])
+        datasets, links = _disk_layout(data["data"])
+        with self.datafile() as f:
+            for key, value in datasets.items():
+                value = np.asarray(value)
+                if value.dtype in (np.float32, np.uint8, np.uint32):
+                    if key in f:
+                        del f[key]
+                    f.create_dataset(key, data=value, maxshape=(None,) * value.ndim)
+                else:
+                    f.add(key, value)
+            for key, target in links.items():
+                if key in f:
+                    del f[key]
+                f[key] = h5py.SoftLink("/" + target)

@@ -55,7 +55,9 @@ PLAN = [R.undriven_single_shot(charge_sweep=True, voltage_start=0.0,
     `rounds` and `length` in place.
   - Only the **last** pass is shown on screen (`plotDisp` blocks until the window is
     closed). The png is written for every pass.
-  - The run returns the list of per-pass data dicts.
+  - The run returns the list of per-pass data dicts, so every pass's float64 payload
+    (~72 MB per read per bias per 1e6 shots) stays in RAM until the run ends: memory
+    grows linearly with `Repeat` (see the Parameters table).
 - **Charge sweep.** Ramps the yoko through `np.arange(voltage_start, voltage_end,
   voltage_step)`, so the range is half-open and `voltage_end` is not measured. It
   waits `charge_settle_s` after each ramp and acquires at each bias, then **returns
@@ -85,35 +87,48 @@ values.
 | `charge_sweep` | False | bool | Sweep the yoko charge bias. |
 | `voltage_start` / `voltage_end` / `voltage_step` | 0.0 / 0.05 / 0.005 | V | Sweep range, half-open. |
 | `charge_settle_s` | 1.0 | s | Extra wait after each ramp (for filtered lines). |
-| `Repeat` | 10000 | count | Back-to-back passes. Runner-only key. |
+| `Repeat` | 1 | count | Back-to-back passes. Runner-only key. The CSTQ03 runner file still carries the legacy value 10000: at 1e6 shots and a ~300 µs rep period one pass takes ~5 min and writes ~26 MB per read, so 10000 passes is ~35 days and ~0.26 TB. RAM is the tighter limit: the run keeps every pass's float64 data dict in memory until it returns (~72 MB per read per bias per 1e6 shots), so memory grows linearly with `Repeat`. On a 16 GB PC keep `Repeat` × reads × biases × (shots / 1e6) below ~50 (~3.6 GB), e.g. `Repeat` 10-30 with one read at 1e6 shots; run several sessions for a longer record. |
 | `plotDisp` | True | bool | Show the last pass on screen. Runner-only key. |
 
 ## Outputs
 
 Path `UndrivenSingleShot/`. One h5/png/json per pass.
 
+The h5 is slimmed on write (about 26 MB per 1e6-shot read instead of 128 MB). The
+in-memory `data` dict that `display()` reads keeps every key below in float64.
+
 - **Per read tag r:**
-  - `i<r>`, `q<r>`: the points the blob fit saw. These are raw shots when
-    `shot_average = 1`, and averaged points otherwise.
-  - `i_raw<r>`, `q_raw<r>`, `projection_raw<r>`.
+  - `i<r>`, `q<r>`, `projection<r>`: the points the blob fit saw. These are raw shots
+    when `shot_average = 1`, and averaged points otherwise. With `shot_average = 1`
+    they are h5py SoftLinks to `i_raw<r>`, `q_raw<r>`, `projection_raw<r>` (h5py
+    follows a SoftLink transparently on read); otherwise float32 datasets.
+  - `i_raw<r>`, `q_raw<r>`, `projection_raw<r>`: float32 (about 6e-8 relative
+    precision, far below readout noise).
   - Cloud results: `labels`, `projection`, `center`, `cov`, `axis`, `axis_angle`,
     `n_blobs`, `blob_weights`, `blob_means_proj`, `blob_sigmas_proj`,
     `blob_centers_iq`, `separation_sigma`, `secondary_population`, `bic_1`, `bic_2`,
     `rms_radius`, `sigma_along_axis`, `sigma_across_axis` (each suffixed `<r>`), plus
-    `*_raw<r>` copies of the main cloud scalars.
-  - `shot_index`, `shot_time_us`, `ts_index`, `ts_time_us`, `n_dropped`.
+    `*_raw<r>` copies of the main cloud scalars. `labels<r>` is uint8 (0/1).
+  - `n_dropped<r>`. The per-read time axes are **not** written to the h5; they
+    regenerate from the saved scalars, with N = length of `i_raw<r>`, n = `shot_average`
+    and T = `scheduled_rep_period_us`: `shot_index<r>` = arange(N),
+    `shot_time_us<r>` = arange(N)·T, `ts_index<r>` = arange(N // n)·n + (n − 1)/2 (block
+    centres on the raw shot axis), `ts_time_us<r>` = `ts_index<r>`·T.
   - Time-series results `ts_<key><r>`: threshold, states, transitions, occupancy,
     dwell means, γ01, γ10, mean γ, τ_dwell, samples per dwell, ACF fit, and the
-    bin-sweep arrays. Also `ts_acf_fit_ok<r>`.
+    bin-sweep arrays, and the HMM rates (`ts_hmm_*`, see Analysis step 3). Also
+    `ts_acf_fit_ok<r>` and `ts_hmm_identifiable<r>`. `ts_states<r>` is uint8 (0/1).
 - **Global:** `read_indices`, `scheduled_rep_period_us`, `shot_average`,
   `timeseries_dt_us`, `gap_indices` (empty).
-- **Modified Ramsey aliases** for the first read: `shots_i`, `shots_q`,
-  `shot_index`, `shot_time_us`. The record can be fed directly to the
+- **Modified Ramsey aliases** for the first read: `shots_i`, `shots_q` (SoftLinks to
+  `i_raw<first>`, `q_raw<first>`), and `shot_index` (uint32), `shot_time_us` (float64),
+  the one real copy of the time axis. The record can be fed directly to the
   Modified Ramsey analysis (`fit_two_state_hmm`, `psd_rate_estimate`).
-- **Charge sweep:** every per-point key is prefixed `V<k>_`. The file adds
-  `sweep_voltages`, summary arrays `sweep_<scalar><r>` (n_blobs, separation_sigma,
-  secondary_population, sigma_along_axis, gamma_mean_hz, acf_gamma_hz), and the
-  aliases pointing at `V0`.
+- **Charge sweep:** every per-point key is prefixed `V<k>_`, with the same on-disk
+  types and links within each bias. The file adds `sweep_voltages`, summary arrays
+  `sweep_<scalar><r>` (n_blobs, separation_sigma, secondary_population,
+  sigma_along_axis, gamma_mean_hz, acf_gamma_hz), and the aliases pointing at `V0`
+  (`shots_i`, `shots_q`, `shot_index`, `shot_time_us` as SoftLinks).
 - **Aborted charge sweep:** the same layout for the first `sweep_completed` biases
   only (`sweep_voltages` has that length), plus a `sweep_completed` dataset; the json
   cfg carries `sweep_completed` and `aborted`. A complete sweep has neither key, so
@@ -143,6 +158,16 @@ Path `UndrivenSingleShot/`. One h5/png/json per pass.
    rate several-fold.
 3. **Rates.**
    - Continuous-time Markov ML: γ_ij = (transitions out of i) / (time in i).
+   - HMM (`ts_hmm_*`, beside the Markov ML): a two-state HMM (`fit_two_state_hmm`,
+     default gates) on the analysed (block-averaged) trace with the two blob Gaussians
+     as fixed emissions, fitted on at most 100 000 leading samples (usually 3-8 s; up
+     to about a minute if its L-BFGS-B fit fails and the Powell fallback runs).
+     Threshold crossings count every misassigned sample as two switches; the HMM does
+     not. On blobs 1.0 apart at σ = 0.22 (true 500 Hz each way) the Markov ML reads
+     1466/1605 Hz and the HMM 470/516 Hz. Saved: `ts_hmm_gamma01_hz`, `ts_hmm_gamma10_hz`,
+     `ts_hmm_gamma01_err_hz`, `ts_hmm_gamma10_err_hz`, `ts_hmm_gamma_mean_hz`,
+     `ts_hmm_emission_snr`, `ts_hmm_n_samples`, `ts_hmm_identifiable` (0/1). NaN (and 0)
+     unless the cloud has two blobs and the HMM gates pass.
    - Mean dwell: computed from interior runs only, because the first and last runs
      are truncated by the record.
    - ACF: fit `C(t) = A·e^(−t/τc)` with τc = 1/(2γ) and τ_dwell = 1/γ. Lag 0 is
@@ -150,6 +175,9 @@ Path `UndrivenSingleShot/`. One h5/png/json per pass.
      and the bin sweep run on the un-averaged trace.
 4. **Rate-vs-bin-size plateau rule.** Re-threshold the trace after averaging 1, 2, 4,
    … shots.
+   - The rate at block size b is n_switches / ((n_bins − 1)·b·dt): n_bins = N//b blocks
+     give n_bins − 1 intervals in which a switch can be seen. This is the same estimator
+     (`analysis.rates`) that Modified Ramsey uses. Sizes with fewer than 4 blocks give NaN.
    - A rate that **falls** with bin size means the small-bin crossings are readout
      noise.
    - A **plateau** is a real telegraph rate. Set `average_shots` on the plateau.

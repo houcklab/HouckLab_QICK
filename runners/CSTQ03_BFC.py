@@ -679,7 +679,12 @@ US_params = {
     "charge_settle_s": 1.0,  # extra wait after each ramp, if filtered
     # Run the whole acquisition this many times back to back. Each pass
     # gets its own timestamped h5/png/json; only the last is shown on
-    # screen (plotDisp blocks until closed).
+    # screen (plotDisp blocks until closed). One pass of 1e6 shots at a
+    # ~300 us rep period takes ~5 min and writes ~26 MB per read, so 10000
+    # (the legacy value) is ~35 days / ~0.26 TB. RAM binds first: every
+    # pass's float64 data (~72 MB per read per bias per 1e6 shots) is held
+    # until the run returns, so on a 16 GB PC keep Repeat x reads x biases
+    # x (Shots / 1e6) below ~50, e.g. 10-30 with one read at 1e6 shots.
     "Repeat": 10000,
     "plotDisp": True,
 }
@@ -797,7 +802,7 @@ AutoCoherence_override_params = {
 # Hard constraints (validated fail-fast in ZeroSpanParity.__init__, spec §5.3):
 #   sample_period_us >= adc_trig_offset + read_length + 1.0
 #   us2cycles(sample_period_us | capture_length_us) <= 65535
-#   reps_per_chunk <= soccfg['readouts'][ro_ch]['avg_maxlen']
+#   reps_per_chunk <= 2e7 (client memory; the averages buffer is a streamed ring buffer)
 #   decimated read_length samples <= soccfg['readouts'][ro_ch]['buf_maxlen']
 RunZeroSpanParity = False
 
@@ -840,7 +845,7 @@ ZSP_ParitySpec_params = {
 }
 
 # Strobe-mode params (Path A). sample_period_us floor = adc_trig_offset +
-# read_length + 1.0 us; reps_per_chunk capped at avg_maxlen; total record (s) =
+# read_length + 1.0 us; reps_per_chunk not capped at avg_maxlen; total record (s) =
 # reps_per_chunk * n_chunks * sample_period_us * 1e-6 (~12 s for defaults below).
 ZSP_StrobeParams = {
     "sample_period_us": 20.0,

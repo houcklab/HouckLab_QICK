@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 
+from qicklab.analysis.hmm import fit_two_state_hmm
 from qicklab.analysis.rates import autocorrelation_rate_us, rate_vs_bin_size_us
 
 
@@ -216,6 +217,44 @@ def two_gaussian_threshold(means, sigmas, weights):
     return float(min(roots, key=lambda r: min(abs(r - lo), abs(r - hi))))
 
 
+def _hmm_rates(proj, dt_us, cloud, max_samples, warnings):
+    """HMM rate fields of analyze_undriven_timeseries (blob Gaussians as emissions)."""
+    m = int(min(proj.size, max(10, int(max_samples))))
+    try:
+        hmm = fit_two_state_hmm(
+            proj[:m],
+            dt_us * 1e-6,
+            {
+                "model": "gaussian",
+                "mu0": float(cloud["blob_means_proj"][0]),
+                "mu1": float(cloud["blob_means_proj"][1]),
+                "sigma0": float(cloud["blob_sigmas_proj"][0]),
+                "sigma1": float(cloud["blob_sigmas_proj"][1]),
+            },
+            compute_viterbi=False,
+        )
+    except Exception as e:  # the payload must always be saved
+        warnings.append(f"HMM rate fit failed: {e}")
+        return {}
+    if m < proj.size:
+        warnings.append(f"HMM fitted on the first {m} of {proj.size} samples")
+    if not hmm["identifiable"]:
+        warnings.append("HMM rate withheld: " + "; ".join(hmm["unidentifiable_reasons"]))
+    g01, g10 = float(hmm["gamma01_hz"]), float(hmm["gamma10_hz"])
+    ok = bool(hmm["identifiable"])  # the HMM leaves its errors finite when it withholds
+    nan = float("nan")
+    return {
+        "hmm_identifiable": ok,
+        "hmm_gamma01_hz": g01,
+        "hmm_gamma10_hz": g10,
+        "hmm_gamma01_err_hz": float(hmm["gamma01_err_hz"]) if ok else nan,
+        "hmm_gamma10_err_hz": float(hmm["gamma10_err_hz"]) if ok else nan,
+        "hmm_gamma_mean_hz": 0.5 * (g01 + g10),
+        "hmm_emission_snr": float(hmm["emission_snr"]),
+        "hmm_n_samples": m,
+    }
+
+
 def analyze_undriven_timeseries(
     cloud,
     dt_us,
@@ -224,6 +263,7 @@ def analyze_undriven_timeseries(
     bin_sizes=(1, 2, 4, 8, 16, 32, 64),
     min_samples_per_dwell=5.0,
     min_transitions=10,
+    hmm_max_samples=100_000,
 ):
     """Telegraph statistics for cloud['projection'] at sample period dt_us
     (= rep_period * shot_average).
@@ -231,6 +271,14 @@ def analyze_undriven_timeseries(
     raw_projection/raw_dt_us: the same axis and center un-averaged, used for the
     ACF and the bin sweep. Every rate field is nan unless the cloud resolved
     two blobs.
+
+    hmm_* : a two-state HMM (fit_two_state_hmm, default gates) on the analysed
+    trace with the blob Gaussians as fixed emissions, beside the threshold
+    Markov-ML rates; noise-robust where a misassigned sample would add two
+    threshold crossings. Fitted on at most hmm_max_samples leading samples
+    (usually 3-8 s per 1e5; up to about 1 min if its L-BFGS-B fit fails and the
+    Powell fallback runs); nan and hmm_identifiable False when the HMM gates
+    reject the record or the fit fails.
     """
     warnings = []
     proj = np.asarray(cloud.get("projection"), dtype=float).ravel()
@@ -266,6 +314,14 @@ def analyze_undriven_timeseries(
         "bin_dt_us": np.zeros(0),
         "bin_rate_hz": np.zeros(0),
         "bin_n_switches": np.zeros(0, dtype=int),
+        "hmm_identifiable": False,
+        "hmm_gamma01_hz": float("nan"),
+        "hmm_gamma10_hz": float("nan"),
+        "hmm_gamma01_err_hz": float("nan"),
+        "hmm_gamma10_err_hz": float("nan"),
+        "hmm_gamma_mean_hz": float("nan"),
+        "hmm_emission_snr": float("nan"),
+        "hmm_n_samples": 0,
         "warnings": warnings,
     }
     if n == 0:
@@ -390,4 +446,6 @@ def analyze_undriven_timeseries(
                     "if the sweep never flattens, the record has no resolvable "
                     "telegraph"
                 )
+    # last, so its warnings follow the threshold ones
+    out.update(_hmm_rates(proj, dt_us, cloud, hmm_max_samples, warnings))
     return out

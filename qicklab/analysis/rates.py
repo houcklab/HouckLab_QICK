@@ -6,6 +6,8 @@ import numpy as np
 from scipy import optimize, signal
 from scipy.ndimage import uniform_filter1d
 
+from qicklab.analysis.dwell import _gap_segment_edges
+
 
 def remove_slow_drift(v, dt_s, drift_timescale_s, expected_dwell_s=None, min_timescale_ratio=20.0):
     """
@@ -353,6 +355,39 @@ def psd_rate_estimate(v, dt_s, nperseg=None, f_max_factor=0.45):
     return out
 
 
+def _threshold_rate_sweep(v, dt_s, threshold, bin_sizes):
+    """Shared core of the rate-vs-bin-size sweep (SI units).
+
+    For each block size b >= 1, mean-bin the trace into n_bins = len(v)//b
+    blocks, threshold, and count state changes between consecutive blocks.
+    The rate is n_switches / ((n_bins - 1) * b * dt_s): the n_bins - 1 diff
+    intervals are the time over which those changes could occur. Sizes with
+    fewer than 4 blocks give nan (0 switches). Sizes below 1 are skipped.
+
+    Returns (sizes, rate_hz, n_switches) as lists.
+    """
+    v = np.ravel(np.asarray(v, dtype=float))
+    dt_s = float(dt_s)
+    sizes, rates, counts = [], [], []
+    for b in bin_sizes:
+        b = int(b)
+        if b < 1:
+            continue
+        n_bins = v.size // b
+        sizes.append(b)
+        if n_bins < 4:
+            rates.append(float("nan"))
+            counts.append(0)
+            continue
+        vb = v[: n_bins * b].reshape(n_bins, b).mean(axis=1)
+        bits = (vb > threshold).astype(int)
+        n_switch = int(np.count_nonzero(np.diff(bits)))
+        span_s = (n_bins - 1) * b * dt_s
+        rates.append(n_switch / span_s if span_s > 0 else float("nan"))
+        counts.append(n_switch)
+    return sizes, rates, counts
+
+
 def rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1, 2, 4, 8, 16, 32)):
     """
     Threshold-crossing switch rate as a function of visualization bin size.
@@ -361,35 +396,33 @@ def rate_vs_bin_size(v, dt_s, threshold, bin_sizes=(1, 2, 4, 8, 16, 32)):
     (each binning step removes noise-induced flips); a rate that is stable
     over a plateau of bin sizes reflects genuine telegraph switching.
 
-    Returns dict: bin_sizes, bin_us, rate_hz, n_switches.
+    The rate is n_switches / ((n_bins - 1) * b * dt_s); see
+    `_threshold_rate_sweep` (shared with `rate_vs_bin_size_us`).
+
+    Returns dict: bin_sizes, bin_us, rate_hz, n_switches (lists).
     """
-    v = np.ravel(np.asarray(v, dtype=float))
     dt_s = float(dt_s)
-    rates, counts, bin_us = [], [], []
-    for b in bin_sizes:
-        b = int(b)
-        nb = v.size // b
-        if nb < 4:
-            rates.append(float("nan"))
-            counts.append(0)
-            bin_us.append(b * dt_s * 1e6)
-            continue
-        vb = v[: nb * b].reshape(nb, b).mean(axis=1)
-        bits = (vb > threshold).astype(int)
-        n_sw = int(np.count_nonzero(np.diff(bits)))
-        total_t = (nb - 1) * b * dt_s
-        rates.append(n_sw / total_t if total_t > 0 else float("nan"))
-        counts.append(n_sw)
-        bin_us.append(b * dt_s * 1e6)
-    return {"bin_sizes": list(bin_sizes), "bin_us": bin_us, "rate_hz": rates, "n_switches": counts}
+    sizes, rates, counts = _threshold_rate_sweep(v, dt_s, threshold, bin_sizes)
+    bin_us = [b * dt_s * 1e6 for b in sizes]
+    return {"bin_sizes": sizes, "bin_us": bin_us, "rate_hz": rates, "n_switches": counts}
 
 
-def autocorrelation_rate_us(v, dt_us, min_points=5):
+def autocorrelation_rate_us(v, dt_us, min_points=5, gap_indices=None):
     """Rate from the ACF decay: C(t)=A*exp(-t/tau_corr), tau_corr=1/(2*gamma),
     tau_dwell=1/gamma.
 
+    For a telegraph with unequal rates the ACF decays at gamma01 + gamma10, so
+    gamma_hz = 1/(2*tau_corr) is the mean rate (gamma01 + gamma10)/2.
+
     Lag 0 is EXCLUDED from the fit: it carries the additive readout-noise
     variance, reported separately as `noise_variance`.
+
+    gap_indices: sample indices where an acquisition gap starts a new segment
+    (as in dwell_time_statistics). Lag products are then summed only inside
+    the gap-free segments and normalised per lag by their number of pairs,
+    times (N - k)/N, the taper of the gap-free (biased) estimator, so the
+    pooled ACF is the segment-length-weighted mean and None / [] give exactly
+    the single-trace result. Lags beyond the longest segment are not fitted.
     """
     v = np.ravel(np.asarray(v, dtype=float))
     warnings = []
@@ -409,9 +442,25 @@ def autocorrelation_rate_us(v, dt_us, min_points=5):
         return out
     dt_us = float(dt_us)
     x = v - v.mean()
-    nfft = int(2 ** math.ceil(math.log2(2 * n)))
-    X = np.fft.rfft(x, nfft)
-    acov = np.fft.irfft(X * np.conj(X), nfft)[:n] / n
+    edges = _gap_segment_edges(gap_indices, n)
+    max_lag = n
+    if len(edges) == 2:
+        nfft = int(2 ** math.ceil(math.log2(2 * n)))
+        X = np.fft.rfft(x, nfft)
+        acov = np.fft.irfft(X * np.conj(X), nfft)[:n] / n
+    else:
+        lag_sum = np.zeros(n)
+        pairs = np.zeros(n)
+        for a, b in zip(edges[:-1], edges[1:]):
+            m = b - a
+            nfft = int(2 ** math.ceil(math.log2(2 * m)))
+            X = np.fft.rfft(x[a:b], nfft)
+            lag_sum[:m] += np.fft.irfft(X * np.conj(X), nfft)[:m]
+            pairs[:m] += np.arange(m, 0, -1)
+        max_lag = int(max(b - a for a, b in zip(edges[:-1], edges[1:])))
+        acov = np.zeros(n)
+        k = np.arange(max_lag)
+        acov[:max_lag] = lag_sum[:max_lag] / pairs[:max_lag] * (n - k) / n
     c0 = acov[0]
     if c0 <= 0:
         warnings.append("zero-variance trace")
@@ -422,7 +471,7 @@ def autocorrelation_rate_us(v, dt_us, min_points=5):
     below = np.flatnonzero(acf[1:] < ref / math.e**2)
     kmax = int(below[0] + 1) if below.size else n // 4
     kmax = int(np.clip(kmax, min_points + 1, max(n // 4, min_points + 1)))
-    kmax = min(kmax, n - 1)
+    kmax = min(kmax, n - 1, max_lag - 1)
 
     lags = np.arange(1, kmax + 1) * dt_us
     y = acov[1 : kmax + 1]
@@ -477,30 +526,18 @@ def rate_vs_bin_size_us(v, dt_us, threshold, bin_sizes=(1, 2, 4, 8, 16, 32, 64))
     """Threshold-crossing rate vs block-average size (the shot_average sweep).
 
     Falling rate = noise crossings averaging out; a plateau = real telegraph.
+    Microsecond-input form of `rate_vs_bin_size` (same core, same
+    n_switches / ((n_bins - 1) * b * dt) rate). A non-finite threshold gives
+    nan rates and 0 switches at every size.
     """
-    v = np.ravel(np.asarray(v, dtype=float))
     dt_us = float(dt_us)
-    sizes, dts, rates, counts = [], [], [], []
-    for b in bin_sizes:
-        b = int(b)
-        if b < 1:
-            continue
-        n_bins = v.size // b
-        sizes.append(b)
-        dts.append(b * dt_us)
-        if n_bins < 4 or not np.isfinite(threshold):
-            rates.append(float("nan"))
-            counts.append(0)
-            continue
-        vb = v[: n_bins * b].reshape(n_bins, b).mean(axis=1)
-        bits = (vb > threshold).astype(int)
-        n_switch = int(np.count_nonzero(np.diff(bits)))
-        span_us = n_bins * b * dt_us
-        counts.append(n_switch)
-        rates.append(n_switch / (span_us * 1e-6) if span_us > 0 else float("nan"))
+    sizes, rates, counts = _threshold_rate_sweep(v, dt_us * 1e-6, threshold, bin_sizes)
+    if not np.isfinite(threshold):
+        rates = [float("nan")] * len(sizes)
+        counts = [0] * len(sizes)
     return {
         "bin_sizes": np.asarray(sizes, dtype=int),
-        "bin_dt_us": np.asarray(dts, dtype=float),
+        "bin_dt_us": np.asarray([b * dt_us for b in sizes], dtype=float),
         "rate_hz": np.asarray(rates, dtype=float),
         "n_switches": np.asarray(counts, dtype=int),
     }

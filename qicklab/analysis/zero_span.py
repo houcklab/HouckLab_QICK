@@ -14,7 +14,9 @@ matplotlib.use("Agg")  # B1: stays until its own fix commit (design.md)
 import matplotlib.pyplot as plt
 
 from qicklab.analysis.dwell import _gap_segment_edges, dwell_time_statistics
+from qicklab.analysis.hmm import fit_two_state_hmm
 from qicklab.analysis.iq import project_iq_onto_separator
+from qicklab.analysis.rates import autocorrelation_rate_us, psd_rate_estimate
 from qicklab.analysis.undriven import two_gaussian_threshold
 
 
@@ -253,6 +255,229 @@ def event_switch_rate(binary_states, t_us, gap_indices=None, exclude_us=()):
     return {"rate_Hz": n / T_s, "rate_err_Hz": float(np.sqrt(n)) / T_s, "n_switches": n, "T_s": T_s}
 
 
+RATE_AGREEMENT_MAX_RATIO = 2.0  # analyze_parity_run flags estimators further apart than this
+HMM_MAX_SAMPLES = 100_000  # analyze_parity_run fits the HMM on at most this many leading samples
+# HMM step (s) given to every gap-spanning step: saved t_us is stitched contiguously across
+# acquisition gaps, so the dead time is not in it. 1e3 s decorrelates the chain for any rate
+# above the fit's 1e-2 Hz lower bound (exp(-20)), so each gap-free segment is an independent
+# restart, matching the other estimators that never count a switch across a gap.
+HMM_GAP_DT_S = 1e3
+
+
+def _readout_error_estimate(h, threshold):
+    """Per-sample misassignment probabilities of thresholding the scores at `threshold`.
+
+    From the two-Gaussian score fit h (projected_histogram_snr; component 0 = lower
+    center = bit 0): eps_0 = P(score > thr | 0), eps_1 = P(score <= thr | 1) and the
+    occupancy-weighted eps = w0 eps_0 + w1 eps_1. NaN when the fit or threshold is unusable.
+    """
+    from scipy.stats import norm
+
+    nan = float("nan")
+    if h is None or not np.isfinite(threshold):
+        return nan, nan, nan
+    mu = np.asarray(h["centers"], dtype=float)
+    sig = np.asarray(h["sigmas"], dtype=float)
+    w = np.asarray(h["weights"], dtype=float)
+    if not (np.all(np.isfinite(mu)) and np.all(np.isfinite(w)) and np.all(sig > 0)):
+        return nan, nan, nan
+    eps0 = float(norm.sf((threshold - mu[0]) / sig[0]))
+    eps1 = float(norm.cdf((threshold - mu[1]) / sig[1]))
+    return eps0, eps1, float(w[0] * eps0 + w[1] * eps1)
+
+
+def _noise_robust_rates(
+    scores, t_us, gap_indices, sample_period_us, h, threshold, bits, hmm_max_samples=None
+):
+    """Readout-error estimate and the rate estimators that need no threshold.
+
+    Threshold counting adds about 2 eps (1 - eps) / sample period of spurious switches
+    (each misassigned sample makes two), so analyze_parity_run reports it beside:
+    the ACF rate (autocorrelation_rate_us on the scores, pooled over the gap-free
+    segments), the Welch PSD Lorentzian rate (psd_rate_estimate, run across gaps, so it is
+    left out of the agreement when the record has gaps) and a two-state HMM
+    (fit_two_state_hmm, fixed Gaussian emissions from the score fit h, per-step dt from
+    diff(t_us) with every gap-spanning step set to HMM_GAP_DT_S so each gap-free segment is
+    an independent restart -- saved t_us is contiguous across gaps --, at most
+    `hmm_max_samples` leading samples, default gates incl. min_emission_snr = 0.7). All
+    estimators are compared as a switch rate (switches per second, what threshold counting
+    measures): HMM 2 g01 g10 / (g01 + g10); ACF and PSD give (g01 + g10)/2, scaled by
+    4 w0 w1 with the fit's weights. Each block
+    is guarded: a failure leaves its fields NaN with a warning. The eps, the HMM emissions
+    and the 4 w0 w1 scale need a usable score fit, delta BIC > 0 and separation SNR > 1.5
+    (the bimodality gate without its weight condition, so a lopsided occupancy still
+    counts); otherwise they are NaN and hmm_unidentifiable_reasons says why.
+    """
+    nan = float("nan")
+    if hmm_max_samples is None:
+        hmm_max_samples = HMM_MAX_SAMPLES
+    scores = np.ravel(np.asarray(scores, dtype=float))
+    t = np.ravel(np.asarray(t_us, dtype=float))
+    warnings = []
+    out = {}
+
+    fit_usable = (
+        h is not None
+        and np.isfinite(h["delta_bic"])
+        and h["delta_bic"] > 0
+        and h["separation_snr"] > 1.5
+    )
+    if not fit_usable:
+        h = None
+    eps0, eps1, eps = _readout_error_estimate(h, threshold)
+    sp = float(sample_period_us)
+    spurious = 2.0 * eps * (1.0 - eps) / (sp * 1e-6) if np.isfinite(eps) and sp > 0 else nan
+    out.update(
+        {
+            "readout_eps_0": eps0,
+            "readout_eps_1": eps1,
+            "readout_eps": eps,
+            "threshold_spurious_rate_Hz_est": spurious,
+        }
+    )
+
+    threshold_rate = nan
+    if bits is not None:
+        try:
+            threshold_rate = float(event_switch_rate(bits, t, gap_indices=gap_indices)["rate_Hz"])
+        except Exception as e:  # the sidecar must always be written
+            warnings.append(f"threshold rate failed: {e}")
+    out["threshold_switch_rate_Hz"] = threshold_rate
+
+    acf = {"tau_corr_us": nan, "gamma_hz": nan, "fit_ok": False, "warnings": []}
+    try:
+        acf = autocorrelation_rate_us(scores, sp, gap_indices=gap_indices)
+    except Exception as e:
+        warnings.append(f"ACF rate failed: {e}")
+    warnings.extend(f"ACF: {w}" for w in acf["warnings"])
+    out.update(
+        {
+            "acf_tau_corr_us": float(acf["tau_corr_us"]),
+            "acf_gamma_Hz": float(acf["gamma_hz"]),
+            "acf_fit_ok": bool(acf["fit_ok"]),
+        }
+    )
+
+    psd = {"f_corner_hz": nan, "gamma_hz": nan, "fit_ok": False, "warnings": []}
+    try:
+        psd = psd_rate_estimate(scores, sp * 1e-6)
+    except Exception as e:
+        warnings.append(f"PSD rate failed: {e}")
+    psd_gapped = len(_gap_segment_edges(gap_indices, scores.size)) > 2
+    if psd_gapped:
+        warnings.append(
+            "PSD: Welch windows run across the acquisition gaps; left out of the rate agreement"
+        )
+    warnings.extend(f"PSD: {w}" for w in psd["warnings"])
+    out.update(
+        {
+            "psd_f_corner_Hz": float(psd["f_corner_hz"]),
+            "psd_gamma_Hz": float(psd["gamma_hz"]),
+            "psd_fit_ok": bool(psd["fit_ok"]),
+        }
+    )
+
+    hmm_fields = {
+        "hmm_identifiable": False,
+        "hmm_gamma01_Hz": nan,
+        "hmm_gamma10_Hz": nan,
+        "hmm_gamma01_err_Hz": nan,
+        "hmm_gamma10_err_Hz": nan,
+        "hmm_switch_rate_Hz": nan,
+        "hmm_emission_snr": nan,
+        "hmm_n_samples": 0,
+        "hmm_unidentifiable_reasons": "",
+    }
+    if h is None:
+        hmm_fields["hmm_unidentifiable_reasons"] = (
+            "score fit not bimodal (delta BIC <= 0 or separation SNR <= 1.5): "
+            "no emissions for the HMM"
+        )
+    else:
+        try:
+            m = int(min(scores.size, max(10, int(hmm_max_samples))))
+            if m < scores.size:
+                warnings.append(f"HMM: fitted on the first {m} of {scores.size} samples")
+            emissions = {
+                "model": "gaussian",
+                "mu0": float(h["centers"][0]),
+                "mu1": float(h["centers"][1]),
+                "sigma0": float(h["sigmas"][0]),
+                "sigma1": float(h["sigmas"][1]),
+            }
+            dt_steps = np.diff(t[:m]) * 1e-6
+            gap_steps = np.asarray(_gap_segment_edges(gap_indices, m)[1:-1], dtype=int) - 1
+            in_seg = np.ones(dt_steps.size, dtype=bool)
+            in_seg[gap_steps] = False
+            # the HMM's own start value (midpoint crossings / total time / 2) without the
+            # gap steps, whose HMM_GAP_DT_S would otherwise dominate the total time
+            b = scores[:m] > 0.5 * (emissions["mu0"] + emissions["mu1"])
+            n_cross = int(np.count_nonzero(np.diff(b)[in_seg]))
+            gamma_init = max(n_cross, 1) / max(float(dt_steps[in_seg].sum()), 1e-12) / 2.0
+            dt_steps[gap_steps] = HMM_GAP_DT_S
+            hmm = fit_two_state_hmm(
+                scores[:m],
+                dt_steps,
+                emissions,
+                gamma_init_hz=gamma_init,
+                compute_viterbi=False,
+            )
+            g01, g10 = float(hmm["gamma01_hz"]), float(hmm["gamma10_hz"])
+            ok = bool(hmm["identifiable"])  # the HMM leaves its errors finite when it withholds
+            hmm_fields.update(
+                {
+                    "hmm_identifiable": ok,
+                    "hmm_gamma01_Hz": g01,
+                    "hmm_gamma10_Hz": g10,
+                    "hmm_gamma01_err_Hz": float(hmm["gamma01_err_hz"]) if ok else nan,
+                    "hmm_gamma10_err_Hz": float(hmm["gamma10_err_hz"]) if ok else nan,
+                    "hmm_switch_rate_Hz": 2.0 * g01 * g10 / (g01 + g10),
+                    "hmm_emission_snr": float(hmm["emission_snr"]),
+                    "hmm_n_samples": m,
+                    "hmm_unidentifiable_reasons": "; ".join(hmm["unidentifiable_reasons"]),
+                }
+            )
+            warnings.extend(f"HMM: {w}" for w in hmm["warnings"])
+        except Exception as e:
+            warnings.append(f"HMM rate failed: {e}")
+            hmm_fields["hmm_unidentifiable_reasons"] = f"HMM fit failed: {e}"
+    out.update(hmm_fields)
+
+    occ = 4.0 * float(np.prod(h["weights"])) if h is not None else nan
+    agree = {
+        "threshold": threshold_rate,
+        "acf": occ * out["acf_gamma_Hz"] if out["acf_fit_ok"] else nan,
+        "psd": occ * out["psd_gamma_Hz"] if out["psd_fit_ok"] and not psd_gapped else nan,
+        "hmm": out["hmm_switch_rate_Hz"] if out["hmm_identifiable"] else nan,
+    }
+    finite = [v for v in agree.values() if np.isfinite(v) and v > 0]
+    ratio = float(max(finite) / min(finite)) if len(finite) >= 2 else nan
+    disagree = bool(np.isfinite(ratio) and ratio > RATE_AGREEMENT_MAX_RATIO)
+    line = "switch rate: " + ", ".join(f"{k} {v:.4g} Hz" for k, v in agree.items())
+    if psd_gapped:
+        line += " (psd left out: Welch runs across the gaps)"
+    if np.isfinite(spurious):
+        line += f" (threshold spurious est {spurious:.4g} Hz, eps {eps:.3g})"
+    if np.isfinite(ratio):
+        line += f"; max/min {ratio:.3g}"
+        line += f" > {RATE_AGREEMENT_MAX_RATIO:g}: DISAGREE" if disagree else ": agree"
+    else:
+        line += "; fewer than two estimators available"
+    out.update(
+        {
+            "rate_switch_threshold_Hz": agree["threshold"],
+            "rate_switch_acf_Hz": agree["acf"],
+            "rate_switch_psd_Hz": agree["psd"],
+            "rate_switch_hmm_Hz": agree["hmm"],
+            "rate_agreement_max_ratio": ratio,
+            "rates_disagree": disagree,
+            "rate_agreement": line,
+            "rate_warnings": "; ".join(warnings),
+        }
+    )
+    return out
+
+
 MAX_BURST_PASSES = 5  # burst exclusion / re-detection passes in baseline_rate_and_bursts
 
 
@@ -264,7 +489,9 @@ def baseline_rate_and_bursts(
 
     1. Provisional baseline: all switches / all observed time (`event_switch_rate`).
     2. Flag bursts in the sliding-window rates (`rate_out`, from
-       `sliding_window_switch_rate`) with `detect_bursts` at that provisional baseline.
+       `sliding_window_switch_rate`) with `detect_bursts` at that provisional baseline;
+       a partial last window (rate_out["covered_us"] < window_us) is held to its own,
+       higher threshold.
     3. Baseline: switches / observed time outside those bursts, each widened to the
        full extent of its flagged windows (by (window_us - stride)/2 per side). If the
        bursts cover the whole record, the provisional baseline is kept.
@@ -288,6 +515,7 @@ def baseline_rate_and_bursts(
             k_sigma=k_sigma,
             min_duration_us=min_duration_us,
             window_us=rate_out["window_us"],
+            covered_us=rate_out.get("covered_us"),
         )
 
     # detect_bursts reports a burst as centers[s] - stride/2 .. centers[e-1] + stride/2,
@@ -349,8 +577,16 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap
     -------
     dict with keys:
       window_t_us         : array (M,), center time of each window
-      rate_Hz             : array (M,), switch rate per window
+      rate_Hz             : array (M,), switches_per_window / covered_us
       switches_per_window : array (M,) of int
+      covered_us          : array (M,), observed time of each window,
+                            min(window_us, t_end - start + sample period) with the
+                            sample period the median spacing of t_us; less than
+                            window_us only for a final window that runs past the
+                            record end (or a record shorter than one window). Such a
+                            window is kept, its rate normalised to the time it covers.
+                            A window starting after the last sample (possible only
+                            when step_us > window_us) holds no data and is dropped.
       window_us, step_us  : echoed scalars
     """
     bits = np.asarray(binary_states, dtype=int)
@@ -366,6 +602,7 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap
             "window_t_us": np.zeros(0),
             "rate_Hz": np.zeros(0),
             "switches_per_window": np.zeros(0, dtype=int),
+            "covered_us": np.zeros(0),
             "window_us": float(window_us),
             "step_us": float(step_us),
         }
@@ -379,31 +616,47 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None, gap
     else:
         starts = np.arange(t_start, t_end - window_us + step_us, step_us)
     centers = starts + window_us / 2.0
-    counts = np.zeros(starts.size, dtype=int)
-    last = starts.size - 1
-    for i, s in enumerate(starts):
-        # Half-open [s, s+window) so overlapping windows never double-count a
-        # boundary event. The final window closes its right edge so a switch
-        # landing exactly at t_end (possible when the record length is an exact
-        # multiple of the window) is counted rather than silently dropped.
-        if i == last:
-            mask = (t_event >= s) & (t_event <= s + window_us)
-        else:
-            mask = (t_event >= s) & (t_event < s + window_us)
-        counts[i] = int(diffs[mask].sum())
-    rate_Hz = counts / (window_us * 1e-6)
+    # Half-open [s, s+window) so overlapping windows never double-count a boundary
+    # event. The final window closes its right edge so a switch landing exactly at
+    # t_end (possible when the record length is an exact multiple of the window) is
+    # counted rather than silently dropped. Counted from the cumulative switch count
+    # at the window edges (t_event = t[1:] is sorted), O((N + M) log N).
+    cum = np.concatenate([[0], np.cumsum(diffs)])
+    lo = np.searchsorted(t_event, starts, side="left")
+    hi = np.searchsorted(t_event, starts + window_us, side="left")
+    hi[-1] = np.searchsorted(t_event, starts[-1] + window_us, side="right")
+    counts = (cum[hi] - cum[lo]).astype(int)
+    # With step_us > window_us the arange can place a last start past t_end: that
+    # window holds no sample (and no switch), so it is dropped rather than reported
+    # as a zero rate over a non-positive observed time. Dropped after counting, so
+    # the closed right edge stays on the arange's last window as before.
+    keep = starts <= t_end
+    starts, centers, counts = starts[keep], centers[keep], counts[keep]
+    # Observed time per window: a sample at t stands for [t, t + sample period), so a
+    # window starting at s covers min(window, t_end - s + sample period). Only the last
+    # window (and a record shorter than one window) can be partial.
+    sample_period_us = float(np.median(np.diff(t)))
+    covered_us = np.minimum(float(window_us), t_end - starts + sample_period_us)
+    rate_Hz = counts / (covered_us * 1e-6)
 
     return {
         "window_t_us": centers,
         "rate_Hz": rate_Hz,
         "switches_per_window": counts,
+        "covered_us": covered_us,
         "window_us": float(window_us),
         "step_us": float(step_us),
     }
 
 
 def detect_bursts(
-    rate_Hz, window_t_us, baseline_rate=None, k_sigma=5, min_duration_us=None, window_us=None
+    rate_Hz,
+    window_t_us,
+    baseline_rate=None,
+    k_sigma=5,
+    min_duration_us=None,
+    window_us=None,
+    covered_us=None,
 ):
     """
     Identify contiguous high-rate windows as bursts above a robust baseline.
@@ -422,6 +675,10 @@ def detect_bursts(
                     `rate_Hz`. Used to derive the rate quantum (one switch per
                     window) for the Poisson sigma floor. If None it is estimated
                     from the smallest nonzero rate.
+    covered_us    : array (M,) or None; the observed time of each window
+                    (sliding_window_switch_rate's covered_us). Requires window_us. A
+                    window with covered_us < window_us (a partial last window) gets
+                    its own threshold, see below. None: every window is full.
 
     Threshold model
     ---------------
@@ -433,6 +690,15 @@ def detect_bursts(
     The Poisson floor `sigma_floor = q * sqrt(max(baseline_counts, 1))`, where
     `q = 1/(window_us*1e-6)` is the rate per single switch, keeps the threshold
     a statistically meaningful margin above baseline tunneling.
+
+    A partial window covering c < window_us has a rate n/c, so one switch there is
+    worth q_c = q * window_us/c and its rate noise is larger. It is tested against
+    baseline + k_sigma * max(1.4826 * MAD * sqrt(window_us/c),
+    q_c * sqrt(max(baseline/q_c, 1))): the MAD scaled as a Poisson rate averaged over
+    the shorter time, and the same Poisson floor for a window of length c. Full
+    windows keep the threshold above, which is the reported threshold_Hz. In a burst
+    holding a partial window, that window's excess (rate - baseline) * c enters
+    integrated_excess_switches with the full windows' weight stride/window_us.
 
     Returns
     -------
@@ -469,7 +735,23 @@ def detect_bursts(
 
     threshold = baseline_rate + k_sigma * sigma
 
-    above = rate > threshold
+    thresholds = np.full(rate.shape, threshold)
+    partial = np.zeros(rate.shape, dtype=bool)
+    if covered_us is not None:
+        if not (window_us is not None and window_us > 0):
+            raise ValueError("covered_us requires window_us")
+        covered = np.asarray(covered_us, dtype=float)
+        if covered.shape != rate.shape:
+            raise ValueError(f"covered_us {covered.shape} and rate {rate.shape} differ")
+        partial = covered < float(window_us)
+        for i in np.where(partial)[0]:
+            scale = float(window_us) / covered[i]
+            q_c = q * scale
+            floor_c = q_c * np.sqrt(max(max(baseline_rate, 0.0) / q_c, 1.0))
+            sigma_c = max(1.4826 * mad * np.sqrt(scale), floor_c)
+            thresholds[i] = baseline_rate + k_sigma * sigma_c
+
+    above = rate > thresholds
     if not np.any(above):
         return []
 
@@ -494,6 +776,13 @@ def detect_bursts(
         if min_duration_us is not None and duration < min_duration_us:
             continue
         seg = rate[s:e]
+        if partial[s:e].any():
+            # a partial window's excess switches are (rate - baseline) * covered, of which
+            # a full window's share stride/window_us is attributed to it, as for full ones
+            w = covered[s:e] / float(window_us) * (stride * 1e-6)
+            excess = float(np.sum((seg - baseline_rate) * w))
+        else:
+            excess = float(np.sum(seg - baseline_rate) * (stride * 1e-6))
         bursts.append(
             {
                 "t_start_us": t_start,
@@ -501,7 +790,7 @@ def detect_bursts(
                 "duration_us": duration,
                 "peak_rate_Hz": float(np.max(seg)),
                 "mean_rate_Hz": float(np.mean(seg)),
-                "integrated_excess_switches": float(np.sum(seg - baseline_rate) * (stride * 1e-6)),
+                "integrated_excess_switches": excess,
                 "baseline_rate_Hz": baseline_rate,
                 "threshold_Hz": threshold,
             }
@@ -577,23 +866,43 @@ def _plot_switch_rate(rate_out, bursts, out_path):
 
 def _plot_dwell_histograms(stats, out_path):
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(10, 4))
-    for ax, dwells, fit, title in [
-        (ax0, stats["dwell_0_us"], stats["exp_fit_0"], "state 0 dwells"),
-        (ax1, stats["dwell_1_us"], stats["exp_fit_1"], "state 1 dwells"),
+    sp = stats.get("sample_period_us", float("nan"))
+    for ax, dwells, fit, tau, err, n_exits, p, title in [
+        (
+            ax0,
+            stats["dwell_0_us"],
+            stats["exp_fit_0"],
+            stats.get("tau_mle_0_us", float("nan")),
+            stats.get("tau_err_0_us", float("nan")),
+            stats.get("n_exits_0", 0),
+            stats.get("p_exit_0", float("nan")),
+            "state 0 dwells",
+        ),
+        (
+            ax1,
+            stats["dwell_1_us"],
+            stats["exp_fit_1"],
+            stats.get("tau_mle_1_us", float("nan")),
+            stats.get("tau_err_1_us", float("nan")),
+            stats.get("n_exits_1", 0),
+            stats.get("p_exit_1", float("nan")),
+            "state 1 dwells",
+        ),
     ]:
         if dwells.size > 0:
-            # Use the same bin count the fit was computed on so the overlaid
-            # exponential (whose amplitude A is calibrated to that bin width)
-            # lines up with the plotted bars.
             nb = fit.get("bins_used") or min(30, max(5, dwells.size // 10))
-            ax.hist(dwells, bins=int(nb), log=True, alpha=0.7)
-            if np.isfinite(fit["tau_us"]):
+            counts, edges, _ = ax.hist(dwells, bins=int(nb), log=True, alpha=0.7)
+            if np.isfinite(tau) and np.isfinite(sp) and sp > 0 and 0 < p < 1:
+                # Expected counts per bin of the MLE geometric run-length law (P = the
+                # per-sample exit probability, min dwell one sample):
+                # N * (bin width / sp) * P * (1 - P)^((x - sp) / sp).
+                bw = float(edges[1] - edges[0])
                 xs = np.linspace(dwells.min(), dwells.max(), 200)
                 ax.plot(
                     xs,
-                    fit["A"] * np.exp(-xs / fit["tau_us"]),
+                    dwells.size * bw / sp * p * np.exp((xs - sp) / sp * np.log1p(-p)),
                     "r-",
-                    label=f"tau={fit['tau_us']:.1f} us",
+                    label=f"tau_MLE={tau:.1f} +/- {err:.1f} us ({n_exits} exits)",
                 )
                 ax.legend()
         ax.set_xlabel("dwell (us)")
@@ -664,6 +973,7 @@ def analyze_parity_run(
     save_plots=True,
     out_dir=None,
     analysis_bin_us=None,
+    hmm_max_samples=HMM_MAX_SAMPLES,
 ):
     """
     Load a ZeroSpanParity raw .h5, classify into parity bits, compute switch rate,
@@ -692,6 +1002,20 @@ def analyze_parity_run(
         Real decimated captures cover a single `read_length` end-to-end,
         so binning by the full read_length collapses the capture to one
         point — choose a fraction.
+    hmm_max_samples   : int, the HMM is fitted on at most this many leading samples
+                        (usually 3-8 s per 1e5 samples; up to about 1 min when its
+                        L-BFGS-B fit fails and the Powell fallback runs, e.g. the
+                        flat likelihood of a gapped record with no time correlation;
+                        rate_warnings then says "retried with Powell")
+
+    Readout-error model and noise-robust rates (_noise_robust_rates): readout_eps_0/1 and
+    readout_eps (per-sample misassignment at the threshold, from the score fit),
+    threshold_spurious_rate_Hz_est = 2 eps (1 - eps) / sample_period_us (post-binning),
+    threshold_switch_rate_Hz (all switches / all observed time), the ACF (acf_*), PSD
+    (psd_*) and HMM (hmm_*) rates on the scores, and the agreement line rate_agreement with
+    rate_switch_*_Hz (every estimator as switches per second), rate_agreement_max_ratio and
+    rates_disagree (max/min > RATE_AGREEMENT_MAX_RATIO = 2). These run also when the bits
+    are withheld (the threshold entry is then NaN); the HMM's own gates decide its rate.
 
     Returns
     -------
@@ -745,6 +1069,7 @@ def analyze_parity_run(
             "window_t_us": np.zeros(0),
             "rate_Hz": np.zeros(0),
             "switches_per_window": np.zeros(0, dtype=int),
+            "covered_us": np.zeros(0),
             "window_us": float(window_us),
             "step_us": float(window_us // 2 if step_us is None else step_us),
         }
@@ -761,6 +1086,14 @@ def analyze_parity_run(
             "mean_1": nan,
             "n_runs_0": nan,
             "n_runs_1": nan,
+            "tau_mle_0_us": nan,
+            "tau_mle_1_us": nan,
+            "tau_err_0_us": nan,
+            "tau_err_1_us": nan,
+            "n_exits_0": nan,
+            "n_exits_1": nan,
+            "n_interior_0": nan,
+            "n_interior_1": nan,
             "exp_fit_0": {"tau_us": nan},
             "exp_fit_1": {"tau_us": nan},
             "dwell_0_us": np.zeros(0),
@@ -789,6 +1122,23 @@ def analyze_parity_run(
             )
             _plot_dwell_histograms(stats, os.path.join(out_dir, base + "_dwell_histograms.png"))
 
+    h_fit = cls.get("histogram_fit")
+    if h_fit is None:
+        from qicklab.analysis.zero_span_checks import projected_histogram_snr
+
+        h_fit = projected_histogram_snr(cls["scores"])
+    robust = _noise_robust_rates(
+        cls["scores"],
+        t_us,
+        gap_indices,
+        sample_period_us,
+        h_fit,
+        float(cls["threshold"]),
+        bits,
+        hmm_max_samples=hmm_max_samples,
+    )
+    print(f"[analyze_parity_run] {robust['rate_agreement']}")
+
     summary = {
         "h5_path": h5_path,
         "sample_period_us": sample_period_us,
@@ -807,11 +1157,20 @@ def analyze_parity_run(
         "n_runs_1": stats["n_runs_1"],
         "exp_fit_tau_0_us": stats["exp_fit_0"]["tau_us"],
         "exp_fit_tau_1_us": stats["exp_fit_1"]["tau_us"],
+        "tau_mle_0_us": stats["tau_mle_0_us"],
+        "tau_mle_1_us": stats["tau_mle_1_us"],
+        "tau_err_0_us": stats["tau_err_0_us"],
+        "tau_err_1_us": stats["tau_err_1_us"],
+        "n_exits_0": stats["n_exits_0"],
+        "n_exits_1": stats["n_exits_1"],
+        "n_interior_0": stats["n_interior_0"],
+        "n_interior_1": stats["n_interior_1"],
         "classifier_method": cls["method"],
         "classifier_threshold": float(cls["threshold"]),
         "bits_withheld": bool(withheld),
         "classifier_warning": cls["warning"] or "",
         **_histogram_fit_summary(cls.get("histogram_fit")),
+        **robust,
     }
 
     with open(os.path.join(out_dir, base + "_analysis.json"), "w") as f:

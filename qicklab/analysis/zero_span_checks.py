@@ -68,21 +68,100 @@ def verify_modulation(scores, t_us, modulation_reference, gap_indices=None):
     return out
 
 
-def contrast_from_sweeps(freqs, Z_on, Z_off):
-    """|Z_on - Z_off|(f), best probe freq, robust contrast SNR.
+def complex_response_stats(I, Q, n_blocks=20):
+    """Mean complex response of one record and the batch-means standard errors of I and Q.
+
+    Strobe samples are time-ordered and correlated (parity telegraph, drift), so
+    std/sqrt(N) understates the error. The record is cut into n_blocks contiguous blocks of
+    N // n_blocks samples (batch_means_se on the sample index; fewer blocks, each at least
+    2 samples, when N < 2 * n_blocks; trailing partial block dropped). Blocks must be much
+    longer than the correlation time for the se to be unbiased. cov_IQ is the covariance of
+    mean I and mean Q from the same block means (a telegraph along a diagonal of the IQ plane
+    correlates them). The ses and cov_IQ are NaN with fewer than 2 blocks.
+
+    Returns (z_mean, se_I, se_Q, cov_IQ, n_batches); z_mean = mean(I) + 1j mean(Q) over the
+    whole record.
+    """
+    I = np.asarray(I, dtype=float).ravel()
+    Q = np.asarray(Q, dtype=float).ravel()
+    n = min(I.size, Q.size)
+    if n == 0:
+        return complex(np.nan, np.nan), np.nan, np.nan, np.nan, 0
+    I, Q = I[:n], Q[:n]
+    z_mean = complex(np.mean(I) + 1j * np.mean(Q))
+    nb = min(int(n_blocks), n // 2)
+    if nb < 2:
+        return z_mean, np.nan, np.nan, np.nan, max(nb, 0)
+    idx = np.arange(n, dtype=float)
+    blen = n // nb
+    _, se_I, n_b = batch_means_se(I, idx, blen, min_batches=2)
+    _, se_Q, _ = batch_means_se(Q, idx, blen, min_batches=2)
+    _, se_sum, _ = batch_means_se(I + Q, idx, blen, min_batches=2)
+    # var(mean(I + Q)) = se_I^2 + se_Q^2 + 2 cov, all from the same block means (ddof=1)
+    cov_IQ = 0.5 * (se_sum**2 - se_I**2 - se_Q**2)
+    return z_mean, se_I, se_Q, float(cov_IQ), int(n_b)
+
+
+def max_contrast_snr_threshold(n_points, alpha=0.05, dof=None):
+    """Value the largest of n_points pure-noise contrast SNRs exceeds with probability alpha.
+
+    Under no signal the per-point SNR |Z_on - Z_off| / sigma is the length of a 2-D Gaussian
+    in units of its sigma: Rayleigh, P(snr > r) = exp(-r^2 / 2) with exact sigma. With a sigma
+    estimated on dof degrees of freedom, snr^2 / 2 is F(2, dof): P(snr > r) =
+    (1 + r^2 / dof)^(-dof / 2). The per-point tail p = 1 - (1 - alpha)^(1 / n_points) treats
+    the points as independent. dof None or inf = exact sigma. NaN for n_points < 1.
+    """
+    n_points = int(n_points)
+    if n_points < 1 or not (0.0 < alpha < 1.0):
+        return np.nan
+    p = -np.expm1(np.log1p(-alpha) / n_points)
+    if dof is None or not np.isfinite(dof):
+        return float(np.sqrt(-2.0 * np.log(p)))
+    if dof <= 0:
+        return np.nan
+    return float(np.sqrt(dof * (p ** (-2.0 / dof) - 1.0)))
+
+
+def contrast_from_sweeps(
+    freqs, Z_on, Z_off, se_on=None, se_off=None, cov_on=None, cov_off=None, dof=None, alpha=0.05
+):
+    """|Z_on - Z_off|(f), best probe freq, contrast SNR.
 
     Z_on/Z_off are complex demodulated responses (proportional to S21, NOT
     calibrated S21).
+
+    se_on/se_off: standard errors of the means, encoded like Z (real part = se of mean I,
+    imag part = se of mean Q), per point or one scalar (a shared baseline); cov_on/cov_off:
+    covariance of mean I and mean Q (default 0); dof: degrees of freedom of the ses (the
+    smallest number of blocks - 1; None = exact). With ses the per-point SNR is
+    |Z_on - Z_off| / sigma, sigma = the standard error of Z_on - Z_off projected on its own
+    direction u: sigma^2 = u^T (C_on + C_off) u. contrast_snr is that SNR at best_freq;
+    contrast_snr_max is the largest over the points and contrast_significant compares it with
+    max_contrast_snr_threshold(n, alpha, dof). contrast_snr_method = "standard_error".
+
+    Without ses there is no noise estimate: contrast_snr is contrast_peak_to_mad (peak
+    contrast over the MAD of the contrast curve itself, a shape ratio, not an SNR),
+    contrast_snr_method = "peak_to_mad", and the per-point, max, threshold and significance
+    fields are NaN / None. contrast_peak_to_mad is reported in both cases.
     """
     freqs = np.asarray(freqs, dtype=float).ravel()
     Z_on = np.asarray(Z_on).ravel()
     Z_off = np.asarray(Z_off).ravel()
+    with_se = se_on is not None and se_off is not None
     out = {
         "freqs": freqs,
         "contrast": np.zeros(0),
         "best_freq": np.nan,
         "max_contrast": np.nan,
         "contrast_snr": np.nan,
+        "contrast_peak_to_mad": np.nan,
+        "contrast_snr_method": "standard_error" if with_se else "peak_to_mad",
+        "contrast_se": np.zeros(0),
+        "contrast_snr_per_point": np.zeros(0),
+        "contrast_snr_max": np.nan,
+        "contrast_snr_threshold": np.nan,
+        "contrast_significant": None,
+        "alpha": float(alpha),
         "Z_on": Z_on,
         "Z_off": Z_off,
     }
@@ -94,15 +173,56 @@ def contrast_from_sweeps(freqs, Z_on, Z_off):
     idx = int(np.argmax(contrast))
     # MAD sigma; a zero MAD falls back to the median, then 1.0
     _, noise_floor = estimate_noise_floor(contrast, zero_mad=lambda med: med if med > 0 else 1.0)
+    peak_to_mad = float(contrast[idx] / noise_floor) if noise_floor > 0 else np.inf
     out.update(
         {
             "freqs": freqs,
             "contrast": contrast,
             "best_freq": float(freqs[idx]),
             "max_contrast": float(contrast[idx]),
-            "contrast_snr": float(contrast[idx] / noise_floor) if noise_floor > 0 else np.inf,
+            "contrast_snr": peak_to_mad,
+            "contrast_peak_to_mad": peak_to_mad,
             "Z_on": Z_on,
             "Z_off": Z_off,
+        }
+    )
+    if not with_se:
+        return out
+
+    def _per_point(v, default=0.0):
+        v = np.zeros(1) + default if v is None else np.asarray(v)
+        return np.broadcast_to(v.ravel() if v.size > 1 else v.reshape(()), (n,))
+
+    s_on = _per_point(se_on).astype(complex)
+    s_off = _per_point(se_off).astype(complex)
+    c_on = _per_point(cov_on).astype(float)
+    c_off = _per_point(cov_off).astype(float)
+    d = Z_on - Z_off
+    with np.errstate(invalid="ignore", divide="ignore"):
+        u = np.where(contrast > 0, d / contrast, 1.0 + 0j)
+    var = (
+        u.real**2 * (s_on.real**2 + s_off.real**2)
+        + u.imag**2 * (s_on.imag**2 + s_off.imag**2)
+        + 2.0 * u.real * u.imag * (c_on + c_off)
+    )
+    sigma = np.sqrt(np.where(var >= 0, var, np.nan))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        snr = np.where(sigma > 0, contrast / sigma, np.where(contrast > 0, np.inf, np.nan))
+    snr = np.where(np.isfinite(sigma), snr, np.nan)
+    finite = np.isfinite(snr)
+    snr_max = float(np.max(snr[finite])) if finite.any() else np.nan
+    thr = max_contrast_snr_threshold(n, alpha, dof)
+    out.update(
+        {
+            "contrast_snr": float(snr[idx]),
+            "contrast_snr_method": "standard_error",
+            "contrast_se": sigma,
+            "contrast_snr_per_point": snr,
+            "contrast_snr_max": snr_max,
+            "contrast_snr_threshold": thr,
+            "contrast_significant": (
+                bool(snr_max > thr) if np.isfinite(snr_max) and np.isfinite(thr) else None
+            ),
         }
     )
     return out
@@ -179,6 +299,8 @@ def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method=
     Returns per-bin separation SNR and dwell tau. best_bin_us maximizes separation
     SNR. NO monotonic-then-degrade assertion: the optimum can occur before T_parity.
     Dwell entries are NaN at a bin size where classify_parity_trace withholds the bits.
+    exp_tau_per_bin is the mean over the two states of the dwell-time MLE
+    (dwell_time_statistics tau_mle_*_us, censored likelihood, debounced at 2 bins).
     """
     sep_snr, mean_dwell, exp_tau = [], [], []
     for b in bin_list_us:
@@ -194,7 +316,7 @@ def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method=
             cls["binary_states"], tb, gap_indices=gb, merge_short_segments=True, min_dwell_bins=2
         )
         mean_dwell.append(0.5 * (dw["mean_0"] + dw["mean_1"]))
-        taus = [dw["exp_fit_0"]["tau_us"], dw["exp_fit_1"]["tau_us"]]
+        taus = [dw["tau_mle_0_us"], dw["tau_mle_1_us"]]
         taus = [tt for tt in taus if np.isfinite(tt)]
         exp_tau.append(float(np.mean(taus)) if taus else np.nan)
     snr_arr = np.array(sep_snr, dtype=float)
@@ -214,7 +336,13 @@ def threshold_stability(scores, t_us, threshold_list=None, gap_indices=None, min
     """Vary the classification threshold; report dwell tau stability.
 
     Low tau_cv (coefficient of variation across thresholds) = robust telegraph;
-    high tau_cv = noise crossings.
+    high tau_cv = noise crossings. tau0/tau1 are the dwell-time MLE per threshold
+    (dwell_time_statistics tau_mle_*_us, censored likelihood, debounced at min_dwell_bins).
+
+    The default threshold_list (30-70th percentiles of the scores) is not meaningful for a
+    well-separated telegraph: for balanced populations those percentiles sit inside a score
+    cloud, so tau_cv does not separate a clean telegraph from pure noise. Pass thresholds
+    that lie in the gap between the cloud centres.
     """
     scores = np.asarray(scores, dtype=float).ravel()
     if threshold_list is None:
@@ -229,8 +357,8 @@ def threshold_stability(scores, t_us, threshold_list=None, gap_indices=None, min
             merge_short_segments=True,
             min_dwell_bins=min_dwell_bins,
         )
-        tau0.append(dw["exp_fit_0"]["tau_us"])
-        tau1.append(dw["exp_fit_1"]["tau_us"])
+        tau0.append(dw["tau_mle_0_us"])
+        tau1.append(dw["tau_mle_1_us"])
     allt = np.array([x for x in (tau0 + tau1) if np.isfinite(x)], dtype=float)
     tau_cv = float(np.std(allt) / np.mean(allt)) if allt.size >= 2 and np.mean(allt) > 0 else np.inf
     return {

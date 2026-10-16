@@ -18,6 +18,7 @@ from qicklab.analysis.zero_span import classify_parity_trace, sliding_window_swi
 from qicklab.analysis.zero_span_checks import (
     batch_means_se,
     branch_response_test,
+    complex_response_stats,
     contrast_from_sweeps,
     level_shift_null,
     projected_histogram_snr,
@@ -184,9 +185,15 @@ def run_modulation_check(
     return {**vm, "acq": acq, "classification": cls, "sidecar": json_path}
 
 
-def _mean_complex_response(experiment, progress=False):
+def _complex_response_stats(experiment, n_blocks=20, progress=False):
+    """One acquire(): (z_mean, se_I, se_Q, cov_IQ, n_batches), batch means over n_blocks
+    contiguous blocks of the time-ordered record (complex_response_stats)."""
     data = experiment.acquire(progress=progress)
-    return complex(np.mean(data["I"]) + 1j * np.mean(data["Q"]))
+    return complex_response_stats(data["I"], data["Q"], n_blocks=n_blocks)
+
+
+def _mean_complex_response(experiment, progress=False):
+    return _complex_response_stats(experiment, progress=progress)[0]
 
 
 def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
@@ -198,7 +205,13 @@ def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(c["freqs"], np.abs(c["Z_on"]), label="|Z_on|")
     ax.plot(c["freqs"], np.abs(c["Z_off"]), label="|Z_off|")
-    ax.plot(c["freqs"], c["contrast"], "k-", label="|Z_on - Z_off|")
+    se = np.asarray(c.get("contrast_se", np.zeros(0)), dtype=float)
+    if se.size == np.size(c["contrast"]) and np.isfinite(se).any():
+        ax.errorbar(
+            c["freqs"], c["contrast"], yerr=se, fmt="k-", capsize=2, label="|Z_on - Z_off| +- se"
+        )
+    else:
+        ax.plot(c["freqs"], c["contrast"], "k-", label="|Z_on - Z_off|")
     if np.isfinite(c["best_freq"]):
         ax.axvline(c["best_freq"], color="r", ls="--", label=f"best={c['best_freq']:.3f}")
     ax.set_xlabel(xlabel)
@@ -207,7 +220,13 @@ def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
     # annotate it when a finite value was actually computed (stage 1).
     snr = c.get("contrast_snr")
     if snr is not None and np.isfinite(snr):
-        ax.set_title(f"Contrast  snr={snr:.2f}")
+        if c.get("contrast_snr_method") == "standard_error":
+            ax.set_title(
+                f"Contrast  snr={snr:.2f} at best  (max {c['contrast_snr_max']:.2f}, "
+                f"alpha={c['alpha']:g} threshold {c['contrast_snr_threshold']:.2f})"
+            )
+        else:
+            ax.set_title(f"Contrast  peak/MAD={snr:.2f}")
     else:
         ax.set_title("Contrast")
     ax.legend(loc="best", fontsize=8)
@@ -216,25 +235,52 @@ def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
     plt.close(fig)
 
 
-def run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, out_dir=None):
+def run_static_contrast(
+    experiment, freq_list, qubit_gain_on, progress=False, out_dir=None, n_blocks=20
+):
     """Stage 1: sweep read_pulse_freq, drive ON vs OFF, max |Z_on - Z_off|.
 
-    Z = <I + iQ> averaged per point. NOT calibrated S21.
+    Z = <I + iQ> averaged per point. NOT calibrated S21. Each point's standard error is from
+    batch means over n_blocks contiguous blocks of its record (complex_response_stats);
+    contrast_snr = |Z_on - Z_off| / se of the difference, at best_freq.
     Returns contrast_from_sweeps result; best_freq is the recommended read_pulse_freq.
     """
     freq_list = np.asarray(freq_list, dtype=float).ravel()
     Z_on = np.empty(freq_list.size, dtype=complex)
     Z_off = np.empty(freq_list.size, dtype=complex)
+    se_on = np.full(freq_list.size, np.nan, dtype=complex)
+    se_off = np.full(freq_list.size, np.nan, dtype=complex)
+    cov_on = np.full(freq_list.size, np.nan)
+    cov_off = np.full(freq_list.size, np.nan)
+    n_batches = []
     base_gain = experiment.cfg["qubit_gain"]
     with _preserve_cfg(experiment, "read_pulse_freq", "qubit_gain"):
         for i, fr in enumerate(freq_list):
             experiment.cfg["read_pulse_freq"] = float(fr)
             experiment.set_qubit_gain(qubit_gain_on)
-            Z_on[i] = _mean_complex_response(experiment, progress=progress)
+            Z_on[i], sI, sQ, cov_on[i], nb_on = _complex_response_stats(
+                experiment, n_blocks=n_blocks, progress=progress
+            )
+            se_on[i] = complex(sI, sQ)
             experiment.set_qubit_gain(0)
-            Z_off[i] = _mean_complex_response(experiment, progress=progress)
+            Z_off[i], sI, sQ, cov_off[i], nb_off = _complex_response_stats(
+                experiment, n_blocks=n_blocks, progress=progress
+            )
+            se_off[i] = complex(sI, sQ)
+            n_batches += [nb_on, nb_off]
     experiment.set_qubit_gain(base_gain)
-    c = contrast_from_sweeps(freq_list, Z_on, Z_off)
+    min_batches = min(n_batches) if n_batches else 0
+    c = contrast_from_sweeps(
+        freq_list,
+        Z_on,
+        Z_off,
+        se_on=se_on,
+        se_off=se_off,
+        cov_on=cov_on,
+        cov_off=cov_off,
+        dof=(min_batches - 1) if min_batches >= 2 else np.nan,
+    )
+    c.update({"se_on": se_on, "se_off": se_off, "n_batches_min": min_batches})
     arrays = {
         "freqs": c["freqs"],
         "Z_on_real": c["Z_on"].real,
@@ -242,11 +288,27 @@ def run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, ou
         "Z_off_real": c["Z_off"].real,
         "Z_off_imag": c["Z_off"].imag,
         "contrast": c["contrast"],
+        "Z_on_se_real": se_on.real,
+        "Z_on_se_imag": se_on.imag,
+        "Z_off_se_real": se_off.real,
+        "Z_off_se_imag": se_off.imag,
+        "Z_on_cov_IQ": cov_on,
+        "Z_off_cov_IQ": cov_off,
+        "contrast_se": c["contrast_se"],
+        "contrast_snr_per_point": c["contrast_snr_per_point"],
     }
     scalars = {
         "best_freq": c["best_freq"],
         "max_contrast": c["max_contrast"],
         "contrast_snr": c["contrast_snr"],
+        "contrast_snr_method": c["contrast_snr_method"],
+        "contrast_snr_max": c["contrast_snr_max"],
+        "contrast_snr_threshold": c["contrast_snr_threshold"],
+        "contrast_significant": c["contrast_significant"],
+        "alpha": c["alpha"],
+        "contrast_peak_to_mad": c["contrast_peak_to_mad"],
+        "n_blocks": n_blocks,
+        "n_batches_min": min_batches,
     }
     json_path, _ = _stage_sidecar(
         experiment, "1_static_contrast", scalars=scalars, arrays=arrays, out_dir=out_dir
@@ -255,38 +317,72 @@ def run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, ou
     return {**c, "sidecar": json_path}
 
 
-def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=None):
+def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=None, n_blocks=20):
     """Stage 2: contrast(f_q) = |<Z>_drive_on - <Z>_drive_off| vs qubit drive freq.
 
     No telegraph exists at each driven steady state, so DO NOT use histogram
     bimodality here -- use complex-response difference against a drive-off baseline.
     Run this at the resonator probe point already optimized by stage 1.
+    Each z_on and the one z_off get batch-means standard errors (complex_response_stats);
+    contrast_snr_per_point includes z_off's error, which is shared by every point (a
+    correlated offset, not independent noise).
     """
     qfreq_list = np.asarray(qfreq_list, dtype=float).ravel()
     base_gain = experiment.cfg["qubit_gain"]
     with _preserve_cfg(experiment, "parity_drive_freq", "qubit_gain"):
         # drive-off baseline at current probe point
         experiment.set_qubit_gain(0)
-        z_off = _mean_complex_response(experiment, progress=progress)
+        z_off, sI, sQ, cov_off, nb_off = _complex_response_stats(
+            experiment, n_blocks=n_blocks, progress=progress
+        )
+        z_off_se = complex(sI, sQ)
         contrast = np.empty(qfreq_list.size, dtype=float)
         z_on = np.empty(qfreq_list.size, dtype=complex)
+        z_on_se = np.full(qfreq_list.size, np.nan, dtype=complex)
+        z_on_cov = np.full(qfreq_list.size, np.nan)
+        n_batches = [nb_off]
         for i, fq in enumerate(qfreq_list):
             experiment.cfg["parity_drive_freq"] = float(fq)
             experiment.set_qubit_gain(base_gain)
-            z_on[i] = _mean_complex_response(experiment, progress=progress)
+            z_on[i], sI, sQ, z_on_cov[i], nb = _complex_response_stats(
+                experiment, n_blocks=n_blocks, progress=progress
+            )
+            z_on_se[i] = complex(sI, sQ)
+            n_batches.append(nb)
             contrast[i] = abs(z_on[i] - z_off)
     experiment.set_qubit_gain(base_gain)
     peaks = find_two_tone_peaks(qfreq_list, contrast)
+    min_batches = min(n_batches)
+    c = contrast_from_sweeps(
+        qfreq_list,
+        z_on,
+        np.full(qfreq_list.size, z_off),
+        se_on=z_on_se,
+        se_off=z_off_se,
+        cov_on=z_on_cov,
+        cov_off=cov_off,
+        dof=(min_batches - 1) if min_batches >= 2 else np.nan,
+    )
     arrays = {
         "qfreqs": qfreq_list,
         "contrast": contrast,
         "z_on_real": z_on.real,
         "z_on_imag": z_on.imag,
+        "z_on_se_real": z_on_se.real,
+        "z_on_se_imag": z_on_se.imag,
+        "z_on_cov_IQ": z_on_cov,
+        "contrast_se": c["contrast_se"],
+        "contrast_snr_per_point": c["contrast_snr_per_point"],
     }
     scalars = {
         "z_off_real": z_off.real,
         "z_off_imag": z_off.imag,
+        "z_off_se_real": z_off_se.real,
+        "z_off_se_imag": z_off_se.imag,
+        "z_off_cov_IQ": cov_off,
         "peak_sep": peaks.get("peak_sep"),
+        "n_blocks": n_blocks,
+        "n_batches_min": min_batches,
     }
     json_path, _ = _stage_sidecar(
         experiment, "2_contrast_vs_qubit_freq", scalars=scalars, arrays=arrays, out_dir=out_dir
@@ -297,6 +393,7 @@ def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=N
             "Z_on": z_on,
             "Z_off": np.full(qfreq_list.size, z_off),
             "contrast": contrast,
+            "contrast_se": c["contrast_se"],
             "best_freq": float(qfreq_list[int(np.argmax(contrast))]) if contrast.size else np.nan,
             "contrast_snr": np.nan,
         },
@@ -308,6 +405,10 @@ def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=N
         "contrast": contrast,
         "z_on": z_on,
         "z_off": z_off,
+        "z_on_se": z_on_se,
+        "z_off_se": z_off_se,
+        "contrast_se": c["contrast_se"],
+        "contrast_snr_per_point": c["contrast_snr_per_point"],
         "peaks": peaks,
         "sidecar": json_path,
     }
@@ -426,7 +527,7 @@ def run_environment_sweep(
 def _control_record(experiment, separator, n_blocks=1, progress=False):
     """Acquire n_blocks strobe records with the current program, stitch and classify them.
 
-    Each block is one acquire() (reps_per_chunk samples, bounded by avg_maxlen); block k's
+    Each block is one acquire() (reps_per_chunk samples); block k's
     t_us is offset to follow block k-1 by one sample spacing, so the stitched time omits
     the dead time between acquisitions. Returns the projected scores, t_us, the mean level
     and the histogram separation SNR.

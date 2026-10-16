@@ -200,8 +200,11 @@ def test_undriven_abort_mid_summary_drops_the_unfinished_bias(tmp_path, monkeypa
 
     expected = {k for k in full_keys if not k.startswith(("V2_", "V3_"))} | {"sweep_completed"}
     assert set(exp.data["data"]) == expected
+    # on disk the per-read index/time axes are dropped (regenerable, F74); the rest is kept
+    axes = ("shot_index0", "shot_time_us0", "ts_index0", "ts_time_us0")
+    on_disk = {k for k in expected if not (k.startswith(("V0_", "V1_")) and k[3:] in axes)}
     with h5py.File(exp.fname, "r") as f:
-        assert set(f) == expected
+        assert set(f) == on_disk
         assert f["sweep_completed"][()] == 2
         for key in (k for k in f if k.startswith("sweep_") and k != "sweep_completed"):
             assert f[key].shape == (2,), key

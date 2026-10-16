@@ -8,6 +8,7 @@ helpers below replay the earlier blocks' draws so each test sees the same data.
 import json
 import os
 import tempfile
+import warnings
 
 import h5py
 import numpy as np
@@ -250,6 +251,14 @@ def test_apriori_gmm_withholds_bits_when_not_bimodal(tmp_path):
         "mean_dwell_1_us",
         "exp_fit_tau_0_us",
         "exp_fit_tau_1_us",
+        "tau_mle_0_us",
+        "tau_mle_1_us",
+        "tau_err_0_us",
+        "tau_err_1_us",
+        "n_exits_0",
+        "n_exits_1",
+        "n_interior_0",
+        "n_interior_1",
     ):
         assert np.isnan(res[k]), (k, res[k])
     base = os.path.join(str(tmp_path), "ZeroSpanParity_unresolved")
@@ -347,6 +356,100 @@ def test_sliding_window_switch_rate():
     assert int(out_edge["switches_per_window"].sum()) == 1, (
         f"boundary switch dropped: {out_edge['switches_per_window']}"
     )
+
+
+def _sliding_counts_loop(bits, t, window_us, step_us, gap_indices=None):
+    """The pre-F75 per-window mask loop (test oracle for the switch counts)."""
+    bits = np.asarray(bits, dtype=int)
+    t = np.asarray(t, dtype=float)
+    diffs = np.abs(np.diff(bits))
+    for gi in gap_indices or ():
+        if 1 <= gi < bits.size:
+            diffs[gi - 1] = 0
+    t_event = t[1:]
+    if t[-1] - t[0] < window_us:
+        starts = np.array([t[0]])
+    else:
+        starts = np.arange(t[0], t[-1] - window_us + step_us, step_us)
+    counts = np.zeros(starts.size, dtype=int)
+    for i, s in enumerate(starts):
+        if i == starts.size - 1:
+            mask = (t_event >= s) & (t_event <= s + window_us)
+        else:
+            mask = (t_event >= s) & (t_event < s + window_us)
+        counts[i] = int(diffs[mask].sum())
+    return starts, counts
+
+
+@pytest.mark.parametrize(
+    "n, dt_us, window_us, step_us",
+    [
+        (60_000, 20.0, 1000.0, 500.0),  # window edges land exactly on sample times
+        (60_001, 20.0, 1000.0, 1000.0),  # record an exact multiple: switch at t_end
+        (20_000, 7.3, 333.0, 111.0),  # incommensurate spacing, 2/3 overlap
+        (5_000, 20.0, 1e6, None),  # record shorter than one window
+    ],
+)
+def test_sliding_window_counts_match_loop(n, dt_us, window_us, step_us):
+    # F75: the cumsum + searchsorted counts are bit-identical to the old mask loop
+    # (same half-open windows, closed last window, gap zeroing) on a telegraph with gaps.
+    rng = np.random.default_rng(n)
+    bits = (np.cumsum(rng.random(n) < 0.02) % 2).astype(int)
+    bits[-1] = 1 - bits[-2]  # a switch exactly at t_end
+    t = np.arange(n) * dt_us
+    gaps = [0, 1, 17, n // 3, n // 2, n - 1, n]  # incl. the guarded out-of-range ones
+    out = sliding_window_switch_rate(bits, t, window_us, step_us=step_us, gap_indices=gaps)
+    step = window_us // 2 if step_us is None else step_us
+    starts, counts = _sliding_counts_loop(bits, t, window_us, step, gap_indices=gaps)
+    assert out["switches_per_window"].dtype.kind == "i"
+    assert np.array_equal(out["switches_per_window"], counts)
+    assert np.array_equal(out["window_t_us"], starts + window_us / 2.0)
+    # Full windows are still divided by window_us exactly; only the last can be partial.
+    full = out["covered_us"] == window_us
+    assert full[:-1].all()
+    assert np.array_equal(out["rate_Hz"][full], counts[full] / (window_us * 1e-6))
+
+
+def test_sliding_window_partial_last_window():
+    # F75: t = 0..1020 us, W = 100, step 50 -> the last window [950, 1050) holds only the
+    # samples 950..1020, i.e. 71 us of observed time; its rate is n/71 us, not n/100 us,
+    # so a uniform 1 MHz switching trace reads 1 MHz there too (was 0.71 MHz).
+    t = np.arange(0, 1021, dtype=float)
+    bits = np.arange(t.size) % 2  # a switch on every sample interval
+    out = sliding_window_switch_rate(bits, t, window_us=100.0, step_us=50.0)
+    assert out["window_t_us"][-1] == 1000.0
+    assert out["covered_us"][-1] == 71.0
+    assert np.all(out["covered_us"][:-1] == 100.0)
+    assert out["switches_per_window"][-1] == 71  # events (t[i+1]) at t = 950..1020
+    assert out["rate_Hz"][-1] == pytest.approx(1e6)
+    # 100 switches per full 100 us window (the first holds events at t = 1..99 only)
+    assert out["switches_per_window"][0] == 99
+    assert np.allclose(out["rate_Hz"][1:-1], 1e6)
+    # A record shorter than one window is normalised to its own length (+ one sample).
+    short = sliding_window_switch_rate(bits[:51], t[:51], window_us=100.0)
+    assert short["covered_us"].tolist() == [51.0]
+    assert short["rate_Hz"][0] == pytest.approx(50 / 51e-6)
+
+
+def test_sliding_window_step_wider_than_window_drops_empty_tail():
+    # F75 review: with step_us > window_us the last arange start (1200) lies past
+    # t_end = 1100 and would get covered_us = -99 (rate -0.0, NaN burst threshold).
+    # It holds no sample, so it is dropped; the kept windows match the old loop.
+    t = np.arange(0, 1101, dtype=float)
+    bits = np.arange(t.size) % 2
+    out = sliding_window_switch_rate(bits, t, window_us=100.0, step_us=300.0)
+    starts, counts = _sliding_counts_loop(bits, t, 100.0, 300.0)
+    assert starts.tolist() == [0.0, 300.0, 600.0, 900.0, 1200.0]
+    assert counts[-1] == 0
+    assert np.array_equal(out["window_t_us"], starts[:-1] + 50.0)
+    assert np.array_equal(out["switches_per_window"], counts[:-1])
+    assert out["covered_us"].tolist() == [100.0] * 4
+    assert np.all(out["rate_Hz"] >= 0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # the old -99 us window raised in sqrt
+        base, bursts = baseline_rate_and_bursts(bits, t, out, k_sigma=3.0)
+    assert np.isfinite(base["baseline_rate_Hz"])
+    assert bursts == []
 
 
 def test_detect_bursts():
@@ -494,6 +597,80 @@ def test_event_baseline_masks_full_flagged_windows(n_bursts, p_burst):
     assert narrow["rate_Hz"] - 400.0 > 3 * narrow["rate_err_Hz"], narrow
 
 
+def _tail_trace(n, tail_flips, seed=7, dt=10.0, rate_Hz=200.0):
+    """200 Hz telegraph at 10 us/sample whose last len(tail_flips) intervals are set."""
+    rng = np.random.default_rng(seed)
+    flips = rng.random(n - 1) < rate_Hz * dt * 1e-6
+    flips[-len(tail_flips) :] = tail_flips
+    bits = np.concatenate([[0], np.cumsum(flips) % 2]).astype(int)
+    return bits, np.arange(n) * dt
+
+
+@pytest.mark.parametrize("step_us", [1000.0, 500.0])
+def test_partial_tail_window_single_switch_is_not_a_burst(step_us):
+    # F75: the record is 100 windows + 2 samples, so with step = window the last window
+    # covers 30 us; one switch there reads 33 kHz. At the full-window Poisson floor
+    # (q = 1 kHz) that is a 5-sigma burst, and it would then be cut from the baseline.
+    # The partial window is held to its own floor (q_c = 1/30 us): no burst, baseline =
+    # the whole-record event rate.
+    bits, t = _tail_trace(10_003, [False, True, False])
+    rate_out = sliding_window_switch_rate(bits, t, window_us=1000.0, step_us=step_us)
+    cov = rate_out["covered_us"]
+    assert cov[-1] == (30.0 if step_us == 1000.0 else 530.0) and np.all(cov[:-1] == 1000.0)
+    assert rate_out["switches_per_window"][-1] == 1
+    base, bursts = baseline_rate_and_bursts(bits, t, rate_out, k_sigma=5)
+    assert bursts == []
+    whole = event_switch_rate(bits, t)
+    assert base["baseline_rate_Hz"] == whole["rate_Hz"]
+    assert base["T_baseline_s"] == whole["T_s"]
+    if step_us == 1000.0:
+        # without covered_us (one floor for every window) the tail switch is flagged
+        flagged = detect_bursts(
+            rate_out["rate_Hz"],
+            rate_out["window_t_us"],
+            baseline_rate=whole["rate_Hz"],
+            k_sigma=5,
+            window_us=1000.0,
+        )
+        assert [b["t_start_us"] for b in flagged] == [100_000.0]
+
+
+def test_partial_tail_window_real_burst_is_detected():
+    # F75: a switch on every one of the last 29 intervals (a 97 kHz burst in a 300 us
+    # tail window) still crosses the partial window's own threshold; its integrated
+    # excess is the excess switches it holds, (rate - baseline) * covered_us.
+    bits, t = _tail_trace(10_030, np.ones(29, dtype=bool))
+    rate_out = sliding_window_switch_rate(bits, t, window_us=1000.0, step_us=1000.0)
+    assert rate_out["covered_us"][-1] == 300.0
+    base, bursts = baseline_rate_and_bursts(bits, t, rate_out, k_sigma=5)
+    assert len(bursts) == 1
+    (b,) = bursts
+    assert (b["t_start_us"], b["t_end_us"]) == (100_000.0, 101_000.0)
+    assert b["peak_rate_Hz"] == pytest.approx(29 / 300e-6)
+    expected = 29 - base["baseline_rate_Hz"] * 300e-6
+    assert b["integrated_excess_switches"] == pytest.approx(expected)
+    # the tail's 29 switches are excluded from the baseline
+    assert base["n_switches_baseline"] == event_switch_rate(bits, t)["n_switches"] - 29
+
+
+def test_detect_bursts_covered_us_full_windows_unchanged():
+    # F75: covered_us of only full windows gives the old detection exactly; covered_us
+    # needs window_us (it sets the per-window quantum) and the rate's shape.
+    rng = np.random.default_rng(11)
+    rate = rng.poisson(0.4, 400) * 1000.0
+    rate[200:204] = 20_000.0
+    cen = np.arange(400) * 500.0 + 500.0
+    ref = detect_bursts(rate, cen, baseline_rate=400.0, k_sigma=5, window_us=1000.0)
+    got = detect_bursts(
+        rate, cen, baseline_rate=400.0, k_sigma=5, window_us=1000.0, covered_us=np.full(400, 1e3)
+    )
+    assert ref and got == ref
+    with pytest.raises(ValueError, match="requires window_us"):
+        detect_bursts(rate, cen, covered_us=np.full(400, 1e3))
+    with pytest.raises(ValueError, match="differ"):
+        detect_bursts(rate, cen, window_us=1000.0, covered_us=np.full(399, 1e3))
+
+
 def test_event_switch_rate_edge_cases():
     # Gap-aware: the switch across the gap and the 970 us gap interval are not counted;
     # T is the sum of the in-record intervals, not (N-1)*dt.
@@ -616,6 +793,239 @@ def test_dwell_time_statistics():
     )
 
 
+def _sampled_exit_p(sp_us, tau_own_us, tau_other_us):
+    """Per-sample exit probability of a continuous-time telegraph sampled every sp:
+    P_s = (gamma_s/Gamma)(1 - exp(-Gamma sp)), Gamma = gamma_0 + gamma_1."""
+    g_own, g_other = 1.0 / tau_own_us, 1.0 / tau_other_us
+    gam = g_own + g_other
+    return g_own / gam * -np.expm1(-gam * sp_us)
+
+
+def _geometric_telegraph(rng, n_dwells, tau_us, sp_us):
+    """Alternating 0/1 runs with the exact run-length law of a symmetric continuous-time
+    telegraph (dwell tau) sampled every sp: Geometric(P), P = (1 - exp(-2 sp/tau))/2."""
+    p = _sampled_exit_p(sp_us, tau_us, tau_us)
+    lengths = rng.geometric(p, n_dwells)
+    bits = np.repeat(np.arange(lengths.size) % 2, lengths)
+    return bits, np.arange(bits.size) * sp_us
+
+
+def test_dwell_mle_unbiased_at_small_n():
+    # F73: at the 100-300 dwells of a stage-7 / threshold-stability record the
+    # log-linear histogram fit reads tau ~15 % high; the dwell-time MLE is unbiased
+    # to ~1 % and its tau_err matches the replicate scatter. The runs follow the exact
+    # run-length law of a sampled symmetric telegraph.
+    sp, tau = 20.0, 2000.0
+    rng = np.random.default_rng(11)
+    mle, err, hist, n_int, n_exits = [], [], [], [], []
+    for _ in range(200):
+        bits, t = _geometric_telegraph(rng, 2 * 150 + 2, tau, sp)
+        st = dwell_time_statistics(bits, t)
+        mle.append(st["tau_mle_0_us"])
+        err.append(st["tau_err_0_us"])
+        hist.append(st["exp_fit_0"]["tau_us"])
+        n_int.append(st["n_interior_0"])
+        n_exits.append(st["n_exits_0"])
+    mle, err, hist = (np.asarray(x, dtype=float) for x in (mle, err, hist))
+    assert set(n_int) == {150}  # 151 state-0 runs, the first one censored
+    assert set(n_exits) == {151}  # ... but it still ends in a switch: 151 exits
+    assert abs(np.mean(mle) / tau - 1) < 0.02, np.mean(mle)
+    assert np.nanmean(hist) / tau - 1 > 0.08, np.nanmean(hist)  # the bias being replaced
+    assert np.std(mle) < np.nanstd(hist)
+    # delta-method error ~ tau/sqrt(N_exits), and it matches the scatter of the estimate
+    assert np.mean(err) == pytest.approx(tau / np.sqrt(151), rel=0.05)
+    assert np.mean(err) == pytest.approx(np.std(mle), rel=0.15)
+
+
+def _symmetric_markov(rng, n, tau_us, sp_us):
+    """A symmetric continuous-time telegraph (dwell tau) sampled n times every sp.
+
+    Sampled, it is a Markov chain switching with P = (1 - exp(-2 sp/tau))/2 per step
+    in either state, so the switch events are i.i.d. Bernoulli(P) and the chain is a
+    cumsum.
+    """
+    p = _sampled_exit_p(sp_us, tau_us, tau_us)
+    return (rng.integers(2) + np.cumsum(rng.random(n) < p)) % 2
+
+
+def _ct_telegraph(rng, T_us, tau0_us, tau1_us, sp_us):
+    """Event-driven continuous-time telegraph: exponential dwells (tau0 in 0, tau1 in 1),
+    sampled every sp for T_us with a random sampling phase. Returns (bits, t_us)."""
+    s0 = int(rng.integers(2))
+    n_ev = int(3 * T_us / min(tau0_us, tau1_us)) + 50
+    states = (s0 + np.arange(n_ev)) % 2
+    edges = np.concatenate(([0.0], np.cumsum(rng.exponential(np.where(states, tau1_us, tau0_us)))))
+    assert edges[-1] > T_us
+    ts = rng.random() * sp_us + np.arange(int(T_us / sp_us)) * sp_us
+    return states[np.searchsorted(edges, ts, side="right") - 1], ts - ts[0]
+
+
+def _telegraph_tau(sp, p_own, p_other):
+    """Independent inversion of the sampled-telegraph exit probabilities."""
+    gam = -np.log(1.0 - p_own - p_other) / sp
+    return (p_own + p_other) / (p_own * gam)
+
+
+def _transition_counts(bits, gap_indices, k):
+    """Brute-force (exits, trials) from state k: steps i -> i+1 within a segment."""
+    edges = [0, *sorted(gap_indices), bits.size]
+    exits = trials = 0
+    for a, b in zip(edges[:-1], edges[1:]):
+        for i in range(a, b - 1):
+            if bits[i] == k:
+                trials += 1
+                exits += int(bits[i + 1] != k)
+    return exits, trials
+
+
+def test_dwell_mle_censoring_and_edge_cases():
+    # Run lengths in samples with a censored flag for each segment's first/last run;
+    # the MLE counts every within-segment step from a state as a trial and every
+    # switch out of it as an exit, censored runs included.
+    bits = np.array([0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1])
+    t = np.arange(bits.size) * 10.0
+    st = dwell_time_statistics(bits, t, gap_indices=[9])
+    # segment [0, 9): 00 111 0000 ; segment [9, 14): 11 00 1
+    np.testing.assert_array_equal(st["dwell_0_samples"], [2, 4, 2])
+    np.testing.assert_array_equal(st["censored_0"], [True, True, False])
+    np.testing.assert_array_equal(st["dwell_1_samples"], [3, 2, 1])
+    np.testing.assert_array_equal(st["censored_1"], [False, True, True])
+    assert st["n_interior_0"] == 1 and st["n_interior_1"] == 1
+    assert st["n_exits_0"] == 2 and st["n_exits_1"] == 2  # a segment's last run has no exit
+    assert st["sample_period_us"] == 10.0
+    assert np.isnan(st["tau_mle_0_us"]) and np.isnan(st["tau_err_0_us"])  # < 5 exits
+
+    # Exact value: P_s = exits/trials, tau_s from the two-state telegraph inversion,
+    # against a brute-force count of the transitions, in one segment and split by a
+    # gap; the error against a finite-difference delta method.
+    runs = [7] + [2, 4, 3, 5, 6] * 4 + [9]  # alternating states, the last run in state 1
+    bits2 = np.repeat(np.arange(len(runs)) % 2, runs)
+    t2 = np.arange(bits2.size) * 20.0
+    t3 = t2.copy()
+    t3[1:] += 5.0  # irregular first step
+    t3[60:] += 1000.0  # acquisition gap
+    for tt, gaps in ((t2, []), (t3, [60])):
+        st2 = dwell_time_statistics(bits2, tt, gap_indices=gaps)
+        # The sample period is the median within-segment spacing, not t[1] - t[0]
+        # and not the spacing across a gap.
+        assert st2["sample_period_us"] == 20.0
+        counts = [_transition_counts(bits2, gaps, k) for k in (0, 1)]
+        P = [e / n for e, n in counts]
+        for k in (0, 1):
+            exits, trials = counts[k]
+            assert st2[f"n_exits_{k}"] == exits
+            assert st2[f"p_exit_{k}"] == pytest.approx(P[k], rel=1e-12)
+            assert st2[f"tau_mle_{k}_us"] == pytest.approx(
+                _telegraph_tau(20.0, P[k], P[1 - k]), rel=1e-12
+            )
+            var = 0.0
+            for j in (0, 1):
+                h = 1e-7
+                dp = [0.0, 0.0]
+                dp[j] = h
+                d = (
+                    _telegraph_tau(20.0, P[k] + dp[k], P[1 - k] + dp[1 - k])
+                    - _telegraph_tau(20.0, P[k] - dp[k], P[1 - k] - dp[1 - k])
+                ) / (2 * h)
+                var += d**2 * P[j] * (1 - P[j]) / counts[j][1]
+            assert st2[f"tau_err_{k}_us"] == pytest.approx(np.sqrt(var), rel=1e-5)
+    # one segment: state 1 holds the last run (9 samples, 8 trials, no exit)
+    assert _transition_counts(bits2, [], 1) == (10, sum(runs[1::2]) - 1)
+
+    # Every run at the minimum length (P_0 + P_1 = 2 >= 1): tau not resolved (nan, not 0).
+    flicker = np.arange(40) % 2
+    st4 = dwell_time_statistics(flicker, np.arange(40) * 20.0)
+    assert st4["n_exits_0"] == 20 and np.isnan(st4["tau_mle_0_us"])
+    # Empty trace
+    st5 = dwell_time_statistics(np.zeros(0), np.zeros(0))
+    assert st5["n_interior_0"] == 0 and st5["n_exits_0"] == 0 and np.isnan(st5["tau_mle_1_us"])
+
+
+def test_dwell_mle_short_segments():
+    # A sampled Markov chain cut into gap segments only 5 tau long: the censored
+    # likelihood stays unbiased, while the mean of the interior runs alone is biased
+    # low by ~tau/T_segment (long dwells are the ones a segment cuts off).
+    sp, tau = 20.0, 2000.0
+    seg_len, n_seg = 500, 80  # 5 tau per segment
+    gaps = list(range(seg_len, seg_len * n_seg, seg_len))
+    rng = np.random.default_rng(21)
+    mle, err, interior_only = [], [], []
+    for _ in range(40):
+        bits = _symmetric_markov(rng, seg_len * n_seg, tau, sp)
+        t = np.arange(bits.size) * sp + np.repeat(np.arange(n_seg) * 5e4, seg_len)
+        st = dwell_time_statistics(bits, t, gap_indices=gaps)
+        assert st["sample_period_us"] == sp
+        mle.append(st["tau_mle_0_us"])
+        err.append(st["tau_err_0_us"])
+        n_int = st["dwell_0_samples"][~st["censored_0"]]
+        interior_only.append(sp * n_int.mean())
+    assert abs(np.mean(mle) / tau - 1) < 0.02, np.mean(mle)
+    assert np.mean(interior_only) / tau - 1 < -0.15, np.mean(interior_only)
+    assert np.mean(err) == pytest.approx(np.std(mle), rel=0.25)
+
+
+def test_dwell_mle_continuous_telegraph():
+    # An event-driven continuous-time telegraph (exponential dwells, random sampling
+    # phase), asymmetric, at sp/tau = 0.33 / 0.17 / 0.1: the MLE recovers the true
+    # 1/gamma_s. The single-state inversion -sp/ln(1 - P_s) of the same exit
+    # probability would read high by ~sp/(2 tau_other) (+8 % for tau0 = 60 us).
+    rng = np.random.default_rng(31)
+    sp = 20.0
+    for tau0, tau1 in ((60.0, 120.0), (200.0, 400.0)):
+        est = {0: [], 1: []}
+        err = {0: [], 1: []}
+        single = {0: [], 1: []}
+        for _ in range(40):
+            bits, t = _ct_telegraph(rng, 2000 * tau1, tau0, tau1, sp)
+            st = dwell_time_statistics(bits, t)
+            assert st["sample_period_us"] == pytest.approx(sp)
+            for k in (0, 1):
+                est[k].append(st[f"tau_mle_{k}_us"])
+                err[k].append(st[f"tau_err_{k}_us"])
+                single[k].append(-sp / np.log1p(-st[f"p_exit_{k}"]))
+        for k, tau in ((0, tau0), (1, tau1)):
+            m, e = np.mean(est[k]), np.mean(err[k])
+            # mean of 40 replicates: its error is e/sqrt(40)
+            assert abs(m - tau) < 4 * e / np.sqrt(40), (tau0, tau1, k, m, tau, e)
+            assert e == pytest.approx(np.std(est[k]), rel=0.35)
+            # the single-state inversion's model bias, -sp/ln(1 - P_s)/tau - 1 at the
+            # true P_s (+9.5 % / +18.5 % at 60 / 120 us, +2.6 % / +5.3 % at 200 / 400 us)
+            other = tau1 if k == 0 else tau0
+            bias = -sp / np.log1p(-_sampled_exit_p(sp, tau, other)) / tau - 1
+            assert bias > 0.7 * sp / (2 * other)
+            ratio = np.mean(np.asarray(single[k]) / np.asarray(est[k])) - 1
+            assert ratio == pytest.approx(bias, rel=0.1), (tau0, tau1, k, ratio, bias)
+
+
+def test_dwell_mle_debounce_on_noisy_markov():
+    # Debouncing at m = 2 bins on a sampled Markov chain with isolated one-sample
+    # readout flips: merging (prev + flip + next) restores the true dwells, and the
+    # shifted censored MLE recovers tau; without debouncing the flips read as fast
+    # switching. The shift is an approximation: debouncing also merges the real
+    # one-sample dwells, so at tau = 10 sp the estimate reads high by ~11 %.
+    sp = 20.0
+    seg_len, n_seg = 2000, 40
+    gaps = list(range(seg_len, seg_len * n_seg, seg_len))
+    rng = np.random.default_rng(8)
+    for tau, tol in ((2000.0, None), (200.0, 0.2)):
+        tau_exact = tau
+        bits = _symmetric_markov(rng, seg_len * n_seg, tau, sp)
+        flips = rng.random(bits.size) < 0.01
+        bits = np.where(flips, 1 - bits, bits)
+        t = np.arange(bits.size) * sp
+        st = dwell_time_statistics(
+            bits, t, gap_indices=gaps, merge_short_segments=True, min_dwell_bins=2
+        )
+        st_raw = dwell_time_statistics(bits, t, gap_indices=gaps)
+        for k in (0, 1):
+            tau_hat, e = st[f"tau_mle_{k}_us"], st[f"tau_err_{k}_us"]
+            if tol is None:
+                assert abs(tau_hat - tau_exact) < 4 * e, (k, tau_hat, tau_exact, e)
+            else:
+                assert tau_exact < tau_hat < (1 + tol) * tau_exact, (k, tau_hat, tau_exact)
+            assert st_raw[f"tau_mle_{k}_us"] < 0.9 * tau_exact
+
+
 def test_dwell_time_statistics_debounce():
     # --- Task 1: dwell debounce ---
     rng = np.random.default_rng(0)
@@ -701,6 +1111,17 @@ def test_analyze_parity_run_end_to_end():
             results["n_switches_baseline"] / results["T_baseline_s"]
         )
         assert "mean_dwell_0_us" in results and "mean_dwell_1_us" in results
+        # F73: dwell-time MLE with its error; the labels flip with P = 0.005 per sample,
+        # i.e. a symmetric telegraph sampled every sp with tau = -2 sp/ln(1 - 2P)
+        tau_syn = -2 * sample_period_us_syn / np.log1p(-2 * 0.005)
+        for k in (0, 1):
+            assert results[f"n_interior_{k}"] >= 50
+            assert results[f"n_exits_{k}"] >= results[f"n_interior_{k}"]
+            assert abs(results[f"tau_mle_{k}_us"] - tau_syn) < 4 * results[f"tau_err_{k}_us"], (
+                k,
+                results[f"tau_mle_{k}_us"],
+                tau_syn,
+            )
 
         base = os.path.splitext(os.path.basename(h5_path))[0]
         for suffix in [
@@ -720,6 +1141,8 @@ def test_analyze_parity_run_end_to_end():
             sj = json.load(f)
         assert "baseline_rate_Hz" in sj
         assert sj["baseline_rate_err_Hz"] == pytest.approx(results["baseline_rate_err_Hz"])
+        assert sj["tau_mle_0_us"] == pytest.approx(results["tau_mle_0_us"])
+        assert sj["tau_err_1_us"] == pytest.approx(results["tau_err_1_us"])
 
 
 def test_markov_dwell_at_two_cadences():
@@ -740,11 +1163,11 @@ def test_markov_dwell_at_two_cadences():
         return bits_
 
     rng_mc = np.random.default_rng(42)
-    # Continuous-time rates: lambda01 = 1/2ms, lambda10 = 1/4ms.
-    # At 20 us cadence: p01 = 20e-6/2e-3 = 0.01; at 100 us cadence: p01 = 0.05.
+    # Continuous-time rates: lambda01 = 1/2ms, lambda10 = 1/4ms, sampled exactly:
+    # p01 = (2/3)(1 - exp(-sp * 3/4ms)) (~0.01 at 20 us cadence, ~0.048 at 100 us).
     for sample_us, n in [(20.0, 200_000), (100.0, 40_000)]:
-        p01 = sample_us * 1e-6 / 2e-3
-        p10 = sample_us * 1e-6 / 4e-3
+        p01 = _sampled_exit_p(sample_us, 2000.0, 4000.0)
+        p10 = _sampled_exit_p(sample_us, 4000.0, 2000.0)
         bits_mc = _markov_trace(n, p01, p10, rng_mc)
         t_mc = np.arange(n) * sample_us
         st = dwell_time_statistics(bits_mc, t_mc)
@@ -755,6 +1178,12 @@ def test_markov_dwell_at_two_cadences():
         assert abs(st["mean_1"] - 4000.0) / 4000.0 < 0.2, (
             f"sample_us={sample_us}: mean_1={st['mean_1']:.1f} vs 4000"
         )
+        # F73: the dwell-time MLE recovers the continuous-time tau (2 ms / 4 ms) at both
+        # cadences within 4 of its own error bars, which are tau/sqrt(N_exits) to a few %.
+        for k, tau_k in ((0, 2000.0), (1, 4000.0)):
+            tau_hat, err = st[f"tau_mle_{k}_us"], st[f"tau_err_{k}_us"]
+            assert abs(tau_hat - tau_k) < 4 * err, (sample_us, k, tau_hat, tau_k, err)
+            assert err == pytest.approx(tau_hat / np.sqrt(st[f"n_exits_{k}"]), rel=0.05)
 
 
 def test_bin_iq_time():
@@ -1070,6 +1499,17 @@ def test_threshold_stability():
     t = np.arange(n) * sp
     clean_scores = np.where(bits == 1, 4.0, -4.0) + rng.normal(0, 1.0, n)  # well separated
     noise_scores = rng.normal(0, 1.0, n)  # pure noise
-    ts_clean = threshold_stability(clean_scores, t)
-    ts_noise = threshold_stability(noise_scores, t)
-    assert ts_clean["tau_cv"] < ts_noise["tau_cv"], (ts_clean["tau_cv"], ts_noise["tau_cv"])
+    # Thresholds in the gap between the clouds (>= 2.5 sigma from both centres). The
+    # default 30-70th percentiles of a balanced telegraph sit inside a cloud, where the
+    # clean trace also has noise crossings (tau_cv ~0.6 for both traces at the defaults).
+    thr = [-1.5, -0.75, 0.0, 0.75, 1.5]
+    ts_clean = threshold_stability(clean_scores, t, threshold_list=thr)
+    ts_noise = threshold_stability(noise_scores, t, threshold_list=thr)
+    assert ts_clean["tau_cv"] < 0.1 < ts_noise["tau_cv"], (ts_clean["tau_cv"], ts_noise["tau_cv"])
+    # Default threshold_list: the 30-70th score percentiles. It runs and returns finite
+    # per-threshold MLEs, but it is not a telegraph-vs-noise discriminator (see docstring).
+    ts_def = threshold_stability(clean_scores, t)
+    np.testing.assert_allclose(ts_def["threshold_list"], np.percentile(clean_scores, [30, 40, 50, 60, 70]))
+    assert len(ts_def["tau0_per_threshold"]) == len(ts_def["tau1_per_threshold"]) == 5
+    assert np.all(np.isfinite(ts_def["tau0_per_threshold"] + ts_def["tau1_per_threshold"]))
+    assert np.isfinite(ts_def["tau_cv"])

@@ -47,14 +47,19 @@ def _extract_iq_from_singleshot_data(data_ss, state="g"):
     raise KeyError(f"Could not find raw I/Q arrays for state={state}.")
 
 
-def get_apriori_separator_from_singleshot(ctx, ss_shots=1000):
+def get_apriori_separator_from_singleshot(ctx, ss_shots=1000, pulse_freq=None):
     """
     Runs one SingleShot calibration using a pi pulse.
     Uses the returned ground/excited blobs to define a fixed separator.
     Also saves the SingleShot data/config/png through the normal SingleShot methods.
+    pulse_freq: readout probe frequency [MHz] for the calibration (default: the working
+    config's, the resonator centre); the g -> e axis is only valid at the probe it was
+    measured at.
     """
 
     cfg_ss = ctx.working_config()
+    if pulse_freq is not None:
+        cfg_ss["pulse_freq"] = float(pulse_freq)
     cfg_ss["number_of_pulses"] = 1
     cfg_ss["shots"] = ss_shots
     cfg_ss["reps"] = ss_shots
