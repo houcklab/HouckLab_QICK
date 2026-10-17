@@ -244,12 +244,17 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     still separate commits.
 TIER B IS COMPLETE (items 50-59). Skipped by decision: F47 (= F21+F53). Phase-5a inputs, not commits: F49, F50, F56,
 F57, F58.
+60. `837e0d45` refactor(cfg): dead cfg keys dropped — pulse_style (BASE_CONFIG + trans_config) and the runner's ts gain keys
+    (start_ts_gain / end_ts_gain / ts_step; build_context still accepts ts and ignores it); allowlist in
+    tests/regression/README.md 'Allowed cfg diffs'; symbol-map row for the runner's ts -> deleted 3b (golden: 2668 leaves,
+    all the four keys in cfg / config digests / cfg_digest; hw, sets, cfg_access, yoko_writes, outcome identical).
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: B1-B10 (items 50-59). Next: the dead-cfg-key commit, then 5a, 5b, 6, docs rewrite, merge back.
+Landed: B1-B10 (items 50-59) and the dead-cfg-key commit (60). Next: 5a (brief + workflow in the session scratchpad:
+brief_5a.md, workflow_phase5a.js), 5b, 6, docs rewrite, merge back.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
