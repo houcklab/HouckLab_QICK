@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 
 from qicklab.core.config import validate_gains
+from qicklab.core.io import experiment_fields, provenance_json, write_provenance_text
 
 
 def h5_array(key, data):
@@ -205,6 +206,7 @@ class ExperimentClass:
         self.path = path
         self.outerFolder = outerFolder
         datetimenow = datetime.datetime.now()
+        self._provenance_t0 = time.time()  # provenance start_time (private: not a result)
         self.prefix = prefix
         self.cfg = cfg
         self.soc = soc
@@ -233,10 +235,13 @@ class ExperimentClass:
 
         The cfg is serialised first, so an unencodable value raises before any file is
         touched, and the .json is written to a temp file that replaces cname in one step.
+        Then the provenance record goes to `<cname stem>_provenance.json` and the h5
+        attribute `provenance` (save_provenance; never raises, never touches the cfg).
         """
         text = json.dumps(self.cfg, cls=NumpyJSONEncoder)
         _write_text_replacing(self.cname, text)
         self.datafile().attrs["config"] = text
+        save_provenance(self)
 
     def datafile(self, group=None, remote=False, data_file=None, swmr=False):
         """Open self.fname (or `data_file`) as an H5File in append mode."""
@@ -268,6 +273,45 @@ class ExperimentClass:
         with self.datafile() as f:
             for k, d in arrays.items():
                 f.add(k, d)
+
+
+def provenance_text(exp):
+    """The provenance JSON of experiment `exp` (qicklab.core.io.provenance), or None.
+
+    Built from qicklab.core.io.experiment_fields (never the cfg). See
+    docs/architecture.md#provenance.
+    """
+    try:
+        return provenance_json(**experiment_fields(exp))
+    except Exception:
+        return None
+
+
+def write_h5_provenance(f, exp, text=None):
+    """Set attribute `provenance` on the open h5 file `f`; never raises."""
+    try:
+        text = provenance_text(exp) if text is None else text
+        if text is not None:
+            f.attrs["provenance"] = text
+    except Exception as exc:
+        print(f"[provenance] h5 attribute not written: {exc!r}")
+
+
+def save_provenance(exp):
+    """Write `<cname stem>_provenance.json` and the h5 attribute `provenance` of `exp`.
+
+    Runs after the cfg json and the `config` attribute are on disk, and never raises: a
+    provenance failure is printed and the save it follows stands.
+    """
+    text = provenance_text(exp)
+    if text is None:
+        return
+    write_provenance_text(os.path.splitext(exp.cname)[0], text)
+    try:
+        with exp.datafile() as f:
+            write_h5_provenance(f, exp, text)
+    except Exception as exc:
+        print(f"[provenance] h5 attribute not written: {exc!r}")
 
 
 def finish(cls, inst, data, *, reraise=False, **display_kw):

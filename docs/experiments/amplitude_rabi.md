@@ -68,6 +68,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 | `..._data.h5` | `x_pts` (expts,) gain; `avgi`, `avgq` (2, 1, expts), winding-corrected **and** rotated onto ADC 0's principal axis (both ADCs by the same angle); `iq_rotation_rad`; `iq_axis_contrast_ratio`; with `fit=True` also `fit_i_popt` (4,) = [y0, A, P, phi], `fit_i_perr` (4,) (1-sigma errors of `fit_i_popt`, sqrt of the covariance diagonal), `fit_i_pi_gain`, `fit_i_pi_gain_err` (= dP/2), `fit_i_flag` (quality bitmask, see Analysis), and the same five for Q (a fit that fails leaves its keys out) |
 | `..._data.png` | I and Q vs gain, fits and pi markers |
 | `..._data.json` | config |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 `AmplitudeRabiFF_N`:
 
@@ -76,6 +77,7 @@ PLAN = [R.amplitude_rabi(max_gain=20000, fit=True)]
 | `..._data_Q{qubit_pulse}.h5` | `x_pts` (float linspace), `avgi`, `avgq` (1, 1, N), winding-corrected, **not** rotated; with `rotate=True` also `rotation_phase` (the multiplier phase: rotated = raw x exp(1j rotation_phase)); with `fit=True` the same `fit_i_*` / `fit_q_*` keys as `AmplitudeRabiFF` (popt, perr, pi_gain, pi_gain_err, flag; fitted to the rotated trace; a fit that fails leaves its keys out). Before 2026-10 no fit result was saved |
 | `..._data.png` | rotated I and Q, fits, pi markers (only if inside the swept range) |
 | `..._data.json` | config, with `reps = reps x rounds`, `rounds = 1`, `qubit_gain` = last gain |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 The pi gain is not written back automatically; copy it into the device file
 (`Qubit(gain=...)`).

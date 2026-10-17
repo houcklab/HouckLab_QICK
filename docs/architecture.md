@@ -121,9 +121,60 @@ collision the names are exactly the ones above. The on-disk check looks at the `
   it, a viewer, an antivirus, indexer or sync client); the replace is retried a few times
   and then the already-serialised text is written in place. `<cname>.tmp` is removed on
   every path, including when the write raises, unless another process holds it (then the
-  finished save is not failed over the leftover file).
+  finished save is not failed over the leftover file). Then it writes the provenance record
+  (next section).
 - Scripts are intentionally not embedded in the h5. An automatic save-script feature existed
   and was removed: "caused more trouble than convenience" (Ge Yang, legacy CoreLib comment).
+
+### Provenance
+
+`save_config()` ends with `save_provenance(self)`, after the cfg `.json` and `attrs["config"]`
+are on disk: one JSON record goes to `<cname stem>_provenance.json` (next to the cfg json, e.g.
+`T1_2026_10_13_14_03_22_data_provenance.json`; a plain write, so the cfg json keeps the
+tmp + replace retries to itself) and to the h5 attribute `provenance`. It says
+which code, board, session and bias produced the file, which the cfg alone cannot. Built by
+`qicklab.core.io.provenance()`:
+
+| field | value |
+|---|---|
+| `provenance_version` | 1 |
+| `qick_version` | the qick client (`qick.get_version()` when qick is loaded, else package metadata, so analysis never imports qick) |
+| `soccfg_board`, `soccfg_sw_version`, `soccfg_fw_timestamp` | from the board's `QickConfig` (None when the firmware does not report one) |
+| `soccfg_sha1` | sha1 of `soccfg.dump_cfg()`: equal hashes mean the same firmware configuration |
+| `git_commit`, `git_dirty` | `git rev-parse HEAD` and `git status --porcelain --untracked-files=no` in the repo (5 s timeout). `git_dirty` = tracked files modified: the commit alone does not reproduce the code. Both None when git is missing or the package is not a checkout |
+| `python_version`, `hostname`, `script` | `script` is `sys.argv[0]` (None in a REPL) |
+| `device`, `data_root`, `qubit_readout`, `qubit_pulse`, `rfsoc_host`, `rfsoc_port`, `rfsoc_name`, `rfsoc_timeout_s`, `yoko_addr`, `start_voltage`, `yoko_fixed`, `session_start_time` | the session record `build_context` registers with `io.start_session` (`device` is `build_context(device=...)`: `runners/CSTQ03_BFC.py` passes `"CSTQ03"`; None when not passed). Absent when no `build_context` ran in the process (TWPA scripts, offline analysis) |
+| `bias` | per source, the last ramp in this process: `charge_yoko` (`ramp_to`, V) and `twpa_bias` (`ramp_current`, A), each with `address`, `unit`, `setpoint`, `readback` and `time`. `readback` is the `:SOUR:LEV?` reply the ramp already takes (the GS200 setpoint register, not a measurement of the output). Nothing is queried at save time, so the yoko traffic is unchanged |
+| `program_class`, `program_asm_sha1` | only for classes that keep their program as `self.prog`: sha1 of `prog.asm()`. `ZeroSpanParity` gets it through `save_config` (h5 attribute and `_provenance.json`); `ChargeDispersionQuasiCW` has no h5 or cfg json, so it gets it in the `save_record` sidecar (below) |
+| `experiment_class`, `outer_folder`, `data_file` | the experiment's class, `outerFolder` and h5 name at save time (on a run-level sidecar, only when the experiment is passed) |
+| `start_time`, `end_time` | construction of the experiment and this save; local ISO-8601 with UTC offset |
+
+The cfg key `Qubit_number` is the pulse qubit in amplitude Rabi and the readout qubit
+elsewhere (T1, T2E, single shot, ARV, Modified Ramsey); T1 and Rabi build their h5 names from it
+(`_Q<n>.h5`), so it is left as is. Use `qubit_readout` and `qubit_pulse` from the provenance.
+
+Rules, so that the record changes no measurement output and no golden field:
+
+- Never in `self.cfg` (the cfg json and `attrs["config"]` are unchanged), never in a
+  `save_data` payload, never a public attribute (the start time is `self._provenance_t0`).
+- Times come from `time.time()`, never `datetime.now()`: the regression harness advances a
+  virtual clock on every `now()`, which would shift every later file name.
+- Versions, host, script and git are computed once per process (git is spawned at most twice),
+  the board summary once per `QickConfig`.
+- Every piece that fails is None, and a provenance failure never blocks a save: it prints
+  `[provenance] ...` and the cfg json, the h5 and `finish()` go on as before.
+- UndrivenSingleShot's `save_data` also writes the attribute (its partial-sweep save).
+
+Run-level files get a sidecar `<stem>_provenance.json` from `io.write_provenance`: `save_record`
+(Modified Ramsey and charge-dispersion cycles, next to `<base>.npz` / `<base>_config.json`;
+`save_record(base, cfg, exp, **arrays)` takes the experiment that acquired the record, so the
+sidecar also carries its class, h5 name, start time and program hash), the
+charge-sweep maps (`..._ChargeSweepHeatmap_provenance.json`,
+`..._ChargeTransmissionHeatmap_provenance.json`), the ARV overlay npz and the TWPA
+`flux_sweep` / `pump_sweep` / `gain_compare` npz (rewritten with every incremental save). The
+zero-span and Modified Ramsey `_analysis.json` sidecars carry a `provenance` key: the record of
+the analysis run, not of the acquisition. Files saved before 2026-10-17 have none of this. A
+`*.json` glob in a data folder now also matches the `*_provenance.json` files.
 
 ### Display never loses the record
 

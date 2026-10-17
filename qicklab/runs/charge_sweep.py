@@ -16,6 +16,7 @@ from qicklab.analysis.spectroscopy import (
 )
 from qicklab.core.config import sanity_dump
 from qicklab.core.experiment import finish
+from qicklab.core.io import write_provenance
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
 from qicklab.experiments.transmission import CavitySpecFF
 from qicklab.hardware.yoko import ramp_to
@@ -280,6 +281,7 @@ def run_charge_sweep(ctx, Spec_relevant_params, cd_period_mv=None):
         **fit,
         **axis,
     )
+    write_provenance(Instance_specSlice.fname[:-3] + "_ChargeSweepHeatmap", soccfg=ctx.soccfg)
 
     plt.ioff()
     plt.close(fig)
@@ -548,6 +550,7 @@ def run_charge_transmission_sweep(ctx, params=None):
         yoko_fixed=bool(ctx.yoko_fixed),
         **axis,
     )
+    write_provenance(Instance_trans.fname[:-3] + "_ChargeTransmissionHeatmap", soccfg=ctx.soccfg)
 
     span_khz = 1e3 * (np.nanmax(raw_extremum) - np.nanmin(raw_extremum))
     if ctx.yoko_fixed:

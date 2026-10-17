@@ -134,6 +134,9 @@ Yokogawa GS200 at `GPIB1::9::INSTR` in voltage mode, connected to the charge lin
   the active range clipped the setpoint. On the 30 V range (1 mV resolution) a target that is not
   a whole mV would trip it, so `open_charge_yoko` refuses that range at bring-up; the error message
   names both causes.
+- Every ramp's target and read-back are kept in memory (`yoko.last_levels()["charge_yoko"]`) and
+  written into the provenance of each later save as `bias.charge_yoko`
+  ([architecture](architecture.md#provenance)). No extra GPIB query: it is the read-back above.
 - Never park the bias. An aborted sweep must not leave the bias at an arbitrary point: every later
   measurement would silently run at that charge offset, while the cfg still records the session
   value. `undriven_single_shot` (charge sweep) and `charge_transmission_sweep` return to the start
@@ -174,7 +177,9 @@ resistor value was unreliable.
   `flux_sweep` ramps back to 0 in `finally` only if this step succeeded.
 - `ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S)` steps linearly from the
   present `:SOUR:LEV?` every `dt` s (default `yoko.STEP_PERIOD_S` = 0.05 s; the twpa scripts pass
-  `set_bias.STEP_PERIOD_S`, also 0.05 s); it assumes current-source mode.
+  `set_bias.STEP_PERIOD_S`, also 0.05 s); it assumes current-source mode. Its target and final
+  `:SOUR:LEV?` read-back go into the provenance of later saves in the same process as
+  `bias.twpa_bias` ([architecture](architecture.md#provenance)).
 - The script refuses targets above 25 uA.
 
 ### Pump: Windfreak SynthHD on `COM5`
@@ -235,9 +240,9 @@ extra in `pyproject.toml`). Typical use: `list_instruments()`, then `inst = conn
 
 ## Data paths
 
-Every experiment writes three files with one timestamp:
+Every experiment writes four files with one timestamp:
 
-    <outerFolder><path>/<path>_<YYYY_MM_DD>/<path>_<YYYY_MM_DD_HH_MM_SS>_data.h5   (+ .png, .json)
+    <outerFolder><path>/<path>_<YYYY_MM_DD>/<path>_<YYYY_MM_DD_HH_MM_SS>_data.h5   (+ .png, .json, _provenance.json)
 
 - `outerFolder` = `Device.folder(qubit_readout)` = `f"{data_root}/Q{q}//"`. `data_root` is set per
   device and cooldown, e.g. `V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC`.
@@ -247,8 +252,11 @@ Every experiment writes three files with one timestamp:
 - `path` (`"T1"`, `"QubitSpecFF"`, `"SingleShot"`, ...) is fixed per step and unchanged by the
   refactor. Some experiments append a suffix to the h5 name (`_Q{n}` for T1 and the soft-sweep
   Rabi, `_n{num_pi_pulses}` for T2E). If the names are already taken (two runs of the same
-  `path` in the same second), `_1`, `_2`, ... is appended to the stem of all three files
+  `path` in the same second), `_1`, `_2`, ... is appended to the stem of every file
+  (the provenance sidecar takes the json's stem)
   ([architecture](architecture.md#file-naming-must-stay-byte-identical)).
+- Each save also writes `<stem>_provenance.json` and `attrs["provenance"]` (versions, board
+  hash, git commit, session, last yoko level; [architecture](architecture.md#provenance)).
 - The h5 holds one float64 dataset per numeric data key (complex data as complex128, strings
   as UTF-8; undriven single-shot also writes float32/uint8 traces and SoftLinks, see
   [its outputs](experiments/undriven_single_shot.md#outputs)) and the full cfg as a JSON
@@ -264,7 +272,8 @@ Every experiment writes three files with one timestamp:
 - Steps that move the charge bias without restoring it: `auto_coherence` sweet-spot walk,
   `charge_sweep`, `two_tone_charge_dispersion_quasicw` (ramps even with `yoko_fixed`),
   `modified_ramsey_control` (via the sweet-spot search). Later steps run at the new bias while
-  their cfg shows `current_voltage` = session bias.
+  their cfg shows `current_voltage` = session bias (the provenance `bias.charge_yoko` shows the
+  level actually landed on).
 - The legacy connect turned the yoko output on and ramped before validating the readout window;
   a validation error left the yoko open and on.
 - `pick_current_range` / the TWPA bias script: the 25 uA safety cap equals the hard limit, so the

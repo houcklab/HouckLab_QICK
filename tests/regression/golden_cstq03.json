@@ -38496,7 +38496,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
-          "qicklab/runs/charge_dispersion.py:569:run_charge_dispersion_ramsey"
+          "qicklab/runs/charge_dispersion.py:571:run_charge_dispersion_ramsey"
         ],
         "type": "KeyError"
       },
@@ -192785,7 +192785,7 @@
         "traceback": [
           "tests/regression/driver_qicklab.py:275:run_one",
           "tests/regression/fixtures/cstq03_legacy_runner.py.txt:762:<module>",
-          "qicklab/runs/charge_dispersion.py:569:run_charge_dispersion_ramsey"
+          "qicklab/runs/charge_dispersion.py:571:run_charge_dispersion_ramsey"
         ],
         "type": "KeyError"
       },

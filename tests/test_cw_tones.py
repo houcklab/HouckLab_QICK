@@ -146,7 +146,8 @@ def test_run_makes_one_folder_and_saves_the_settings(tmp_path, monkeypatch, run)
     getattr(resonator, run)(ctx, {"hold_s": 1.5})
     assert slept == [1.5]  # params['hold_s'] reaches the hold
     assert ctx.soc.calls.count("start_tproc") == 1 and ctx.soc.calls[-1] == "reset_gens"
-    (saved,) = glob.glob(str(tmp_path / "*" / "*" / "*.json"))
+    saved, prov = sorted(glob.glob(str(tmp_path / "*" / "*" / "*.json")))
+    assert prov == saved[: -len(".json")] + "_provenance.json"  # F46 sidecar
     with open(saved) as fid:
         assert json.load(fid)["pulse_freq"] == 7095.4
     assert len(glob.glob(str(tmp_path / "*" / "*"))) == 1

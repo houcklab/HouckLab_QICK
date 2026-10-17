@@ -73,6 +73,7 @@ and the charge-dispersion steps. The sweep is centred on the device qubit freque
 | `..._data_IQ.png` | I and Q vs drive frequency, peaks marked; title has gain and length/sigma |
 | `..._data_Amp2_LorentzFits.png` | rotated IQ projection + Lorentzian fits |
 | `..._data.json` | config |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 The peak and Lorentzian results **are** saved (display runs before save). The attribute
 `qubitFreq` (argmax of the projection, computed in acquire) is not saved. No `_data.png`

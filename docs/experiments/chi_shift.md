@@ -62,6 +62,7 @@ The pi pulse uses the device values of `qubit_pulse` (gain, sigma, flat-top, fre
 | `..._data.h5` | `fpts` (N,) MHz; `results_ground`, `results_01` (1, n_adc, 2, N); the fit fields below |
 | `..._data.png` | \|S21\| for both states (GHz axis), minima marked, fit curves when the fit is ok; f_e - f_g (= 2chi) and the pi-trace population in the title |
 | `..._data.json` | config (with `pulse_freq` = last sweep point, `pulse_01 = True`, `rounds = 1`) |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 Fit fields in the h5 (scalars unless noted; MHz; written by `display`):
 

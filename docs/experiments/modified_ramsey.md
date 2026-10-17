@@ -342,7 +342,9 @@ Per cycle:
     (analysis on) or `_controls_index.json` (analysis off: `cycle_idx`,
     `parent_record`, `controls` = control type → h5 path, `skipped` with reasons);
   - legacy diagnostics: `_iq_labeled_apriori.png`, `_single_shot_binary.png`,
-    `_averaged_population.png`, `.npz`, `_config.json`;
+    `_averaged_population.png`, `.npz`, `_config.json`, `_provenance.json`
+    ([provenance](../architecture.md#provenance); the `_analysis.json` sidecars carry a
+    `provenance` key for the analysis run);
   - one `CycleSummary_<ts>.json` per run.
 - Control records go to `ModifiedRamsey_Controls/` (h5, `_IQ.png`, json).
 - **The fitted rates are saved only in the analysis sidecars and the cycle summary.**

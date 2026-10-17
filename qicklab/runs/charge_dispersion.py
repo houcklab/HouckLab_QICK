@@ -401,6 +401,7 @@ def run_two_tone_charge_dispersion_quasicw(
         save_record(
             base,
             cfg,
+            Instance_qcw,
             elapsed_s=np.array(elapsed_s),
             raw_i=np.array(raw_i),
             raw_q=np.array(raw_q),
@@ -544,6 +545,7 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     save_record(
         base,
         cfg,
+        Instance_specSlice,
         elapsed_s=np.array(elapsed_s),
         raw_i=np.array(raw_i),
         raw_q=np.array(raw_q),

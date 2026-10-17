@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from qicklab.core.experiment import finish
-from qicklab.core.io import timestamp
+from qicklab.core.io import timestamp, write_provenance
 from qicklab.experiments.active_reset_verify import ActiveResetVerify
 from qicklab.runs.single_shot import get_apriori_separator_from_singleshot
 
@@ -187,6 +187,7 @@ def run_active_reset_verify(ctx, ActiveResetVerify_params):
         e_center=arv_calib["e_center"],
         **{f"p_ground_{lbl}": arv_results[lbl] for lbl, *_ in arv_conditions},
     )
+    write_provenance(os.path.join(arv_dir, f"ActiveResetVerify_{timestamp_arv}"), soccfg=ctx.soccfg)
 
     # verdict criteria: docs/experiments/active_reset_verify.md
     pg_g_off = float(np.mean(arv_results["prep|g>_resetOFF"]))

@@ -150,6 +150,7 @@ def fakes(monkeypatch):
         "ss_shots": [],
         "ss_cfg_v": [],
         "records": [],
+        "record_exps": [],  # the experiment save_record attributes each record to (F46)
         "summaries": [],
     }
     sweet = {"voltages": [0.0059], "calls": 0}
@@ -209,7 +210,12 @@ def fakes(monkeypatch):
     monkeypatch.setattr(mr_runs, "analyze_modified_ramsey_record", analyze)
     monkeypatch.setattr(mr_runs, "compare_parity_controls", lambda p, c: {"all_expected": True})
     monkeypatch.setattr(mr_runs.plt, "savefig", lambda *a, **k: None)
-    monkeypatch.setattr(mr_runs, "save_record", lambda base, cfg, **a: calls["records"].append(a))
+
+    def record(base, cfg, exp=None, **arrays):
+        calls["records"].append(arrays)
+        calls["record_exps"].append(exp)
+
+    monkeypatch.setattr(mr_runs, "save_record", record)
     monkeypatch.setattr(
         mr_runs, "save_cycle_summary", lambda d, rows: calls["summaries"].append(rows)
     )
@@ -325,6 +331,9 @@ def test_result_saved_and_compared_with_latest_mr(fakes, tmp_path, capsys):
 
     mr_runs.run_modified_ramsey_control(_Ctx(outer), _mrc_params(), _mr_params())
     (rec,) = fakes["records"]
+    # the record's provenance sidecar names the MRC Ramsey experiment that acquired it
+    (exp,) = fakes["record_exps"]
+    assert exp is _FakeMR.instances[-1] and exp.path == "ModifiedRamsey_Control"
     ((row,),) = fakes["summaries"]
     for d in (rec, row):
         assert bool(d["parity_identifiable"]) is False

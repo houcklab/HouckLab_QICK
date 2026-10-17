@@ -258,7 +258,8 @@ Validation-stage parameters:
     `n_chunks`, `n_captures`, `soft_avgs`.
   - json: the cfg. No png from the experiment itself.
 - **Analysis**, in the same run folder:
-  - `<base>_analysis.json`: summary, bursts, window, step.
+  - `<base>_analysis.json`: summary, bursts, window, step, and `provenance` (of the analysis
+    run; [provenance](../architecture.md#provenance)).
   - `<base>_analysis.h5`: `binary_states`, `scores`, `window_t_us`, `rate_Hz`,
     `dwell_0_us`, `dwell_1_us`, summary attrs.
   - `<base>_iq_scatter.png`, `_parity_vs_time.png`, `_switch_rate_vs_time.png`,

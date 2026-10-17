@@ -148,7 +148,8 @@ The Ramsey cfg always has `pi_gain = qubit_gain` (with `pi2_gain`), `ramsey_tau_
 - **Analysis files** with base `…/ModifiedRamsey_Control/<…>`:
   - diagnostic plots `_iq_labeled.png`, `_binary.png`, `_state_moving_avg.png`,
     `_state_hysteresis.png`, `_state_hysteresis_jumps.png`;
-  - `.npz`, `_config.json`. The result keys are `parity_identifiable`, `gamma01_hz`,
+  - `.npz`, `_config.json`, `_provenance.json`
+    ([provenance](../architecture.md#provenance)). The result keys are `parity_identifiable`, `gamma01_hz`,
     `gamma10_hz`, `gamma01_err_hz`, `acf_amplitude` (NaN for an uncorrelated record,
     see Analysis), `acf_r1` (lag-1 autocorrelation) and `acf_r1_mr` (the MR record's),
     `lag_covariance_norm` and `lag_covariance_norm_mr` (drift-corrected lag-covariance

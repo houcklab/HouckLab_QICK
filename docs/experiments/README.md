@@ -95,8 +95,10 @@ bias/pump scripts, no session).
   key of `data['data']` (complex keys as complex128, str keys as UTF-8 strings;
   [undriven_single_shot](undriven_single_shot.md#outputs) differs: float32/uint8 traces, SoftLinks for
   duplicates, regenerable axes dropped) and the config as a JSON string in
-  `attrs["config"]`; the `.json` holds the same config. Each page gives its `path` and any
-  filename suffix.
+  `attrs["config"]`; the `.json` holds the same config. Each save also writes
+  `<json stem>_provenance.json` and `attrs["provenance"]` (versions, board hash, git commit,
+  session, last yoko level; [architecture](../architecture.md#provenance)). Each page gives
+  its `path` and any filename suffix.
 - **Saved config is the experiment's own copy after the run.** Several experiments write
   into it during acquire/display (`pulse_freq` at the last sweep point, `reps`, `rounds`,
   ...). Each page lists what changes.

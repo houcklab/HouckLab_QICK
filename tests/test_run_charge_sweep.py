@@ -112,11 +112,13 @@ def _run(kind, yoko_fixed, tmp_path, monkeypatch):
         monkeypatch.setattr(cs, "QubitSpecSliceFF", fake)
         cs.run_charge_sweep(ctx, SPEC_PARAMS)
         npz = np.load(tmp_path / "slice2_ChargeSweepHeatmap.npz")
+        assert (tmp_path / "slice2_ChargeSweepHeatmap_provenance.json").is_file()  # F46
     else:
         fake = _fake_experiment(tmp_path, _trans_data)
         monkeypatch.setattr(cs, "CavitySpecFF", fake)
         cs.run_charge_transmission_sweep(ctx, {})
         npz = np.load(tmp_path / "slice2_ChargeTransmissionHeatmap.npz")
+        assert (tmp_path / "slice2_ChargeTransmissionHeatmap_provenance.json").is_file()  # F46
     return ctx, fake.slices, npz, ramps
 
 

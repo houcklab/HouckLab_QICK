@@ -11,6 +11,7 @@ Run from the repo root:
     python -m pytest tests/test_modified_ramsey_offline.py
 """
 
+import json
 import math
 import os
 
@@ -991,6 +992,9 @@ def test_plot_and_sidecar_paths():
         assert all(os.path.getsize(os.path.join(td, f)) > 0 for f in written), (
             "every written plot is non-empty: " + str(written)
         )
+        with open(os.path.join(td, "plt_analysis.json")) as fh:  # F46: analysis-run provenance
+            prov = json.load(fh)["provenance"]
+        assert prov["end_time"] and "git_commit" in prov
 
     # an UNIDENTIFIABLE record must also render (rates withheld -> nan title)
     with tempfile.TemporaryDirectory() as td:

@@ -61,7 +61,9 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
 
 `qubit_readout` and `qubit_pulse` are usually the same. They differ only for cross-qubit
 experiments; the legacy code is not consistent about which one a step uses for `Qubit_number`
-(Rabi uses the pulse qubit, T1 and single shot the readout qubit).
+(Rabi uses the pulse qubit, T1 and single shot the readout qubit). File names depend on it, so it
+stays; every saved file records both qubits explicitly in its provenance
+([architecture](architecture.md#provenance)).
 
 ### Shared groups
 
@@ -224,6 +226,10 @@ stops the step, and the loop with it
   the device file for you. See [adding_a_device.md](adding_a_device.md#calibration-write-back).
 - Every experiment writes its full `cfg` to a `.json` next to its data and into the h5
   `config` attribute. The saved cfg is the ground truth, not the log.
+- Every saved file also gets a provenance record (`<stem>_provenance.json` and the h5
+  attribute `provenance`): qick and board versions, board-config hash, git commit and dirty
+  flag, host, device, data root, readout and pulse qubit, the last landed yoko level and the
+  start and end time ([architecture](architecture.md#provenance)).
 
 ## Where data lands
 
@@ -231,6 +237,7 @@ stops the step, and the loop with it
 <data_root>/Q<q>//<path>/<path>_<YYYY_MM_DD>/<path>_<YYYY_MM_DD_HH_MM_SS>_data.h5
                                              <path>_<YYYY_MM_DD_HH_MM_SS>_data.png
                                              <path>_<YYYY_MM_DD_HH_MM_SS>_data.json
+                                             <path>_<YYYY_MM_DD_HH_MM_SS>_data_provenance.json
 ```
 
 `<q>` is `qubit_readout`. `<data_root>` comes from the device file. If two experiments with
@@ -289,6 +296,7 @@ fname = sorted(glob.glob(folder + "/T1_*/T1_*_data*.h5"))[-1]   # newest
 
 with h5py.File(fname, "r") as f:
     cfg = json.loads(f.attrs["config"])        # the exact cfg the experiment ran with
+    prov = json.loads(f.attrs.get("provenance", "{}"))  # code, board, qubits, bias (2026-10-17 on)
     data = {k: f[k][()] for k in f.keys()}     # every dataset (float64 for most steps)
 
 print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
@@ -302,7 +310,7 @@ print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
   and duplicate keys as h5py SoftLinks, which the loop above follows transparently; its dropped index/time axes are
   rebuilt from saved scalars ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)).
 - The `.json` next to the h5 holds the same cfg; it is the quick way to grep settings across a
-  folder.
+  folder. Skip `*_provenance.json` when globbing `*.json`: those hold the provenance record.
 - `t1` and `t2_echo` save their exponential fit in the h5 (`t1_fit_*`, `t2e_fit_*`, see
   [t1](experiments/t1.md#outputs)); `*_fit_ok` is a quality flag, not an unbiased selector for a
   T(t) series ([t1](experiments/t1.md#analysis)). `chi_shift` saves its joint fit (`chi_fit`,
@@ -323,7 +331,8 @@ Error messages and their fixes are collected in [troubleshooting.md](troubleshoo
   `active_reset_verify` and then `single_shot` sees `res_phase` reset to 0.
 - Some steps move the bias and do not restore it (AutoCoherence sweet-spot walk, some charge
   sweeps). Later steps then run at a different voltage while the cfg's `current_voltage` still
-  shows the session value.
+  shows the session value; the provenance `bias.charge_yoko` holds the level the last ramp
+  actually landed on.
 - Two steps mutate their caller's parameter dicts (`probe_freq` from
   `two_tone_charge_dispersion_quasicw` leaks into `charge_dispersion_quasicw`; Modified Ramsey
   control adds hysteresis/window keys). Order of such steps changes their parameters.

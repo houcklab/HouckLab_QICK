@@ -21,6 +21,7 @@ from qicklab.analysis.rates import (
     remove_slow_drift,
 )
 from qicklab.analysis.readout import project_iq_trace
+from qicklab.core.io import provenance
 
 
 def reset_success_vs_cycle(reset_I, reset_Q, calibration, post_reset_I=None, post_reset_Q=None):
@@ -1212,6 +1213,8 @@ def analyze_modified_ramsey_record(
                             "validated_after_reset_g_fraction"
                         ),
                         "reset_final_ground_fraction": (reset or {}).get("final_ground_fraction"),
+                        # of this analysis run (docs/architecture.md#provenance)
+                        "provenance": provenance(),
                     },
                     fh,
                     indent=2,

@@ -92,7 +92,9 @@ values.
 
 ## Outputs
 
-Path `UndrivenSingleShot/`. One h5/png/json per pass.
+Path `UndrivenSingleShot/`. One h5/png/json per pass, plus `..._data_provenance.json`
+and the h5 attribute `provenance` ([provenance](../architecture.md#provenance)). `save_data`
+also writes that attribute, so an aborted sweep's partial h5 carries it.
 
 The h5 is slimmed on write (about 26 MB per 1e6-shot read instead of 128 MB). The
 in-memory `data` dict that `display()` reads keeps every key below in float64. Every key

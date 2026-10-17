@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
 
+from qicklab.core.io import write_provenance
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.yoko import enable_current_output_safely, pick_current_range, ramp_current
 from qicklab.twpa.common import append_state, read_bias_state, timestamped_paths
@@ -150,6 +151,7 @@ def main():
         sys.exit(0)
 
     npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
+    t_start = time.time()  # provenance start_time
 
     rm = pyvisa.ResourceManager()
     yoko = rm.open_resource(TWPA_YOKO_ADDRESS)
@@ -209,6 +211,7 @@ def main():
                 yoko_curr_range_a=range_A,
                 completed_index=k,
             )
+            write_provenance(npz_path[: -len(".npz")], t_start=t_start)
             k_done = k + 1
         outcome = "completed"
 

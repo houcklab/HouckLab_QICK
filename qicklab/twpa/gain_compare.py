@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
 
+from qicklab.core.io import write_provenance
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
 from qicklab.twpa.common import (
     append_state,
@@ -169,6 +170,7 @@ def main():
         sys.exit(0)
 
     npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
+    t_start = time.time()  # provenance start_time
 
     rm = pyvisa.ResourceManager()
     # Read-only TWPA bias readback for the npz and the state log (never writes to the YOKO).
@@ -240,6 +242,7 @@ def main():
                 pnax_power_dbm=PNAX_POWER_dBm,
                 scheme="identical_channels",
             )
+            write_provenance(npz_path[: -len(".npz")], t_start=t_start)
             n_done = r + 1
         outcome = "completed"
 

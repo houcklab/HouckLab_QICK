@@ -67,6 +67,7 @@ into the regime-A base config.
 | `..._data.png` | I, Q, \|S21\| vs frequency (GHz axis) with the raw minimum marked |
 | `..._data_hanger_fit.png` | dB data, fit, raw and fit minima (only if the fit succeeded) |
 | `..._data.json` | config; `pulse_freq` = fit minimum if the display fit succeeded, else the **last sweep point** |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 Carry-over: `pulse_freq` of the session config is set to `hanger_fit_min_freq_mhz`, the
 minimum of the display fit's curve (readout sits at the transmission minimum; with `asym != 0`

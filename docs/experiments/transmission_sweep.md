@@ -48,7 +48,7 @@ PLAN = [R.transmission_sweep(), R.two_tone_spec()]   # regime A; spec reads at t
 `path = "TransmissionFF"` (same folder as transmission_fit). Files and h5 keys are those of
 [transmission_fit](transmission_fit.md#outputs): `fpts`, `results`, and the `hanger_fit_*`
 keys when the display hanger fit succeeds; `..._data.png`, `..._data_hanger_fit.png`,
-`..._data.json`.
+`..._data.json`, `..._data_provenance.json` ([provenance](../architecture.md#provenance)).
 
 Carry-over to the session config:
 

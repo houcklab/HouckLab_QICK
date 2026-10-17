@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyvisa
 
+from qicklab.core.io import write_provenance
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
 from qicklab.twpa.common import (
@@ -273,9 +274,10 @@ def main():
         sys.exit(0)
 
     npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
+    t_start = time.time()  # provenance start_time
 
     def save():
-        return save_npz_atomic(
+        ok = save_npz_atomic(
             npz_path,
             freqs_GHz=freqs_GHz,
             powers_dBm=powers_dBm,
@@ -301,6 +303,8 @@ def main():
             scheme="identical_channels",
             **bias_npz_fields(bias),
         )
+        write_provenance(npz_path[: -len(".npz")], t_start=t_start)
+        return ok
 
     unsaved = False  # data measured since the last successful save
     saved_once = False  # npz_path has been written at least once

@@ -827,7 +827,9 @@ def _run_charge_dispersion(monkeypatch, tmp_path, spectra, gate_off=False):
     monkeypatch.setattr(cd, "finish", lambda *a, **k: None)
     monkeypatch.setattr(cd, "ramp_to", lambda yoko, v: out["ramps"].append(v))
     monkeypatch.setattr(cd, "save_two_tone_plot", fake_plot)
-    monkeypatch.setattr(cd, "save_record", lambda base, cfg, **kw: out["records"].append(kw))
+    monkeypatch.setattr(
+        cd, "save_record", lambda base, cfg, exp=None, **kw: out["records"].append(kw)
+    )
     monkeypatch.setattr(cd, "save_cycle_summary", lambda d, s: out.__setitem__("summary", s))
     monkeypatch.setattr(cd.plt, "savefig", lambda *a, **k: None)
     seen = out.setdefault("chooser_kwargs", [])

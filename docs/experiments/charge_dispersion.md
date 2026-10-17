@@ -135,7 +135,8 @@ in the CSTQ03 runner), not a key of its own.
     `_iq_blobs_labeled.png`, `_separator_score_hist.png`, `_binary.png`,
     `.npz` (`elapsed_s`, `raw_i`, `raw_q`, `amps` = |I+iQ|², `scores`,
     `binary_amps`, `centers`, `midpoint`, `normal`, `x_pts`, `config`, `rep_period_us`,
-    `blob_snr`, `parity_analysis`), and `_config.json`.
+    `blob_snr`, `parity_analysis`), `_config.json`, and `_provenance.json`
+    ([provenance](../architecture.md#provenance), with the program hash).
   - When the parity analysis runs: `<name>_parity_analysis.json`,
     `<name>_parity_analysis.h5` (written only if h5py is importable) and the
     `_calibration`, `_projected_trace`, `_hmm`, `_acf_psd`, `_rate_vs_bin`, `_dwells` PNGs
@@ -148,7 +149,7 @@ in the CSTQ03 runner), not a key of its own.
     `TwoToneChargeDispersion`), with a two-tone plot and `<base>_summary.txt`.
   - Per successful cycle: `Cycle_<nnn>_QuasiCW_<ts>` with `_iq_separator.png`,
     `_iq_labeled.png`, `_amplitude_vs_time.png`, `_binary.png`, `.npz` (also
-    `rep_period_us`, `blob_snr`, `parity_analysis`), `_config.json`, and the
+    `rep_period_us`, `blob_snr`, `parity_analysis`), `_config.json`, `_provenance.json`, and the
     `_parity_*` analysis files as above.
   - One `CycleSummary_<ts>.json` per run.
   - No raw-data h5 for the quasi-CW record; the only h5 is the

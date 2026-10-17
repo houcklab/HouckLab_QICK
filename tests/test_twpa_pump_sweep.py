@@ -165,6 +165,8 @@ def load_npz(tmp_path):
     files = sorted(tmp_path.glob("*_pump_sweep.npz"))
     assert len(files) == 1
     assert not list(tmp_path.glob("*.tmp"))  # atomic: no temp file left behind
+    # F46: each save (re)writes the provenance sidecar next to the npz
+    assert (tmp_path / (files[0].stem + "_provenance.json")).is_file()
     with np.load(files[0]) as z:
         return {k: z[k] for k in z.files}
 

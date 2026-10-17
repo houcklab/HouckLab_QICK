@@ -115,7 +115,8 @@ per **S period** and warns (never raises) when |step| > T_S/8.
     time, the same clock as the file names) and `nominal_voltage` (the unused grid
     value).
 - **Heatmap:** `<last slice name>_ChargeSweepHeatmap.png` and
-  `<last slice name>_ChargeSweepHeatmap.npz`, beside the last slice. The npz holds
+  `<last slice name>_ChargeSweepHeatmap.npz` (+ `_ChargeSweepHeatmap_provenance.json`,
+  [provenance](../architecture.md#provenance)), beside the last slice. The npz holds
   `avgamp_map` (row × frequency), `x_pts` and a `yoko_fixed` flag, plus the row
   axis:
   - Sweeping: `voltage_pts`.

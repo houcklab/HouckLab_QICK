@@ -938,6 +938,7 @@ ctx = build_context(
     yoko_fixed=yoko_fixed,
     readout_length_us=Readout_Time,
     adc_trig_offset_us=ADC_Offset,
+    device="CSTQ03",
 )
 
 # ── Regime A: transmission / spectroscopy / charge-parity / coherence / ARV ──

@@ -9,6 +9,8 @@ KMeans blob gate. docs/experiments/charge_dispersion.md#analysis.
 """
 
 import glob
+import hashlib
+import json
 import os
 import types
 
@@ -184,6 +186,16 @@ def qcw_run(monkeypatch, tmp_path):
     return make, instances, tmp_path
 
 
+def _check_provenance(npz_path, inst):
+    """F46: the save_record sidecar names the experiment and hashes its real program."""
+    with open(npz_path[: -len(".npz")] + "_provenance.json") as f:
+        rec = json.load(f)
+    assert rec["program_class"] == type(inst.prog).__name__
+    assert rec["program_asm_sha1"] == hashlib.sha1(inst.prog.asm().encode()).hexdigest()
+    assert rec["experiment_class"] == type(inst).__name__ and rec["start_time"]
+    assert rec["soccfg_sha1"] == hashlib.sha1(inst.soccfg.dump_cfg().encode()).hexdigest()
+
+
 def _check_saved_record(npz_path, prog, variant, binary_key, gated):
     from tests.test_program_timing import QCW_PERIOD
 
@@ -226,6 +238,7 @@ def test_run_charge_dispersion_quasicw_saves_program_dt_and_gates(qcw_run, varia
     (npz,) = glob.glob(str(tmp_path / "ChargeDispersion" / "ChargeDispersionQuasiCW_*.npz"))
     (inst,) = instances
     parity = _check_saved_record(npz, inst.prog, variant, "binary_amps", gated)
+    _check_provenance(npz, inst)
     assert parity["feasibility_warning"]  # 2.7 samples per 2.5 ms dwell
 
 
@@ -285,3 +298,4 @@ def test_run_two_tone_quasicw_saves_program_dt_and_gates(qcw_run, monkeypatch, v
     (npz,) = glob.glob(str(tmp_path / "TwoToneChargeDispersion" / "Cycle_000_QuasiCW_*.npz"))
     (inst,) = instances
     _check_saved_record(npz, inst.prog, variant, "binary_states", gated)
+    _check_provenance(npz, inst)

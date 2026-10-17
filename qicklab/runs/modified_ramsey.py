@@ -623,6 +623,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params):
         save_record(
             base_mr,
             config_mr,
+            Instance_mr,
             elapsed_ms=np.array(elapsed_ms_mr),
             elapsed_avg_ms=np.array(elapsed_avg_ms_mr),
             raw_i=np.array(raw_i_mr),
@@ -1268,6 +1269,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params, ModifiedRams
             save_record(
                 base_mrc,
                 config_mrc,
+                Instance_mrc,
                 elapsed_ms=np.array(elapsed_ms_mrc),
                 raw_i=np.array(raw_i_mrc),
                 raw_q=np.array(raw_q_mrc),

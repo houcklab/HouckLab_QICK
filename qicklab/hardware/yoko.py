@@ -12,6 +12,30 @@ RANGE_HEADROOM = 1.2  # GS200 sources up to 1.2x the nominal range (12 V on the 
 # ramp_to readback tolerance: the 10 V range resolves 100 uV; a clipped setpoint is off by far more
 LEVEL_READBACK_TOL_V = 1e-4
 
+# Last level each ramp landed on, per source, for the provenance record of later saves
+# (qicklab.core.io.provenance; docs/architecture.md#provenance). Filled from the read-back the
+# ramp already takes: recording it sends nothing to the instrument.
+_LAST_LEVELS = {}
+
+
+def _note_level(source, yoko, unit, setpoint, readback):
+    _LAST_LEVELS[source] = {
+        "address": getattr(yoko, "resource_name", None),
+        "unit": unit,
+        "setpoint": float(setpoint),
+        "readback": float(readback),
+        "time": time.time(),
+    }
+
+
+def last_levels():
+    """{source: {address, unit, setpoint, readback, time}} of the last landed ramp per source.
+
+    source is "charge_yoko" (ramp_to, volts) or "twpa_bias" (ramp_current, amperes); `readback`
+    is the :SOUR:LEV? reply after the ramp (the GS200's setpoint register, not a measurement
+    of the output); `time` is a time.time() value."""
+    return {k: dict(v) for k, v in _LAST_LEVELS.items()}
+
 
 def _gpib_key(address):
     """(board, primary address) of a GPIB VISA resource string, else the normalised string.
@@ -49,6 +73,7 @@ def ramp_to(yoko, target, step=0.001, delay=0.01):
         time.sleep(delay)
     yoko.write(f":SOUR:LEV {target}")  # land exactly on target
     landed = float(yoko.query(":SOUR:LEV?"))
+    _note_level("charge_yoko", yoko, "V", target, landed)
     if abs(landed - target) > LEVEL_READBACK_TOL_V:
         raise RuntimeError(
             f"yoko level reads {landed} V after ramping to {target} V "
@@ -171,6 +196,7 @@ def ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
 
     if abs(delta_I) < 1e-12:
         print(f"[twpa_set_bias] Already at {start_I * 1e6:+.3f} uA, nothing to do.")
+        _note_level("twpa_bias", yoko, "A", target_A, start_I)
         return
 
     step_I = max_rate_A_per_s * dt
@@ -199,4 +225,5 @@ def ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S):
             print(f"  step {i:>5d}/{n_steps}  I={I * 1e6:+.3f} uA  t={elapsed:5.1f}s")
 
     final_I = float(yoko.query(":SOUR:LEV?"))
+    _note_level("twpa_bias", yoko, "A", target_A, final_I)
     print(f"[twpa_set_bias] Done. Final I={final_I * 1e6:+.3f} uA.")

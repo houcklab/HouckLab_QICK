@@ -98,7 +98,8 @@ Legacy `ChargeTransmission_params` keys (CSTQ03 runner values). None means "inhe
   - With `yoko_fixed`: `current_voltage` is the held level. The cfg also has
     `repeat_index`, `acq_time` (local wall-clock ISO time) and `nominal_voltage`.
 - **Map:** `<last slice name>_ChargeTransmissionHeatmap.png` (with the tracked
-  extremum overlaid) and `…_ChargeTransmissionHeatmap.npz`, beside the last slice. The
+  extremum overlaid) and `…_ChargeTransmissionHeatmap.npz` (+ `_provenance.json`,
+  [provenance](../architecture.md#provenance)), beside the last slice. The
   npz holds `db_map`, `avgi_map`, `avgq_map`, `fpts_mhz`, `x_pts_ghz` (absolute,
   including `cavity_LO`), `raw_extremum_mhz`, `fit_extremum_mhz`, `cavity_min` and a
   `yoko_fixed` flag, plus the row axis:

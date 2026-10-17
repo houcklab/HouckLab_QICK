@@ -20,7 +20,7 @@ from qicklab.analysis.undriven import (
     project_onto_axis,
 )
 from qicklab.core.acquisition import acquire_with_retry, raw_shot_buffers
-from qicklab.core.experiment import ExperimentClass, h5_array
+from qicklab.core.experiment import ExperimentClass, h5_array, write_h5_provenance
 from qicklab.core.readout import cover_readout_window
 from qicklab.hardware.yoko import ramp_to
 
@@ -1024,3 +1024,4 @@ class UndrivenSingleShot(ExperimentClass):
                 if key in f:
                     del f[key]
                 f[key] = h5py.SoftLink("/" + target)
+            write_h5_provenance(f, self)  # also on a partial save; never raises

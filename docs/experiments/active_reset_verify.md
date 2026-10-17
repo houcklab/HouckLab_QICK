@@ -110,6 +110,7 @@ The run also writes `f_ge`, `pi_gain`, `sigma`, `flattop_length`, `rounds = 1`,
   - `ActiveResetVerify_overlay_<ts>.png`.
   - `ActiveResetVerify_<ts>.npz`: `read_index`, `readout_threshold`, `res_phase`,
     `g_center`, `e_center`, `p_ground_<label>` per condition.
+  - `ActiveResetVerify_<ts>_provenance.json` ([provenance](../architecture.md#provenance)).
 - The verdict is **printed only**; it is not saved.
 - The reset readouts themselves are not returned.
 

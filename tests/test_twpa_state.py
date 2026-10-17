@@ -253,6 +253,8 @@ def test_gain_compare_completed_run_leaves_pump_on_and_logs_it(env, monkeypatch,
     d = npz(env)
     assert d["bias_uA"] == pytest.approx(11.0) and int(d["yoko_output_on"]) == 1
     assert str(d["yoko_func"]) == "CURR" and int(d["completed_repeats"]) == N_REP
+    (prov,) = env.data_dir.glob("*_gain_on_vs_off_provenance.json")  # F46
+    assert json.loads(prov.read_text())["start_time"]
 
     (entry,) = read_log(env.state_dir)
     assert entry["script"] == "twpa_gain_compare" and entry["outcome"] == "completed"

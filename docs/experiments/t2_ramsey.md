@@ -65,6 +65,7 @@ Group `coherence` (legacy `T1T2_params`).
 | `..._dataRotatedI_Fit.png` | projected I with the fit; legend has T2* and the fitted frequency (on a failed fit: no fit curve, the title is marked "(no fit)", and `fit failed: <error>` is printed to stdout); a warning line if the fit and the FFT peak disagree by more than one FFT bin |
 | `..._dataFFT.png` | FFT of the projected trace, its peaks, and the fitted frequency |
 | `..._data.json` | config, including `f_virt_mhz` (the value the integer `phase_step` realises) and `phase_step` |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 Fit results live only on the instance (`osc_fit`, `env_fit`) and are **not** saved.
 `osc_fit` also holds `f_virt_mhz` and `detuning_mhz` = f - `f_virt_mhz`, with f the

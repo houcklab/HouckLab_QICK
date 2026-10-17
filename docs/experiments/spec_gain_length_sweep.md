@@ -54,7 +54,8 @@ Cost: `len(sweep_lengths) * len(sweep_gains)` spectra. The legacy defaults are
 
 One standard two_tone_spec record per grid point, `path = "QubitSpecFF"` (same folder as
 two_tone_spec): `..._data.h5` (`x_pts`, `avgi`, `avgq`, peak and Lorentzian keys),
-`..._data_IQ.png`, `..._data_Amp2_LorentzFits.png`, `..._data.json`. Every PNG title
+`..._data_IQ.png`, `..._data_Amp2_LorentzFits.png`, `..._data.json`,
+`..._data_provenance.json` ([provenance](../architecture.md#provenance)). Every PNG title
 carries `gain=... length=... us` (or the Gaussian sigma), so the grid can be browsed by
 file. The console prints `=== GainLengthSweep: qubit_length=... qubit_gain=... ===` before
 each point.

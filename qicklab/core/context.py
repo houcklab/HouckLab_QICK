@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pyvisa
 
+from qicklab.core import io
 from qicklab.core.config import check_gain
 from qicklab.hardware.board import BaseConfig, FF_Qubits
 from qicklab.hardware.rfsoc import DEFAULT_TIMEOUT_S, makeProxy
@@ -65,6 +66,7 @@ def build_context(
     rfsoc_port=8888,
     rfsoc_name="myqick",
     rfsoc_timeout_s=DEFAULT_TIMEOUT_S,
+    device=None,
 ):
     """Connect RFSoC + yoko, build the regime-A config and return a populated Context.
 
@@ -72,6 +74,8 @@ def build_context(
     Raises ValueError before touching hardware if a selected gain is outside 0..32767.
     ``rfsoc_host``/``rfsoc_port``/``rfsoc_name``/``rfsoc_timeout_s`` go to ``make_proxy``
     (docs/hardware.md#rfsoc); ``rfsoc_timeout_s=None`` waits forever on a dead board.
+    Registers the session record (``device``, data root, qubits, endpoints) that every later
+    save attaches as provenance (docs/architecture.md#provenance).
     """
     readout_entry = Qubit_Parameters[str(Qubit_Readout)]["Readout"]
     qubit_entry = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]
@@ -85,6 +89,20 @@ def build_context(
     )
 
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
+    io.start_session(
+        soccfg,
+        device=device,
+        data_root=outerFolder,
+        qubit_readout=Qubit_Readout,
+        qubit_pulse=Qubit_Pulse,
+        rfsoc_host=rfsoc_host,
+        rfsoc_port=rfsoc_port,
+        rfsoc_name=rfsoc_name,
+        rfsoc_timeout_s=rfsoc_timeout_s,
+        yoko_addr=yoko_addr,
+        start_voltage=start_voltage,
+        yoko_fixed=yoko_fixed,
+    )
 
     rm = pyvisa.ResourceManager()
     yoko = open_charge_yoko(rm, yoko_addr, start_voltage)

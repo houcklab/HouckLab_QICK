@@ -189,6 +189,8 @@ def test_apriori_gmm_rate_needs_snr_or_binning(tmp_path):
         sj = json.load(f)
     assert sj["classifier_centers"] == pytest.approx(c)
     assert sj["classifier_separation_snr"] == pytest.approx(binned["classifier_separation_snr"])
+    # F46: the record of this analysis run (code version, host, time)
+    assert sj["provenance"]["end_time"] and "qick_version" in sj["provenance"]
     with h5py.File(base + "_analysis.h5", "r") as f:
         np.testing.assert_allclose(f.attrs["classifier_centers"], c)
         assert f.attrs["classifier_separation_snr"] == pytest.approx(

@@ -58,8 +58,9 @@ in the legacy runner), not from the spec group.
 
 One standard two_tone_spec record per repetition under `path = "QubitSpecFF"`: h5 with
 `x_pts`, `avgi`, `avgq`, peak and Lorentzian keys; `_IQ.png`, `_Amp2_LorentzFits.png`;
-`.json`. Plots are never displayed (`plotDisp=False`). Before the loop the step prints a
-sanity dump of the key config values.
+`.json`; `_provenance.json` ([provenance](../architecture.md#provenance)). Plots are never
+displayed (`plotDisp=False`). Before the loop the step prints a sanity dump of the key config
+values.
 
 ## Analysis
 

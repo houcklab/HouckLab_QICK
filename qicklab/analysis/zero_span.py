@@ -18,6 +18,7 @@ from qicklab.analysis.hmm import fit_two_state_hmm
 from qicklab.analysis.iq import project_iq_onto_separator
 from qicklab.analysis.rates import autocorrelation_rate_us, psd_rate_estimate
 from qicklab.analysis.undriven import two_gaussian_threshold
+from qicklab.core.io import provenance
 
 
 # classifier methods that use the SingleShot separator; "apriori" is the legacy name of
@@ -1180,6 +1181,7 @@ def analyze_parity_run(
                 "bursts": bursts,
                 "window_us": rate_out["window_us"],
                 "step_us": rate_out["step_us"],
+                "provenance": provenance(),  # of this analysis run (docs/architecture.md#provenance)
             },
             f,
             indent=2,

@@ -98,6 +98,7 @@ Group `echo` (legacy `T2E_params`).
 | `..._dataI_Data.png` | rotated (or normalised) I with the fit; title `Num Pulses: n ; ... T2E = x +- y us`, or `T2E fit not reliable` (fit drawn dashed grey if one exists) |
 | `..._dataQ_Data.png` | rotated Q |
 | `..._data.json` | config |
+| `..._data_provenance.json` | provenance record ([architecture](../architecture.md#provenance)) |
 
 Fit fields in the h5, as for [t1](t1.md#outputs) with prefix `t2e_`: `t2e_fit_ok`,
 `t2e_fit_us`, `t2e_fit_err_us`, `t2e_fit_a`, `t2e_fit_c`, `t2e_fit_popt`, `t2e_fit_perr`

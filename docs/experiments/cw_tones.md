@@ -88,7 +88,8 @@ with a CW tone on that line.
 One experiment object per step, so one folder:
 `<outerFolder>ConstantTwoTone/ConstantTwoTone_<date>/` (`SingleTone`:
 `<outerFolder>TransmissionFF/...`) holding the run's settings: `save_config()` writes the cfg
-as `<path>_<timestamp>_data.json` and as the `config` attribute of the `.h5` (no datasets).
+as `<path>_<timestamp>_data.json` and as the `config` attribute of the `.h5` (no datasets),
+plus `<path>_<timestamp>_data_provenance.json` ([provenance](../architecture.md#provenance)).
 `ConstantTwoTone.acquire()` also prints the frequencies, gains and period, and returns them.
 
 ## Analysis
