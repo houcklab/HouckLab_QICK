@@ -230,12 +230,18 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     gone; symbol-map row 'deleted' 3b) (golden identical). Known: same-second two-process collision when the first
     crashes before save_config; save_config's datafile() handle not closed (pre-existing); timeout not derived from
     avg_maxlen.
+58. `d5efdf29` fix(twpa): tier-B batch B9 — F55 (pump_sweep ranked on band-mean gain against a per-row pump-OFF trace;
+    gain_min / ripple; atomic per-row saves, honest 'NOT saved'), F54 (TWPA state log twpa_state.jsonl on every exit with a
+    bias readback and a confirmed/unknown pump state; gain_compare LEAVE_PUMP_ON, set_pump --on; bring-up order
+    flux_sweep -> set_bias -> pump_sweep -> gain_compare -> set_pump --on; conftest sandboxes TWPA_STATE_DIR) (golden
+    identical). Known: phase-5 session stamping / connect() warning wait for Setup.twpa; leaving the pump on relies on
+    interpreter exit not closing the SynthHD; PNA-X / yoko opened before the try; not verified against pywindfreak.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: B1-B8 (items 50-57). Next: B9 (brief ready), B10 (F46 alone), then the dead-cfg-key commit, 5a, 5b, 6.
+Landed: B1-B9 (items 50-58). Next: B10 (F46 alone, brief ready), then the dead-cfg-key commit, 5a, 5b, 6.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
