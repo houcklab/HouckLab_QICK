@@ -33,12 +33,11 @@ pi gain, sigma, flat-top length).
 
 | Source | Keys (value or origin) |
 |---|---|
-| `BASE_CONFIG` ([hardware](../hardware.md#channel-map)) | `res_ch`=0, `qubit_ch`=1, `mixer_freq`=0.0, `ro_chs`=[0], `nqz`=2, `qubit_nqz`=1, `relax_delay`=3000, `res_phase`=0, `pulse_style`="const", `cavity_LO`=0, `cavity_winding_freq`=0, `cavity_winding_offset`=0, `trig_buffer_start`=0.02, `trig_buffer_end`=0.02, `trig_delay`=0.082 |
+| `BASE_CONFIG` ([hardware](../hardware.md#channel-map)) | `res_ch`=0, `qubit_ch`=1, `mixer_freq`=0.0, `ro_chs`=[0], `nqz`=2, `qubit_nqz`=1, `relax_delay`=3000, `res_phase`=0, `cavity_LO`=0, `cavity_winding_freq`=0, `cavity_winding_offset`=0, `trig_buffer_start`=0.02, `trig_buffer_end`=0.02, `trig_delay`=0.082 |
 | readout block | `reps`=1000, `length`=`adc_trig_offset + readout_length`, `readout_length`, `adc_trig_offset`, `pulse_gain`=readout gain, `pulse_freq`=readout frequency, `TransSpan`, `TransNumPoints` (from `transmission`), `cav_relax_delay`=30 |
 | qubit block | `qubit_pulse_style`="const", `qubit_gain`=**spec gain**, `qubit_freq`=qubit centre frequency, `qubit_length`, `SpecSpan`, `SpecNumPoints` (from `spec`), `current_voltage`=session bias |
 | sweep block | `start`=`qubit_freq - SpecSpan`, `step`=`2*SpecSpan/SpecNumPoints`, `expts`=`SpecNumPoints` |
 | `tones` | `tone_length` (read by `constant_two_tone`) |
-| `ts` | `start_ts_gain`, `end_ts_gain`, `ts_step`: read by nothing (dead keys, dropped later as an allowed diff) |
 | `charge` | `voltage_start`, `voltage_end`, `voltage_step` (read by `charge_sweep`, `charge_transmission_sweep`) |
 | added last | `FF_Qubits` (metadata only, see [hardware](../hardware.md#fast-flux-channels)), `cavity_min` |
 

@@ -12,7 +12,6 @@ BASE_CONFIG = {
     "qubit_nqz": 1,
     "relax_delay": 3000,
     "res_phase": 0,
-    "pulse_style": "const",
     "length": 30,  # [us] resonator pulse duration (converted by each program)
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 1,  # [us]

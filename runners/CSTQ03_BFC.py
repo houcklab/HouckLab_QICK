@@ -222,7 +222,6 @@ RunTransmissionSweep = False  # determine cavity frequency
 Transmission_params = {"reps": 20, "rounds": 20, "num_points": 201, "span": 5}
 
 RunTransmissionSweeps = False
-ts = {"start_ts_gain": 500, "end_ts_gain": 6000, "ts_step": 100}
 
 Run2ToneSpec = False
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
@@ -932,7 +931,6 @@ ctx = build_context(
     Transmission_params=Transmission_params,
     Spec_relevant_params=Spec_relevant_params,
     tl=tl,
-    ts=ts,
     charge_params=charge_params,
     cavity_min=cavity_min,
     yoko_fixed=yoko_fixed,

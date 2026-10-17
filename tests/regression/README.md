@@ -380,6 +380,21 @@ modules still under `WorkingProjects.`.
 Differences that are intentional must be justified one by one before the
 golden is regenerated.
 
+## Allowed cfg diffs (dead keys dropped)
+
+The golden regenerated after these keys left every experiment cfg (design.md invariant: dead cfg
+keys may be dropped only if provably unread; the recording-cfg `cfg_access` of every label shows
+no read of any of them):
+
+| Key | Was set by | Read by | Dropped in |
+|---|---|---|---|
+| `pulse_style` | `BASE_CONFIG` and the regime-A `trans_config` (`"const"`) | nobody (programs use `read_pulse_style` / `qubit_pulse_style` or hard-code `style="const"`) | dead-cfg-key commit, 2026-10-17 |
+| `start_ts_gain`, `end_ts_gain`, `ts_step` | the runner's `ts` dict merged by `build_context` | nobody | dead-cfg-key commit, 2026-10-17 |
+
+`build_context` still accepts `ts` (the frozen fixture passes it) and ignores it. Every label's
+`cfg` and `cfg_digest` moved by exactly these keys; `hw`, `sets`, `data_digest` data keys,
+`cfg_access`, `yoko_writes` and `outcome` did not.
+
 ## Existing offline scripts
 
 Run with the venv Python from the repo root on 2026-10-13:

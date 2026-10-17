@@ -55,7 +55,7 @@ def build_context(
     Transmission_params,
     Spec_relevant_params,
     tl,
-    ts,
+    ts=None,  # accepted for the legacy call shape; its gain keys were read by nothing and are no longer merged
     charge_params,
     cavity_min=True,
     yoko_fixed=False,
@@ -137,7 +137,6 @@ def build_context(
     )
     trans_config = {
         "reps": 1000,
-        "pulse_style": "const",
         # tone starts at t=0, ADC at adc_trig_offset: covers both (docs/concepts/readout_window.md)
         "length": adc_trig_offset_us + readout_length_us,
         "readout_length": readout_length_us,
@@ -163,7 +162,7 @@ def build_context(
         "expts": qubit_config["SpecNumPoints"],
     }
 
-    UpdateConfig = trans_config | qubit_config | expt_cfg | tl | ts | charge_params
+    UpdateConfig = trans_config | qubit_config | expt_cfg | tl | charge_params
     config = BaseConfig | UpdateConfig
     print(config)
     config["FF_Qubits"] = FF_Qubits
