@@ -145,7 +145,9 @@ Yokogawa GS200 at `GPIB1::9::INSTR` in voltage mode, connected to the charge lin
 ## TWPA instruments
 
 The TWPA is run by standalone scripts (`python -m qicklab.twpa.<script>`), not by steps. Each asks
-for `yes` before touching hardware. Order: set the bias first (pump off), then the pump.
+for `yes` before touching hardware. Order: set the bias first (pump off), then the pump. Each
+script appends its end state (bias readback, commanded pump state) to `twpa_state.jsonl`, the only
+record of the pump state: [twpa](experiments/twpa.md#state-log).
 
 ### Bias: GS200 at `GPIB1::12::INSTR`, current mode
 
@@ -179,7 +181,9 @@ resistor value was unreliable.
 
 - Connecting (`SynthHD.__init__`) disables RF on **both** channels and locks to the external
   10 MHz reference; `SynthHD.close()` disables RF on both as well. The set-pump script therefore
-  deliberately leaves the port open to keep the pump on. Setting one channel switches the other
+  deliberately leaves the port open to keep the pump on, and so does the gain-compare script
+  after a completed run (`LEAVE_PUMP_ON`). Nothing reads the pump state back, since connecting
+  would switch it off. Setting one channel switches the other
   off.
 - Pump power ceiling 0 dBm in the set-pump and gain-compare scripts (the pump-sweep script uses
   20 dBm; inconsistent).
@@ -267,7 +271,11 @@ Every experiment writes three files with one timestamp:
   `ALLOW_CALIBRATION` branch is unreachable, and the "about 11 uA" guidance is not enforced.
 - The TWPA bias script and the flux sweep confirmation prompts still name a Holzworth HS9004A as
   the pump; the pump is the Windfreak SynthHD.
-- The set-pump script is committed with `DISABLE_PUMP = True`: run unchanged, it only turns the
-  pump off.
-- TWPA sweeps open the PNA-X (and yoko) before the `try` block; a failure to connect the
-  SynthHD leaves the PNA-X session open.
+- The set-pump script is committed with `DISABLE_PUMP = True`: run without `--on`, it only turns
+  the pump off.
+- `flux_sweep`, `pump_sweep` and `gain_compare` open the PNA-X before the `try` block
+  (`flux_sweep` the yoko too; `pump_sweep` and `gain_compare` open and close the yoko briefly in
+  `query_bias` first; `set_bias` opens only the yoko, `set_pump` opens nothing before its `try`),
+  so a failure to open one instrument can leave another session open; it changes no TWPA state
+  and writes no state-log line. The SynthHD connect is inside the `try` in `pump_sweep`,
+  `gain_compare` and `set_pump`: a failed connect is logged and the PNA-X is still closed.

@@ -1,10 +1,15 @@
-"""TWPA pump (freq x power) sweep at parked bias; PNA-X band-mean (or CW) |S21| per point.
+"""TWPA pump (freq x power) sweep at parked bias; PNA-X band (or CW) gain per point.
 
-Transmission, not gain (subtract an unpumped reference offline). See docs/experiments/twpa.md.
+Each pump-frequency row starts with one pump-RF-OFF reference trace; gain = |S21|_on - |S21|_off
+(dB) per signal frequency, so drift slower than a row cancels. The best point is the largest
+band-mean gain. Pump RF off on exit. Reads the TWPA bias read-only into the npz and appends the
+end state to the TWPA state log. See docs/experiments/twpa.md.
 """
 
+import os
 import sys
 import time
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +17,13 @@ import pyvisa
 
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
-from qicklab.twpa.common import timestamped_paths
+from qicklab.twpa.common import (
+    append_state,
+    bias_npz_fields,
+    pump_state,
+    query_bias,
+    timestamped_paths,
+)
 
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
@@ -30,8 +41,9 @@ SETTLE_AFTER_FREQ_S = 0.20  # PLL lock + thermal settle
 SETTLE_AFTER_POWER_S = 0.05  # power-only update settle
 
 PNAX_ADDRESS = "GPIB0::16::INSTR"
-# Figure of merit: "BAND" = mean |S21| over [PNAX_F_START_HZ, PNAX_F_STOP_HZ];
-# "CW" = |S21| at PNAX_CW_FREQ_HZ (single tone, faster).
+# What the PNA-X measures: "BAND" = |S21| at PNAX_N_FREQ_POINTS across
+# [PNAX_F_START_HZ, PNAX_F_STOP_HZ]; "CW" = |S21| at PNAX_CW_FREQ_HZ (single tone, faster).
+# Figure of merit either way: band-mean gain = |S21| ON - |S21| of the row's pump-OFF trace (dB).
 PNAX_MEAS_MODE = "BAND"
 PNAX_CW_FREQ_HZ = 7.0e9  # CW tone (used only when PNAX_MEAS_MODE == "CW")
 PNAX_F_START_HZ = 6e9
@@ -103,11 +115,69 @@ def configure_pnax(
 
 
 def disable_pump_channels(channels):
+    """Write rf_enable = False to every channel; True only if every write succeeded."""
+    ok = True
     for ch in channels:
         try:
             ch.rf_enable = False
         except Exception as e:
+            ok = False
             print(f"[twpa_pump_sweep] WARNING: failed to disable a channel: {e}")
+    return ok
+
+
+def gain_trace_dB(s21_on, s21_off):
+    """Per-signal-frequency gain (dB) = 20 log10|S21_on| - 20 log10|S21_off| (broadcasts)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return 20.0 * np.log10(np.abs(s21_on)) - 20.0 * np.log10(np.abs(s21_off))
+
+
+def gain_band_stats(gain_dB):
+    """(band mean, band min, ripple = max - min) of gain_dB over its last axis; NaN-safe."""
+    gain_dB = np.asarray(gain_dB, dtype=float)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN slices -> NaN
+        g_mean = np.nanmean(gain_dB, axis=-1)
+        g_min = np.nanmin(gain_dB, axis=-1)
+        g_max = np.nanmax(gain_dB, axis=-1)
+    return g_mean, g_min, g_max - g_min
+
+
+def best_point(fom, completed):
+    """(i, j) of the largest finite fom among completed points, or None if there is none."""
+    masked = np.where(np.isfinite(fom) & completed, fom, np.nan)
+    if not np.isfinite(masked).any():
+        return None
+    i, j = np.unravel_index(int(np.nanargmax(masked)), masked.shape)
+    return int(i), int(j)
+
+
+def save_npz_atomic(npz_path, **arrays):
+    """Write npz_path via ``<npz_path>.tmp`` + os.replace, so a crash never leaves a torn file.
+
+    A failed write (e.g. a transient network-drive error) prints a warning and returns
+    False instead of raising, so the sweep keeps running and the next save retries. If the
+    temp file was written completely but the rename failed (e.g. the npz is open elsewhere),
+    the temp file is kept and the warning names it: it holds the newest data."""
+    tmp_path = npz_path + ".tmp"
+    written = False
+    try:
+        with open(tmp_path, "wb") as f:  # a file handle: numpy appends no second ".npz"
+            np.savez(f, **arrays)
+        written = True
+        os.replace(tmp_path, npz_path)
+    except OSError as e:
+        if written:
+            where = f"the newest data is complete in {tmp_path}"
+        else:
+            where = f"{npz_path} keeps the last successful save"
+            try:
+                os.remove(tmp_path)  # torn temp file
+            except OSError:
+                pass
+        print(f"[twpa_pump_sweep] WARNING: saving {npz_path} failed ({e}); {where}.")
+        return False
+    return True
 
 
 def main():
@@ -132,17 +202,24 @@ def main():
     if cw_mode:
         n_freq = 1
         pnax_freq_hz = np.array([PNAX_CW_FREQ_HZ])
-        fom_desc = f"|S21| (dB) at {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW tone"
+        fom_desc = f"gain (dB, ON - row OFF) at {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW tone"
     else:
         n_freq = PNAX_N_FREQ_POINTS
         pnax_freq_hz = np.linspace(PNAX_F_START_HZ, PNAX_F_STOP_HZ, PNAX_N_FREQ_POINTS)
-        fom_desc = "mean |S21| (dB) across the band"
+        fom_desc = "band-mean gain (dB, ON - row OFF); band-min gain and ripple reported"
     band_GHz = (PNAX_F_START_HZ / 1e9, PNAX_F_STOP_HZ / 1e9)
 
     n_total = N_FREQ_POINTS * N_POWER_POINTS
     s21_band = np.full((N_FREQ_POINTS, N_POWER_POINTS, n_freq), np.nan + 1j * np.nan, dtype=complex)
     mean_band_dB = np.full((N_FREQ_POINTS, N_POWER_POINTS), np.nan)
     completed = np.zeros((N_FREQ_POINTS, N_POWER_POINTS), dtype=bool)
+    # Pump-RF-OFF reference, one per frequency row, and the gain against it.
+    s21_off = np.full((N_FREQ_POINTS, n_freq), np.nan + 1j * np.nan, dtype=complex)
+    off_band_dB = np.full(N_FREQ_POINTS, np.nan)
+    off_completed = np.zeros(N_FREQ_POINTS, dtype=bool)
+    gain_band_dB = np.full((N_FREQ_POINTS, N_POWER_POINTS), np.nan)  # band-mean gain
+    gain_min_dB = np.full((N_FREQ_POINTS, N_POWER_POINTS), np.nan)  # band-min gain
+    gain_ripple_dB = np.full((N_FREQ_POINTS, N_POWER_POINTS), np.nan)  # band max - min
 
     print("=" * 72)
     print("TWPA PUMP (FREQ, POWER) SWEEP + PNA-X banded S21")
@@ -174,9 +251,13 @@ def main():
     # Wall-clock estimate, dominated by the PNA-X sweeps (per-point dwell ~ 1/IF_BW).
     per_sweep_s = n_freq / max(PNAX_IF_BW_HZ, 1.0)
     per_meas_s = per_sweep_s * max(int(PNAX_N_AVG), 1)
-    est_s = n_total * (per_meas_s + SETTLE_AFTER_POWER_S) + N_FREQ_POINTS * SETTLE_AFTER_FREQ_S
+    # + one pump-OFF reference per row (its own settle, then the RF-on settle).
+    est_s = n_total * (per_meas_s + SETTLE_AFTER_POWER_S) + N_FREQ_POINTS * (
+        per_meas_s + 2 * SETTLE_AFTER_FREQ_S
+    )
     print(
-        f"  total points    : {n_total}  (est. ~{est_s / 60.0:.1f} min wall-clock: "
+        f"  total points    : {n_total} + {N_FREQ_POINTS} pump-OFF refs  "
+        f"(est. ~{est_s / 60.0:.1f} min wall-clock: "
         f"{per_meas_s:.2f} s/point PNA-X + settles; excludes VISA/transfer/save overhead)"
     )
     print(f"  save dir        : {SAVE_DIR}")
@@ -193,15 +274,52 @@ def main():
 
     npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
 
+    def save():
+        return save_npz_atomic(
+            npz_path,
+            freqs_GHz=freqs_GHz,
+            powers_dBm=powers_dBm,
+            pnax_freq_hz=pnax_freq_hz,
+            s21_band=s21_band,
+            mean_band_dB=mean_band_dB,
+            completed=completed,
+            s21_off=s21_off,
+            off_band_dB=off_band_dB,
+            off_completed=off_completed,
+            gain_band_dB=gain_band_dB,
+            gain_min_dB=gain_min_dB,
+            gain_ripple_dB=gain_ripple_dB,
+            meas_mode=PNAX_MEAS_MODE,
+            pnax_cw_freq_hz=PNAX_CW_FREQ_HZ,
+            pnax_f_start_hz=PNAX_F_START_HZ,
+            pnax_f_stop_hz=PNAX_F_STOP_HZ,
+            pnax_if_bw_hz=PNAX_IF_BW_HZ,
+            pnax_power_dbm=PNAX_POWER_dBm,
+            pump_power_max_dbm=PUMP_POWER_MAX_dBm,
+            pump_synth_port=PUMP_SYNTH_PORT,
+            pump_channels=np.array(PUMP_CHANNELS),
+            scheme="identical_channels",
+            **bias_npz_fields(bias),
+        )
+
+    unsaved = False  # data measured since the last successful save
+    saved_once = False  # npz_path has been written at least once
+
     rm = pyvisa.ResourceManager()
+    # Read-only TWPA bias readback for the npz and the state log (never writes to the YOKO).
+    bias = query_bias(rm, tag="twpa_pump_sweep")
     pnax = rm.open_resource(PNAX_ADDRESS)
 
-    # Connecting disables RF on both channels and locks to the external 10 MHz reference.
-    synth = SynthHD(PUMP_SYNTH_PORT)
-    pump_channels = [synth[i] for i in PUMP_CHANNELS]
+    synth = None  # connected inside the try, so a failed connect is logged too
+    pump_channels = []
 
+    outcome = "error"  # -> "completed" after the last row, "interrupted" on Ctrl-C
     t0 = time.time()
     try:
+        # Connecting disables RF on both channels and locks to the external 10 MHz reference.
+        synth = SynthHD(PUMP_SYNTH_PORT)
+        pump_channels = [synth[i] for i in PUMP_CHANNELS]
+
         # Start every channel disabled at the sweep's lowest power / first freq
         set_pump_channels(pump_channels, freqs_Hz[0], powers_dBm[0], rf_enable=False)
 
@@ -225,6 +343,14 @@ def main():
 
         # outer = freq (slow PLL retune), inner = power
         for i, f_Hz in enumerate(freqs_Hz):
+            # Pump-RF-OFF reference for this row (drift on the row timescale cancels in the gain).
+            set_pump_channels(pump_channels, f_Hz, powers_dBm[0], rf_enable=False)
+            time.sleep(SETTLE_AFTER_FREQ_S)
+            s21_off[i] = measure_s21_band(pnax, PNAX_N_AVG)
+            off_band_dB[i] = band_mean_dB(s21_off[i])
+            off_completed[i] = True
+            unsaved = True
+
             # Re-tune frequency at the inner-loop start power, then enable RF.
             set_pump_channels(pump_channels, f_Hz, powers_dBm[0], rf_enable=True)
             time.sleep(SETTLE_AFTER_FREQ_S)
@@ -237,7 +363,12 @@ def main():
                 trace = measure_s21_band(pnax, PNAX_N_AVG)
                 s21_band[i, j] = trace
                 mean_band_dB[i, j] = band_mean_dB(trace)
+                g_mean, g_min, g_ripple = gain_band_stats(gain_trace_dB(trace, s21_off[i]))
+                gain_band_dB[i, j] = g_mean
+                gain_min_dB[i, j] = g_min
+                gain_ripple_dB[i, j] = g_ripple
                 completed[i, j] = True
+                unsaved = True
 
                 elapsed = time.time() - t0
                 n_done = int(completed.sum())
@@ -245,45 +376,76 @@ def main():
                     f"  [{n_done:>4d}/{n_total}] f={f_Hz / 1e9:7.4f} GHz  "
                     f"P={p_dBm:+6.2f} dBm  "
                     f"mean|S21|={mean_band_dB[i, j]:+7.2f} dB  "
+                    f"gain={gain_band_dB[i, j]:+7.2f} dB  "
                     f"t={elapsed:6.1f}s"
                 )
 
-                # Incremental save so a crash mid-sweep keeps the partial map.
-                np.savez(
-                    npz_path,
-                    freqs_GHz=freqs_GHz,
-                    powers_dBm=powers_dBm,
-                    pnax_freq_hz=pnax_freq_hz,
-                    s21_band=s21_band,
-                    mean_band_dB=mean_band_dB,
-                    completed=completed,
-                    meas_mode=PNAX_MEAS_MODE,
-                    pnax_cw_freq_hz=PNAX_CW_FREQ_HZ,
-                    pnax_f_start_hz=PNAX_F_START_HZ,
-                    pnax_f_stop_hz=PNAX_F_STOP_HZ,
-                    pnax_if_bw_hz=PNAX_IF_BW_HZ,
-                    pnax_power_dbm=PNAX_POWER_dBm,
-                    pump_power_max_dbm=PUMP_POWER_MAX_dBm,
-                    pump_synth_port=PUMP_SYNTH_PORT,
-                    pump_channels=np.array(PUMP_CHANNELS),
-                    scheme="identical_channels",
-                )
+            # Save once per frequency row (not per point), so a crash keeps the finished rows.
+            if save():
+                unsaved = False
+                saved_once = True
+        outcome = "completed"
 
     except KeyboardInterrupt:
+        outcome = "interrupted"
         print("\n[twpa_pump_sweep] Ctrl-C — disabling pump RF before exit.")
     finally:
+        rf_off_confirmed = False  # every rf_enable=False write, or close(), succeeded
         try:
-            disable_pump_channels(pump_channels)
+            rf_off_confirmed = disable_pump_channels(pump_channels)
         except Exception as e:
             print(f"[twpa_pump_sweep] WARNING: failed to disable pumps cleanly: {e}")
         try:
-            synth.close()
+            if synth is not None:
+                synth.close()  # also disables RF on both channels
+                rf_off_confirmed = True
         except Exception:
             pass
+        if synth is not None and not rf_off_confirmed:
+            print(
+                "[twpa_pump_sweep] WARNING: could not disable the pump RF or close the SynthHD; "
+                "pump RF state unknown (it may still be ON). Run set_pump to switch it off."
+            )
         try:
             pnax.write("SOUR:POW1:MODE OFF")
         except Exception:
             pass
+        if unsaved:  # partial row from Ctrl-C / an error, or a row whose save failed
+            if save():
+                unsaved = False
+                saved_once = True
+            else:
+                tmp_note = (
+                    f"; the newest complete write is {npz_path}.tmp"
+                    if os.path.exists(npz_path + ".tmp")
+                    else ""
+                )
+                kept = "holds only the last successful save" if saved_once else "was never written"
+                print(f"[twpa_pump_sweep] WARNING: data NOT saved: {npz_path} {kept}{tmp_note}.")
+        append_state(
+            "twpa_pump_sweep",
+            action="pump_sweep",
+            outcome=outcome,
+            data_file=npz_path,
+            completed_points=int(completed.sum()),
+            bias=bias,
+            # RF off once confirmed (every disable write, or close(), succeeded); unknown (None)
+            # if the connect failed, or if both the disable and close() failed
+            pump=pump_state(
+                PUMP_CHANNELS, None, None, False if synth is not None and rf_off_confirmed else None
+            ),
+            pnax={
+                "address": PNAX_ADDRESS,
+                "meas_mode": PNAX_MEAS_MODE,
+                "cw_freq_hz": PNAX_CW_FREQ_HZ,
+                "f_start_hz": PNAX_F_START_HZ,
+                "f_stop_hz": PNAX_F_STOP_HZ,
+                "n_points": PNAX_N_FREQ_POINTS,
+                "if_bw_hz": PNAX_IF_BW_HZ,
+                "power_dbm": PNAX_POWER_dBm,
+                "n_avg": PNAX_N_AVG,
+            },
+        )
         pnax.close()
 
     # pcolormesh with shading='nearest' centers each cell on its (f, P)
@@ -293,23 +455,25 @@ def main():
     if cw_mode:
         fig, ax1 = plt.subplots(1, 1, figsize=(7, 6))
         ax2 = None
-        map_title = f"|S21| (dB) @ {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW"
-        cbar_label = "|S21|  (dB)"
+        map_title = f"gain (dB, ON - row OFF) @ {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW"
+        cbar_label = "gain  (dB)"
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6))
-        map_title = f"mean |S21| (dB) over {band_GHz[0]:.3f}–{band_GHz[1]:.3f} GHz"
-        cbar_label = "mean |S21|  (dB)"
+        map_title = (
+            f"band-mean gain (dB, ON - row OFF) over {band_GHz[0]:.3f}–{band_GHz[1]:.3f} GHz"
+        )
+        cbar_label = "band-mean gain  (dB)"
 
-    pm1 = ax1.pcolormesh(PP, FF, mean_band_dB, shading="nearest", cmap="viridis")
+    pm1 = ax1.pcolormesh(PP, FF, gain_band_dB, shading="nearest", cmap="viridis")
     ax1.set_xlabel("Pump power  (dBm, pump channels)")
     ax1.set_ylabel("Pump frequency  (GHz, pump channels)")
     ax1.set_title(map_title)
     fig.colorbar(pm1, ax=ax1, label=cbar_label)
 
-    # Mark the best pump point (and, in BAND mode, show its band trace).
-    if np.isfinite(mean_band_dB).any():
-        k_best = int(np.nanargmax(mean_band_dB))
-        i_best, j_best = np.unravel_index(k_best, mean_band_dB.shape)
+    # Mark the best pump point (and, in BAND mode, show its gain trace).
+    best = best_point(gain_band_dB, completed)
+    if best is not None:
+        i_best, j_best = best
         ax1.plot(
             powers_dBm[j_best],
             freqs_GHz[i_best],
@@ -321,43 +485,51 @@ def main():
         ax1.legend(loc="best", fontsize=8)
 
         if ax2 is not None:
-            best_trace_dB = 20.0 * np.log10(np.abs(s21_band[i_best, j_best]))
-            ax2.plot(pnax_freq_hz / 1e9, best_trace_dB, "-")
+            best_gain_dB = gain_trace_dB(s21_band[i_best, j_best], s21_off[i_best])
+            ax2.plot(pnax_freq_hz / 1e9, best_gain_dB, "-")
             ax2.axhline(
-                mean_band_dB[i_best, j_best],
+                gain_band_dB[i_best, j_best],
                 ls="--",
                 color="C3",
                 alpha=0.7,
-                label=f"band mean = {mean_band_dB[i_best, j_best]:+.2f} dB",
+                label=f"band mean = {gain_band_dB[i_best, j_best]:+.2f} dB",
             )
             ax2.set_title(
-                f"Best point: f={freqs_GHz[i_best]:.4f} GHz, P={powers_dBm[j_best]:+.2f} dBm"
+                f"Best point: f={freqs_GHz[i_best]:.4f} GHz, P={powers_dBm[j_best]:+.2f} dBm\n"
+                f"band-min gain {gain_min_dB[i_best, j_best]:+.2f} dB, "
+                f"ripple {gain_ripple_dB[i_best, j_best]:.2f} dB"
             )
             ax2.legend(loc="best", fontsize=8)
     if ax2 is not None:
         ax2.set_xlabel("Signal frequency  (GHz)")
-        ax2.set_ylabel("|S21|  (dB)")
+        ax2.set_ylabel("gain = |S21|_on - |S21|_off  (dB)")
         ax2.grid(True, alpha=0.3)
 
     fig.tight_layout()
     fig.savefig(png_path, dpi=140)
-    print(f"[twpa_pump_sweep] Saved: {npz_path}")
+    if saved_once and not unsaved:
+        print(f"[twpa_pump_sweep] Saved: {npz_path}")
+    elif not saved_once and not unsaved:
+        print("[twpa_pump_sweep] No data measured; no npz written.")
     print(f"[twpa_pump_sweep] Saved: {png_path}")
 
-    finite = np.isfinite(mean_band_dB) & completed
+    finite = np.isfinite(gain_band_dB) & completed
     if finite.sum() >= 3:
-        masked = np.where(finite, mean_band_dB, np.nan)
-        k_best = int(np.nanargmax(masked))
-        i_max, j_max = np.unravel_index(k_best, masked.shape)
+        i_max, j_max = best_point(gain_band_dB, completed)
         where = (
             f"at {PNAX_CW_FREQ_HZ / 1e9:.4f} GHz CW"
             if cw_mode
             else f"over {band_GHz[0]:.3f}–{band_GHz[1]:.3f} GHz"
         )
-        print("[twpa_pump_sweep] Best pump point for |S21|:")
+        print("[twpa_pump_sweep] Best pump point for band-mean gain (ON - row pump-OFF):")
         print(
             f"  f = {freqs_GHz[i_max]:.4f} GHz   P = {powers_dBm[j_max]:+.2f} dBm   "
-            f"|S21| = {mean_band_dB[i_max, j_max]:+.2f} dB {where}"
+            f"gain = {gain_band_dB[i_max, j_max]:+.2f} dB {where}"
+        )
+        print(
+            f"  band-min gain = {gain_min_dB[i_max, j_max]:+.2f} dB   "
+            f"ripple (max - min) = {gain_ripple_dB[i_max, j_max]:.2f} dB   "
+            f"|S21| ON = {mean_band_dB[i_max, j_max]:+.2f} dB, OFF = {off_band_dB[i_max]:+.2f} dB"
         )
 
 

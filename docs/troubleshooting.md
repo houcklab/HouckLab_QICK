@@ -113,7 +113,8 @@ separate, reviewed commits.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Setting pump channel 1 turned channel 0 off | SynthHD disables RF on both channels on connect | set all channels in one call |
-| `twpa set_pump` only turns the pump off | committed with `DISABLE_PUMP = True` | set it to False |
+| `twpa set_pump` only turns the pump off | committed with `DISABLE_PUMP = True` | pass `--on` |
+| Not sure whether the pump was on / the bias was set during a qubit run | the SynthHD cannot be read back without switching it off | read `twpa_state.jsonl` in the TWPA calibration folder ([twpa](experiments/twpa.md#state-log)); after `pump_sweep` or an aborted `gain_compare` the pump is OFF; `rf_enable: null` means unknown (after a failed disable it may still be ON), so rerun `set_pump --on` (or `set_pump` to switch it off) |
 | VISA timeout in the flux sweep | fixed timeout too short for low IF bandwidth / many averages | raise the timeout or IF bandwidth |
 | Flat band-mean \|S21\| vs bias, spread < 0.5 dB | DC bias path open or not flux-responsive | check wiring |
 | Band-mean gain < 1 dB with pump on | pump off-optimum, under-powered or not reaching the TWPA | re-run the pump sweep |

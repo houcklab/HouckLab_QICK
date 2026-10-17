@@ -493,8 +493,10 @@ holding `VNX_atten64.dll` explicitly (`set_attenuation(db, serial, dll_dir=...)`
 ### TWPA instruments
 
 - `SynthHD.__init__` disables RF on both channels and locks to the external 10 MHz reference;
-  `SynthHD.close()` also disables RF on both. The set-pump script therefore deliberately does
-  not close the port, to leave the pump on. Connecting to set one channel switches the other
+  `SynthHD.close()` also disables RF on both. The set-pump script (and the gain-compare script
+  after a completed run) therefore deliberately does not close the port, to leave the pump on.
+  Every TWPA script appends its end state to `twpa_state.jsonl` (`qicklab.twpa.common`), the
+  only record of the pump state. Connecting to set one channel switches the other
   off.
 - PNA-X sweep time is about `n_points / IF_BW` per sweep times `n_avg`. A fixed 30 s VISA
   timeout was exceeded at low IF bandwidth with many averages; the pump sweep sizes its timeout

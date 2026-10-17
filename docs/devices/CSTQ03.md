@@ -56,8 +56,8 @@ six-qubit chip; it belongs in `Setup.ff_qubits` if it is kept at all.
 | Earlier bias optimum | flux sweep `20260521_144734`: max \|S21\|, broad plateau 3.5-5.5 uA | 2026-05-21 |
 | Datasheet nominal | about 11 uA (about 15 uT internal field, impedance matched); first flux period ends about 25 uA; ramp at most 300 nA/s, pump off | |
 
-The committed set-pump script has `DISABLE_PUMP = True`, so running it as committed turns the
-pump off. Note 18 uA is above the datasheet's "do not sweep well above about 11 uA in normal
+The committed set-pump script has `DISABLE_PUMP = True`, so running it without `--on` turns
+the pump off. Note 18 uA is above the datasheet's "do not sweep well above about 11 uA in normal
 operation" guidance.
 
 ## Qubit parameters, 2026-10-01 cooldown
@@ -280,4 +280,5 @@ previous cooldown of this chip or a sibling chip is not recorded.
 - Decide `mr_relax_delay` (250 vs 500 us) and `mr_reps` (50k vs 100k).
 - Per-qubit readout windows for Q2 and Q5.
 - Identity of the 2306.3 MHz charge-dispersion doublet.
-- TWPA bias in use for this cooldown (18 uA per the 2026-10-07 note, or 0 as committed).
+- TWPA bias in use for this cooldown (18 uA per the 2026-10-07 note, or 0 as committed). From
+  now on the `twpa_state.jsonl` log in the TWPA calibration folder records it.

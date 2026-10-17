@@ -30,15 +30,22 @@ anything that fails before cooling down.
 ## 1. TWPA
 
 Bias first, pump second. Scripts in `qicklab.twpa` are standalone and ask you to type `yes`
-before touching an instrument.
+before touching an instrument. The order below ends with the bias at the operating point and the
+pump ON: `flux_sweep` ends by ramping the bias to 0, so it runs before `set_bias`, and
+`pump_sweep` always leaves the pump off.
 
 | order | script | knobs | good |
 |---|---|---|---|
-| 1 | `python -m qicklab.twpa.set_bias` | target current; ramp at most 300 nA/s from 0, pump OFF | reaches target without trapping flux |
-| 2 | `python -m qicklab.twpa.flux_sweep` (calibration, once per cooldown) | +/-25 uA, pump off | transmission enhancement near about 11 uA, strong suppression near about 25 uA. A spread under 0.5 dB means the DC path is open |
-| 3 | `python -m qicklab.twpa.set_pump` | `(freq_GHz, power_dBm, channel)` from `setup.twpa` | pump on, script leaves the port open on purpose (closing would switch RF off) |
-| 4 | `python -m qicklab.twpa.pump_sweep` (if no operating point yet) | pump freq x power grid | best band-mean \|S21\|; subtract an unpumped reference offline for gain |
-| 5 | `python -m qicklab.twpa.gain_compare` | pump off/on interleaved | broadband positive gain, often about 15-20 dB with modest ripple. Band-mean gain under 1 dB: pump off-optimum, under-powered or not reaching the TWPA |
+| 1 | `python -m qicklab.twpa.flux_sweep` (calibration, once per cooldown) | +/-25 uA, pump off; ends at 0 uA | transmission enhancement near about 11 uA, strong suppression near about 25 uA. A spread under 0.5 dB means the DC path is open |
+| 2 | `python -m qicklab.twpa.set_bias` | target current; ramp at most 300 nA/s from 0, pump OFF | reaches target without trapping flux |
+| 3 | `python -m qicklab.twpa.pump_sweep` (if no operating point yet) | pump freq x power grid; one pump-OFF reference per frequency row; leaves the pump OFF | best band-mean gain against the row's pump-OFF trace; the script prints band-min gain and ripple there |
+| 4 | `python -m qicklab.twpa.gain_compare` | pump off/on interleaved; a completed run leaves the pump ON at the ON point (`LEAVE_PUMP_ON = True`, `--off` to switch it off); Ctrl-C or an error leaves it OFF | broadband positive gain, often about 15-20 dB with modest ripple. Band-mean gain under 1 dB: pump off-optimum, under-powered or not reaching the TWPA |
+| 5 | `python -m qicklab.twpa.set_pump --on` | `PUMP_SETTINGS` (`(freq_GHz, power_dBm)` per channel) | pump on, script leaves the port open on purpose (closing would switch RF off). Needed after `pump_sweep` or an interrupted `gain_compare`; after a completed `gain_compare` the pump is already on, and re-running parks `PUMP_SETTINGS` (connecting switches RF off for a moment). `DISABLE_PUMP = True` is committed, so without `--on` the script only turns the pump off |
+
+Before qubit measurements, check the last line of `twpa_state.jsonl` in the TWPA calibration
+folder: every TWPA script appends its end state there (bias readback, pump state, PNA-X settings),
+and it is the only record of the pump state, because connecting to the SynthHD switches the pump
+off. Details: [twpa](experiments/twpa.md#state-log).
 
 Keep the PNA-X at -25 dBm so the probe does not saturate the TWPA. Datasheet limits: nominal
 bias about 11 uA; do not sweep well above that in normal operation (flux trapping, reduced

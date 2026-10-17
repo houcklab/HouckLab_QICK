@@ -1,6 +1,7 @@
 """Ramp the dedicated TWPA bias YOKO (current mode) to TARGET_CURRENT_uA at <= 300 nA/s.
 
-Measurement-free; pump OFF first. Usage, limits and bias history: docs/experiments/twpa.md.
+Measurement-free; pump OFF first. Appends the bias readback after the ramp to the TWPA state log.
+Usage, limits and bias history: docs/experiments/twpa.md.
 """
 
 import sys
@@ -14,6 +15,7 @@ from qicklab.hardware.yoko import (
     pick_current_range,
     ramp_current,
 )
+from qicklab.twpa.common import append_state, read_bias_state
 
 # GPIB1::12; not the charge-line yoko at ::9::. One shared constant, edit it in hardware.yoko
 # (the charge-line opener refuses this address).
@@ -81,13 +83,32 @@ def main():
 
     rm = pyvisa.ResourceManager()
     yoko = rm.open_resource(TWPA_YOKO_ADDRESS)
+    outcome = "error"
     try:
         enable_current_output_safely(yoko, range_A)
 
         max_rate_A_per_s = MAX_RATE_nA_per_s * 1e-9
 
         ramp_current(yoko, target_A, max_rate_A_per_s, dt=STEP_PERIOD_S)
+        outcome = "completed"
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        raise
     finally:
+        try:
+            bias = read_bias_state(yoko)  # read-only
+        except Exception as e:
+            print(f"[twpa_set_bias] WARNING: TWPA bias readback failed: {e}")
+            bias = None
+        append_state(
+            "twpa_set_bias",
+            action="set_bias",
+            outcome=outcome,
+            target_uA=TARGET_CURRENT_uA,
+            bias=bias,
+            pump=None,  # not touched by this script (pump must be OFF)
+            pnax=None,
+        )
         yoko.close()
 
 

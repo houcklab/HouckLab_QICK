@@ -1,6 +1,7 @@
 """TWPA flux-period sweep (pump OFF): ramp the bias over +-25 uA at <= 300 nA/s, read PNA-X |S21|.
 
-Reports the bias maximizing band-mean (or CW) |S21|; calibration only. See docs/experiments/twpa.md.
+Reports the bias maximizing band-mean (or CW) |S21|; calibration only. Appends the end state (bias
+readback after the ramp to 0) to the TWPA state log. See docs/experiments/twpa.md.
 """
 
 import sys
@@ -12,7 +13,7 @@ import pyvisa
 
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.yoko import enable_current_output_safely, pick_current_range, ramp_current
-from qicklab.twpa.common import timestamped_paths
+from qicklab.twpa.common import append_state, read_bias_state, timestamped_paths
 from qicklab.twpa.set_bias import STEP_PERIOD_S, TWPA_YOKO_ADDRESS, MAX_RATE_nA_per_s
 
 PNAX_ADDRESS = "GPIB0::16::INSTR"
@@ -158,6 +159,8 @@ def main():
     mean_band_dB = np.full(N_BIAS_POINTS, np.nan)
     t0 = time.time()
     bias_enabled = False  # finally ramps to 0 only once the YOKO is known to be in current mode
+    outcome = "error"  # -> "completed" after the last point, "interrupted" on Ctrl-C
+    k_done = 0
 
     try:
         range_A = enable_current_output_safely(yoko, range_A)
@@ -206,8 +209,11 @@ def main():
                 yoko_curr_range_a=range_A,
                 completed_index=k,
             )
+            k_done = k + 1
+        outcome = "completed"
 
     except KeyboardInterrupt:
+        outcome = "interrupted"
         print("\n[twpa_flux_sweep] Ctrl-C — ramping bias back to 0 uA before exit.")
     finally:
         try:
@@ -219,6 +225,31 @@ def main():
             pnax.write("SOUR:POW1:MODE OFF")
         except Exception:
             pass
+        try:
+            bias = read_bias_state(yoko)  # read-only, after the ramp back to 0
+        except Exception as e:
+            print(f"[twpa_flux_sweep] WARNING: TWPA bias readback failed: {e}")
+            bias = None
+        append_state(
+            "twpa_flux_sweep",
+            action="flux_sweep",
+            outcome=outcome,
+            data_file=npz_path,
+            completed_points=k_done,
+            bias=bias,
+            pump=None,  # not touched by this script (pump must be OFF)
+            pnax={
+                "address": PNAX_ADDRESS,
+                "meas_mode": PNAX_MEAS_MODE,
+                "cw_freq_hz": PNAX_CW_FREQ_HZ,
+                "f_start_hz": PNAX_F_START_HZ,
+                "f_stop_hz": PNAX_F_STOP_HZ,
+                "n_points": PNAX_N_FREQ_POINTS,
+                "if_bw_hz": PNAX_IF_BW_HZ,
+                "power_dbm": PNAX_POWER_dBm,
+                "n_avg": PNAX_N_AVG,
+            },
+        )
         yoko.close()
         pnax.close()
 

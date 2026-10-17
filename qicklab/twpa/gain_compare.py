@@ -1,6 +1,8 @@
 """TWPA gain: PNA-X |S21| across the signal band, pump OFF vs ON, interleaved over N_REPEATS.
 
-gain(f) = |S21|_on - |S21|_off (dB); pump RF off on exit. See docs/experiments/twpa.md.
+gain(f) = |S21|_on - |S21|_off (dB). A run that completes leaves the pump ON at the ON point
+(LEAVE_PUMP_ON; ``--off`` overrides); Ctrl-C or an error switches it off. Reads the TWPA bias
+read-only into the npz and appends the end state to the TWPA state log. See docs/experiments/twpa.md.
 """
 
 import sys
@@ -11,7 +13,13 @@ import numpy as np
 import pyvisa
 
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
-from qicklab.twpa.common import timestamped_paths
+from qicklab.twpa.common import (
+    append_state,
+    bias_npz_fields,
+    pump_state,
+    query_bias,
+    timestamped_paths,
+)
 
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
@@ -20,6 +28,10 @@ PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
 PUMP_ON_FREQ_GHz = 10.7165
 PUMP_ON_POWER_dBm = -5.5  # per channel, identical
 PUMP_POWER_MAX_dBm = 0.0  # hard ceiling — script refuses ON power above this
+# After a run that completes, leave the pump ON at the ON point and the SynthHD port open (as
+# set_pump does; closing switches RF off). Ctrl-C or an error always switches the pump off.
+# Pass '--off' to switch it off after a completed run too.
+LEAVE_PUMP_ON = True
 
 F_SIGNAL_START_GHz = 2.0
 F_SIGNAL_STOP_GHz = 10.0
@@ -88,11 +100,15 @@ def measure_s21_trace(pnax, n_points):
 
 
 def disable_pump_channels(channels):
+    """Write rf_enable = False to every channel; True only if every write succeeded."""
+    ok = True
     for ch in channels:
         try:
             ch.rf_enable = False
         except Exception as e:
+            ok = False
             print(f"[twpa_gain_compare] WARNING: failed to disable a channel: {e}")
+    return ok
 
 
 def main():
@@ -107,6 +123,7 @@ def main():
         raise ValueError("Require 0 < F_SIGNAL_START_GHz < F_SIGNAL_STOP_GHz.")
     if N_REPEATS < 1:
         raise ValueError("N_REPEATS must be ≥ 1.")
+    leave_on = LEAVE_PUMP_ON and "--off" not in sys.argv[1:]
 
     f_start_hz = F_SIGNAL_START_GHz * 1e9
     f_stop_hz = F_SIGNAL_STOP_GHz * 1e9
@@ -131,6 +148,14 @@ def main():
     )
     print(f"  PNA-X           : IF BW = {PNAX_IF_BW_HZ:g} Hz   P = {PNAX_POWER_dBm:+.1f} dBm")
     print(f"  repeats         : {N_REPEATS}  (OFF/ON interleaved per repeat)")
+    print(
+        "  on exit         : "
+        + (
+            "pump left ON at the ON point if the run completes (OFF on Ctrl-C / error)"
+            if leave_on
+            else "pump RF OFF"
+        )
+    )
     print(f"  save dir        : {SAVE_DIR}")
     print()
     print("CONFIRM:")
@@ -146,15 +171,22 @@ def main():
     npz_path, png_path = timestamped_paths(SAVE_DIR, RUN_TAG)
 
     rm = pyvisa.ResourceManager()
+    # Read-only TWPA bias readback for the npz and the state log (never writes to the YOKO).
+    bias = query_bias(rm, tag="twpa_gain_compare")
     pnax = rm.open_resource(PNAX_ADDRESS)
 
-    # Connecting disables RF on both channels and locks to the external 10 MHz reference.
-    synth = SynthHD(PUMP_SYNTH_PORT)
-    pump_channels = [synth[i] for i in PUMP_CHANNELS]
+    synth = None  # connected inside the try, so a failed connect is logged too
+    pump_channels = []
 
     freqs_Hz = None
+    n_done = 0
+    outcome = "error"  # -> "completed" after the last repeat, "interrupted" on Ctrl-C
     t0 = time.time()
     try:
+        # Connecting disables RF on both channels and locks to the external 10 MHz reference.
+        synth = SynthHD(PUMP_SYNTH_PORT)
+        pump_channels = [synth[i] for i in PUMP_CHANNELS]
+
         # Park the pump at the ON point but RF disabled to start.
         set_pump_channels(pump_channels, pump_on_hz, PUMP_ON_POWER_dBm, rf_enable=False)
 
@@ -198,6 +230,7 @@ def main():
                 s21_off=s21_off,
                 s21_on=s21_on,
                 completed_repeats=r + 1,
+                **bias_npz_fields(bias),
                 pump_on_freq_hz=pump_on_hz,
                 pump_on_power_dbm=PUMP_ON_POWER_dBm,
                 pump_power_max_dbm=PUMP_POWER_MAX_dBm,
@@ -207,23 +240,81 @@ def main():
                 pnax_power_dbm=PNAX_POWER_dBm,
                 scheme="identical_channels",
             )
+            n_done = r + 1
+        outcome = "completed"
 
     except KeyboardInterrupt:
+        outcome = "interrupted"
         print("\n[twpa_gain_compare] Ctrl-C — disabling pump RF before exit.")
     finally:
-        try:
-            disable_pump_channels(pump_channels)
-        except Exception as e:
-            print(f"[twpa_gain_compare] WARNING: failed to disable pumps cleanly: {e}")
-        try:
-            synth.close()
-        except Exception:
-            pass
+        # Leave the pump ON only after a completed run; every other exit keeps the safety disable.
+        pump_left_on = False
+        rf_off_confirmed = False  # every rf_enable=False write, or close(), succeeded
+        if leave_on and outcome == "completed":
+            try:
+                set_pump_channels(pump_channels, pump_on_hz, PUMP_ON_POWER_dBm, rf_enable=True)
+                pump_left_on = True
+            except Exception as e:
+                print(
+                    f"[twpa_gain_compare] WARNING: failed to re-enable the ON point ({e}); "
+                    "switching the pump off."
+                )
+        if not pump_left_on:
+            try:
+                rf_off_confirmed = disable_pump_channels(pump_channels)
+            except Exception as e:
+                print(f"[twpa_gain_compare] WARNING: failed to disable pumps cleanly: {e}")
+            try:
+                if synth is not None:
+                    synth.close()  # also disables RF on both channels
+                    rf_off_confirmed = True
+            except Exception:
+                pass
+        # else no synth.close(): it disables RF on both channels, and the pump must stay ON.
+        # Logged pump RF: True = left ON; False = confirmed off; None = unknown (the connect
+        # failed, or both the disable and close() failed after the pump may have been ON).
+        if pump_left_on:
+            rf_logged = True
+        elif synth is not None and rf_off_confirmed:
+            rf_logged = False
+        else:
+            rf_logged = None
         try:
             pnax.write("SOUR:POW1:MODE OFF")
         except Exception:
             pass
+        append_state(
+            "twpa_gain_compare",
+            action="gain_compare",
+            outcome=outcome,
+            data_file=npz_path,
+            completed_repeats=n_done,
+            bias=bias,
+            pump=pump_state(PUMP_CHANNELS, pump_on_hz, PUMP_ON_POWER_dBm, rf_logged),
+            pnax={
+                "address": PNAX_ADDRESS,
+                "f_start_hz": f_start_hz,
+                "f_stop_hz": f_stop_hz,
+                "n_points": N_SIGNAL_POINTS,
+                "if_bw_hz": PNAX_IF_BW_HZ,
+                "power_dbm": PNAX_POWER_dBm,
+            },
+        )
         pnax.close()
+        if pump_left_on:
+            print(
+                f"[twpa_gain_compare] Pump left ON at {PUMP_ON_FREQ_GHz:.4f} GHz, "
+                f"{PUMP_ON_POWER_dBm:+.2f} dBm on channels {list(PUMP_CHANNELS)}."
+            )
+        elif synth is None:
+            print("[twpa_gain_compare] SynthHD connect failed; pump RF state unknown.")
+        elif rf_logged is None:
+            print(
+                "[twpa_gain_compare] WARNING: could not disable the pump RF or close the SynthHD; "
+                "pump RF state unknown (it may still be ON). Run set_pump to switch it off."
+            )
+        else:
+            print("[twpa_gain_compare] Pump RF disabled.")
 
     if freqs_Hz is None:
         freqs_Hz = np.linspace(f_start_hz, f_stop_hz, N_SIGNAL_POINTS)
