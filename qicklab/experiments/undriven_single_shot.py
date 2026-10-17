@@ -20,7 +20,7 @@ from qicklab.analysis.undriven import (
     project_onto_axis,
 )
 from qicklab.core.acquisition import acquire_with_retry, raw_shot_buffers
-from qicklab.core.experiment import ExperimentClass
+from qicklab.core.experiment import ExperimentClass, h5_array
 from qicklab.core.readout import cover_readout_window
 from qicklab.hardware.yoko import ramp_to
 
@@ -191,6 +191,20 @@ _DISK_UINT8 = ("labels", "ts_states")
 _DISK_DROPPED = ("shot_index", "shot_time_us", "ts_index", "ts_time_us")
 _DISK_TWINS = (("i", "i_raw"), ("q", "q_raw"), ("projection", "projection_raw"))
 _MR_LINKED = (("shots_i", "i_raw"), ("shots_q", "q_raw"))
+
+
+_DISK_NATIVE = (np.float32, np.uint8, np.uint32)  # written as-is; everything else via h5_array
+
+
+def _disk_array(key, value):
+    """The array save_data writes for `key`: a _DISK_NATIVE array as-is, else h5_array's."""
+    try:
+        arr = np.asarray(value)
+    except ValueError:  # ragged: let h5_array raise its TypeError naming the key
+        arr = None
+    if arr is not None and arr.dtype in _DISK_NATIVE:
+        return arr
+    return h5_array(key, value)
 
 
 def _disk_layout(payload):
@@ -988,15 +1002,19 @@ class UndrivenSingleShot(ExperimentClass):
         ax.set_title("rate vs averaging\n(plateau = real, falling = noise)", fontsize=9)
 
     def save_data(self, data=None):
-        """Write the slimmed on-disk layout (see _disk_layout); self.data is left untouched."""
+        """Write the slimmed on-disk layout (see _disk_layout); self.data is left untouched.
+
+        Every key is converted before the file is opened (see _disk_array), so one bad key
+        raises TypeError naming it and nothing is written; re-saving a key replaces it.
+        """
         if data is None:
             data = self.data
         print(f"Saving {self.fname}")
         datasets, links = _disk_layout(data["data"])
+        arrays = {key: _disk_array(key, value) for key, value in datasets.items()}
         with self.datafile() as f:
-            for key, value in datasets.items():
-                value = np.asarray(value)
-                if value.dtype in (np.float32, np.uint8, np.uint32):
+            for key, value in arrays.items():
+                if value.dtype in _DISK_NATIVE:
                     if key in f:
                         del f[key]
                     f.create_dataset(key, data=value, maxshape=(None,) * value.ndim)

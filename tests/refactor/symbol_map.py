@@ -608,7 +608,7 @@ SYMBOLS = [
     Entry(L + '.PythonDrivers.YOKOGS200', 'YOKOGS200', 'qicklab.hardware.yoko', 'YOKOGS200', 'deleted', '3b', 'infra.md s4: imported by nobody; design: delete YOKOGS200 class (ramping = hardware.yoko.ramp_to / ramp_current)'),
     # --- PythonDrivers.control_atten  [3a-i] ---
     Entry(L + '.PythonDrivers.control_atten', '<module>', 'qicklab.hardware.attenuator', '<module>', 'moved', '3a-i', 'module header: docstring + imports (imports rewritten explicit, no star)'),
-    Entry(L + '.PythonDrivers.control_atten', '<expr:os.add_dll_directory(os.getcwd())>', 'qicklab.hardware.attenuator', '<expr:os.add_dll_directory(os.getcwd())>', 'moved', '3a-i', 'import-time DLL dir registration (CWD-dependent); 3b: replaced by the explicit dll_dir argument of set_attenuation (CLAUDE.md: DLL path setup is load-bearing)'),
+    Entry(L + '.PythonDrivers.control_atten', '<expr:os.add_dll_directory(os.getcwd())>', 'qicklab.hardware.attenuator', '<expr:os.add_dll_directory(os.getcwd())>', 'deleted', '3b', 'import-time CWD DLL registration replaced by the dll_dir argument of set_attenuation (F81, review/findings.json, 2026-10-17; audit/infra.md control_atten; CLAUDE.md: DLL path setup is load-bearing)'),
     Entry(L + '.PythonDrivers.control_atten', 'setatten', 'qicklab.hardware.attenuator', 'setatten', 'moved', '3a-i', '3b: set_attenuation(db, serial, dll_dir, verbose); fix NameError L71 in its own commit', 'qicklab.hardware.attenuator', 'set_attenuation'),
     Entry(L + '.PythonDrivers.control_atten', '<main>', 'qicklab.hardware.attenuator', '<main>', 'moved', '3a-i', 'manual hardware CLI (30 dB on serial 27786); not a test'),
     # --- PythonDrivers.sc5510a_client  [3a-i] ---

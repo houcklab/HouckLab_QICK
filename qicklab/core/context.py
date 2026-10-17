@@ -9,7 +9,7 @@ import pyvisa
 
 from qicklab.core.config import check_gain
 from qicklab.hardware.board import BaseConfig, FF_Qubits
-from qicklab.hardware.rfsoc import makeProxy
+from qicklab.hardware.rfsoc import DEFAULT_TIMEOUT_S, makeProxy
 from qicklab.hardware.yoko import open_charge_yoko, ramp_to
 
 
@@ -61,11 +61,17 @@ def build_context(
     yoko_addr="GPIB1::9::INSTR",
     readout_length_us=15,
     adc_trig_offset_us=None,
+    rfsoc_host="192.168.0.103",
+    rfsoc_port=8888,
+    rfsoc_name="myqick",
+    rfsoc_timeout_s=DEFAULT_TIMEOUT_S,
 ):
     """Connect RFSoC + yoko, build the regime-A config and return a populated Context.
 
     Regime A and its window: docs/concepts/config_regimes.md, docs/concepts/readout_window.md.
     Raises ValueError before touching hardware if a selected gain is outside 0..32767.
+    ``rfsoc_host``/``rfsoc_port``/``rfsoc_name``/``rfsoc_timeout_s`` go to ``make_proxy``
+    (docs/hardware.md#rfsoc); ``rfsoc_timeout_s=None`` waits forever on a dead board.
     """
     readout_entry = Qubit_Parameters[str(Qubit_Readout)]["Readout"]
     qubit_entry = Qubit_Parameters[str(Qubit_Pulse)]["Qubit"]
@@ -74,7 +80,9 @@ def build_context(
     check_gain(f"Qubit_Parameters['{Qubit_Pulse}']['Qubit']['pi2_Gain']", qubit_entry["pi2_Gain"])
     check_gain("Spec_relevant_params['qubit_gain']", Spec_relevant_params["qubit_gain"])
 
-    soc, soccfg = makeProxy()
+    soc, soccfg = makeProxy(
+        host=rfsoc_host, port=rfsoc_port, name=rfsoc_name, timeout=rfsoc_timeout_s
+    )
 
     outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
 

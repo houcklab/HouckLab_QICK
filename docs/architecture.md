@@ -84,21 +84,44 @@ resulting paths is what is on disk today; do not "fix" it with `pathlib`, becaus
 are saved and printed and some code compares them. `path` is both the sub-folder name and the
 file stem. `os.makedirs` runs in `__init__`, so constructing an experiment creates its folder.
 
+Two experiments with the same `path` and `prefix` started in the same second would get the
+same names and write into one h5. `__init__` therefore passes the three names through
+`unique_data_paths`: if any of them already exists on disk, or was handed to another
+experiment earlier in the same Python process (so two instances built before either saves
+still differ), `_1`, `_2`, ... is appended to the stem of all three
+(`..._data_1.h5`, `..._data_1.png`, `..._data_1.json`). `titlename` is unchanged. Without a
+collision the names are exactly the ones above. The on-disk check looks at the `.json`, which
+`save_config` always writes with the original stem, so a T1/T2E run whose h5 was renamed to
+`*_Q1.h5` / `*_n1.h5` still marks its stem as taken.
+
 ### h5 and json writing
 
-- `save_data(data)` writes one dataset per key, always as float64 with resizable shape.
-  Complex, string and object arrays cannot go through the base class; experiments that need
-  them (ZeroSpanParity) override `save_data`, open the file in `"a"` mode so the `config`
-  attribute is not truncated, and delete-then-recreate datasets so a re-save is idempotent.
+- `save_data(data)` writes one dataset per key with resizable shape. Every value is converted
+  (`h5_array`) before the file is opened: numeric and bool data become float64 (the type of
+  every existing record), complex data complex128, str data an h5py UTF-8 string dataset
+  (read it back with `f[k].asstr()[()]`). `None`, object, bytes, datetime and ragged arrays
+  raise `TypeError` naming the key, and because the conversion runs first, one bad key writes
+  nothing at all (no zero-filled half-file). Re-saving a key replaces it (`H5File.add`
+  deletes an existing dataset first), so a partial save followed by a final save is safe.
+  ZeroSpanParity overrides `save_data` (int arrays, string attributes), opens the file in
+  `"a"` mode so the `config` attribute is not truncated, and delete-then-recreates datasets.
   UndrivenSingleShot also overrides it, to shrink its file: raw traces as float32, 0/1 labels
   as uint8, regenerable index/time axes dropped, and copies (averaged traces at
   `shot_average = 1`, the ModifiedRamsey `shots_*` aliases) written as h5py SoftLinks, which
   `f[k][()]` follows transparently. Its in-memory `data` stays float64
-  ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)).
-- Re-saving an existing key through the base class raises `ValueError` (h5py 3 behaviour; the
-  legacy `except RuntimeError` overwrite branch never fires).
+  ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)). Like the base
+  method, it converts every key before opening the file, so one bad key writes nothing.
 - `save_config()` writes the full `cfg` to the `.json` and to the h5 attribute `config`
-  (JSON string). That attribute is how you recover the exact settings of any file.
+  (JSON string). That attribute is how you recover the exact settings of any file. The cfg
+  is serialised once, before any file is touched, with `NumpyJSONEncoder` (numpy ints and
+  floats as numbers, arrays as lists, `np.bool_` as `true`/`false`, complex values as
+  `[re, im]`); the `.json` is written to `<cname>.tmp` and moved over `cname` with
+  `os.replace`, so an unencodable value raises without leaving a truncated `.json`. On
+  Windows `os.replace` fails while another process holds `cname` open (a script reading
+  it, a viewer, an antivirus, indexer or sync client); the replace is retried a few times
+  and then the already-serialised text is written in place. `<cname>.tmp` is removed on
+  every path, including when the write raises, unless another process holds it (then the
+  finished save is not failed over the leftover file).
 - Scripts are intentionally not embedded in the h5. An automatic save-script feature existed
   and was removed: "caused more trouble than convenience" (Ge Yang, legacy CoreLib comment).
 

@@ -233,7 +233,10 @@ stops the step, and the loop with it
                                              <path>_<YYYY_MM_DD_HH_MM_SS>_data.json
 ```
 
-`<q>` is `qubit_readout`. `<data_root>` comes from the device file. A real CSTQ03 file:
+`<q>` is `qubit_readout`. `<data_root>` comes from the device file. If two experiments with
+the same `path` start in the same second, the second gets `_1` (then `_2`, ...) on all three
+names (`..._data_1.h5`, `..._data_1.png`, `..._data_1.json`) instead of overwriting the
+first. A real CSTQ03 file:
 
 ```
 V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_13\TransmissionFF_2026_10_13_14_03_22_data.h5
@@ -291,10 +294,12 @@ with h5py.File(fname, "r") as f:
 print(cfg["relax_delay"], cfg["f_ge"], sorted(data))
 ```
 
-- Every dataset is float64 (the base writer forces it). Experiments that save complex or
-  string data write their own files (zero-span parity). Undriven single-shot is the other
-  exception: it stores raw traces as float32, 0/1 labels as uint8 and duplicate keys as h5py
-  SoftLinks, which the loop above follows transparently; its dropped index/time axes are
+- Numeric and bool data are stored as float64 by the base writer; complex data is
+  complex128 and string data an h5py UTF-8 string dataset, which `f[k][()]` returns as
+  bytes (use `f[k].asstr()[()]` for `str`). Every current step saves numeric data only.
+  Zero-span parity writes its own file (int arrays, string attributes). Undriven
+  single-shot is the other exception: it stores raw traces as float32, 0/1 labels as uint8
+  and duplicate keys as h5py SoftLinks, which the loop above follows transparently; its dropped index/time axes are
   rebuilt from saved scalars ([undriven_single_shot](experiments/undriven_single_shot.md#outputs)).
 - The `.json` next to the h5 holds the same cfg; it is the quick way to grep settings across a
   folder.

@@ -28,12 +28,8 @@ ALLOWED_FAILURES = {
     "qicklab.hardware.synthhd": "pywindfreak",
 }
 
-# module -> exception types it may fail with. The attenuator registers its DLL directory at import
-# with os.add_dll_directory, which exists only on Windows (the lab PC): AttributeError elsewhere,
-# OSError (or a subclass) if the DLL directory or DLL is missing.
-ALLOWED_FAILURE_TYPES = {
-    "qicklab.hardware.attenuator": ("AttributeError", "OSError"),
-}
+# module -> exception types it may fail with (none: every module imports on any OS)
+ALLOWED_FAILURE_TYPES = {}
 
 
 class HardwareAccessAtImport(RuntimeError):

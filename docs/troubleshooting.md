@@ -9,6 +9,7 @@ separate, reviewed commits.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `locateNS` fails / `NamingError` on connect | not on the lab network, or the board's Pyro4 nameserver is down | check that `192.168.0.103:8888` answers; old docs naming `192.168.1.7` are stale ([hardware](hardware.md#rfsoc)) |
+| `Pyro4.errors.TimeoutError` mid-run | a remote call got no answer for `timeout` s (default 300): the board rebooted, lost its network or its server is wedged (a silent nameserver at connect time gives `NamingError` after the same timeout) | check the board answers, then rerun the step; if a run legitimately has a shot period so long that one `poll_data` stride exceeds 300 s, pass a larger `timeout` / `rfsoc_timeout_s` ([hardware](hardware.md#rfsoc)) |
 | `RuntimeError` / version mismatch in the regression tests | client qick is not 0.2.334 | reinstall from `pyproject.toml` |
 | `KeyError: 'gens'` from `"gens" in soccfg` | `QickConfig` has `__getitem__` but no `__contains__` | use `try: soccfg["gens"] except KeyError` |
 | Bias is not where the session says | an earlier step (sweet-spot search, `charge_sweep`, two-tone charge dispersion, Modified Ramsey control) moved the yoko and did not return it | read `:SOUR:LEV?`; re-ramp; see [hardware](hardware.md#charge-bias-yoko) |
@@ -16,7 +17,7 @@ separate, reviewed commits.
 | `RuntimeError` "yoko level reads ... after ramping" | the read-back level differs from the target by more than 1e-4 V: either the active GS200 range clipped it (target above 1.2x the range), or the range is too coarse to resolve it (the 30 V range resolves 1 mV) | clipped: set a larger range (output off); off by under 1 mV on the 30 V range: set the 10 V range (output off) |
 | `connect()` refuses the yoko ("TWPA bias source", "sourcing current with its output ON", "exceeds the active ... V range", "active voltage range is 30 V") | `yoko_addr` is the TWPA source (any spelling of GPIB board 1, address 12), or the source is biasing something in current mode, or `bias_v` is above the active range, or the source is on the 30 V range | check `yoko_addr`; set the 10 V range (or smaller) with the output off; see [hardware](hardware.md#charge-bias-yoko) |
 | Yoko output still on after a crash | closing VISA does not switch the output off; the legacy connect also turned it on before validating the readout window | intended (bias holds); ramp to 0 by hand if you want it off |
-| Attenuator does nothing / `OSError` loading `VNX_atten64.dll` | DLL directory not registered (Python >= 3.8 ignores `PATH`), DLL not present, wrong serial | pass `dll_dir=`; the DLL is not in the repo; default serial 27786 |
+| `OSError` loading `VNX_atten64.dll` / `LookupError` "no Vaunix LDA attenuator with serial" | DLL directory not registered (Python >= 3.8 ignores `PATH`), DLL not present, wrong serial (the error lists the serials found) | pass `dll_dir=`; the DLL is not in the repo; default serial 27786 |
 | `NameError: result` from the legacy attenuator driver in verbose mode | typo in a print when the readback is negative **(legacy bug)** | use `qicklab.hardware.attenuator` |
 | SC5510A connects to the wrong host | `SC5510A_SERVER_HOST` is read at import | set the variable before importing |
 
@@ -56,7 +57,8 @@ separate, reviewed commits.
 | `ValueError` "not a finite number" or "thermal mode" in `t1_ss` | `calibrate_SS=False` with `threshold`/`angle` None or NaN, or the calibration single_shot failed (NaN threshold) or ran in thermal mode | calibrate first or pass `threshold` and `angle`; check the `SingleShot/` record ([t1_single_shot](experiments/t1_single_shot.md#how-to-run)) |
 | `AttributeError` / `NameError` at the end of `charge_sweep` | empty voltage list or first voltage above 10 V ends the loop before anything is created **(legacy bug)** | check the voltage range |
 | `TypeError` from `save_data()` with no argument | every `save_data(data=None)` override indexes `None` **(legacy bug)** | pass the data dict |
-| `ValueError` when saving a key twice, or saving complex/string data | the base h5 writer always creates float64 datasets and cannot overwrite | save once; convert complex to real/imag |
+| `TypeError` "save_data: key '...' has unsupported dtype" or "is not a rectangular array", and nothing is written to the h5 | a `data['data']` value is `None`, an object/bytes/datetime array or a ragged list; the base h5 writer checks every key before writing anything ([architecture](architecture.md#h5-and-json-writing)) | store numbers, bools, complex numbers or strings (complex saves as complex128, str as UTF-8); pad or split ragged lists |
+| `TypeError` "... is not JSON serializable" from `save_config()` | a cfg value that is not a number, bool, string, list, dict, numpy number/array or complex (e.g. an object or a set); the previous `.json` is left intact, not truncated | convert the value before putting it in the cfg |
 
 ## Plots and files
 

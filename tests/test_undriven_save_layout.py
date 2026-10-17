@@ -10,6 +10,7 @@ See docs/experiments/undriven_single_shot.md#outputs.
     python -m pytest tests/test_undriven_save_layout.py
 """
 
+import os
 import types
 
 import h5py
@@ -182,3 +183,36 @@ def test_charge_sweep_layout(tmp_path):
         np.testing.assert_array_equal(f["shot_time_us"][()], d["shot_time_us"])
         np.testing.assert_allclose(f["sweep_voltages"][()], [0.0, 0.001])
         _check_rest_float64(f, d, _expected_narrow(["V0_", "V1_"], 1))
+
+
+@pytest.mark.parametrize("bad", [None, [1, [2, 3]], np.array([object()], dtype=object)])
+def test_bad_key_writes_nothing(tmp_path, bad):
+    """F77: the override converts every key before opening the file, like the base save_data.
+
+    A bad key in the middle of the payload used to leave the keys before it written and drop
+    the keys after it; now save_data raises TypeError naming the key and the h5 is not touched.
+    """
+    exp, d, _ = _run(tmp_path)
+    with h5py.File(exp.fname, "r") as f:
+        before = {k: f[k].dtype for k in f if _link(f, k) is None}
+    keys = list(d)
+    mid = len(keys) // 2
+    payload = {k: d[k] for k in keys[:mid]}
+    payload["bad_key"] = bad
+    payload.update({k: d[k] for k in keys[mid:]})
+    payload["late_key"] = np.arange(3.0)  # would be written last if the loop kept going
+    with pytest.raises(TypeError, match="bad_key"):
+        exp.save_data({"data": payload})
+    with h5py.File(exp.fname, "r") as f:
+        assert "bad_key" not in f and "late_key" not in f
+        assert {k: f[k].dtype for k in f if _link(f, k) is None} == before
+    # a fresh experiment whose first save fails creates no h5 at all
+    exp2 = us_mod.UndrivenSingleShot(
+        path="Undriven2",
+        outerFolder=str(tmp_path) + "/",
+        cfg={"ts_bin_sizes": (1, 2)},
+        soc=types.SimpleNamespace(stop_tproc=lambda: None),
+    )
+    with pytest.raises(TypeError, match="bad_key"):
+        exp2.save_data({"data": payload})
+    assert not os.path.exists(exp2.fname)

@@ -90,8 +90,10 @@ bias/pump scripts, no session).
 
 - **Files.** `outerFolder` is `<data_root>/Q{qubit_readout}//`. Each experiment instance
   writes `<outerFolder><path>/<path>_<YYYY_MM_DD>/<path>_<YYYY_MM_DD_HH_MM_SS>_data.h5`
-  (+ `.png`, `.json`). The h5 holds one float64 dataset per key of `data['data']` (except
-  [undriven_single_shot](undriven_single_shot.md#outputs): float32/uint8 traces, SoftLinks for
+  (+ `.png`, `.json`; `_1`, `_2`, ... is appended to all three if a run of the same `path`
+  in the same second already took the name). The h5 holds one float64 dataset per numeric
+  key of `data['data']` (complex keys as complex128, str keys as UTF-8 strings;
+  [undriven_single_shot](undriven_single_shot.md#outputs) differs: float32/uint8 traces, SoftLinks for
   duplicates, regenerable axes dropped) and the config as a JSON string in
   `attrs["config"]`; the `.json` holds the same config. Each page gives its `path` and any
   filename suffix.

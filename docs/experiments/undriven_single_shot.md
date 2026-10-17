@@ -95,7 +95,9 @@ values.
 Path `UndrivenSingleShot/`. One h5/png/json per pass.
 
 The h5 is slimmed on write (about 26 MB per 1e6-shot read instead of 128 MB). The
-in-memory `data` dict that `display()` reads keeps every key below in float64.
+in-memory `data` dict that `display()` reads keeps every key below in float64. Every key
+is converted before the file is opened, so a value h5 cannot store (None, an object, a
+ragged list) raises `TypeError` naming the key and nothing is written.
 
 - **Per read tag r:**
   - `i<r>`, `q<r>`, `projection<r>`: the points the blob fit saw. These are raw shots

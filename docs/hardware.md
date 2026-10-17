@@ -18,10 +18,23 @@ cooldown).
 
 ## RFSoC
 
-`make_proxy(host="192.168.0.103", port=8888, name="myqick")` locates the Pyro4 nameserver, prints
-its full listing (on every connect), opens the `myqick` proxy and returns `(soc, soccfg)`; `soccfg`
-is a `QickConfig` built from `soc.get_cfg()`. It sets the Pyro4 serializer to pickle (protocol 4)
-globally. Nothing connects at import time; `connect(session)` or `run()` does.
+`make_proxy(host="192.168.0.103", port=8888, name="myqick", timeout=300.0)` locates the Pyro4
+nameserver, prints its full listing (on every connect), opens the `myqick` proxy and returns
+`(soc, soccfg)`; `soccfg` is a `QickConfig` built from `soc.get_cfg()`. It sets the Pyro4 serializer
+to pickle (protocol 4) globally. Nothing connects at import time; `connect(session)` or `run()`
+does. `build_context` takes the same endpoint as `rfsoc_host`, `rfsoc_port`, `rfsoc_name` and
+`rfsoc_timeout_s` (same defaults) and passes them through.
+
+- Timeout: every remote call on the nameserver and on `soc` is bounded by `timeout` seconds
+  (default `DEFAULT_TIMEOUT_S` = 300 s, set per proxy; the global `Pyro4.config.COMMTIMEOUT` is
+  only raised while locating the nameserver). A board that reboots or drops off the network
+  mid-run then raises `Pyro4.errors.TimeoutError` instead of hanging an unattended loop
+  (AutoCoherence, an overnight repeat) forever. The longest legitimate call is `soc.poll_data()`,
+  which waits for one streamer stride, `int(0.1 * avg_maxlen / reads_per_shot)` shots, about
+  13 s at `avg_maxlen` 16384 and an 8 ms `relax_delay`; raise `timeout` if a run has a much longer
+  shot period. `timeout=None` restores the old wait-forever behaviour. After a timeout the board's
+  Pyro worker can stay blocked in `poll_data`; the next acquire's `start_readout` stops the tProc
+  and drains the leftover readout. Nothing retries automatically.
 
 - Firmware: tProc v1. Client `qick` pinned at 0.2.334 (`pyproject.toml`); the regression golden
   records the version and fails on a mismatch. The board itself runs qick 0.2.367 (per the
@@ -184,13 +197,26 @@ TWPA results save as `<SAVE_DIR>/<YYYYmmdd_HHMMSS>_<RUN_TAG>.npz/.png` (not the
 
 ## Attenuator (Vaunix LDA)
 
-`set_attenuation(db, serial=27786, dll_dir=..., verbose=False)` drives the attenuator through
-`VNX_atten64.dll`. Python 3.8 and later do not search `PATH` for DLLs, so the DLL directory must be
-registered with `os.add_dll_directory` before the DLL loads; the driver does this from `dll_dir`.
-The DLL is not in the repository. Attenuation is set in units of 0.05 dB. No current step uses
-the attenuator. The legacy driver searched the current working directory at import time, silently
-did nothing when the serial was not found, and raised `NameError` in verbose mode when the
-readback was negative; the refactored driver raises instead.
+`set_attenuation(db, serial=27786, dll_dir=None, verbose=False)` sets channel 1 of the attenuator
+through `VNX_atten64.dll` and returns the attenuation read back from the device, in dB. Python 3.8
+and later do not search `PATH` for DLLs, so the DLL directory must be registered with
+`os.add_dll_directory` before the DLL loads; the driver does this from `dll_dir` and keeps the
+registration open until the DLL has loaded (with `dll_dir=None` the normal DLL search applies).
+The DLL loads on the call, not at import, so the module imports on any OS. The DLL is not in the
+repository. Attenuation is set in units of 0.05 dB (`round(db / 0.05)`). No current step uses the
+attenuator.
+
+- Every attached device is searched (the legacy driver looked at the first 5 only).
+- No device with `serial`: `LookupError` listing the serials found.
+- `db` outside the device's own `GetMinAttenuationHR`..`GetMaxAttenuationHR` range (models differ,
+  e.g. 63 dB or 95.75 dB): `ValueError`, nothing is sent.
+- A non-zero return code from `InitDevice`, `SetChannel`, `SetAttenuationHR` or `CloseDevice`, a
+  negative readback, or a readback more than half a 0.05 dB step from the request: `RuntimeError`.
+  The device is closed on every path.
+
+The legacy driver registered the current working directory at import time, silently did nothing
+when the serial was not found or a call failed, and raised `NameError` in verbose mode when the
+readback was negative.
 
 ## SignalCore SC5510A
 
@@ -216,9 +242,11 @@ Every experiment writes three files with one timestamp:
   Example: `V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_13\TransmissionFF_2026_10_13_14_03_22_data.h5`.
 - `path` (`"T1"`, `"QubitSpecFF"`, `"SingleShot"`, ...) is fixed per step and unchanged by the
   refactor. Some experiments append a suffix to the h5 name (`_Q{n}` for T1 and the soft-sweep
-  Rabi, `_n{num_pi_pulses}` for T2E).
-- The h5 holds one float64 dataset per data key (undriven single-shot also writes
-  float32/uint8 traces and SoftLinks, see
+  Rabi, `_n{num_pi_pulses}` for T2E). If the names are already taken (two runs of the same
+  `path` in the same second), `_1`, `_2`, ... is appended to the stem of all three files
+  ([architecture](architecture.md#file-naming-must-stay-byte-identical)).
+- The h5 holds one float64 dataset per numeric data key (complex data as complex128, strings
+  as UTF-8; undriven single-shot also writes float32/uint8 traces and SoftLinks, see
   [its outputs](experiments/undriven_single_shot.md#outputs)) and the full cfg as a JSON
   string in `attrs["config"]`; the `.json` holds the same cfg. Load offline with h5py:
   `cfg = json.loads(f.attrs["config"])`.
