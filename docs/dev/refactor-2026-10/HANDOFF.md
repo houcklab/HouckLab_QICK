@@ -236,12 +236,20 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     flux_sweep -> set_bias -> pump_sweep -> gain_compare -> set_pump --on; conftest sandboxes TWPA_STATE_DIR) (golden
     identical). Known: phase-5 session stamping / connect() warning wait for Setup.twpa; leaving the pump on relies on
     interpreter exit not closing the SynthHD; PNA-X / yoko opened before the try; not verified against pywindfreak.
+59. `1c95731c` fix(io): tier-B batch B10 — F46 provenance (h5 attrs['provenance'] + <stem>_provenance.json beside every
+    save; session record from build_context incl. device; last yoko landed level from ramp_to / ramp_current; program
+    hash; save_record takes the acquiring experiment; TWPA / heatmap / ARV / analysis sidecars) (golden identical).
+    Known: no yoko read-back at save time; save_cycle_summary, auto_coherence summary, zero_span_validation sidecars
+    and spectroscopy.py npz carry no provenance yet; save_config's open datafile() handle and dead cname guard are
+    still separate commits.
+TIER B IS COMPLETE (items 50-59). Skipped by decision: F47 (= F21+F53). Phase-5a inputs, not commits: F49, F50, F56,
+F57, F58.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: B1-B9 (items 50-58). Next: B10 (F46 alone, brief ready), then the dead-cfg-key commit, 5a, 5b, 6.
+Landed: B1-B10 (items 50-59). Next: the dead-cfg-key commit, then 5a, 5b, 6, docs rewrite, merge back.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
